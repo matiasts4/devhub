@@ -182,7 +182,11 @@ export function getSettingsControlStyle({ emphasized = false, tone = 'neutral' }
 
 export function getSettingsAccentOptionStyle(isActive, color) {
   return {
-    ...chromeSurfaceStyle({ surface: 'panel', emphasized: isActive, tone: isActive ? 'accent' : 'neutral' }),
+    ...chromeSurfaceStyle({
+      surface: 'panel',
+      emphasized: isActive,
+      tone: isActive ? 'accent' : 'neutral',
+    }),
     background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
     borderColor: isActive
       ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'
@@ -259,7 +263,11 @@ function ThemeOptionCard({ option, active, onClick }) {
         <div className="p-2 h-[calc(100%-1.75rem)] grid grid-cols-[28%_1fr] gap-1.5">
           <div
             className="rounded-none"
-            style={{ background: preview.panel, border: `1px solid ${preview.line}`, borderRadius: 0 }}
+            style={{
+              background: preview.panel,
+              border: `1px solid ${preview.line}`,
+              borderRadius: 0,
+            }}
           />
           <div className="flex flex-col gap-1.5">
             <div
@@ -268,7 +276,11 @@ function ThemeOptionCard({ option, active, onClick }) {
             />
             <div
               className="flex-1 rounded-none"
-              style={{ background: preview.panel, border: `1px solid ${preview.line}`, borderRadius: 0 }}
+              style={{
+                background: preview.panel,
+                border: `1px solid ${preview.line}`,
+                borderRadius: 0,
+              }}
             />
           </div>
         </div>
@@ -541,7 +553,9 @@ export default function Ajustes() {
   const handleAccentChange = useCallback((accentId) => {
     const next = setAccent(accentId);
     setActiveAccent(next);
-    toast.success(`Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}`);
+    toast.success(
+      `Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}`
+    );
   }, []);
 
   const finishOnboarding = useCallback(() => {
@@ -668,10 +682,7 @@ export default function Ajustes() {
   const renderProjectTab = () => (
     <div className="space-y-6">
       {/* Project identity card */}
-      <div
-        className="overflow-hidden"
-        style={{ ...panelStyle(), borderRadius: 0 }}
-      >
+      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -679,7 +690,7 @@ export default function Ajustes() {
             background: 'var(--chrome-panel-fill-emphasis)',
           }}
         >
-<div
+          <div
             className="w-9 h-9 rounded-none flex items-center justify-center"
             style={pillStyle({ tone: 'accent' })}
           >
@@ -710,7 +721,7 @@ export default function Ajustes() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
+                className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition-colors cursor-pointer"
                 style={inputStyle()}
               />
             </div>
@@ -760,12 +771,11 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
                       key={value}
                       type="button"
                       onClick={() => setProjectType(value)}
-                      className="rounded-none border px-3 py-2 text-left transition-all"
-                      style={{
-                        ...panelStyle({ emphasized: selected, tone: selected ? 'accent' : 'neutral' }),
-                        borderRadius: 0,
-                        boxShadow: selected ? 'var(--chrome-shadow-control)' : '4px 4px 0 0 var(--border-strong)',
-                      }}
+                      className="border px-3 py-2 text-left transition-all"
+                      style={panelStyle({
+                        emphasized: selected,
+                        tone: selected ? 'accent' : 'neutral',
+                      })}
                     >
                       <div className="flex items-center gap-2">
                         <Icon
@@ -802,12 +812,11 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
                       key={value}
                       type="button"
                       onClick={() => setDocumentationPolicy(value)}
-                      className="w-full rounded-none border px-3 py-2.5 text-left transition-all"
-                      style={{
-                        ...panelStyle({ emphasized: selected, tone: selected ? 'accent' : 'neutral' }),
-                        borderRadius: 0,
-                        boxShadow: selected ? 'var(--chrome-shadow-control)' : '4px 4px 0 0 var(--border-strong)',
-                      }}
+                      className="w-full border px-3 py-2.5 text-left transition-all"
+                      style={panelStyle({
+                        emphasized: selected,
+                        tone: selected ? 'accent' : 'neutral',
+                      })}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <span
@@ -941,210 +950,216 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
 
   const renderThemeTab = () => (
     <div className="space-y-6">
-      {/* Active theme banner */}
       <ChromeSurface asChild surface="panel" emphasized>
         <div
           data-testid="ajustes-appearance-shell"
           className="overflow-hidden"
           style={getSettingsShellStyle({ emphasized: true })}
         >
-        <div
-          className="flex items-center justify-between px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-none flex items-center justify-center"
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-none flex items-center justify-center"
+                style={{
+                  ...pillStyle({ tone: 'accent' }),
+                  borderRadius: 0,
+                  background: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 14%, var(--chrome-control-fill))`,
+                  borderColor: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 28%, var(--chrome-border-color))`,
+                }}
+              >
+                <Palette className="w-4 h-4" style={{ color: activeThemeData?.accent }} />
+              </div>
+              <div>
+                <h3
+                  className="font-mono text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Apariencia
+                </h3>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Tema activo:{' '}
+                  <span className="font-medium" style={{ color: activeThemeData?.accent }}>
+                    {activeThemeData?.label}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWizardOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-none text-xs"
               style={{
-                ...pillStyle({ tone: 'accent' }),
+                ...getSettingsControlStyle(),
+                color: 'var(--text-secondary)',
                 borderRadius: 0,
-                background: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 14%, var(--chrome-control-fill))`,
-                borderColor: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 28%, var(--chrome-border-color))`,
               }}
             >
-              <Palette className="w-4 h-4" style={{ color: activeThemeData?.accent }} />
-            </div>
-            <div>
-              <h3
-                className="font-mono text-sm font-semibold"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                Apariencia
-              </h3>
-              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                Tema activo:{' '}
-                <span className="font-medium" style={{ color: activeThemeData?.accent }}>
-                  {activeThemeData?.label}
-                </span>
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWizardOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-none text-xs"
-            style={{
-              ...getSettingsControlStyle(),
-              color: 'var(--text-secondary)',
-              borderRadius: 0,
-            }}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Onboarding
-          </button>
-        </div>
-
-        {/* Filter pills */}
-        <div
-          className="px-6 py-3 flex items-center gap-2"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
-        >
-          {[
-            { key: 'all', label: 'Todos', icon: LayoutGrid },
-            { key: 'dark', label: 'Oscuros', icon: Moon },
-            { key: 'light', label: 'Claro', icon: Sun },
-          ].map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setThemeFilter(key)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none text-xs font-medium transition-all"
-              style={
-                themeFilter === key
-                  ? {
-                      ...pillStyle({ tone: 'accent' }),
-                      color: 'var(--text-primary)',
-                      borderRadius: 0,
-                    }
-                  : {
-                      ...pillStyle(),
-                      color: 'var(--text-muted)',
-                      borderRadius: 0,
-                    }
-              }
-            >
-              <Icon className="w-3 h-3" />
-              {label}
+              <Sparkles className="w-3.5 h-3.5" />
+              Onboarding
             </button>
-          ))}
-        </div>
+          </div>
 
-        {/* Theme grid */}
-        <div className="p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredThemes.map((option) => (
-              <ThemeOptionCard
-                key={option.id}
-                option={option}
-                active={activeTheme === option.id}
-                onClick={handleThemeChange}
-              />
+          <div
+            className="px-6 py-3 flex items-center gap-2"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            {[
+              { key: 'all', label: 'Todos', icon: LayoutGrid },
+              { key: 'dark', label: 'Oscuros', icon: Moon },
+              { key: 'light', label: 'Claro', icon: Sun },
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setThemeFilter(key)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none text-xs font-medium transition-all"
+                style={
+                  themeFilter === key
+                    ? {
+                        ...pillStyle({ tone: 'accent' }),
+                        color: 'var(--text-primary)',
+                        borderRadius: 0,
+                      }
+                    : {
+                        ...pillStyle(),
+                        color: 'var(--text-muted)',
+                        borderRadius: 0,
+                      }
+                }
+              >
+                <Icon className="w-3 h-3" />
+                {label}
+              </button>
             ))}
           </div>
-        </div>
 
-        {/* Accent selector */}
-        <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <h4 className="font-mono text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-primary)' }}>
-                Color de tema
+          <div className="p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredThemes.map((option) => (
+                <ThemeOptionCard
+                  key={option.id}
+                  option={option}
+                  active={activeTheme === option.id}
+                  onClick={handleThemeChange}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h4
+                  className="font-mono text-sm font-semibold uppercase tracking-[0.18em]"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Color de tema
+                </h4>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Elegí una señal brutalist independiente del tema base.
+                </p>
+              </div>
+              <span
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em]"
+                style={{
+                  ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
+                  color: 'var(--text-primary)',
+                  borderRadius: 0,
+                }}
+              >
+                <Palette className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
+                {ACCENT_OPTIONS.find((option) => option.id === activeAccent)?.label ?? 'Theme sync'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {ACCENT_OPTIONS.map((option) => {
+                const isActive = activeAccent === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    data-testid={`ajustes-accent-option-${option.id}`}
+                    type="button"
+                    onClick={() => handleAccentChange(option.id)}
+                    className="border p-4 text-left transition-all"
+                    style={getSettingsAccentOptionStyle(isActive, option.primary)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p
+                          className="text-sm font-semibold uppercase tracking-[0.18em]"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {option.label}
+                        </p>
+                        <p
+                          className="mt-1 text-[11px] leading-relaxed"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {option.description}
+                        </p>
+                      </div>
+                      {isActive ? (
+                        <span
+                          className="h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-xs font-medium"
+                          style={{ background: 'var(--accent-primary)', color: 'white' }}
+                        >
+                          <Check className="w-3 h-3" />
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2">
+                      {[0, 1, 2].map((index) => (
+                        <span
+                          key={`${option.id}-accent-preview-${index}`}
+                          className="h-8 flex-1 border"
+                          style={{
+                            borderRadius: 0,
+                            borderColor:
+                              'color-mix(in srgb, var(--settings-accent-preview) 42%, var(--chrome-border-color))',
+                            background:
+                              index === 1
+                                ? 'color-mix(in srgb, var(--settings-accent-preview) 18%, var(--chrome-panel-fill-emphasis))'
+                                : 'color-mix(in srgb, var(--settings-accent-preview) 10%, var(--chrome-panel-fill))',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="mb-4">
+              <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Morphology
               </h4>
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                Elegí una señal brutalist independiente del tema base.
+                Separa el lenguaje de chrome del color del tema activo.
               </p>
             </div>
-            <span
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em]"
-              style={{
-                ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
-                color: 'var(--text-primary)',
-                borderRadius: 0,
-              }}
-            >
-              <Palette className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
-              {ACCENT_OPTIONS.find((option) => option.id === activeAccent)?.label ?? 'Theme sync'}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {ACCENT_OPTIONS.map((option) => {
-              const isActive = activeAccent === option.id;
-              return (
-                <button
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {MORPHOLOGY_OPTIONS.map((option) => (
+                <ChromeSurface
                   key={option.id}
-                  data-testid={`ajustes-accent-option-${option.id}`}
-                  type="button"
-                  onClick={() => handleAccentChange(option.id)}
-                  className="border p-4 text-left transition-all"
-                  style={getSettingsAccentOptionStyle(isActive, option.primary)}
+                  asChild
+                  surface="panel"
+                  emphasized={activeMorphology === option.id}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-primary)' }}>
-                        {option.label}
-                      </p>
-                      <p className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                        {option.description}
-                      </p>
-                    </div>
-                    {isActive ? (
-                      <span
-                        className="h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-xs font-medium"
-                        style={{ background: 'var(--accent-primary)', color: 'white' }}
-                      >
-                        <Check className="w-3 h-3" />
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-4 flex items-center gap-2">
-                    {[0, 1, 2].map((index) => (
-                      <span
-                        key={`${option.id}-accent-preview-${index}`}
-                        className="h-8 flex-1 border"
-                        style={{
-                          borderRadius: 0,
-                          borderColor: 'color-mix(in srgb, var(--settings-accent-preview) 42%, var(--chrome-border-color))',
-                          background:
-                            index === 1
-                              ? 'color-mix(in srgb, var(--settings-accent-preview) 18%, var(--chrome-panel-fill-emphasis))'
-                              : 'color-mix(in srgb, var(--settings-accent-preview) 10%, var(--chrome-panel-fill))',
-                        }}
-                      />
-                    ))}
-                  </div>
-                </button>
-              );
-            })}
+                  <MorphologyOptionCard
+                    option={option}
+                    active={activeMorphology === option.id}
+                    onClick={handleMorphologyChange}
+                  />
+                </ChromeSurface>
+              ))}
+            </div>
           </div>
-        </div>
-
-        <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
-          <div className="mb-4">
-            <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Morphology
-            </h4>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-              Separa el lenguaje de chrome del color del tema activo.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {MORPHOLOGY_OPTIONS.map((option) => (
-              <ChromeSurface
-                key={option.id}
-                asChild
-                surface="panel"
-                emphasized={activeMorphology === option.id}
-              >
-                <MorphologyOptionCard
-                  option={option}
-                  active={activeMorphology === option.id}
-                  onClick={handleMorphologyChange}
-                />
-              </ChromeSurface>
-            ))}
-          </div>
-        </div>
         </div>
       </ChromeSurface>
     </div>
@@ -1155,10 +1170,7 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
   const renderSwarmTab = () => (
     <div className="space-y-6">
       {/* Swarm Status Card */}
-      <div
-        className="overflow-hidden"
-        style={{ ...panelStyle(), borderRadius: 0 }}
-      >
+      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1271,10 +1283,7 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
       </div>
 
       {/* Swarm Configuration Card */}
-      <div
-        className="overflow-hidden"
-        style={{ ...panelStyle(), borderRadius: 0 }}
-      >
+      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1418,10 +1427,7 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
 
   const renderProfileTab = () => (
     <div className="space-y-6">
-      <div
-        className="overflow-hidden"
-        style={{ ...panelStyle(), borderRadius: 0 }}
-      >
+      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1514,10 +1520,7 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
 
   const renderPrefsTab = () => (
     <div className="space-y-6">
-      <div
-        className="overflow-hidden"
-        style={{ ...panelStyle(), borderRadius: 0 }}
-      >
+      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1628,7 +1631,10 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
               <button
                 onClick={() => setDeleteConfirm(true)}
                 className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-none transition-all shrink-0"
-                style={{ ...btnDangerStyle({ size: 'sm' }), boxShadow: 'var(--chrome-shadow-control)' }}
+                style={{
+                  ...btnDangerStyle({ size: 'sm' }),
+                  boxShadow: 'var(--chrome-shadow-control)',
+                }}
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Eliminar
@@ -1636,10 +1642,7 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
             </div>
           ) : (
             <div className="space-y-4">
-              <div
-                className="flex items-start gap-3 p-3 rounded-none"
-                style={dangerBannerStyle()}
-              >
+              <div className="flex items-start gap-3 p-3 rounded-none" style={dangerBannerStyle()}>
                 <AlertTriangle
                   className="w-5 h-5 shrink-0 mt-0.5"
                   style={{ color: 'var(--danger)' }}
@@ -1657,7 +1660,11 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
                 <button
                   onClick={() => setDeleteConfirm(false)}
                   className="flex-1 py-2.5 rounded-none text-sm transition-all"
-                  style={{ ...btnSecondaryStyle({ size: 'md' }), width: '100%', color: 'var(--text-muted)' }}
+                  style={{
+                    ...btnSecondaryStyle({ size: 'md' }),
+                    width: '100%',
+                    color: 'var(--text-muted)',
+                  }}
                 >
                   Cancelar
                 </button>
@@ -1702,8 +1709,6 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
       </div>
 
       <div style={getWorkspacePageContentStyle()}>
-        
-
         {/* Tab navigation */}
         <div
           className="flex items-center gap-1 mb-6 overflow-x-auto pb-1 core-panel shadow-sm p-1"
@@ -1714,9 +1719,7 @@ className="w-full rounded-none px-3 py-2.5 text-sm focus:outline-none transition
               key={key}
               onClick={() => setActiveTab(key)}
               className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-none text-xs font-medium transition-all whitespace-nowrap ${
-                activeTab === key
-                  ? 'text-text-primary'
-                  : 'text-text-muted hover:text-text-primary'
+                activeTab === key ? 'text-text-primary' : 'text-text-muted hover:text-text-primary'
               }`}
               style={
                 activeTab === key

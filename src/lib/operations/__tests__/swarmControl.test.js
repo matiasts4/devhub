@@ -22,6 +22,7 @@ const {
   selectControlRoomEvidenceTimeline,
   selectControlRoomErrors,
   buildRoleAgentProfile,
+  resolveLaunchKickoffBodySummary,
   buildSwarmLaunchModels,
 } = require('../swarmControl');
 const {
@@ -1563,8 +1564,10 @@ describe('composeControlRoomSnapshot', () => {
         mode: 'active',
         hero: expect.objectContaining({
           primaryCta: expect.objectContaining({
-            disabled: true,
-            reason: 'No hay foco durable inmediato en este snapshot.',
+            kind: 'action',
+            target: 'terminate-swarm',
+            label: 'Finalizar swarm',
+            disabled: false,
           }),
         }),
       })
@@ -1616,19 +1619,25 @@ describe('composeControlRoomSnapshot', () => {
     );
     expect(catalog.templates[1]).toEqual(
       expect.objectContaining({
+        id: 'zed-orchestrator-pod',
+      })
+    );
+    expect(catalog.templates[2]).toEqual(
+      expect.objectContaining({
         id: 'queue-restart',
       })
     );
   });
 
-  test('selectSwarmLaunchCatalog falls back to a clean-start recommendation when the control room is idle', () => {
+  test('selectSwarmLaunchCatalog falls back to ZED pod when the control room is idle', () => {
     const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
 
-    expect(catalog.recommended_template_id).toBe('clean-slate');
+    expect(catalog.recommended_template_id).toBe('zed-orchestrator-pod');
     expect(catalog.templates[0]).toEqual(
       expect.objectContaining({
-        id: 'clean-slate',
+        id: 'zed-orchestrator-pod',
         readiness: 'ready-now',
+        featured: true,
       })
     );
     expect(catalog.swarm_types).toEqual(
@@ -1651,30 +1660,36 @@ describe('composeControlRoomSnapshot', () => {
       })
     ).toEqual({
       mode: 'template',
-      category: 'delivery',
-      templateId: 'clean-slate',
-      swarmTypeId: 'delivery-swarm',
-      teamId: 'feature-delivery-team',
-      providerId: 'github-copilot/gpt-5.4-mini',
+      category: 'orchestration',
+      templateId: 'zed-orchestrator-pod',
+      swarmTypeId: 'zed-orchestration-swarm',
+      teamId: 'zed-sdd-pod',
+      providerId: 'minimax-coding-plan/MiniMax-M3',
       launchStrategy: 'director_first',
-      bootstrapMode: 'engram_first',
+      bootstrapMode: 'standby',
       workspacePath: '/home/matias/ArxonLabs/devhub',
+      workerCount: 4,
       rolePrograms: {
-        director: 'opencode',
-        coder: 'opencode',
-        auditor: 'opencode',
-        devops: 'opencode',
-        architect: 'opencode',
+        zed: 'opencode',
+        sdd_worker_1: 'opencode',
+        sdd_worker_2: 'opencode',
+        sdd_worker_3: 'opencode',
+        sdd_worker_4: 'opencode',
       },
       roleModels: {
-        director: 'opencode-go/qwen3.6-plus',
-        coder: 'opencode-go/deepseek-v4-flash',
-        auditor: 'opencode-go/qwen3.6-plus',
-        devops: 'opencode-go/deepseek-v4-flash',
-        architect: 'opencode/claude-sonnet-4.6',
+        zed: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
+        sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
       },
-      mission:
-        'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
+      sddEnabled: false,
+      sddOptions: {
+        sddEnabled: false,
+        phase: null,
+        changeName: null,
+      },
+      mission: '',
     });
   });
 
@@ -1714,17 +1729,17 @@ describe('composeControlRoomSnapshot', () => {
 
     expect(preview).toEqual(
       expect.objectContaining({
-        modeLabel: 'Custom team',
+        modeLabel: 'Equipo personalizado',
         launchLabel: 'Lanzar Recovery swarm',
-        launchStrategyLabel: 'Director-first bootstrap',
-        bootstrapModeLabel: 'Engram first',
+        launchStrategyLabel: 'Bootstrap director primero',
+        bootstrapModeLabel: 'Engram primero',
         isReady: true,
         topology: expect.objectContaining({
           label: 'Director → Recovery Ops → Evidence → QA',
           roles: expect.arrayContaining(['Director', 'Recovery Ops', 'Evidence', 'QA']),
         }),
         summaryLines: expect.arrayContaining([
-          'Custom team · Recovery',
+          'Equipo personalizado · Recovery',
           'Resolver aprobaciones y destrabar · Recovery swarm',
           'Amber Recovery Cell · Claude Opus 4',
           '/tmp/devhub-recovery',
@@ -1753,7 +1768,46 @@ describe('composeControlRoomSnapshot', () => {
   });
 });
 
+describe('resolveLaunchKickoffBodySummary', () => {
+  test('uses mission text when present', () => {
+    expect(
+      resolveLaunchKickoffBodySummary({
+        mission: '  Coordinar change X  ',
+        bootstrapMode: 'standby',
+      })
+    ).toBe('Coordinar change X');
+  });
+
+  test('uses standby placeholder when mission is empty in standby mode', () => {
+    expect(
+      resolveLaunchKickoffBodySummary({
+        mission: '',
+        bootstrapMode: 'standby',
+      })
+    ).toContain('standby');
+  });
+
+  test('falls back to launch label when mission empty and not standby', () => {
+    expect(
+      resolveLaunchKickoffBodySummary({
+        mission: '',
+        bootstrapMode: 'engram_first',
+        launchLabel: 'Lanzar Arranque limpio guiado',
+      })
+    ).toBe('Lanzar Arranque limpio guiado');
+  });
+});
+
 describe('buildRoleAgentProfile', () => {
+  test('maps zed to zed-orchestrator', () => {
+    expect(buildRoleAgentProfile('zed')).toBe('zed-orchestrator');
+  });
+
+  test('maps sdd workers to gentle-orchestrator default', () => {
+    expect(buildRoleAgentProfile('sdd_worker_1')).toBe('gentle-orchestrator');
+    expect(buildRoleAgentProfile('sdd_worker_4')).toBe('gentle-orchestrator');
+  });
+
   test('maps director to swarm-director', () => {
     expect(buildRoleAgentProfile('director')).toBe('swarm-director');
   });
@@ -1794,7 +1848,9 @@ describe('buildRoleAgentProfile', () => {
 describe('buildSwarmLaunchModels', () => {
   test('returns model catalog with expected models', () => {
     const models = buildSwarmLaunchModels();
-    expect(models).toHaveLength(4);
+    expect(models).toHaveLength(6);
+    expect(models.map((m) => m.id)).toContain('minimax-coding-plan/MiniMax-M3');
+    expect(models.map((m) => m.id)).toContain('minimax-coding-plan/MiniMax-M2.7');
     expect(models.map((m) => m.id)).toContain('opencode-go/deepseek-v4-flash');
     expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.6-plus');
     expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.5-plus');
@@ -1815,6 +1871,6 @@ describe('buildSwarmLaunchModels', () => {
   test('catalog includes models', () => {
     const catalog = selectSwarmLaunchCatalog({});
     expect(catalog.models).toBeDefined();
-    expect(catalog.models).toHaveLength(4);
+    expect(catalog.models).toHaveLength(6);
   });
 });

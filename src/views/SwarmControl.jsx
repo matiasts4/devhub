@@ -30,6 +30,8 @@ import ApprovalsErrorsPanel from '@/components/control-room/ApprovalsErrorsPanel
 import DiagnosticOverlay from '@/components/control-room/DiagnosticOverlay';
 import MissionKernelPanel from '@/components/control-room/MissionKernelPanel';
 import EvidenceTimelinePanel from '@/components/control-room/EvidenceTimelinePanel';
+import DGObserverSidebar from '@/components/control-room/DGObserverSidebar';
+import { useDirectorGeneralBridge } from '@/lib/directorGeneral';
 import SwarmPrimarySurface from '@/components/control-room/SwarmPrimarySurface';
 import LaunchpadTemplatesPanel from '@/components/control-room/LaunchpadTemplatesPanel';
 import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPanel';
@@ -38,7 +40,9 @@ import { ChromeSurface } from '@/components/ui/chrome-surface';
 import { Button } from '@/components/ui/button';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
+import SwarmDelegationPanel from '@/components/control-room/SwarmDelegationPanel';
 import StatusSignal from '@/components/ui/StatusSignal';
+import OperatorTimelineFeed from '@/components/OperatorTimeline/OperatorTimelineFeed.jsx';
 import {
   dataTileStyle,
   filterBarStyle,
@@ -53,6 +57,7 @@ import {
   getWorkspacePageHeaderStyle,
   getWorkspacePageShellStyle,
 } from './workspacePageChrome';
+import { dispatchSwarmLaunchMaterialized } from '@/lib/terminal/swarmLaunchBatch';
 
 void [
   ControlRoomHeader,
@@ -105,25 +110,39 @@ function writeCachedSwarmSnapshot(projectId, snapshotInput) {
   }
 }
 
-function scheduleSwarmRuntimeRequests(requests = [], timersRef = null) {
-  requests.forEach((request) => {
-    const delayMs = Number.isFinite(request?.startAfterMs) ? request.startAfterMs : 0;
-    if (delayMs > 0 && timersRef?.current) {
-      const requestKey = `${request.taskId}:${request.sessionId || 'pending'}`;
-      const timerId = window.setTimeout(() => {
-        timersRef.current.delete(requestKey);
-        window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-      }, delayMs);
-      timersRef.current.set(requestKey, timerId);
-      return;
-    }
-
-    window.dispatchEvent(new window.CustomEvent('devhub:run-agent', { detail: request }));
-  });
-}
-
 export function getSwarmControlLayoutButtonVariant(layout, targetLayout) {
   return layout === targetLayout ? 'devhubGlass' : 'devhubGhost';
+}
+
+export function getSwarmControlChromeStyles() {
+  return {
+    launchSummaryShell: {
+      ...sectionSurfaceStyle({ emphasized: true }),
+      background: 'var(--chrome-panel-fill-emphasis)',
+      borderColor: 'var(--chrome-border-color)',
+    },
+    launchSummaryCard: {
+      ...dataTileStyle(),
+      background: 'var(--chrome-control-fill)',
+    },
+    controlSection: {
+      ...panelStyle(),
+      background: 'var(--chrome-panel-fill)',
+    },
+    controlCluster: {
+      ...panelStyle(),
+      background: 'var(--chrome-control-fill)',
+    },
+    filterInput: {
+      ...inputStyle(),
+      background: 'var(--chrome-control-fill)',
+      borderRadius: 'var(--chrome-radius-control)',
+    },
+    statChip: {
+      ...pillStyle(),
+      background: 'var(--chrome-control-fill)',
+    },
+  };
 }
 
 export default function SwarmControl({ snapshotInput = null }) {
@@ -147,7 +166,13 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [launchDraft, setLaunchDraft] = useState(null);
   const [launchResult, setLaunchResult] = useState(null);
   const [launchSubmitState, setLaunchSubmitState] = useState({ submitting: false, error: null });
+  const [terminateState, setTerminateState] = useState({ submitting: false, error: null });
+  const [activateZedState, setActivateZedState] = useState({ submitting: false, error: null });
+  const [pruneState, setPruneState] = useState({ submitting: false, error: null, result: null });
   const eventSourceRef = useRef(null);
+
+  // DG bridge state — reads projectId from context
+  const dg = useDirectorGeneralBridge({ projectId: project?.id });
   const scheduledLaunchTimersRef = useRef(new Map());
 
   useEffect(
@@ -375,6 +400,53 @@ export default function SwarmControl({ snapshotInput = null }) {
     [launchCatalog, project]
   );
 
+  const handleTerminateSwarmLaunch = useCallback(async () => {
+    const launchId = primarySurface?.hero?.launchId;
+    if (!project?.id || !launchId) {
+      setTerminateState({ submitting: false, error: 'No hay swarm activo para finalizar.' });
+      return;
+    }
+
+    setTerminateState({ submitting: true, error: null });
+
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'terminate_swarm_local',
+          project_id: project.id,
+          launch_id: launchId,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo finalizar el swarm.');
+      }
+
+      const nextInput = payload?.control_room_snapshot_input || payload?.control_room_input || null;
+      if (nextInput) {
+        writeCachedSwarmSnapshot(project.id, nextInput);
+        mergeFetchedInput(nextInput);
+      } else {
+        try {
+          localStorage.removeItem(getSwarmSnapshotStorageKey(project.id));
+        } catch {
+          // ignore
+        }
+        setFetchedInput(null);
+      }
+
+      setTerminateState({ submitting: false, error: null });
+    } catch (error) {
+      setTerminateState({
+        submitting: false,
+        error: error?.message || 'No se pudo finalizar el swarm.',
+      });
+    }
+  }, [primarySurface, project]);
+
   const handlePrimaryAction = useCallback(
     (cta) => {
       if (cta?.target === 'launchpad-templates') {
@@ -384,9 +456,49 @@ export default function SwarmControl({ snapshotInput = null }) {
           mode: 'template',
         });
       }
+      if (cta?.target === 'terminate-swarm') {
+        handleTerminateSwarmLaunch();
+      }
     },
-    [launchCatalog?.recommended_template_id, openLaunchWizard]
+    [launchCatalog?.recommended_template_id, openLaunchWizard, handleTerminateSwarmLaunch]
   );
+
+  const handlePruneAllWorktrees = useCallback(async () => {
+    if (!project?.localPath) {
+      setPruneState({ submitting: false, error: 'Proyecto sin localPath.', result: null });
+      return;
+    }
+
+    setPruneState({ submitting: true, error: null, result: null });
+
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'prune_all_worktrees',
+          repo_root: project.localPath,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudieron podar los worktrees.');
+      }
+
+      setPruneState({
+        submitting: false,
+        error: null,
+        result: payload,
+      });
+    } catch (error) {
+      setPruneState({
+        submitting: false,
+        error: error?.message || 'No se pudieron podar los worktrees.',
+        result: null,
+      });
+    }
+  }, [project]);
 
   const handleLaunchSubmit = useCallback(async () => {
     if (!project?.id) return;
@@ -426,10 +538,7 @@ export default function SwarmControl({ snapshotInput = null }) {
         runtimeRequests: payload.launch_result?.runtime_requests || [],
       });
 
-      scheduleSwarmRuntimeRequests(
-        payload.launch_result?.runtime_requests || [],
-        scheduledLaunchTimersRef
-      );
+      dispatchSwarmLaunchMaterialized(payload.launch_result?.runtime_requests || []);
 
       setLaunchWizardOpen(false);
       setLaunchWizardStep('launch');
@@ -543,7 +652,53 @@ export default function SwarmControl({ snapshotInput = null }) {
     [normalizedFilter]
   );
 
+  const handleActivateZed = useCallback(async () => {
+    const launchId = effectiveMissionControl?.mission?.mission_id || null;
+    if (!launchId || !project?.id) return;
+
+    setActivateZedState({ submitting: true, error: null });
+    try {
+      const response = await fetch('/api/agenthub/operations/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'activate_zed_standby',
+          project_id: project.id,
+          launch_id: launchId,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo activar ZED.');
+      }
+      setActivateZedState({ submitting: false, error: null });
+    } catch (error) {
+      setActivateZedState({
+        submitting: false,
+        error: error?.message || 'No se pudo activar ZED.',
+      });
+    }
+  }, [effectiveMissionControl?.mission?.mission_id, project?.id]);
+
   const filteredAgents = useMemo(() => agents.filter(matchesFilter), [agents, matchesFilter]);
+
+  const workerRoles = useMemo(
+    () =>
+      filteredAgents
+        .map((agent) => {
+          const id = String(agent?.agent_id || '');
+          const match = id.match(/sdd_worker_\d+$/);
+          return match ? match[0] : null;
+        })
+        .filter(Boolean)
+        .sort(),
+    [filteredAgents]
+  );
+
+  const isStandbyMission = useMemo(() => {
+    const summary = String(missionSummary?.summary || missionControl?.mission?.summary || '');
+    return /standby/i.test(summary);
+  }, [missionControl?.mission?.summary, missionSummary?.summary]);
   const filteredWorkspaces = useMemo(
     () => workspaces.filter(matchesFilter),
     [workspaces, matchesFilter]
@@ -556,10 +711,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const filteredErrors = useMemo(() => errors.filter(matchesFilter), [errors, matchesFilter]);
 
   return (
-    <div
-      className="h-full flex flex-col core-page-shell"
-      style={getWorkspacePageShellStyle()}
-    >
+    <div className="h-full flex flex-col core-page-shell" style={getWorkspacePageShellStyle()}>
       <div
         className="sticky top-0 z-10 core-sticky-header border-b px-6 py-3 flex items-center justify-between"
         style={getWorkspacePageHeaderStyle()}
@@ -604,66 +756,62 @@ export default function SwarmControl({ snapshotInput = null }) {
               <section aria-label="Launch summary local">
                 <ChromeSurface asChild surface="panel" emphasized>
                   <div className="p-4" style={sectionSurfaceStyle({ emphasized: true })}>
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p
-                        className="typography-label"
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="typography-label">Launch snapshot durable</p>
+                        <h2 className="mt-2 typography-card-title">
+                          {launchResult.summary?.launchLabel}
+                        </h2>
+                        <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          {launchResult.summary?.summaryLines?.[4]}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="devhubGlass"
+                        size="toolbar"
+                        onClick={() => openLaunchWizard({ step: 'launch' })}
                       >
-                        Launch snapshot durable
-                      </p>
-                      <h2 className="mt-2 typography-card-title">
-                        {launchResult.summary?.launchLabel}
-                      </h2>
-                      <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {launchResult.summary?.summaryLines?.[4]}
-                      </p>
+                        Reabrir summary
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="devhubGlass"
-                      size="toolbar"
-                      onClick={() => openLaunchWizard({ step: 'launch' })}
-                    >
-                      Reabrir summary
-                    </Button>
-                  </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
-                      <ChromeSurface key={line} asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          {line}
-                        </div>
-                      </ChromeSurface>
-                    ))}
-                  </div>
-
-                  {launchResult.launchTrace ? (
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      <ChromeSurface asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          Strategy · {launchResult.launchTrace.launchStrategy || 'director_first'}
-                        </div>
-                      </ChromeSurface>
-                      <ChromeSurface asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          Bootstrap · {launchResult.launchTrace.bootstrapMode || 'engram_first'}
-                        </div>
-                      </ChromeSurface>
-                      <ChromeSurface asChild surface="pill">
-                        <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
-                          Phases · {launchResult.launchTrace.phaseCount || 0} · Memory ·{' '}
-                          {launchResult.launchTrace.memorySnapshotCount || 0}
-                        </div>
-                      </ChromeSurface>
+                      {launchResult.summary?.summaryLines?.slice(0, 3).map((line) => (
+                        <ChromeSurface key={line} asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            {line}
+                          </div>
+                        </ChromeSurface>
+                      ))}
                     </div>
-                  ) : null}
 
-                  {launchSubmitState.error ? (
-                    <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>
-                      {launchSubmitState.error}
-                    </p>
-                  ) : null}
+                    {launchResult.launchTrace ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <ChromeSurface asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            Strategy · {launchResult.launchTrace.launchStrategy || 'director_first'}
+                          </div>
+                        </ChromeSurface>
+                        <ChromeSurface asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            Bootstrap · {launchResult.launchTrace.bootstrapMode || 'engram_first'}
+                          </div>
+                        </ChromeSurface>
+                        <ChromeSurface asChild surface="pill">
+                          <div className="px-3 py-3 text-sm" style={dataTileStyle()}>
+                            Phases · {launchResult.launchTrace.phaseCount || 0} · Memory ·{' '}
+                            {launchResult.launchTrace.memorySnapshotCount || 0}
+                          </div>
+                        </ChromeSurface>
+                      </div>
+                    ) : null}
+
+                    {launchSubmitState.error ? (
+                      <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>
+                        {launchSubmitState.error}
+                      </p>
+                    ) : null}
                   </div>
                 </ChromeSurface>
               </section>
@@ -696,77 +844,94 @@ export default function SwarmControl({ snapshotInput = null }) {
             ) : null}
 
             <ChromeSurface asChild surface="panel">
-              <section
-                className="p-4"
-                style={filterBarStyle()}
-                aria-label="Controles operativos"
-              >
-              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                <div className="flex-1" style={panelStyle()}>
-                  <label className="flex flex-col gap-2 p-3 text-xs font-medium">
-                    <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
-                    <input
-                      aria-label="Filtrar registros"
-                      className="w-full"
-                      style={inputStyle()}
-                      placeholder="agente, workspace, run, evidencia…"
-                      value={filterText}
-                      onChange={(event) => setFilterText(event.target.value)}
-                    />
-                  </label>
+              <section className="p-4" style={filterBarStyle()} aria-label="Controles operativos">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div className="flex-1" style={panelStyle()}>
+                    <label className="flex flex-col gap-2 p-3 text-xs font-medium">
+                      <span style={{ color: 'var(--text-muted)' }}>Filtrar registros</span>
+                      <input
+                        aria-label="Filtrar registros"
+                        className="w-full"
+                        style={inputStyle()}
+                        placeholder="agente, workspace, run, evidencia…"
+                        value={filterText}
+                        onChange={(event) => setFilterText(event.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-2" style={panelStyle()}>
+                    <Button
+                      type="button"
+                      variant={getSwarmControlLayoutButtonVariant(layout, 'grid')}
+                      size="toolbar"
+                      onClick={() => setLayout('grid')}
+                      aria-pressed={layout === 'grid'}
+                    >
+                      Grilla
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={getSwarmControlLayoutButtonVariant(layout, 'stack')}
+                      size="toolbar"
+                      onClick={() => setLayout('stack')}
+                      aria-pressed={layout === 'stack'}
+                    >
+                      Pila
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 p-2" style={panelStyle()}>
-                  <Button
-                    type="button"
-                    variant={getSwarmControlLayoutButtonVariant(layout, 'grid')}
-                    size="toolbar"
-                    onClick={() => setLayout('grid')}
-                    aria-pressed={layout === 'grid'}
+                <div
+                  className="mt-3 flex flex-wrap gap-2 text-xs"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
                   >
-                    Grilla
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={getSwarmControlLayoutButtonVariant(layout, 'stack')}
-                    size="toolbar"
-                    onClick={() => setLayout('stack')}
-                    aria-pressed={layout === 'stack'}
+                    {filteredAgents.length} agentes
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
                   >
-                    Pila
-                  </Button>
+                    {filteredWorkspaces.length} workspaces
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
+                  >
+                    {filteredRuns.length} runs
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
+                  >
+                    {filteredApprovals.length} aprobaciones
+                  </ChromeSurface>
+                  <ChromeSurface
+                    as="span"
+                    surface="pill"
+                    className="px-2.5 py-1"
+                    style={pillStyle()}
+                  >
+                    {filteredErrors.length} errores
+                  </ChromeSurface>
                 </div>
-              </div>
-
-              <div
-                className="mt-3 flex flex-wrap gap-2 text-xs"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredAgents.length} agentes
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredWorkspaces.length} workspaces
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredRuns.length} runs
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredApprovals.length} aprobaciones
-                </ChromeSurface>
-                <ChromeSurface as="span" surface="pill" className="px-2.5 py-1" style={pillStyle()}>
-                  {filteredErrors.length} errores
-                </ChromeSurface>
-              </div>
               </section>
             </ChromeSurface>
 
             <section className="space-y-3" aria-label="Operaciones activas">
-              <p
-                className="typography-section-label"
-              >
-                Operaciones activas
-              </p>
+              <p className="typography-section-label">Operaciones activas</p>
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
               >
@@ -783,8 +948,21 @@ export default function SwarmControl({ snapshotInput = null }) {
                   errors={filteredErrors}
                   mutationState={approvalMutationState}
                   onDecision={handleDirectorDecision}
+                  dgPendingApproval={dg.pendingApproval}
+                  dgMissionId={dg.activeMissionId}
+                  onDGDApprove={dg.onApprove}
+                  onDGDReject={dg.onReject}
+                  dgError={dg.error}
                 />
               </div>
+
+              <SwarmDelegationPanel
+                missionId={missionControl?.mission?.mission_id || null}
+                workerRoles={workerRoles}
+                standbyMode={isStandbyMission}
+                onActivateZed={handleActivateZed}
+                activateState={activateZedState}
+              />
             </section>
 
             <section className="space-y-3" aria-label="Procesos OpenCode">
@@ -792,11 +970,7 @@ export default function SwarmControl({ snapshotInput = null }) {
             </section>
 
             <section className="space-y-3" aria-label="Mision y evidencia">
-              <p
-                className="typography-section-label"
-              >
-                Mision y evidencia
-              </p>
+              <p className="typography-section-label">Mision y evidencia</p>
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-2' : 'flex flex-col gap-6'}
               >
@@ -804,20 +978,44 @@ export default function SwarmControl({ snapshotInput = null }) {
                   missionControl={effectiveMissionControl}
                   onComposerSubmit={handleComposerSubmit}
                 />
-                <EvidenceTimelinePanel items={evidenceTimeline} />
+                <div className="flex flex-col gap-3">
+                  <p className="typography-section-label">Evidence</p>
+                  <EvidenceTimelinePanel
+                    items={evidenceTimeline}
+                    dgTimelineRows={dg.timelineRows}
+                  />
+                </div>
+                <div className="flex flex-col gap-3">
+                  <p className="typography-section-label">Timeline</p>
+                  <OperatorTimelineFeed rollup limit={20} />
+                </div>
+                <div className="flex flex-col gap-3">
+                  <p className="typography-section-label">Director General</p>
+                  <DGObserverSidebar
+                    activeMissionId={dg.activeMissionId}
+                    timelineRows={dg.timelineRows}
+                    pollingState={dg.pollingState}
+                    pendingApproval={dg.pendingApproval}
+                    error={dg.error}
+                    lastPollAt={dg.lastPollAt}
+                    retry={dg.retryMission}
+                    onApprove={dg.onApprove}
+                    onReject={dg.onReject}
+                  />
+                </div>
               </div>
             </section>
 
             <section className="space-y-3" aria-label="Inventario operativo">
-              <p
-                className="typography-section-label"
-              >
-                Inventario operativo
-              </p>
+              <p className="typography-section-label">Inventario operativo</p>
               <div
                 className={layout === 'grid' ? 'grid gap-6 xl:grid-cols-3' : 'flex flex-col gap-6'}
               >
-                <AgentsClaimsPanel agents={filteredAgents} />
+                <AgentsClaimsPanel
+                  agents={filteredAgents}
+                  missionId={missionControl?.mission?.mission_id}
+                  onReactivate={loadSnapshot}
+                />
                 <WorkspacesPanel workspaces={filteredWorkspaces} />
                 <RunsArtifactsPanel
                   runs={filteredRuns}
@@ -848,6 +1046,38 @@ export default function SwarmControl({ snapshotInput = null }) {
               onDraftChange={updateLaunchDraft}
               onLaunch={handleLaunchSubmit}
             />
+
+            {terminateState.error ? (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {terminateState.error}
+              </div>
+            ) : null}
+
+            {pruneState.result ? (
+              <div className="mt-3 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+                {pruneState.result.summary}
+              </div>
+            ) : pruneState.error ? (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {pruneState.error}
+              </div>
+            ) : null}
+
+            {project?.localPath ? (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={pruneState.submitting}
+                  onClick={handlePruneAllWorktrees}
+                  className="inline-flex items-center gap-1.5 rounded-sm border border-red-500/30 px-3 py-1.5 text-xs text-red-300 transition-all hover:border-red-400/50 hover:text-red-200 hover:bg-red-500/10 disabled:opacity-40"
+                >
+                  {pruneState.submitting ? 'Podendoting…' : 'Podar todos los worktrees .devhub'}
+                </button>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Elimina todos los worktrees de swarm en este repo
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

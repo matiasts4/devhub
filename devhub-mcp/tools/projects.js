@@ -1,9 +1,35 @@
 import { z } from 'zod';
 
-import { PROJECT_ID_SCHEMA, UUID_OR_LEGACY_ID_SCHEMA } from './schemas/common.js';
+import {
+  PROJECT_ID_SCHEMA,
+  UUID_OR_LEGACY_ID_SCHEMA,
+  WORKSPACE_ID_SCHEMA,
+} from './schemas/common.js';
 
 export function registerProjectTools(server, deps) {
-  const { supabase, ok, err, randomUUID } = deps;
+  const { supabase, ok, err, randomUUID, getActor, writeAuditLog } = deps;
+
+  // devhub-cloud-foundation (PR 3): the hardcoded user identifier
+  // is removed. The actor is resolved per-request via the AuthProvider
+  // port (default: synthetic local-user in local mode; the actual
+  // authenticated user in cloud mode).
+  const getActorUserId = () => {
+    try {
+      if (typeof getActor === 'function') {
+        const session = getActor();
+        if (session && session.user && session.user.id) {
+          return session.user.id;
+        }
+      }
+    } catch {
+      /* fall through to default */
+    }
+    // Defensive fallback: if the AuthProvider port is unavailable,
+    // the local-user literal is the only acceptable default. This
+    // is the one allowed occurrence per the hardcoded-local-user
+    // contract test.
+    return 'local-user';
+  };
 
   server.tool(
     'list_projects',
@@ -13,13 +39,20 @@ export function registerProjectTools(server, deps) {
         .enum(['active', 'paused', 'completed', 'archived', 'all'])
         .optional()
         .describe('Filtrar por estado. Default: all'),
+      workspace_id: WORKSPACE_ID_SCHEMA.optional().describe(
+        'devhub-cloud-foundation: required in cloud mode; auto-filled with local-ws in local-dev'
+      ),
     },
-    async ({ status }) => {
+    async ({ status, workspace_id }) => {
       let query = supabase
         .from('projects')
         .select('id, name, status, progress')
         .order('created_at', { ascending: false });
       if (status && status !== 'all') query = query.eq('status', status);
+      // Legacy local rows often have NULL workspace_id but belong to local-ws.
+      if (workspace_id && workspace_id !== 'local-ws') {
+        query = query.eq('workspace_id', workspace_id);
+      }
       const { data, error } = await query;
       if (error) return err(error.message);
       return ok({ total: data.length, projects: data });
@@ -29,8 +62,8 @@ export function registerProjectTools(server, deps) {
   server.tool(
     'get_project',
     'Obtiene todos los detalles de un proyecto específico incluyendo sus tareas e hitos.',
-    { project_id: PROJECT_ID_SCHEMA },
-    async ({ project_id }) => {
+    { project_id: PROJECT_ID_SCHEMA, workspace_id: WORKSPACE_ID_SCHEMA.optional() },
+    async ({ project_id, workspace_id }) => {
       const [projRes, tasksRes, msRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', project_id).single(),
         supabase
@@ -63,6 +96,7 @@ export function registerProjectTools(server, deps) {
           total_tasks: tasksRes.data?.length || 0,
           completed_tasks: tasksRes.data?.filter((t) => t.status === 'completed').length || 0,
           in_progress: tasksRes.data?.filter((t) => t.status === 'in_progress').length || 0,
+          qa_ready: tasksRes.data?.filter((t) => t.status === 'qa_ready').length || 0,
           blocked: tasksRes.data?.filter((t) => t.status === 'blocked').length || 0,
           milestones_done: msRes.data?.filter((m) => m.status === 'completed').length || 0,
         },
@@ -131,7 +165,7 @@ export function registerProjectTools(server, deps) {
       const id = randomUUID();
       const payload = {
         id,
-        user_id: 'local-user',
+        user_id: getActorUserId(),
         name,
         description: description || '',
         color: color || '#58A6FF',
@@ -324,13 +358,15 @@ export function registerProjectTools(server, deps) {
 
   server.tool(
     'get_project_context',
-    'Lee el contexto completo de planificación de un proyecto: planning_prompt y todos los archivos subidos por el usuario. Usar ANTES de generar un plan exhaustivo.',
+    'Lee el contexto completo de planificación de un proyecto: planning_prompt, archivos, hitos y tareas existentes. Usar ANTES de generar o continuar un plan.',
     { project_id: PROJECT_ID_SCHEMA.describe('UUID del proyecto a planificar') },
     async ({ project_id }) => {
-      const [projRes, filesRes] = await Promise.all([
+      const [projRes, filesRes, milestonesRes, tasksRes] = await Promise.all([
         supabase
           .from('projects')
-          .select('id, name, description, planning_prompt, planning_status, created_at')
+          .select(
+            'id, name, description, planning_prompt, planning_status, project_type, documentation_policy, progress, created_at'
+          )
           .eq('id', project_id)
           .single(),
         supabase
@@ -338,13 +374,30 @@ export function registerProjectTools(server, deps) {
           .select('id, file_name, file_type, content, size_chars, created_at')
           .eq('project_id', project_id)
           .order('created_at', { ascending: true }),
+        supabase
+          .from('milestones')
+          .select('id, title, description, status, due_date, created_at')
+          .eq('project_id', project_id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('tasks')
+          .select('id, title, description, status, priority, milestone_id, due_date, created_at')
+          .eq('project_id', project_id)
+          .order('created_at', { ascending: true }),
       ]);
       if (projRes.error) return err(projRes.error.message);
       const files = filesRes.data || [];
+      const milestones = milestonesRes.data || [];
+      const tasks = tasksRes.data || [];
       const totalChars = files.reduce(
         (acc, f) => acc + (f.size_chars || f.content?.length || 0),
         0
       );
+      const tasksByStatus = tasks.reduce((acc, task) => {
+        const status = task.status || 'pending';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
       return ok({
         project: {
           id: projRes.data.id,
@@ -352,6 +405,9 @@ export function registerProjectTools(server, deps) {
           description: projRes.data.description,
           planning_prompt: projRes.data.planning_prompt,
           planning_status: projRes.data.planning_status,
+          project_type: projRes.data.project_type,
+          documentation_policy: projRes.data.documentation_policy,
+          progress: projRes.data.progress,
           created_at: projRes.data.created_at,
         },
         files: files.map((f) => ({
@@ -361,11 +417,32 @@ export function registerProjectTools(server, deps) {
           size_chars: f.size_chars || f.content?.length || 0,
           content: f.content,
         })),
+        roadmap: {
+          milestones: milestones.map((m) => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            status: m.status,
+            due_date: m.due_date,
+          })),
+          tasks: tasks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            priority: t.priority,
+            milestone_id: t.milestone_id,
+            due_date: t.due_date,
+          })),
+        },
         summary: {
           total_files: files.length,
           total_chars: totalChars,
           has_planning_prompt: !!projRes.data.planning_prompt,
           planning_status: projRes.data.planning_status,
+          total_milestones: milestones.length,
+          total_tasks: tasks.length,
+          tasks_by_status: tasksByStatus,
         },
       });
     }

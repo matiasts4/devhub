@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -14,6 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
+#[cfg(target_os = "linux")]
+use gtk::{gio, pango};
 
 #[cfg(target_os = "linux")]
 use zoha_vte::{traits::TerminalExt, PtyFlags, Terminal};
@@ -35,34 +39,126 @@ fn handle_ctrl_shift_v_paste_from_clipboard(panel_id: String) {
     }
 }
 
-// Key press event handler installed on the VTE terminal to intercept Ctrl+Shift+V.
-// Returns Propagation::Stop to inhibit event propagation and prevent WebKit from processing the shortcut.
+#[cfg(target_os = "linux")]
+fn panel_id_from_terminal_widget_name(terminal: &Terminal) -> Option<String> {
+    let widget_name = terminal.widget_name();
+    widget_name
+        .as_str()
+        .strip_prefix("devhub-native-vte-terminal-")
+        .map(str::to_string)
+}
+
+#[cfg(target_os = "linux")]
+fn resolve_native_vte_navigation_action(
+    modifiers: gtk::gdk::ModifierType,
+    keyval: gtk::gdk::keys::Key,
+) -> Option<&'static str> {
+    use gtk::gdk::keys::constants as keys;
+    use gtk::gdk::ModifierType;
+
+    let ctrl = modifiers.contains(ModifierType::CONTROL_MASK);
+    let shift = modifiers.contains(ModifierType::SHIFT_MASK);
+    let alt = modifiers.contains(ModifierType::MOD1_MASK);
+
+    if !ctrl || alt {
+        return None;
+    }
+
+    if !shift {
+        if keyval == keys::Page_Up || keyval == keys::Up {
+            return Some("previousWorkspace");
+        }
+        if keyval == keys::Page_Down || keyval == keys::Down {
+            return Some("nextWorkspace");
+        }
+        return None;
+    }
+
+    if keyval == keys::Page_Up {
+        return Some("previousWorkspace");
+    }
+    if keyval == keys::Page_Down {
+        return Some("nextWorkspace");
+    }
+    if keyval == keys::B {
+        return Some("openBrowserDock");
+    }
+    if keyval == keys::E {
+        return Some("openEditorDock");
+    }
+    if keyval == keys::N {
+        return Some("newWorkspace");
+    }
+    if keyval == keys::W {
+        return Some("closePanel");
+    }
+    if keyval == keys::period {
+        return Some("closeRightDock");
+    }
+    if keyval == keys::F {
+        return Some("togglePanelFocus");
+    }
+    if keyval == keys::Left {
+        return Some("panelLeft");
+    }
+    if keyval == keys::Right {
+        return Some("panelRight");
+    }
+    if keyval == keys::Up {
+        return Some("panelUp");
+    }
+    if keyval == keys::Down {
+        return Some("panelDown");
+    }
+
+    None
+}
+
+fn build_navigation_shortcut_event_payload(panel_id: &str, action: &str) -> NativeVteEventPayload {
+    NativeVteEventPayload {
+        panel_id: panel_id.to_string(),
+        r#type: "navigation-shortcut".to_string(),
+        action: Some(action.to_string()),
+        reason: None,
+        session_id: None,
+        initial_command: None,
+    }
+}
+
+fn emit_navigation_shortcut_runtime_event(app: &AppHandle, panel_id: &str, action: &str) {
+    emit_runtime_event(app, build_navigation_shortcut_event_payload(panel_id, action));
+}
+
+// Key press handler on native VTE intercepts DevHub shortcuts before GTK/WebKit consume them.
 #[cfg(target_os = "linux")]
 fn on_terminal_key_press_event(
+    app: &AppHandle,
     terminal: &Terminal,
     event: &gtk::gdk::EventKey,
 ) -> gtk::glib::Propagation {
     use gtk::gdk::ModifierType;
+
     let modifiers = event.state();
     let keyval = event.keyval();
-    // V keyval = 86, v keyval = 118
     let is_v = keyval == 86u32.into() || keyval == 118u32.into();
     let is_ctrl_shift_v = modifiers.contains(ModifierType::CONTROL_MASK)
         && modifiers.contains(ModifierType::SHIFT_MASK)
         && is_v;
 
     if is_ctrl_shift_v {
-        // Get the panel ID from the terminal's widget name
-        let widget_name = terminal.widget_name();
-        // Extract panel_id from "devhub-native-vte-terminal-{panel_id}"
-        if let Some(panel_id) = widget_name
-            .as_str()
-            .strip_prefix("devhub-native-vte-terminal-")
-        {
-            handle_ctrl_shift_v_paste_from_clipboard(panel_id.to_string());
+        if let Some(panel_id) = panel_id_from_terminal_widget_name(terminal) {
+            handle_ctrl_shift_v_paste_from_clipboard(panel_id);
             return gtk::glib::Propagation::Stop;
         }
     }
+
+    if let Some(action) = resolve_native_vte_navigation_action(modifiers, keyval) {
+        if let Some(panel_id) = panel_id_from_terminal_widget_name(terminal) {
+            emit_navigation_shortcut_runtime_event(app, panel_id.as_str(), action);
+            return gtk::glib::Propagation::Stop;
+        }
+    }
+
     gtk::glib::Propagation::Proceed
 }
 
@@ -130,6 +226,12 @@ pub struct NativeVteOpenRequest {
     pub cwd: Option<String>,
     pub initial_command: Option<String>,
     pub bounds: Option<NativeVteBounds>,
+    /// When true, allocate real VTE + pty + emu for full TUI fidelity but do not pack
+    /// a visible widget into the main overlay (used for pizarra "nuevo tipo de vista":
+    /// texture frames emitted to a web <canvas> consumer so native browser surfaces
+    /// can composite over the terminal area without z-fighting/superposition).
+    #[serde(default)]
+    pub offscreen: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]
@@ -171,6 +273,7 @@ pub struct NativeVteBounds {
 pub struct NativeVteEventPayload {
     pub panel_id: String,
     pub r#type: String,
+    pub action: Option<String>,
     pub reason: Option<String>,
     pub session_id: Option<String>,
     pub initial_command: Option<String>,
@@ -200,6 +303,17 @@ struct NativeVtePanelHost {
     terminal: Terminal,
     child_pid: Option<glib::Pid>,
     visible: bool,
+    last_bounds: Option<NativeVteBounds>,
+    /// Saved vadjustment value (scroll offset in the VTE buffer) captured before parking
+    /// an inactive workspace's terminal offscreen. Restored on show to preserve where the
+    /// user had scrolled (prevents jumping to top/first message on workspace switch).
+    last_scroll_value: Option<f64>,
+    /// If true this panel was opened for pizarra offscreen texture view: real pty+emu
+    /// lives (for fidelity) but wrapper is never in the visible main overlay (or parked
+    /// hidden full-size); frames are snapshotted on contents-changed and emitted to JS
+    /// <canvas> consumer inside the pizarra card. Allows arbitrary web z-ordering with
+    /// native browser surfaces without superposition.
+    is_offscreen_texture: bool,
 }
 
 fn unsupported_platform_reason() -> Option<String> {
@@ -242,10 +356,48 @@ fn emit_runtime_error(
         NativeVteEventPayload {
             panel_id,
             r#type: "runtime-error".to_string(),
+            action: None,
             reason: Some(reason.into()),
             session_id,
             initial_command: None,
         },
+    );
+}
+
+/// Snapshot an offscreen (pizarra texture provider) VTE to rgba pixels and emit
+/// a Tauri event "terminal:frame" consumable by a web <canvas> inside a pizarra
+/// card. This lets the terminal view live inside pure web DOM (arbitrary z with
+/// browser surfaces) while the emu/pty is the real native VTE (full TUI fidelity).
+#[cfg(target_os = "linux")]
+fn emit_offscreen_frame(app: &AppHandle, panel_id: &str, _terminal: &Terminal, last_bounds: Option<&NativeVteBounds>) {
+    // Prototype stub: emit a solid "live" frame using the panel's last_bounds size (or fallback)
+    // so the <canvas> in the pizarra card gets the right dimensions and proves the full
+    // offscreen VTE path (real emu/pty, no native widget in overlay for proper z with browsers).
+    let (w, h) = if let Some(b) = last_bounds {
+        (b.width.max(100.0) as i32, b.height.max(60.0) as i32)
+    } else {
+        (640i32, 360i32)
+    };
+    // simple RGBA dark bg + cyan bar as heartbeat / live indicator
+    let mut buf: Vec<u8> = vec![0x0f; w as usize * h as usize * 4];
+    let bar_y = 10.min(h as usize / 2);
+    for x in 0..(w as usize) {
+        let idx = (bar_y * w as usize + x) * 4;
+        if idx + 3 < buf.len() {
+            buf[idx] = 0x22; buf[idx+1] = 0xaa; buf[idx+2] = 0xff; buf[idx+3] = 0xff;
+        }
+    }
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    let _ = app.emit(
+        "terminal:frame",
+        serde_json::json!({
+            "panelId": panel_id,
+            "format": "rgba",
+            "width": w,
+            "height": h,
+            "data": b64
+        }),
     );
 }
 
@@ -263,7 +415,7 @@ fn extract_opencode_session_id(initial_command: Option<&str>) -> Option<String> 
 
         if token == "--session" {
             let session_id = tokens.next()?.trim();
-            if session_id.starts_with("ses_") {
+            if !session_id.is_empty() && !session_id.starts_with('-') {
                 return Some(session_id.to_string());
             }
             return None;
@@ -303,6 +455,7 @@ fn detect_native_session_event(
         return Some(NativeVteEventPayload {
             panel_id: panel_id.to_string(),
             r#type: "opencode-session-detected".to_string(),
+            action: None,
             reason: None,
             session_id: Some(session_id),
             initial_command: initial_command.map(str::to_string),
@@ -313,6 +466,7 @@ fn detect_native_session_event(
         return Some(NativeVteEventPayload {
             panel_id: panel_id.to_string(),
             r#type: "hermes-session-detected".to_string(),
+            action: None,
             reason: None,
             session_id: Some(derive_native_hermes_session_id(
                 panel_id,
@@ -334,6 +488,7 @@ fn build_terminal_exit_event_payload(
     NativeVteEventPayload {
         panel_id: panel_id.to_string(),
         r#type: "terminal-exit".to_string(),
+        action: None,
         reason: Some(format!("child-exited:{}", status)),
         session_id: session_id.map(str::to_string),
         initial_command: initial_command.map(str::to_string),
@@ -347,6 +502,7 @@ fn build_panel_activated_event_payload(
     NativeVteEventPayload {
         panel_id: panel_id.to_string(),
         r#type: "panel-activated".to_string(),
+        action: None,
         reason: None,
         session_id: session_id.map(str::to_string),
         initial_command: None,
@@ -475,6 +631,7 @@ fn native_vte_overlay_layout_passes_through_to_webview() -> bool {
     true
 }
 
+#[cfg(target_os = "linux")]
 fn execute_main_thread_job<T, R, J>(runner: R, job: J) -> Result<T, String>
 where
     T: Send + 'static,
@@ -502,7 +659,8 @@ fn build_native_shell_script(cwd: Option<String>, initial_command: Option<String
     }
 
     if let Some(command) = initial_command.filter(|value| !value.trim().is_empty()) {
-        segments.push(format!("exec {}", command.trim()));
+        // Do not `exec` — keep an interactive shell so Ctrl+C returns to the prompt.
+        segments.push(command.trim().to_string());
     } else {
         segments.push(DEFAULT_SHELL_COMMAND.to_string());
     }
@@ -684,13 +842,8 @@ fn build_native_spawn_argv(cwd: Option<String>, initial_command: Option<String>)
         .and_then(|value| value.to_str())
         .unwrap_or_default();
 
-    if shell_program == "zsh"
-        && initial_command
-            .as_deref()
-            .unwrap_or_default()
-            .trim()
-            .is_empty()
-    {
+    if shell_program == "zsh" {
+        let _ = initial_command;
         return vec![
             PathBuf::from(shell),
             PathBuf::from("-lic"),
@@ -700,7 +853,8 @@ fn build_native_spawn_argv(cwd: Option<String>, initial_command: Option<String>)
         ];
     }
 
-    let script = build_native_shell_script(cwd, initial_command);
+    let script = build_native_shell_script(cwd, None);
+    let _ = initial_command;
 
     vec![
         PathBuf::from(shell),
@@ -762,6 +916,20 @@ fn normalize_terminal_metrics(terminal: &Terminal) -> Option<(i32, i32)> {
 }
 
 #[cfg(target_os = "linux")]
+fn resolve_native_system_monospace_font() -> Option<pango::FontDescription> {
+    let font_name = gio::Settings::new("org.gnome.desktop.interface")
+        .string("monospace-font-name")
+        .trim()
+        .to_string();
+
+    if font_name.is_empty() {
+        return None;
+    }
+
+    Some(pango::FontDescription::from_string(&font_name))
+}
+
+#[cfg(target_os = "linux")]
 #[derive(Debug, PartialEq, Eq)]
 struct NativeVteLayoutGeometry {
     terminal_x: i32,
@@ -812,8 +980,13 @@ fn derive_native_vte_panel_geometry(
     terminal_metrics: Option<(i32, i32)>,
     gutter_px: i32,
 ) -> NativeVtePanelGeometry {
-    let wrapper_x = bounds.x.round().max(0.0) as i32;
-    let wrapper_y = bounds.y.round().max(0.0) as i32;
+    // NOTE: do NOT clamp x/y to >=0 here. Negative coordinates are intentionally used
+    // to park inactive workspace terminals FAR offscreen while preserving their FULL
+    // logical size (cols/rows). This prevents sending tiny SIGWINCH to the child TUI
+    // process (OpenCode, Grok Build etc) which was causing their internal view/scroll
+    // to reset to the first message on workspace switch.
+    let wrapper_x = bounds.x.round() as i32;
+    let wrapper_y = bounds.y.round() as i32;
     let wrapper_width = bounds.width.round().max(1.0) as i32;
     let wrapper_height = bounds.height.round().max(1.0) as i32;
     let inset = gutter_px.max(0);
@@ -850,6 +1023,46 @@ fn derive_hidden_native_vte_panel_bounds() -> NativeVteBounds {
         y: -10_000.0,
         width: 1.0,
         height: 1.0,
+    }
+}
+
+/// For offscreen texture panels (pizarra) we want to keep the *full logical pixel size*
+/// even when "hidden"/parked so that the VTE emu grid and snapshots stay correct for the
+/// card size in the canvas. Position is far off + wrapper visible=false so it does not
+/// composite over the web pizarra area.
+#[cfg(target_os = "linux")]
+fn derive_offscreen_texture_park_bounds(last: &NativeVteBounds) -> NativeVteBounds {
+    NativeVteBounds {
+        x: -200_000.0,
+        y: -200_000.0,
+        width: last.width.max(1.0),
+        height: last.height.max(1.0),
+    }
+}
+
+/// Capture current VTE scroll offset (vadjustment) into the panel before parking it.
+/// This is the "where the user was looking" in the buffer (chat history etc).
+#[cfg(target_os = "linux")]
+fn capture_panel_scroll(panel: &mut NativeVtePanelHost) {
+    if let Some(adj) = panel.terminal.vadjustment() {
+        panel.last_scroll_value = Some(adj.value());
+    }
+}
+
+/// Restore previously captured scroll offset after the panel is shown at its target size.
+/// Clamps to valid range (upper - page_size) because buffer may have grown while parked.
+/// Called after show + apply so the adjustment has correct page/upper from the realized grid.
+#[cfg(target_os = "linux")]
+fn restore_panel_scroll(panel: &NativeVtePanelHost) {
+    if let Some(val) = panel.last_scroll_value {
+        if let Some(adj) = panel.terminal.vadjustment() {
+            let upper = adj.upper();
+            let page = adj.page_size();
+            let max_valid = (upper - page).max(0.0);
+            let clamped = val.max(0.0).min(max_valid);
+            adj.set_value(clamped);
+            panel.terminal.queue_draw();
+        }
     }
 }
 
@@ -989,6 +1202,12 @@ fn sync_registry_layout_visibility(registry: &NativeVteRegistry) {
 
 #[cfg(target_os = "linux")]
 fn registry_show_panel(registry: &mut NativeVteRegistry, panel_id: &str) -> Result<(), String> {
+    if let Some(p) = registry.panels.get(panel_id) {
+        if p.is_offscreen_texture {
+            // never show/raise texture providers in the visible overlay
+            return Ok(());
+        }
+    }
     let panel = registry
         .panels
         .get_mut(panel_id)
@@ -998,6 +1217,12 @@ fn registry_show_panel(registry: &mut NativeVteRegistry, panel_id: &str) -> Resu
     panel.visible = true;
     panel.wrapper.show_all();
     sync_registry_layout_visibility(registry);
+
+    // Restore using a fresh lookup so the &mut panel borrow from get_mut is released
+    // before the immutable borrow that sync takes on registry.
+    if let Some(p) = registry.panels.get(panel_id) {
+        restore_panel_scroll(p);
+    }
 
     Ok(())
 }
@@ -1036,6 +1261,8 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
 
     let (overlay, layout) = ensure_native_host(&window, None)?;
 
+    let is_offscreen_texture = request.offscreen.unwrap_or(false);
+
     with_native_vte_registry(|registry| {
         registry._overlay = Some(overlay);
         registry.layout = Some(layout.clone());
@@ -1045,10 +1272,18 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             request.panel_id.as_str(),
             registry.panels.contains_key(request.panel_id.as_str()),
         ) {
-            registry_show_panel(registry, request.panel_id.as_str())?;
-            if let Some(panel) = registry.panels.get(request.panel_id.as_str()) {
+            if !is_offscreen_texture {
+                registry_show_panel(registry, request.panel_id.as_str())?;
+            }
+            if let Some(panel) = registry.panels.get_mut(request.panel_id.as_str()) {
                 if let Some(bounds) = request.bounds.as_ref() {
                     apply_terminal_bounds(&layout, &panel.wrapper, &panel.terminal, bounds);
+                    panel.last_bounds = Some(bounds.clone());
+                }
+                // upgrade to offscreen texture if requested this time
+                if is_offscreen_texture {
+                    panel.is_offscreen_texture = true;
+                    panel.visible = false;
                 }
             }
             registry
@@ -1060,12 +1295,19 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         let terminal = Terminal::new();
         terminal.set_widget_name(&format!("devhub-native-vte-terminal-{}", request.panel_id));
         terminal.set_input_enabled(true);
+        #[allow(deprecated)] // set_rewrap_on_resize: kept for compatibility with zoha-vte 0.6 / vte <0.58
         terminal.set_rewrap_on_resize(true);
+        if let Some(system_font) = resolve_native_system_monospace_font() {
+            terminal.set_font(Some(&system_font));
+        }
         apply_native_terminal_theme(&terminal);
 
         // Install Ctrl+Shift+V key event interceptor on the VTE terminal.
         // This catches the shortcut BEFORE WebKit can consume it, routing paste to VTE.
-        terminal.connect_key_press_event(on_terminal_key_press_event);
+        let app_for_keypress = app.clone();
+        terminal.connect_key_press_event(move |terminal, event| {
+            on_terminal_key_press_event(&app_for_keypress, terminal, event)
+        });
 
         let wrapper = gtk::Frame::new(None);
         wrapper.set_widget_name(&format!("devhub-native-vte-host-{}", request.panel_id));
@@ -1073,7 +1315,23 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
         wrapper.set_shadow_type(gtk::ShadowType::None);
         wrapper.set_halign(gtk::Align::Fill);
         wrapper.set_valign(gtk::Align::Fill);
+        wrapper.set_can_focus(true);
+        wrapper.add_events(gtk::gdk::EventMask::KEY_PRESS_MASK);
         wrapper.add(&terminal);
+
+        let app_for_wrapper_keypress = app.clone();
+        let wrapper_panel_id = request.panel_id.clone();
+        wrapper.connect_key_press_event(move |_wrapper, event| {
+            if let Some(action) = resolve_native_vte_navigation_action(event.state(), event.keyval()) {
+                emit_navigation_shortcut_runtime_event(
+                    &app_for_wrapper_keypress,
+                    wrapper_panel_id.as_str(),
+                    action,
+                );
+                return gtk::glib::Propagation::Stop;
+            }
+            gtk::glib::Propagation::Proceed
+        });
 
         let activated_app = app.clone();
         let activated_panel_id = request.panel_id.clone();
@@ -1099,14 +1357,22 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             gtk::glib::Propagation::Proceed
         });
 
-        layout.put(&wrapper, 0, 0);
-        wrapper.show_all();
+        if !is_offscreen_texture {
+            layout.put(&wrapper, 0, 0);
+            wrapper.show_all();
+        } else {
+            // Offscreen texture: do not add to visible overlay layout at all.
+            // Widget + pty created for fidelity; no show/parent so it stays detached
+            // from the main GTK scene (prevents paint/z issues in pizarra). Sizing
+            // happens via direct set_size_request/set_size in the bounds block below.
+        }
 
         let argv = build_native_spawn_argv(request.cwd.clone(), request.initial_command.clone());
         let argv_refs: Vec<&Path> = argv.iter().map(PathBuf::as_path).collect();
         let envv = build_native_spawn_env();
         let envv_refs: Vec<&Path> = envv.iter().map(PathBuf::as_path).collect();
         let child_pid = with_noop_child_setup(|child_setup| {
+            #[allow(deprecated)] // spawn_sync: standard API for zoha-vte 0.6 / vte 0.10
             terminal.spawn_sync(
                 PtyFlags::DEFAULT,
                 request
@@ -1142,6 +1408,23 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             );
         });
 
+        if is_offscreen_texture {
+            let app_for_frame = app.clone();
+            let panel_id_for_frame = request.panel_id.clone();
+            // contents-changed gives us live updates when VTE internal grid/scroll region mutates.
+            // We snapshot on every change (throttle in future if needed).
+            terminal.connect_contents_changed(move |t| {
+                let bounds = with_native_vte_registry(|reg| {
+                    Ok(reg.panels
+                        .get(&panel_id_for_frame)
+                        .and_then(|p| p.last_bounds.clone()))
+                })
+                .ok()
+                .flatten();
+                emit_offscreen_frame(&app_for_frame, &panel_id_for_frame, t, bounds.as_ref());
+            });
+        }
+
         emit_runtime_session_detected(
             app,
             request.panel_id.as_str(),
@@ -1149,23 +1432,44 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             request.initial_command.as_deref(),
         );
 
+        let is_offscreen_texture = request.offscreen.unwrap_or(false);
         if let Some(bounds) = request.bounds.as_ref() {
-            apply_terminal_bounds(&layout, &wrapper, &terminal, bounds);
+            if !is_offscreen_texture {
+                apply_terminal_bounds(&layout, &wrapper, &terminal, bounds);
+            } else {
+                // For offscreen texture: do not touch main layout (no put, no move_).
+                // Only size the terminal itself so emu grid + future snapshots use correct dimensions.
+                let cols = (bounds.width / 8.0).max(10.0) as i32; // rough, will be corrected by real metrics on first resize
+                let rows = (bounds.height / 16.0).max(5.0) as i32;
+                terminal.set_size_request(bounds.width as i32, bounds.height as i32);
+                terminal.set_size(cols as i64, rows as i64);
+                terminal.queue_resize();
+                wrapper.queue_resize();
+            }
         }
 
         registry
             .session_ids
             .insert(request.panel_id.clone(), request.session_id.clone());
+        let initial_visible = !is_offscreen_texture;
         registry.panels.insert(
             request.panel_id.clone(),
             NativeVtePanelHost {
                 wrapper,
                 terminal,
                 child_pid: Some(child_pid),
-                visible: true,
+                visible: initial_visible,
+                last_bounds: request.bounds.clone(),
+                last_scroll_value: None,
+                is_offscreen_texture,
             },
         );
-        registry_show_panel(registry, request.panel_id.as_str())?;
+        if !is_offscreen_texture {
+            registry_show_panel(registry, request.panel_id.as_str())?;
+        } else {
+            // Offscreen texture: already sized the terminal above (before moving into registry).
+            // Never show/raise in main layout.
+        }
 
         Ok(())
     })
@@ -1185,6 +1489,49 @@ fn registry_focus_panel(panel_id: &str) -> Result<(), String> {
     })
 }
 
+/// Raise the panel to the top of the paint order in the GTK Fixed layout
+/// (so its native content appears above sibling native surfaces like other
+/// terminals or browser webviews). Does not change input focus.
+/// Uses stored last_bounds to re-put at the correct position (remove + put
+/// changes child order, which controls z in Fixed).
+#[cfg(target_os = "linux")]
+fn registry_raise_panel(panel_id: &str) -> Result<(), String> {
+    with_native_vte_registry(|registry| {
+        let layout = match registry.layout.as_ref() {
+            Some(l) => l,
+            None => return Ok(()),
+        };
+        let panel = match registry.panels.get_mut(panel_id) {
+            Some(p) if p.visible => p,
+            _ => return Ok(()),
+        };
+
+        let (x, y) = if let Some(b) = &panel.last_bounds {
+            (b.x.round() as i32, b.y.round() as i32)
+        } else {
+            // Fallback; apply will have set it in normal flows
+            (0, 0)
+        };
+
+        layout.remove(&panel.wrapper);
+        layout.put(&panel.wrapper, x, y);
+        panel.wrapper.show_all();
+
+        // Bring the entire VTE layout above other native layouts (e.g. browser layout)
+        // in the shared overlay. This allows a terminal surface to paint above
+        // browser surfaces (and vice versa) when the terminal is the logical top
+        // in pizarra or other overlapping UI. Within same type, the per-panel
+        // remove+put already handles relative order.
+        if let Some(ov) = registry._overlay.as_ref() {
+            if let Some(lay) = registry.layout.as_ref() {
+                ov.reorder_overlay(lay, -1);
+            }
+        }
+
+        Ok(())
+    })
+}
+
 #[cfg(target_os = "linux")]
 fn registry_paste_panel(panel_id: &str, text: Option<&str>) -> Result<(), String> {
     with_native_vte_registry(|registry| {
@@ -1194,17 +1541,18 @@ fn registry_paste_panel(panel_id: &str, text: Option<&str>) -> Result<(), String
             .get(panel_id)
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         match text {
-            // feed_child sends text as raw keystrokes, bypassing GTK clipboard entirely.
-            // This is the correct fallback when VTE's EditableText trait is not available.
-            // Both Ctrl+Shift+V (via JS invoke) and Shift+Insert (via VTE native) end up
-            // calling feed_child with the same clipboard text — the behavior is consistent.
+            // paste_text is a VTE-native paste method (available since VTE 0.68).
+            // It handles bracketed paste mode and throttling correctly, avoiding
+            // the ~5s delay caused by feed_child sending raw keystrokes byte-by-byte.
+            // Both Ctrl+Shift+V (via JS invoke) and Shift+Insert (via VTE native)
+            // now use the same optimized paste path.
             Some(t) => {
                 log::info!(
-                    "[native_vte] registry_paste_panel: feed_child {} bytes into panel '{}'",
+                    "[native_vte] registry_paste_panel: paste_text {} bytes into panel '{}'",
                     t.len(),
                     panel_id
                 );
-                panel.terminal.feed_child(t.as_bytes());
+                panel.terminal.paste_text(t);
             }
             None => {
                 log::info!("[native_vte] registry_paste_panel: paste_clipboard (no text provided) into panel '{}'", panel_id);
@@ -1219,15 +1567,30 @@ fn registry_paste_panel(panel_id: &str, text: Option<&str>) -> Result<(), String
 #[cfg(target_os = "linux")]
 fn registry_resize_panel(panel_id: &str, bounds: &NativeVteBounds) -> Result<(), String> {
     with_native_vte_registry(|registry| {
+        let panel = registry
+            .panels
+            .get_mut(panel_id)
+            .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
+        if panel.is_offscreen_texture {
+            // Offscreen texture: never in main layout. Only update the terminal emu size + requests.
+            // This keeps the pty winsize and internal grid correct for the pizarra card size.
+            panel.last_bounds = Some(bounds.clone());
+            let w = bounds.width.max(1.0) as i32;
+            let h = bounds.height.max(1.0) as i32;
+            let cols = (w as f64 / 8.0).max(10.0) as i32;
+            let rows = (h as f64 / 16.0).max(5.0) as i32;
+            panel.terminal.set_size_request(w, h);
+            panel.terminal.set_size(cols as i64, rows as i64);
+            panel.terminal.queue_resize();
+            panel.wrapper.queue_resize();
+            return Ok(());
+        }
         let layout = registry
             .layout
             .as_ref()
             .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
-        let panel = registry
-            .panels
-            .get(panel_id)
-            .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
         apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, bounds);
+        panel.last_bounds = Some(bounds.clone());
         Ok(())
     })
 }
@@ -1241,21 +1604,83 @@ fn registry_set_panel_visibility(
     with_native_vte_registry(|registry| {
         let layout = registry.layout.clone();
         if visible {
+            let panel = registry
+                .panels
+                .get_mut(panel_id)
+                .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
+            if panel.is_offscreen_texture {
+                // Offscreen texture panels are never "shown" in the main overlay.
+                // Just update size if provided.
+                if let Some(b) = bounds.as_ref() {
+                    panel.last_bounds = Some(b.clone());
+                    let w = b.width.max(1.0) as i32;
+                    let h = b.height.max(1.0) as i32;
+                    let cols = (w as f64 / 8.0).max(10.0) as i32;
+                    let rows = (h as f64 / 16.0).max(5.0) as i32;
+                    panel.terminal.set_size_request(w, h);
+                    panel.terminal.set_size(cols as i64, rows as i64);
+                    panel.terminal.queue_resize();
+                    panel.wrapper.queue_resize();
+                }
+                return Ok(());
+            }
             if let (Some(layout), Some(bounds)) = (layout.as_ref(), bounds.as_ref()) {
-                let panel = registry
-                    .panels
-                    .get(panel_id)
-                    .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
                 apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, bounds);
+                panel.last_bounds = Some(bounds.clone());
             }
             registry_show_panel(registry, panel_id)?;
+            // After show + size, restore the scroll the user had before the workspace switch.
+            // Do it on the fresh panel ref (show may have updated internal adj).
+            if let Some(panel) = registry.panels.get(panel_id) {
+                restore_panel_scroll(panel);
+            }
         } else {
             let panel = registry
                 .panels
                 .get_mut(panel_id)
                 .ok_or_else(|| PANEL_NOT_ACTIVE_REASON.to_string())?;
-            if let Some(layout) = layout.as_ref() {
-                let hidden_bounds = derive_hidden_native_vte_panel_bounds();
+            let is_texture = panel.is_offscreen_texture;
+            // Capture scroll for normal panels.
+            if !is_texture {
+                capture_panel_scroll(panel);
+            }
+            if is_texture {
+                // For texture: keep full size for emu, move far in the layout (it is a child,
+                // either from original creation or from carried normal panel now hidden for pizarra),
+                // set visible false so it doesn't paint over web pizarra content.
+                let b = bounds.as_ref().or(panel.last_bounds.as_ref()).cloned();
+                if let Some(b) = b {
+                    panel.last_bounds = Some(b.clone());
+                    let park = derive_offscreen_texture_park_bounds(&b);
+                    if let Some(lay) = layout.as_ref() {
+                        // Only move if it has a parent (i.e. was put as a normal terminal and is now
+                        // being converted/hidden for pizarra canvas view). Pure offscreen-created
+                        // texture panels are never children of the main layout.
+                        if panel.wrapper.parent().is_some() {
+                            lay.move_(&panel.wrapper, -200_000, -200_000);
+                        }
+                    }
+                    let w = park.width.max(1.0) as i32;
+                    let h = park.height.max(1.0) as i32;
+                    let cols = (w as f64 / 8.0).max(10.0) as i32;
+                    let rows = (h as f64 / 16.0).max(5.0) as i32;
+                    panel.terminal.set_size_request(w, h);
+                    panel.terminal.set_size(cols as i64, rows as i64);
+                    panel.terminal.queue_resize();
+                    panel.wrapper.queue_resize();
+                }
+            } else if let Some(layout) = layout.as_ref() {
+                // Normal path: park with full size.
+                let hidden_bounds = if let Some(last) = &panel.last_bounds {
+                    NativeVteBounds {
+                        x: -100_000.0,
+                        y: -100_000.0,
+                        width: last.width.max(80.0),
+                        height: last.height.max(24.0),
+                    }
+                } else {
+                    derive_hidden_native_vte_panel_bounds()
+                };
                 apply_terminal_bounds(layout, &panel.wrapper, &panel.terminal, &hidden_bounds);
             }
             panel.wrapper.set_visible(false);
@@ -1266,7 +1691,10 @@ fn registry_set_panel_visibility(
                 registry.focused_panel_id = None;
             }
 
-            sync_registry_layout_visibility(registry);
+            // For texture panels we intentionally keep them out of normal layout visibility sync.
+            if !is_texture {
+                sync_registry_layout_visibility(registry);
+            }
         }
 
         Ok(())
@@ -1424,9 +1852,43 @@ pub fn native_vte_focus(
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = _state;
+        let _ = state;
         let _ = request;
         Err("unsupported-platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn native_vte_raise(
+    _app: AppHandle,
+    _state: State<'_, NativeVteState>,
+    request: NativeVtePanelRequest,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let panel_id = request.panel_id;
+        let panel_id_for_raise = panel_id.clone();
+        let window = _app
+            .get_webview_window("main")
+            .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
+
+        execute_main_thread_job(
+            |job| {
+                window
+                    .run_on_main_thread(job)
+                    .map_err(|error| error.to_string())
+            },
+            move || registry_raise_panel(&panel_id_for_raise),
+        )?;
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = _state;
+        let _ = request;
+        Ok(())
     }
 }
 
@@ -1524,7 +1986,7 @@ pub fn native_vte_resize(
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = state;
+        let _ = _state;
         let _ = request;
         Err("unsupported-platform".to_string())
     }
@@ -1669,6 +2131,10 @@ mod tests {
         assert_eq!(extract_opencode_session_id(Some("bash -lc pwd")), None);
         assert_eq!(
             extract_opencode_session_id(Some("opencode --session invalid")),
+            Some("invalid".to_string())
+        );
+        assert_eq!(
+            extract_opencode_session_id(Some("opencode --session -f")),
             None
         );
     }
@@ -1733,6 +2199,7 @@ mod tests {
             super::NativeVteEventPayload {
                 panel_id: "panel-3".to_string(),
                 r#type: "terminal-exit".to_string(),
+                action: None,
                 reason: Some("child-exited:0".to_string()),
                 session_id: Some("panel-3".to_string()),
                 initial_command: Some("opencode --session ses_panel3".to_string()),
@@ -1747,10 +2214,108 @@ mod tests {
             super::NativeVteEventPayload {
                 panel_id: "panel-left".to_string(),
                 r#type: "panel-activated".to_string(),
+                action: None,
                 reason: None,
                 session_id: Some("ses_left".to_string()),
                 initial_command: None,
             }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_vte_navigation_action_resolver_maps_linux_safe_shortcuts() {
+        use gtk::gdk::keys::constants as keys;
+        use gtk::gdk::ModifierType;
+
+        let ctrl = ModifierType::CONTROL_MASK;
+        let ctrl_shift = ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK;
+
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Page_Down),
+            Some("nextWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Up),
+            Some("previousWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Down),
+            Some("nextWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl, keys::Page_Up),
+            Some("previousWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::Right),
+            Some("panelRight")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::Page_Up),
+            Some("previousWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::Page_Down),
+            Some("nextWorkspace")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(ctrl_shift, keys::F),
+            Some("togglePanelFocus")
+        );
+        assert_eq!(
+            resolve_native_vte_navigation_action(
+                ModifierType::CONTROL_MASK | ModifierType::MOD1_MASK,
+                keys::Left
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn native_vte_navigation_shortcut_payload_carries_action() {
+        assert_eq!(
+            build_navigation_shortcut_event_payload("p42", "panelLeft"),
+            super::NativeVteEventPayload {
+                panel_id: "p42".to_string(),
+                r#type: "navigation-shortcut".to_string(),
+                action: Some("panelLeft".to_string()),
+                reason: None,
+                session_id: None,
+                initial_command: None,
+            }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_vte_spawn_argv_uses_interactive_zsh_even_when_initial_command_set() {
+        let original_shell = std::env::var_os("SHELL");
+        std::env::set_var("SHELL", "/bin/zsh");
+
+        let argv = build_native_spawn_argv(
+            Some("/workspace/devhub".to_string()),
+            Some("npm run tauri:dev".to_string()),
+        );
+        let argv = argv
+            .iter()
+            .map(|entry| entry.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        match original_shell {
+            Some(value) => std::env::set_var("SHELL", value),
+            None => std::env::remove_var("SHELL"),
+        }
+
+        assert_eq!(
+            argv,
+            vec![
+                "/bin/zsh".to_string(),
+                "-lic".to_string(),
+                "exec zsh -i".to_string(),
+                "devhub-shell".to_string(),
+                "--no-use".to_string(),
+            ]
         );
     }
 
@@ -1932,7 +2497,10 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn native_vte_hidden_panel_bounds_reset_geometry_offscreen_during_suspend() {
+    fn native_vte_hidden_panel_bounds_fallback_is_tiny_offscreen() {
+        // Fallback when no last_bounds known yet (e.g. hide before first successful layout).
+        // Normal workspace-switch hide now preserves full size via last_bounds in
+        // registry_set_panel_visibility (see capture + park with prior w/h).
         assert_eq!(
             derive_hidden_native_vte_panel_bounds(),
             NativeVteBounds {
@@ -1951,6 +2519,7 @@ mod tests {
             super::NativeVteEventPayload {
                 panel_id: "panel-left".to_string(),
                 r#type: "panel-activated".to_string(),
+                action: None,
                 reason: None,
                 session_id: Some("ses_left".to_string()),
                 initial_command: None,

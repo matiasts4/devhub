@@ -7,6 +7,8 @@ const MAX_RIGHT_DOCK_SIZE = 82;
 const DEFAULT_RIGHT_DOCK_STATE = {
   visible: false,
   activeTab: 'browser',
+  /** Bumped when the in-app browser dock opens/resizes so native GTK re-measures bounds. */
+  browserLayoutEpoch: 0,
   browserRuntime: 'native-gtk',
   editMode: false,
   maximized: false,
@@ -15,6 +17,11 @@ const DEFAULT_RIGHT_DOCK_STATE = {
   browserUrl: DEFAULT_BROWSER_URL,
   browserHistory: [DEFAULT_BROWSER_URL],
   browserHistoryIndex: 0,
+  // pizarra-ux-overhaul: opt-in flag for the pizarra-mounted browser
+  // surface to keep using the iframe path even when the native GTK
+  // runtime reports ready. Defaults to false on the right-dock path;
+  // PizarraBrowserSurface always sets it to true explicitly.
+  browserLoadFallback: false,
 };
 
 function buildRightDockStorageKey(projectId, wsId) {
@@ -121,19 +128,31 @@ function normalizeBrowserUrl(rawValue) {
 function sanitizeRightDockState(rawState = {}) {
   const visible = rawState.visible === true;
   const isLegacyBridgeTab = rawState.activeTab === 'bridge';
-  const activeTab = ['browser', 'editor', 'swarm'].includes(rawState.activeTab)
-    ? rawState.activeTab
-    : 'browser';
+  const rawActiveTab = rawState.activeTab;
+  const activeTab = ['browser', 'editor', 'swarm', 'operator', 'pizarra'].includes(rawActiveTab)
+    ? rawActiveTab
+    : rawActiveTab === 'zed'
+      ? 'browser'
+      : 'browser';
   const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
-  const maximizedView = ['browser', 'editor', 'swarm', 'window'].includes(rawState.maximizedView)
-    ? rawState.maximizedView
-    : activeTab === 'editor'
+  const normalizedActiveTab = activeTab;
+  const maximizedView = ['browser', 'editor', 'swarm', 'operator', 'pizarra', 'window'].includes(
+    rawState.maximizedView
+  )
+    ? rawState.maximizedView === 'zed'
+      ? 'browser'
+      : rawState.maximizedView
+    : normalizedActiveTab === 'editor'
       ? 'editor'
-      : activeTab === 'swarm'
+      : normalizedActiveTab === 'swarm'
         ? 'swarm'
-        : 'browser';
+        : normalizedActiveTab === 'operator'
+          ? 'operator'
+          : normalizedActiveTab === 'pizarra'
+            ? 'pizarra'
+            : 'browser';
   const rawSize = Number(rawState.size);
   const size = Number.isFinite(rawSize)
     ? clamp(rawSize, MIN_RIGHT_DOCK_SIZE, MAX_RIGHT_DOCK_SIZE)
@@ -161,9 +180,20 @@ function sanitizeRightDockState(rawState = {}) {
 
   const browserUrl = browserHistory[browserHistoryIndex] || normalizedUrl;
 
+  // pizarra-ux-overhaul: strict === true coercion so any non-boolean
+  // value (null, undefined, 0, "true" as a string, 1 as a number)
+  // falls back to false. Only the literal `true` opts in to the
+  // iframe-first browser path.
+  const browserLoadFallback = rawState.browserLoadFallback === true;
+
+  const browserLayoutEpoch = Number.isFinite(Number(rawState.browserLayoutEpoch))
+    ? Math.max(0, Math.floor(Number(rawState.browserLayoutEpoch)))
+    : 0;
+
   return {
     visible,
-    activeTab,
+    activeTab: normalizedActiveTab,
+    browserLayoutEpoch,
     browserRuntime,
     editMode,
     maximized,
@@ -172,6 +202,7 @@ function sanitizeRightDockState(rawState = {}) {
     browserUrl,
     browserHistory,
     browserHistoryIndex,
+    browserLoadFallback,
   };
 }
 

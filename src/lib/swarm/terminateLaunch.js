@@ -40,7 +40,9 @@ function listLaunchArtifacts(db, launchId) {
         .all(...workspaceIds)
     : [];
   const sessionIds = uniqueStrings(
-    runs.map((run) => run.run_id_or_session_id).concat(workspaces.map((workspace) => workspace.run_id_or_session_id))
+    runs
+      .map((run) => run.run_id_or_session_id)
+      .concat(workspaces.map((workspace) => workspace.run_id_or_session_id))
   );
   const sessions = sessionIds.length
     ? db
@@ -121,10 +123,16 @@ function updateLaunchRecords(db, { launchId, artifacts, now, updateSessionStatus
   }
 }
 
-async function abortOpenCodeSession(sessionId, { fetchImpl = fetch, opencodeUrl = OPENCODE_URL } = {}) {
-  const response = await fetchImpl(`${opencodeUrl}/session/${encodeURIComponent(sessionId)}/abort`, {
-    method: 'POST',
-  });
+async function abortOpenCodeSession(
+  sessionId,
+  { fetchImpl = fetch, opencodeUrl = OPENCODE_URL } = {}
+) {
+  const response = await fetchImpl(
+    `${opencodeUrl}/session/${encodeURIComponent(sessionId)}/abort`,
+    {
+      method: 'POST',
+    }
+  );
 
   if (!response.ok) {
     let detail = '';
@@ -152,6 +160,24 @@ async function killTmuxSession(sessionName) {
   await execFileAsync('tmux', ['kill-session', '-t', sessionName], { timeout: 5000 });
 }
 
+async function listTmuxSessionsByPrefix(prefix, { execFileImpl = execFileAsync } = {}) {
+  const normalizedPrefix = String(prefix || '').trim();
+  if (!normalizedPrefix) return [];
+
+  try {
+    const { stdout } = await execFileImpl('tmux', ['list-sessions', '-F', '#{session_name}'], {
+      timeout: 5000,
+    });
+    return uniqueStrings(
+      String(stdout || '')
+        .split('\n')
+        .filter((name) => name.startsWith(normalizedPrefix))
+    );
+  } catch {
+    return [];
+  }
+}
+
 export async function terminateSwarmLaunch(
   launchId,
   {
@@ -160,8 +186,12 @@ export async function terminateSwarmLaunch(
     closeTerminalSessionImpl = closeTerminalSessionById,
     cleanupMissionWorktreesImpl = cleanupMissionWorktrees,
     killTmuxSessionImpl = killTmuxSession,
+    listTmuxSessionsByPrefixImpl = listTmuxSessionsByPrefix,
     updateSessionStatusImpl = updateSessionStatus,
     opencodeUrl = OPENCODE_URL,
+    panelIds = [],
+    opencodeSessionIds = [],
+    forceOrphanCleanup = false,
   } = {}
 ) {
   const normalizedLaunchId = String(launchId || '').trim();
@@ -170,33 +200,85 @@ export async function terminateSwarmLaunch(
   }
 
   const artifacts = listLaunchArtifacts(db, normalizedLaunchId);
-  if (!artifacts.mission) {
+  const missionMissing = !artifacts.mission;
+
+  if (missionMissing && !forceOrphanCleanup) {
     throw new Error(`No existe un swarm activo para ${normalizedLaunchId}.`);
   }
 
-  const terminalIds = uniqueStrings(artifacts.workspaces.map((workspace) => workspace.terminal_id));
-  const opencodeSessionIds = uniqueStrings(
+  if (missionMissing && forceOrphanCleanup) {
+    const tmuxPrefix = `devhub-swarm-${normalizedLaunchId}-`;
+    const discoveredTmuxSessions = await listTmuxSessionsByPrefixImpl(tmuxPrefix);
+    const terminalIds = uniqueStrings(panelIds);
+    const terminalResults = await Promise.allSettled(
+      terminalIds.map((terminalId) => closeTerminalSessionImpl(terminalId))
+    );
+    const abortResults = await Promise.allSettled(
+      uniqueStrings(opencodeSessionIds).map((sessionId) =>
+        abortOpenCodeSession(sessionId, { fetchImpl, opencodeUrl })
+      )
+    );
+    const tmuxResults = await Promise.allSettled(
+      discoveredTmuxSessions.map((sessionName) => killTmuxSessionImpl(sessionName))
+    );
+
+    return {
+      launchId: normalizedLaunchId,
+      missionId: null,
+      terminated: true,
+      orphan_cleanup: true,
+      terminals: {
+        attempted: terminalIds,
+        results: terminalResults,
+      },
+      opencodeSessions: {
+        attempted: uniqueStrings(opencodeSessionIds),
+        results: abortResults,
+      },
+      tmuxSessions: {
+        attempted: discoveredTmuxSessions,
+        results: tmuxResults,
+      },
+      worktrees: { launch_id: normalizedLaunchId, workspaces_processed: 0, results: [] },
+    };
+  }
+
+  const terminalIds = uniqueStrings(
+    artifacts.workspaces
+      .map((workspace) => workspace.terminal_id)
+      .concat(artifacts.workspaces.map((workspace) => workspace.pane_id))
+      .concat(panelIds)
+  );
+  const resolvedOpencodeSessionIds = uniqueStrings(
     artifacts.sessions
       .map((session) => session.opencode_session_id)
       .concat(
-        artifacts.runs
-          .map((run) => artifacts.sessionsById.get(run.run_id_or_session_id)?.opencode_session_id)
+        artifacts.runs.map(
+          (run) => artifacts.sessionsById.get(run.run_id_or_session_id)?.opencode_session_id
+        )
       )
+      .concat(opencodeSessionIds)
   );
+  const tmuxPrefix = `devhub-swarm-${normalizedLaunchId}-`;
+  const discoveredTmuxSessions = await listTmuxSessionsByPrefixImpl(tmuxPrefix);
   const tmuxSessionNames = uniqueStrings(
-    artifacts.participants.map((participant) => {
-      const suffix = participant.agent_id?.startsWith(`${normalizedLaunchId}-`)
-        ? participant.agent_id.slice(`${normalizedLaunchId}-`.length)
-        : participant.agent_id;
-      return suffix ? `devhub-swarm-${normalizedLaunchId}-${suffix}` : null;
-    })
+    artifacts.participants
+      .map((participant) => {
+        const suffix = participant.agent_id?.startsWith(`${normalizedLaunchId}-`)
+          ? participant.agent_id.slice(`${normalizedLaunchId}-`.length)
+          : participant.agent_id;
+        return suffix ? `${tmuxPrefix}${suffix}` : null;
+      })
+      .concat(discoveredTmuxSessions)
   );
 
   const terminalResults = await Promise.allSettled(
     terminalIds.map((terminalId) => closeTerminalSessionImpl(terminalId))
   );
   const abortResults = await Promise.allSettled(
-    opencodeSessionIds.map((sessionId) => abortOpenCodeSession(sessionId, { fetchImpl, opencodeUrl }))
+    resolvedOpencodeSessionIds.map((sessionId) =>
+      abortOpenCodeSession(sessionId, { fetchImpl, opencodeUrl })
+    )
   );
   const tmuxResults = await Promise.allSettled(
     tmuxSessionNames.map((sessionName) => killTmuxSessionImpl(sessionName))
@@ -224,7 +306,7 @@ export async function terminateSwarmLaunch(
       results: terminalResults,
     },
     opencodeSessions: {
-      attempted: opencodeSessionIds,
+      attempted: resolvedOpencodeSessionIds,
       results: abortResults,
     },
     tmuxSessions: {

@@ -15,9 +15,9 @@ export async function GET(request) {
       );
     }
 
-    const absolutePath = path.resolve(basePath, filePathParam);
+    const absolutePath = path.resolve(/*turbopackIgnore: true*/ basePath, filePathParam);
 
-    const content = await fs.readFile(absolutePath, 'utf8');
+    const content = await fs.readFile(/*turbopackIgnore: true*/ absolutePath, 'utf8');
     return NextResponse.json({ content });
   } catch (error) {
     console.error('Error api/fs/read:', error);

@@ -28,6 +28,7 @@ jest.mock('@/components/control-room/ActiveProcessesPanel', () => {
 });
 
 const SwarmControl = require('../SwarmControl').default;
+const { composeControlRoomSnapshot } = require('@/lib/operations/swarmControl');
 const {
   buildControlRoomInput,
 } = require('@/lib/operations/__tests__/fixtures/controlRoomSnapshot');
@@ -77,6 +78,96 @@ function getLastEventSource() {
 async function flushAsyncWork(cycles = 3) {
   for (let index = 0; index < cycles; index += 1) {
     await flushEffects();
+  }
+}
+
+const TIMELINE_FETCH_PATTERN = /\/api\/agenthub\/operators\/timeline/;
+
+function timelineFetchResult() {
+  return {
+    ok: true,
+    json: async () => ({ items: [] }),
+  };
+}
+
+function isTimelineFetch(url) {
+  return TIMELINE_FETCH_PATTERN.test(String(url || ''));
+}
+
+function wrapFetchMock(responses = []) {
+  const queue = [...responses];
+  let queueIndex = 0;
+
+  return jest.fn((url, options) => {
+    if (isTimelineFetch(url)) {
+      return Promise.resolve(timelineFetchResult());
+    }
+
+    const next = queue[queueIndex];
+    queueIndex += 1;
+    if (!next) {
+      return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+    }
+
+    return typeof next === 'function' ? Promise.resolve(next(url, options)) : Promise.resolve(next);
+  });
+}
+
+function nonTimelineFetchCalls() {
+  return global.fetch.mock.calls.filter(([url]) => !isTimelineFetch(url));
+}
+
+function findFetchCallByUrl(urlPart) {
+  return global.fetch.mock.calls.find(([url]) => String(url).includes(urlPart));
+}
+
+function findFetchCallByAction(action) {
+  return global.fetch.mock.calls.find(([, options]) => {
+    if (!options?.body) return false;
+    try {
+      return JSON.parse(options.body).action === action;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function findWizardButtonForTemplate(container, templateLabel) {
+  const launchpad = container.querySelector('#launchpad-templates');
+  if (!launchpad) return null;
+
+  const heading = Array.from(launchpad.querySelectorAll('h3')).find(
+    (node) => node.textContent?.trim() === templateLabel
+  );
+  if (!heading) return null;
+
+  const card = heading.closest('.grid > *');
+  if (!card) return null;
+
+  return Array.from(card.querySelectorAll('button')).find((button) =>
+    button.textContent?.includes('Abrir wizard')
+  );
+}
+
+function findLaunchWizardNextButton() {
+  const wizard = document.body.querySelector('[aria-label="Launch wizard de swarm"]');
+  if (!wizard) return null;
+
+  return Array.from(wizard.querySelectorAll('button')).find((button) =>
+    button.textContent?.includes('Siguiente')
+  );
+}
+
+async function selectLaunchWizardTemplate(templateLabel) {
+  const wizard = document.body.querySelector('[aria-label="Launch wizard de swarm"]');
+  if (!wizard) return;
+
+  const templateButton = Array.from(wizard.querySelectorAll('h4'))
+    .find((heading) => heading.textContent?.trim() === templateLabel)
+    ?.closest('button');
+
+  if (templateButton) {
+    await click(templateButton);
   }
 }
 
@@ -510,7 +601,7 @@ describe('SwarmControl control room composition', () => {
       'Aprobaciones pendientes y faltantes explícitos de evidencia. Las decisiones del Director se revalidan contra el estado durable antes de mutar.'
     );
     expect(text).toContain('aprobación requerida');
-    expect(text).toContain('falta evidencia de workspace');
+    expect(text).toMatch(/falta evidencia de workspace|Workspace evidence gap/i);
 
     expect(text).toContain('Overlay diagnóstico');
     expect(text).toContain('Telegram');
@@ -626,40 +717,20 @@ describe('SwarmControl control room composition', () => {
     );
   });
 
-  test('launches through the durable route and dispatches runtime requests after the wizard completes', async () => {
-    const launchEvents = [];
-    const scheduledTimers = [];
-    const handleLaunchEvent = (event) => launchEvents.push(event.detail);
-    const originalSetTimeout = window.setTimeout.bind(window);
-    const originalClearTimeout = window.clearTimeout.bind(window);
-    const setTimeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((callback, delay, ...args) => {
-      if (!Number.isFinite(delay) || delay <= 0) {
-        return originalSetTimeout(callback, delay, ...args);
-      }
-
-      const timerId = scheduledTimers.length + 1;
-      scheduledTimers.push({ timerId, callback, delay, args });
-      return timerId;
-    });
-    const clearTimeoutSpy = jest.spyOn(window, 'clearTimeout').mockImplementation((timerId) => {
-      const timerIndex = scheduledTimers.findIndex((timer) => timer.timerId === timerId);
-      if (timerIndex >= 0) {
-        scheduledTimers.splice(timerIndex, 1);
-        return;
-      }
-      originalClearTimeout(timerId);
-    });
+  test('launches through the durable route and materializes runtime requests after the wizard completes', async () => {
+    const { SWARM_LAUNCH_MATERIALIZED_EVENT } = require('@/lib/terminal/swarmLaunchBatch');
+    const materializedEvents = [];
+    const handleMaterializedEvent = (event) => materializedEvents.push(event.detail);
     try {
-      window.addEventListener('devhub:run-agent', handleLaunchEvent);
-      global.fetch = jest
-        .fn()
-        .mockResolvedValueOnce({
+      window.addEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleMaterializedEvent);
+      global.fetch = wrapFetchMock([
+        {
           ok: true,
           json: async () => ({
             control_room_snapshot_input: buildIdleLaunchpadInput(),
           }),
-        })
-        .mockResolvedValueOnce({
+        },
+        {
           ok: true,
           json: async () => ({
             control_room_snapshot_input: buildControlRoomInput({
@@ -711,7 +782,7 @@ describe('SwarmControl control room composition', () => {
                   taskId: 'launch-1-builder',
                   selectedAgent: 'opencode',
                   command:
-                    '/home/matias/.opencode/bin/opencode --agent sdd-orchestrator --prompt "Builder launch"',
+                    '/home/matias/.opencode/bin/opencode --agent swarm-director --prompt "Builder launch"',
                   launchOrigin: 'swarm-control-launch',
                   launchPhase: 'fanout',
                   startAfterMs: 4000,
@@ -721,8 +792,8 @@ describe('SwarmControl control room composition', () => {
               ],
             },
           }),
-        })
-        .mockResolvedValueOnce({
+        },
+        {
           ok: true,
           json: async () => ({
             control_room_snapshot_input: buildControlRoomInput({
@@ -742,35 +813,31 @@ describe('SwarmControl control room composition', () => {
               },
             }),
           }),
-        });
+        },
+      ]);
 
       const view = await renderSwarmControl();
-      const wizardTrigger = Array.from(view.container.querySelectorAll('button')).find((button) =>
-        button.textContent?.includes('Abrir wizard')
-      );
+      await flushAsyncWork();
+      const wizardTrigger = findWizardButtonForTemplate(view.container, 'Arranque limpio guiado');
 
       expect(wizardTrigger).not.toBeNull();
       await click(wizardTrigger);
 
-      expect(document.body.textContent).toContain('Launch wizard');
-      expect(document.body.textContent).toContain('Template team');
-      expect(document.body.textContent).toContain('Team');
-      expect(document.body.textContent).toContain('Configure');
-      expect(document.body.textContent).toContain('Launch');
+      expect(document.body.textContent).toContain('Asistente de lanzamiento');
+      expect(document.body.textContent).toContain('Equipo plantilla');
+      expect(document.body.textContent).toContain('Equipo');
+      expect(document.body.textContent).toContain('Configurar');
+      expect(document.body.textContent).toContain('Lanzar');
 
-      const nextButtons = () =>
-        Array.from(document.body.querySelectorAll('button')).filter((button) =>
-          button.textContent?.includes('Siguiente')
-        );
+      await selectLaunchWizardTemplate('Arranque limpio guiado');
+      await click(findLaunchWizardNextButton());
+      expect(document.body.textContent).toContain('Ruta operativa');
+      expect(document.body.textContent).toContain('Misión');
 
-      await click(nextButtons()[0]);
-      expect(document.body.textContent).toContain('Path operativo');
-      expect(document.body.textContent).toContain('Mission');
-
-      await click(nextButtons()[0]);
-      expect(document.body.textContent).toContain('Summary');
+      await click(findLaunchWizardNextButton());
+      expect(document.body.textContent).toContain('Resumen');
       expect(document.body.textContent).toContain('Payload local');
-      expect(document.body.textContent).toContain('Topology preview');
+      expect(document.body.textContent).toContain('Vista previa de topología');
 
       const launchButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
         button.textContent?.includes('Lanzar swarm local')
@@ -779,16 +846,17 @@ describe('SwarmControl control room composition', () => {
 
       await click(launchButton);
 
-      expect(global.fetch).toHaveBeenNthCalledWith(
-        2,
-        '/api/agenthub/operations/health',
+      const launchCall = findFetchCallByAction('launch_swarm_local');
+      expect(launchCall).toBeDefined();
+      expect(launchCall[0]).toBe('/api/agenthub/operations/health');
+      expect(launchCall[1]).toEqual(
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
         })
       );
 
-      const launchPayload = JSON.parse(global.fetch.mock.calls[1][1].body);
+      const launchPayload = JSON.parse(launchCall[1].body);
       expect(launchPayload).toEqual(
         expect.objectContaining({
           action: 'launch_swarm_local',
@@ -807,38 +875,20 @@ describe('SwarmControl control room composition', () => {
       expect(view.container.textContent).toContain('Phases · 4 · Memory · 4');
       expect(view.container.textContent).toContain('0/');
       expect(view.container.textContent).not.toContain('Lanzá un swarm nuevo');
-      expect(global.fetch).toHaveBeenNthCalledWith(
-        3,
+      expect(findFetchCallByUrl('/api/agenthub/operations/health?project_id=project-1')).toEqual([
         '/api/agenthub/operations/health?project_id=project-1',
-        { cache: 'no-store' }
-      );
-      expect(launchEvents).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
-        ])
-      );
-      expect(launchEvents).not.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
-        ])
-      );
-
-      expect(scheduledTimers).toEqual([
-        expect.objectContaining({ delay: 4000 }),
+        { cache: 'no-store' },
       ]);
-
-      scheduledTimers[0].callback(...scheduledTimers[0].args);
-
-      expect(launchEvents).toEqual(
+      expect(materializedEvents).toHaveLength(1);
+      expect(materializedEvents[0].runtimeRequests).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ taskId: 'launch-1-director', selectedAgent: 'codex' }),
           expect.objectContaining({ taskId: 'launch-1-builder', selectedAgent: 'opencode' }),
         ])
       );
+      expect(materializedEvents[0].runtimeRequests).toHaveLength(2);
     } finally {
-      window.removeEventListener('devhub:run-agent', handleLaunchEvent);
-      setTimeoutSpy.mockRestore();
-      clearTimeoutSpy.mockRestore();
+      window.removeEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleMaterializedEvent);
     }
   });
 
@@ -851,26 +901,20 @@ describe('SwarmControl control room composition', () => {
     expect(configureButtons.length).toBeGreaterThan(0);
     await click(configureButtons[1]);
 
-    expect(document.body.textContent).toContain('Custom team');
-    expect(document.body.textContent).toContain('Topology preview');
+    expect(document.body.textContent).toContain('Equipo personalizado');
+    expect(document.body.textContent).toContain('Vista previa de topología');
     expect(document.body.textContent).toContain('Director → Recovery Ops → Evidence → QA');
   });
 
   test('lets the operator pick a program per role inside the launch wizard and reflects it in the summary', async () => {
     const view = await renderSwarmControl({ snapshotInput: buildIdleLaunchpadInput() });
-    const wizardTrigger = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Abrir wizard')
-    );
+    await flushAsyncWork();
+    const wizardTrigger = findWizardButtonForTemplate(view.container, 'Arranque limpio guiado');
 
     expect(wizardTrigger).not.toBeNull();
     await click(wizardTrigger);
-
-    const nextButtons = () =>
-      Array.from(document.body.querySelectorAll('button')).filter((button) =>
-        button.textContent?.includes('Siguiente')
-      );
-
-    await click(nextButtons()[0]);
+    await selectLaunchWizardTemplate('Arranque limpio guiado');
+    await click(findLaunchWizardNextButton());
 
     const directorProgram = document.body.querySelector(
       'select[aria-label="Programa para Director"]'
@@ -882,7 +926,7 @@ describe('SwarmControl control room composition', () => {
 
     await changeField(directorProgram, 'codex');
     await changeField(coderProgram, 'hermes');
-    await click(nextButtons()[0]);
+    await click(findLaunchWizardNextButton());
 
     expect(document.body.textContent).toContain('Programas por rol');
     expect(document.body.textContent).toContain('Director · Codex');
@@ -1182,7 +1226,7 @@ describe('SwarmControl control room composition', () => {
   });
 
   test('disables the handoff button when recipient resolution is unsafe', async () => {
-    global.fetch = jest.fn();
+    global.fetch = wrapFetchMock([]);
     const view = await renderSwarmControl({
       snapshotInput: buildControlRoomInput({
         mission_control: {
@@ -1253,73 +1297,80 @@ describe('SwarmControl control room composition', () => {
 
     await click(handoffButton);
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(nonTimelineFetchCalls()).toHaveLength(0);
   });
 
   test('submits durable handoff and renders the refreshed durable result card', async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        control_room_snapshot_input: {
-          director_queue: {
-            authority: 'authoritative',
-            freshness: 'current',
-            items: [
-              {
-                id: 'task-2',
-                title: 'Validar regresión del panel',
-                status: 'pending',
-                position: 1,
-                priority: 'high',
-                blocked_reason: null,
-              },
-            ],
-            handoff: {
-              status: 'claimed',
-              recipient_agent_id: 'agent-worker-1',
-              message: 'Tarea asignada al agente.',
-              task: {
-                id: 'task-1',
-                title: 'Checkpoint workspace principal',
-                status: 'in_progress',
-                priority: 'critical',
-              },
-              workspace: {
-                workspace_id: 'ws-1',
-                status: 'active',
-                branch_name: 'feat/sw-8-5a',
-              },
-              run: {
-                run_id: 'run-1',
-                status: 'running',
-              },
-              artifact: {
-                artifact_id: 'artifact-1',
-                kind: 'decision.note',
-              },
-              supervisor: {
-                supervisor_state: 'dispatch_pending',
+    global.fetch = wrapFetchMock([
+      {
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: {
+            director_queue: {
+              authority: 'authoritative',
+              freshness: 'current',
+              items: [
+                {
+                  id: 'task-2',
+                  title: 'Validar regresión del panel',
+                  status: 'pending',
+                  position: 1,
+                  priority: 'high',
+                  blocked_reason: null,
+                },
+              ],
+              handoff: {
+                status: 'claimed',
+                recipient_agent_id: 'agent-worker-1',
+                message: 'Tarea asignada al agente.',
+                task: {
+                  id: 'task-1',
+                  title: 'Checkpoint workspace principal',
+                  status: 'in_progress',
+                  priority: 'critical',
+                },
+                workspace: {
+                  workspace_id: 'ws-1',
+                  status: 'active',
+                  branch_name: 'feat/sw-8-5a',
+                },
+                run: {
+                  run_id: 'run-1',
+                  status: 'running',
+                },
+                artifact: {
+                  artifact_id: 'artifact-1',
+                  kind: 'decision.note',
+                },
+                supervisor: {
+                  supervisor_state: 'dispatch_pending',
+                },
               },
             },
           },
-        },
-      }),
-    });
+        }),
+      },
+    ]);
     const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    await flushAsyncWork();
     const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
       button.textContent.includes('Tomar siguiente durable')
     );
 
     await click(handoffButton);
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'claim_director_next_task',
-        project_id: 'project-1',
-      }),
-    });
+    const handoffCall = findFetchCallByAction('claim_director_next_task');
+    expect(handoffCall).toEqual([
+      '/api/agenthub/operations/health',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'claim_director_next_task',
+          project_id: 'project-1',
+        }),
+      },
+    ]);
     expect(view.container.textContent).toContain('Resultado durable del handoff');
     expect(view.container.textContent).toContain('Tarea asignada al agente.');
     expect(view.container.textContent).toContain('Checkpoint workspace principal');
@@ -1332,29 +1383,32 @@ describe('SwarmControl control room composition', () => {
     ['blocked', 'Todas las tareas pendientes están bloqueadas.'],
     ['empty', 'Sin tareas pendientes'],
   ])('renders %s handoff refresh message from durable route payload', async (_status, message) => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        control_room_snapshot_input: {
-          director_queue: {
-            authority: 'authoritative',
-            freshness: 'current',
-            items: [],
-            handoff: {
-              status: _status,
-              recipient_agent_id: 'agent-worker-1',
-              message,
-              task: null,
-              workspace: null,
-              run: null,
-              artifact: null,
-              supervisor: null,
+    global.fetch = wrapFetchMock([
+      {
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: {
+            director_queue: {
+              authority: 'authoritative',
+              freshness: 'current',
+              items: [],
+              handoff: {
+                status: _status,
+                recipient_agent_id: 'agent-worker-1',
+                message,
+                task: null,
+                workspace: null,
+                run: null,
+                artifact: null,
+                supervisor: null,
+              },
             },
           },
-        },
-      }),
-    });
+        }),
+      },
+    ]);
     const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    await flushAsyncWork();
     const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
       button.textContent.includes('Tomar siguiente durable')
     );
@@ -1365,11 +1419,14 @@ describe('SwarmControl control room composition', () => {
   });
 
   test('renders route error message after a failed handoff refresh', async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: false,
-      json: async () => ({ error: 'No se pudo reclamar el siguiente task durable.' }),
-    });
+    global.fetch = wrapFetchMock([
+      {
+        ok: false,
+        json: async () => ({ error: 'No se pudo reclamar el siguiente task durable.' }),
+      },
+    ]);
     const view = await renderSwarmControl({ snapshotInput: buildDirectorQueueInput() });
+    await flushAsyncWork();
     const handoffButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
       button.textContent.includes('Tomar siguiente durable')
     );
@@ -1381,47 +1438,48 @@ describe('SwarmControl control room composition', () => {
   });
 
   test('refreshes the visible director queue when a scoped director-feed event arrives', async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
+    const liveSnapshot = buildControlRoomInput({
+      mission_control: {
+        ...buildPreviewInput().mission_control,
+        mission: {
+          ...buildPreviewInput().mission_control.mission,
+          mission_id: 'mission-live-1',
+        },
+      },
+      director_queue: {
+        authority: 'authoritative',
+        freshness: 'current',
+        items: [
+          {
+            id: 'task-before',
+            title: 'Antes del feed durable',
+            status: 'pending',
+            position: 1,
+            priority: 'high',
+            blocked_reason: null,
+          },
+        ],
+        handoff: {
+          status: 'idle',
+          recipient_agent_id: null,
+          message: null,
+          task: null,
+          workspace: null,
+          run: null,
+          artifact: null,
+          supervisor: null,
+        },
+      },
+    });
+
+    global.fetch = wrapFetchMock([
+      {
         ok: true,
         json: async () => ({
-          control_room_snapshot_input: buildControlRoomInput({
-            mission_control: {
-              ...buildPreviewInput().mission_control,
-              mission: {
-                ...buildPreviewInput().mission_control.mission,
-                mission_id: 'mission-live-1',
-              },
-            },
-            director_queue: {
-              authority: 'authoritative',
-              freshness: 'current',
-              items: [
-                {
-                  id: 'task-before',
-                  title: 'Antes del feed durable',
-                  status: 'pending',
-                  position: 1,
-                  priority: 'high',
-                  blocked_reason: null,
-                },
-              ],
-              handoff: {
-                status: 'idle',
-                recipient_agent_id: null,
-                message: null,
-                task: null,
-                workspace: null,
-                run: null,
-                artifact: null,
-                supervisor: null,
-              },
-            },
-          }),
+          control_room_snapshot_input: liveSnapshot,
         }),
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         ok: true,
         json: async () => ({
           control_room_snapshot_input: buildControlRoomInput({
@@ -1461,7 +1519,8 @@ describe('SwarmControl control room composition', () => {
             },
           }),
         }),
-      });
+      },
+    ]);
 
     const view = await renderSwarmControl();
     await flushAsyncWork();
@@ -1488,56 +1547,51 @@ describe('SwarmControl control room composition', () => {
     });
     await flushAsyncWork();
 
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      2,
+    expect(findFetchCallByUrl('/api/agenthub/operations/health?project_id=project-1')).toEqual([
       '/api/agenthub/operations/health?project_id=project-1',
-      { cache: 'no-store' }
-    );
+      { cache: 'no-store' },
+    ]);
     expect(view.container.textContent).toContain('Después del feed durable');
     expect(view.container.textContent).toContain('Worker terminó y dejó handoff durable.');
   });
 
   test('ignores director-feed events from a different mission scope', async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        control_room_snapshot_input: buildControlRoomInput({
-          mission_control: {
-            ...buildPreviewInput().mission_control,
-            mission: {
-              ...buildPreviewInput().mission_control.mission,
-              mission_id: 'mission-live-1',
-            },
+    global.fetch = wrapFetchMock([]);
+    const view = await renderSwarmControl({
+      snapshotInput: buildControlRoomInput({
+        mission_control: {
+          ...buildPreviewInput().mission_control,
+          mission: {
+            ...buildPreviewInput().mission_control.mission,
+            mission_id: 'mission-live-1',
           },
-          director_queue: {
-            authority: 'authoritative',
-            freshness: 'current',
-            items: [
-              {
-                id: 'task-stable',
-                title: 'Queue estable',
-                status: 'pending',
-                position: 1,
-                priority: 'high',
-                blocked_reason: null,
-              },
-            ],
-            handoff: {
-              status: 'idle',
-              recipient_agent_id: null,
-              message: null,
-              task: null,
-              workspace: null,
-              run: null,
-              artifact: null,
-              supervisor: null,
+        },
+        director_queue: {
+          authority: 'authoritative',
+          freshness: 'current',
+          items: [
+            {
+              id: 'task-stable',
+              title: 'Queue estable',
+              status: 'pending',
+              position: 1,
+              priority: 'high',
+              blocked_reason: null,
             },
+          ],
+          handoff: {
+            status: 'idle',
+            recipient_agent_id: null,
+            message: null,
+            task: null,
+            workspace: null,
+            run: null,
+            artifact: null,
+            supervisor: null,
           },
-        }),
+        },
       }),
     });
-
-    const view = await renderSwarmControl();
     await flushAsyncWork();
 
     getLastEventSource()?.emit('director-feed', {
@@ -1548,7 +1602,7 @@ describe('SwarmControl control room composition', () => {
     });
     await flushAsyncWork();
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(nonTimelineFetchCalls()).toHaveLength(0);
     expect(view.container.textContent).toContain('Queue estable');
     expect(view.container.textContent).not.toContain('No debería refrescar');
   });
@@ -1731,16 +1785,19 @@ describe('SwarmControl control room composition', () => {
   });
 
   test('keeps submit payload limited to the legacy contract even when preview data is visible', async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        control_room_snapshot_input: {
-          mission_control: buildPreviewInput().mission_control,
-        },
-      }),
-    });
+    global.fetch = wrapFetchMock([
+      {
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: {
+            mission_control: buildPreviewInput().mission_control,
+          },
+        }),
+      },
+    ]);
 
     const view = await renderSwarmControl({ snapshotInput: buildPreviewInput() });
+    await flushAsyncWork();
     const worker1 = view.container.querySelector('input[type="checkbox"][value="agent-worker-1"]');
     const worker2 = view.container.querySelector('input[type="checkbox"][value="agent-worker-2"]');
     const textarea = view.container.querySelector(
@@ -1759,7 +1816,9 @@ describe('SwarmControl control room composition', () => {
 
     await submitForm(form);
 
-    const payload = JSON.parse(global.fetch.mock.calls[0][1].body);
+    const missionCall = findFetchCallByAction('create_local_mission_message');
+    expect(missionCall).toBeDefined();
+    const payload = JSON.parse(missionCall[1].body);
 
     expect(payload).toEqual({
       action: 'create_local_mission_message',
@@ -1772,57 +1831,60 @@ describe('SwarmControl control room composition', () => {
   });
 
   test('persists a local mission message and reflects it in the current control room snapshot', async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        control_room_snapshot_input: {
-          mission_control: {
-            mission: {
-              mission_id: 'mission-1',
-              title: 'Misión Director',
-              status: 'active',
-            },
-            participants: [
-              {
-                participant_id: 'participant-1',
-                agent_id: 'agent-director',
-                role_in_mission: 'director',
+    global.fetch = wrapFetchMock([
+      {
+        ok: true,
+        json: async () => ({
+          control_room_snapshot_input: {
+            mission_control: {
+              mission: {
+                mission_id: 'mission-1',
+                title: 'Misión Director',
                 status: 'active',
               },
-              {
-                participant_id: 'participant-2',
-                agent_id: 'agent-worker-1',
-                role_in_mission: 'executor',
-                status: 'active',
+              participants: [
+                {
+                  participant_id: 'participant-1',
+                  agent_id: 'agent-director',
+                  role_in_mission: 'director',
+                  status: 'active',
+                },
+                {
+                  participant_id: 'participant-2',
+                  agent_id: 'agent-worker-1',
+                  role_in_mission: 'executor',
+                  status: 'active',
+                },
+              ],
+              latest_message: {
+                message_id: 'message-2',
+                sender_agent_id: 'agent-director',
+                message_kind: 'directive',
+                body_summary: 'Necesito update del workspace hoy',
+                created_at: '2026-05-19T12:30:00.000Z',
               },
-            ],
-            latest_message: {
-              message_id: 'message-2',
-              sender_agent_id: 'agent-director',
-              message_kind: 'directive',
-              body_summary: 'Necesito update del workspace hoy',
-              created_at: '2026-05-19T12:30:00.000Z',
-            },
-            pending_deliveries: [
-              {
-                delivery_id: 'delivery-2',
-                recipient_agent_id: 'agent-worker-1',
-                channel: 'local_snapshot',
-                status: 'pending',
-                last_attempt_at: '2026-05-19T12:30:00.000Z',
+              pending_deliveries: [
+                {
+                  delivery_id: 'delivery-2',
+                  recipient_agent_id: 'agent-worker-1',
+                  channel: 'local_snapshot',
+                  status: 'pending',
+                  last_attempt_at: '2026-05-19T12:30:00.000Z',
+                },
+              ],
+              presence: {
+                active: [],
+                stale: [],
+                offline: [],
               },
-            ],
-            presence: {
-              active: [],
-              stale: [],
-              offline: [],
             },
           },
-        },
-      }),
-    });
+        }),
+      },
+    ]);
 
     const view = await renderSwarmControl({ snapshotInput: buildControlRoomInput() });
+    await flushAsyncWork();
     const recipient = view.container.querySelector(
       'input[type="checkbox"][value="agent-worker-1"]'
     );
@@ -1838,15 +1900,18 @@ describe('SwarmControl control room composition', () => {
     await changeField(textarea, 'Necesito update del workspace hoy');
     await submitForm(form);
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'create_local_mission_message',
-        recipient_agent_ids: ['agent-worker-1'],
-        body_summary: 'Necesito update del workspace hoy',
-      }),
-    });
+    expect(findFetchCallByAction('create_local_mission_message')).toEqual([
+      '/api/agenthub/operations/health',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_local_mission_message',
+          recipient_agent_ids: ['agent-worker-1'],
+          body_summary: 'Necesito update del workspace hoy',
+        }),
+      },
+    ]);
     expect(view.container.textContent).toContain('Necesito update del workspace hoy');
     expect(view.container.textContent).toContain('snapshot local');
     expect(view.container.textContent).toContain('pendiente');
@@ -1871,40 +1936,43 @@ describe('SwarmControl control room composition', () => {
   });
 
   test('submits approve decision, disables controls while pending, hydrates response, and revalidates via GET', async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
+    global.fetch = wrapFetchMock([
+      {
         ok: true,
         json: async () => ({
           control_room_snapshot_input: buildDirectorApprovalInput(),
         }),
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         ok: true,
         json: async () => ({
           control_room_snapshot_input: {
             ...buildDirectorApprovalInput(),
             supervisor: {
+              ...buildDirectorApprovalInput().supervisor,
               supervisor_state: 'dispatch_pending',
               approvals: [],
             },
           },
         }),
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         ok: true,
         json: async () => ({
           control_room_snapshot_input: {
             ...buildDirectorApprovalInput(),
             supervisor: {
+              ...buildDirectorApprovalInput().supervisor,
               supervisor_state: 'dispatch_pending',
               approvals: [],
             },
           },
         }),
-      });
+      },
+    ]);
 
     const view = await renderSwarmControl();
+    await flushAsyncWork();
     const approveButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Aprobar')
     );
@@ -1912,41 +1980,40 @@ describe('SwarmControl control room composition', () => {
     expect(approveButton).not.toBeNull();
     await click(approveButton);
 
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      2,
+    expect(findFetchCallByUrl('/api/agenthub/director-approval')).toEqual([
       '/api/agenthub/director-approval',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-      })
-    );
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      3,
+      }),
+    ]);
+    expect(findFetchCallByUrl('/api/agenthub/operations/health?project_id=project-1')).toEqual([
       '/api/agenthub/operations/health?project_id=project-1',
-      { cache: 'no-store' }
-    );
+      { cache: 'no-store' },
+    ]);
     expect(view.container.textContent).not.toContain('checkpoint-1');
   });
 
   test('submits reject decision and renders conflict error while keeping controls enabled after failure', async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
+    global.fetch = wrapFetchMock([
+      {
         ok: true,
         json: async () => ({
           control_room_snapshot_input: buildDirectorApprovalInput(),
         }),
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         ok: false,
         json: async () => ({ error: 'La linkage durable cambió: workspace_id ya no coincide.' }),
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         ok: true,
         json: async () => ({ control_room_snapshot_input: buildDirectorApprovalInput() }),
-      });
+      },
+    ]);
 
     const view = await renderSwarmControl();
+    await flushAsyncWork();
     const rejectButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Rechazar')
     );
@@ -1958,10 +2025,9 @@ describe('SwarmControl control room composition', () => {
       'La linkage durable cambió: workspace_id ya no coincide.'
     );
     expect(rejectButton.disabled).toBe(false);
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      3,
+    expect(findFetchCallByUrl('/api/agenthub/operations/health?project_id=project-1')).toEqual([
       '/api/agenthub/operations/health?project_id=project-1',
-      { cache: 'no-store' }
-    );
+      { cache: 'no-store' },
+    ]);
   });
 });

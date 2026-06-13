@@ -11,7 +11,9 @@ import {
   CalendarClock,
   LayoutDashboard,
   Trophy,
+  Sparkles,
 } from 'lucide-react';
+import { getProjectPlanningPath } from '@/lib/workspaceRouting';
 import { createClient } from '@/lib/db/localClient';
 import { Button } from '@/components/ui/button';
 import { ChromeSurface } from '@/components/ui/chrome-surface';
@@ -58,7 +60,7 @@ function SectionLabel({ prefix, headingId, children }) {
 function StatCard({ label, value, color, icon: Icon }) {
   return (
     <div
-      className="flex items-center justify-between px-4 py-3 transition-all duration-150 hover:-translate-y-0.5 rounded-none"
+      className="flex items-center justify-between px-4 py-3 transition-all duration-150 hover:-translate-y-0.5"
       style={panelStyle()}
     >
       <div className="space-y-1">
@@ -106,6 +108,7 @@ export default function ProjectDashboard() {
   const total = tasks.length;
   const completed = tasks.filter((t) => t.status === 'completed').length;
   const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
+  const qaReady = tasks.filter((t) => t.status === 'qa_ready').length;
   const blocked = tasks.filter((t) => t.status === 'blocked').length;
   const compPct = total > 0 ? Math.round((completed / total) * 100) : 0;
   const accentColor = project?.color || '#58A6FF';
@@ -198,6 +201,36 @@ export default function ProjectDashboard() {
             </p>
           </div>
 
+          {total === 0 && milestones.length === 0 && (
+            <ChromeSurface
+              className="mb-5 flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+              surface="panel"
+              style={panelStyle()}
+            >
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-5 h-5 shrink-0 text-[var(--project-type-university,#D2A8FF)]" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                    Sin roadmap todavía
+                  </p>
+                  <p className="mt-1 text-[11px] text-text-muted max-w-md">
+                    Investigá el alcance y generá hitos y tareas desde Planificación antes de usar el
+                    kanban.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate(getProjectPlanningPath(project?.id))}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 h-8 shrink-0 transition-all duration-150 hover:-translate-y-0.5"
+                style={btnPrimaryStyle({ size: 'sm' })}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Ir a Planificación
+              </button>
+            </ChromeSurface>
+          )}
+
           {/* Stats cards - 4 column grid */}
           <ChromeSurface
             className="mb-5 flex flex-col overflow-hidden"
@@ -217,7 +250,7 @@ export default function ProjectDashboard() {
             </div>
 
             <div className="p-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
                 <StatCard
                   label="Tareas totales"
                   value={total}
@@ -237,6 +270,12 @@ export default function ProjectDashboard() {
                   icon={Clock}
                 />
                 <StatCard
+                  label="Pendiente revisión"
+                  value={qaReady}
+                  color="var(--accent-secondary)"
+                  icon={Clock}
+                />
+                <StatCard
                   label="Bloqueadas"
                   value={blocked}
                   color="var(--danger)"
@@ -247,11 +286,7 @@ export default function ProjectDashboard() {
           </ChromeSurface>
 
           {/* Progress bar */}
-          <ChromeSurface
-            className="mb-5 px-4 py-3 rounded-none"
-            surface="panel"
-            style={panelStyle()}
-          >
+          <ChromeSurface className="mb-5 px-4 py-3" surface="panel">
             <div className="flex items-center justify-between mb-2">
               <p className="typography-label">Progreso General</p>
               <span

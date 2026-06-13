@@ -6,7 +6,7 @@
  * export const POST = withAuth(async function POST(request) { ... }).
  */
 
-import { verifySignature } from './auth.js';
+import { verifySignature, isTokenExpired } from './auth.js';
 import { getActiveAuthToken, getAgentSecret, getDb } from '../db/localDb.js';
 import { isAuthEnforced } from './authMiddleware.js';
 import { NextResponse } from 'next/server';
@@ -80,6 +80,20 @@ export function withAuth(handler, opts = {}) {
       }
       return NextResponse.json(
         { error: 'Agent not registered or token revoked', code: 'AUTH_NO_TOKEN' },
+        { status: 401 }
+      );
+    }
+
+    // Token reuse grace: check expires_at — reject if token has expired
+    // A non-expired token within 24h can be reused on reconnect
+    if (isTokenExpired(token.expires_at)) {
+      if (!enforced) {
+        console.warn(`[withAuth] Token expired for agent ${agentId} (permissive mode)`);
+        request.agentId = agentId;
+        return handler(request, ...rest);
+      }
+      return NextResponse.json(
+        { error: 'Token expired — please re-authenticate', code: 'AUTH_TOKEN_EXPIRED' },
         { status: 401 }
       );
     }

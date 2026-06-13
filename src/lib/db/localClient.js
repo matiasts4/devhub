@@ -1,3 +1,39 @@
+/* eslint-disable */
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
+const isCloud =
+  process.env.NEXT_PUBLIC_DEVHUB_AUTH_PROVIDER === 'supabase' ||
+  process.env.NEXT_PUBLIC_DEVHUB_DB_DRIVER === 'supabase' ||
+  (typeof window !== 'undefined' &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+let supabaseInstance = null;
+
+function _shouldQuerySupabase(table) {
+  if (typeof window === 'undefined') return false;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return false;
+
+  // Check if authenticated
+  if (!window.__devhub_authenticated) return false;
+
+  // Global tenant tables are always synced/queried from Supabase if authenticated
+  if (table === 'workspaces' || table === 'workspace_members') {
+    return true;
+  }
+
+  // Active workspace must be non-local
+  const activeWorkspaceId = localStorage.getItem('devhub:active-workspace-id');
+  if (activeWorkspaceId && activeWorkspaceId !== 'local-ws') {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * DevHub Local DB Client (CLIENT-SIDE ONLY)
  *
@@ -12,6 +48,74 @@
  */
 
 // ── Client-side query builder (uses fetch to API routes) ──────────────────────
+
+function extractErrorMessage(input, fallback) {
+  if (typeof input === 'string' && input.trim()) {
+    return input;
+  }
+
+  if (input instanceof Error && typeof input.message === 'string' && input.message.trim()) {
+    return input.message;
+  }
+
+  if (input && typeof input === 'object') {
+    if (typeof input.message === 'string' && input.message.trim()) {
+      return input.message;
+    }
+
+    if (typeof input.error === 'string' && input.error.trim()) {
+      return input.error;
+    }
+
+    if (input.error && typeof input.error === 'object') {
+      const nestedMessage = extractErrorMessage(input.error, '');
+      if (nestedMessage) {
+        return nestedMessage;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeClientError(input, fallbackMessage, extras = {}) {
+  const error = {
+    message: extractErrorMessage(input, fallbackMessage),
+  };
+
+  if (input instanceof Error && input.name) {
+    error.name = input.name;
+  }
+
+  if (extras.status) {
+    error.status = extras.status;
+  }
+
+  if (extras.statusText) {
+    error.statusText = extras.statusText;
+  }
+
+  return error;
+}
+
+async function readErrorPayload(response) {
+  const contentType = response.headers?.get?.('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  const text = await response.text().catch(() => '');
+  return text ? { error: text } : null;
+}
+
+async function buildResponseError(response, fallbackMessage) {
+  const payload = await readErrorPayload(response).catch(() => null);
+  return normalizeClientError(payload, fallbackMessage, {
+    status: response.status,
+    statusText: response.statusText,
+  });
+}
 
 class LocalQueryClient {
   constructor(table) {
@@ -99,34 +203,130 @@ class LocalQueryClient {
   }
 
   async execute() {
-    const params = new URLSearchParams();
-    params.set('table', this.table);
-    params.set('select', this._select);
+    if (_shouldQuerySupabase(this.table)) {
+      const supabase = getSupabaseInstance();
+      if (supabase) {
+        try {
+          const { data, error } = await this._buildSupabaseQuery(supabase);
+          if (!error) {
+            this._cacheLocally(data);
+            return { data, error: null };
+          }
+          console.warn('Supabase query failed, falling back to local SQLite:', error);
+        } catch (err) {
+          console.warn('Supabase exception, falling back to local SQLite:', err);
+        }
+      }
+    }
+    return this._executeLocalQuery();
+  }
 
-    if (this._where.length > 0) {
-      params.set('where', JSON.stringify(this._where));
+  async _executeLocalQuery() {
+    try {
+      const params = new URLSearchParams();
+      params.set('table', this.table);
+      params.set('select', this._select);
+
+      if (this._where.length > 0) {
+        params.set('where', JSON.stringify(this._where));
+      }
+      if (this._orderBy.length > 0) {
+        params.set('orderBy', JSON.stringify(this._orderBy));
+      }
+      if (this._limitVal) {
+        params.set('limit', String(this._limitVal));
+      }
+
+      const response = await fetch(`/api/db/query?${params.toString()}`, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return { data: null, error: await buildResponseError(response, 'Query failed') };
+      }
+
+      let data = await response.json();
+      if (this._single && Array.isArray(data) && data.length > 0) {
+        data = data[0];
+      }
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error: normalizeClientError(error, 'Query failed') };
     }
-    if (this._orderBy.length > 0) {
-      params.set('orderBy', JSON.stringify(this._orderBy));
+  }
+
+  _buildSupabaseQuery(supabase) {
+    let query = supabase.from(this.table);
+
+    if (this._action === 'insert') {
+      query = query.insert(this._actionData);
+      if (this._select) query = query.select(this._select);
+    } else if (this._action === 'update') {
+      query = query.update(this._actionData);
+      if (this._select) query = query.select(this._select);
+    } else if (this._action === 'upsert') {
+      query = query.upsert(this._actionData);
+      if (this._select) query = query.select(this._select);
+    } else if (this._action === 'delete') {
+      query = query.delete();
+      if (this._select) query = query.select(this._select);
+    } else {
+      query = query.select(this._select);
     }
+
+    for (const w of this._where) {
+      if (w.op === 'eq') {
+        query = query.eq(w.col, w.val);
+      } else if (w.op === 'neq') {
+        query = query.neq(w.col, w.val);
+      } else if (w.op === 'in') {
+        query = query.in(w.col, w.val);
+      } else if (w.op === 'lt') {
+        query = query.lt(w.col, w.val);
+      } else if (w.op === 'lte') {
+        query = query.lte(w.col, w.val);
+      } else if (w.op === 'gt') {
+        query = query.gt(w.col, w.val);
+      } else if (w.op === 'gte') {
+        query = query.gte(w.col, w.val);
+      } else if (w.op === 'not') {
+        query = query.not(w.col, w.operator, w.val);
+      }
+    }
+
+    for (const o of this._orderBy) {
+      query = query.order(o.col, { ascending: o.ascending });
+    }
+
     if (this._limitVal) {
-      params.set('limit', String(this._limitVal));
+      query = query.limit(this._limitVal);
     }
 
-    const response = await fetch(`/api/db/query?${params.toString()}`, {
-      cache: 'no-store',
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || 'Query failed' } };
+    if (this._single) {
+      query = query.single();
     }
 
-    let data = await response.json();
-    if (this._single && Array.isArray(data) && data.length > 0) {
-      data = data[0];
+    return query;
+  }
+
+  async _cacheLocally(data) {
+    if (!data) return;
+    const items = Array.isArray(data) ? data : [data];
+    for (const item of items) {
+      try {
+        fetch('/api/db/mutate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: this.table,
+            action: 'upsert',
+            data: item,
+          }),
+        }).catch(() => {});
+      } catch {
+        // ignore
+      }
     }
-    return { data, error: null };
   }
 
   // For insert/update/delete - returns a chainable builder
@@ -153,29 +353,57 @@ class LocalQueryClient {
     return this;
   }
 
-  // Override execute to handle mutations
   async _executeMutation() {
-    const response = await fetch('/api/db/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        table: this.table,
-        action: this._action,
-        data: this._actionData,
-        where: this._where,
-      }),
-    });
+    const localResult = await this._executeLocalMutation();
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      return { data: null, error: { message: error.error || `${this._action} failed` } };
+    if (_shouldQuerySupabase(this.table) && localResult.error === null) {
+      const supabase = getSupabaseInstance();
+      if (supabase) {
+        try {
+          const { error } = await this._buildSupabaseQuery(supabase);
+          if (error) {
+            console.error('Supabase sync mutation error:', error);
+          }
+        } catch (err) {
+          console.warn('Supabase sync mutation exception (offline):', err);
+        }
+      }
     }
 
-    let result = await response.json();
-    if (this._single && Array.isArray(result) && result.length > 0) {
-      result = result[0];
+    return localResult;
+  }
+
+  async _executeLocalMutation() {
+    try {
+      const response = await fetch('/api/db/mutate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          table: this.table,
+          action: this._action,
+          data: this._actionData,
+          where: this._where,
+        }),
+      });
+
+      if (!response.ok) {
+        return {
+          data: null,
+          error: await buildResponseError(response, `${this._action} failed`),
+        };
+      }
+
+      let result = await response.json();
+      if (this._single && Array.isArray(result) && result.length > 0) {
+        result = result[0];
+      }
+      return { data: result, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: normalizeClientError(error, `${this._action} failed`),
+      };
     }
-    return { data: result, error: null };
   }
 }
 
@@ -196,14 +424,34 @@ LocalQueryClient.prototype.catch = function (reject) {
 // Add finally() for full Promise compatibility
 LocalQueryClient.prototype.finally = function (onSettled) {
   return this.then(
-    (result) => { onSettled?.(); return result; },
-    (error) => { onSettled?.(); throw error; }
+    (result) => {
+      onSettled?.();
+      return result;
+    },
+    (error) => {
+      onSettled?.();
+      throw error;
+    }
   );
 };
 
 // ── Auth stub (no auth needed for local) ──────────────────────────────────────
 
 const localAuth = {
+  async getSession() {
+    return {
+      data: {
+        session: {
+          user: {
+            id: 'local-user',
+            email: 'local@devhub.local',
+          },
+        },
+      },
+      error: null,
+    };
+  },
+
   async getUser() {
     return {
       data: {
@@ -225,6 +473,39 @@ const localAuth = {
         },
         session: { access_token: 'local' },
       },
+      error: null,
+    };
+  },
+
+  async signInWithOtp({ email }) {
+    return {
+      data: { status: 'sent' },
+      error: null,
+    };
+  },
+
+  async verifyOtp({ email, token, type }) {
+    return {
+      data: {
+        session: {
+          access_token: 'local',
+          user: {
+            id: 'local-user',
+            email: email || 'local@devhub.local',
+          },
+        },
+        user: {
+          id: 'local-user',
+          email: email || 'local@devhub.local',
+        },
+      },
+      error: null,
+    };
+  },
+
+  async setSession(session) {
+    return {
+      data: { session },
       error: null,
     };
   },
@@ -280,17 +561,41 @@ const localRealtime = {
 
 // ── Client factory ────────────────────────────────────────────────────────────
 
+function getSupabaseInstance() {
+  if (isCloud) {
+    if (!supabaseInstance) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && anonKey) {
+        supabaseInstance = createSupabaseClient(url, anonKey);
+      } else {
+        console.error('Supabase credentials missing in NEXT_PUBLIC_ variables');
+      }
+    }
+    return supabaseInstance;
+  }
+  return null;
+}
+
 export function createClient() {
+  const supabase = getSupabaseInstance();
+
   return {
     from(table) {
       return new LocalQueryClient(table);
     },
-    auth: localAuth,
-    realtime: localRealtime,
+    auth: supabase ? supabase.auth : localAuth,
+    realtime: supabase ? supabase : localRealtime,
     channel(name) {
+      if (supabase) {
+        return supabase.channel(name);
+      }
       return localRealtime.channel(name);
     },
     removeChannel(channel) {
+      if (supabase) {
+        return supabase.removeChannel(channel);
+      }
       localRealtime.removeChannel(channel);
     },
   };

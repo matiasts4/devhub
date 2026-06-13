@@ -4,7 +4,8 @@
   "description": "CLI for DevHub — agent swarm orchestration and operations",
   "type": "commonjs",
   "bin": {
-    "devhub": "./bin/devhub"
+    "devhub": "./bin/devhub",
+    "devhub-bus": "./bin/devhub-bus.js"
   },
   "scripts": {
     "test": "jest",

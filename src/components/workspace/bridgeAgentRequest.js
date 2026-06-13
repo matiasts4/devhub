@@ -1,7 +1,8 @@
 'use client';
 
 import { ATTRS } from '@emergentbase/visual-edits';
-import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand';
+import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand.shared';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 
 export const BRIDGE_AGENT_OPTIONS = [
   {
@@ -35,8 +36,12 @@ function normalizeClassName(className = '') {
 }
 
 export function deriveSelectionLabel(elementInfo = {}) {
-  const tagName = String(elementInfo?.tagName || elementInfo?.element?.tagName || 'div').toLowerCase();
-  const className = normalizeClassName(elementInfo?.className || elementInfo?.element?.className || '');
+  const tagName = String(
+    elementInfo?.tagName || elementInfo?.element?.tagName || 'div'
+  ).toLowerCase();
+  const className = normalizeClassName(
+    elementInfo?.className || elementInfo?.element?.className || ''
+  );
   const attributes = elementInfo?.attributes || elementInfo?.element?.attributes || {};
   const id = String(elementInfo?.id || elementInfo?.element?.id || attributes.id || '').trim();
   const baseLabel = id ? `${tagName}#${id}` : tagName;
@@ -102,7 +107,7 @@ export function buildBridgePrompt({ browserUrl, selectedElement, changeRequest }
 }
 
 function buildAgentCommand(agentId, prompt) {
-  return buildAgentLaunchCommand(agentId, prompt, { opencodeAgent: 'sdd-orchestrator' });
+  return buildAgentLaunchCommand(agentId, prompt, { opencodeAgent: DEFAULT_OPENCODE_AGENT });
 }
 
 export function buildBridgeAgentRequest({

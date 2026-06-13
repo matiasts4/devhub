@@ -7,12 +7,13 @@ export const dynamic = 'force-static';
 
 function resolveRootPath(inputPath) {
   const projectRoot = process.cwd();
+  const projectRootAbs = path.resolve(/*turbopackIgnore: true*/ projectRoot);
   if (!inputPath) {
-    return projectRoot;
+    return projectRootAbs;
   }
 
-  const resolved = path.resolve(projectRoot, inputPath);
-  if (!resolved.startsWith(path.resolve(projectRoot))) {
+  const resolved = path.resolve(/*turbopackIgnore: true*/ projectRoot, /*turbopackIgnore: true*/ inputPath);
+  if (!resolved.startsWith(projectRootAbs)) {
     throw new Error('Invalid root path outside project directory');
   }
 

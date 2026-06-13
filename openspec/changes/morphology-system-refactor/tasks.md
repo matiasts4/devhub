@@ -56,8 +56,9 @@ Chain strategy: pending
 
 ## Phase 5: Roadmap Hardcode Fixes
 
-- [ ] 5.1 `src/views/Roadmap.jsx` — Replace hardcoded `borderRadius: '0'`, `border: '2px solid var(--border-strong)'`, `boxShadow: '4px 4px 0px 0px var(--border-strong)'` on milestone card elements with `panelStyle()` from morphology.js imports
-- [ ] 5.2 `src/views/Roadmap.jsx` — Fix timeline dot styles to use morphology tokens instead of inline literals
+- [x] 5.1 `src/views/Roadmap.jsx` — Replace hardcoded `borderRadius: '0'`, `border: '2px solid var(--border-strong)'`, `boxShadow: '4px 4px 0px 0px var(--border-strong)'` on milestone card elements with `panelStyle()` from morphology.js imports
+- [x] 5.2 `src/views/Roadmap.jsx` — Fix timeline dot styles to use morphology tokens instead of inline literals
+- [x] **Roadmap.jsx borderRadius residuals** — `borderRadius: '0'` literals at lines 85 and 338 removed by `sdd/ui-professionalization` T10 (commit T10). Workspace section wrapper now derives from `getWorkspaceSectionSurfaceStyle({ emphasized: true })`; progress fill derives from `progressFillStyle()`. See `sdd/ui-professionalization/verify-report.md` and morphology verify-report cross-link.
 
 ## Phase 6: SwarmTopologyGraph Hardcode Fixes
 

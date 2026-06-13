@@ -3,15 +3,12 @@
 // NOT a React component — called from JSX, not rendered with < />.
 
 import React from 'react';
-import {
-  SplitSquareVertical,
-  SplitSquareHorizontal,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelCommandMetadata } from '../utils/semanticMetadata';
+import { buildPanelHeaderDisplay } from '../utils/panelHeaderDisplay';
+import PanelRendererSelect from './PanelRendererSelect';
+import { SHOW_RENDERER_SWITCH } from './terminalRendererPreferences';
 
 function renderWorkspacePanel(
   panel,
@@ -28,19 +25,28 @@ function renderWorkspacePanel(
     onSplitDown,
     onToggleFocus,
     isFocusedPanel,
+    navigationPulseActive,
     requestedRendererMode,
     onResetRendererToXterm,
+    onSetPanelRenderer,
     onActivatePanel,
     panelLabel,
     panelSemanticMetadata,
     suspendNativeSurface,
     nativeSurfacePolicy,
+    /** When pizarra canvas owns live surfaces, skip mounting a second TTY here. */
+    deferLiveSurfaceToPizarra = false,
+    pizarraOwnsLiveSurfaces = false,
+    connectionState,
+    visibleTerminalPanelCount = 1,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
   const panelChromeSafeZoneMinTop = 34;
-  const semanticMetadata =
-    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand);
+  const semanticMetadata = buildPanelHeaderDisplay(
+    panelLabel,
+    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
+  );
   const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
 
   return (
@@ -51,7 +57,7 @@ function renderWorkspacePanel(
         isActive
           ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
           : 'border-transparent'
-      }`}
+      } ${navigationPulseActive ? 'terminal-panel-nav-pulse' : ''}`}
       style={swarmRole ? { '--swarm-role-rgb': swarmRole.rgb } : undefined}
       onMouseDown={() => {
         if (onActivatePanel) {
@@ -134,6 +140,14 @@ function renderWorkspacePanel(
             data-testid={`panel-header-actions-${panel.id}`}
             title={`Panel ${panelLabel || panel.id} actions`}
           >
+            {SHOW_RENDERER_SWITCH ? (
+              <PanelRendererSelect
+                panelId={panel.id}
+                currentMode={requestedRendererMode}
+                availableModes={['xterm-webgl', 'xterm']}
+                onChange={(mode) => onSetPanelRenderer?.(mode)}
+              />
+            ) : null}
             <button
               type="button"
               data-testid={`panel-split-right-${panel.id}`}
@@ -198,26 +212,36 @@ function renderWorkspacePanel(
         </div>
       </div>
       <div
-        className="min-h-0 min-w-0 flex-1 bg-[#0f1724] p-px"
+        className="min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
         data-testid={`panel-body-${panel.id}`}
       >
-        <div className="h-full w-full overflow-hidden rounded-[10px] bg-[var(--surface-app)]">
-          <TerminalTTY
-            id={panel.id}
-            cwd={panel.cwd || cwd}
-            swarmContext={panel.swarmContext || null}
-            hideTitleBar={true}
-            showQuickCopyButton={false}
-            autoFocus={isActive}
-            isActivePanel={Boolean(isActivePanel ?? isActive)}
-            isVisibleInLayout={Boolean(isVisibleInLayout)}
-            initialCommand={panel.initialCommand}
-            requestedRendererMode={requestedRendererMode}
-            onResetRendererToXterm={onResetRendererToXterm}
-            onActivatePanel={onActivatePanel}
-            suspendNativeSurface={Boolean(suspendNativeSurface)}
-            nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-          />
+        <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
+          {deferLiveSurfaceToPizarra ? (
+            <div
+              data-testid={`panel-body-deferred-pizarra-${panel.id}`}
+              className="h-full w-full"
+              aria-hidden="true"
+            />
+          ) : (
+            <TerminalTTY
+              id={panel.id}
+              cwd={panel.cwd || cwd}
+              swarmContext={panel.swarmContext || null}
+              hideTitleBar={true}
+              showQuickCopyButton={false}
+              autoFocus={isActive}
+              isActivePanel={Boolean(isActivePanel ?? isActive)}
+              isVisibleInLayout={Boolean(isVisibleInLayout)}
+              visibleTerminalPanelCount={visibleTerminalPanelCount}
+              initialCommand={panel.initialCommand}
+              connectionState={connectionState}
+              requestedRendererMode={requestedRendererMode}
+              onResetRendererToXterm={onResetRendererToXterm}
+              onActivatePanel={onActivatePanel}
+              suspendNativeSurface={Boolean(suspendNativeSurface)}
+              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+            />
+          )}
         </div>
       </div>
     </div>

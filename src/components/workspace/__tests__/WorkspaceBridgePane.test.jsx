@@ -445,6 +445,53 @@ describe('WorkspaceBridgePane', () => {
     expect(mockInvoke).toHaveBeenCalledWith('native_browser_probe', expect.any(Object));
   });
 
+  test('hides native loading overlay once the GTK surface is ready', async () => {
+    window.__TAURI_INTERNALS__ = {};
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === 'native_browser_probe') {
+        return {
+          ready: true,
+          reason: null,
+          persistentProfile: true,
+          capabilities: { persistentProfile: true, selector: { inspect: true } },
+        };
+      }
+      if (command === 'native_browser_open') return { opened: true, reason: null };
+      if (command === 'native_browser_load_url') return { loaded: true, reason: null };
+      if (
+        command === 'native_browser_resize' ||
+        command === 'native_browser_set_visibility' ||
+        command === 'native_browser_focus'
+      ) {
+        return null;
+      }
+      return null;
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(WorkspaceBrowserPane, {
+        dockState: {
+          browserUrl: 'https://github.com/',
+          browserHistory: ['https://github.com/'],
+          browserHistoryIndex: 0,
+          browserRuntime: 'native-gtk',
+          visible: true,
+          activeTab: 'browser',
+          editMode: false,
+          maximized: false,
+          maximizedView: 'browser',
+        },
+        onDockStateChange: jest.fn(),
+      })
+    );
+
+    await flushEffects();
+    await flushEffects();
+
+    expect(view.container.querySelector('[data-testid="browser-loading-overlay"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="browser-native-runtime-shell"]')).not.toBeNull();
+  });
+
   test('hides the native gtk panel when the browser pane stops being visible in layout', async () => {
     window.__TAURI_INTERNALS__ = {};
     mockInvoke.mockImplementation(async (command) => {

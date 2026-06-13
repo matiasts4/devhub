@@ -162,6 +162,43 @@ function resolveTauriCliArgs({ args = [], buildConfig = null, devUrlReady = fals
   return injectArgsBeforeAppArgs(args, ['-c', JSON.stringify({ build: { beforeDevCommand: '' } })]);
 }
 
+function patchPackagedDesktop() {
+  // After tauri build on Linux, the generator produces a minimal desktop.
+  // Overwrite it with our rich packaging/linux/DevHub.desktop (includes launcher Exec, WMClass, StartupNotify, keywords etc).
+  // The deb.files map in tauri.conf also places the launcher; this ensures the .desktop is the canonical rich one.
+  if (process.platform !== 'linux') return;
+  const bundleRoot = path.join(__dirname, '..', 'src-tauri', 'target', 'release', 'bundle', 'deb');
+  try {
+    if (!fs.existsSync(bundleRoot)) return;
+    const entries = fs.readdirSync(bundleRoot, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory() || !e.name.startsWith('DevHub_')) continue;
+      const desktopPath = path.join(bundleRoot, e.name, 'data', 'usr', 'share', 'applications', 'DevHub.desktop');
+      const sourceDesktop = path.join(__dirname, '..', 'packaging', 'linux', 'DevHub.desktop');
+      if (fs.existsSync(sourceDesktop) && fs.existsSync(path.dirname(desktopPath))) {
+        fs.copyFileSync(sourceDesktop, desktopPath);
+        // Ensure launcher (if mapped via deb.files) has exec bit in the data tree
+        const launcherPath = path.join(bundleRoot, e.name, 'data', 'usr', 'lib', 'DevHub', 'bin', 'devhub-launcher');
+        if (fs.existsSync(launcherPath)) {
+          fs.chmodSync(launcherPath, 0o755);
+        }
+        const postinstCandidates = [
+          path.join(bundleRoot, e.name, 'data', 'DEBIAN', 'postinst'),
+          path.join(bundleRoot, e.name, 'DEBIAN', 'postinst'),
+        ];
+        for (const postinstPath of postinstCandidates) {
+          if (fs.existsSync(postinstPath)) {
+            fs.chmodSync(postinstPath, 0o755);
+          }
+        }
+        console.log(`[tauri-cli] Patched desktop + launcher exec for ${e.name}`);
+      }
+    }
+  } catch (err) {
+    console.warn('[tauri-cli] Desktop patch skipped (non-fatal):', err?.message || err);
+  }
+}
+
 function runTauriCli({
   args = process.argv.slice(2),
   env = buildTauriEnv(),
@@ -183,7 +220,11 @@ function runTauriCli({
     throw result.error;
   }
 
+  const isBuild = args.includes('build');
   if (typeof result.status === 'number') {
+    if (result.status === 0 && isBuild) {
+      patchPackagedDesktop();
+    }
     process.exitCode = result.status;
     return result.status;
   }

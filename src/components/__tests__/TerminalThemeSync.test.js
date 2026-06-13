@@ -10,7 +10,7 @@
  * - No hard-coded blue hex in primary mappings
  */
 
-const { buildXtermTheme } = require('../terminal/TerminalThemeSync.js');
+const { buildXtermTheme, getTerminalFontOptions } = require('../terminal/TerminalThemeSync.js');
 
 describe('buildXtermTheme()', () => {
   // Helper: simulate CSS var resolution with known values
@@ -109,5 +109,16 @@ describe('buildXtermTheme()', () => {
 
     expect(theme.cursor).toBe('#e6b450');
     expect(theme.background).toBe('transparent');
+  });
+});
+
+describe('getTerminalFontOptions()', () => {
+  test('returns bold Kali-style defaults when CSS vars are unset', () => {
+    const opts = getTerminalFontOptions();
+    expect(opts.fontWeight).toBe('bold');
+    expect(opts.fontWeightBold).toBe('bold');
+    expect(opts.lineHeight).toBe(1.1);
+    expect(opts.letterSpacing).toBe(-0.5);
+    expect(opts.fontFamily).toContain('monospace');
   });
 });

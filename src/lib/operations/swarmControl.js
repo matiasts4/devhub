@@ -3,6 +3,85 @@ import {
   mergeControlRoomStatus,
   normalizeEvidenceRefs,
 } from '@/lib/operations/contracts';
+import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
+import { buildPrompt } from '../sdd/SwarmPromptEngine';
+
+/** Launchpad template: ZED + N SDD Workers (gentle-orchestrator), standby by default. */
+export const ZED_ORCHESTRATOR_TEMPLATE_ID = 'zed-orchestrator-pod';
+
+/** Max wait for /tmp/devhub-opencode-ready-<tmux> before bootstrap paste (ms). */
+export const SWARM_OPENCODE_READY_GRACE_MS = 30000;
+
+/** Delay between worker terminal spawns during fanout (ms). */
+export const SWARM_WORKER_FANOUT_STAGGER_MS = 4000;
+
+/** Base delay before first worker spawn so ZED can finish OpenCode startup (ms). */
+export const SWARM_WORKER_FANOUT_BASE_DELAY_MS = 8000;
+
+/**
+ * Standby launches: orchestrators get bootstrap at launch; workers wait for delegation.
+ */
+export function resolveBootstrapPromptForLaunch({
+  roleKey = '',
+  prompt = '',
+  bootstrapMode = 'engram_first',
+} = {}) {
+  const normalizedRoleKey = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (bootstrapMode === 'standby' && isSddWorkerRoleKey(normalizedRoleKey)) {
+    return '';
+  }
+  return String(prompt || '');
+}
+
+export function resolveLaunchKickoffBodySummary({
+  mission,
+  bootstrapMode = 'engram_first',
+  launchLabel = '',
+} = {}) {
+  const trimmedMission = String(mission ?? '').trim();
+  if (trimmedMission) return trimmedMission;
+
+  if (bootstrapMode === 'standby') {
+    return 'Modo standby — terminales listas; esperando instrucciones del operador antes de delegar trabajo.';
+  }
+
+  const label = String(launchLabel ?? '').trim();
+  if (label) return label;
+
+  return 'Kickoff durable del swarm.';
+}
+
+export function isOrchestratorRoleKey(roleKey = '') {
+  const key = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return key === 'director' || key === 'zed';
+}
+
+export function isSddWorkerRoleKey(roleKey = '') {
+  const key = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return /^sdd_worker_\d+$/.test(key);
+}
+
+export function buildZedSddPodTopology(workerCount = 4) {
+  const count = Math.min(4, Math.max(1, Number(workerCount) || 4));
+  const workerRoles = Array.from({ length: count }, (_, index) => `SDD Worker ${index + 1}`);
+  return {
+    label: `ZED → ${workerRoles.join(' / ')}`,
+    roles: ['ZED', ...workerRoles],
+    connections: workerRoles.map((worker) => `ZED → ${worker}`),
+  };
+}
 
 export function getSourceByKey(snapshot, key) {
   return snapshot?.sources?.find((source) => source.key === key) || null;
@@ -91,6 +170,27 @@ function countPendingApprovals(approvals = []) {
 function buildSwarmTemplateCatalog() {
   return [
     {
+      id: ZED_ORCHESTRATOR_TEMPLATE_ID,
+      label: 'ZED Orchestrator Pod',
+      summary:
+        'ZED en standby + SDD Workers con Gentle Orchestrator. Vos conversás con ZED; él delega changes sin SDD custom.',
+      readiness: 'ready-now',
+      featured: true,
+      tags: ['nuevo', 'zed', 'sdd', 'standby', 'orchestration'],
+      category: 'orchestration',
+      swarm_type_id: 'zed-orchestration-swarm',
+      default_team_id: 'zed-sdd-pod',
+      default_provider_id: 'minimax-coding-plan/MiniMax-M3',
+      default_mission: '',
+      launch_defaults: {
+        bootstrapMode: 'standby',
+        launchStrategy: 'director_first',
+        sddEnabled: false,
+        workerCount: 4,
+      },
+      topology: buildZedSddPodTopology(4),
+    },
+    {
       id: 'approval-recovery',
       label: 'Resolver aprobaciones y destrabar',
       summary: 'Volvé al swarm activo, cerrá bloqueos y seguí desde la cola durable.',
@@ -135,7 +235,7 @@ function buildSwarmTemplateCatalog() {
       category: 'delivery',
       swarm_type_id: 'delivery-swarm',
       default_team_id: 'feature-delivery-team',
-      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_provider_id: 'github-copilot/gpt-4o-mini',
       default_mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
       topology: {
@@ -156,6 +256,18 @@ function buildSwarmTemplateCatalog() {
 function buildSwarmTypeCatalog() {
   return [
     {
+      id: 'zed-orchestration-swarm',
+      label: 'ZED Orchestration',
+      summary:
+        'ZED delega changes a SDD Workers (gentle-orchestrator); flujo SDD estándar por worker.',
+      readiness: 'ready-now',
+      defaults_preview: ['standby', 'mcp-queue', 'human-qa-gate'],
+      category: 'orchestration',
+      default_team_id: 'zed-sdd-pod',
+      default_provider_id: 'minimax-coding-plan/MiniMax-M3',
+      topology: buildZedSddPodTopology(4),
+    },
+    {
       id: 'delivery-swarm',
       label: 'Delivery swarm',
       summary: 'Ejecuta, valida y entrega con foco en handoff seguro.',
@@ -163,7 +275,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['handoff-first', 'checkpoint-safe'],
       category: 'delivery',
       default_team_id: 'feature-delivery-team',
-      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_provider_id: 'github-copilot/gpt-4o-mini',
       topology: {
         label: 'Director → Coder / Auditor / DevOps / Architect',
         roles: ['Director', 'Coder', 'Auditor', 'DevOps', 'Architect'],
@@ -204,7 +316,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['context-first', 'evidence-trace'],
       category: 'research',
       default_team_id: 'launchpad-scout-team',
-      default_provider_id: 'github-copilot/gpt-5.4-mini',
+      default_provider_id: 'github-copilot/gpt-4o-mini',
       topology: {
         label: 'Director → Scout → Analyst → Director',
         roles: ['Director', 'Scout', 'Analyst'],
@@ -216,6 +328,11 @@ function buildSwarmTypeCatalog() {
 
 function buildSwarmLaunchCategories() {
   return [
+    {
+      id: 'orchestration',
+      label: 'Orquestación',
+      summary: 'ZED + SDD Workers en standby; delegación conversacional y SDD estándar por worker.',
+    },
     {
       id: 'delivery',
       label: 'Delivery',
@@ -237,6 +354,11 @@ function buildSwarmLaunchCategories() {
 function buildSwarmLaunchProviders() {
   return [
     {
+      id: 'minimax-coding-plan/MiniMax-M3',
+      label: 'MiniMax M3',
+      summary: 'Modelo por defecto para ZED Orchestrator Pod y swarms DevHub.',
+    },
+    {
       id: 'claude-sonnet-4-20250514',
       label: 'Claude Sonnet 4',
       summary: 'Balanceado para delivery y handoff corto.',
@@ -247,13 +369,13 @@ function buildSwarmLaunchProviders() {
       summary: 'Mayor criterio para recovery, approvals y decisiones delicadas.',
     },
     {
-      id: 'github-copilot/gpt-5.4-mini',
-      label: 'GPT-5.4 mini',
+      id: 'github-copilot/gpt-4o-mini',
+      label: 'GPT-4o mini (OpenAI)',
       summary: 'Modo pruebas: menor consumo por request para swarms y validación rápida.',
     },
     {
-      id: 'github-copilot/gpt-5.4',
-      label: 'GPT-5.4',
+      id: 'github-copilot/gpt-4o',
+      label: 'GPT-4o (OpenAI)',
       summary: 'Bueno para planning, scouting y coordinación de launchpad.',
     },
   ];
@@ -276,11 +398,23 @@ function buildSwarmLaunchPrograms() {
       label: 'Hermes',
       summary: 'Cliente alternativo para flujos simples o apoyo operativo.',
     },
+    {
+      id: 'zed',
+      label: 'Zed / OpenCode + MiniMax M2.7',
+      summary: 'Zed — Senior Architect con MiniMax M2.7 via OpenCode subscription.',
+    },
   ];
 }
 
 function buildSwarmLaunchTeams() {
   return [
+    {
+      id: 'zed-sdd-pod',
+      label: 'ZED SDD Pod',
+      category: 'orchestration',
+      summary: 'ZED Orchestrator + SDD Workers (gentle-orchestrator) en standby hasta delegación.',
+      topology: buildZedSddPodTopology(4),
+    },
     {
       id: 'feature-delivery-team',
       label: 'Feature Delivery Team',
@@ -402,7 +536,7 @@ function selectRecommendedTemplateId(snapshot = {}) {
   if (approvals > 0) return 'approval-recovery';
   if (asArray(queue.items).length > 0 || Number(header.queue_depth || 0) > 0)
     return 'queue-restart';
-  return 'clean-slate';
+  return ZED_ORCHESTRATOR_TEMPLATE_ID;
 }
 
 function findTemplateById(templates = [], templateId) {
@@ -414,7 +548,10 @@ function findTemplateBySwarmTypeId(templates = [], swarmTypeId) {
 }
 
 function findRecordById(records = [], id) {
-  return records.find((record) => record.id === id) || records[0] || null;
+  if (id === undefined || id === null || id === '') {
+    return null;
+  }
+  return records.find((record) => record.id === id) || null;
 }
 
 function hasActiveSwarm(snapshot = {}) {
@@ -426,10 +563,12 @@ function hasActiveSwarm(snapshot = {}) {
   // Check if at least one agent is non-offline (stale counts as potentially live).
   // 'stale' means the agent hasn't pinged recently but is not confirmed dead.
   // Only 'offline' and 'unknown' mean the agent is confirmed gone.
-  const hasNonOfflineAgent = agents.length > 0 && agents.some((agent) => {
-    const status = String(agent.supervisor_state || agent.status || '').toLowerCase();
-    return status !== 'offline' && status !== 'unknown';
-  });
+  const hasNonOfflineAgent =
+    agents.length > 0 &&
+    agents.some((agent) => {
+      const status = String(agent.supervisor_state || agent.status || '').toLowerCase();
+      return status !== 'offline' && status !== 'unknown';
+    });
 
   // If the database has an active mission, but we have agents and ALL are confirmed offline/unknown,
   // then the swarm is actually dead.
@@ -461,11 +600,11 @@ function buildActivePrimaryCta(snapshot = {}) {
   }
 
   return {
-    kind: 'anchor',
-    target: 'director-queue',
-    label: 'Continuar desde cola durable',
-    disabled: true,
-    reason: 'No hay foco durable inmediato en este snapshot.',
+    kind: 'action',
+    target: 'terminate-swarm',
+    label: 'Finalizar swarm',
+    disabled: false,
+    reason: null,
   };
 }
 
@@ -511,40 +650,34 @@ function buildActiveRoster(snapshot = {}) {
   );
   const participants = asArray(missionControl.participants);
 
-  const hasRuntimeQuotaBlocked = Boolean(runtimeMetrics.quota_blocked);
-  const hasRuntimeOrphanedProcess = Number(runtimeMetrics.orphaned_processes || 0) > 0;
-  const hasRuntimeStaleRegistry = Number(runtimeMetrics.stale_registry_agents || 0) > 0;
-
-  const hasLiveAgentRegistryMismatch = selectControlRoomAgents(snapshot).some((agent) => {
-    const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
-    const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
-    const hasLiveActivity = ['running', 'working', 'active', 'thinking', 'asking_questions'].includes(
-      normalizedLiveHintStatus
-    );
-    return normalizedSupervisorState === 'idle' && hasLiveActivity;
-  });
-
-  const globalRuntimeStatus = hasRuntimeQuotaBlocked
-    ? 'quota-blocked'
-    : hasRuntimeStaleRegistry || hasLiveAgentRegistryMismatch
-      ? 'stale-registry'
-      : hasRuntimeOrphanedProcess
-        ? 'orphaned-process'
-        : null;
-
   const resolveRosterStatus = (baseStatus, agent, isDirector = false) => {
     const normalizedSupervisorState = String(agent?.supervisor_state || '').toLowerCase();
     const normalizedLiveHintStatus = String(agent?.live_hint?.status || '').toLowerCase();
-    const hasLiveActivity = ['running', 'working', 'active', 'thinking', 'asking_questions'].includes(
-      normalizedLiveHintStatus
-    );
+    const hasLiveActivity = [
+      'running',
+      'working',
+      'active',
+      'thinking',
+      'asking_questions',
+    ].includes(normalizedLiveHintStatus);
+
+    if (runtimeMetrics.quota_blocked && isDirector) {
+      return 'quota-blocked';
+    }
 
     if (normalizedSupervisorState === 'idle' && hasLiveActivity) {
       return 'stale-registry';
     }
 
-    if (isDirector && globalRuntimeStatus) {
-      return globalRuntimeStatus;
+    if (hasLiveActivity) {
+      return normalizedLiveHintStatus;
+    }
+
+    if (
+      Number(runtimeMetrics.stale_registry_agents || 0) > 0 &&
+      normalizedSupervisorState === 'idle'
+    ) {
+      return 'stale-registry';
     }
 
     return baseStatus;
@@ -573,6 +706,7 @@ function buildActiveRoster(snapshot = {}) {
             isDirector: participant.role_in_mission === 'director',
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
+            phase: agent.phase || null,
           };
         })
       : selectControlRoomAgents(snapshot).map((agent, index) => {
@@ -582,10 +716,15 @@ function buildActiveRoster(snapshot = {}) {
             id: agent.agent_id || `agent-${index}`,
             label: role,
             role,
-            status: resolveRosterStatus(agent.supervisor_state || 'active', agent, /director/i.test(role)),
+            status: resolveRosterStatus(
+              agent.supervisor_state || 'active',
+              agent,
+              /director/i.test(role)
+            ),
             isDirector: /director/i.test(role),
             workspaceId: agent.workspace_id || null,
             runId: agent.run_id || null,
+            phase: agent.phase || null,
           };
         });
 
@@ -668,6 +807,7 @@ function buildLaunchIdentityHealth(snapshot = {}) {
 function buildActiveHero(snapshot = {}) {
   const header = selectControlRoomHeader(snapshot);
   const missionSummary = selectDirectorMissionSummary(snapshot);
+  const missionControl = selectControlRoomMission(snapshot);
   const directorQueue = selectDirectorQueue(snapshot);
   const nextQueueItem = asArray(directorQueue.items)[0] || null;
   const roster = buildActiveRoster(snapshot);
@@ -683,6 +823,7 @@ function buildActiveHero(snapshot = {}) {
     identityHealth,
     roster,
     topology: buildActiveTopology(roster),
+    launchId: missionControl?.mission?.launch_id || missionControl?.mission?.mission_id || null,
     highlights: [
       missionSummary.latestMessageSummary || 'Seguí el foco activo desde la cola durable.',
       nextQueueItem?.title || 'Sin siguiente task durable confirmado.',
@@ -1199,6 +1340,10 @@ function normalizeAgent(agent = {}, liveHintsByAgent = {}) {
     evidence_ref: status.evidence_ref,
     evidence_refs: status.evidence_refs,
     missing_source: status.evidence_ref ? null : 'agent evidence',
+    // phase: SDD phase this agent is executing (e.g. 'sdd-design', 'sdd-apply').
+    // Populated by swarm infrastructure when launching with SDD context.
+    // Enables SwarmPhaseBadge on agent cards in the DevHub UI.
+    phase: agent.phase || null,
     live_hint: liveHint
       ? {
           status: liveHint.status || null,
@@ -1223,6 +1368,11 @@ function normalizeWorkspace(workspace = {}) {
     evidence_ref: status.evidence_ref,
     evidence_refs: status.evidence_refs,
     missing_source: status.evidence_ref ? null : 'workspace evidence',
+    // WSN-3 / WSN-S7: preserve naming metadata for semantic label derivation on restore
+    sessionType: workspace.sessionType || null,
+    swarmRole: workspace.swarmRole || null,
+    swarmId: workspace.swarmId || null,
+    workspace_label: workspace.workspace_label || null,
   };
 }
 
@@ -1581,12 +1731,12 @@ function buildSwarmLaunchStrategies() {
   return [
     {
       id: 'director_first',
-      label: 'Director-first bootstrap',
+      label: 'Bootstrap director primero',
       summary: 'Prepara al Director primero y deja el fan-out explícito como segunda fase.',
     },
     {
       id: 'parallel_all',
-      label: 'Parallel all roles',
+      label: 'Paralelo todos los roles',
       summary: 'Mantiene el fan-out inmediato para todos los roles desde el launch inicial.',
     },
   ];
@@ -1595,13 +1745,19 @@ function buildSwarmLaunchStrategies() {
 function buildSwarmBootstrapModes() {
   return [
     {
+      id: 'standby',
+      label: 'Standby (esperar operador)',
+      summary:
+        'Terminales abiertas sin trabajo. ZED y workers esperan instrucciones antes de delegar o correr SDD.',
+    },
+    {
       id: 'engram_first',
-      label: 'Engram first',
+      label: 'Engram primero',
       summary: 'El Director arranca leyendo contexto durable antes de repartir foco.',
     },
     {
       id: 'skip_bootstrap',
-      label: 'Skip bootstrap',
+      label: 'Omitir inicialización',
       summary: 'Salta el checkpoint inicial y deja constancia explícita en el trace.',
     },
   ];
@@ -1682,10 +1838,19 @@ export function createSwarmLaunchDraft({
   const launchStrategy =
     findRecordById(launchStrategies, draft.launchStrategy || null) ||
     findRecordById(launchStrategies, 'director_first');
+  const launchDefaults = template?.launch_defaults || {};
   const bootstrapMode =
-    findRecordById(bootstrapModes, draft.bootstrapMode || null) ||
+    findRecordById(bootstrapModes, draft.bootstrapMode || launchDefaults.bootstrapMode || null) ||
     findRecordById(bootstrapModes, 'engram_first');
-  const topology = team?.topology || template?.topology || swarmType?.topology || null;
+  let topology = team?.topology || template?.topology || swarmType?.topology || null;
+  const isZedPodTemplate = template?.id === ZED_ORCHESTRATOR_TEMPLATE_ID;
+  const workerCount = Math.min(
+    4,
+    Math.max(1, Number(draft.workerCount ?? launchDefaults.workerCount ?? 4) || 4)
+  );
+  if (isZedPodTemplate) {
+    topology = buildZedSddPodTopology(workerCount);
+  }
   const rolePrograms = mergeRolePrograms(
     buildDefaultRolePrograms(topology, 'opencode'),
     draft.rolePrograms
@@ -1693,20 +1858,35 @@ export function createSwarmLaunchDraft({
   const projectPath =
     project?.local_path || (project?.id ? `/workspace/${project.id}` : '/workspace/devhub');
 
-  const DEFAULT_SWARM_MODEL = 'opencode-go/deepseek-v4-flash';
+  // Phase 2: SDD integration — detect if SDD mode is active
+  // ZED pod: SDD runs inside gentle-orchestrator workers, not at launch.
+  const sddEnabled = isZedPodTemplate
+    ? false
+    : draft.sddEnabled === true ||
+      (draft.sddEnabled === undefined &&
+        launchDefaults.sddEnabled !== false &&
+        process.env.SDD_ENABLED !== 'false');
+  const sddPhase = draft.phase || null;
+
+  const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M3';
   const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
-    director: 'opencode-go/qwen3.6-plus',
-    coder: 'opencode-go/deepseek-v4-flash',
-    builder: 'opencode-go/deepseek-v4-flash',
-    qa: 'opencode-go/deepseek-v4-flash',
-    auditor: 'opencode-go/qwen3.6-plus',
-    reviewer: 'opencode-go/qwen3.6-plus',
-    devops: 'opencode-go/deepseek-v4-flash',
-    recovery_ops: 'opencode-go/deepseek-v4-flash',
-    architect: 'opencode/claude-sonnet-4.6',
-    scout: 'opencode-go/qwen3.5-plus',
-    analyst: 'opencode-go/qwen3.5-plus',
-    evidence: 'opencode-go/qwen3.5-plus',
+    director: 'minimax-coding-plan/MiniMax-M3',
+    coder: 'minimax-coding-plan/MiniMax-M3',
+    builder: 'minimax-coding-plan/MiniMax-M3',
+    qa: 'minimax-coding-plan/MiniMax-M3',
+    auditor: 'minimax-coding-plan/MiniMax-M3',
+    reviewer: 'minimax-coding-plan/MiniMax-M3',
+    devops: 'minimax-coding-plan/MiniMax-M3',
+    recovery_ops: 'minimax-coding-plan/MiniMax-M3',
+    architect: 'minimax-coding-plan/MiniMax-M3',
+    scout: 'minimax-coding-plan/MiniMax-M3',
+    analyst: 'minimax-coding-plan/MiniMax-M3',
+    evidence: 'minimax-coding-plan/MiniMax-M3',
+    zed: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
+    sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
   });
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
@@ -1723,12 +1903,23 @@ export function createSwarmLaunchDraft({
     swarmTypeId: swarmType?.id || null,
     teamId: team?.id || null,
     providerId: provider?.id || null,
-    launchStrategy: launchStrategy?.id || 'director_first',
-    bootstrapMode: bootstrapMode?.id || 'engram_first',
+    launchStrategy: launchStrategy?.id || launchDefaults.launchStrategy || 'director_first',
+    bootstrapMode: bootstrapMode?.id || launchDefaults.bootstrapMode || 'engram_first',
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
-    roleModels: Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
-    mission: draft.mission ?? template?.default_mission ?? '',
+    roleModels:
+      Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
+    workerCount: isZedPodTemplate ? workerCount : draft.workerCount,
+    mission:
+      draft.mission ?? (bootstrapMode?.id === 'standby' ? '' : (template?.default_mission ?? '')),
+    // Phase 2: SDD options — pass sddEnabled + sddPhase to buildAgentLaunchCommand
+    // Also expose sddEnabled at top level for SwarmLaunchWizardModal checkbox binding
+    sddEnabled,
+    sddOptions: {
+      sddEnabled,
+      phase: sddPhase,
+      changeName: draft.changeName || null,
+    },
   };
 }
 
@@ -1744,14 +1935,20 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     resolvedCatalog.launch_strategies,
     resolvedDraft.launchStrategy
   );
-  const bootstrapMode = findRecordById(resolvedCatalog.bootstrap_modes, resolvedDraft.bootstrapMode);
-  const topology = team?.topology || template?.topology || swarmType?.topology || null;
+  const bootstrapMode = findRecordById(
+    resolvedCatalog.bootstrap_modes,
+    resolvedDraft.bootstrapMode
+  );
+  let topology = team?.topology || template?.topology || swarmType?.topology || null;
+  if (template?.id === ZED_ORCHESTRATOR_TEMPLATE_ID) {
+    topology = buildZedSddPodTopology(resolvedDraft.workerCount || 4);
+  }
   const rolePrograms = buildRoleProgramPreview(
     topology,
     resolvedDraft.rolePrograms,
     resolvedCatalog.programs
   );
-  const modeLabel = resolvedDraft.mode === 'custom' ? 'Custom team' : 'Template team';
+  const modeLabel = resolvedDraft.mode === 'custom' ? 'Equipo personalizado' : 'Equipo plantilla';
 
   return {
     draft: resolvedDraft,
@@ -1765,36 +1962,61 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
     topology,
     rolePrograms,
     modeLabel,
-    launchStrategyLabel: launchStrategy?.label || 'Director-first bootstrap',
-    bootstrapModeLabel: bootstrapMode?.label || 'Engram first',
+    launchStrategyLabel: launchStrategy?.label || 'Bootstrap director primero',
+    bootstrapModeLabel: bootstrapMode?.label || 'Engram primero',
     launchLabel:
       resolvedDraft.mode === 'custom'
-        ? `Lanzar ${swarmType?.label || 'custom swarm'}`
-        : `Lanzar ${template?.label || 'template team'}`,
+        ? `Lanzar ${swarmType?.label || 'swarm personalizado'}`
+        : `Lanzar ${template?.label || 'equipo plantilla'}`,
     summaryLines: [
       `${modeLabel} · ${category?.label || 'Sin categoría'}`,
       `${template?.label || 'Sin plantilla'} · ${swarmType?.label || 'Sin tipo'}`,
-      `${team?.label || 'Sin team'} · ${provider?.label || 'Sin provider'}`,
-      resolvedDraft.workspacePath || 'Sin path',
-      resolvedDraft.mission || 'Sin misión',
+      `${team?.label || 'Sin equipo'} · ${provider?.label || 'Sin proveedor'}`,
+      resolvedDraft.workspacePath || 'Sin ruta',
+      resolvedDraft.bootstrapMode === 'standby'
+        ? 'Modo standby — sin misión hasta que el operador hable con ZED'
+        : resolvedDraft.mission || 'Sin misión',
     ],
     isReady: Boolean(
       resolvedDraft.workspacePath?.trim() &&
-      resolvedDraft.mission?.trim() &&
+      (resolvedDraft.bootstrapMode === 'standby' || resolvedDraft.mission?.trim()) &&
       category?.id &&
       template?.id &&
       swarmType?.id &&
       team?.id &&
       provider?.id
     ),
+    // Phase 2: SDD options for buildAgentLaunchCommand wiring
+    sddOptions: resolvedDraft.sddOptions,
   };
 }
 
 /**
  * Mapea un role_key de swarm a un perfil de agente OpenCode.
  * Director y workers visibles usan perfiles dedicados por rol.
+ *
+ * SDD-enhanced version: when changeName + phase are provided, wires
+ * SwarmPromptEngine for Phase Contract prompts and injects SDD_ENABLED flag.
  */
-export function buildRoleAgentProfile(roleKey = '') {
+export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = null) {
+  const normalizedKey = String(roleKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (normalizedKey === 'zed') {
+    return changeName !== null && phase !== null
+      ? { profileKey: 'zed-orchestrator', sddEnabled: false, phase, changeName, prompt: null }
+      : 'zed-orchestrator';
+  }
+
+  if (isSddWorkerRoleKey(normalizedKey)) {
+    return changeName !== null && phase !== null
+      ? { profileKey: DEFAULT_OPENCODE_AGENT, sddEnabled: false, phase, changeName, prompt: null }
+      : DEFAULT_OPENCODE_AGENT;
+  }
+
   const mapping = {
     director: 'swarm-director',
     coder: 'swarm-coder',
@@ -1809,7 +2031,38 @@ export function buildRoleAgentProfile(roleKey = '') {
     recovery_ops: 'swarm-devops',
     evidence: 'swarm-explorer',
   };
-  return mapping[roleKey] || 'swarm-coder';
+
+  const profileKey = mapping[normalizedKey] || 'swarm-coder';
+
+  // When changeName + phase provided, return SDD-enriched profile object
+  if (changeName !== null && phase !== null) {
+    const sddEnabled = process.env.SDD_ENABLED !== 'false';
+
+    if (sddEnabled) {
+      const vars = {
+        change_name: changeName,
+        phase,
+        artifacts: 'spec, design, tasks',
+        mission_id: null,
+        role: roleKey,
+        session_id: '{{session_id}}',
+      };
+
+      const prompt = buildPrompt(roleKey, phase, vars, { forcePhaseContract: true });
+
+      return {
+        profileKey,
+        sddEnabled: true,
+        phase,
+        changeName,
+        prompt,
+      };
+    }
+
+    return { profileKey, sddEnabled: false, phase, changeName };
+  }
+
+  return profileKey;
 }
 
 /**
@@ -1817,6 +2070,31 @@ export function buildRoleAgentProfile(roleKey = '') {
  */
 export function buildSwarmLaunchModels() {
   return [
+    {
+      id: 'minimax-coding-plan/MiniMax-M3',
+      label: 'MiniMax M3',
+      summary: 'Modelo por token plan — mismo stack que SDD/asistente; recomendado para swarm.',
+      recommended_for: [
+        'director',
+        'coder',
+        'builder',
+        'qa',
+        'auditor',
+        'reviewer',
+        'devops',
+        'architect',
+        'explorer',
+        'scout',
+        'analyst',
+        'evidence',
+      ],
+    },
+    {
+      id: 'minimax-coding-plan/MiniMax-M2.7',
+      label: 'MiniMax M2.7',
+      summary: 'Alternativa M2.7 — útil si M3 no está disponible en el plan.',
+      recommended_for: [],
+    },
     {
       id: 'opencode-go/deepseek-v4-flash',
       label: 'DeepSeek V4 Flash',
@@ -1853,4 +2131,349 @@ export function selectSwarmControlPrimarySurface(snapshot = {}) {
   };
 }
 
+/**
+ * Builds a FeedItem from a mission_messages row.
+ * message_kind 'directive'    → operator-prompt
+ * message_kind 'status'        → agent-reply  (sender is an agent)
+ * Other kinds are excluded from the transcript feed.
+ */
+function missionMessageToFeedItem(row) {
+  if (!row || !row.message_id) return null;
+  const isOperator = row.message_kind === 'directive';
+  const isAgent = row.message_kind === 'status';
+  if (!isOperator && !isAgent) return null;
+
+  return {
+    id: `msg:${row.message_id}`,
+    type: isOperator ? 'operator-prompt' : 'agent-reply',
+    role: isOperator ? 'operator' : 'agent',
+    text: row.body_summary || '',
+    timestamp: row.created_at || null,
+    occurredAt: row.created_at || null,
+  };
+}
+
+/**
+ * Builds a FeedItem from an agent_events row (action-executed).
+ */
+function agentEventToFeedItem(row) {
+  if (!row || !row.id) return null;
+  let status = 'running';
+  let completedAt = null;
+  let error = null;
+
+  if (row.event_type === 'task_completed') {
+    status = 'done';
+    completedAt = row.created_at || null;
+  } else if (row.event_type === 'crash_detected' || row.event_type === 'heartbeat_missed') {
+    status = 'failed';
+    completedAt = row.created_at || null;
+    try {
+      const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+      error = payload?.error || payload?.reason || 'Execution failed';
+    } catch {
+      error = 'Execution failed';
+    }
+  }
+
+  let argsSummary = '';
+  try {
+    const payload = row.payload_json ? JSON.parse(row.payload_json) : {};
+    argsSummary = payload?.summary || payload?.next_action || payload?.tool_name || '';
+  } catch {
+    argsSummary = '';
+  }
+
+  return {
+    id: `action:${row.id}`,
+    type: 'action-executed',
+    tool: row.event_type || 'unknown',
+    argsSummary: String(argsSummary).slice(0, 120),
+    startedAt: row.created_at || null,
+    completedAt,
+    status,
+    error,
+    occurredAt: row.created_at || null,
+  };
+}
+
+/**
+ * Derives progress step items from agent_events task transitions.
+ * Returns { progressItems, currentStepIndex, totalSteps }
+ */
+function deriveProgressFromEvents(eventRows = []) {
+  const taskEvents = eventRows
+    .filter((e) =>
+      ['task_started', 'task_progress', 'task_completed', 'needs_help', 'crash_detected'].includes(
+        e.event_type
+      )
+    )
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+
+  if (taskEvents.length === 0) {
+    return { progressItems: [], currentStepIndex: -1, totalSteps: 0 };
+  }
+
+  const progressItems = [];
+  let stepIndex = 0;
+  let currentStepIndex = -1;
+
+  for (const event of taskEvents) {
+    stepIndex += 1;
+    let item = null;
+
+    if (event.event_type === 'task_started' || event.event_type === 'task_progress') {
+      let stepLabel = `Step ${stepIndex}`;
+      try {
+        const payload = JSON.parse(event.payload_json || '{}');
+        stepLabel = payload?.summary || payload?.next_action || `Step ${stepIndex}`;
+      } catch {
+        /* use default */
+      }
+
+      item = {
+        id: `progress:${event.id}`,
+        type: 'progress-active',
+        stepIndex,
+        totalSteps: stepIndex, // will be updated when total is known
+        stepLabel,
+        occurredAt: event.created_at || null,
+      };
+      currentStepIndex = stepIndex - 1; // 0-based index of active item
+    } else if (event.event_type === 'task_completed') {
+      let stepLabel = `Step ${stepIndex}`;
+      try {
+        const payload = JSON.parse(event.payload_json || '{}');
+        stepLabel = payload?.summary || payload?.next_action || `Step ${stepIndex}`;
+      } catch {
+        /* use default */
+      }
+
+      item = {
+        id: `progress:${event.id}`,
+        type: 'progress-done',
+        stepIndex,
+        totalSteps: stepIndex,
+        stepLabel,
+        completedAt: event.created_at || null,
+        occurredAt: event.created_at || null,
+      };
+    } else if (event.event_type === 'needs_help' || event.event_type === 'crash_detected') {
+      let stepLabel = `Step ${stepIndex}`;
+      let errorMsg = 'Step encountered an error';
+      try {
+        const payload = JSON.parse(event.payload_json || '{}');
+        stepLabel = payload?.summary || payload?.next_action || `Step ${stepIndex}`;
+        errorMsg = payload?.error || payload?.reason || errorMsg;
+      } catch {
+        /* use default */
+      }
+
+      item = {
+        id: `progress:${event.id}`,
+        type: 'progress-failed',
+        stepIndex,
+        totalSteps: stepIndex,
+        stepLabel,
+        error: errorMsg,
+        occurredAt: event.created_at || null,
+      };
+    }
+
+    if (item) progressItems.push(item);
+  }
+
+  // Update totalSteps on all progress-active items
+  const totalSteps = progressItems.length;
+  progressItems.forEach((item) => {
+    if (item.type === 'progress-active') {
+      item.totalSteps = totalSteps;
+    }
+  });
+
+  return { progressItems, currentStepIndex, totalSteps };
+}
+
+/**
+ * getOperatorSidebarModel — returns the operator observer sidebar feed model.
+ *
+ * @param {Object} opts
+ * @param {string|null} opts.sessionId  — run_id of the active mission session
+ * @param {string|null} opts.watermark — last seen occurredAt; returns only newer items if set
+ * @param {number}     opts.limit      — max items per load (default 200)
+ * @param {Function}  opts.fetchImpl   — fetch implementation (for test injection)
+ */
+export async function getOperatorSidebarModel({
+  sessionId = null,
+  watermark = null,
+  limit = 200,
+  fetchImpl = fetch,
+} = {}) {
+  try {
+    const base =
+      typeof window !== 'undefined' && window.location
+        ? window.location.origin
+        : 'http://localhost';
+
+    // Fetch the control room snapshot which contains mission + events
+    const response = await fetchImpl(
+      `${base}/api/agenthub/operations/health?project_id=&_sidebar=1`,
+      { cache: 'no-store' }
+    );
+
+    if (!response.ok) {
+      return emptySidebarModel(sessionId);
+    }
+
+    const payload = await response.json();
+    const input =
+      payload.control_room_input ||
+      payload.control_room_snapshot_input ||
+      payload.control_room ||
+      null;
+
+    if (!input) return emptySidebarModel(sessionId);
+
+    const missionControl = input.mission_control || {};
+    const mission = missionControl.mission || null;
+
+    // Resolve active mission
+    let activeMission = null;
+    if (mission?.mission_id) {
+      if (!sessionId || mission.run_id === sessionId || mission.mission_id === sessionId) {
+        activeMission = mission;
+      }
+    }
+
+    if (!activeMission) {
+      return emptySidebarModel(sessionId);
+    }
+
+    const missionId = activeMission.mission_id;
+
+    // Fetch messages + events for this mission via the events API
+    const [messagesResp, eventsResp] = await Promise.all([
+      fetchImpl(
+        `${base}/api/agenthub/events?mission_id=${encodeURIComponent(missionId)}&limit=${limit}`,
+        { cache: 'no-store' }
+      ),
+      fetchImpl(
+        `${base}/api/agenthub/events?mission_id=${encodeURIComponent(missionId)}&event_type=&limit=${limit}`,
+        { cache: 'no-store' }
+      ),
+    ]);
+
+    let messages = [];
+    let events = [];
+
+    if (messagesResp.ok) {
+      const msgPayload = await messagesResp.json();
+      messages = msgPayload.events || [];
+    }
+    if (eventsResp.ok) {
+      const evtPayload = await eventsResp.json();
+      events = evtPayload.events || [];
+    }
+
+    // Filter by watermark if provided
+    const items = [];
+    const allRaw = [
+      ...messages.map((m) => ({ ...m, _kind: 'message' })),
+      ...events.map((e) => ({ ...e, _kind: 'event' })),
+    ];
+
+    for (const raw of allRaw) {
+      const occurredAt = raw.created_at || raw.occurred_at || null;
+      if (watermark && occurredAt && occurredAt <= watermark) continue;
+
+      if (raw._kind === 'message') {
+        const item = missionMessageToFeedItem(raw);
+        if (item) items.push(item);
+      } else {
+        const item = agentEventToFeedItem(raw);
+        if (item) items.push(item);
+      }
+    }
+
+    // Derive progress from events
+    const { progressItems } = deriveProgressFromEvents(events);
+    items.push(...progressItems);
+
+    // Sort by occurredAt ascending
+    items.sort((a, b) => {
+      const ta = a.occurredAt ? Date.parse(a.occurredAt) : 0;
+      const tb = b.occurredAt ? Date.parse(b.occurredAt) : 0;
+      return ta - tb;
+    });
+
+    // Apply limit
+    const hasMore = items.length > limit;
+    const feedItems = items.slice(0, limit);
+
+    // Compute watermark from last item
+    const lastItem = feedItems[feedItems.length - 1] || null;
+    const computedWatermark = lastItem?.occurredAt || null;
+
+    // Derive current progress summary
+    const activeProgress = progressItems.find((p) => p.type === 'progress-active') || null;
+    const progress = activeProgress
+      ? {
+          currentStep: activeProgress.stepIndex,
+          totalSteps: activeProgress.totalSteps,
+          stepLabel: activeProgress.stepLabel,
+          status: 'running',
+        }
+      : progressItems.length > 0
+        ? {
+            currentStep: progressItems[progressItems.length - 1].stepIndex,
+            totalSteps: progressItems[progressItems.length - 1].totalSteps,
+            stepLabel: progressItems[progressItems.length - 1].stepLabel,
+            status:
+              progressItems[progressItems.length - 1].type === 'progress-failed'
+                ? 'failed'
+                : 'done',
+          }
+        : null;
+
+    return {
+      sessionId: missionId,
+      feedItems,
+      progress,
+      watermark: computedWatermark,
+      hasMore,
+    };
+  } catch (err) {
+    console.error('[getOperatorSidebarModel]', err.message);
+    return emptySidebarModel(sessionId);
+  }
+}
+
+function emptySidebarModel(sessionId) {
+  return {
+    sessionId: sessionId || null,
+    feedItems: [],
+    progress: null,
+    watermark: null,
+    hasMore: false,
+  };
+}
+
 export { normalizeMissionControl };
+
+/**
+ * Selects DG bridge observable state from a snapshot.
+ * DG state is managed by useDirectorGeneralBridge; this selector
+ * provides a consistent derivation interface matching the existing pattern.
+ *
+ * @param {Object} snapshot — control room snapshot
+ * @returns {Object} DG observable state subset
+ */
+export function selectDGObservableState(snapshot = {}) {
+  return {
+    activeMissionId: snapshot._dgBridge?.activeMissionId || null,
+    timelineRows: snapshot._dgBridge?.timelineRows || [],
+    pollingState: snapshot._dgBridge?.pollingState || 'idle',
+    pendingApproval: snapshot._dgBridge?.pendingApproval || null,
+    error: snapshot._dgBridge?.error || null,
+  };
+}

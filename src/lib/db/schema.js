@@ -16,6 +16,31 @@ const AGENT_EVENT_TYPES = [
   'handoff_ready',
 ];
 
+/**
+ * Seed the singleton `(local-ws, local-user, owner)` row on first boot.
+ * Idempotent: subsequent calls are no-ops. This keeps local mode
+ * byte-identical to the pre-change behavior (REQ-TEN-4, regression budget).
+ */
+function seedLocalTenancy(db) {
+  // Tables may not exist yet on a brand-new DB that has not run the
+  // CREATE TABLE block above. Use a defensive check.
+  if (!db) return;
+  try {
+    db.prepare('SELECT 1 FROM workspaces LIMIT 1').get();
+  } catch {
+    return;
+  }
+  db.prepare(`INSERT OR IGNORE INTO workspaces (id, name, slug, owner_id) VALUES (?, ?, ?, ?)`).run(
+    'local-ws',
+    'local',
+    'local',
+    'local-user'
+  );
+  db.prepare(
+    `INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)`
+  ).run('local-ws', 'local-user', 'owner');
+}
+
 function rebuildAgentEventsTableIfNeeded(db) {
   const tableInfo = db.prepare(`PRAGMA table_info(agent_events)`).all();
   if (tableInfo.length === 0) return;
@@ -57,6 +82,8 @@ function ensureRuntimeSchema(db) {
   if (typeof db.pragma === 'function') {
     db.pragma('foreign_keys = ON');
   }
+
+  seedLocalTenancy(db);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -729,7 +756,7 @@ function ensureRuntimeSchema(db) {
       message_id TEXT NOT NULL,
       recipient_agent_id TEXT NOT NULL,
       channel TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('pending', 'sent', 'failed', 'retry_pending', 'expired')),
+      status TEXT NOT NULL CHECK(status IN ('pending', 'sent', 'failed', 'retry_pending', 'expired', 'consumed')),
       delivery_ref TEXT,
       evidence_ref TEXT,
       last_error TEXT,
@@ -751,7 +778,7 @@ function ensureRuntimeSchema(db) {
       workspace_id TEXT,
       run_id TEXT,
       runtime_surface TEXT NOT NULL,
-      presence_state TEXT NOT NULL CHECK(presence_state IN ('online', 'busy', 'idle', 'waiting', 'offline')),
+      presence_state TEXT NOT NULL CHECK(presence_state IN ('online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed')),
       status_summary TEXT,
       evidence_ref TEXT,
       last_seen_at TEXT NOT NULL,
@@ -844,10 +871,150 @@ function ensureRuntimeSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_history_created ON task_history(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_task_history_action ON task_history(action);
+
+    -- operator_timeline: append-only execution event log
+    CREATE TABLE IF NOT EXISTS operator_timeline (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id         TEXT NOT NULL,
+      execution_id    TEXT NOT NULL,
+      correlation_id  TEXT NOT NULL,
+      sequence        INTEGER NOT NULL,
+      actor_type      TEXT NOT NULL CHECK(actor_type IN ('human','operator','director','system')),
+      actor_id        TEXT NOT NULL,
+      actor_role      TEXT NOT NULL,
+      stage           TEXT NOT NULL CHECK(stage IN (
+        'action_request','policy_evaluation','tool_invocation','execution_progress',
+        'rollback','deferred','audit_recorded'
+      )),
+      status          TEXT NOT NULL CHECK(status IN (
+        'requested','policy_approved','policy_denied','invoked','running',
+        'completed','failed','rolled_back','deferred'
+      )),
+      tool_name        TEXT,
+      params          TEXT,
+      evidence_refs   TEXT NOT NULL DEFAULT '[]',
+      redaction_level TEXT NOT NULL DEFAULT 'none' CHECK(redaction_level IN ('none','params_only','full')),
+      occurred_at     TEXT NOT NULL,
+      authority       TEXT NOT NULL DEFAULT 'primary' CHECK(authority IN ('primary','secondary_hint')),
+      next_step_hint  TEXT,
+      error_code       TEXT,
+      error_message    TEXT,
+      error_recoverable INTEGER,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(execution_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ot_execution ON operator_timeline(execution_id, sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_ot_occurred  ON operator_timeline(occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ot_actor      ON operator_timeline(actor_id, occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ot_item_id    ON operator_timeline(item_id);
+
+    CREATE TRIGGER IF NOT EXISTS operator_timeline_append_only
+    BEFORE UPDATE ON operator_timeline
+    FOR EACH ROW
+    BEGIN
+      SELECT RAISE(ABORT, 'operator_timeline_append_only');
+    END;
+
+    -- dg_timeline: append-only DG bridge mission timeline rows
+    CREATE TABLE IF NOT EXISTS dg_timeline (
+      id TEXT NOT NULL,
+      mission_id      TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      initiator TEXT NOT NULL CHECK(initiator IN ('operator','director-general','swarm-director')),
+      target          TEXT NOT NULL CHECK(target IN ('director-general','swarm-director','operator')),
+      action          TEXT NOT NULL CHECK(action IN ('mission-request','status-poll','approval-required','mission-result')),
+      status          TEXT NOT NULL CHECK(status IN ('pending','waiting','in-progress','awaiting-approval','completed','rejected','failed')),
+      authority       TEXT NOT NULL CHECK(authority IN ('operator','operator-initiated','director','director-escalated')),
+      freshness TEXT NOT NULL CHECK(freshness IN ('just_now','stale','unknown')),
+      fallback TEXT NOT NULL DEFAULT '',
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(id, mission_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dg_timeline_mission ON dg_timeline(mission_id, timestamp ASC);
+    CREATE INDEX IF NOT EXISTS idx_dg_timeline_timestamp ON dg_timeline(timestamp DESC);
+
+    -- devhub-cloud-foundation (PR 2): tenancy tables. Forward-only and
+    -- additive. Existing tables above are untouched. REQ-TEN-1, REQ-TEN-4.
+
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      owner_id TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      workspace_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('owner','admin','member','viewer')),
+      joined_at TEXT NOT NULL DEFAULT(datetime('now')),
+      PRIMARY KEY (workspace_id, user_id),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
+
+    CREATE TABLE IF NOT EXISTS project_members (
+      project_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('owner','admin','member','viewer')),
+      joined_at TEXT NOT NULL DEFAULT(datetime('now')),
+      PRIMARY KEY (project_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id);
+
+    CREATE TABLE IF NOT EXISTS workspace_invitations (
+      workspace_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin','member','viewer')),
+      token TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','accepted','expired','revoked')) DEFAULT('pending'),
+      invited_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT(datetime('now')),
+      PRIMARY KEY (workspace_id, email)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_invitations_token ON workspace_invitations(token);
+
+    CREATE TABLE IF NOT EXISTS project_invitations (
+      project_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin','member','viewer')),
+      token TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','accepted','expired','revoked')) DEFAULT('pending'),
+      invited_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT(datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT(datetime('now')),
+      PRIMARY KEY (project_id, email)
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_invitations_token ON project_invitations(token);
+
+    CREATE TABLE IF NOT EXISTS devhub_audit_log (
+      audit_id TEXT PRIMARY KEY,
+      tool TEXT NOT NULL,
+      actor TEXT,
+      workspace_id TEXT,
+      project_id TEXT,
+      status TEXT NOT NULL CHECK(status IN ('ok', 'error')),
+      error_code TEXT,
+      error_message TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT(datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_log_tool ON devhub_audit_log(tool, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON devhub_audit_log(actor, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_workspace ON devhub_audit_log(workspace_id, created_at DESC);
   `);
 
   const alterStatements = [
     "ALTER TABLE projects ADD COLUMN documentation_policy TEXT DEFAULT 'personal'",
+    // devhub-cloud-foundation (PR 2): additive — projects needs workspace_id
+    // for tenancy. REQ-TEN-1, REQ-TEN-2.
+    'ALTER TABLE projects ADD COLUMN workspace_id TEXT',
+    'ALTER TABLE tasks ADD COLUMN workspace_id TEXT',
+    'ALTER TABLE milestones ADD COLUMN workspace_id TEXT',
     'ALTER TABLE tasks ADD COLUMN claimed_at TEXT',
     'ALTER TABLE tasks ADD COLUMN lease_expires_at TEXT',
     'ALTER TABLE tasks ADD COLUMN claim_token TEXT',
@@ -865,10 +1032,28 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_hub_sessions ADD COLUMN custom_name TEXT',
     "ALTER TABLE agent_hub_sessions ADD COLUMN visibility TEXT DEFAULT 'visible'",
     'ALTER TABLE agent_hub_sessions ADD COLUMN error_message TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN repo_root TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN workspace_path TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN worktree_path TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN base_branch TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN base_commit TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN branch_name TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN status TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN observed_branch TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN observed_head TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN observed_dirty TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN last_error TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN last_error_class TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN recovery_reason TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN evidence_ref TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN run_id_or_session_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN reservation_token TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN correlation_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN accepted_at TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN claimed_at TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN started_at TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN completed_at TEXT',
+    'ALTER TABLE agent_workspaces ADD COLUMN current_task_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN pane_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN terminal_id TEXT',
     'ALTER TABLE agent_workspaces ADD COLUMN opencode_pid INTEGER',
@@ -885,6 +1070,34 @@ function ensureRuntimeSchema(db) {
       }
     }
   }
+
+  // audit_events table (idempotent)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id             TEXT PRIMARY KEY,
+      event_id       TEXT UNIQUE NOT NULL,
+      action_id      TEXT NOT NULL,
+      action_class   TEXT NOT NULL,
+      actor_role     TEXT NOT NULL,
+      actor_session_id TEXT NOT NULL,
+      target_type    TEXT,
+      target_id      TEXT,
+      target_label   TEXT,
+      params         TEXT,
+      risk_tier      INTEGER,
+      confirmed      INTEGER,
+      confirmed_at   TEXT,
+      rationale      TEXT,
+      outcome        TEXT NOT NULL CHECK(outcome IN ('success','denied','error','deferred')),
+      error_detail   TEXT,
+      devhub_version TEXT,
+      received_at    TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_outcome ON audit_events(outcome)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor_session_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_events_received ON audit_events(received_at)`);
 
   db.exec(
     "UPDATE projects SET documentation_policy = 'personal' WHERE documentation_policy IS NULL"
@@ -1123,6 +1336,32 @@ const MCP_SCHEMA_SQL = `
 `;
 
 const MCP_ALTER_STATEMENTS = [
+  'ALTER TABLE agent_workspaces ADD COLUMN repo_root TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN workspace_path TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN worktree_path TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN base_branch TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN base_commit TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN branch_name TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN status TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN observed_branch TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN observed_head TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN observed_dirty TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN last_error TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN last_error_class TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN recovery_reason TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN evidence_ref TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN run_id_or_session_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN reservation_token TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN correlation_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN accepted_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN claimed_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN started_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN completed_at TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN current_task_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN pane_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN terminal_id TEXT',
+  'ALTER TABLE agent_workspaces ADD COLUMN opencode_pid INTEGER',
+  'ALTER TABLE agent_workspaces ADD COLUMN last_heartbeat TEXT',
   'ALTER TABLE tasks ADD COLUMN milestone_id TEXT',
   'ALTER TABLE tasks ADD COLUMN business_value INTEGER DEFAULT 5',
   'ALTER TABLE tasks ADD COLUMN stale_alert INTEGER DEFAULT 0',
@@ -1151,6 +1390,11 @@ function ensureAllSchema(db) {
       }
     }
   }
+  // T-001 — agent comms bus migration (idempotent; safe to call on every boot).
+  // Lazy require to avoid circular dep with localDb.js.
+  const { ensureAgentCommsBusSchema, applyPragmasForBus } = require('./busMigrations.js');
+  ensureAgentCommsBusSchema(db);
+  applyPragmasForBus(db);
 }
 
 module.exports = {

@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { ZED_ORCHESTRATOR_TEMPLATE_ID } from '@/lib/operations/swarmControl';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import {
+  brutalPanelStyle,
   btnDangerStyle,
   btnPrimaryStyle,
   btnSecondaryStyle,
   codeBlockStyle,
   dangerBannerStyle,
   inputStyle,
-  panelStyle,
   pillStyle,
   selectStyle,
   sectionSurfaceStyle,
@@ -16,10 +17,21 @@ import {
 
 const STEP_ORDER = ['team', 'configure', 'launch'];
 
+const SDD_PHASES = [
+  { id: 'sdd-explore', label: 'Explore' },
+  { id: 'sdd-propose', label: 'Propose' },
+  { id: 'sdd-design', label: 'Design' },
+  { id: 'sdd-spec', label: 'Spec' },
+  { id: 'sdd-tasks', label: 'Tasks' },
+  { id: 'sdd-apply', label: 'Apply' },
+  { id: 'sdd-verify', label: 'Verify' },
+  { id: 'sdd-archive', label: 'Archive' },
+];
+
 const modalChromeStyle = {
-  ...panelStyle({ emphasized: true }),
+  ...brutalPanelStyle({ emphasized: true }),
   color: 'var(--text-primary)',
-  borderRadius: '0',
+  borderRadius: 0,
 };
 
 function wizardInsetPanelStyle({ emphasized = false } = {}) {
@@ -44,10 +56,7 @@ const wizardRightRailStyle = {
 function TopologyPreview({ topology }) {
   if (!topology) {
     return (
-      <div
-        className="border p-4 text-sm"
-        style={wizardInsetPanelStyle()}
-      >
+      <div className="border p-4 text-sm" style={wizardInsetPanelStyle()}>
         Sin topología reusable definida todavía.
       </div>
     );
@@ -146,14 +155,22 @@ export default function SwarmLaunchWizardModal({
   const teams = Array.isArray(catalog?.teams) ? catalog.teams : [];
   const providers = Array.isArray(catalog?.providers) ? catalog.providers : [];
   const programs = Array.isArray(catalog?.programs) ? catalog.programs : [];
-  const launchStrategies = Array.isArray(catalog?.launch_strategies) ? catalog.launch_strategies : [];
+  const launchStrategies = Array.isArray(catalog?.launch_strategies)
+    ? catalog.launch_strategies
+    : [];
   const bootstrapModes = Array.isArray(catalog?.bootstrap_modes) ? catalog.bootstrap_modes : [];
+
+  const isZedPodTemplate = draft.templateId === ZED_ORCHESTRATOR_TEMPLATE_ID;
 
   const stepDescription = useMemo(() => {
     if (currentStep === 'team') return 'Elegí base operativa: template team o custom team.';
-    if (currentStep === 'configure') return 'Ajustá defaults snapshot-first antes de lanzar.';
+    if (currentStep === 'configure') {
+      return isZedPodTemplate
+        ? 'ZED + SDD Workers en standby. Ajustá workers y ruta; el trabajo empieza cuando hables con ZED.'
+        : 'Ajustá defaults snapshot-first antes de lanzar.';
+    }
     return 'Revisá summary, topología y payload local del launch.';
-  }, [currentStep]);
+  }, [currentStep, isZedPodTemplate]);
 
   if (!open) return null;
 
@@ -178,13 +195,13 @@ export default function SwarmLaunchWizardModal({
         >
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
-              <SurfacePill tone="accent">Launch wizard</SurfacePill>
+              <SurfacePill tone="accent">Asistente de lanzamiento</SurfacePill>
               <SurfacePill>{preview?.modeLabel || 'Template team'}</SurfacePill>
               <SurfacePill>{preview?.category?.label || 'Sin categoría'}</SurfacePill>
             </div>
             <div>
               <h2 className="text-2xl font-semibold tracking-tight">
-                {preview?.launchLabel || 'Configurar launch'}
+                {preview?.launchLabel || 'Configurar lanzamiento'}
               </h2>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                 {stepDescription}
@@ -192,54 +209,48 @@ export default function SwarmLaunchWizardModal({
             </div>
           </div>
 
-            <button
-              type="button"
-              onClick={() => onClose?.()}
-              className="text-sm"
-              style={{
-                ...btnSecondaryStyle(),
-                borderRadius: '0',
-                textTransform: 'none',
-                letterSpacing: 'normal',
-              }}
-            >
-              Cerrar
-            </button>
+          <button
+            type="button"
+            onClick={() => onClose?.()}
+            className="text-sm"
+            style={{
+              ...btnSecondaryStyle(),
+              borderRadius: '0',
+              textTransform: 'none',
+              letterSpacing: 'normal',
+            }}
+          >
+            Cerrar
+          </button>
         </div>
 
         <div className="grid flex-1 gap-0 overflow-hidden xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-          <aside
-            className="border-r p-4"
-            style={wizardLeftRailStyle}
-          >
+          <aside className="border-r p-4" style={wizardLeftRailStyle}>
             <div className="space-y-3">
               <StepButton
                 step="team"
                 currentStep={currentStep}
-                label="Team"
+                label="Equipo"
                 index={0}
                 onClick={onStepChange}
               />
               <StepButton
                 step="configure"
                 currentStep={currentStep}
-                label="Configure"
+                label="Configurar"
                 index={1}
                 onClick={onStepChange}
               />
               <StepButton
                 step="launch"
                 currentStep={currentStep}
-                label="Launch"
+                label="Lanzar"
                 index={2}
                 onClick={onStepChange}
               />
             </div>
 
-            <div
-              className="mt-6 border p-4 text-sm"
-              style={wizardInsetPanelStyle()}
-            >
+            <div className="mt-6 border p-4 text-sm" style={wizardInsetPanelStyle()}>
               <p className="font-medium">Topología reusable</p>
               <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                 Mostramos roster y conexiones como parte del launch, no como dato decorativo.
@@ -298,25 +309,51 @@ export default function SwarmLaunchWizardModal({
                   <div className="grid gap-3 md:grid-cols-2">
                     {templates.map((template) => {
                       const selected = template.id === draft.templateId;
+                      const isFeatured = Boolean(template.featured);
 
                       return (
                         <button
                           key={template.id}
                           type="button"
                           onClick={() =>
-                            onDraftChange({ templateId: template.id, mode: 'template' })
+                            onDraftChange({
+                              templateId: template.id,
+                              mode: 'template',
+                              category: template.category || draft.category,
+                              swarmTypeId: template.swarm_type_id || draft.swarmTypeId,
+                              teamId: template.default_team_id || draft.teamId,
+                              ...(template.launch_defaults || {}),
+                            })
                           }
                           aria-pressed={selected}
                           className="text-left"
+                          style={
+                            isFeatured
+                              ? {
+                                  gridColumn: templates.length > 1 ? '1 / -1' : undefined,
+                                }
+                              : undefined
+                          }
                         >
-                          <SurfaceCard emphasized={selected} className="h-full p-4">
-                            <div className="flex items-center justify-between gap-3">
+                          <SurfaceCard emphasized={selected || isFeatured} className="h-full p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
                               <h4 className="text-sm font-semibold">{template.label}</h4>
-                              {selected ? <SurfacePill tone="accent">Base</SurfacePill> : null}
+                              <div className="flex flex-wrap gap-2">
+                                {isFeatured ? <SurfacePill tone="accent">Nuevo</SurfacePill> : null}
+                                {selected ? <SurfacePill>Base</SurfacePill> : null}
+                              </div>
                             </div>
                             <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                               {template.summary}
                             </p>
+                            {isFeatured ? (
+                              <p
+                                className="mt-2 text-xs font-medium"
+                                style={{ color: 'var(--accent-cyan, var(--accent-primary))' }}
+                              >
+                                ZED delega · Workers usan gentle-orchestrator · Standby al launch
+                              </p>
+                            ) : null}
                           </SurfaceCard>
                         </button>
                       );
@@ -328,16 +365,51 @@ export default function SwarmLaunchWizardModal({
 
             {currentStep === 'configure' ? (
               <div className="space-y-5">
+                {isZedPodTemplate ? (
+                  <div
+                    className="border p-4 text-sm"
+                    style={wizardInsetPanelStyle({ emphasized: true })}
+                  >
+                    <p className="font-medium">ZED Orchestrator Pod — modo standby</p>
+                    <p className="mt-2" style={{ color: 'var(--text-secondary)' }}>
+                      Se abrirán terminales para ZED y SDD Workers sin trabajo asignado. Conversá
+                      con ZED para delegar changes; cada worker ejecuta el SDD estándar vía{' '}
+                      <code>gentle-orchestrator</code>.
+                    </p>
+                  </div>
+                ) : null}
+
+                {isZedPodTemplate ? (
+                  <label className="block space-y-2 text-sm font-medium md:max-w-xs">
+                    <span>SDD Workers (1–4)</span>
+                    <select
+                      aria-label="Cantidad de SDD Workers"
+                      value={String(draft.workerCount || 4)}
+                      onChange={(event) =>
+                        onDraftChange({ workerCount: Number(event.target.value) })
+                      }
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
+                      {[1, 2, 3, 4].map((count) => (
+                        <option key={count} value={count}>
+                          {count} worker{count > 1 ? 's' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Category</span>
+                    <span>Categoría</span>
                     <select
-                      aria-label="Launch category"
+                      aria-label="Categoría de lanzamiento"
                       value={draft.category || ''}
                       onChange={(event) => onDraftChange({ category: event.target.value })}
-                        className="w-full"
-                        style={wizardSelectFieldStyle}
-                     >
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
                       {categories.map((category) => (
                         <option key={category.id} value={category.id}>
                           {category.label}
@@ -347,14 +419,14 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Swarm type</span>
+                    <span>Tipo de swarm</span>
                     <select
-                      aria-label="Swarm type"
+                      aria-label="Tipo de swarm"
                       value={draft.swarmTypeId || ''}
                       onChange={(event) => onDraftChange({ swarmTypeId: event.target.value })}
-                        className="w-full"
-                        style={wizardSelectFieldStyle}
-                     >
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
                       {swarmTypes.map((swarmType) => (
                         <option key={swarmType.id} value={swarmType.id}>
                           {swarmType.label}
@@ -364,14 +436,14 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Template</span>
+                    <span>Plantilla</span>
                     <select
-                      aria-label="Launch template"
+                      aria-label="Plantilla de lanzamiento"
                       value={draft.templateId || ''}
                       onChange={(event) => onDraftChange({ templateId: event.target.value })}
-                        className="w-full"
-                        style={wizardSelectFieldStyle}
-                     >
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
                       {templates.map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.label}
@@ -381,16 +453,16 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Team</span>
+                    <span>Equipo</span>
                     <select
-                      aria-label="Team preset"
+                      aria-label="Equipo predefinido"
                       value={draft.teamId || ''}
                       onChange={(event) =>
                         onDraftChange({ teamId: event.target.value, mode: 'custom' })
                       }
-                        className="w-full"
-                        style={wizardSelectFieldStyle}
-                     >
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
                       {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.label}
@@ -400,14 +472,14 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Provider</span>
+                    <span>Proveedor</span>
                     <select
-                      aria-label="Provider model"
+                      aria-label="Modelo proveedor"
                       value={draft.providerId || ''}
                       onChange={(event) => onDraftChange({ providerId: event.target.value })}
-                        className="w-full"
-                        style={wizardSelectFieldStyle}
-                     >
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
                       {providers.map((provider) => (
                         <option key={provider.id} value={provider.id}>
                           {provider.label}
@@ -417,9 +489,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Launch strategy</span>
+                    <span>Estrategia de lanzamiento</span>
                     <select
-                      aria-label="Launch strategy"
+                      aria-label="Estrategia de lanzamiento"
                       value={draft.launchStrategy || ''}
                       onChange={(event) => onDraftChange({ launchStrategy: event.target.value })}
                       className="w-full"
@@ -434,9 +506,9 @@ export default function SwarmLaunchWizardModal({
                   </label>
 
                   <label className="space-y-2 text-sm font-medium">
-                    <span>Bootstrap mode</span>
+                    <span>Modo de inicialización</span>
                     <select
-                      aria-label="Bootstrap mode"
+                      aria-label="Modo de inicialización"
                       value={draft.bootstrapMode || ''}
                       onChange={(event) => onDraftChange({ bootstrapMode: event.target.value })}
                       className="w-full"
@@ -478,9 +550,9 @@ export default function SwarmLaunchWizardModal({
                                     },
                                   })
                                 }
-                                  className="w-full text-xs"
-                                  style={wizardSelectFieldStyle}
-                               >
+                                className="w-full text-xs"
+                                style={wizardSelectFieldStyle}
+                              >
                                 {programs.map((program) => (
                                   <option key={program.id} value={program.id}>
                                     {program.label}
@@ -498,9 +570,9 @@ export default function SwarmLaunchWizardModal({
                                     },
                                   })
                                 }
-                                  className="w-full text-xs"
-                                  style={wizardSelectFieldStyle}
-                               >
+                                className="w-full text-xs"
+                                style={wizardSelectFieldStyle}
+                              >
                                 <option value="">Default del perfil</option>
                                 {roleModels.map((model) => (
                                   <option key={model.id} value={model.id}>
@@ -516,27 +588,111 @@ export default function SwarmLaunchWizardModal({
                   </div>
 
                   <label className="space-y-2 text-sm font-medium md:col-span-2">
-                    <span>Path operativo</span>
+                    <span>Ruta operativa</span>
                     <input
-                      aria-label="Workspace path"
+                      aria-label="Ruta del workspace"
                       value={draft.workspacePath || ''}
                       onChange={(event) => onDraftChange({ workspacePath: event.target.value })}
-                    className="w-full"
-                    style={wizardFieldStyle}
-                  />
+                      className="w-full"
+                      style={wizardFieldStyle}
+                    />
                   </label>
 
-                  <label className="space-y-2 text-sm font-medium md:col-span-2">
-                    <span>Mission</span>
-                    <textarea
-                      aria-label="Launch mission"
-                      value={draft.mission || ''}
-                      onChange={(event) => onDraftChange({ mission: event.target.value })}
-                      rows={5}
-                    className="w-full"
-                    style={wizardFieldStyle}
-                  />
+                  {/*
+                    T-018 hook: spawnStrategy field. T-018 (lazy spawn) is
+                    being designed separately. This is a UI-only hook so the
+                    modal can pass spawnStrategy through to the launch
+                    request body. The actual lazy-spawn behavior is NOT
+                    implemented in this change — values are stored in the
+                    draft and forwarded to the launch request, but the
+                    orchestrator ignores them for now. Two values:
+                      - automatic:     default. Spawn all roles concurrently
+                                       (current behavior, no change).
+                      - all-at-once:   spawn every role in a single nohup.
+                                       (Reserved for T-018 lazy spawn.)
+                  */}
+                  <label className="space-y-2 text-sm font-medium">
+                    <span>Estrategia de spawn</span>
+                    <select
+                      aria-label="Spawn strategy (T-018 hook)"
+                      value={draft.spawnStrategy || 'automatic'}
+                      onChange={(event) => onDraftChange({ spawnStrategy: event.target.value })}
+                      className="w-full"
+                      style={wizardSelectFieldStyle}
+                    >
+                      <option value="automatic">Automatic (default)</option>
+                      <option value="all-at-once">All-at-once (T-018 reserved)</option>
+                    </select>
                   </label>
+
+                  {!isZedPodTemplate ? (
+                    <div className="space-y-3 md:col-span-2">
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                          <input
+                            type="checkbox"
+                            aria-label="Enable SDD mode"
+                            checked={draft.sddEnabled || false}
+                            onChange={(event) =>
+                              onDraftChange({ sddEnabled: event.target.checked })
+                            }
+                            className="w-4 h-4 accent-[var(--accent-primary)]"
+                          />
+                          <span>Modo SDD</span>
+                        </label>
+                      </div>
+
+                      {draft.sddEnabled && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="space-y-2 text-sm font-medium">
+                            <span>Nombre del cambio</span>
+                            <input
+                              aria-label="Change name"
+                              value={draft.changeName || ''}
+                              onChange={(event) =>
+                                onDraftChange({ changeName: event.target.value })
+                              }
+                              placeholder="e.g. swarm-sdd-integration"
+                              className="w-full"
+                              style={wizardFieldStyle}
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm font-medium">
+                            <span>Fase inicial</span>
+                            <select
+                              aria-label="Initial SDD phase"
+                              value={draft.phase || ''}
+                              onChange={(event) => onDraftChange({ phase: event.target.value })}
+                              className="w-full"
+                              style={wizardSelectFieldStyle}
+                            >
+                              <option value="">Seleccionar fase...</option>
+                              {SDD_PHASES.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {!isZedPodTemplate ? (
+                    <label className="space-y-2 text-sm font-medium md:col-span-2">
+                      <span>Misión</span>
+                      <textarea
+                        aria-label="Launch mission"
+                        value={draft.mission || ''}
+                        onChange={(event) => onDraftChange({ mission: event.target.value })}
+                        rows={5}
+                        className="w-full"
+                        style={wizardFieldStyle}
+                      />
+                    </label>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -545,7 +701,7 @@ export default function SwarmLaunchWizardModal({
               <div className="space-y-5">
                 <SurfaceCard emphasized className="p-5">
                   <div className="flex flex-wrap gap-2">
-                    <SurfacePill tone="accent">Summary</SurfacePill>
+                    <SurfacePill tone="accent">Resumen</SurfacePill>
                     <SurfacePill>{preview?.template?.label || 'Sin plantilla'}</SurfacePill>
                     <SurfacePill>{preview?.team?.label || 'Sin team'}</SurfacePill>
                     <SurfacePill>{preview?.provider?.label || 'Sin provider'}</SurfacePill>
@@ -553,35 +709,29 @@ export default function SwarmLaunchWizardModal({
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     {preview?.summaryLines?.map((line) => (
-                        <div
-                          key={line}
-                          className="border px-3 py-3 text-sm"
-                          style={wizardInsetPanelStyle()}
-                        >
+                      <div
+                        key={line}
+                        className="border px-3 py-3 text-sm"
+                        style={wizardInsetPanelStyle()}
+                      >
                         {line}
                       </div>
                     ))}
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div
-                      className="border px-3 py-3 text-sm"
-                      style={wizardInsetPanelStyle()}
-                    >
-                      Strategy · {preview?.launchStrategyLabel || 'Director-first bootstrap'}
+                    <div className="border px-3 py-3 text-sm" style={wizardInsetPanelStyle()}>
+                      Estrategia · {preview?.launchStrategyLabel || 'Bootstrap director primero'}
                     </div>
-                    <div
-                      className="border px-3 py-3 text-sm"
-                      style={wizardInsetPanelStyle()}
-                    >
-                      Bootstrap · {preview?.bootstrapModeLabel || 'Engram first'}
+                    <div className="border px-3 py-3 text-sm" style={wizardInsetPanelStyle()}>
+                      Inicialización · {preview?.bootstrapModeLabel || 'Engram primero'}
                     </div>
                   </div>
                 </SurfaceCard>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <SurfaceCard className="p-5">
-                    <p className="text-sm font-semibold">Roster previsto</p>
+                    <p className="text-sm font-semibold">Equipo planificado</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {(preview?.topology?.roles || []).map((role) => (
                         <SurfacePill key={role}>{role}</SurfacePill>
@@ -614,13 +764,10 @@ export default function SwarmLaunchWizardModal({
             ) : null}
           </main>
 
-          <aside
-            className="border-l p-5"
-            style={wizardRightRailStyle}
-          >
+          <aside className="border-l p-5" style={wizardRightRailStyle}>
             <div className="space-y-4">
               <div>
-                <p className="text-sm font-semibold">Topology preview</p>
+                <p className="text-sm font-semibold">Vista previa de topología</p>
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                   Reutilizable para launch y handoff inicial.
                 </p>
@@ -629,13 +776,15 @@ export default function SwarmLaunchWizardModal({
               <TopologyPreview topology={preview?.topology} />
 
               <SurfaceCard className="p-4">
-                <p className="text-sm font-semibold">Snapshot-first summary</p>
+                <p className="text-sm font-semibold">Resumen snapshot</p>
                 <div className="mt-3 space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  <div>Modo · {preview?.modeLabel || 'Template team'}</div>
-                  <div>Category · {preview?.category?.label || 'Sin categoría'}</div>
-                  <div>Strategy · {preview?.launchStrategyLabel || 'Director-first bootstrap'}</div>
-                  <div>Bootstrap · {preview?.bootstrapModeLabel || 'Engram first'}</div>
-                  <div>Path · {draft.workspacePath || 'Sin path'}</div>
+                  <div>Modo · {preview?.modeLabel || 'Equipo plantilla'}</div>
+                  <div>Categoría · {preview?.category?.label || 'Sin categoría'}</div>
+                  <div>
+                    Estrategia · {preview?.launchStrategyLabel || 'Bootstrap director primero'}
+                  </div>
+                  <div>Inicialización · {preview?.bootstrapModeLabel || 'Engram primero'}</div>
+                  <div>Ruta · {draft.workspacePath || 'Sin ruta'}</div>
                 </div>
               </SurfaceCard>
 
@@ -717,8 +866,7 @@ export default function SwarmLaunchWizardModal({
                               textTransform: 'none',
                               letterSpacing: 'normal',
                               color: 'var(--danger)',
-                              background:
-                                'color-mix(in srgb, var(--danger) 12%, transparent)',
+                              background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
                               borderColor:
                                 'color-mix(in srgb, var(--danger) 42%, var(--chrome-border-color))',
                               boxShadow: 'var(--chrome-shadow-control)',

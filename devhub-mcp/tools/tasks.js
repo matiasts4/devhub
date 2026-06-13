@@ -2,10 +2,12 @@ import { z } from 'zod';
 
 import {
   AGENT_ID_SCHEMA,
+  LEGACY_ID_REGEX,
   PROJECT_ID_SCHEMA,
   RUN_ID_SCHEMA,
   TASK_ID_SCHEMA,
   UUID_OR_LEGACY_ID_SCHEMA,
+  UUID_REGEX,
   WORKSPACE_ID_SCHEMA,
 } from './schemas/common.js';
 
@@ -953,7 +955,9 @@ export function registerTaskTools(server, deps) {
     'Lista las tareas de un proyecto, opcionalmente filtradas por estado o prioridad.',
     {
       project_id: PROJECT_ID_SCHEMA,
-      status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'all']).optional(),
+      status: z
+        .enum(['pending', 'in_progress', 'qa_ready', 'completed', 'blocked', 'all'])
+        .optional(),
       priority: z.enum(['low', 'medium', 'high', 'critical', 'all']).optional(),
     },
     async ({ project_id, status, priority }) => {
@@ -979,7 +983,7 @@ export function registerTaskTools(server, deps) {
       title: z.string().min(1).describe('Título de la tarea'),
       description: z.string().optional(),
       status: z
-        .enum(['pending', 'in_progress', 'completed', 'blocked'])
+        .enum(['pending', 'in_progress', 'qa_ready', 'completed', 'blocked'])
         .optional()
         .default('pending'),
       priority: z.enum(['low', 'medium', 'high', 'critical']).optional().default('medium'),
@@ -1031,7 +1035,9 @@ export function registerTaskTools(server, deps) {
           z.object({
             title: z.string().min(1),
             description: z.string().optional(),
-            status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
+            status: z
+              .enum(['pending', 'in_progress', 'qa_ready', 'completed', 'blocked'])
+              .optional(),
             priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
             due_date: z.string().optional(),
             milestone_id: UUID_OR_LEGACY_ID_SCHEMA.optional(),
@@ -1097,10 +1103,16 @@ export function registerTaskTools(server, deps) {
       task_id: TASK_ID_SCHEMA,
       title: z.string().optional(),
       description: z.string().optional(),
-      status: z.enum(['pending', 'in_progress', 'completed', 'blocked']).optional(),
+      status: z.enum(['pending', 'in_progress', 'qa_ready', 'completed', 'blocked']).optional(),
       priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
       due_date: z.string().nullable().optional(),
-      milestone_id: UUID_OR_LEGACY_ID_SCHEMA.nullable()
+      milestone_id: z
+        .string()
+        .refine(
+          (value) => UUID_REGEX.test(String(value)) || LEGACY_ID_REGEX.test(String(value)),
+          { message: 'Debe ser UUID o ID legacy (<tipo>-<timestamp>-<suffix>)' }
+        )
+        .nullable()
         .optional()
         .describe('ID del hito (UUID o legacy). null para desvincular'),
       assigned_to: z
@@ -1112,7 +1124,9 @@ export function registerTaskTools(server, deps) {
     },
     async ({ task_id, status, ...rest }) => {
       let existingTask = null;
-      if (status === 'completed') {
+      let checkpointGate = null;
+
+      if (status === 'completed' || status === 'qa_ready') {
         const { data: currentTask, error: currentTaskError } = await supabase
           .from('tasks')
           .select('*')
@@ -1122,11 +1136,19 @@ export function registerTaskTools(server, deps) {
         if (!currentTask) return err(`Tarea ${task_id} no encontrada.`);
         existingTask = currentTask;
 
-        const checkpointGate = await enforceTaskCheckpointGate(existingTask, deps, {
-          handoffKind: 'completed',
-        });
-        if (!checkpointGate.ok)
-          return err(`${checkpointGate.message} ${checkpointGate.remediation || ''}`.trim());
+        if (status === 'qa_ready') {
+          checkpointGate = await enforceTaskCheckpointGate(existingTask, deps, {
+            handoffKind: 'qa-ready',
+          });
+          if (!checkpointGate.ok)
+            return err(`${checkpointGate.message} ${checkpointGate.remediation || ''}`.trim());
+        } else if (existingTask.status !== 'qa_ready') {
+          checkpointGate = await enforceTaskCheckpointGate(existingTask, deps, {
+            handoffKind: 'completed',
+          });
+          if (!checkpointGate.ok)
+            return err(`${checkpointGate.message} ${checkpointGate.remediation || ''}`.trim());
+        }
       }
 
       const updates = {
@@ -1134,7 +1156,13 @@ export function registerTaskTools(server, deps) {
       };
       if (status) {
         updates.status = status;
-        if (status === 'completed') updates.completed_at = new Date().toISOString();
+        if (status === 'completed') {
+          updates.completed_at = new Date().toISOString();
+        }
+        if (status === 'qa_ready') {
+          updates.claim_token = null;
+          updates.lease_expires_at = null;
+        }
       }
       const { data, error } = await supabase
         .from('tasks')
@@ -1145,8 +1173,7 @@ export function registerTaskTools(server, deps) {
       if (error) return err(error.message);
       if (!data) return err(`Tarea ${task_id} no encontrada.`);
 
-      let checkpointGate = null;
-      if (status === 'completed') {
+      if (status === 'completed' && !checkpointGate && existingTask?.status !== 'qa_ready') {
         checkpointGate = await enforceTaskCheckpointGate(existingTask || data, deps, {
           handoffKind: 'completed',
         });

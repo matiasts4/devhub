@@ -1,0 +1,199 @@
+Already up to date
+Done in 269ms using pnpm v11.5.0
+$ pnpm run generate-icon && node scripts/tauri-cli.cjs build
+$ node scripts/generate-preview.js && node scripts/generate-icon.js && pnpm exec tauri icon public/logo-square.png -o src-tauri/icons
+✅ logo.png generado  → /home/matias/ArxonLabs/devhub/public/logo.png
+✅ logo-preview.png   → /home/matias/ArxonLabs/devhub/public/logo-preview.png
+✅ logo_oficial_clean.png → /home/matias/ArxonLabs/devhub/public/logo_oficial_clean.png
+📐 Tamaño: 1535x1535px (desde 2048x2048, recortado a 1421x1392)
+📦 Generando icono cuadrado desde: /home/matias/ArxonLabs/devhub/public/logo.png
+📐 Dimensiones originales: 1535x1535
+✅ Icono cuadrado generado con padding transparente: 1535x1535
+📁 Guardado en: /home/matias/ArxonLabs/devhub/public/logo-square.png
+✅ PWA icon generado: /home/matias/ArxonLabs/devhub/public/icons/icon-192x192.png
+✅ PWA icon generado: /home/matias/ArxonLabs/devhub/public/icons/icon-512x512.png
+
+🎉 ¡Listo! Ahora ejecuta:
+npx @tauri-apps/cli icon public/logo-square.png -o src-tauri/icons
+        Appx Creating StoreLogo.png
+        Appx Creating Square30x30Logo.png
+        Appx Creating Square44x44Logo.png
+        Appx Creating Square71x71Logo.png
+        Appx Creating Square89x89Logo.png
+        Appx Creating Square107x107Logo.png
+        Appx Creating Square142x142Logo.png
+        Appx Creating Square150x150Logo.png
+        Appx Creating Square284x284Logo.png
+        Appx Creating Square310x310Logo.png
+        ICNS Creating icon.icns
+         ICO Creating icon.ico
+         PNG Creating 32x32.png
+         PNG Creating 64x64.png
+         PNG Creating 128x128.png
+         PNG Creating 128x128@2x.png
+         PNG Creating icon.png
+         iOS Creating AppIcon-20x20@2x-1.png
+         iOS Creating AppIcon-20x20@1x.png
+         iOS Creating AppIcon-20x20@2x.png
+         iOS Creating AppIcon-20x20@3x.png
+         iOS Creating AppIcon-29x29@2x-1.png
+         iOS Creating AppIcon-29x29@1x.png
+         iOS Creating AppIcon-29x29@2x.png
+         iOS Creating AppIcon-29x29@3x.png
+         iOS Creating AppIcon-40x40@2x-1.png
+         iOS Creating AppIcon-40x40@1x.png
+         iOS Creating AppIcon-40x40@2x.png
+         iOS Creating AppIcon-40x40@3x.png
+         iOS Creating AppIcon-60x60@2x.png
+         iOS Creating AppIcon-60x60@3x.png
+         iOS Creating AppIcon-76x76@1x.png
+         iOS Creating AppIcon-76x76@2x.png
+         iOS Creating AppIcon-83.5x83.5@2x.png
+         iOS Creating AppIcon-512@2x.png
+     Android Creating mipmap-hdpi/ic_launcher_foreground.png
+     Android Creating mipmap-mdpi/ic_launcher_foreground.png
+     Android Creating mipmap-xhdpi/ic_launcher_foreground.png
+     Android Creating mipmap-xxhdpi/ic_launcher_foreground.png
+     Android Creating mipmap-xxxhdpi/ic_launcher_foreground.png
+     Android Creating mipmap-hdpi/ic_launcher_round.png
+     Android Creating mipmap-hdpi/ic_launcher.png
+     Android Creating mipmap-mdpi/ic_launcher_round.png
+     Android Creating mipmap-mdpi/ic_launcher.png
+     Android Creating mipmap-xhdpi/ic_launcher_round.png
+     Android Creating mipmap-xhdpi/ic_launcher.png
+     Android Creating mipmap-xxhdpi/ic_launcher_round.png
+     Android Creating mipmap-xxhdpi/ic_launcher.png
+     Android Creating mipmap-xxxhdpi/ic_launcher_round.png
+     Android Creating mipmap-xxxhdpi/ic_launcher.png
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> frontend@0.1.0 build
+> pnpm run native:ensure && pnpm exec next build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/ && cp -r src/lib .next/standalone/src/ && find .next/standalone/node_modules/@img -name "*musl*" -type d -prune -exec rm -rf {} + 2>/dev/null; find .next/standalone/node_modules/@img -name "*-musl*" -type f -delete 2>/dev/null; rm -rf .next/standalone/src-tauri .next/standalone/.next/cache .next/standalone/node_modules/@img/sharp*-linuxmusl* && cp -r node_modules/node-pty .next/standalone/node_modules/ && cp -r node_modules/ws .next/standalone/node_modules/ && mkdir -p src-tauri/resources && cd .next/standalone && zip -q -r ../../src-tauri/resources/standalone.zip .
+
+$ node scripts/ensure-native-runtime.cjs
+[native:ensure] Native modules already healthy
+▲ Next.js 16.2.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 6.8s
+  Running TypeScript ...
+  Finished TypeScript in 143ms ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/56) ...
+  Generating static pages using 15 workers (14/56) 
+  Generating static pages using 15 workers (28/56) 
+  Generating static pages using 15 workers (42/56) 
+✓ Generating static pages using 15 workers (56/56) in 242ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/agent/cleanup-stale
+├ ƒ /api/agent/execute
+├ ƒ /api/agent/prompt-builder
+├ ƒ /api/agent/qa-result
+├ ƒ /api/agenthub/chat
+├ ƒ /api/agenthub/compress
+├ ƒ /api/agenthub/config
+├ ƒ /api/agenthub/director-approval
+├ ƒ /api/agenthub/events
+├ ƒ /api/agenthub/events/stream
+├ ƒ /api/agenthub/headless
+├ ƒ /api/agenthub/mcp/status
+├ ƒ /api/agenthub/missions
+├ ƒ /api/agenthub/missions/[missionId]/reply
+├ ƒ /api/agenthub/missions/[missionId]/status
+├ ƒ /api/agenthub/missions/[missionId]/timeline
+├ ƒ /api/agenthub/opencode/start
+├ ƒ /api/agenthub/opencode/status
+├ ƒ /api/agenthub/opencode/stop
+├ ƒ /api/agenthub/operations/health
+├ ƒ /api/agenthub/operators/timeline
+├ ƒ /api/agenthub/operators/timeline/stream
+├ ƒ /api/agenthub/presence/heartbeat
+├ ƒ /api/agenthub/queue/[itemId]
+├ ƒ /api/agenthub/sessions
+├ ƒ /api/agenthub/sessions/[sessionId]
+├ ƒ /api/agenthub/sessions/[sessionId]/abort
+├ ƒ /api/agenthub/sessions/[sessionId]/binding
+├ ƒ /api/agenthub/sessions/[sessionId]/opencode-messages
+├ ƒ /api/agenthub/sessions/[sessionId]/permissions/[permId]
+├ ƒ /api/agenthub/sessions/[sessionId]/status
+├ ƒ /api/agenthub/sessions/[sessionId]/traces
+├ ƒ /api/agenthub/sessions/[sessionId]/traces/[traceId]
+├ ƒ /api/agenthub/sessions/[sessionId]/traces/search
+├ ƒ /api/agenthub/sessions/[sessionId]/usage
+├ ƒ /api/agenthub/sessions/health
+├ ƒ /api/agenthub/sessions/stream
+├ ƒ /api/agenthub/supervisor/snapshot
+├ ƒ /api/agenthub/swarm/[missionId]/message
+├ ƒ /api/agenthub/swarm/[missionId]/timeline
+├ ƒ /api/agenthub/traces/persist
+├ ƒ /api/agents/launch
+├ ƒ /api/agents/profiles
+├ ƒ /api/ai/chat
+├ ƒ /api/ai/suggestions
+├ ƒ /api/assistant/chat
+├ ƒ /api/audit/events
+├ ƒ /api/centro-ia/query
+├ ƒ /api/client-log
+├ ƒ /api/db/mutate
+├ ƒ /api/db/query
+├ ƒ /api/engram/memories
+├ ƒ /api/fs/file
+├ ƒ /api/fs/read
+├ ƒ /api/fs/tree
+├ ƒ /api/invite/[token]
+├ ƒ /api/mcp/connections
+├ ƒ /api/mcp/devhub
+├ ƒ /api/mcp/engram
+├ ƒ /api/metrics
+├ ƒ /api/opencode/sessions
+├ ƒ /api/operator/actions
+├ ƒ /api/operator/dispatch
+├ ƒ /api/operator/timeline
+├ ƒ /api/preview-proxy
+├ ƒ /api/projects/[id]/files
+├ ƒ /api/projects/[id]/invite
+├ ƒ /api/realtime
+├ ƒ /api/settings/llm-providers
+├ ƒ /api/settings/llm-providers/copilot/device-flow
+├ ƒ /api/settings/llm-providers/copilot/poll
+├ ƒ /api/settings/llm-providers/models
+├ ƒ /api/settings/llm-providers/test
+├ ƒ /api/settings/swarm
+├ ƒ /api/swarm-phase-events
+├ ƒ /api/swarm/processes
+├ ƒ /api/swarm/runtime-diagnostics
+├ ƒ /api/tasks
+├ ƒ /api/telegram/activity
+├ ƒ /api/telegram/status
+├ ƒ /api/terminal/log
+├ ƒ /api/terminal/processes
+├ ƒ /api/terminal/session
+├ ƒ /api/terminal/session/[id]/capture
+├ ƒ /api/terminal/session/[id]/input
+├ ƒ /api/terminal/sessions
+├ ƒ /api/visual-edit-overlay
+├ ○ /settings
+├ ○ /settings/account
+├ ○ /settings/appearance
+└ ○ /settings/llm-providers
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+   Compiling devhub v0.1.0 (/home/matias/ArxonLabs/devhub/src-tauri)
+    Finished `release` profile [optimized] target(s) in 16.44s
+       Built application at: /home/matias/ArxonLabs/devhub/src-tauri/target/release/devhub
+        Info Patching /home/matias/ArxonLabs/devhub/src-tauri/target/release/devhub with bundle type information: deb
+    Bundling DevHub_0.1.1_amd64.deb (/home/matias/ArxonLabs/devhub/src-tauri/target/release/bundle/deb/DevHub_0.1.1_amd64.deb)
+    Finished 1 bundle at:
+        /home/matias/ArxonLabs/devhub/src-tauri/target/release/bundle/deb/DevHub_0.1.1_amd64.deb
+

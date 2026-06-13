@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   HashRouter,
@@ -7,8 +8,10 @@ import {
   Outlet,
   useParams,
   useLocation,
+  useNavigate,
 } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { AnimatePresence, motion } from 'framer-motion';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
 import ProjectHub from './views/ProjectHub';
@@ -17,6 +20,7 @@ import Tareas from './views/Tareas';
 import CodeEditor from './views/CodeEditor';
 import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
+import Planificacion from './views/Planificacion';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
@@ -34,13 +38,21 @@ import {
   applyZoomToDocument,
   getStoredZoom,
   setZoom,
+  getStoredTerminalHeaderStyle,
+  getStoredTerminalAccentBarVisible,
 } from '@/lib/theme/themes';
 import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
+import { OperatorActionsDispatchProvider } from './lib/operator/OperatorActionsDispatchContext';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
 import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
-import { getWorkspaceShellChromeStyle } from './components/terminal/terminalChromeStyles';
+import {
+  getTerminalPanelBodyStyle,
+  getWorkspaceShellChromeStyle,
+} from './components/terminal/terminalChromeStyles';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { MotionProvider } from '@/components/ui/motion/MotionProvider';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -54,6 +66,7 @@ const PAGE_LABELS = {
   swarm: 'swarm control',
   telegram: 'telegram monitor',
   planning: 'planning',
+  planificacion: 'planificación',
 };
 
 function WorkspaceLayout() {
@@ -71,21 +84,31 @@ function WorkspaceLayout() {
     return Boolean(getUIPrefs(projectId).sidebarCollapsed);
   });
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
+  const [isPizarraActive, setIsPizarraActive] = useState(false);
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const db = useMemo(() => createClient(), []);
   const pollRef = useRef(null);
 
+  const { activeWorkspaceId } = useAuth();
+  const navigate = useNavigate();
+
   const loadProject = useCallback(async () => {
     const { data } = await db.from('projects').select('*').eq('id', projectId).single();
     setProject(data || null);
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, db]);
 
   useEffect(() => {
     loadProject();
   }, [loadProject]);
+
+  useEffect(() => {
+    if (project && activeWorkspaceId && project.workspace_id !== activeWorkspaceId) {
+      navigate('/hub');
+    }
+  }, [project, activeWorkspaceId, navigate]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -103,6 +126,37 @@ function WorkspaceLayout() {
     };
     window.addEventListener('devhub:toggle-maximize', handleMaximizeToggle);
     return () => window.removeEventListener('devhub:toggle-maximize', handleMaximizeToggle);
+  }, []);
+
+  // Listen for Pizarra activation events
+  useEffect(() => {
+    const handlePizarraActive = (e) => {
+      setIsPizarraActive(e.detail?.active ?? false);
+    };
+    window.addEventListener('devhub:pizarra-active', handlePizarraActive);
+    return () => window.removeEventListener('devhub:pizarra-active', handlePizarraActive);
+  }, []);
+
+  // Sync terminal-view attribute on html for CSS targeting
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (isTerminalRoute) {
+      document.documentElement.setAttribute('data-terminal-view', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-terminal-view');
+    }
+  }, [isTerminalRoute]);
+
+  // Apply terminal zone appearance (header style + accent bar) on mount.
+  // Uses 'dragon' as default if no stored preference exists.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const headerStyle = getStoredTerminalHeaderStyle();
+    const accentBarVisible = getStoredTerminalAccentBarVisible();
+    const container = document.querySelector('[data-terminal-container]');
+    if (!container) return;
+    container.setAttribute('data-terminal-header-style', headerStyle);
+    container.setAttribute('data-terminal-accent-bar', String(accentBarVisible));
   }, []);
 
   useEffect(() => {
@@ -170,20 +224,32 @@ function WorkspaceLayout() {
     <div
       className="relative flex h-screen overflow-hidden bg-surface-app text-text-primary flex-col"
       style={{
-        ...getWorkspaceShellChromeStyle(),
+        ...(isTerminalRoute
+          ? { borderWidth: 0, boxShadow: 'none' }
+          : getWorkspaceShellChromeStyle()),
         borderRadius: '22px',
       }}
     >
       {/* ── Inner layout: sidebar + content ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Hide sidebar when terminal is maximized and visible */}
-        {!(isTerminalMaximized && isTerminalRoute) && (
-          <WorkspaceSidebar
-            project={project}
-            collapsed={collapsed}
-            onToggleCollapse={setCollapsed}
-          />
-        )}
+        <AnimatePresence initial={false}>
+          {!((isTerminalMaximized || isPizarraActive) && isTerminalRoute) && (
+            <motion.div
+              key="workspace-sidebar-wrapper"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: collapsed ? 48 : 256, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+              style={{ overflow: 'hidden', display: 'flex', flexShrink: 0 }}
+            >
+              <WorkspaceSidebar
+                project={project}
+                collapsed={collapsed}
+                onToggleCollapse={setCollapsed}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
           {shouldShowGlobalHeader && (
@@ -205,14 +271,24 @@ function WorkspaceLayout() {
           {/* Persistent Terminal IDE Container */}
           <div
             className="absolute inset-0 z-10 bg-[#0d0d0d]"
-            style={{ ...getWorkspaceShellChromeStyle(), display: isTerminalRoute ? 'block' : 'none' }}
+            data-terminal-container
+            data-terminal-view={isTerminalRoute ? 'true' : undefined}
+            style={{
+              ...getTerminalPanelBodyStyle(),
+              display: isTerminalRoute ? 'block' : 'none',
+            }}
           >
+            {/* Drag region for the Tauri window is provided by the
+                WorkspaceWindowTabBar wrapper (data-tauri-drag-region on the tab bar
+                inside the terminal container). No extra header is needed here. */}
             {project && (
-              <TerminalWorkspacesManager
-                cwd={project.local_path}
-                isVisible={isTerminalRoute}
-                projectId={project.id}
-              />
+              <OperatorActionsDispatchProvider>
+                <TerminalWorkspacesManager
+                  cwd={project.local_path}
+                  isVisible={isTerminalRoute}
+                  projectId={project.id}
+                />
+              </OperatorActionsDispatchProvider>
             )}
           </div>
         </div>
@@ -256,6 +332,26 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Block the browser's native ctrl/⌘ + wheel (and trackpad pinch, which the
+  // engine reports as a wheel event with ctrlKey set) page zoom. Without this,
+  // pinching/ctrl-scrolling inside the app — e.g. while zooming the pizarra
+  // canvas — zooms the ENTIRE webview (top workspace tabs, HUD, bottom bars all
+  // scale/disappear) instead of only the intended target. The app exposes its
+  // own document zoom via the keyboard handler above; the pizarra canvas does
+  // its own focal zoom in JS. We only need to stop the engine's default zoom.
+  // Capture phase + { passive: false } so preventDefault is honored even when an
+  // inner handler stops propagation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const preventBrowserZoom = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('wheel', preventBrowserZoom, { passive: false, capture: true });
+    return () => window.removeEventListener('wheel', preventBrowserZoom, { capture: true });
+  }, []);
+
   useEffect(() => {
     if (!isDevelopmentRuntime()) return;
     if (typeof window === 'undefined') return;
@@ -281,41 +377,44 @@ function App() {
 
   return (
     <div className="App">
-      <HashRouter>
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          richColors
-          toastOptions={{
-            style: {
-              background: 'var(--surface-card)',
-              border: '1px solid var(--border-strong)',
-              color: 'var(--text-primary)',
-            },
-          }}
-        />
-        <Routes>
-          <Route path="/" element={<Navigate to="/hub" replace />} />
-          <Route path="/hub" element={<ProjectHub />} />
-          <Route path="/project/:projectId" element={<WorkspaceLayout />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<ProjectDashboard />} />
-            <Route path="tareas" element={<Tareas />} />
-            <Route path="editor" element={<CodeEditor />} />
-            <Route path="scaffolding" element={<Scaffolding />} />
-            <Route path="roadmap" element={<Roadmap />} />
-            <Route path="historial" element={<Historial />} />
-            <Route path="conexiones" element={<Conexiones />} />
-            <Route path="ajustes" element={<Ajustes />} />
-            <Route path="swarm" element={<SwarmControl />} />
-            <Route path="telegram" element={<TelegramMonitor />} />
-            <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
+      <MotionProvider>
+        <HashRouter>
+          <Toaster
+            theme="dark"
+            position="bottom-right"
+            richColors
+            toastOptions={{
+              style: {
+                background: 'var(--surface-card)',
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)',
+              },
+            }}
+          />
+          <Routes>
+            <Route path="/" element={<Navigate to="/hub" replace />} />
+            <Route path="/hub" element={<ProjectHub />} />
+            <Route path="/project/:projectId" element={<WorkspaceLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<ProjectDashboard />} />
+              <Route path="planificacion" element={<Planificacion />} />
+              <Route path="tareas" element={<Tareas />} />
+              <Route path="editor" element={<CodeEditor />} />
+              <Route path="scaffolding" element={<Scaffolding />} />
+              <Route path="roadmap" element={<Roadmap />} />
+              <Route path="historial" element={<Historial />} />
+              <Route path="conexiones" element={<Conexiones />} />
+              <Route path="ajustes" element={<Ajustes />} />
+              <Route path="swarm" element={<SwarmControl />} />
+              <Route path="telegram" element={<TelegramMonitor />} />
+              <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
 
-            {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
-            <Route path="terminales" element={<div />} />
-          </Route>
-        </Routes>
-      </HashRouter>
+              {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}
+              <Route path="terminales" element={<div />} />
+            </Route>
+          </Routes>
+        </HashRouter>
+      </MotionProvider>
     </div>
   );
 }

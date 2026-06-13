@@ -1,5 +1,5 @@
 const os = require('os');
-const { resolveTerminalSpawnCwd } = require('../src/lib/terminal/cwdGuard.js');
+const { resolveTerminalSpawnCwd } = require('./cwdGuard.js');
 
 function resolveSidecarSessionCwd(requestedCwd) {
   return resolveTerminalSpawnCwd(requestedCwd, {

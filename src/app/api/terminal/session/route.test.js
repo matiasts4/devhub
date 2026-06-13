@@ -8,6 +8,11 @@ const mockCloseSession = jest.fn();
 const mockExistsSync = jest.fn(() => false);
 const mockReadFileSync = jest.fn();
 const mockSpawn = jest.fn();
+const mockReadProductionSidecarPort = jest.fn();
+
+jest.mock('@/lib/devhub/sidecarRuntime', () => ({
+  readProductionSidecarPort: (...args) => mockReadProductionSidecarPort(...args),
+}));
 
 jest.mock('@/lib/terminal/ttyServer', () => ({
   closeSession: mockCloseSession,
@@ -37,6 +42,7 @@ describe('GET /api/terminal/session', () => {
     global.fetch = jest.fn();
     mockExistsSync.mockReturnValue(false);
     mockReadFileSync.mockReset();
+    mockReadProductionSidecarPort.mockResolvedValue(null);
     mockSpawn.mockReturnValue({ unref: jest.fn() });
     NextResponse.json.mockImplementation((body, init) => ({ body, status: init?.status || 200 }));
     ensureTTYServer.mockResolvedValue({ port: 3001, wsPath: '/terminals' });
@@ -61,9 +67,7 @@ describe('GET /api/terminal/session', () => {
 
   test('returns the json tty path for the production sidecar transport', async () => {
     process.env.NODE_ENV = 'production';
-    mockExistsSync.mockReturnValue(true);
-    mockReadFileSync.mockReturnValue('4000');
-    global.fetch.mockResolvedValueOnce({ ok: true });
+    mockReadProductionSidecarPort.mockResolvedValue(4000);
 
     const { GET } = require('./route.js');
     const request = {
@@ -72,9 +76,7 @@ describe('GET /api/terminal/session', () => {
 
     const response = await GET(request);
 
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:4000/health', {
-      cache: 'no-store',
-    });
+    expect(mockReadProductionSidecarPort).toHaveBeenCalled();
     expect(response.body).toEqual({ port: 4000, wsPath: '/tty' });
     expect(ensureTTYServer).not.toHaveBeenCalled();
   });
@@ -82,15 +84,11 @@ describe('GET /api/terminal/session', () => {
   test('respawns the packaged sidecar when production health fails and standalone fallback is unavailable', async () => {
     process.env.NODE_ENV = 'production';
     ensureTTYServer.mockRejectedValue(new Error("Cannot find module 'node-pty'"));
-    mockExistsSync.mockImplementation((targetPath) => {
-      if (String(targetPath).endsWith('sidecar-port.txt')) return true;
-      if (String(targetPath).includes('sidecar-backend/server.js')) return true;
-      return false;
-    });
-    mockReadFileSync.mockReturnValue('4000');
-    global.fetch
-      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
-      .mockResolvedValueOnce({ ok: true });
+    mockReadProductionSidecarPort.mockResolvedValue(null);
+    mockExistsSync.mockImplementation((targetPath) =>
+      String(targetPath).includes('sidecar-backend/server.js')
+    );
+    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '' });
 
     const { GET } = require('./route.js');
     const request = {
@@ -120,8 +118,8 @@ describe('GET /api/terminal/session', () => {
   test('keeps the production 503 when no sidecar recovery path exists', async () => {
     process.env.NODE_ENV = 'production';
     ensureTTYServer.mockRejectedValue(new Error("Cannot find module 'node-pty'"));
-    mockExistsSync.mockImplementation((targetPath) => String(targetPath).endsWith('sidecar-port.txt'));
-    mockReadFileSync.mockReturnValue('4000');
+    mockReadProductionSidecarPort.mockResolvedValue(null);
+    mockExistsSync.mockReturnValue(false);
     global.fetch.mockRejectedValue(new Error('ECONNREFUSED'));
 
     const { GET } = require('./route.js');
@@ -170,11 +168,8 @@ describe('DELETE /api/terminal/session', () => {
 
   test('forwards explicit close requests to the production sidecar', async () => {
     process.env.NODE_ENV = 'production';
-    mockExistsSync.mockReturnValue(true);
-    mockReadFileSync.mockReturnValue('4000');
-    global.fetch
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true, status: 200 });
+    mockReadProductionSidecarPort.mockResolvedValue(4000);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
 
     const { DELETE } = require('./route.js');
     const request = {
@@ -183,10 +178,7 @@ describe('DELETE /api/terminal/session', () => {
 
     const response = await DELETE(request);
 
-    expect(global.fetch).toHaveBeenNthCalledWith(1, 'http://127.0.0.1:4000/health', {
-      cache: 'no-store',
-    });
-    expect(global.fetch).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:4000/sessions/p3', {
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:4000/sessions/p3', {
       method: 'DELETE',
       cache: 'no-store',
     });
@@ -203,7 +195,10 @@ describe('DELETE /api/terminal/session', () => {
     const response = await DELETE(request);
 
     expect(mockCloseSession).not.toHaveBeenCalled();
-    expect(NextResponse.json).toHaveBeenLastCalledWith({ error: 'sessionId required' }, { status: 400 });
+    expect(NextResponse.json).toHaveBeenLastCalledWith(
+      { error: 'sessionId required' },
+      { status: 400 }
+    );
     expect(response.status).toBe(400);
   });
 });

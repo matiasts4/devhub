@@ -2,15 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import {
-  History,
-  Loader2,
-  Calendar,
-  ChevronDown,
-  Download,
-  BarChart3,
-  Flag,
-} from 'lucide-react';
+import { History, Loader2, Calendar, ChevronDown, Download, BarChart3, Flag } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
@@ -56,6 +48,12 @@ const STATUS_COLORS = {
     text: 'text-danger',
     label: 'Bloqueada',
   },
+  qa_ready: {
+    color: 'var(--accent-primary)',
+    bg: 'bg-[color:var(--accent-primary)]/10',
+    text: 'text-accent-primary',
+    label: 'Pendiente revisión',
+  },
 };
 
 const PRIORITY_COLORS = {
@@ -68,6 +66,7 @@ const PRIORITY_COLORS = {
 function getHistoryTone(status) {
   if (status === 'completed') return 'success';
   if (status === 'in_progress') return 'info';
+  if (status === 'qa_ready') return 'accent';
   if (status === 'blocked') return 'danger';
   return 'neutral';
 }
@@ -86,6 +85,7 @@ function groupByMonth(tasks) {
 const FILTER_OPTIONS = [
   { key: 'all', label: 'Todo' },
   { key: 'completed', label: 'Completadas' },
+  { key: 'qa_ready', label: 'Pendiente revisión' },
   { key: 'in_progress', label: 'En progreso' },
   { key: 'pending', label: 'Pendientes' },
 ];
@@ -217,11 +217,7 @@ export default function Historial() {
                   ? 'text-text-primary'
                   : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated border-transparent'
               }`}
-              style={
-                filterStatus === key
-                  ? pillStyle({ tone: 'accent' })
-                  : pillStyle()
-              }
+              style={filterStatus === key ? pillStyle({ tone: 'accent' }) : pillStyle()}
             >
               {label}
             </button>
@@ -249,10 +245,7 @@ export default function Historial() {
                   <BarChart3 className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
                 </div>
                 <div>
-                  <h3
-                    className="typography-section-label"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
+                  <h3 className="typography-section-label" style={{ color: 'var(--text-primary)' }}>
                     Resumen del Swarm
                   </h3>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -295,11 +288,7 @@ export default function Historial() {
                     className="p-4 rounded-none"
                     style={getWorkspaceDataTileStyle(s.color)}
                   >
-                    <p
-                      className="typography-label mb-2"
-                    >
-                      {s.label}
-                    </p>
+                    <p className="typography-label mb-2">{s.label}</p>
                     <p className="typography-data text-2xl font-bold" style={{ color: s.color }}>
                       {s.value}
                     </p>
@@ -318,10 +307,7 @@ export default function Historial() {
               />
             </div>
           ) : filtered.length === 0 ? (
-            <div
-                className="overflow-hidden fade-in-up rounded-none"
-                style={panelStyle()}
-              >
+            <div className="overflow-hidden fade-in-up rounded-none" style={panelStyle()}>
               <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
                 <div
                   className="w-14 h-14 flex items-center justify-center rounded-none"
@@ -346,11 +332,7 @@ export default function Historial() {
               {Object.entries(grouped).map(([month, monthTasks]) => {
                 const isOpen = expanded[month] === true;
                 return (
-                  <div
-                    key={month}
-                    className="overflow-hidden rounded-none"
-                    style={panelStyle()}
-                  >
+                  <div key={month} className="overflow-hidden rounded-none" style={panelStyle()}>
                     <button
                       onClick={() => handleToggleMonth(month)}
                       className="flex items-center gap-3 w-full text-left px-6 py-4 transition-colors cursor-pointer rounded-none"
@@ -394,9 +376,13 @@ export default function Historial() {
                           <div className="space-y-3">
                             {monthTasks.map((task, i) => {
                               const st = STATUS_COLORS[task.status] || STATUS_COLORS.pending;
-                              const prioColor = PRIORITY_COLORS[task.priority] || 'var(--text-muted)';
+                              const prioColor =
+                                PRIORITY_COLORS[task.priority] || 'var(--text-muted)';
                               const date = new Date(task.updated_at || task.created_at);
-                              const shouldBlink = task.status === 'in_progress' || task.status === 'blocked';
+                              const shouldBlink =
+                                task.status === 'in_progress' ||
+                                task.status === 'qa_ready' ||
+                                task.status === 'blocked';
                               return (
                                 <div
                                   key={task.id}
@@ -409,7 +395,11 @@ export default function Historial() {
                                       boxShadow: '2px 2px 0 0 var(--border-strong)',
                                     }}
                                   >
-                                    <StatusSignal compact tone={getHistoryTone(task.status)} animation={shouldBlink ? 'blink' : 'none'} />
+                                    <StatusSignal
+                                      compact
+                                      tone={getHistoryTone(task.status)}
+                                      animation={shouldBlink ? 'blink' : 'none'}
+                                    />
                                   </div>
                                   <div
                                     className="flex-1 p-4 transition-all rounded-none"
@@ -430,7 +420,11 @@ export default function Historial() {
                                       <StatusSignal
                                         label={st.label}
                                         tone={getHistoryTone(task.status)}
-                                        animation={task.status === 'in_progress' || task.status === 'blocked' ? 'blink' : 'none'}
+                                        animation={
+                                          task.status === 'in_progress' || task.status === 'blocked'
+                                            ? 'blink'
+                                            : 'none'
+                                        }
                                       />
                                     </div>
                                     {task.description && (

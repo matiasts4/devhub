@@ -1,13 +1,14 @@
 # TERM-01 — Evidence pack y protocolo de terminal renderer
 
 **Estado:** implementado para baseline xterm + protocolo manual reproducible.
-**Fecha:** 2026-05-15.
+**Fecha:** 2026-05-15 (revisión: 2026-06-07 — default baseline actualizado a xterm-webgl, soft roll-out).
 **Scope:** TERM-01 únicamente. No inicia TERM-02.
 
 ## Decisión
 
-- **xterm remains the baseline** estable dentro de DevHub.
-- xterm también queda como **fallback** explícito para cualquier investigación posterior.
+- **xterm-webgl is the default renderer** desde 2026-06-07 para fresh users y nuevos paneles sin preferencia almacenada. El flip del default respeta el soft roll-out: stored `vte-experimental` se preserva; no se sobreescribe la preferencia del usuario en primer load.
+- **xterm (DOM) remains the baseline** estable y queda como **fallback** explícito para cualquier investigación posterior, incluyendo escenarios donde xterm-webgl no está disponible (WebView sin WebGL, addon registration failure, context lost).
+- **vte-experimental (GTK/VTE)** queda como **opt-in** para Linux/Tauri operators que prefieran el runtime nativo; no es el default.
 - La rama `checkpoint/terminal-experiments-2026-05-14` queda como **reference material only**: útil para specs e ideas, NO para merge directo en esta tarea.
 
 ## Qué entrega TERM-01

@@ -7,6 +7,7 @@ function createPanel(id, initialCommand = null, panelCwd = null, metadata = null
     initialCommand,
     cwd: panelCwd,
     swarmRole: metadata?.swarmRole || null,
+    displayName: metadata?.displayName || null,
   };
 }
 
@@ -40,7 +41,12 @@ function createDefaultWorkspaceState() {
   };
 }
 
-function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds) {
+function normalizeWorkspaceState(
+  rawWorkspaces,
+  rawActiveWsId,
+  rawActivePanelIds,
+  workspaceLabelOverride = null
+) {
   const fallbackState = createDefaultWorkspaceState();
   if (!Array.isArray(rawWorkspaces) || rawWorkspaces.length === 0) {
     return fallbackState;
@@ -117,6 +123,7 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
           cwd: panel?.cwd || null,
           initialCommand: panel?.initialCommand || null,
           swarmRole: panel?.swarmRole || null,
+          displayName: panel?.displayName || null,
         };
       });
 
@@ -128,12 +135,25 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
     nextActivePanelIds[workspaceId] =
       (originalActivePanelId && panelIdMap.get(originalActivePanelId)) || firstPanelId;
 
+    // WSN-2 / WSN-S4: use workspace_label (from snapshot override or stored) before workspace.name
+    const storedLabel =
+      typeof workspaceLabelOverride === 'function'
+        ? workspaceLabelOverride(workspace, workspaceIndex)
+        : typeof workspaceLabelOverride === 'object' && workspaceLabelOverride !== null
+          ? workspaceLabelOverride[workspace?.id || workspaceId] ||
+            workspace?.workspace_label ||
+            null
+          : workspace?.workspace_label || null;
+    const displayName =
+      storedLabel ||
+      (typeof workspace?.name === 'string' && workspace.name.trim()
+        ? workspace.name
+        : `Workspace ${workspaceIndex + 1}`);
+
     return {
       id: workspaceId,
-      name:
-        typeof workspace?.name === 'string' && workspace.name.trim()
-          ? workspace.name
-          : `Workspace ${workspaceIndex + 1}`,
+      name: displayName,
+      workspace_label: storedLabel || null,
       columns,
     };
   });
@@ -259,6 +279,112 @@ function getWorkspaceTabStyle(totalWorkspaces) {
   return { flex: '0 1 138px', minWidth: '138px', maxWidth: '180px' };
 }
 
+function resolveWorkspaceGridShape(terminalCount) {
+  switch (terminalCount) {
+    case 1:
+      return { columns: 1, rows: 1 };
+    case 2:
+      return { columns: 2, rows: 1 };
+    case 3:
+      return { columns: 3, rows: 1 };
+    case 4:
+      return { columns: 2, rows: 2 };
+    case 6:
+      return { columns: 3, rows: 2 };
+    default:
+      return { columns: 1, rows: Math.max(1, terminalCount) };
+  }
+}
+
+function buildWorkspaceColumnsForTerminalCount({
+  terminalCount,
+  createPanel: createPanelFn,
+  allocateColumnId,
+  allocatePanelId,
+  initialCommand = null,
+  panelCwd = null,
+}) {
+  const safeCount = Math.max(0, Math.min(6, Number(terminalCount) || 0));
+  if (safeCount === 0) {
+    return { columns: [], firstPanelId: null };
+  }
+
+  let firstPanelId = null;
+  const nextPanel = () => {
+    const panelId = allocatePanelId();
+    if (!firstPanelId) firstPanelId = panelId;
+    return createPanelFn(panelId, initialCommand, panelCwd);
+  };
+
+  const panelsByIndex = Array.from({ length: safeCount }, () => nextPanel());
+
+  if (safeCount === 5) {
+    // Swarm-style 2+2+1: even workers left, odd workers center, fifth panel right.
+    return {
+      columns: [
+        {
+          id: allocateColumnId(),
+          panels: [panelsByIndex[0], panelsByIndex[2]],
+        },
+        {
+          id: allocateColumnId(),
+          panels: [panelsByIndex[1], panelsByIndex[3]],
+        },
+        {
+          id: allocateColumnId(),
+          panels: [panelsByIndex[4]],
+        },
+      ],
+      firstPanelId,
+    };
+  }
+
+  const { columns: columnCount, rows } = resolveWorkspaceGridShape(safeCount);
+  const builtColumns = [];
+
+  for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+    const panels = [];
+    for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+      const panelIndex = rowIndex * columnCount + columnIndex;
+      if (panelIndex >= safeCount) continue;
+      panels.push(panelsByIndex[panelIndex]);
+    }
+    if (panels.length > 0) {
+      builtColumns.push({
+        id: allocateColumnId(),
+        panels,
+      });
+    }
+  }
+
+  return { columns: builtColumns, firstPanelId };
+}
+
+/** First terminal panel when workspace has zero panels (split/add from empty). */
+function spawnFirstTerminalPanelColumns({
+  allocateColumnId,
+  allocatePanelId,
+  initialCommand = null,
+  panelCwd = null,
+  explicitPanelId = null,
+  createPanel: createPanelFn = createPanel,
+}) {
+  const panelId =
+    typeof explicitPanelId === 'string' && explicitPanelId.length > 0
+      ? explicitPanelId
+      : allocatePanelId();
+  const colId = allocateColumnId();
+  return {
+    columns: [
+      {
+        id: colId,
+        panels: [createPanelFn(panelId, initialCommand, panelCwd)],
+      },
+    ],
+    panelId,
+  };
+}
+
 export {
   createPanel,
   createColumn,
@@ -268,4 +394,7 @@ export {
   normalizeWorkspaceWindows,
   resolveWorkspacePanelId,
   getWorkspaceTabStyle,
+  resolveWorkspaceGridShape,
+  buildWorkspaceColumnsForTerminalCount,
+  spawnFirstTerminalPanelColumns,
 };

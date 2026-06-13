@@ -7,21 +7,85 @@
  *
  * Pure function: buildXtermTheme(getVar) — accepts a CSS var resolver,
  * returns an xterm theme object. Testable without a DOM.
+ *
+ * Also exposes buildTerminalChromeVars(style) and setTerminalChromeVars(el, style)
+ * for terminal header styling driven by data-terminal-header-style attribute.
  */
 
 let cachedTheme = null;
 
 /**
+ * Builds the set of CSS custom properties for a terminal chrome header style.
+ * Returns a flat object of CSS var name → value pairs, suitable for
+ * element.style.setProperty() iteration.
+ *
+ * @param {'dragon'|'minimal'|'gradient'|'plain'} style
+ * @returns {{ [key: string]: string }} CSS var object
+ */
+export function buildTerminalChromeVars(style) {
+  switch (style) {
+    case 'dragon':
+      return {
+        '--terminal-header-bg': 'var(--surface-card)',
+        '--terminal-header-gradient':
+          'linear-gradient(180deg, var(--surface-elevated), var(--chrome-panel-fill))',
+        '--terminal-accent-bar': 'var(--accent-primary)',
+      };
+    case 'minimal':
+      return {
+        '--terminal-header-bg': 'var(--surface-card)',
+        '--terminal-header-gradient': 'var(--surface-card)',
+        '--terminal-accent-bar': 'transparent',
+      };
+    case 'gradient':
+      return {
+        '--terminal-header-bg': 'var(--surface-card)',
+        '--terminal-header-gradient':
+          'linear-gradient(180deg, var(--surface-elevated), var(--surface-card))',
+        '--terminal-accent-bar': 'transparent',
+      };
+    case 'plain':
+    default:
+      return {
+        '--terminal-header-bg': 'var(--surface-card)',
+        '--terminal-header-gradient': 'var(--surface-card)',
+        '--terminal-accent-bar': 'transparent',
+      };
+  }
+}
+
+/**
+ * Applies terminal chrome CSS vars to a DOM element based on the header style.
+ * Also sets the data-terminal-header-style attribute on the element.
+ *
+ * @param {Element} el - Target DOM element (typically the terminal root)
+ * @param {string} style - One of 'dragon' | 'minimal' | 'gradient' | 'plain'
+ */
+export function setTerminalChromeVars(el, style) {
+  if (!el) return;
+  el.setAttribute('data-terminal-header-style', style);
+  const vars = buildTerminalChromeVars(style);
+  for (const [name, value] of Object.entries(vars)) {
+    el.style.setProperty(name, value);
+  }
+}
+
+/**
  * Pure function: builds an xterm theme from a CSS var resolver.
+ * Reads --terminal-bg / --terminal-fg first; falls back to --surface-app.
+ *
  * @param {(name: string) => string} getVar - CSS var resolver
  * @returns {object} xterm-compatible ITheme object
  */
 export function buildXtermTheme(getVar) {
+  // Read terminal-specific vars first; fall back to surface-app for background
+  const terminalBg = getVar('--terminal-bg');
+  const terminalFg = getVar('--terminal-fg');
   const surfaceApp = getVar('--surface-app');
 
   return {
-    background: getVar('--terminal-bg') || surfaceApp || '#0D1117',
-    foreground: getVar('--terminal-fg') || '#F0F6FC',
+    background: terminalBg || surfaceApp || '#0D1117',
+    foreground: terminalFg || '#F0F6FC',
     // cursor maps to --accent-primary for theme consistency
     cursor: getVar('--accent-primary') || '#58A6FF',
     selectionBackground: getVar('--terminal-selection') || 'rgba(88,166,255,0.3)',
@@ -47,7 +111,20 @@ export function buildXtermTheme(getVar) {
 function makeDomCssVarResolver() {
   return (name) => {
     try {
-      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (typeof document === 'undefined') return '';
+      const rawValue = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (!rawValue) return '';
+
+      const tempEl = document.createElement('div');
+      tempEl.style.color = rawValue;
+      tempEl.style.display = 'none';
+      const parent = document.body || document.documentElement;
+      if (!parent) return rawValue;
+
+      parent.appendChild(tempEl);
+      const resolved = getComputedStyle(tempEl).color;
+      parent.removeChild(tempEl);
+      return resolved || '';
     } catch {
       return '';
     }
@@ -62,4 +139,36 @@ export function getTerminalTheme() {
 
 export function getCachedTheme() {
   return cachedTheme || getTerminalTheme();
+}
+
+/**
+ * Reads terminal typography options from CSS custom properties.
+ * Safe to spread into `new Terminal({ ...fontOptions })`.
+ */
+export function getTerminalFontOptions() {
+  const getRawVar = (name) => {
+    if (typeof document === 'undefined') return '';
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch {
+      return '';
+    }
+  };
+
+  const fontFamily =
+    getRawVar('--font-family-mono') ||
+    "'Noto Sans Mono', 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace";
+
+  const rawWeight = getRawVar('--terminal-font-weight');
+  const rawWeightBold = getRawVar('--terminal-font-weight-bold');
+  const rawLine = getRawVar('--terminal-line-height');
+  const rawLetter = getRawVar('--terminal-letter-spacing');
+
+  return {
+    fontFamily: fontFamily.replace(/\s+/g, ' ').trim(),
+    fontWeight: rawWeight || 'bold',
+    fontWeightBold: rawWeightBold || 'bold',
+    lineHeight: parseFloat(rawLine) || 1.1,
+    letterSpacing: parseFloat(rawLetter) || -0.5,
+  };
 }

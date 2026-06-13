@@ -81,15 +81,15 @@ function classifyTerminal({ terminal, hasMatchingProcess, quotaBlocked }) {
 function classifyProcess({ process, hasTerminal, hasRegistryAgent, quotaBlocked }) {
   if (quotaBlocked) return RUNTIME_STATUS.QUOTA_BLOCKED;
   if (!process) return RUNTIME_STATUS.UNKNOWN;
-  if (!hasTerminal) return RUNTIME_STATUS.ORPHANED_PROCESS;
-  if (!hasRegistryAgent) return RUNTIME_STATUS.UNKNOWN;
+  if (!hasRegistryAgent) return RUNTIME_STATUS.ORPHANED_PROCESS;
   return RUNTIME_STATUS.ACTIVE;
 }
 
 function classifyRegistry({ agent, hasProcess, hasActiveRun }) {
   if (!agent) return RUNTIME_STATUS.UNKNOWN;
   if (hasProcess) return RUNTIME_STATUS.ACTIVE;
-  if (hasActiveRun || agent.status === 'idle') return RUNTIME_STATUS.STALE_REGISTRY;
+  if (hasActiveRun) return RUNTIME_STATUS.ACTIVE;
+  if (agent.status === 'idle') return RUNTIME_STATUS.STALE_REGISTRY;
   return RUNTIME_STATUS.UNKNOWN;
 }
 

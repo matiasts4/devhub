@@ -4,7 +4,15 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import cwdGuard from './cwdGuard.js';
-import { saveSessions, loadSessions } from './sessionStore.js';
+import { saveSessions, loadSessions, classifySession } from './sessionStore.js';
+import {
+  filterTerminalInputForSession,
+  filterTerminalOutputForSession,
+} from './terminalNoiseFilter.js';
+import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
+import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
+import { writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
+import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -39,12 +47,35 @@ function tryUpdatePtyIdentity(session) {
 
   try {
     const db = helpers.getDb();
-    // Try to find a workspace matching this session's cwd
-    const workspace = db
-      .prepare(
-        `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
-      )
-      .get(session.cwd);
+    let workspace = null;
+
+    const swarmId = session?.swarmId ? String(session.swarmId).trim() : '';
+    const roleKey = session?.swarmRole?.roleKey ? String(session.swarmRole.roleKey).trim() : '';
+    if (swarmId && roleKey) {
+      const agentId = `${swarmId}-${roleKey}`;
+      workspace =
+        db
+          .prepare(
+            `SELECT id FROM agent_workspaces WHERE agent_id = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
+          )
+          .get(agentId) || null;
+    }
+
+    if (!workspace && session?.cwd) {
+      workspace =
+        db
+          .prepare(
+            `SELECT id FROM agent_workspaces WHERE workspace_path = ? AND status NOT IN ('completed', 'failed') ORDER BY updated_at DESC LIMIT 1`
+          )
+          .get(session.cwd) || null;
+    }
+
+    if (!workspace && session?.id) {
+      workspace =
+        db
+          .prepare(`SELECT id FROM agent_workspaces WHERE terminal_id = ? OR pane_id = ? LIMIT 1`)
+          .get(session.id, session.id) || null;
+    }
 
     if (workspace) {
       helpers.updateWorkspacePtyIdentity(db, {
@@ -88,6 +119,14 @@ function tryClearPtyIdentity(session) {
 // Safe for concurrent calls — appendFileSync is atomic per call.
 const TTY_LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log');
 const CRASH_DUMP_DIR = path.resolve(process.cwd(), 'data', 'logs', 'crash-dumps');
+const DEFAULT_AUTO_KILL_GRACE_MS = 15_000;
+const SWARM_AUTO_KILL_GRACE_MS = 120_000;
+
+function resolveAutoKillGraceMs(session) {
+  if (session?.swarmId) return SWARM_AUTO_KILL_GRACE_MS;
+  if (session?.mode === 'tui') return SWARM_AUTO_KILL_GRACE_MS;
+  return DEFAULT_AUTO_KILL_GRACE_MS;
+}
 
 function ttyLog(tag, msg, extra = {}) {
   try {
@@ -172,20 +211,30 @@ function resolveMcpServerPath() {
   );
 }
 
-const MCP_SERVER_PATH = resolveMcpServerPath();
+import { createRequire } from 'module';
 
 function loadTerminalDependency(globalKey, moduleName) {
   if (globalThis[globalKey]) {
     return globalThis[globalKey];
   }
-  return eval('require')(moduleName);
+  try {
+    const nativeRequire = createRequire(path.resolve(process.cwd(), 'package.json'));
+    return nativeRequire(moduleName);
+  } catch (err) {
+    ttyLog('loadDepErr', `failed to load ${moduleName} via nativeRequire, trying eval`, {
+      error: err?.message,
+    });
+    return eval('require')(moduleName);
+  }
 }
 
-// Use global require via eval to bypass Webpack's statically analyzed requires
+// Use global require via eval or createRequire to bypass Webpack's statically analyzed requires
 // This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
 // instead of getting stubbed or mangled by Next.js's dev compiler.
 const pty = loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');
 const { WebSocketServer } = loadTerminalDependency('__DEVHUB_TTY_WS__', 'ws');
+
+const MCP_SERVER_PATH = resolveMcpServerPath();
 
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
 const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
@@ -361,6 +410,27 @@ function maybeLogTTYSessionDiagnostic(session, previousSnapshot, nextSnapshot) {
   return nextSnapshot;
 }
 
+function resolveSessionTmuxName(session) {
+  if (session?.swarmId && session?.swarmRole?.roleKey) {
+    return buildSwarmTmuxSessionName(session.swarmId, session.swarmRole.roleKey);
+  }
+  return null;
+}
+
+function maybeWriteOpencodeReadyMarker(session, payload = {}) {
+  const tmuxSession = resolveSessionTmuxName(session);
+  if (!tmuxSession) return;
+  try {
+    writeOpencodeReadyMarker(tmuxSession, {
+      sessionId: session.id,
+      opencodeSessionId: session.opencodeSessionId || null,
+      ...payload,
+    });
+  } catch {
+    // Best-effort marker for bootstrap polling in swarm wrappers.
+  }
+}
+
 function broadcastOpenCodeSessionDetected(session, sessionId) {
   for (const s of session.sockets) {
     if (s.readyState === s.OPEN) {
@@ -406,8 +476,8 @@ function detectSessionModeFromInput(session, input) {
 
     // Extract OpenCode session ID from --session <id> pattern immediately
     if (!session.opencodeSessionId) {
-      const sessionMatch = input.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
-      if (sessionMatch?.[1]) {
+      const sessionMatch = input.match(/opencode\s+(?:--session\s+)([\w-]+)/i);
+      if (sessionMatch?.[1] && !sessionMatch[1].startsWith('-')) {
         session.opencodeSessionId = sessionMatch[1];
         broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
       }
@@ -428,6 +498,14 @@ function detectSessionModeFromInput(session, input) {
     return;
   }
 
+  // Grok Build TUI (groc is a legacy launcher alias)
+  if (/\b(?:grok|groc)\b/i.test(input)) {
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    session.history = '';
+    return;
+  }
+
   session.pendingInput = `${session.pendingInput || ''}${input}`;
 
   // Parse line-based shell commands to detect transitions into TUI mode.
@@ -443,8 +521,8 @@ function detectSessionModeFromInput(session, input) {
 
       // Extract session ID from the command line
       if (!session.opencodeSessionId) {
-        const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)(ses_[\w]+)/i);
-        if (sessionMatch?.[1]) {
+        const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)([\w-]+)/i);
+        if (sessionMatch?.[1] && !sessionMatch[1].startsWith('-')) {
           session.opencodeSessionId = sessionMatch[1];
           broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
         }
@@ -463,6 +541,13 @@ function detectSessionModeFromInput(session, input) {
       }
       return;
     }
+
+    if (/^\s*(?:grok|groc)\b/i.test(trimmed)) {
+      session.mode = 'tui';
+      session.historyEnabled = false;
+      session.history = '';
+      return;
+    }
   }
 }
 
@@ -474,6 +559,33 @@ function getOrInitSessions() {
     globalThis[GLOBAL_TTY_SESSIONS_KEY] = new Map();
   }
   return globalThis[GLOBAL_TTY_SESSIONS_KEY];
+}
+
+/**
+ * getSessionOutput — read the accumulated output buffer of a session.
+ * Returns the history string or null if the session is unknown.
+ */
+export function getSessionOutput(id) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(id);
+  if (!session) return null;
+  return session.history || '';
+}
+
+/**
+ * pushSessionInput — write keystrokes to a session's PTY.
+ * Returns true on success, false if the session is unknown.
+ */
+export function pushSessionInput(id, data) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(id);
+  if (!session || !session.pty) return false;
+  try {
+    session.pty.write(String(data ?? ''));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizePtyRuntimeEvidence(session, terminalId) {
@@ -547,9 +659,14 @@ export function attachPtyLifecycle({ runtimeHint } = {}) {
   };
 }
 
-function buildSessionSpawnConfig(cwd, terminalId) {
+function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
   const tmuxEnabled = hasTmux();
-  const tmuxSession = normalizeTmuxSessionName(terminalId);
+  const isSwarm = Boolean(
+    swarmContext?.isSwarmRole && swarmContext?.launchId && swarmContext?.roleKey
+  );
+  const tmuxSession = isSwarm
+    ? `devhub-swarm-${swarmContext.launchId}-${swarmContext.roleKey}`
+    : normalizeTmuxSessionName(terminalId);
   const resolvedShell = resolveShell();
   const env = Object.assign(sanitizeTerminalSpawnEnv(process.env), {
     DEVHUB_PROJECT_DIR: cwd,
@@ -568,9 +685,18 @@ function buildSessionSpawnConfig(cwd, terminalId) {
     spawnArgs = ['-lc', attachCommand];
   } else if (path.basename(resolvedShell) === 'zsh') {
     spawnArgs = ['-lic', 'exec zsh -i', 'devhub-shell', '--no-use'];
+  } else if (os.platform() === 'win32') {
+    const shellBase = path.basename(resolvedShell).toLowerCase();
+    if (shellBase.includes('powershell') || shellBase.includes('pwsh')) {
+      // Suppress the standard Windows PowerShell copyright / "Instale la versión más reciente..." banner.
+      // This gives a much cleaner initial view (just the prompt + any command output).
+      // -NoLogo is the official way; we keep it minimal so user profiles can still run if present.
+      // Applies to both regular terminals and swarm agent worktree shells.
+      spawnArgs = ['-NoLogo'];
+    }
   }
 
-  return { env, spawnArgs, tmuxEnabled };
+  return { env, spawnArgs, tmuxEnabled, tmuxSession: tmuxEnabled ? tmuxSession : null };
 }
 
 /**
@@ -580,6 +706,12 @@ function buildSessionSpawnConfig(cwd, terminalId) {
  * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean }} opts
  */
 export function createSession({ id, cwd, shell, restored = false, swarmContext = null } = {}) {
+  // Auto-generate id when caller does not provide one (e.g. POST /api/terminal/session).
+  // Without this, the route returns { id: undefined } → JSON.stringify drops the key → the
+  // open_terminal tool sees { port, wsPath } and reports "missing required fields".
+  if (!id) {
+    id = `term-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  }
   const sessions = getOrInitSessions();
   const requestedCwd = cwd || resolveHomeDirectory();
   const cwdResolution = resolveTerminalSpawnCwd(requestedCwd, {
@@ -617,7 +749,11 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     }
   }
 
-  const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(resolvedCwd, id);
+  const { env, spawnArgs, tmuxEnabled, tmuxSession } = buildSessionSpawnConfig(
+    resolvedCwd,
+    id,
+    swarmContext
+  );
 
   ttyLog('createSession', `spawning PTY`, {
     id,
@@ -662,6 +798,10 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     title: null,
     restored,
     id,
+    swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
+    swarmId: swarmContext?.launchId || null,
+    tmuxSession: tmuxSession || null,
+    tmuxEnabled: Boolean(tmuxEnabled),
     _saveDebounceTimer: null,
     _lastDiagnosticSnapshot: null,
   };
@@ -694,6 +834,8 @@ export function closeSession(id) {
   if (session) {
     // PTY-4: Clear workspace PTY identity on session termination
     tryClearPtyIdentity(session);
+
+    teardownPanelSessionProcesses(session, { hasTmux });
 
     try {
       session.pty?.kill?.();
@@ -735,25 +877,12 @@ function _debouncedSave(sessions, session) {
   }, 30000);
 }
 
-const OPENCODE_OUTPUT_SESSION_RE = /\bses_([a-zA-Z0-9_]+)\b/;
-const SHELL_TERMINAL_RESPONSE_RE = new RegExp(
-  [
-    String.raw`\u001b\[\?(?:\d+;)*\d+[cnR]`,
-    String.raw`\u001b\[>(?:\d+;)*\d+c`,
-    String.raw`\u001b\[(?:\d+;)*\d+n`,
-    String.raw`\u001b\[(?:\d+;)*\d+R`,
-  ].join('|'),
-  'g'
-);
+const OPENCODE_OUTPUT_SESSION_RE =
+  /(?:session[ _]id|sesión[ _]id|session_id|opencode_session_id)[:\s]+([\w-]+)|\b(ses_[\w-]+)\b|\b(oc_[\w-]+)\b/i;
 const SHELL_NVM_ENV_WARNING_RE =
   /nvm is not compatible with the "[^"]+" environment variable:[^\n]*\nRun `unset [^`]+` to unset it\.\n?/g;
 const SHELL_NVM_NPMRC_WARNING_RE =
   /Your user.?s \.npmrc file \(\$\{HOME\}\/\.npmrc\)\nhas a `globalconfig` and\/or a `prefix` setting, which are incompatible with nvm\.\nRun `nvm use --delete-prefix [^`]+` to unset it\.\n?/g;
-
-function stripShellTerminalResponseNoise(chunk) {
-  if (typeof chunk !== 'string' || !chunk) return chunk;
-  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
-}
 
 function stripShellStartupNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
@@ -763,7 +892,7 @@ function stripShellStartupNoise(chunk) {
 
 function sanitizeHistoryReplay(session, history) {
   if (!session?.historyEnabled || session?.mode !== 'shell') return history;
-  return stripShellTerminalResponseNoise(history);
+  return filterTerminalOutputForSession(session, history);
 }
 
 function handleSessionOutput(sessions, session, chunk) {
@@ -780,17 +909,27 @@ function handleSessionOutput(sessions, session, chunk) {
     filtered = filtered.replace(/zsh: corrupt history file[^\n]*\n?/g, '');
     filtered = stripShellStartupNoise(filtered);
 
-    if (session.mode === 'shell') {
-      filtered = stripShellTerminalResponseNoise(filtered);
-    }
+    filtered = filterTerminalOutputForSession(session, filtered);
 
     if (!session.opencodeSessionId && session.mode === 'tui') {
       const outputMatch = filtered.match(OPENCODE_OUTPUT_SESSION_RE);
       if (outputMatch) {
-        const detectedId = `ses_${outputMatch[1]}`;
-        session.opencodeSessionId = detectedId;
-        broadcastOpenCodeSessionDetected(session, detectedId);
+        const detectedId = (outputMatch[1] || outputMatch[2] || outputMatch[3])?.trim();
+        if (detectedId && !detectedId.startsWith('-')) {
+          session.opencodeSessionId = detectedId;
+          broadcastOpenCodeSessionDetected(session, detectedId);
+        }
       }
+    }
+
+    // Swarm agents start OpenCode inside tmux before the DevHub client attaches,
+    // so session.mode may still be 'shell' when the TUI footer first appears.
+    if (detectOpenCodeTuiReady(filtered)) {
+      if (session.mode !== 'tui') {
+        session.mode = 'tui';
+        session.historyEnabled = false;
+      }
+      maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
     }
   }
 
@@ -955,46 +1094,175 @@ function startIdleCleanup(sessions) {
 /**
  * restoreSessions — loads persisted sessions from disk and recreates PTY processes.
  * Called once at startup. No-op if no file exists.
- * ZOMBIE CLEANUP: Skips sessions whose PTY processes are no longer alive.
- * REQUIRES ptyPid: sessions without a saved ptyPid are skipped entirely.
+ *
+ * Session branching:
+ * - opencode-durable: skip (React handles via opencode --session)
+ * - pty-durable: verify PTY pid still alive via process.kill(pid, 0), then createSession
+ * - shell-ephemeral: respawn via createSession({ cwd, shell, restored: true }) — no ptyPid check
+ *
+ * Mutex: sets devhub_restore_in_progress flag in localStorage before restore begins,
+ * clears it after all restores complete. React reads this flag to block relaunch dispatches.
  */
 export function restoreSessions() {
   const saved = loadSessions();
   let zombieCount = 0;
   let skippedNoPid = 0;
+  let shellEphemeralRestored = 0;
   const sessions = getOrInitSessions();
+
+  // Set mutex flag before restore begins
+  // Note: devhub_generic_restore_in_progress is for generic (pty-durable + shell-ephemeral) restores.
+  // opencode-durable sessions are skipped here (React handles them via opencode --session).
+  // For backward compatibility, startupRestoreCoordinator.js and TerminalWorkspacesManager.jsx
+  // still read devhub_restore_in_progress (Phase 6 will switch them to devhub_opencode_restore_in_progress).
+  try {
+    if (typeof globalThis.localStorage !== 'undefined') {
+      globalThis.localStorage.setItem('devhub_generic_restore_in_progress', 'true');
+    }
+  } catch {
+    // localStorage not available — skip mutex
+  }
 
   for (const s of saved) {
     try {
-      // Must have a saved ptyPid — without it we cannot verify the process
+      const sessionType = s.sessionType || classifySession(s);
+
+      // opencode-durable: React handles via opencode --session; skip backend restore
+      if (sessionType === 'opencode-durable') {
+        ttyLog('RESTORE', `skipping opencode-durable session — React handles it`, { id: s.id });
+        continue;
+      }
+
+      // pty-durable: must have a saved ptyPid — verify process is still alive
+      if (sessionType === 'pty-durable') {
+        if (!s.ptyPid) {
+          ttyLog('RESTORE', `skipping pty-durable session without ptyPid`, { id: s.id });
+          skippedNoPid++;
+          continue;
+        }
+
+        try {
+          process.kill(s.ptyPid, 0); // Signal 0 = check if process exists
+        } catch {
+          // Process is dead — skip restoration and log
+          ttyLog('ZOMBIE_CLEANUP', `skipping dead pty-durable session`, {
+            id: s.id,
+            pid: s.ptyPid,
+          });
+          zombieCount++;
+          continue;
+        }
+
+        const restored = createSession({
+          id: s.id,
+          cwd: s.cwd,
+          shell: s.shell,
+          restored: true,
+          swarmContext:
+            s.swarmRole || s.swarmId
+              ? {
+                  isSwarmRole: true,
+                  roleKey: s.swarmRole?.roleKey || null,
+                  launchId: s.swarmId || null,
+                }
+              : null,
+        });
+
+        // Verify the newly spawned PTY is actually alive
+        if (restored.ptyPid && typeof process.kill === 'function') {
+          try {
+            process.kill(restored.ptyPid, 0);
+          } catch {
+            // Spawned process died immediately — remove from disk
+            ttyLog(
+              'ZOMBIE_CLEANUP',
+              `restored pty-durable session died on spawn, removing from disk`,
+              {
+                id: s.id,
+                pid: restored.ptyPid,
+              }
+            );
+            sessions.delete(s.id);
+            zombieCount++;
+          }
+        }
+        continue;
+      }
+
+      // shell-ephemeral: respawn without ptyPid check
+      if (sessionType === 'shell-ephemeral') {
+        if (!s.cwd || !s.shell) {
+          ttyLog('RESTORE', `skipping shell-ephemeral without cwd/shell`, { id: s.id });
+          skippedNoPid++;
+          continue;
+        }
+
+        try {
+          const restored = createSession({
+            id: s.id,
+            cwd: s.cwd,
+            shell: s.shell,
+            restored: true,
+            swarmContext:
+              s.swarmRole || s.swarmId
+                ? {
+                    isSwarmRole: true,
+                    roleKey: s.swarmRole?.roleKey || null,
+                    launchId: s.swarmId || null,
+                  }
+                : null,
+          });
+          ttyLog('RESTORE', `restored shell-ephemeral session`, {
+            id: s.id,
+            cwd: s.cwd,
+            shell: s.shell,
+            newPid: restored.ptyPid,
+          });
+          shellEphemeralRestored++;
+        } catch (ephemeralErr) {
+          ttyLog('RESTORE', `failed to restore shell-ephemeral session`, {
+            id: s.id,
+            error: ephemeralErr?.message,
+          });
+        }
+        continue;
+      }
+
+      // Fallback for sessions without sessionType and no identifiable type markers
+      // (legacy v1 sessions that somehow weren't migrated)
       if (!s.ptyPid) {
-        ttyLog('RESTORE', `skipping session without ptyPid`, { id: s.id });
+        ttyLog('RESTORE', `skipping legacy session without ptyPid or sessionType`, { id: s.id });
         skippedNoPid++;
         continue;
       }
 
-      // Check if the PTY process is still alive before restoring
+      // Legacy pty-durable without sessionType — treat as pty-durable
       try {
-        process.kill(s.ptyPid, 0); // Signal 0 = check if process exists
+        process.kill(s.ptyPid, 0);
       } catch {
-        // Process is dead — skip restoration and log
-        ttyLog('ZOMBIE_CLEANUP', `skipping dead session`, { id: s.id, pid: s.ptyPid });
+        ttyLog('ZOMBIE_CLEANUP', `skipping dead legacy session`, { id: s.id, pid: s.ptyPid });
         zombieCount++;
         continue;
       }
 
-      const restored = createSession({ id: s.id, cwd: s.cwd, shell: s.shell, restored: true });
-
-      // Verify the newly spawned PTY is actually alive
+      const restored = createSession({
+        id: s.id,
+        cwd: s.cwd,
+        shell: s.shell,
+        restored: true,
+        swarmContext:
+          s.swarmRole || s.swarmId
+            ? {
+                isSwarmRole: true,
+                roleKey: s.swarmRole?.roleKey || null,
+                launchId: s.swarmId || null,
+              }
+            : null,
+      });
       if (restored.ptyPid && typeof process.kill === 'function') {
         try {
           process.kill(restored.ptyPid, 0);
         } catch {
-          // Spawned process died immediately — remove from disk
-          ttyLog('ZOMBIE_CLEANUP', `restored session died on spawn, removing from disk`, {
-            id: s.id,
-            pid: restored.ptyPid,
-          });
           sessions.delete(s.id);
           zombieCount++;
         }
@@ -1005,6 +1273,16 @@ export function restoreSessions() {
     }
   }
 
+  // Clear mutex flag after all restores complete
+  // Uses devhub_generic_restore_in_progress — the generic restore mutex key.
+  try {
+    if (typeof globalThis.localStorage !== 'undefined') {
+      globalThis.localStorage.removeItem('devhub_generic_restore_in_progress');
+    }
+  } catch {
+    // localStorage not available — skip
+  }
+
   if (zombieCount > 0) {
     console.log(
       `[ttyServer][ZOMBIE_CLEANUP] Cleaned up ${zombieCount} dead session(s) from previous run`
@@ -1012,6 +1290,11 @@ export function restoreSessions() {
   }
   if (skippedNoPid > 0) {
     console.log(`[ttyServer][RESTORE] Skipped ${skippedNoPid} session(s) without saved ptyPid`);
+  }
+  if (shellEphemeralRestored > 0) {
+    console.log(
+      `[ttyServer][RESTORE] Restored ${shellEphemeralRestored} shell-ephemeral session(s)`
+    );
   }
 }
 
@@ -1123,10 +1406,15 @@ export async function ensureTTYServer() {
     });
 
     let session = terminalSessions.get(terminalId);
+    const isSessionReattach = Boolean(session);
 
     if (!session) {
       const shell = resolveShell();
-      const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(cwd, terminalId);
+      const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(
+        cwd,
+        terminalId,
+        swarmContext
+      );
 
       ttyLog('WS_CONN', `creating new session`, {
         terminalId,
@@ -1171,6 +1459,8 @@ export async function ensureTTYServer() {
         shell,
         title: null,
         restored: false,
+        swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
+        swarmId: swarmContext?.launchId || null,
         _saveDebounceTimer: null,
         _lastDiagnosticSnapshot: null,
       };
@@ -1224,10 +1514,12 @@ export async function ensureTTYServer() {
       if (!message?.type) return;
 
       if (message.type === 'input' && typeof message.data === 'string') {
-        detectSessionModeFromInput(session, message.data);
+        const filteredInput = filterTerminalInputForSession(session, message.data);
+        if (filteredInput === null) return;
+        detectSessionModeFromInput(session, filteredInput);
         session.lastActivityAt = Date.now();
         try {
-          session.pty.write(message.data);
+          session.pty.write(filteredInput);
         } catch (err) {
           // PTY file descriptor already closed (EBADF) — ignore silently
           ttyLog('EBADF', `pty.write failed`, { id: session.id, error: err?.message });
@@ -1279,9 +1571,12 @@ export async function ensureTTYServer() {
         // AUTO-KILL: If this was the last socket, start a grace timer
         // If no one reconnects within 15s, kill the PTY to prevent zombies
         if (remainingSockets <= 0 && session.pty) {
+          const autoKillGraceMs = resolveAutoKillGraceMs(session);
           ttyLog('WS_CLOSE', `last socket disconnected, starting auto-kill grace timer`, {
             terminalId,
-            gracePeriodSeconds: 15,
+            gracePeriodMs: autoKillGraceMs,
+            swarmId: session.swarmId || null,
+            mode: session.mode || 'shell',
           });
 
           // Clear any existing timer (reconnect scenario)
@@ -1327,7 +1622,7 @@ export async function ensureTTYServer() {
               });
             }
             session._autoKillTimer = null;
-          }, 15000); // 15 second grace period
+          }, autoKillGraceMs);
         }
 
         // If client reconnected and cancelled the auto-kill timer, log it
@@ -1342,8 +1637,18 @@ export async function ensureTTYServer() {
       }
     });
 
-    ttyLog('WS_CONN', `sending ready to client`, { terminalId });
-    socket.send(JSON.stringify({ type: 'ready' }));
+    ttyLog('WS_CONN', `sending ready to client`, {
+      terminalId,
+      reattached: isSessionReattach,
+      mode: session?.mode || 'shell',
+    });
+    socket.send(
+      JSON.stringify({
+        type: 'ready',
+        reattached: isSessionReattach,
+        mode: session?.mode || 'shell',
+      })
+    );
   });
 
   const serverState = { port, wsPath };
@@ -1396,7 +1701,7 @@ export function getActiveOpenCodeSessionIds() {
   const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
   if (!sessions || typeof sessions.values !== 'function') return {};
 
-  const OPENCODE_SESSION_RE = /opencode\s+(?:--session\s+|session\s+resume\s+)(ses_[\w]+)/i;
+  const OPENCODE_SESSION_RE = /opencode\s+(?:--session\s+|session\s+resume\s+)([\w-]+)/i;
 
   const result = {};
 
@@ -1413,12 +1718,51 @@ export function getActiveOpenCodeSessionIds() {
     // Scan history for session ID pattern
     if (session.history) {
       const match = session.history.match(OPENCODE_SESSION_RE);
-      if (match?.[1]) {
+      if (match?.[1] && !match[1].startsWith('-')) {
         session.opencodeSessionId = match[1];
         result[terminalId] = match[1];
       }
     }
   }
+
+  return result;
+}
+
+/**
+ * getAllActiveSessions — list every live PTY session in the global map.
+ *
+ * Unlike `getActiveOpenCodeSessionIds`, this includes plain shell/pty
+ * sessions created by the open_terminal tool (which do not set
+ * opencodeSessionId). Without it, list_terminals returns `{processes:[]}`
+ * and the assistant loops on open_terminal.
+ *
+ * `type` is 'opencode' when opencodeSessionId is set, otherwise the
+ * session's mode (e.g. 'pty', 'shell', 'tui'). Sorted ascending by
+ * createdAt; sessions missing createdAt are pushed to the end.
+ */
+export function getAllActiveSessions() {
+  const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
+  if (!sessions || typeof sessions.values !== 'function') return [];
+
+  const result = [];
+  for (const [, session] of sessions.entries()) {
+    if (!session || !session.id) continue;
+    result.push({
+      id: session.id,
+      cwd: session.cwd || null,
+      shell: session.shell || null,
+      createdAt: session.createdAt || null,
+      type: session.opencodeSessionId ? 'opencode' : session.mode || 'pty',
+      opencodeSessionId: session.opencodeSessionId || null,
+    });
+  }
+
+  result.sort((a, b) => {
+    if (!a.createdAt && !b.createdAt) return 0;
+    if (!a.createdAt) return 1;
+    if (!b.createdAt) return -1;
+    return String(a.createdAt).localeCompare(String(b.createdAt));
+  });
 
   return result;
 }

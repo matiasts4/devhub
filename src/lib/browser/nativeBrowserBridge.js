@@ -1,4 +1,5 @@
 'use client';
+/* global require */
 
 let nativeBrowserUnlisten = null;
 
@@ -47,6 +48,25 @@ function normalizeNativeBrowserReason(reason, fallbackReason) {
   return String(reason);
 }
 
+export function isTransientNativeBrowserProbeFailure(reason) {
+  if (!reason) return false;
+  const r = String(reason);
+  if (
+    r === 'probe-failed' ||
+    r === 'probe-missing-main-window' ||
+    r === 'probe-missing-default-vbox' ||
+    r === 'probe-missing-webview-handle' ||
+    r === 'probe-missing-host-primitives' ||
+    r === 'missing-bounds' ||
+    r === 'open-failed' ||
+    r.includes('host-primitives') ||
+    r.includes('open-failed')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 async function invokeNativeBrowser(command, payload = {}, failureShape = {}) {
   if (!isNativeBrowserRuntimeAvailable()) {
     return failureShape;
@@ -92,21 +112,19 @@ export async function reloadNativeBrowser(payload = {}) {
 }
 
 export async function resizeNativeBrowser(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_resize', { request: payload });
+  return invokeNativeBrowser('native_browser_resize', payload, {});
 }
 
 export async function focusNativeBrowser(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_focus', { request: payload });
+  return invokeNativeBrowser('native_browser_focus', payload, {});
+}
+
+export async function raiseNativeBrowser(payload = {}) {
+  return invokeNativeBrowser('native_browser_raise', payload, {});
 }
 
 export async function setNativeBrowserVisibility(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_set_visibility', { request: payload });
+  return invokeNativeBrowser('native_browser_set_visibility', payload, {});
 }
 
 export async function nativeBrowserSelectorCommand(payload = {}) {
@@ -131,9 +149,7 @@ export async function copyNativeBrowser(payload = {}) {
 }
 
 export async function closeNativeBrowser(payload = {}) {
-  if (!isNativeBrowserRuntimeAvailable()) return;
-  const { invoke } = await getTauriCore();
-  await invoke('native_browser_close', { request: payload });
+  return invokeNativeBrowser('native_browser_close', payload, {});
 }
 
 export async function subscribeNativeBrowserEvents() {

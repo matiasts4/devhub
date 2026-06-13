@@ -40,7 +40,34 @@ function buildMissionMessageSummary(eventType, normalizedPayload, fallbackStatus
   return eventType;
 }
 
-export const POST = withAuth(async function POST(request) {
+// T-007 — POST /api/agenthub/events is RETIRED. Agents now write to team_events
+// via the devhub-bus binary (`_devhub_event ...`) which is durable, atomic, and
+// doesn't require HMAC plumbing. Real-time consumers should use `devhub events tail`
+// to read the JSONL projection. The GET handler below is preserved unchanged for
+// historical / one-shot queries.
+export const POST = withAuth(async function POST() {
+  return NextResponse.json(
+    {
+      error: 'gone',
+      message:
+        'POST /api/agenthub/events is retired (agent-comms-redesign). ' +
+        'Write to team_events via the devhub-bus binary: ' +
+        '`devhub-bus event-write --mission <id> --source <role> --kind <kind> --payload <json>`. ' +
+        'For real-time consumers, use `devhub events tail --mission <id>` to read the JSONL projection.',
+      replaced_by: 'devhub-bus event-write / devhub events tail',
+    },
+    { status: 410 }
+  );
+});
+
+// Keep the original POST body below for reference; it is now unreachable.
+// The original handler from before T-007 is preserved as legacy code for
+// the internal supervisor adapter (which calls emitAgentEvent directly, not via HTTP).
+// Keep the original POST body below for reference; it is now unreachable.
+// The original handler from before T-007 is preserved as legacy code for
+// the internal supervisor adapter (which calls emitAgentEvent directly, not via HTTP).
+// eslint-disable-next-line no-unused-vars
+async function _legacyPOST_REMOVED(request) {
   try {
     const body = await request.json();
     const {
@@ -167,7 +194,7 @@ export const POST = withAuth(async function POST(request) {
       { status: error.status && error.status < 500 ? error.status : 500 }
     );
   }
-});
+}
 
 export async function GET(request) {
   try {
@@ -177,9 +204,83 @@ export async function GET(request) {
     const eventType = searchParams.get('event_type');
     const since = searchParams.get('since');
     const limit = parseInt(searchParams.get('limit') || '100', 10);
+    const longPoll = searchParams.get('long_poll') === 'true';
+    const timeoutSec = parseInt(searchParams.get('timeout') || '30', 10);
 
     const db = getDb();
 
+    // Long-poll: wait up to timeoutSec for new events after `since`
+    if (longPoll && since) {
+      const deadline = Date.now() + Math.min(Math.max(timeoutSec, 1), 30) * 1000;
+      let events = [];
+      let source = '';
+
+      while (Date.now() < deadline) {
+        // Primary query: agent_events table
+        if (AGENT_EVENT_TYPES.includes(eventType) || !eventType) {
+          const candidate = queryAgentEvents(db, {
+            agent_id: agentId || undefined,
+            type: eventType && AGENT_EVENT_TYPES.includes(eventType) ? eventType : undefined,
+            since: since || undefined,
+            limit: Math.min(limit, 100),
+          });
+          let filtered = missionId
+            ? candidate.filter((e) => e.mission_id === missionId)
+            : candidate;
+          if (filtered.length > 0) {
+            events = filtered;
+            source = 'agent_events';
+            break;
+          }
+        }
+
+        // Also check mission_messages for legacy events after since
+        const legacyParams = [since];
+        let legacyQuery = `
+          SELECT
+            message_id as event_id,
+            mission_id,
+            sender_agent_id as agent_id,
+            body_summary,
+            created_at
+          FROM mission_messages
+          WHERE message_kind = 'status' AND created_at >= ?
+        `;
+        if (missionId) {
+          legacyQuery += ' AND mission_id = ?';
+          legacyParams.push(missionId);
+        }
+        if (agentId) {
+          legacyQuery += ' AND sender_agent_id = ?';
+          legacyParams.push(agentId);
+        }
+        legacyQuery += ' ORDER BY created_at DESC LIMIT ?';
+        legacyParams.push(Math.min(limit, 100));
+
+        const legacyEvents = db.prepare(legacyQuery).all(...legacyParams);
+        if (legacyEvents.length > 0) {
+          events = legacyEvents;
+          source = 'mission_messages';
+          break;
+        }
+
+        // Sleep briefly before next poll attempt (avoid tight loop)
+        const sleepMs = Math.min(2000, deadline - Date.now() - 500);
+        if (sleepMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, sleepMs));
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        source,
+        events,
+        count: events.length,
+        timed_out: events.length === 0,
+      });
+    }
+
+    // Standard GET without long-poll (original behavior)
     // Primary query: agent_events table
     if (AGENT_EVENT_TYPES.includes(eventType) || !eventType) {
       const events = queryAgentEvents(db, {

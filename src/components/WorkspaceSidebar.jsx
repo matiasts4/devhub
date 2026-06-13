@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 'use client';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
@@ -21,6 +22,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import { useAuth } from '@/lib/auth/AuthContext';
 import StatusSignal from '@/components/ui/StatusSignal';
 import {
   getVisibleNavKeys,
@@ -46,6 +48,7 @@ const HEARTBEAT_FRESH_MS = 90_000;
 
 const allNavItems = {
   dashboard: { icon: LayoutDashboard, label: 'Dashboard' },
+  planificacion: { icon: Sparkles, label: 'Planificación' },
   tareas: { icon: ListTodo, label: 'Tareas' },
   editor: { icon: FolderOpen, label: 'Sistema de Archivos' },
   scaffolding: { icon: Layers, label: 'Scaffolding' },
@@ -60,9 +63,18 @@ const configNavItems = {
   ajustes: { icon: Settings, label: 'Ajustes' },
 };
 
-const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm', 'telegram'];
+const DEFAULT_NAV = [
+  'dashboard',
+  'planificacion',
+  'tareas',
+  'editor',
+  'roadmap',
+  'historial',
+  'swarm',
+  'telegram',
+];
 
-const SECTION_CORE = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial'];
+const SECTION_CORE = ['dashboard', 'planificacion', 'tareas', 'editor', 'roadmap', 'historial'];
 const SECTION_AI = ['swarm', 'telegram'];
 
 // Transition used consistently for slide/fade in collapsed ↔ expanded
@@ -106,10 +118,17 @@ function ProgressRing({ value, color = 'oklch(0.74 0.16 57)' }) {
   );
 }
 
-export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, onToggleCollapse }) {
+export default function WorkspaceSidebar({
+  project,
+  collapsed,
+  isTerminalOpen,
+  onToggleCollapse,
+  className,
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+  const { user } = useAuth();
 
   const [activeAgentsCount, setActiveAgentsCount] = useState(0);
 
@@ -174,9 +193,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
           exit={{ opacity: 0, height: 0 }}
           transition={SLIDE_TRANSITION}
         >
-          <p className="typography-section-label">
-            {title}
-          </p>
+          <p className="typography-section-label">{title}</p>
           {extra}
         </motion.div>
       )}
@@ -264,7 +281,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
       initial={false}
       animate={{ width: collapsed ? 48 : 256 }}
       transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-      className="relative flex-shrink-0 border-r h-full"
+      className={`relative flex-shrink-0 border-r h-full ${className || ''}`}
       style={{
         ...getSidebarChromeStyle(),
         minWidth: collapsed ? 48 : 256,
@@ -347,10 +364,7 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
         </nav>
 
         {/* Identity block - moved to bottom */}
-        <div
-          className="px-2.5 py-2.5 border-t"
-          style={{ borderTopColor: 'var(--border-subtle)' }}
-        >
+        <div className="px-2.5 py-2.5 border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
           <motion.div
             layout
             className={collapsed ? 'flex justify-center' : 'rounded-none border p-2.5'}
@@ -466,13 +480,57 @@ export default function WorkspaceSidebar({ project, collapsed, isTerminalOpen, o
           </motion.div>
         </div>
 
-        {/* Sidebar collapse toggle */}
-        <div className="border-t p-2" style={{ borderColor: 'var(--border-subtle)' }}>
+        {/* Bottom bar: user indicator + collapse toggle */}
+        <div className="border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
+          {/* User row — only visible when logged in */}
+          {user && (
+            <div
+              className={`flex items-center min-w-0 ${
+                collapsed ? 'justify-center px-1.5 py-2' : 'gap-2 px-2.5 py-2'
+              }`}
+            >
+              {/* Avatar */}
+              <div
+                className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                style={{
+                  background: 'var(--accent-primary)',
+                  boxShadow: '0 0 0 1px color-mix(in srgb, var(--accent-primary) 30%, transparent)',
+                }}
+                title={user.email}
+              >
+                {user.email[0].toUpperCase()}
+              </div>
+
+              {/* Info - only when expanded */}
+              {!collapsed && (
+                <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+                  <span
+                    className="text-[11px] font-medium truncate"
+                    style={{ color: 'var(--text-primary)', lineHeight: '1.3' }}
+                  >
+                    {user.email.split('@')[0]}
+                  </span>
+                  <span
+                    className="text-[9px] flex items-center gap-1 truncate"
+                    style={{ color: 'var(--accent-primary)', lineHeight: '1.2' }}
+                  >
+                    <Cloud className="w-2.5 h-2.5 shrink-0" />
+                    Cloud Sync
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Collapse toggle */}
           <button
             data-testid="sidebar-toggle-bottom"
             onClick={() => onToggleCollapse && onToggleCollapse(!collapsed)}
             aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-all cursor-pointer rounded-none border"
+            title={collapsed ? 'Expandir' : 'Colapsar'}
+            className={`w-full flex items-center justify-center transition-all cursor-pointer border-t ${
+              collapsed ? 'py-1.5' : 'gap-1.5 px-2 py-1.5'
+            } text-[10px] font-medium`}
             style={{
               background: 'var(--chrome-control-fill)',
               borderColor: 'var(--chrome-border-color)',

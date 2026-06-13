@@ -54,10 +54,10 @@ describe('terminalRendererPreferences', () => {
       )
     ).toEqual({
       version: 1,
-      defaultMode: 'vte-experimental',
+      defaultMode: 'xterm-webgl',
       workspaces: {
         'ws-1': {
-          defaultMode: 'vte-experimental',
+          defaultMode: 'xterm-webgl',
           panels: {
             p1: 'xterm',
           },
@@ -66,27 +66,27 @@ describe('terminalRendererPreferences', () => {
     });
   });
 
-  test('resolves panel inherit from workspace default and falls back to GTK VTE for missing prefs', () => {
+  test('resolves panel inherit from workspace default and falls back to xterm-webgl for missing prefs', () => {
     const prefs = {
       version: 1,
       workspaces: {
         'ws-1': {
-          defaultMode: 'vte-experimental',
+          defaultMode: 'xterm',
           panels: {
             p1: 'inherit',
-            p2: 'xterm',
+            p2: 'xterm-webgl',
           },
         },
       },
     };
 
-    expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p1', prefs })).toBe(
-      'vte-experimental'
-    );
+    expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p1', prefs })).toBe('xterm');
     expect(resolveRequestedRenderer({ workspaceId: 'ws-1', panelId: 'p2', prefs })).toBe(
-      'xterm'
+      'xterm-webgl'
     );
-    expect(resolveRequestedRenderer({ workspaceId: 'ws-unknown', panelId: 'p-x', prefs })).toBe('vte-experimental');
+    expect(resolveRequestedRenderer({ workspaceId: 'ws-unknown', panelId: 'p-x', prefs })).toBe(
+      'xterm-webgl'
+    );
   });
 
   test('returns raw panel preference so UI can distinguish inherit from explicit overrides', () => {
@@ -103,11 +103,15 @@ describe('terminalRendererPreferences', () => {
       },
     };
 
-    expect(getPanelRendererPreferenceMode({ workspaceId: 'ws-1', panelId: 'p1', prefs })).toBe('inherit');
+    expect(getPanelRendererPreferenceMode({ workspaceId: 'ws-1', panelId: 'p1', prefs })).toBe(
+      'inherit'
+    );
     expect(getPanelRendererPreferenceMode({ workspaceId: 'ws-1', panelId: 'p2', prefs })).toBe(
       'vte-experimental'
     );
-    expect(getPanelRendererPreferenceMode({ workspaceId: 'ws-1', panelId: 'p999', prefs })).toBe('inherit');
+    expect(getPanelRendererPreferenceMode({ workspaceId: 'ws-1', panelId: 'p999', prefs })).toBe(
+      'inherit'
+    );
   });
 
   test('reads stored prefs through scoped key and sanitizes them against live workspace ids', () => {
@@ -132,9 +136,11 @@ describe('terminalRendererPreferences', () => {
       }),
     };
 
-    expect(readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])).toEqual({
+    expect(
+      readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])
+    ).toEqual({
       version: 1,
-      defaultMode: 'vte-experimental',
+      defaultMode: 'xterm-webgl',
       workspaces: {
         'ws-1': {
           defaultMode: 'xterm',
@@ -152,7 +158,9 @@ describe('terminalRendererPreferences', () => {
       }),
     };
 
-    expect(readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])).toEqual({
+    expect(
+      readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])
+    ).toEqual({
       version: 1,
       defaultMode: 'xterm',
       workspaces: {},
@@ -170,18 +178,21 @@ describe('terminalRendererPreferences', () => {
 
     writeTerminalRendererDefaultModeSetting(storage, 'vte-experimental');
 
-    expect(storage.setItem).toHaveBeenCalledWith('devhub_terminal_renderer_default_mode', 'vte-experimental');
+    expect(storage.setItem).toHaveBeenCalledWith(
+      'devhub_terminal_renderer_default_mode',
+      'vte-experimental'
+    );
     expect(readTerminalRendererDefaultModeSetting(storage)).toBe('vte-experimental');
   });
 
-  test('creates baseline GTK VTE preferences when storage is empty or invalid', () => {
+  test('creates baseline xterm-webgl preferences when storage is empty or invalid', () => {
     const fallback = createDefaultTerminalRendererPreferences();
     const storage = {
       getItem: jest.fn(() => '{broken-json'),
     };
 
-    expect(readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])).toEqual(
-      fallback
-    );
+    expect(
+      readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])
+    ).toEqual(fallback);
   });
 });

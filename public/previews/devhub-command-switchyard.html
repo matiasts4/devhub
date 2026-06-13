@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - DevHub Command Switchyard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Chakra Petch', 'sans-serif'],
+                        mono: ['IBM Plex Mono', 'monospace'],
+                    },
+                    colors: {
+                        brutal: {
+                            bg: 'var(--surface-0)',
+                            panel: 'var(--surface-3)',
+                            border: 'var(--panel-border)',
+                            borderStrong: 'var(--panel-border-strong)',
+                            yellow: 'var(--accent)',
+                            green: 'var(--success)',
+                            rose: 'var(--warn)',
+                            slate: 'var(--ink-muted)'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        :root {
+            --accent: #63d0c2;
+            --accent-hover: #85e0d5;
+            --accent-rgb: 99, 208, 194;
+            --secondary-rgb: 79, 131, 212;
+            --accent-shadow: rgba(18, 78, 76, 0.48);
+            --accent-glow: rgba(99, 208, 194, 0.16);
+            --surface-0: #091014;
+            --surface-1: #10181d;
+            --surface-2: #070b0d;
+            --surface-3: #111d22;
+            --surface-4: #0f171c;
+            --panel-border: rgba(99, 208, 194, 0.18);
+            --panel-border-strong: rgba(99, 208, 194, 0.34);
+            --ink-main: #ecf5f4;
+            --ink-muted: #9bb9bf;
+            --success: #43d19e;
+            --warn: #ef6b7b;
+            --accent-ink: #081012;
+        }
+
+        body[data-palette='cobalt'] {
+            --accent: #7a93ff;
+            --accent-hover: #9cb0ff;
+            --accent-rgb: 122, 147, 255;
+            --accent-shadow: rgba(34, 54, 116, 0.4);
+            --accent-glow: rgba(122, 147, 255, 0.16);
+            --accent-ink: #0a1022;
+        }
+
+        body[data-palette='alloy'] {
+            --accent: #d4a16a;
+            --accent-hover: #e1b684;
+            --accent-rgb: 212, 161, 106;
+            --accent-shadow: rgba(83, 52, 25, 0.38);
+            --accent-glow: rgba(212, 161, 106, 0.16);
+            --accent-ink: #171009;
+        }
+
+        body {
+            background-color: #091014;
+            background-image:
+                radial-gradient(circle at top left, rgba(99, 208, 194, 0.18), transparent 24%),
+                radial-gradient(circle at top right, rgba(79, 131, 212, 0.12), transparent 22%),
+                linear-gradient(rgba(228, 255, 251, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(228, 255, 251, 0.012) 1px, transparent 1px),
+                linear-gradient(180deg, #10181d 0%, #070b0d 100%);
+            background-size: auto, auto, 24px 24px, 24px 24px, auto;
+            color: #ecf5f4;
+        }
+
+        body.font-sans {
+            font-family: 'Chakra Petch', sans-serif;
+        }
+
+        .shell-card,
+        .signal-node,
+        .aux-card,
+        .kanban-card,
+        .timeline-card,
+        .control-card,
+        .drawer-card {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(18, 28, 33, 0.98), rgba(10, 16, 19, 0.98)),
+                repeating-linear-gradient(180deg, rgba(228, 255, 251, 0.02) 0, rgba(228, 255, 251, 0.02) 1px, transparent 1px, transparent 22px);
+            box-shadow: 0 18px 30px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(228, 255, 251, 0.05), inset 0 0 0 1px rgba(255, 255, 255, 0.015);
+        }
+
+        .shell-card::after,
+        .signal-node::after,
+        .aux-card::after,
+        .kanban-card::after,
+        .timeline-card::after,
+        .control-card::after,
+        .drawer-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            border-radius: inherit;
+            background: linear-gradient(135deg, rgba(228, 255, 251, 0.04), transparent 42%);
+        }
+
+        .shell-card::before,
+        .signal-node::before,
+        .aux-card::before,
+        .kanban-card::before,
+        .timeline-card::before,
+        .control-card::before,
+        .drawer-card::before {
+            content: '';
+            position: absolute;
+            inset: 1px;
+            pointer-events: none;
+            border-radius: inherit;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            opacity: 0.9;
+        }
+
+        .shell-card,
+        .drawer-card,
+        .aux-card,
+        .timeline-card {
+            border-radius: 18px;
+        }
+
+        .control-card,
+        .kanban-card,
+        .signal-node {
+            border-radius: 12px;
+        }
+
+        .brand-mark,
+        .metric-icon,
+        .nav-icon,
+        .status-dot,
+        .control-dot {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .brand-mark {
+            width: 2.35rem;
+            height: 2.35rem;
+            border: 1px solid var(--panel-border-strong);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.24), rgba(var(--accent-rgb), 0.08));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 18px rgba(0, 0, 0, 0.24);
+        }
+
+        .theme-link {
+            padding: 0.42rem 0.72rem;
+            font-size: 11px;
+            font-weight: 700;
+            color: #7d9498;
+            text-decoration: none;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
+        }
+
+        .theme-link:hover {
+            color: #eef8f8;
+            border-color: var(--panel-border);
+            background: rgba(var(--accent-rgb), 0.08);
+        }
+
+        .theme-link.active {
+            color: var(--accent-ink);
+            background: linear-gradient(180deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 86%, white 14%) 100%);
+            border-color: rgba(205, 250, 245, 0.22);
+            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-chip {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.72rem 0.9rem;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #8ca4a8;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+        }
+
+        .nav-chip:hover {
+            color: #eef8f8;
+            background: rgba(var(--accent-rgb), 0.08);
+            border-color: var(--panel-border);
+        }
+
+        .nav-chip[data-active='true'] {
+            color: #f2fffd;
+            background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.16), rgba(var(--accent-rgb), 0.05));
+            border-color: var(--panel-border-strong);
+            box-shadow: inset 0 1px 0 rgba(228, 255, 251, 0.06), 0 10px 18px rgba(0, 0, 0, 0.24);
+        }
+
+        .nav-icon {
+            width: 1.7rem;
+            height: 1.7rem;
+            border: 1px solid var(--panel-border);
+            background: rgba(255, 255, 255, 0.025);
+            border-radius: 12px;
+            color: var(--accent);
+        }
+
+        .brutal-btn-primary,
+        .brutal-btn-secondary {
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+            transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, color 160ms ease;
+        }
+
+        .brutal-btn-primary {
+            background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.9), rgba(var(--accent-rgb), 0.72));
+            color: var(--accent-ink);
+            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+            border-color: rgba(var(--accent-rgb), 0.38);
+        }
+
+        .brutal-btn-primary:hover {
+            transform: translateY(-1px);
+            background: linear-gradient(180deg, var(--accent-hover), var(--accent));
+        }
+
+        .brutal-btn-secondary {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+            color: var(--ink-main);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .brutal-btn-secondary:hover {
+            transform: translateY(-1px);
+            border-color: var(--panel-border-strong);
+            background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.14), rgba(var(--accent-rgb), 0.05));
+            color: color-mix(in srgb, var(--ink-main) 86%, white 14%);
+        }
+
+        .tab-content.hidden {
+            display: none;
+        }
+
+        .signal-node {
+            padding: 0.9rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+        }
+
+        .signal-node.live {
+            border-color: rgba(67, 209, 158, 0.34);
+        }
+
+        .signal-node.warn {
+            border-color: rgba(239, 107, 123, 0.34);
+        }
+
+        .signal-node.idle {
+            border-color: rgba(156, 177, 181, 0.18);
+        }
+
+        .status-dot,
+        .control-dot {
+            width: 0.7rem;
+            height: 0.7rem;
+            border-radius: 999px;
+        }
+
+        .status-dot.live,
+        .control-dot.live {
+            background: #43d19e;
+            box-shadow: 0 0 0 4px rgba(67, 209, 158, 0.14);
+        }
+
+        .status-dot.warn,
+        .control-dot.warn {
+            background: #ef6b7b;
+            box-shadow: 0 0 0 4px rgba(239, 107, 123, 0.14);
+        }
+
+        .status-dot.idle,
+        .control-dot.idle {
+            background: #6f878c;
+        }
+
+        .terminal-shell {
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            background: linear-gradient(180deg, #050809 0%, #0b1012 100%);
+            box-shadow: inset 0 1px 0 rgba(228, 255, 251, 0.05), 0 18px 34px rgba(0, 0, 0, 0.34);
+        }
+
+        .metric-tile {
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(20, 28, 32, 0.99), rgba(11, 16, 19, 0.99));
+            box-shadow: inset 0 1px 0 rgba(228, 255, 251, 0.05);
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.16fr) 20rem;
+            gap: 1rem;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .dashboard-main,
+        .dashboard-rail {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-height: 0;
+        }
+
+        .dashboard-hero {
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .dashboard-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.06fr) minmax(17rem, 0.94fr);
+            gap: 1rem;
+            align-items: stretch;
+        }
+
+        .hero-metric-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .hero-metric {
+            position: relative;
+            overflow: hidden;
+            padding: 0.95rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        .hero-metric[data-span='wide'] {
+            grid-column: span 2;
+        }
+
+        .hero-metric[data-tone='accent'] {
+            border-color: rgba(var(--accent-rgb), 0.26);
+            background: linear-gradient(180deg, rgba(13, 30, 31, 0.98), rgba(8, 18, 19, 0.98));
+        }
+
+        .hero-metric[data-tone='cobalt'] {
+            border-color: rgba(var(--secondary-rgb), 0.24);
+            background: linear-gradient(180deg, rgba(17, 27, 46, 0.98), rgba(10, 15, 26, 0.98));
+        }
+
+        .hero-metric[data-tone='amber'] {
+            border-color: rgba(212, 161, 106, 0.24);
+            background: linear-gradient(180deg, rgba(37, 27, 20, 0.98), rgba(17, 13, 10, 0.98));
+        }
+
+        .hero-metric[data-tone='rose'] {
+            border-color: rgba(239, 107, 123, 0.22);
+            background: linear-gradient(180deg, rgba(32, 18, 22, 0.98), rgba(16, 10, 12, 0.98));
+        }
+
+        .hero-metric-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .metric-kicker {
+            font-size: 10px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--ink-muted);
+        }
+
+        .metric-value {
+            font-size: clamp(2rem, 2.7vw, 2.85rem);
+            line-height: 0.9;
+            font-weight: 900;
+            color: var(--ink-main);
+        }
+
+        .metric-subcopy {
+            color: #c8d7da;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .hero-meter {
+            width: 100%;
+            height: 7px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .hero-meter > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 58%, white 42%) 100%);
+            box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.28);
+        }
+
+        .hero-metric[data-tone='cobalt'] .hero-meter > span {
+            background: linear-gradient(90deg, #9eb3ff 0%, #4f83d4 100%);
+            box-shadow: 0 0 18px rgba(var(--secondary-rgb), 0.32);
+        }
+
+        .hero-metric[data-tone='amber'] .hero-meter > span {
+            background: linear-gradient(90deg, #ffd8a8 0%, #d4a16a 100%);
+            box-shadow: 0 0 18px rgba(212, 161, 106, 0.24);
+        }
+
+        .hero-metric[data-tone='rose'] .hero-meter > span {
+            background: linear-gradient(90deg, #ffb3bd 0%, #ef6b7b 100%);
+            box-shadow: 0 0 18px rgba(239, 107, 123, 0.24);
+        }
+
+        .hero-signal-board {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 1rem;
+            background: linear-gradient(180deg, rgba(10, 17, 22, 0.95), rgba(8, 12, 17, 0.98));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            display: flex;
+            flex-direction: column;
+            gap: 0.95rem;
+        }
+
+        .signal-constellation {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .constellation-node {
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 14px;
+            padding: 0.8rem;
+            background: rgba(255, 255, 255, 0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .constellation-node[data-tone='accent'] {
+            border-color: rgba(var(--accent-rgb), 0.24);
+            background: rgba(var(--accent-rgb), 0.08);
+        }
+
+        .constellation-node[data-tone='cobalt'] {
+            border-color: rgba(var(--secondary-rgb), 0.24);
+            background: rgba(var(--secondary-rgb), 0.08);
+        }
+
+        .constellation-node[data-tone='amber'] {
+            border-color: rgba(212, 161, 106, 0.24);
+            background: rgba(212, 161, 106, 0.08);
+        }
+
+        .constellation-node[data-tone='mint'] {
+            border-color: rgba(67, 209, 158, 0.24);
+            background: rgba(67, 209, 158, 0.08);
+        }
+
+        .constellation-node strong {
+            font-size: 1.2rem;
+            color: var(--ink-main);
+            line-height: 1;
+        }
+
+        .signal-trace {
+            height: 7.2rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 0.75rem;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.015)),
+                repeating-linear-gradient(180deg, rgba(228, 255, 251, 0.03) 0, rgba(228, 255, 251, 0.03) 1px, transparent 1px, transparent 16px);
+        }
+
+        .dashboard-lower-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.9fr);
+            gap: 1rem;
+            min-height: 0;
+        }
+
+        .dashboard-pod-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .dashboard-pod {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+            background: rgba(255, 255, 255, 0.03);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .dashboard-pod[data-tone='cobalt'] {
+            border-color: rgba(var(--secondary-rgb), 0.22);
+            background: linear-gradient(180deg, rgba(17, 26, 44, 0.94), rgba(10, 15, 25, 0.94));
+        }
+
+        .dashboard-pod[data-tone='amber'] {
+            border-color: rgba(212, 161, 106, 0.22);
+            background: linear-gradient(180deg, rgba(39, 28, 20, 0.94), rgba(17, 13, 10, 0.94));
+        }
+
+        .dashboard-pod[data-tone='mint'] {
+            border-color: rgba(67, 209, 158, 0.22);
+            background: linear-gradient(180deg, rgba(14, 28, 24, 0.94), rgba(8, 15, 13, 0.94));
+        }
+
+        .dashboard-stream {
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .stream-row {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 0.8rem 0.85rem;
+            background: rgba(255, 255, 255, 0.025);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.85rem;
+        }
+
+        .stream-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .pressure-stack {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .pressure-item {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 0.8rem 0.85rem;
+            background: rgba(255, 255, 255, 0.03);
+            display: grid;
+            gap: 0.55rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .pressure-bar {
+            width: 100%;
+            height: 7px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.28);
+            overflow: hidden;
+        }
+
+        .pressure-bar > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 58%, white 42%) 100%);
+            box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.26);
+        }
+
+        .dashboard-note {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 0.8rem 0.85rem;
+            display: grid;
+            gap: 0.35rem;
+            background: rgba(255, 255, 255, 0.025);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .dashboard-note[data-tone='cobalt'] {
+            border-color: rgba(var(--secondary-rgb), 0.22);
+            background: rgba(var(--secondary-rgb), 0.08);
+        }
+
+        .dashboard-note[data-tone='mint'] {
+            border-color: rgba(67, 209, 158, 0.22);
+            background: rgba(67, 209, 158, 0.08);
+        }
+
+        .dashboard-note[data-tone='amber'] {
+            border-color: rgba(212, 161, 106, 0.22);
+            background: rgba(212, 161, 106, 0.08);
+        }
+
+        .dashboard-note[data-tone='rose'] {
+            border-color: rgba(239, 107, 123, 0.22);
+            background: rgba(239, 107, 123, 0.08);
+        }
+
+        .meter-fill {
+            background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 58%, white 42%) 100%);
+            box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.26);
+        }
+
+        .eyebrow-label {
+            font-size: 10px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--ink-muted);
+        }
+
+        .aux-card h4,
+        .control-card h4,
+        .kanban-card h4,
+        .timeline-card h4 {
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .route-pill {
+            border: 1px solid var(--panel-border);
+            background: rgba(var(--accent-rgb), 0.08);
+            color: #dff8f5;
+        }
+
+        .route-pill.warn {
+            border-color: rgba(239, 107, 123, 0.22);
+            background: rgba(239, 107, 123, 0.08);
+        }
+
+        .theme-stamp,
+        .accent-chip {
+            border: 1px solid var(--panel-border-strong);
+            border-radius: 999px;
+            background: var(--accent-glow);
+            color: var(--accent);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .palette-option {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 5.2rem minmax(0, 1fr);
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.7rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+            transition: border-color 180ms ease, transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
+        }
+
+        .palette-option:hover {
+            transform: translateY(-1px);
+            border-color: var(--panel-border);
+            box-shadow: 0 12px 20px rgba(0, 0, 0, 0.16);
+        }
+
+        .palette-option.active {
+            border-color: var(--panel-border-strong);
+            background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.16), rgba(var(--accent-rgb), 0.05));
+            box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .palette-swatches {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.3rem;
+        }
+
+        .palette-swatch {
+            height: 2.75rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .palette-copy strong {
+            display: block;
+            color: var(--ink-main);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .palette-copy span,
+        #palette-caption {
+            color: var(--ink-muted);
+            font-size: 10px;
+            line-height: 1.5;
+        }
+
+        .kanban-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 1rem;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .lane-shell {
+            padding: 0.95rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+            min-height: 0;
+        }
+
+        .lane-shell[data-lane='backlog'] {
+            border-color: rgba(var(--secondary-rgb), 0.22);
+            background:
+                linear-gradient(180deg, rgba(17, 26, 43, 0.98), rgba(8, 13, 23, 0.98)),
+                repeating-linear-gradient(180deg, rgba(170, 190, 255, 0.035) 0, rgba(170, 190, 255, 0.035) 1px, transparent 1px, transparent 19px);
+        }
+
+        .lane-shell[data-lane='queued'] {
+            border-color: rgba(212, 161, 106, 0.24);
+            background:
+                linear-gradient(180deg, rgba(34, 24, 18, 0.98), rgba(14, 11, 8, 0.98)),
+                repeating-linear-gradient(180deg, rgba(255, 220, 180, 0.03) 0, rgba(255, 220, 180, 0.03) 1px, transparent 1px, transparent 19px);
+        }
+
+        .lane-shell[data-lane='running'] {
+            border-color: rgba(var(--accent-rgb), 0.26);
+            background:
+                linear-gradient(180deg, rgba(11, 27, 28, 0.98), rgba(7, 15, 17, 0.98)),
+                repeating-linear-gradient(180deg, rgba(var(--accent-rgb), 0.03) 0, rgba(var(--accent-rgb), 0.03) 1px, transparent 1px, transparent 19px);
+        }
+
+        .lane-shell[data-lane='done'] {
+            border-color: rgba(67, 209, 158, 0.24);
+            background:
+                linear-gradient(180deg, rgba(12, 25, 21, 0.98), rgba(7, 14, 12, 0.98)),
+                repeating-linear-gradient(180deg, rgba(160, 255, 219, 0.03) 0, rgba(160, 255, 219, 0.03) 1px, transparent 1px, transparent 19px);
+        }
+
+        .lane-strip {
+            height: 4px;
+            border-radius: 999px;
+        }
+
+        .lane-shell[data-lane='backlog'] .lane-strip {
+            background: linear-gradient(90deg, rgba(170, 190, 255, 0.95), rgba(79, 131, 212, 0.22));
+        }
+
+        .lane-shell[data-lane='queued'] .lane-strip {
+            background: linear-gradient(90deg, rgba(255, 214, 164, 0.94), rgba(212, 161, 106, 0.24));
+        }
+
+        .lane-shell[data-lane='running'] .lane-strip {
+            background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.98), rgba(var(--accent-rgb), 0.2));
+        }
+
+        .lane-shell[data-lane='done'] .lane-strip {
+            background: linear-gradient(90deg, rgba(122, 241, 193, 0.96), rgba(67, 209, 158, 0.2));
+        }
+
+        .lane-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .lane-kicker {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .lane-icon {
+            width: 2.15rem;
+            height: 2.15rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .lane-shell[data-lane='backlog'] .lane-icon {
+            color: #a8baff;
+            background: rgba(var(--secondary-rgb), 0.14);
+        }
+
+        .lane-shell[data-lane='queued'] .lane-icon {
+            color: #f5c88f;
+            background: rgba(212, 161, 106, 0.14);
+        }
+
+        .lane-shell[data-lane='running'] .lane-icon {
+            color: color-mix(in srgb, var(--accent) 90%, white 10%);
+            background: rgba(var(--accent-rgb), 0.15);
+        }
+
+        .lane-shell[data-lane='done'] .lane-icon {
+            color: #8df0c6;
+            background: rgba(67, 209, 158, 0.15);
+        }
+
+        .lane-meta {
+            color: var(--ink-muted);
+            font-size: 10px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .lane-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .lane-stat {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 0.55rem 0.65rem;
+            background: rgba(255, 255, 255, 0.025);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .lane-stat strong {
+            display: block;
+            margin-top: 0.2rem;
+            font-size: 13px;
+            color: var(--ink-main);
+        }
+
+        .task-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .kanban-card {
+            padding: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        .kanban-card[data-tone='backlog'] {
+            border-color: rgba(var(--secondary-rgb), 0.18);
+            background: linear-gradient(180deg, rgba(22, 30, 49, 0.96), rgba(12, 18, 29, 0.96));
+        }
+
+        .kanban-card[data-tone='queued'] {
+            border-color: rgba(212, 161, 106, 0.18);
+            background: linear-gradient(180deg, rgba(39, 28, 20, 0.96), rgba(18, 13, 10, 0.96));
+        }
+
+        .kanban-card[data-tone='running'] {
+            border-color: rgba(var(--accent-rgb), 0.2);
+            background: linear-gradient(180deg, rgba(15, 32, 33, 0.96), rgba(8, 18, 19, 0.96));
+        }
+
+        .kanban-card[data-tone='done'] {
+            border-color: rgba(67, 209, 158, 0.2);
+            background: linear-gradient(180deg, rgba(14, 28, 23, 0.96), rgba(8, 16, 13, 0.96));
+        }
+
+        .task-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .task-note {
+            color: #c2d1d4;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .task-chip-row,
+        .milestone-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .task-chip {
+            padding: 0.28rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .task-chip.cobalt,
+        .route-pill.cobalt {
+            border-color: rgba(var(--secondary-rgb), 0.28);
+            background: rgba(var(--secondary-rgb), 0.12);
+            color: #dbe5ff;
+        }
+
+        .task-chip.mint,
+        .route-pill.mint {
+            border-color: rgba(67, 209, 158, 0.28);
+            background: rgba(67, 209, 158, 0.12);
+            color: #dffff1;
+        }
+
+        .task-chip.amber,
+        .route-pill.amber {
+            border-color: rgba(212, 161, 106, 0.28);
+            background: rgba(212, 161, 106, 0.12);
+            color: #ffe7c9;
+        }
+
+        .task-chip.rose,
+        .route-pill.rose,
+        .route-pill.warn {
+            border-color: rgba(239, 107, 123, 0.26);
+            background: rgba(239, 107, 123, 0.1);
+            color: #ffdbe1;
+        }
+
+        .task-chip.ghost {
+            border-color: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            color: #d7e3e5;
+        }
+
+        .task-progress {
+            width: 100%;
+            height: 7px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.28);
+            overflow: hidden;
+        }
+
+        .task-progress > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 58%, white 42%) 100%);
+            box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.28);
+        }
+
+        .roadmap-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.12fr) 19rem;
+            gap: 1rem;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .roadmap-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        .milestone-card {
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .milestone-card[data-tone='foundation'] {
+            border-color: rgba(67, 209, 158, 0.22);
+            background: linear-gradient(180deg, rgba(12, 27, 22, 0.98), rgba(8, 15, 13, 0.98));
+        }
+
+        .milestone-card[data-tone='preview'] {
+            border-color: rgba(var(--secondary-rgb), 0.22);
+            background: linear-gradient(180deg, rgba(16, 24, 40, 0.98), rgba(9, 13, 24, 0.98));
+        }
+
+        .milestone-card[data-tone='blocked'] {
+            border-color: rgba(239, 107, 123, 0.2);
+            background: linear-gradient(180deg, rgba(31, 18, 22, 0.98), rgba(16, 10, 12, 0.98));
+        }
+
+        .milestone-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .deliverable-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .deliverable-grid .control-card {
+            padding: 0.7rem 0.75rem;
+            font-size: 11px;
+        }
+
+        .release-column {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+
+        .release-window {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 0.85rem 0.9rem;
+            background: rgba(255, 255, 255, 0.03);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .release-window[data-tone='cobalt'] {
+            border-color: rgba(var(--secondary-rgb), 0.22);
+            background: linear-gradient(180deg, rgba(19, 26, 42, 0.94), rgba(12, 17, 29, 0.94));
+        }
+
+        .release-window[data-tone='mint'] {
+            border-color: rgba(67, 209, 158, 0.22);
+            background: linear-gradient(180deg, rgba(15, 29, 25, 0.94), rgba(9, 17, 14, 0.94));
+        }
+
+        .release-window[data-tone='rose'] {
+            border-color: rgba(239, 107, 123, 0.22);
+            background: linear-gradient(180deg, rgba(32, 19, 23, 0.94), rgba(16, 11, 13, 0.94));
+        }
+
+        .timeline-line {
+            width: 2px;
+            background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.32), rgba(var(--accent-rgb), 0.02));
+        }
+
+        @media (max-width: 1100px) {
+            .theme-switcher {
+                justify-content: flex-start;
+            }
+
+            .main-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .dashboard-grid,
+            .dashboard-hero-grid,
+            .dashboard-lower-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .dashboard-rail {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .hero-metric-grid,
+            .dashboard-pod-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .hero-metric[data-span='wide'] {
+                grid-column: span 1;
+            }
+
+            .kanban-grid,
+            .roadmap-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .roadmap-grid > :last-child {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 980px) {
+            .app-body {
+                flex-direction: column;
+            }
+
+            .sidebar-shell {
+                width: 100%;
+                border-right: 0;
+                border-bottom: 1px solid rgba(var(--accent-rgb), 0.14);
+            }
+
+            .dashboard-rail,
+            .hero-metric-grid,
+            .dashboard-pod-grid,
+            .kanban-grid,
+            .roadmap-grid,
+            .deliverable-grid,
+            .lane-stat-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .signal-constellation {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body data-palette="mineral" class="h-full flex flex-col font-sans overflow-hidden">
+    <header class="h-16 border-b-2 border-brutal-border bg-brutal-bg px-6 flex items-center justify-between z-10">
+        <div class="flex items-center gap-3">
+            <div class="brand-mark text-black text-lg">
+                <i class="ri-route-fill"></i>
+            </div>
+            <div class="flex items-baseline gap-3">
+                <span class="font-extrabold text-lg text-white uppercase tracking-[0.18em]">DEVHUB_SYSTEM</span>
+                <span class="theme-stamp text-xs font-mono px-2 py-0.5 font-bold">SWITCHYARD CONTROL</span>
+            </div>
+        </div>
+
+        <div class="theme-switcher flex max-w-[920px] flex-wrap items-center justify-end gap-1 border border-brutal-border bg-black/40 px-2 py-1 rounded-xl">
+            <a href="brutalist-tech.html" class="theme-link">Brutalist</a>
+            <a href="brutalist-amber-command.html" class="theme-link">Amber</a>
+            <a href="brutalist-oxide-console.html" class="theme-link">Oxide</a>
+            <a href="brutalist-blueprint-relay.html" class="theme-link">Blueprint</a>
+            <a href="devhub-command-molten.html" class="theme-link">Molten</a>
+            <a href="devhub-command-rack.html" class="theme-link">Rack</a>
+            <a href="devhub-command-vault.html" class="theme-link">Vault</a>
+            <a href="devhub-command-ledger.html" class="theme-link">Ledger</a>
+            <a href="devhub-command-switchyard.html" class="theme-link active">Switchyard</a>
+        </div>
+
+        <div class="flex items-center gap-4 text-xs font-mono">
+            <div class="flex items-center gap-2 px-3 py-1.5 border border-brutal-green bg-brutal-green/5 text-brutal-green font-bold rounded-full">
+                <span class="status-dot live"></span>
+                <span>SWARM: ONLINE</span>
+            </div>
+            <span id="clock" class="text-slate-400 font-bold">15:58:11</span>
+        </div>
+    </header>
+
+    <div class="app-body flex-1 flex overflow-hidden">
+        <nav class="sidebar-shell w-64 border-r-2 border-brutal-border bg-brutal-bg flex flex-col p-4 justify-between">
+            <div class="space-y-2">
+                <p class="eyebrow-label px-1 mb-2">Switchyard directories</p>
+                <button onclick="switchTab('topology')" id="tab-btn-topology" data-active="true" class="nav-chip">
+                    <div class="flex items-center gap-3"><span class="nav-icon"><i class="ri-node-tree"></i></span><span>Swarm topology</span></div>
+                </button>
+                <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" data-active="false" class="nav-chip">
+                    <div class="flex items-center gap-3"><span class="nav-icon"><i class="ri-dashboard-3-line"></i></span><span>System dashboard</span></div>
+                </button>
+                <button onclick="switchTab('terminals')" id="tab-btn-terminals" data-active="false" class="nav-chip">
+                    <div class="flex items-center gap-3"><span class="nav-icon"><i class="ri-terminal-box-line"></i></span><span>Terminal room</span></div>
+                </button>
+                <button onclick="switchTab('kanban')" id="tab-btn-kanban" data-active="false" class="nav-chip">
+                    <div class="flex items-center gap-3"><span class="nav-icon"><i class="ri-stack-line"></i></span><span>Task kanban</span></div>
+                </button>
+                <button onclick="switchTab('roadmap')" id="tab-btn-roadmap" data-active="false" class="nav-chip">
+                    <div class="flex items-center gap-3"><span class="nav-icon"><i class="ri-git-merge-line"></i></span><span>Roadmap view</span></div>
+                </button>
+                <button onclick="switchTab('swarm-control')" id="tab-btn-swarm-control" data-active="false" class="nav-chip">
+                    <div class="flex items-center gap-3"><span class="nav-icon"><i class="ri-radar-line"></i></span><span>Swarm control</span></div>
+                </button>
+
+                <div class="pt-4 border-t border-brutal-border mt-4 space-y-3">
+                    <p class="eyebrow-label px-1">Material stack</p>
+                    <div class="space-y-2 px-1">
+                        <button type="button" class="palette-option active" data-palette="mineral">
+                            <div class="palette-swatches">
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#5ecdc0 0%,#2f8880 100%)"></span>
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#20343a 0%,#0f1c21 100%)"></span>
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#d8f5f2 0%,#8dc4bd 100%)"></span>
+                            </div>
+                            <div class="palette-copy text-left">
+                                <strong>Mineral Teal</strong>
+                                <span>Jade técnico sobre grafito frío.</span>
+                            </div>
+                        </button>
+                        <button type="button" class="palette-option" data-palette="cobalt">
+                            <div class="palette-swatches">
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#7a93ff 0%,#455ac7 100%)"></span>
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#1c2940 0%,#0d1522 100%)"></span>
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#d7e3ff 0%,#87b5f5 100%)"></span>
+                            </div>
+                            <div class="palette-copy text-left">
+                                <strong>Cobalt Relay</strong>
+                                <span>Más frío, más señal y mejor contraste nocturno.</span>
+                            </div>
+                        </button>
+                        <button type="button" class="palette-option" data-palette="alloy">
+                            <div class="palette-swatches">
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#d4a16a 0%,#976438 100%)"></span>
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#2a2018 0%,#120d09 100%)"></span>
+                                <span class="palette-swatch" style="background:linear-gradient(180deg,#f4e6d4 0%,#bea88a 100%)"></span>
+                            </div>
+                            <div class="palette-copy text-left">
+                                <strong>Alloy Sand</strong>
+                                <span>Versión más táctica y metálica sin perder Switchyard.</span>
+                            </div>
+                        </button>
+                    </div>
+                    <p id="palette-caption" class="px-1">Mineral Teal seleccionado. Base fría/mineral con un acento más limpio y menos chillón.</p>
+                    <p class="text-[10px] leading-5 text-slate-400 px-1">Same shell. Switchyard Control keeps the striped grid background, but now pushes a smoother machined border language with alternate palettes to compare directions.</p>
+                </div>
+            </div>
+
+            <div class="shell-card p-4 space-y-3">
+                <div class="flex items-center justify-between text-xs font-bold"><span>Dispatch load</span><span class="text-[var(--accent)]">31.2%</span></div>
+                <div class="w-full border border-brutal-border h-2.5 bg-black/40"><div class="meter-fill h-full" style="width:31.2%"></div></div>
+                <div class="flex items-center justify-between text-xs font-bold"><span>Lease health</span><span class="text-[var(--accent)]">19 / 22</span></div>
+                <div class="w-full border border-brutal-border h-2.5 bg-black/40"><div class="meter-fill h-full" style="width:86%"></div></div>
+            </div>
+        </nav>
+
+        <main class="flex-1 p-6 overflow-hidden flex flex-col relative">
+            <div class="absolute top-2 right-2 text-[7rem] pointer-events-none select-none tracking-[0.24em] opacity-20" style="color:rgba(var(--accent-rgb),0.1)">YARD</div>
+
+            <div id="tab-topology" class="tab-content flex-1 flex flex-col gap-6 z-10">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-black uppercase text-white tracking-[0.18em] flex items-center gap-3"><span>Swarm topology graph</span><span class="accent-chip text-xs font-bold px-2 py-0.5">Same shell + extra lane</span></h2>
+                        <p class="text-xs text-slate-400 mt-1">Switchyard control keeps the topology page but treats it like a live routing board with command brackets, dispatch lanes, and arbitration context.</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button class="brutal-btn-secondary px-4 py-2 text-xs font-bold flex items-center gap-2"><i class="ri-loop-right-line"></i><span>Refresh graph</span></button>
+                        <button class="brutal-btn-primary px-4 py-2 text-xs font-bold flex items-center gap-2"><i class="ri-add-line"></i><span>Open lane</span></button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-[minmax(0,1fr)_19rem] gap-4 flex-1 min-h-0">
+                    <div class="shell-card p-4 relative min-h-0 overflow-hidden">
+                        <div class="absolute inset-x-4 top-4 grid grid-cols-4 gap-2 text-[10px] uppercase tracking-[0.16em] text-slate-400">
+                            <div class="aux-card px-3 py-2">Lane A / live bus</div>
+                            <div class="aux-card px-3 py-2">Lane B / review</div>
+                            <div class="aux-card px-3 py-2">Lane C / recovery</div>
+                            <div class="aux-card px-3 py-2">Lane D / standby</div>
+                        </div>
+                        <svg class="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M 240 206 C 345 206, 345 116, 470 116" stroke="var(--success)" stroke-width="3" fill="none" opacity="0.9"/>
+                            <path d="M 240 206 C 345 206, 345 290, 470 290" stroke="var(--accent)" stroke-width="3" fill="none" opacity="0.88"/>
+                            <path d="M 590 116 C 690 116, 690 206, 812 206" stroke="var(--accent)" stroke-width="2.5" fill="none" opacity="0.86"/>
+                            <path d="M 590 290 C 690 290, 690 206, 812 206" stroke="#ef6b7b" stroke-width="3" fill="none" opacity="0.8"/>
+                            <path d="M 470 356 L 470 430 L 812 430" stroke="#567379" stroke-width="2" fill="none" opacity="0.7" stroke-dasharray="10 8"/>
+                        </svg>
+
+                        <div style="left: 90px; top: 176px;" class="absolute z-20 w-48">
+                            <div class="signal-node live">
+                                <div class="brand-mark text-black"><i class="ri-steering-2-line"></i></div>
+                                <div>
+                                    <h4 class="text-xs font-black text-white">Swarm director</h4>
+                                    <p class="text-[10px] text-brutal-green uppercase tracking-[0.18em]">Exec / dispatch live</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="left: 470px; top: 92px;" class="absolute z-20 w-44">
+                            <div class="signal-node live">
+                                <div class="brand-mark text-black"><i class="ri-code-s-slash-line"></i></div>
+                                <div>
+                                    <h4 class="text-xs font-black text-white">Swarm coder</h4>
+                                    <p class="text-[10px] text-brutal-green uppercase tracking-[0.18em]">Lane A / applying</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="left: 470px; top: 268px;" class="absolute z-20 w-44">
+                            <div class="signal-node warn">
+                                <div class="brand-mark text-black"><i class="ri-shield-keyhole-line"></i></div>
+                                <div>
+                                    <h4 class="text-xs font-black text-white">Swarm auditor</h4>
+                                    <p class="text-[10px] text-rose-300 uppercase tracking-[0.18em]">Lane C / contention</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="left: 812px; top: 176px;" class="absolute z-20 w-44">
+                            <div class="signal-node idle">
+                                <div class="brand-mark text-black"><i class="ri-search-eye-line"></i></div>
+                                <div>
+                                    <h4 class="text-xs font-black text-white">Swarm reviewer</h4>
+                                    <p class="text-[10px] text-slate-400 uppercase tracking-[0.18em]">Lane B / ready</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="left: 470px; top: 408px;" class="absolute z-20 w-48">
+                            <div class="signal-node idle">
+                                <div class="brand-mark text-black"><i class="ri-stack-line"></i></div>
+                                <div>
+                                    <h4 class="text-xs font-black text-white">Workspace relay</h4>
+                                    <p class="text-[10px] text-slate-400 uppercase tracking-[0.18em]">Lease / holding</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <aside class="aux-card p-4 flex flex-col gap-4">
+                        <div>
+                            <p class="eyebrow-label">Switchboard</p>
+                            <h3 class="text-sm font-black text-white uppercase tracking-[0.16em]">Route arbitration</h3>
+                        </div>
+                        <div class="space-y-3 text-xs">
+                            <div class="flex items-center justify-between"><span class="text-slate-400">Hot lane budget</span><span class="route-pill px-2 py-1 rounded-full">4 workers</span></div>
+                            <div class="flex items-center justify-between"><span class="text-slate-400">Interrupt window</span><span class="route-pill warn px-2 py-1 rounded-full">09s hold</span></div>
+                            <div class="flex items-center justify-between"><span class="text-slate-400">Lease expiry</span><span class="route-pill px-2 py-1 rounded-full">28m</span></div>
+                        </div>
+                        <div class="border-t border-brutal-border pt-4 space-y-3">
+                            <div class="flex items-center justify-between text-xs"><span class="text-slate-400">Dispatch queue</span><span class="text-[var(--accent)] font-mono">12 / live</span></div>
+                            <div class="w-full border border-brutal-border h-2 bg-black/50"><div class="meter-fill h-full" style="width:57%"></div></div>
+                            <div class="grid gap-2 text-[11px]">
+                                <div class="control-card px-3 py-2 flex items-center justify-between"><span>workspace-ops-3</span><span class="control-dot live"></span></div>
+                                <div class="control-card px-3 py-2 flex items-center justify-between"><span>review-gate</span><span class="control-dot warn"></span></div>
+                                <div class="control-card px-3 py-2 flex items-center justify-between"><span>handoff-buffer</span><span class="control-dot idle"></span></div>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <div id="tab-dashboard" class="tab-content hidden flex-1 flex flex-col gap-5 z-10">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-black uppercase tracking-[0.18em] text-white">System dashboard</h2>
+                        <p class="text-xs text-slate-400 mt-1">Same dashboard page, but pushed into a denser route theater with more hierarchy, color, and operator detail.</p>
+                    </div>
+                    <div class="flex gap-2 text-xs font-bold">
+                        <span class="route-pill cobalt px-3 py-1.5 rounded-full">09 live lanes</span>
+                        <span class="route-pill mint px-3 py-1.5 rounded-full">control stable</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="dashboard-main">
+                        <div class="shell-card dashboard-hero">
+                            <div class="flex items-start justify-between gap-4 flex-wrap">
+                                <div class="max-w-[42rem]">
+                                    <p class="eyebrow-label">Switchyard / dashboard pass</p>
+                                    <h3 class="mt-2 text-2xl font-black uppercase tracking-[0.12em] text-white">Route weather, queue heat, and live lease pressure in one denser board.</h3>
+                                    <p class="mt-3 text-sm text-slate-300 leading-relaxed">This view now reads more like a control room: fewer blank gaps, clearer heat zones, stronger contrast between active lanes, and more believable operator telemetry.</p>
+                                </div>
+                                <div class="flex gap-2 text-xs font-bold">
+                                    <span class="route-pill amber px-3 py-1.5 rounded-full">2 arbitration holds</span>
+                                    <span class="route-pill px-3 py-1.5 rounded-full">14 queued claims</span>
+                                </div>
+                            </div>
+
+                            <div class="dashboard-hero-grid">
+                                <div class="hero-metric-grid text-xs">
+                                    <div class="metric-tile hero-metric" data-tone="accent" data-span="wide">
+                                        <div class="hero-metric-top">
+                                            <div>
+                                                <p class="metric-kicker">Active agents</p>
+                                                <h4 class="metric-value mt-2">06</h4>
+                                            </div>
+                                            <span class="text-[var(--accent)] text-xl"><i class="ri-robot-2-line"></i></span>
+                                        </div>
+                                        <p class="metric-subcopy">Two hot operators are pinned to Switchyard work, with one reviewer lane floating behind the control queue.</p>
+                                        <div class="stream-meta">
+                                            <span class="task-chip mint">2 hot</span>
+                                            <span class="task-chip ghost">1 review lane</span>
+                                        </div>
+                                        <div class="hero-meter"><span style="width:72%"></span></div>
+                                    </div>
+
+                                    <div class="metric-tile hero-metric" data-tone="cobalt">
+                                        <div class="hero-metric-top">
+                                            <div>
+                                                <p class="metric-kicker">Live claims</p>
+                                                <h4 class="metric-value mt-2">14</h4>
+                                            </div>
+                                            <span class="text-[#9eb3ff] text-xl"><i class="ri-bookmark-3-line"></i></span>
+                                        </div>
+                                        <p class="metric-subcopy">Three claims are still contested and waiting for route arbitration.</p>
+                                        <div class="hero-meter"><span style="width:64%"></span></div>
+                                    </div>
+
+                                    <div class="metric-tile hero-metric" data-tone="amber">
+                                        <div class="hero-metric-top">
+                                            <div>
+                                                <p class="metric-kicker">Token flow</p>
+                                                <h4 class="metric-value mt-2">2.8k</h4>
+                                            </div>
+                                            <span class="text-[#ffd8a8] text-xl"><i class="ri-flashlight-line"></i></span>
+                                        </div>
+                                        <p class="metric-subcopy">Input volume is running 12% above the lane baseline after the latest preview pass.</p>
+                                        <div class="hero-meter"><span style="width:58%"></span></div>
+                                    </div>
+
+                                    <div class="metric-tile hero-metric" data-tone="rose" data-span="wide">
+                                        <div class="hero-metric-top">
+                                            <div>
+                                                <p class="metric-kicker">Interrupt debt</p>
+                                                <h4 class="metric-value mt-2">1.7m</h4>
+                                            </div>
+                                            <span class="text-[#ffb3bd] text-xl"><i class="ri-alarm-warning-line"></i></span>
+                                        </div>
+                                        <p class="metric-subcopy">Review debt is isolated to two edges: runtime proof for Swarm Control and final visual verification for the same-shell family.</p>
+                                        <div class="stream-meta">
+                                            <span class="task-chip rose">runtime proof</span>
+                                            <span class="task-chip amber">visual QA</span>
+                                        </div>
+                                        <div class="hero-meter"><span style="width:43%"></span></div>
+                                    </div>
+                                </div>
+
+                                <div class="hero-signal-board">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p class="eyebrow-label">Signal constellation</p>
+                                            <h4 class="text-sm font-black uppercase tracking-[0.16em] text-white">Lane weather</h4>
+                                        </div>
+                                        <span class="route-pill px-2 py-1 rounded-full text-xs">steady relay</span>
+                                    </div>
+
+                                    <div class="signal-constellation text-xs">
+                                        <div class="constellation-node" data-tone="accent">
+                                            <span class="metric-kicker">Lane A</span>
+                                            <strong>76%</strong>
+                                            <span class="text-slate-300">Switchyard control build</span>
+                                        </div>
+                                        <div class="constellation-node" data-tone="cobalt">
+                                            <span class="metric-kicker">Lane B</span>
+                                            <strong>48%</strong>
+                                            <span class="text-slate-300">Theme switch proof</span>
+                                        </div>
+                                        <div class="constellation-node" data-tone="amber">
+                                            <span class="metric-kicker">Review</span>
+                                            <strong>05</strong>
+                                            <span class="text-slate-300">handoffs warming</span>
+                                        </div>
+                                        <div class="constellation-node" data-tone="mint">
+                                            <span class="metric-kicker">Released</span>
+                                            <strong>11h</strong>
+                                            <span class="text-slate-300">catalog stable</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="signal-trace">
+                                        <svg class="w-full h-full" viewBox="0 0 100 56" preserveAspectRatio="none">
+                                            <polyline points="0,40 10,34 22,30 33,18 46,22 58,14 70,18 84,10 100,16" fill="none" stroke="rgba(99,208,194,0.92)" stroke-width="2.4" />
+                                            <polyline points="0,48 14,42 28,44 44,32 58,28 70,24 86,26 100,20" fill="none" stroke="rgba(79,131,212,0.82)" stroke-width="1.8" />
+                                            <polyline points="0,30 12,28 27,20 41,24 55,18 67,20 82,14 100,8" fill="none" stroke="rgba(212,161,106,0.78)" stroke-width="1.6" />
+                                        </svg>
+                                    </div>
+
+                                    <div class="dashboard-stream text-xs">
+                                        <div class="stream-row">
+                                            <div>
+                                                <p class="text-white font-black uppercase tracking-[0.12em]">Switchyard control lab</p>
+                                                <p class="text-slate-400 mt-1">Lease arbitration is carrying the heaviest live density.</p>
+                                            </div>
+                                            <span class="route-pill mint px-2 py-1 rounded-full">stable</span>
+                                        </div>
+                                        <div class="stream-row">
+                                            <div>
+                                                <p class="text-white font-black uppercase tracking-[0.12em]">Preview batch 04</p>
+                                                <p class="text-slate-400 mt-1">Visual queue is warm but within the same-shell guardrail.</p>
+                                            </div>
+                                            <span class="route-pill amber px-2 py-1 rounded-full">warming</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-lower-grid">
+                            <div class="shell-card p-4 flex flex-col gap-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p class="eyebrow-label">Route choreography</p>
+                                        <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Execution pressure</h3>
+                                    </div>
+                                    <span class="route-pill px-2 py-1 rounded-full text-xs">balanced queue</span>
+                                </div>
+
+                                <div class="dashboard-pod-grid text-xs">
+                                    <div class="dashboard-pod" data-tone="cobalt">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="metric-kicker">Acquire</p>
+                                                <h4 class="text-white font-black uppercase tracking-[0.12em] mt-2">Queue intake</h4>
+                                            </div>
+                                            <i class="ri-inbox-archive-line text-[#9eb3ff] text-lg"></i>
+                                        </div>
+                                        <p class="text-slate-300">New work is entering mostly from preview verification and dashboard polishing.</p>
+                                        <div class="hero-meter"><span style="width:66%"></span></div>
+                                    </div>
+
+                                    <div class="dashboard-pod" data-tone="amber">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="metric-kicker">Review</p>
+                                                <h4 class="text-white font-black uppercase tracking-[0.12em] mt-2">Handoff gates</h4>
+                                            </div>
+                                            <i class="ri-shield-check-line text-[#ffd8a8] text-lg"></i>
+                                        </div>
+                                        <p class="text-slate-300">Two proof points still need design-level review before the queue cools down.</p>
+                                        <div class="hero-meter"><span style="width:52%"></span></div>
+                                    </div>
+
+                                    <div class="dashboard-pod" data-tone="mint">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="metric-kicker">Release</p>
+                                                <h4 class="text-white font-black uppercase tracking-[0.12em] mt-2">Catalog exit</h4>
+                                            </div>
+                                            <i class="ri-rocket-line text-[#8df0c6] text-lg"></i>
+                                        </div>
+                                        <p class="text-slate-300">Stable slices are clearing fast once nav and palette guards are proven.</p>
+                                        <div class="hero-meter"><span style="width:74%"></span></div>
+                                    </div>
+                                </div>
+
+                                <div class="dashboard-stream text-xs">
+                                    <div class="stream-row">
+                                        <div>
+                                            <p class="text-white font-black uppercase tracking-[0.12em]">Rebuild Switchyard dashboard pass</p>
+                                            <p class="text-slate-400 mt-1">Owner: design lane / target: stronger hierarchy + richer modules</p>
+                                        </div>
+                                        <div class="stream-meta">
+                                            <span class="task-chip mint">live</span>
+                                            <span class="task-chip ghost">detail pass</span>
+                                        </div>
+                                    </div>
+                                    <div class="stream-row">
+                                        <div>
+                                            <p class="text-white font-black uppercase tracking-[0.12em]">Validate swarm-control runtime hooks</p>
+                                            <p class="text-slate-400 mt-1">Owner: relay / target: prove telemetry edge before release window C</p>
+                                        </div>
+                                        <div class="stream-meta">
+                                            <span class="task-chip amber">queued</span>
+                                            <span class="task-chip rose">runtime</span>
+                                        </div>
+                                    </div>
+                                    <div class="stream-row">
+                                        <div>
+                                            <p class="text-white font-black uppercase tracking-[0.12em]">Publish palette proof to family catalog</p>
+                                            <p class="text-slate-400 mt-1">Owner: review / target: keep same-shell comparison honest</p>
+                                        </div>
+                                        <div class="stream-meta">
+                                            <span class="task-chip cobalt">catalog</span>
+                                            <span class="task-chip ghost">same-shell</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="shell-card p-4 flex flex-col gap-4">
+                                <div>
+                                    <p class="eyebrow-label">Pressure weather</p>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Control load</h3>
+                                </div>
+
+                                <div class="pressure-stack text-xs">
+                                    <div class="pressure-item">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span class="text-slate-300 uppercase tracking-[0.12em]">Lease churn</span>
+                                            <span class="route-pill cobalt px-2 py-1 rounded-full">64%</span>
+                                        </div>
+                                        <div class="pressure-bar"><span style="width:64%"></span></div>
+                                        <p class="text-slate-400">Most churn comes from preview-batch-04 and swarm-control-lab.</p>
+                                    </div>
+
+                                    <div class="pressure-item">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span class="text-slate-300 uppercase tracking-[0.12em]">Interrupt shield</span>
+                                            <span class="route-pill amber px-2 py-1 rounded-full">raised</span>
+                                        </div>
+                                        <div class="pressure-bar"><span style="width:46%"></span></div>
+                                        <p class="text-slate-400">One runtime blocker keeps the hot lane from opening fully.</p>
+                                    </div>
+
+                                    <div class="pressure-item">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span class="text-slate-300 uppercase tracking-[0.12em]">Release certainty</span>
+                                            <span class="route-pill mint px-2 py-1 rounded-full">81%</span>
+                                        </div>
+                                        <div class="pressure-bar"><span style="width:81%"></span></div>
+                                        <p class="text-slate-400">The visual family is close to stable if the final QA pass clears.</p>
+                                    </div>
+                                </div>
+
+                                <div class="grid gap-2 text-xs">
+                                    <div class="dashboard-note" data-tone="cobalt">
+                                        <strong class="text-white uppercase tracking-[0.12em]">Window A / design</strong>
+                                        <span class="text-slate-300">Dashboard polish, Kanban density, palette proof.</span>
+                                    </div>
+                                    <div class="dashboard-note" data-tone="mint">
+                                        <strong class="text-white uppercase tracking-[0.12em]">Window B / stable</strong>
+                                        <span class="text-slate-300">Switcher consistency and catalog release guardrails.</span>
+                                    </div>
+                                    <div class="dashboard-note" data-tone="rose">
+                                        <strong class="text-white uppercase tracking-[0.12em]">Window C / risk</strong>
+                                        <span class="text-slate-300">Runtime-backed mission telemetry still gates live control.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-rail">
+                        <div class="aux-card p-4 flex flex-col gap-4">
+                            <div>
+                                <p class="eyebrow-label">Lease board</p>
+                                <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Workspace pressure</h3>
+                            </div>
+                            <div class="space-y-2 text-xs">
+                                <div class="stream-row"><span class="text-white font-black uppercase tracking-[0.1em]">preview-batch-04</span><span class="control-dot live"></span></div>
+                                <div class="stream-row"><span class="text-white font-black uppercase tracking-[0.1em]">desktop-rack-lane</span><span class="control-dot idle"></span></div>
+                                <div class="stream-row"><span class="text-white font-black uppercase tracking-[0.1em]">swarm-control-lab</span><span class="control-dot live"></span></div>
+                                <div class="stream-row"><span class="text-white font-black uppercase tracking-[0.1em]">handoff-review</span><span class="control-dot warn"></span></div>
+                            </div>
+                            <div class="border-t border-brutal-border pt-4 text-xs text-slate-300 space-y-3">
+                                <div class="flex justify-between"><span>Mean settle time</span><span class="font-mono">02:14</span></div>
+                                <div class="flex justify-between"><span>Interrupt debt</span><span class="font-mono">1.7m</span></div>
+                                <div class="flex justify-between"><span>Cold workspace count</span><span class="font-mono">03</span></div>
+                            </div>
+                        </div>
+
+                        <div class="shell-card p-4 flex flex-col gap-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="eyebrow-label">Signal mix</p>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Pressure trace</h3>
+                                </div>
+                                <span class="route-pill px-2 py-1 rounded-full text-xs">44 / 31 / 25</span>
+                            </div>
+                            <div class="signal-trace h-28">
+                                <svg class="w-full h-full" viewBox="0 0 100 50" preserveAspectRatio="none">
+                                    <polyline points="0,36 14,30 28,32 42,16 57,20 72,12 86,18 100,8" fill="none" stroke="rgba(99,208,194,0.92)" stroke-width="2.5" />
+                                    <polyline points="0,42 16,38 31,28 45,32 63,24 80,22 100,16" fill="none" stroke="rgba(79,131,212,0.78)" stroke-width="1.8" />
+                                </svg>
+                            </div>
+                            <div class="grid gap-2 text-xs">
+                                <div class="dashboard-note" data-tone="amber">
+                                    <strong class="text-white uppercase tracking-[0.12em]">Queue spread</strong>
+                                    <span class="text-slate-300">Balanced, but review lane still creates the warmest pause.</span>
+                                </div>
+                                <div class="dashboard-note" data-tone="mint">
+                                    <strong class="text-white uppercase tracking-[0.12em]">Reclaims</strong>
+                                    <span class="text-slate-300">Only two reclaims in the last cycle, both from stable windows.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="shell-card p-4 flex flex-col gap-3">
+                            <div>
+                                <p class="eyebrow-label">Shift notes</p>
+                                <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Operator cues</h3>
+                            </div>
+                            <div class="grid gap-2 text-xs">
+                                <div class="dashboard-note" data-tone="cobalt">
+                                    <strong class="text-white uppercase tracking-[0.12em]">Current focus</strong>
+                                    <span class="text-slate-300">Make Switchyard feel more premium than merely readable.</span>
+                                </div>
+                                <div class="dashboard-note" data-tone="mint">
+                                    <strong class="text-white uppercase tracking-[0.12em]">Healthy signal</strong>
+                                    <span class="text-slate-300">Kanban and roadmap now carry stronger chromatic separation.</span>
+                                </div>
+                                <div class="dashboard-note" data-tone="rose">
+                                    <strong class="text-white uppercase tracking-[0.12em]">Open risk</strong>
+                                    <span class="text-slate-300">Dashboard and terminal views must keep up with the stronger tabs.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-terminals" class="tab-content hidden flex-1 flex flex-col gap-6 z-10">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-black uppercase tracking-[0.18em] text-white">Terminal room</h2>
+                        <p class="text-xs text-slate-400 mt-1">Same terminal page, but reframed as a switchboard service lane with live route state and operator side context.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="brutal-btn-primary px-4 py-2 text-xs font-bold">coder.sh</button>
+                        <button class="brutal-btn-secondary px-4 py-2 text-xs font-bold">auditor.sh</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-[minmax(0,1fr)_19rem] gap-4 flex-1 min-h-0">
+                    <div class="terminal-shell flex flex-col min-h-0 overflow-hidden">
+                        <div class="px-4 py-2 border-b border-brutal-border bg-black/40 flex items-center justify-between text-xs font-mono text-slate-400">
+                            <div class="flex items-center gap-2"><span class="status-dot live"></span><span>TTY / switchyard-lane-a</span></div>
+                            <div class="flex items-center gap-3"><span>attach</span><span>capture</span><span>interrupt</span></div>
+                        </div>
+                        <div class="flex-1 p-4 font-mono text-xs text-slate-200 overflow-y-auto space-y-1">
+                            <p class="text-slate-500">matias@devhub:~$ devhub swarm inspect --lane switchyard-a</p>
+                            <p>Connecting to dispatch bus 9421...</p>
+                            <p class="text-brutal-green">Connected. Lane A marked live.</p>
+                            <p class="text-slate-400">[15:58:12] relay: claimed preview-batch / rack-iteration</p>
+                            <p class="text-slate-400">[15:58:14] coder: reading public/previews/devhub-command-rack.html</p>
+                            <p class="text-amber-200">[15:58:16] control: arbitration hold requested for workspace review-gate</p>
+                            <p class="text-slate-300">[15:58:20] relay: warming switchyard-control tab assets</p>
+                            <p class="text-slate-500">[15:58:24] reviewer: standby / waiting for graph proof</p>
+                            <p class="text-slate-500">[15:58:27] dispatch: route-lane-b freed after checkpoint</p>
+                        </div>
+                        <div class="p-3 border-t border-brutal-border bg-black/40 flex gap-3">
+                            <div class="flex-1 border border-brutal-border px-4 py-2 flex items-center gap-2 bg-[#0a1012]">
+                                <span class="text-[var(--accent)] font-bold">&gt;_</span>
+                                <input type="text" placeholder="Issue route command..." class="bg-transparent border-none outline-none text-white w-full font-mono text-xs">
+                            </div>
+                            <button class="brutal-btn-primary px-5 py-2 text-xs font-bold">Execute</button>
+                        </div>
+                    </div>
+
+                    <div class="aux-card p-4 flex flex-col gap-4">
+                        <div>
+                            <p class="eyebrow-label">Operator sidecar</p>
+                            <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Route context</h3>
+                        </div>
+                        <div class="space-y-3 text-xs text-slate-300">
+                            <div class="flex justify-between"><span>Focused lane</span><span class="font-mono">A / preview</span></div>
+                            <div class="flex justify-between"><span>Linked workspace</span><span class="font-mono">swarm-control-lab</span></div>
+                            <div class="flex justify-between"><span>Command debt</span><span class="font-mono">03 pending</span></div>
+                        </div>
+                        <div class="grid gap-2 text-[11px]">
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>Lane temperature</span><span class="route-pill px-2 py-1 rounded-full">Nominal</span></div>
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>Interrupt shield</span><span class="route-pill warn px-2 py-1 rounded-full">Raised</span></div>
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>Proof required</span><span class="route-pill px-2 py-1 rounded-full">Diff + nav</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-kanban" class="tab-content hidden flex-1 flex flex-col gap-5 z-10">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-black uppercase tracking-[0.18em] text-white">Task kanban</h2>
+                        <p class="text-xs text-slate-400 mt-1">Same kanban page, now pushed into color-coded route lanes with live load, clearer urgency, and richer operator cues.</p>
+                    </div>
+                    <button class="brutal-btn-primary px-4 py-2 text-xs font-bold flex items-center gap-2"><i class="ri-add-line"></i><span>New lane task</span></button>
+                </div>
+                <div class="kanban-grid">
+                    <div class="shell-card lane-shell" data-lane="backlog">
+                        <div class="lane-strip"></div>
+                        <div class="lane-head">
+                            <div class="lane-kicker">
+                                <span class="lane-icon"><i class="ri-inbox-archive-line"></i></span>
+                                <div>
+                                    <span class="lane-meta">Cold intake</span>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Backlog</h3>
+                                </div>
+                            </div>
+                            <span class="route-pill cobalt px-2 py-1 rounded-full text-xs">04</span>
+                        </div>
+                        <div class="lane-stat-grid text-[11px]">
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">Oldest</span><strong>3d</strong></div>
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">Owners</span><strong>02</strong></div>
+                        </div>
+                        <div class="task-stack text-xs">
+                            <div class="kanban-card" data-tone="backlog">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Integrate swarm metrics API</h4>
+                                        <p class="task-note mt-1">#8102 / director</p>
+                                    </div>
+                                    <span class="task-chip cobalt">Cold</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip ghost">metrics</span>
+                                    <span class="task-chip cobalt">topology</span>
+                                    <span class="task-chip amber">needs scope</span>
+                                </div>
+                            </div>
+                            <div class="kanban-card" data-tone="backlog">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Write preview verification pass</h4>
+                                        <p class="task-note mt-1">#8210 / relay</p>
+                                    </div>
+                                    <span class="task-chip ghost">Queued</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip cobalt">proof</span>
+                                    <span class="task-chip ghost">html</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="shell-card lane-shell" data-lane="queued">
+                        <div class="lane-strip"></div>
+                        <div class="lane-head">
+                            <div class="lane-kicker">
+                                <span class="lane-icon"><i class="ri-timer-flash-line"></i></span>
+                                <div>
+                                    <span class="lane-meta">Warm prep</span>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Queued</h3>
+                                </div>
+                            </div>
+                            <span class="route-pill amber px-2 py-1 rounded-full text-xs">03</span>
+                        </div>
+                        <div class="lane-stat-grid text-[11px]">
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">ETA</span><strong>42m</strong></div>
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">Proofs</span><strong>05</strong></div>
+                        </div>
+                        <div class="task-stack text-xs">
+                            <div class="kanban-card" data-tone="queued">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Blueprint spec annotations</h4>
+                                        <p class="task-note mt-1">#8872 / audit</p>
+                                    </div>
+                                    <span class="task-chip amber">Review</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip amber">handoff</span>
+                                    <span class="task-chip ghost">docs</span>
+                                    <span class="task-chip rose">blocking note</span>
+                                </div>
+                            </div>
+                            <div class="kanban-card" data-tone="queued">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Vault operator dossier</h4>
+                                        <p class="task-note mt-1">#8894 / preview</p>
+                                    </div>
+                                    <span class="task-chip amber">Prep</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip ghost">copy</span>
+                                    <span class="task-chip amber">artifacts</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="shell-card lane-shell" data-lane="running">
+                        <div class="lane-strip"></div>
+                        <div class="lane-head">
+                            <div class="lane-kicker">
+                                <span class="lane-icon"><i class="ri-pulse-line"></i></span>
+                                <div>
+                                    <span class="lane-meta">Hot execution</span>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Running</h3>
+                                </div>
+                            </div>
+                            <span class="route-pill px-2 py-1 rounded-full text-xs">02</span>
+                        </div>
+                        <div class="lane-stat-grid text-[11px]">
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">WIP</span><strong>2 / 3</strong></div>
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">Heat</span><strong>76%</strong></div>
+                        </div>
+                        <div class="task-stack text-xs">
+                            <div class="kanban-card" data-tone="running">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Create switchyard control preview</h4>
+                                        <p class="task-note mt-1">#9021 / lane A</p>
+                                    </div>
+                                    <span class="task-chip mint">Live</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip mint">swarm-control</span>
+                                    <span class="task-chip ghost">ui pass</span>
+                                    <span class="task-chip cobalt">routing</span>
+                                </div>
+                                <div class="task-progress"><span style="width:76%"></span></div>
+                            </div>
+                            <div class="kanban-card" data-tone="running">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Wire unified theme switcher</h4>
+                                        <p class="task-note mt-1">#9029 / lane B</p>
+                                    </div>
+                                    <span class="task-chip mint">Routing</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip ghost">nav proof</span>
+                                    <span class="task-chip amber">review debt</span>
+                                </div>
+                                <div class="task-progress"><span style="width:48%"></span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="shell-card lane-shell" data-lane="done">
+                        <div class="lane-strip"></div>
+                        <div class="lane-head">
+                            <div class="lane-kicker">
+                                <span class="lane-icon"><i class="ri-checkbox-circle-line"></i></span>
+                                <div>
+                                    <span class="lane-meta">Released</span>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Done</h3>
+                                </div>
+                            </div>
+                            <span class="route-pill mint px-2 py-1 rounded-full text-xs">03</span>
+                        </div>
+                        <div class="lane-stat-grid text-[11px]">
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">Shipped</span><strong>11h</strong></div>
+                            <div class="lane-stat"><span class="text-slate-400 uppercase tracking-[0.12em]">Proofs</span><strong>100%</strong></div>
+                        </div>
+                        <div class="task-stack text-xs">
+                            <div class="kanban-card" data-tone="done">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Signal rack split</h4>
+                                        <p class="task-note mt-1">#6881 / shipped</p>
+                                    </div>
+                                    <span class="task-chip mint">Released</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip mint">same-shell</span>
+                                    <span class="task-chip ghost">qa checked</span>
+                                </div>
+                            </div>
+                            <div class="kanban-card" data-tone="done">
+                                <div class="task-head">
+                                    <div>
+                                        <h4 class="text-white font-black">Command ledger family</h4>
+                                        <p class="task-note mt-1">#6654 / shipped</p>
+                                    </div>
+                                    <span class="task-chip mint">Done</span>
+                                </div>
+                                <div class="task-chip-row">
+                                    <span class="task-chip cobalt">typography</span>
+                                    <span class="task-chip mint">catalog live</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-roadmap" class="tab-content hidden flex-1 flex flex-col gap-5 z-10">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-black uppercase tracking-[0.18em] text-white">Roadmap view</h2>
+                        <p class="text-xs text-slate-400 mt-1">Same roadmap page, now with clearer phase color, release windows, and milestone payloads that feel more alive than neutral slabs.</p>
+                    </div>
+                    <div class="flex gap-2 text-xs font-bold">
+                        <span class="route-pill cobalt px-3 py-1.5 rounded-full">Q2 2026</span>
+                        <span class="route-pill amber px-3 py-1.5 rounded-full">Sprint 03</span>
+                    </div>
+                </div>
+                <div class="roadmap-grid">
+                    <div class="roadmap-stack">
+                        <div class="timeline-card milestone-card" data-tone="foundation">
+                            <div class="milestone-header">
+                                <div>
+                                    <p class="eyebrow-label">Phase / stable core</p>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">M1 / Swarm foundation</h3>
+                                    <p class="text-xs text-slate-300 mt-2">Message bus, claims, lease health, and durable session routing.</p>
+                                </div>
+                                <div class="milestone-chips">
+                                    <span class="route-pill mint px-2 py-1 rounded-full text-xs">Completed</span>
+                                    <span class="route-pill cobalt px-2 py-1 rounded-full text-xs">Core rails</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-[auto_1fr] gap-4 items-start">
+                                <div class="flex flex-col items-center gap-2 shrink-0"><span class="status-dot live"></span><div class="timeline-line min-h-16"></div></div>
+                                <div class="space-y-3">
+                                    <div class="task-progress"><span style="width:100%"></span></div>
+                                    <div class="deliverable-grid">
+                                        <div class="control-card">Durable sessions</div>
+                                        <div class="control-card">Claim registry</div>
+                                        <div class="control-card">Lease health</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="timeline-card milestone-card" data-tone="preview">
+                            <div class="milestone-header">
+                                <div>
+                                    <p class="eyebrow-label">Phase / hot iteration</p>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">M2 / Preview iteration batch</h3>
+                                    <p class="text-xs text-slate-300 mt-2">Comparability kept, but shells pushed into distinct product directions with new pages and stronger operator language.</p>
+                                </div>
+                                <div class="milestone-chips">
+                                    <span class="route-pill cobalt px-2 py-1 rounded-full text-xs">In progress</span>
+                                    <span class="route-pill px-2 py-1 rounded-full text-xs">68%</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-[auto_1fr] gap-4 items-start">
+                                <div class="flex flex-col items-center gap-2 shrink-0"><span class="status-dot live"></span><div class="timeline-line min-h-20"></div></div>
+                                <div class="space-y-3">
+                                    <div class="task-progress"><span style="width:68%"></span></div>
+                                    <div class="deliverable-grid">
+                                        <div class="control-card">Rack service split</div>
+                                        <div class="control-card">Vault dossier lane</div>
+                                        <div class="control-card">Switchyard control tab</div>
+                                    </div>
+                                    <div class="task-chip-row">
+                                        <span class="task-chip cobalt">same-shell</span>
+                                        <span class="task-chip mint">new module</span>
+                                        <span class="task-chip amber">visual pass</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="timeline-card milestone-card" data-tone="blocked">
+                            <div class="milestone-header">
+                                <div>
+                                    <p class="eyebrow-label">Phase / dependency risk</p>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">M3 / Live runtime binding</h3>
+                                    <p class="text-xs text-slate-300 mt-2">Real backend events, mission telemetry, and runtime-backed swarm control.</p>
+                                </div>
+                                <div class="milestone-chips">
+                                    <span class="route-pill warn px-2 py-1 rounded-full text-xs">Blocked</span>
+                                    <span class="route-pill amber px-2 py-1 rounded-full text-xs">Needs runtime</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-[auto_1fr] gap-4 items-start">
+                                <div class="flex flex-col items-center gap-2 shrink-0"><span class="status-dot warn"></span></div>
+                                <div class="space-y-3">
+                                    <div class="deliverable-grid">
+                                        <div class="control-card">mission telemetry</div>
+                                        <div class="control-card">event bridge</div>
+                                        <div class="control-card">runtime proof</div>
+                                    </div>
+                                    <div class="task-chip-row">
+                                        <span class="task-chip rose">blocked</span>
+                                        <span class="task-chip ghost">native link</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <aside class="aux-card release-column p-4">
+                        <div>
+                            <p class="eyebrow-label">Release windows</p>
+                            <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Lane timing map</h3>
+                        </div>
+                        <div class="release-window" data-tone="cobalt">
+                            <div class="flex items-center justify-between text-xs"><span class="text-slate-300 uppercase tracking-[0.14em]">Window A</span><span class="route-pill cobalt px-2 py-1 rounded-full text-xs">Design</span></div>
+                            <p class="text-xs text-slate-300 mt-3">Preview polish, kanban color pass, roadmap signal cleanup.</p>
+                        </div>
+                        <div class="release-window" data-tone="mint">
+                            <div class="flex items-center justify-between text-xs"><span class="text-slate-300 uppercase tracking-[0.14em]">Window B</span><span class="route-pill mint px-2 py-1 rounded-full text-xs">Stable</span></div>
+                            <p class="text-xs text-slate-300 mt-3">Catalog consistency, switcher proof, same-shell guardrails.</p>
+                        </div>
+                        <div class="release-window" data-tone="rose">
+                            <div class="flex items-center justify-between text-xs"><span class="text-slate-300 uppercase tracking-[0.14em]">Window C</span><span class="route-pill warn px-2 py-1 rounded-full text-xs">Risk</span></div>
+                            <p class="text-xs text-slate-300 mt-3">Runtime-backed control lane depends on real telemetry and mission APIs.</p>
+                        </div>
+                        <div class="shell-card p-4 text-xs space-y-3">
+                            <div class="flex items-center justify-between"><span class="text-slate-400">Phase heat</span><span class="font-mono text-[var(--accent)]">0.68</span></div>
+                            <div class="w-full border border-brutal-border h-2 bg-black/40"><div class="meter-fill h-full" style="width:68%"></div></div>
+                            <div class="task-chip-row">
+                                <span class="task-chip cobalt">planning</span>
+                                <span class="task-chip mint">shipping</span>
+                                <span class="task-chip rose">blocked</span>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <div id="tab-swarm-control" class="tab-content hidden flex-1 flex flex-col gap-6 z-10">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-black uppercase tracking-[0.18em] text-white">Swarm control</h2>
+                        <p class="text-xs text-slate-400 mt-1">New internal product lane: central operator control for lane arbitration, lease policy, interrupts, and handoff rules.</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button class="brutal-btn-secondary px-4 py-2 text-xs font-bold flex items-center gap-2"><i class="ri-shuffle-line"></i><span>Rebalance lanes</span></button>
+                        <button class="brutal-btn-primary px-4 py-2 text-xs font-bold flex items-center gap-2"><i class="ri-rocket-2-line"></i><span>Launch batch</span></button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-4 flex-1 min-h-0">
+                    <div class="shell-card p-4 flex flex-col gap-4 min-h-0">
+                        <div class="grid grid-cols-3 gap-3 text-xs">
+                            <div class="control-card p-3"><p class="eyebrow-label">Dispatch</p><h4 class="mt-2 text-white font-black text-lg">06 live lanes</h4><p class="mt-2 text-slate-400">3 hot, 2 review, 1 recovery.</p></div>
+                            <div class="control-card p-3"><p class="eyebrow-label">Interrupts</p><h4 class="mt-2 text-white font-black text-lg">02 pending</h4><p class="mt-2 text-slate-400">Both waiting on audit clearance.</p></div>
+                            <div class="control-card p-3"><p class="eyebrow-label">Lease policy</p><h4 class="mt-2 text-white font-black text-lg">28m cap</h4><p class="mt-2 text-slate-400">Expired lanes move to cool storage.</p></div>
+                        </div>
+
+                        <div class="grid grid-cols-[minmax(0,1fr)_18rem] gap-4 min-h-0 flex-1">
+                            <div class="shell-card p-4 flex flex-col gap-3">
+                                <div class="flex items-center justify-between"><h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Command lattice</h3><span class="route-pill px-2 py-1 rounded-full text-xs">Operator idea</span></div>
+                                <div class="grid grid-cols-2 gap-3 text-xs">
+                                    <div class="control-card p-3 space-y-2"><div class="flex items-center justify-between"><span class="text-slate-400">Launch preview batch</span><span class="control-dot live"></span></div><p class="text-white font-black">Routes 4 preview tasks into warm workspaces and pins review gates automatically.</p></div>
+                                    <div class="control-card p-3 space-y-2"><div class="flex items-center justify-between"><span class="text-slate-400">Arbitrate interrupts</span><span class="control-dot warn"></span></div><p class="text-white font-black">Queues urgent asks without tearing down in-flight coding lanes.</p></div>
+                                    <div class="control-card p-3 space-y-2"><div class="flex items-center justify-between"><span class="text-slate-400">Freeze handoff edge</span><span class="control-dot idle"></span></div><p class="text-white font-black">Holds routing changes while verification proofs land in the inbox.</p></div>
+                                    <div class="control-card p-3 space-y-2"><div class="flex items-center justify-between"><span class="text-slate-400">Release lease block</span><span class="control-dot live"></span></div><p class="text-white font-black">Recycles paused workspaces back into the hot lane pool.</p></div>
+                                </div>
+                            </div>
+
+                            <aside class="aux-card p-4 flex flex-col gap-4">
+                                <div>
+                                    <p class="eyebrow-label">Rules</p>
+                                    <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Handoff contract</h3>
+                                </div>
+                                <div class="space-y-2 text-xs text-slate-300">
+                                    <div class="flex justify-between"><span>Need diff proof</span><span>Required</span></div>
+                                    <div class="flex justify-between"><span>Need nav proof</span><span>Required</span></div>
+                                    <div class="flex justify-between"><span>Can preempt coder</span><span>No</span></div>
+                                    <div class="flex justify-between"><span>Queue stale after</span><span>11m</span></div>
+                                </div>
+                                <div class="border-t border-brutal-border pt-4 space-y-2 text-xs">
+                                    <div class="control-card px-3 py-2">workspace reuse must preserve shell family</div>
+                                    <div class="control-card px-3 py-2">new theme may add one extra module</div>
+                                    <div class="control-card px-3 py-2">preview files only / no runtime drift</div>
+                                </div>
+                            </aside>
+                        </div>
+                    </div>
+
+                    <div class="aux-card p-4 flex flex-col gap-4">
+                        <div>
+                            <p class="eyebrow-label">Control tape</p>
+                            <h3 class="text-sm font-black uppercase tracking-[0.16em] text-white">Live arbitration board</h3>
+                        </div>
+                        <div class="grid gap-2 text-[11px]">
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>preview-batch-04</span><span class="route-pill px-2 py-1 rounded-full">lane A</span></div>
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>review-switch</span><span class="route-pill warn px-2 py-1 rounded-full">hold</span></div>
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>workspace-cooldown</span><span class="route-pill px-2 py-1 rounded-full">28m</span></div>
+                            <div class="control-card px-3 py-2 flex items-center justify-between"><span>interrupt-bucket</span><span class="route-pill warn px-2 py-1 rounded-full">2 pending</span></div>
+                        </div>
+                        <div class="shell-card p-4 text-xs space-y-3">
+                            <div class="flex items-center justify-between"><span class="text-slate-400">Operator confidence</span><span class="text-[var(--accent)] font-mono">0.84</span></div>
+                            <div class="w-full border border-brutal-border h-2 bg-black/40"><div class="meter-fill h-full" style="width:84%"></div></div>
+                            <p class="text-slate-300">Believable DevHub next step: one place to launch, pause, rebalance, and prove swarm work without losing the terminal-first shell.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const ALL_TABS = ['topology', 'dashboard', 'terminals', 'kanban', 'roadmap', 'swarm-control'];
+        const PALETTE_COPY = {
+            mineral: 'Mineral Teal seleccionado. Base fría/mineral con un acento más limpio y menos chillón.',
+            cobalt: 'Cobalt Relay seleccionado. Más nocturno, más señal y mejor contraste para lectura larga.',
+            alloy: 'Alloy Sand seleccionado. Más táctico y sobrio, con calor metálico sin caer en el amber clásico.'
+        };
+
+        function switchTab(tabId) {
+            ALL_TABS.forEach((id) => {
+                const tab = document.getElementById(`tab-${id}`);
+                const btn = document.getElementById(`tab-btn-${id}`);
+                if (tab) tab.classList.add('hidden');
+                if (btn) btn.dataset.active = 'false';
+            });
+
+            const activeTab = document.getElementById(`tab-${tabId}`);
+            const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+            if (activeTab) activeTab.classList.remove('hidden');
+            if (activeBtn) activeBtn.dataset.active = 'true';
+        }
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').textContent = now.toTimeString().split(' ')[0];
+        }
+
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        const paletteButtons = Array.from(document.querySelectorAll('.palette-option'));
+        const paletteCaption = document.getElementById('palette-caption');
+
+        function applyPalette(paletteName) {
+            const next = PALETTE_COPY[paletteName] ? paletteName : 'mineral';
+            document.body.dataset.palette = next;
+            paletteButtons.forEach((button) => {
+                button.classList.toggle('active', button.dataset.palette === next);
+            });
+            if (paletteCaption) paletteCaption.textContent = PALETTE_COPY[next];
+            try {
+                localStorage.setItem('devhub-switchyard-palette', next);
+            } catch (error) {
+                // preview only
+            }
+        }
+
+        paletteButtons.forEach((button) => {
+            button.addEventListener('click', () => applyPalette(button.dataset.palette));
+        });
+
+        let initialPalette = 'mineral';
+        try {
+            initialPalette = localStorage.getItem('devhub-switchyard-palette') || initialPalette;
+        } catch (error) {
+            initialPalette = 'mineral';
+        }
+        applyPalette(initialPalette);
+    </script>
+</body>
+</html>

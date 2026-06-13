@@ -1,0 +1,249 @@
+{
+  "$comment": "Twelve tenancy scenarios from REQ-TEN-3 of devhub-cloud-foundation. Used by parity tests on SQLite withWorkspaceContext (PR 2), Postgres RLS harness (PR 2), and the postgres-generic driver (PR 4). Each scenario is a single test that runs identically against every driver.",
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "S1",
+      "name": "cross-workspace read denied",
+      "description": "A member of workspace W1 cannot SELECT a row whose workspace_id is W2, even with crafted SQL.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "bob", "name": "Bob" },
+          { "id": "carol", "name": "Carol" }
+        ],
+        "workspaces": [
+          { "id": "W1", "owner_id": "alice", "name": "Acme" },
+          { "id": "W2", "owner_id": "bob", "name": "Beta" }
+        ],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W1", "user_id": "carol", "role": "member" },
+          { "workspace_id": "W2", "user_id": "bob", "role": "owner" }
+        ]
+      },
+      "actor": { "user_id": "carol", "workspace_id": "W1" },
+      "action": "select_project_for_workspace",
+      "args": { "workspace_id": "W2" },
+      "expect": "denied",
+      "result_contains": [],
+      "result_excludes": ["W2-project"]
+    },
+    {
+      "id": "S2",
+      "name": "own-workspace read allowed",
+      "description": "A member of workspace W1 can SELECT a row whose workspace_id is W1.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "carol", "name": "Carol" }
+        ],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W1", "user_id": "carol", "role": "member" }
+        ],
+        "projects": [{ "id": "p1", "workspace_id": "W1", "name": "P1" }]
+      },
+      "actor": { "user_id": "carol", "workspace_id": "W1" },
+      "action": "select_projects_in_workspace",
+      "args": { "workspace_id": "W1" },
+      "expect": "allowed",
+      "result_contains": ["p1"]
+    },
+    {
+      "id": "S3",
+      "name": "missing-membership read denied",
+      "description": "A user not a member of W3 cannot SELECT projects in W3.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "bob", "name": "Bob" }
+        ],
+        "workspaces": [{ "id": "W3", "owner_id": "alice", "name": "Gamma" }],
+        "members": [{ "workspace_id": "W3", "user_id": "alice", "role": "owner" }],
+        "projects": [{ "id": "p3", "workspace_id": "W3", "name": "P3" }]
+      },
+      "actor": { "user_id": "bob", "workspace_id": "W3" },
+      "action": "select_projects_in_workspace",
+      "args": { "workspace_id": "W3" },
+      "expect": "denied",
+      "result_contains": [],
+      "result_excludes": ["p3"]
+    },
+    {
+      "id": "S4",
+      "name": "owner can delete workspace",
+      "description": "The owner of W1 can delete it (and the related rows in workspace_members).",
+      "setup": {
+        "users": [{ "id": "alice", "name": "Alice" }],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [{ "workspace_id": "W1", "user_id": "alice", "role": "owner" }]
+      },
+      "actor": { "user_id": "alice", "workspace_id": "W1" },
+      "action": "delete_workspace",
+      "args": { "workspace_id": "W1" },
+      "expect": "allowed",
+      "post": { "workspace_exists": false }
+    },
+    {
+      "id": "S5",
+      "name": "member cannot delete workspace",
+      "description": "A plain member of W1 cannot delete the workspace.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "carol", "name": "Carol" }
+        ],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W1", "user_id": "carol", "role": "member" }
+        ]
+      },
+      "actor": { "user_id": "carol", "workspace_id": "W1" },
+      "action": "delete_workspace",
+      "args": { "workspace_id": "W1" },
+      "expect": "denied",
+      "post": { "workspace_exists": true }
+    },
+    {
+      "id": "S6",
+      "name": "admin can change roles",
+      "description": "An admin of W1 can change a member's role.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "carol", "name": "Carol" },
+          { "id": "bob", "name": "Bob" }
+        ],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W1", "user_id": "carol", "role": "admin" },
+          { "workspace_id": "W1", "user_id": "bob", "role": "viewer" }
+        ]
+      },
+      "actor": { "user_id": "alice", "workspace_id": "W1" },
+      "action": "update_member_role",
+      "args": { "workspace_id": "W1", "user_id": "bob", "role": "member" },
+      "expect": "allowed"
+    },
+    {
+      "id": "S7",
+      "name": "member cannot change roles",
+      "description": "A plain member of W1 cannot change a member's role.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "carol", "name": "Carol" },
+          { "id": "dave", "name": "Dave" }
+        ],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W1", "user_id": "carol", "role": "member" },
+          { "workspace_id": "W1", "user_id": "dave", "role": "member" }
+        ]
+      },
+      "actor": { "user_id": "carol", "workspace_id": "W1" },
+      "action": "update_member_role",
+      "args": { "workspace_id": "W1", "user_id": "dave", "role": "admin" },
+      "expect": "denied"
+    },
+    {
+      "id": "S8",
+      "name": "viewer cannot write",
+      "description": "A viewer of W1 cannot INSERT or UPDATE rows scoped to W1.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "carol", "name": "Carol" }
+        ],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W1", "user_id": "carol", "role": "viewer" }
+        ]
+      },
+      "actor": { "user_id": "carol", "workspace_id": "W1" },
+      "action": "insert_project",
+      "args": { "workspace_id": "W1", "name": "P-from-viewer" },
+      "expect": "denied"
+    },
+    {
+      "id": "S9",
+      "name": "last-owner demotion rejected",
+      "description": "The last owner of W1 cannot be demoted to admin.",
+      "setup": {
+        "users": [{ "id": "alice", "name": "Alice" }],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [{ "workspace_id": "W1", "user_id": "alice", "role": "owner" }]
+      },
+      "actor": { "user_id": "alice", "workspace_id": "W1" },
+      "action": "update_member_role",
+      "args": { "workspace_id": "W1", "user_id": "alice", "role": "admin" },
+      "expect": "denied",
+      "post": { "alice_role_unchanged": true }
+    },
+    {
+      "id": "S10",
+      "name": "last-owner removal rejected",
+      "description": "The last owner of W1 cannot be removed from workspace_members.",
+      "setup": {
+        "users": [{ "id": "alice", "name": "Alice" }],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [{ "workspace_id": "W1", "user_id": "alice", "role": "owner" }]
+      },
+      "actor": { "user_id": "alice", "workspace_id": "W1" },
+      "action": "remove_member",
+      "args": { "workspace_id": "W1", "user_id": "alice" },
+      "expect": "denied",
+      "post": { "alice_still_member": true }
+    },
+    {
+      "id": "S11",
+      "name": "cross-workspace write denied",
+      "description": "A member of W1 cannot INSERT a row whose workspace_id is W2.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "bob", "name": "Bob" }
+        ],
+        "workspaces": [
+          { "id": "W1", "owner_id": "alice", "name": "Acme" },
+          { "id": "W2", "owner_id": "bob", "name": "Beta" }
+        ],
+        "members": [
+          { "workspace_id": "W1", "user_id": "alice", "role": "owner" },
+          { "workspace_id": "W2", "user_id": "bob", "role": "owner" }
+        ]
+      },
+      "actor": { "user_id": "alice", "workspace_id": "W1" },
+      "action": "insert_project",
+      "args": { "workspace_id": "W2", "name": "P-from-alice" },
+      "expect": "denied"
+    },
+    {
+      "id": "S12",
+      "name": "invitation idempotency",
+      "description": "Re-inviting a pending email rotates the token and resets status to pending; accepting creates a workspace_members row and is idempotent.",
+      "setup": {
+        "users": [
+          { "id": "alice", "name": "Alice" },
+          { "id": "carol", "name": "Carol" }
+        ],
+        "workspaces": [{ "id": "W1", "owner_id": "alice", "name": "Acme" }],
+        "members": [{ "workspace_id": "W1", "user_id": "alice", "role": "owner" }]
+      },
+      "actor": { "user_id": "alice", "workspace_id": "W1" },
+      "action": "invitation_idempotency",
+      "args": { "workspace_id": "W1", "email": "carol@example.com" },
+      "expect": "allowed",
+      "post": {
+        "accept_creates_member": true,
+        "second_accept_idempotent": true
+      }
+    }
+  ]
+}

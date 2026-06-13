@@ -86,8 +86,8 @@ export default function Proyectos() {
   const filtered = filtro === 'Todos' ? proyectos : proyectos.filter((p) => p.estado === filtro);
 
   return (
-    <div className="h-full bg-[#0B0F19] dot-grid flex flex-col">
-      <UiHeader sticky>
+    <div className="h-full bg-surface-app dot-grid flex flex-col">
+      <UiHeader sticky data-testid="ui-header">
         <UiHeader.Title>Proyectos</UiHeader.Title>
         <UiHeader.Actions>
           <span className="text-xs text-slate-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
@@ -100,7 +100,7 @@ export default function Proyectos() {
                 description: 'NEXUS-7 generará el scaffolding automáticamente.',
               })
             }
-            className="flex items-center gap-2 bg-[#00F0FF] text-[#0B0F19] font-semibold px-4 py-2 rounded-lg text-xs hover:bg-[#00F0FF]/85 transition-all active:scale-95"
+            className="flex items-center gap-2 bg-[var(--proyectos-accent-cyan)] text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs hover:bg-[var(--proyectos-accent-cyan)]/85 transition-all active:scale-95"
           >
             <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
             Nuevo Proyecto
@@ -133,7 +133,7 @@ export default function Proyectos() {
             <div
               key={p.id}
               data-testid={`proyecto-card-${p.id}`}
-              className="fade-in-up bg-[#111827]/60 border border-white/8 rounded-xl p-5 hover:border-white/15 hover:bg-[#111827]/80 transition-all duration-300 group cursor-pointer"
+              className="fade-in-up bg-surface-card/60 border border-white/8 rounded-xl p-5 hover:border-white/15 hover:bg-surface-card/80 transition-all duration-300 group cursor-pointer"
               style={{
                 animationDelay: `${i * 70}ms`,
                 borderLeftColor: p.color,

@@ -19,6 +19,11 @@ function installDom(url = 'https://devhub.test') {
   global.document = dom.window.document;
   global.navigator = dom.window.navigator;
   global.HTMLElement = dom.window.HTMLElement;
+  // Element is required by libraries that feature-detect WAAPI (e.g.
+  // framer-motion's motion-dom `supportsBrowserAnimation`). Without it the
+  // node-env runner throws `ReferenceError: Element is not defined` and aborts
+  // the whole process, not just the suite.
+  global.Element = dom.window.Element;
   global.Node = dom.window.Node;
   global.MouseEvent = dom.window.MouseEvent;
   global.Event = dom.window.Event;

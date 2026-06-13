@@ -143,7 +143,7 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
   );
 
   const activeCount = roster.filter((member) =>
-    ['active', 'working', 'lease_active', 'online', 'thinking', 'asking_questions'].includes(
+    ['active', 'working', 'lease_active', 'online', 'thinking', 'asking_questions', 'running'].includes(
       member?.status
     )
   ).length;

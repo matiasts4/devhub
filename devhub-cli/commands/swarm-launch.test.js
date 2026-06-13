@@ -111,12 +111,12 @@ describe('swarm-launch CLI command', () => {
 
     swarmLaunchCommand('proj-1', {
       template: 'clean-slate',
-      provider: 'github-copilot/gpt-5.4-mini',
+      provider: 'github-copilot/gpt-4o-mini',
     });
 
     setTimeout(() => {
       expect(capturedWriteData).toContain('"templateId":"clean-slate"');
-      expect(capturedWriteData).toContain('"providerId":"github-copilot/gpt-5.4-mini"');
+      expect(capturedWriteData).toContain('"providerId":"github-copilot/gpt-4o-mini"');
       done();
     }, 50);
   });

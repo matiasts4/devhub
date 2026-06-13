@@ -25,6 +25,21 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Reconcile a persisted priorityOrder against the current PROVIDER_CONFIGS.
+// Drops any name no longer present in the registry and backfills any known
+// provider that is missing so the UI never renders an unknown entry and the
+// crash at `PROVIDER_CONFIGS[name].icon` is avoided.
+//
+// Exported for unit testing.
+export function reconcilePriorityOrder(order) {
+  const known = ['copilot', 'opencode', 'openrouter', 'zen', 'direct'];
+  const valid = (order || []).filter((name) => PROVIDER_CONFIGS[name]);
+  for (const k of known) {
+    if (!valid.includes(k) && PROVIDER_CONFIGS[k]) valid.push(k);
+  }
+  return valid;
+}
+
 // Provider configurations
 const PROVIDER_CONFIGS = {
   copilot: {
@@ -147,13 +162,9 @@ export default function LLMProviderSettings({ embedded = false }) {
   });
   const copilotPollRef = useRef(null);
 
-  const [priorityOrder, setPriorityOrder] = useState([
-    'copilot',
-    'opencode',
-    'openrouter',
-    'zen',
-    'direct',
-  ]);
+  const [priorityOrder, setPriorityOrder] = useState(() =>
+    reconcilePriorityOrder(['copilot', 'opencode', 'openrouter', 'zen', 'direct'])
+  );
   const [globalTemperature, setGlobalTemperature] = useState(0.7);
   const [globalMaxTokens, setGlobalMaxTokens] = useState(4000);
   const [bridgeEnabled, setBridgeEnabled] = useState(true);
@@ -203,7 +214,9 @@ export default function LLMProviderSettings({ embedded = false }) {
       const res = await fetch('/api/settings/llm-providers');
       const data = await res.json();
       setProviders(data.providers || {});
-      setPriorityOrder(data.priorityOrder || ['copilot', 'openrouter', 'zen', 'direct']);
+      setPriorityOrder(
+        reconcilePriorityOrder(data.priorityOrder || ['copilot', 'openrouter', 'zen', 'direct'])
+      );
       setGlobalTemperature(data.globalTemperature ?? 0.7);
       setGlobalMaxTokens(data.globalMaxTokens ?? 4000);
       setBridgeEnabled(data.bridgeEnabled !== false);
@@ -326,7 +339,7 @@ export default function LLMProviderSettings({ embedded = false }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           providers: overrides.providers || providers,
-          priorityOrder: overrides.priorityOrder || priorityOrder,
+          priorityOrder: reconcilePriorityOrder(overrides.priorityOrder || priorityOrder),
           globalTemperature: overrides.globalTemperature ?? globalTemperature,
           globalMaxTokens: overrides.globalMaxTokens ?? globalMaxTokens,
           bridgeEnabled: overrides.bridgeEnabled ?? bridgeEnabled,
@@ -600,6 +613,19 @@ export default function LLMProviderSettings({ embedded = false }) {
       {/* Provider cards */}
       {priorityOrder.map((providerName, index) => {
         const config = PROVIDER_CONFIGS[providerName];
+        if (!config) {
+          // Stale or unknown provider name — skip rather than crash on
+          // `config.icon`. The reconciler above drops these on the next
+          // hydration/persist cycle.
+          if (typeof console !== 'undefined' && !LLMProviderSettings._warnedStale) {
+            console.warn(
+              `[LLMProviderSettings] Unknown provider "${providerName}" in priorityOrder; skipping. ` +
+                `Available: ${Object.keys(PROVIDER_CONFIGS).join(', ')}`
+            );
+            LLMProviderSettings._warnedStale = true;
+          }
+          return null;
+        }
         const providerData = providers[providerName] || {};
         const isEnabled = providerData.enabled ?? true;
         const testResult = testResults[providerName];

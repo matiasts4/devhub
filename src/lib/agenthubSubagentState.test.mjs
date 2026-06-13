@@ -14,8 +14,8 @@ assert.equal(normalizeSubagentStatus('busy'), 'running');
 assert.equal(normalizeSubagentStatus('retry'), 'running');
 assert.equal(normalizeSubagentStatus('idle'), 'success');
 
-assert.equal(normalizeSubagentName('build'), 'sdd-orchestrator');
-assert.equal(normalizeSubagentName('qa'), 'sdd-orchestrator');
+assert.equal(normalizeSubagentName('build'), 'gentle-orchestrator');
+assert.equal(normalizeSubagentName('qa'), 'gentle-orchestrator');
 assert.equal(normalizeSubagentName('sdd-apply'), 'sdd-apply');
 assert.equal(normalizeSubagentName('  sdd-design  '), 'sdd-design');
 

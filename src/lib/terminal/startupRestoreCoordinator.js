@@ -1,9 +1,15 @@
 import { normalizeRestoreManifest } from './restoreManifest';
+import {
+  extractOpenCodeSessionId,
+  inferPanelSessionKind,
+  resolveEffectiveRestorePolicy,
+} from './restorePolicyResolver';
 
 export const RESTORE_ACTION = Object.freeze({
   RESTORE_READY: 'restore-ready',
   REATTACH_LIVE_TERMINAL: 'reattach-live-terminal',
   RESUME_OPENCODE_SESSION: 'resume-opencode-session',
+  RESTORE_SHELL_EMERGENT: 'restore-shell-emergent',
   PROCESS_ORPHAN: 'process-orphan',
   METADATA_STALE: 'metadata-stale',
   QUOTA_BLOCKED: 'quota-blocked',
@@ -15,7 +21,12 @@ function asArray(value) {
 }
 
 function actionKey(entry = {}) {
-  return [entry.action, entry.terminalId || '', entry.panelId || '', entry.opencodeSessionId || ''].join(':');
+  return [
+    entry.action,
+    entry.terminalId || '',
+    entry.panelId || '',
+    entry.opencodeSessionId || '',
+  ].join(':');
 }
 
 function createAction({
@@ -24,6 +35,7 @@ function createAction({
   panelId = null,
   workspaceId = null,
   opencodeSessionId = null,
+  sessionKind = null,
   reason = null,
 } = {}) {
   return {
@@ -32,6 +44,7 @@ function createAction({
     panelId,
     workspaceId,
     opencodeSessionId,
+    sessionKind,
     reason,
   };
 }
@@ -52,12 +65,35 @@ function collectWorkspacePanels(workspaces = []) {
   );
 }
 
+export function collectWorkspacePanelIds(workspaces = []) {
+  return collectWorkspacePanels(workspaces)
+    .map(({ panel }) => panel?.id)
+    .filter(Boolean);
+}
+
+function isTuiLaunchCommand(initialCommand) {
+  const command = String(initialCommand || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
+  return /^(opencode|hermes|grok|groc)\b/i.test(command);
+}
+
+/** Shell-ephemeral respawn only — never relaunch live TUI sessions (opencode/grok/hermes). */
+export function isShellEphemeralRestoreCandidate(session = {}) {
+  const sessionKind = session.sessionKind || null;
+  if (sessionKind === 'opencode' || sessionKind === 'swarm') return false;
+  if (session.opencodeSessionId) return false;
+  if (isTuiLaunchCommand(session.initialCommand)) return false;
+  return true;
+}
+
 export function buildRestoreManifestFromWorkspaceState({
   workspaces = [],
   activeWorkspaceId = null,
   projectId = null,
   appSessionId = null,
   agentRunsByPanel = {},
+  restorePreferences = null,
 } = {}) {
   const panelEntries = collectWorkspacePanels(workspaces);
 
@@ -66,15 +102,27 @@ export function buildRestoreManifestFromWorkspaceState({
       if (!panel?.id) return null;
 
       const initialCommand = String(panel.initialCommand || '').trim();
-      const opencodeMatch = initialCommand.match(/opencode\s+--session\s+([\w-]+)/i);
       const agentRun = panel?.id ? agentRunsByPanel?.[panel.id] || null : null;
+      const sessionKind = inferPanelSessionKind({ initialCommand, agentRun, panel });
+      const opencodeSessionId =
+        agentRun?.opencodeSessionId || extractOpenCodeSessionId(initialCommand) || null;
+      const roleKey =
+        panel?.swarmContext?.roleKey || agentRun?.swarmRole || agentRun?.roleKey || null;
 
       return {
         terminalId: panel.id,
         panelId: panel.id,
         workspaceId: workspace?.id || null,
         cwd: panel?.cwd || null,
-        opencodeSessionId: agentRun?.opencodeSessionId || opencodeMatch?.[1] || null,
+        initialCommand: initialCommand || null,
+        sessionKind,
+        roleKey,
+        opencodeSessionId,
+        restorePolicy: resolveEffectiveRestorePolicy({
+          sessionKind,
+          perSessionPolicy: agentRun?.restorePolicy || null,
+          preferences: restorePreferences,
+        }),
         runId: agentRun?.runId || null,
         launchId: agentRun?.launchId || null,
         missionId: agentRun?.missionId || null,
@@ -92,17 +140,11 @@ export function buildRestoreManifestFromWorkspaceState({
         launchId:
           typeof run?.launchId === 'string' && run.launchId.trim() ? run.launchId.trim() : null,
         missionId:
-          typeof run?.missionId === 'string' && run.missionId.trim()
-            ? run.missionId.trim()
-            : null,
-        agentId:
-          typeof run?.agentId === 'string' && run.agentId.trim() ? run.agentId.trim() : null,
+          typeof run?.missionId === 'string' && run.missionId.trim() ? run.missionId.trim() : null,
+        agentId: typeof run?.agentId === 'string' && run.agentId.trim() ? run.agentId.trim() : null,
         role:
-          typeof run?.swarmRole === 'string' && run.swarmRole.trim()
-            ? run.swarmRole.trim()
-            : null,
-        panelId:
-          typeof run?.panelId === 'string' && run.panelId.trim() ? run.panelId.trim() : null,
+          typeof run?.swarmRole === 'string' && run.swarmRole.trim() ? run.swarmRole.trim() : null,
+        panelId: typeof run?.panelId === 'string' && run.panelId.trim() ? run.panelId.trim() : null,
         terminalId:
           typeof run?.panelId === 'string' && run.panelId.trim() ? run.panelId.trim() : null,
         pid: Number.isFinite(run?.pid) ? Number(run.pid) : null,
@@ -147,6 +189,7 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
       : null;
 
     let nextAction = null;
+    const sessionKind = session.sessionKind || null;
 
     if (anomalies.quotaBlocked) {
       nextAction = createAction({
@@ -155,6 +198,7 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         panelId: session.panelId,
         workspaceId: session.workspaceId,
         opencodeSessionId: session.opencodeSessionId,
+        sessionKind,
         reason: 'runtime-quota-blocked',
       });
     } else if (runtimeTerminal?.alive && Number(runtimeTerminal.socketCount || 0) === 0) {
@@ -184,6 +228,29 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         opencodeSessionId: session.opencodeSessionId,
         reason: 'session-resume-needed',
       });
+    } else if (session.sessionKind === 'swarm') {
+      // Swarm panels reattach to existing tmux on WebSocket connect (ttyServer).
+      // Never re-run the materialized launch wrapper on app/workspace restore.
+      nextAction = createAction({
+        action: RESTORE_ACTION.REATTACH_LIVE_TERMINAL,
+        terminalId: session.terminalId,
+        panelId: session.panelId,
+        workspaceId: session.workspaceId,
+        opencodeSessionId: session.opencodeSessionId,
+        sessionKind,
+        reason: 'swarm-tmux-reattach',
+      });
+    } else if (!runtimeTerminal && session.cwd && isShellEphemeralRestoreCandidate(session)) {
+      // shell-ephemeral: no ptyPid, no opencode session — needs respawn via cwd/shell
+      nextAction = createAction({
+        action: RESTORE_ACTION.RESTORE_SHELL_EMERGENT,
+        terminalId: session.terminalId,
+        panelId: session.panelId,
+        workspaceId: session.workspaceId,
+        opencodeSessionId: null,
+        sessionKind,
+        reason: 'shell-emergent-needs-respawn',
+      });
     } else if (runtimeTerminal?.alive) {
       nextAction = createAction({
         action: RESTORE_ACTION.RESTORE_READY,
@@ -201,6 +268,26 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         workspaceId: session.workspaceId,
         opencodeSessionId: session.opencodeSessionId,
         reason: 'no-runtime-evidence',
+      });
+    }
+
+    // Policy gating (per-session + workspace defaults applied in manifest build)
+    const policy = session.restorePolicy;
+    const isManual = policy === 'manual';
+    const isOff = policy === 'off';
+
+    // If 'off', do not emit any action — session stays in sessionStore but is not dispatched
+    if (isOff) return;
+
+    // If 'manual', emit TERMINATED action instead of the computed nextAction
+    if (isManual) {
+      nextAction = createAction({
+        action: RESTORE_ACTION.TERMINATED,
+        terminalId: session.terminalId,
+        panelId: session.panelId,
+        workspaceId: session.workspaceId,
+        opencodeSessionId: session.opencodeSessionId,
+        reason: 'restore-policy-manual',
       });
     }
 

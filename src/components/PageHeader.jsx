@@ -1,6 +1,8 @@
+/* eslint-disable no-unused-vars */
 import { useCallback, useState, useEffect } from 'react';
 import { X, Minus, Plus, Terminal as TerminalIcon } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
+import UserProfile from './UserProfile';
 
 /**
  * PageHeader - Integrated header for all pages (except terminals)
@@ -54,7 +56,21 @@ export default function PageHeader({
 
   const handleWinToggleMaximize = useCallback(async () => {
     const win = await getTauriWindow();
-    await win?.toggleMaximize().catch(() => {});
+    if (!win) return;
+    // Use explicit maximize/unmaximize instead of toggleMaximize — Tauri v2's
+    // toggleMaximize races with the onResized listener and can return
+    // a no-op when local state and native state disagree. The explicit
+    // pair is deterministic. We do NOT call setIsWinMaximized here — the
+    // onResized listener (above) will read win.isMaximized() and update
+    // state once the window actually resizes, avoiding any local-vs-native
+    // race. Tauri v2 API only exposes maximize() / unmaximize() / toggleMaximize();
+    // there is no setMaximized(boolean).
+    const current = await win.isMaximized().catch(() => false);
+    if (current) {
+      await win.unmaximize().catch(() => {});
+    } else {
+      await win.maximize().catch(() => {});
+    }
   }, [getTauriWindow]);
 
   const handleWinClose = useCallback(async () => {
@@ -68,6 +84,7 @@ export default function PageHeader({
       data-tauri-drag-region
       onDoubleClick={handleWinToggleMaximize}
       style={{
+        zIndex: 50,
         borderBottomColor: 'color-mix(in srgb, var(--border-subtle) 92%, transparent)',
         background:
           'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.028) 100%), linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 90%, black), color-mix(in srgb, var(--surface-card) 82%, black))',
@@ -103,6 +120,7 @@ export default function PageHeader({
       {/* Right: Notifications + Window Controls */}
       <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' }}>
         <NotificationCenter projectId={project?.id} variant="topbar" />
+        <UserProfile />
 
         {/* Window Controls - Circular macOS style */}
         <div className="flex items-center gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]">

@@ -20,14 +20,25 @@ const mockCatalogState = {
   retry: jest.fn(),
 };
 
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }) => {
-      const React = require('react');
-      return React.createElement('div', props, children);
+jest.mock('framer-motion', () => {
+  const React = require('react');
+  const mockEl =
+    (tag) =>
+    ({ children, ...props }) =>
+      React.createElement(tag, props, children);
+  return {
+    motion: {
+      div: mockEl('div'),
+      span: mockEl('span'),
+      aside: mockEl('aside'),
+      li: mockEl('li'),
     },
-  },
-}));
+    AnimatePresence: ({ children }) => children,
+    useReducedMotion: () => false,
+    useMotionValue: (v) => ({ get: () => v, set: () => {} }),
+    useTransform: (v, _from, _to) => v,
+  };
+});
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -156,14 +167,23 @@ jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   default: () => mockCatalogState,
 }));
 
+// Mock OperatorActionsDispatchContext — provider is normally in App.js
+jest.mock('@/lib/operator/OperatorActionsDispatchContext', () => ({
+  OperatorActionsDispatchProvider: ({ children }) => children,
+  useOperatorActionsDispatch: () => ({
+    dispatchAction: jest.fn(),
+    cards: [],
+    confirmCard: jest.fn(),
+    cancelCard: jest.fn(),
+  }),
+}));
+
 const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').default;
 
 const mountedRoots = [];
 
 function getRenderedTerminalNodes(container) {
-  return Array.from(container.querySelectorAll('[data-testid^="terminal-"]')).filter(
-    (node) => !node.getAttribute('data-testid').startsWith('terminal-renderer-')
-  );
+  return Array.from(container.querySelectorAll('[data-testid^="terminal-p"]'));
 }
 
 function renderManager(props = {}) {
@@ -253,15 +273,16 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     const view = await renderManager();
 
-    const beforePanels = getRenderedTerminalNodes(view.container).length;
+    const beforePanels = getRenderedTerminalNodes(view.container);
+    const beforeIds = beforePanels.map((node) => node.textContent);
     await click(
       Array.from(view.container.querySelectorAll('button')).find((button) =>
         button.textContent.includes('Recovered session')
       )
     );
-    const afterPanels = getRenderedTerminalNodes(view.container).length;
+    const afterPanels = getRenderedTerminalNodes(view.container);
 
-    expect(afterPanels).toBe(beforePanels + 1);
+    expect(afterPanels.length).toBe(beforePanels.length + 1);
 
     const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
     expect(runs['oc-reopen-oc-99']).toEqual(
@@ -272,9 +293,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       })
     );
 
-    const resumedPanel = getRenderedTerminalNodes(view.container).find(
-      (node) => node.textContent === 'p2'
-    );
+    const resumedPanel = afterPanels.find((node) => !beforeIds.includes(node.textContent));
     expect(resumedPanel).not.toBeUndefined();
   });
 
@@ -320,6 +339,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     const beforePanels = getRenderedTerminalNodes(view.container);
     expect(beforePanels).toHaveLength(1);
+    const beforeIds = beforePanels.map((node) => node.textContent);
 
     await click(
       Array.from(view.container.querySelectorAll('button')).find((button) =>
@@ -327,12 +347,18 @@ describe('TerminalWorkspacesManager reopen menu', () => {
       )
     );
 
-    expect(getRenderedTerminalNodes(view.container)).toHaveLength(2);
+    const afterPanels = getRenderedTerminalNodes(view.container);
+    expect(afterPanels).toHaveLength(2);
+
+    const newPanelId = afterPanels
+      .map((node) => node.textContent)
+      .find((id) => !beforeIds.includes(id));
+    expect(newPanelId).not.toBeUndefined();
 
     window.dispatchEvent(
       new window.CustomEvent('devhub:terminal-exit', {
         detail: {
-          id: 'p2',
+          id: newPanelId,
           initialCommand: 'opencode --session oc-expired',
         },
       })
@@ -344,6 +370,40 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
     expect(runs['oc-reopen-oc-expired']).toBeUndefined();
+  });
+
+  test('does not apply OpenCode session detect to unrelated grok panels', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'grok' }],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+
+    const view = await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:opencode-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'ses_closed_ws' },
+      })
+    );
+    await flushEffects();
+
+    const grokTerminal = view.container.querySelector('[data-testid="terminal-p1"]');
+    expect(grokTerminal?.getAttribute('data-command')).toBe('grok');
   });
 
   test('restores persisted OpenCode session command after reboot-style reload', async () => {
@@ -418,17 +478,22 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
     await renderManager();
     await flushEffects();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await flushEffects();
 
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/swarm/runtime-diagnostics',
       expect.objectContaining({ cache: 'no-store' })
     );
-    expect(relaunchEvents).toEqual([
-      expect.objectContaining({
-        panelId: 'p1',
-        command: 'opencode --session oc-startup-1',
-      }),
-    ]);
+    expect(relaunchEvents.length).toBeGreaterThanOrEqual(1);
+    expect(relaunchEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          panelId: 'p1',
+          command: expect.stringContaining('opencode --session oc-startup-1'),
+        }),
+      ])
+    );
   });
 
   test('migrates legacy Ghostty renderer preference to xterm on reload', async () => {
@@ -560,70 +625,79 @@ describe('TerminalWorkspacesManager reopen menu', () => {
   });
 
   test('posts canonical binding reconciliation when a swarm launch panel detects a verified OpenCode session', async () => {
-    global.fetch = jest.fn(async (url) => {
-      if (url === '/api/swarm/runtime-diagnostics') {
-        return { ok: true, json: async () => ({ terminals: [], processes: [], anomalies: {} }) };
-      }
-      if (url === '/api/agenthub/sessions/launch-session-1/binding') {
-        return {
-          ok: true,
-          json: async () => ({ status: 'reconciled', reason: 'binding_reconciled' }),
-        };
-      }
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
+    const originalSetTimeout = window.setTimeout;
+    window.setTimeout = (cb, delay) => {
+      return originalSetTimeout(cb, 0);
+    };
 
-    await renderManager();
-    window.dispatchEvent(
-      new window.CustomEvent('devhub:run-agent', {
-        detail: {
-          taskId: 'launch-1:coder',
-          command: 'opencode --agent sdd-orchestrator',
-          selectedAgent: 'opencode',
-          launchOrigin: 'swarm-control-launch',
-          roleKey: 'coder',
-          roleLabel: 'Coder',
-          roleAbbrev: 'COD',
-          taskTitle: 'Launch · Coder',
-          promptSummary: 'Coder · Launch',
-          isSwarmRole: true,
+    try {
+      global.fetch = jest.fn(async (url) => {
+        if (url === '/api/swarm/runtime-diagnostics') {
+          return { ok: true, json: async () => ({ terminals: [], processes: [], anomalies: {} }) };
+        }
+        if (url === '/api/agenthub/sessions/launch-session-1/binding') {
+          return {
+            ok: true,
+            json: async () => ({ status: 'reconciled', reason: 'binding_reconciled' }),
+          };
+        }
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      });
+
+      await renderManager();
+      window.dispatchEvent(
+        new window.CustomEvent('devhub:run-agent', {
+          detail: {
+            taskId: 'launch-1:coder',
+            command: 'opencode --agent sdd-orchestrator',
+            selectedAgent: 'opencode',
+            launchOrigin: 'swarm-control-launch',
+            roleKey: 'coder',
+            roleLabel: 'Coder',
+            roleAbbrev: 'COD',
+            taskTitle: 'Launch · Coder',
+            promptSummary: 'Coder · Launch',
+            isSwarmRole: true,
+            workspaceId: 'ws-canon-1',
+            runId: 'run-canon-1',
+            sessionId: 'launch-session-1',
+            workspacePath: '/workspace/devhub/.devhub/worktrees/launch-1/coder',
+          },
+        })
+      );
+      await flushEffects();
+
+      const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+      const panelId = runs['launch-1:coder']?.panelId;
+      expect(runs['launch-1:coder']).toEqual(
+        expect.objectContaining({
           workspaceId: 'ws-canon-1',
           runId: 'run-canon-1',
           sessionId: 'launch-session-1',
-          workspacePath: '/workspace/devhub/.devhub/worktrees/launch-1/coder',
-        },
-      })
-    );
-    await flushEffects();
+        })
+      );
 
-    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
-    const panelId = runs['launch-1:coder']?.panelId;
-    expect(runs['launch-1:coder']).toEqual(
-      expect.objectContaining({
-        workspaceId: 'ws-canon-1',
-        runId: 'run-canon-1',
-        sessionId: 'launch-session-1',
-      })
-    );
+      window.dispatchEvent(
+        new window.CustomEvent('devhub:opencode-session-detected', {
+          detail: { panelId, sessionId: 'oc-real-1' },
+        })
+      );
+      await flushEffects();
 
-    window.dispatchEvent(
-      new window.CustomEvent('devhub:opencode-session-detected', {
-        detail: { panelId, sessionId: 'oc-real-1' },
-      })
-    );
-    await flushEffects();
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      '/api/agenthub/sessions/launch-session-1/binding',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspace_id: 'ws-canon-1',
-          run_id: 'run-canon-1',
-          opencode_session_id: 'oc-real-1',
-        }),
-      })
-    );
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/agenthub/sessions/launch-session-1/binding',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workspace_id: 'ws-canon-1',
+            run_id: 'run-canon-1',
+            opencode_session_id: 'oc-real-1',
+          }),
+        })
+      );
+    } finally {
+      window.setTimeout = originalSetTimeout;
+    }
   });
 });

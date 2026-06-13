@@ -68,6 +68,15 @@ function parseLaunchPromptArgument(promptArg = '') {
   return trimmed;
 }
 
+function isDirectAgentLaunchCommand(command = '') {
+  const normalized = String(command || '').trim();
+  if (!normalized || normalized.includes('\n')) return false;
+  if (/[;&|]/.test(normalized)) return false;
+
+  const firstToken = normalized.match(/^(\S+)/)?.[1] || '';
+  return /(opencode|codex|hermes)$/.test(firstToken);
+}
+
 export function buildDocOpsGateLanguage() {
   return [
     'Aplicá este gate DocOps como una mejora del sdd-orchestrator existente, no como reemplazo:',
@@ -129,6 +138,11 @@ export function enforceDocOpsGateOnText(text = '') {
 
 export function enforceDocOpsGateOnLaunchCommand(command = '') {
   const normalizedCommand = String(command || '').trim();
+  // Only rewrite direct agent invocations. Wrapped shell scripts and tmux/batch
+  // commands can contain nested quoting that this prompt-level rewriter cannot
+  // safely preserve.
+  if (!isDirectAgentLaunchCommand(normalizedCommand)) return command;
+
   const flag = normalizedCommand.includes('--prompt ')
     ? '--prompt '
     : normalizedCommand.includes('--task ')

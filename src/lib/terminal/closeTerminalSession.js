@@ -1,35 +1,6 @@
 async function readProductionSidecarPortDefault() {
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
-
-  const portFile = path.join(os.homedir(), '.devhub', 'sidecar-port.txt');
-  if (!fs.existsSync(portFile)) {
-    return null;
-  }
-
-  const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-  if (!Number.isInteger(port) || port <= 0) {
-    return null;
-  }
-
-  try {
-    const healthResponse = await fetch(`http://127.0.0.1:${port}/health`, {
-      cache: 'no-store',
-    });
-    try {
-      await healthResponse.text();
-    } catch {
-      /* ignore */
-    }
-    if (healthResponse.ok) {
-      return port;
-    }
-  } catch (error) {
-    console.error('Error checking sidecar health:', error);
-  }
-
-  return null;
+  const { readProductionSidecarPort } = require('../devhub/sidecarRuntime');
+  return readProductionSidecarPort();
 }
 
 export async function closeTerminalSessionById(
@@ -79,8 +50,7 @@ export async function closeTerminalSessionById(
   }
 
   const closeSessionFn =
-    closeSessionImpl ||
-    (await import('@/lib/terminal/ttyServer')).closeSession;
+    closeSessionImpl || (await import('@/lib/terminal/ttyServer')).closeSession;
 
   closeSessionFn(normalizedSessionId);
   return { success: true, sessionId: normalizedSessionId };

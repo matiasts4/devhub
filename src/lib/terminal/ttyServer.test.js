@@ -26,6 +26,8 @@ jest.mock('./sessionStore.js', () => ({
   loadSessions: mockLoadSessions,
   getSessionFilePath: () => '/mock-home/.devhub/terminal-sessions.json',
   STALE_TTL_MS: 7 * 24 * 60 * 60 * 1000,
+  // classifySession: forward to actual implementation for restoreSessions branching
+  classifySession: jest.requireActual('./sessionStore.js').classifySession,
 }));
 
 // --- Mock ws ---
@@ -234,6 +236,61 @@ describe('ttyServer — session create', () => {
     const spawnCall = mockPtySpawn.mock.calls[0];
     expect(spawnCall[0]).toBe('/bin/zsh');
     expect(spawnCall[1]).toEqual(['-lic', 'exec zsh -i', 'devhub-shell', '--no-use']);
+  });
+
+  it('auto-generates an id when createSession is called without one (POST /api/terminal/session contract)', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    // No `id` argument — this is exactly what src/app/api/terminal/session/route.js does.
+    const session = createSession({ cwd: process.cwd(), shell: '/bin/zsh' });
+
+    expect(session.id).toBeDefined();
+    expect(typeof session.id).toBe('string');
+    expect(session.id).toMatch(/^term-\d+-[a-z0-9]+$/);
+
+    // Session must be registered so list_terminals can find it.
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    expect(sessions.has(session.id)).toBe(true);
+  });
+
+  it('uses role-based tmux session naming for swarm agents', async () => {
+    const fs = require('fs');
+    const validSwarmCwd = path.join(process.cwd(), '.devhub', 'worktrees', 'launch-123', 'coder');
+
+    const existsSpy = jest.spyOn(fs, 'existsSync').mockImplementation((p) => {
+      if (p.includes('.devhub/worktrees')) return true;
+      return false;
+    });
+    const statSpy = jest.spyOn(fs, 'statSync').mockImplementation((p) => {
+      if (p.includes('.devhub/worktrees')) {
+        return { isDirectory: () => true };
+      }
+      throw new Error('Directory not found');
+    });
+
+    try {
+      const { createSession } = await import('./ttyServer.js');
+
+      const session = createSession({
+        id: 'term-swarm-agent',
+        cwd: validSwarmCwd,
+        shell: '/bin/zsh',
+        swarmContext: {
+          isSwarmRole: true,
+          roleKey: 'coder',
+          launchId: 'launch-123',
+        },
+      });
+
+      expect(session.swarmRole).toEqual({ roleKey: 'coder' });
+      expect(session.swarmId).toBe('launch-123');
+
+      const spawnCall = mockPtySpawn.mock.calls[0];
+      expect(spawnCall[2]?.env?.DEVHUB_TMUX_SESSION).toBe('devhub-swarm-launch-123-coder');
+    } finally {
+      existsSpy.mockRestore();
+      statSpy.mockRestore();
+    }
   });
 });
 
@@ -488,6 +545,59 @@ describe('ttyServer — shell history hygiene', () => {
     expect(socket.send).toHaveBeenCalledWith(
       JSON.stringify({ type: 'output', data: 'prompt$ ls\r\nfile-a\r\n' })
     );
+  });
+
+  it('filters terminal response noise from tui-mode broadcast', async () => {
+    const { createSession } = await import('./ttyServer.js');
+
+    createSession({ id: 'tui-noise', cwd: '/home/user', shell: '/bin/zsh' });
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('tui-noise');
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    const socket = createMockSocket();
+    session.sockets.add(socket);
+
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler('prompt$ ');
+    onDataHandler('\u001b[?1;2c\u001b[>0;276;0c');
+    onDataHandler('opencode ready\r\n');
+
+    expect(socket.send).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({ type: 'output', data: 'prompt$ ' })
+    );
+    expect(socket.send).toHaveBeenNthCalledWith(
+      2,
+      JSON.stringify({ type: 'output', data: 'opencode ready\r\n' })
+    );
+    expect(socket.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops pure terminal response noise from websocket input before pty.write', async () => {
+    const { ensureTTYServer } = await import('./ttyServer.js');
+
+    await ensureTTYServer();
+
+    const connectionHandler = mockWssOn.mock.calls.find(
+      ([eventName]) => eventName === 'connection'
+    )?.[1];
+
+    const socket = createMockSocket();
+    socket.on = jest.fn((event, handler) => {
+      socket[`__${event}`] = handler;
+    });
+
+    connectionHandler(socket, { url: '/terminal?id=input-filter&cwd=%2Fhome%2Fuser' });
+
+    mockPtyProcess.write.mockClear();
+    socket.__message(JSON.stringify({ type: 'input', data: '\u001b[?1;2c\u001b[>0;276;0c' }));
+
+    expect(mockPtyProcess.write).not.toHaveBeenCalled();
+
+    socket.__message(JSON.stringify({ type: 'input', data: '\u001b[Il' }));
+    expect(mockPtyProcess.write).toHaveBeenCalledTimes(1);
+    expect(mockPtyProcess.write).toHaveBeenCalledWith('l');
   });
 
   it('filters terminal response noise from shell-mode broadcast and history', async () => {

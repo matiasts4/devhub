@@ -69,8 +69,8 @@ const MISSION_MESSAGE_KINDS = [
   'approval_request',
   'approval_result',
 ];
-const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired'];
-const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline'];
+const MISSION_DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'retry_pending', 'expired', 'consumed'];
+const AGENT_PRESENCE_STATES = ['online', 'busy', 'idle', 'waiting', 'offline', 'booting', 'crashed'];
 const AGENT_PRESENCE_TTL_MS = 120_000;
 const MISSION_IDENTITY_METADATA_FIELDS = [
   'profile_key',
@@ -170,6 +170,30 @@ const DIRECTOR_SNAPSHOT_PRESENCE_FIELDS = [
   'updated_at',
 ];
 
+// Operator Timeline vocabulary (OET-2, OET-3)
+const STAGE_VOCABULARY = [
+  'action_request',
+  'policy_evaluation',
+  'tool_invocation',
+  'execution_progress',
+  'rollback',
+  'deferred',
+  'audit_recorded',
+];
+const STATUS_VOCABULARY = [
+  'requested',
+  'policy_approved',
+  'policy_denied',
+  'invoked',
+  'running',
+  'completed',
+  'failed',
+  'rolled_back',
+  'deferred',
+];
+const VALID_STAGES = new Set(STAGE_VOCABULARY);
+const VALID_STATUSES = new Set(STATUS_VOCABULARY);
+
 module.exports = {
   AGENT_WORKSPACE_TERMINAL_STATUSES,
   AGENT_WORKSPACE_BASE_COMMIT,
@@ -198,4 +222,10 @@ module.exports = {
   DIRECTOR_SNAPSHOT_MESSAGE_FIELDS,
   DIRECTOR_SNAPSHOT_DELIVERY_FIELDS,
   DIRECTOR_SNAPSHOT_PRESENCE_FIELDS,
+
+  // Operator Timeline vocabulary
+  STAGE_VOCABULARY,
+  STATUS_VOCABULARY,
+  VALID_STAGES,
+  VALID_STATUSES,
 };

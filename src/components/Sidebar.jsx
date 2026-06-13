@@ -35,27 +35,27 @@ export default function Sidebar({ collapsed, onToggle }) {
     <motion.aside
       data-testid="sidebar"
       initial={false}
-      animate={{ width: collapsed ? 48 : 256 }}
-      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+      animate={{ width: collapsed ? 52 : 200 }}
+      transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
       className="flex-shrink-0 bg-[#0d0d0d] border-r border-white/[0.07] flex flex-col h-full overflow-hidden"
-      style={{ minWidth: collapsed ? 48 : 256 }}
+      style={{ minWidth: collapsed ? 52 : 200 }}
     >
       {/* Logo */}
       <div
-        className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
-          collapsed ? 'px-0 py-3' : 'px-4 py-3'
+        className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'} ${
+          collapsed ? 'px-0 py-3' : 'px-3 py-3'
         } border-b border-white/[0.07] h-12`}
       >
         <div
-          className="h-9 w-9 border-2 flex items-center justify-center"
+          className="h-8 w-8 flex items-center justify-center"
           style={{
-            borderColor: 'var(--accent-primary)',
+            border: '1px solid color-mix(in srgb, var(--accent-primary) 60%, transparent)',
             backgroundColor: 'var(--accent-primary)',
-            boxShadow: '2px 2px 0 0 var(--accent-shadow)',
-            borderRadius: 0,
+            boxShadow: '0 0 12px -2px var(--accent-primary)',
+            borderRadius: 'var(--chrome-radius-control)',
           }}
         >
-          <Terminal className="w-5 h-5" style={{ color: '#000', strokeWidth: 2.5 }} />
+          <Terminal className="w-4 h-4" style={{ color: '#000', strokeWidth: 2.25 }} />
         </div>
         <AnimatePresence initial={false}>
           {!collapsed && (
@@ -64,13 +64,13 @@ export default function Sidebar({ collapsed, onToggle }) {
               initial={{ opacity: 0, width: 0 }}
               animate={{ opacity: 1, width: 'auto' }}
               exit={{ opacity: 0, width: 0 }}
-              transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
               className="overflow-hidden"
             >
-              <p className="font-mono font-bold text-white text-sm tracking-wider leading-tight whitespace-nowrap">
+              <p className="font-sans font-semibold text-white text-[13px] tracking-tight leading-tight whitespace-nowrap">
                 DevHub
               </p>
-              <p className="font-mono text-amber-400/70 text-[10px] tracking-[0.2em] uppercase whitespace-nowrap">
+              <p className="font-mono text-amber-400/70 text-[9px] tracking-[0.2em] uppercase whitespace-nowrap">
                 cockpit
               </p>
             </motion.div>
@@ -79,7 +79,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       </div>
 
       {/* Nav */}
-      <nav className={`flex-1 overflow-y-auto py-3 ${collapsed ? 'px-1.5' : 'px-2'} space-y-0.5`}>
+      <nav className={`flex-1 overflow-y-auto py-2.5 ${collapsed ? 'px-1.5' : 'px-2'} space-y-0.5`}>
         <AnimatePresence initial={false}>
           {!collapsed && (
             <motion.p
@@ -87,8 +87,8 @@ export default function Sidebar({ collapsed, onToggle }) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.15 }}
-              className="px-3 mb-2 text-[10px] uppercase tracking-[0.15em] text-slate-600 font-semibold"
+              transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+              className="px-3 mb-1.5 text-[10px] uppercase tracking-[0.15em] text-slate-600 font-semibold"
             >
               Navegación
             </motion.p>
@@ -105,8 +105,8 @@ export default function Sidebar({ collapsed, onToggle }) {
             className={({ isActive }) => getNavItemClasses(collapsed, isActive)}
           >
             <Icon
-              className={`flex-shrink-0 ${collapsed ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5'}`}
-              strokeWidth={1.6}
+              className="flex-shrink-0 w-4 h-4"
+              strokeWidth={1.75}
             />
             <AnimatePresence initial={false}>
               {!collapsed && (
@@ -115,7 +115,7 @@ export default function Sidebar({ collapsed, onToggle }) {
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: 'auto' }}
                   exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.18, delay: 0.06 }}
+                  transition={{ duration: 0.16, delay: 0.05, ease: [0.32, 0.72, 0, 1] }}
                   className="overflow-hidden whitespace-nowrap"
                 >
                   {label}
@@ -125,7 +125,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           </NavLink>
         ))}
 
-        <div className={`border-t border-white/[0.07] ${collapsed ? 'my-2' : 'my-2.5'}`} />
+        <div className={`border-t border-white/[0.06] ${collapsed ? 'my-2' : 'my-2'}`} />
 
         <AnimatePresence initial={false}>
           {!collapsed && (
@@ -134,8 +134,8 @@ export default function Sidebar({ collapsed, onToggle }) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.15 }}
-              className="px-3 mb-2 text-[10px] uppercase tracking-[0.15em] text-slate-600 font-semibold"
+              transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+              className="px-3 mb-1.5 text-[10px] uppercase tracking-[0.15em] text-slate-600 font-semibold"
             >
               Configuración
             </motion.p>
@@ -152,8 +152,8 @@ export default function Sidebar({ collapsed, onToggle }) {
             className={({ isActive }) => getNavItemClasses(collapsed, isActive)}
           >
             <Icon
-              className={`flex-shrink-0 ${collapsed ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5'}`}
-              strokeWidth={1.6}
+              className="flex-shrink-0 w-4 h-4"
+              strokeWidth={1.75}
             />
             <AnimatePresence initial={false}>
               {!collapsed && (
@@ -162,7 +162,7 @@ export default function Sidebar({ collapsed, onToggle }) {
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: 'auto' }}
                   exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.18, delay: 0.06 }}
+                  transition={{ duration: 0.16, delay: 0.05, ease: [0.32, 0.72, 0, 1] }}
                   className="overflow-hidden whitespace-nowrap"
                 >
                   {label}
@@ -174,7 +174,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-white/[0.07]">
+      <div className="border-t border-white/[0.06]">
         <AnimatePresence initial={false}>
           {!collapsed && (
             <motion.div
@@ -182,14 +182,14 @@ export default function Sidebar({ collapsed, onToggle }) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.18 }}
-              className="flex items-center gap-3 px-4 py-2.5 overflow-hidden"
+              transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+              className="flex items-center gap-2.5 px-3 py-2.5 overflow-hidden"
             >
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400/80 to-amber-600 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400/80 to-amber-600 flex items-center justify-center text-[10px] font-semibold text-white flex-shrink-0">
                 DA
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-white font-medium truncate">Dev Admin</p>
+                <p className="text-[12.5px] text-white font-medium truncate">Dev Admin</p>
                 <p className="text-[10px] text-slate-500 truncate">admin@devhub.local</p>
               </div>
             </motion.div>
@@ -204,10 +204,10 @@ export default function Sidebar({ collapsed, onToggle }) {
           className={`m-2 ${collapsed ? 'w-8 h-8 p-0 rounded-full' : 'w-[calc(100%-1rem)] justify-center'} border-t-0`}
         >
           {collapsed ? (
-            <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.6} />
+            <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.75} />
           ) : (
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <ChevronLeft className="w-3 h-3" strokeWidth={1.6} />
+            <div className="flex items-center gap-1.5 text-[11px] font-sans">
+              <ChevronLeft className="w-3 h-3" strokeWidth={1.75} />
               <span>Colapsar</span>
             </div>
           )}

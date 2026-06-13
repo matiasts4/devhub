@@ -343,32 +343,42 @@ export default function SwarmTopologyGraph({
     injectStyles();
   }, []);
 
-  // Observe container size
+  // Observe container size. Batch via rAF so rapid resizes (e.g. when user resizes
+  // browser/terminal panels, right dock, or splits in TerminalWorkspacesManager)
+  // don't cause a storm of setState -> re-renders -> effects that can hit max update depth
+  // or feel janky. We still want live layout for the graph nodes during the gesture.
   useEffect(() => {
     if (!containerRef.current) return;
     const el = containerRef.current;
+    let rafId = null;
+
+    const commitSize = (w) => {
+      setContainerSize({
+        width: w,
+        height: compact ? Math.max(160, w * 0.28) : Math.max(260, w * 0.38),
+      });
+    };
 
     if (el.clientWidth) {
-      setContainerSize({
-        width: el.clientWidth,
-        height: compact
-          ? Math.max(160, el.clientWidth * 0.28)
-          : Math.max(260, el.clientWidth * 0.38),
-      });
+      commitSize(el.clientWidth);
     }
 
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
-        setContainerSize({
-          width: w,
-          height: compact ? Math.max(160, w * 0.28) : Math.max(260, w * 0.38),
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          commitSize(w);
         });
       }
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
   }, [compact]);
 
   // Build node data from roster
@@ -435,33 +445,38 @@ export default function SwarmTopologyGraph({
     return computeInitialLayout(nodes, containerSize.width, containerSize.height, compact);
   }, [nodes, containerSize.width, containerSize.height, compact]);
 
-  // Keep only overrides that still belong to existing nodes.
-  useEffect(() => {
-    setManualPositions((prev) => {
-      if (!prev || prev.size === 0) return prev;
+  // Derive cleaned manual positions instead of mutating state in an effect.
+  // This avoids "Maximum update depth exceeded" (setState in effect whose dep 'nodes'
+  // is unstable because roster from parent WorkspaceSwarmPane is re-memoized on
+  // every re-render of the dock/pane during resizes, RO fires, layout updates in
+  // TerminalWorkspacesManager etc.). We filter stale overrides here for display only;
+  // drag still writes to raw manualPositions (stale keys are harmless and ignored).
+  const cleanedManualPositions = useMemo(() => {
+    if (!manualPositions || manualPositions.size === 0) return manualPositions;
 
-      const nodeIds = new Set(nodes.map((node) => node.id));
-      let changed = false;
-      const next = new Map();
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    let changed = false;
+    const next = new Map();
 
-      prev.forEach((value, key) => {
-        if (nodeIds.has(key)) {
-          next.set(key, value);
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : prev;
+    manualPositions.forEach((value, key) => {
+      if (nodeIds.has(key)) {
+        next.set(key, value);
+      } else {
+        changed = true;
+      }
     });
-  }, [nodes]);
+
+    return changed ? next : manualPositions;
+  }, [manualPositions, nodes]);
 
   // Apply drag overrides using ratio-based positions so nodes stay connected after resize.
+  // Use cleanedManualPositions (derived) so we don't need the old effect that did setState
+  // on [nodes] (source of the max update depth during resizes of browser/panels/dock).
   const displayNodes = useMemo(() => {
-    if (!manualPositions) return layoutNodes;
+    if (!cleanedManualPositions) return layoutNodes;
 
     return layoutNodes.map((n) => {
-      const pos = manualPositions.get?.(n.id);
+      const pos = cleanedManualPositions.get?.(n.id);
       if (pos) {
         const dims = getNodeDimensions(n, compact);
         const minX = dims.width / 2;
@@ -478,7 +493,7 @@ export default function SwarmTopologyGraph({
 
       return n;
     });
-  }, [layoutNodes, manualPositions, compact, containerSize.width, containerSize.height]);
+  }, [layoutNodes, cleanedManualPositions, compact, containerSize.width, containerSize.height]);
 
   const nodesById = useMemo(() => {
     return new Map(displayNodes.map((n) => [n.id, n]));

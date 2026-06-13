@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevHub Preview - Terminal Matrix</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['JetBrains Mono', 'monospace'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        matrix: {
+                            bg: '#000000',
+                            panel: '#050505',
+                            border: '#003b00',
+                            green: '#00ff41',
+                            cyan: '#00e5ff',
+                            rose: '#ff1744',
+                            amber: '#ffb300',
+                            dim: '#00b32d'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --accent: #00ff41;
+            --accent-hover: #00ff7a;
+            --accent-shadow: #003b00;
+            --accent-glow: rgba(0, 255, 65, 0.12);
+            --accent-blue: #00e5ff;
+            --accent-rose: #ff1744;
+        }
+
+        body {
+            background-color: #000000;
+            background-image:
+                linear-gradient(rgba(0, 255, 65, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.02) 1px, transparent 1px);
+            background-size: 24px 24px;
+            color: #00ff41;
+        }
+
+        /* CRT scanlines */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.08) 2px,
+                rgba(0, 0, 0, 0.08) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        .brutal-panel {
+            background: #050505;
+            border: 1px solid #003b00;
+            box-shadow: none;
+        }
+
+        .brutal-panel-active {
+            background: #080f08;
+            border: 1px solid #00ff41;
+            box-shadow: 0 0 12px rgba(0, 255, 65, 0.15), inset 0 0 20px rgba(0, 255, 65, 0.03);
+        }
+
+        .brutal-btn-primary {
+            background: #001a00;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            font-weight: 700;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+        .brutal-btn-primary:hover {
+            background: #003300;
+            color: #ffffff;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.4);
+            transform: translateY(-1px);
+        }
+        .brutal-btn-primary:active {
+            background: #00ff41;
+            color: #000000;
+            box-shadow: 0 0 8px rgba(0, 255, 65, 0.3);
+        }
+
+        .brutal-btn-secondary {
+            background: transparent;
+            border: 1px solid #00b32d;
+            color: #00b32d;
+            box-shadow: none;
+        }
+        .brutal-btn-secondary:hover {
+            border-color: #00ff41;
+            color: #00ff41;
+            box-shadow: 0 0 8px rgba(0, 255, 65, 0.2);
+        }
+        .brutal-btn-secondary:active {
+            transform: none;
+        }
+
+        .node-brutal-running {
+            border: 1px solid #00ff41;
+            background: #030a03;
+            box-shadow: 0 0 8px rgba(0, 255, 65, 0.2);
+        }
+        .node-brutal-running:hover {
+            transform: none;
+            background: #051005;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.35);
+        }
+
+        .node-brutal-idle {
+            border: 1px solid #005700;
+            background: #020802;
+            box-shadow: none;
+        }
+        .node-brutal-idle:hover {
+            border-color: #00b32d;
+            transform: none;
+        }
+
+        .node-brutal-error {
+            border: 1px solid #ff1744;
+            background: #0a0505;
+            box-shadow: 0 0 8px rgba(255, 23, 68, 0.2);
+        }
+        .node-brutal-error:hover {
+            transform: none;
+        }
+
+        @keyframes march {
+            to { stroke-dashoffset: -20; }
+        }
+        .brutal-edge {
+            stroke-dasharray: 6, 4;
+            animation: march 1s linear infinite;
+        }
+
+        @keyframes brutal-blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0.1; }
+        }
+        .brutal-blink {
+            animation: brutal-blink 1s steps(1) infinite;
+        }
+
+        /* Font variant */
+        body.font-sans {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: #000000;
+            background-image:
+                radial-gradient(circle at top left, rgba(0, 255, 65, 0.08), transparent 24%),
+                linear-gradient(rgba(0, 255, 65, 0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.025) 1px, transparent 1px),
+                linear-gradient(180deg, #000000 0%, #010501 100%);
+            background-size: auto, 24px 24px, 24px 24px, auto;
+            color: #00ff41;
+        }
+
+        header {
+            background: linear-gradient(180deg, rgba(5, 15, 5, 0.98), rgba(0, 10, 0, 0.96));
+            border-bottom-color: rgba(0, 255, 65, 0.2) !important;
+            box-shadow: inset 0 -1px 0 rgba(0, 255, 65, 0.1);
+        }
+
+        nav {
+            background: linear-gradient(180deg, #020802 0%, #010501 100%) !important;
+            border-right-color: rgba(0, 255, 65, 0.12) !important;
+        }
+
+        main {
+            background:
+                radial-gradient(circle at top right, rgba(0, 255, 65, 0.05), transparent 24%),
+                linear-gradient(180deg, #000000 0%, #010501 100%) !important;
+        }
+
+        .brutal-panel,
+        .brutal-panel-active,
+        .node-brutal-running,
+        .node-brutal-idle,
+        .node-brutal-error,
+        #node-drawer {
+            border-width: 1px;
+            border-color: rgba(0, 255, 65, 0.15);
+            background: linear-gradient(180deg, rgba(3, 10, 3, 0.96), rgba(1, 5, 1, 0.96));
+            box-shadow: 0 0 0 0 transparent;
+        }
+
+        .brutal-panel-active,
+        .node-brutal-running {
+            border-color: rgba(0, 255, 65, 0.4);
+            background: linear-gradient(180deg, rgba(5, 15, 5, 0.98), rgba(2, 8, 2, 0.96));
+            box-shadow: 0 0 12px rgba(0, 255, 65, 0.15), inset 0 0 20px rgba(0, 255, 65, 0.03);
+        }
+
+        .node-brutal-error {
+            border-color: rgba(255, 23, 68, 0.4);
+            background: linear-gradient(180deg, rgba(15, 5, 5, 0.98), rgba(8, 2, 2, 0.96));
+        }
+
+        .node-brutal-idle {
+            border-color: rgba(0, 255, 65, 0.1);
+        }
+
+        .brutal-btn-primary,
+        .brutal-btn-secondary {
+            border-width: 1px;
+            border-radius: 999px;
+            box-shadow: none;
+            transform: none !important;
+        }
+
+        .brutal-btn-primary {
+            background: linear-gradient(180deg, #001a00 0%, #002400 100%);
+            color: #00ff41;
+            border-color: rgba(0, 255, 65, 0.5);
+        }
+
+        .brutal-btn-primary:hover {
+            background: #003300;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+        }
+
+        .brutal-btn-secondary {
+            background: transparent;
+            border-color: rgba(0, 179, 45, 0.3);
+            color: #00b32d;
+        }
+
+        .brutal-btn-secondary:hover {
+            background: rgba(0, 255, 65, 0.05);
+            border-color: #00ff41;
+            color: #00ff41;
+        }
+
+        .text-brutal-green { color: #00ff41; }
+        .text-brutal-blue { color: #00e5ff; }
+        .text-brutal-rose { color: #ff1744; }
+        .bg-brutal-green { background-color: #00ff41; }
+        .border-brutal-green { border-color: #00ff41; }
+
+        /* Progress bar inside node */
+        .node-progress {
+            height: 3px;
+            background: rgba(0, 255, 65, 0.08);
+            border: none;
+        }
+        .node-progress-fill {
+            height: 100%;
+            background: #00ff41;
+            box-shadow: 0 0 6px rgba(0, 255, 65, 0.5);
+        }
+
+        /* Status bar */
+        .sys-status { color: #00b32d; }
+    </style>
+</head>
+<body class="font-sans h-full flex flex-col">
+    <!-- Header -->
+    <header class="px-4 py-3 flex items-center justify-between border-b-2">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 brutal-blink" style="background: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,0.6);"></div>
+                <span class="text-xs font-black uppercase tracking-widest" style="color: #00ff41; text-shadow: 0 0 10px rgba(0,255,65,0.5);">ACME_PLATFORM</span>
+            </div>
+            <div class="h-4 w-px" style="background: rgba(0,255,65,0.2);"></div>
+            <span class="text-[10px] uppercase tracking-wider" style="color: rgba(0,255,65,0.4);">SWARM_CONTROL</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <button class="brutal-btn-secondary px-3 py-1.5 text-[10px]">Settings</button>
+            <button class="brutal-btn-primary px-4 py-2 text-[10px]">+ Agent _</button>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 flex overflow-hidden">
+        <!-- LEFT: Agent Grid -->
+        <nav class="w-56 flex flex-col gap-2 p-3 border-r-2">
+            <div class="px-2 py-2 flex items-center justify-between">
+                <span class="text-[10px] font-black uppercase tracking-widest" style="color: #00ff41;">// AGENTS</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(0,255,65,0.08); color: #00b32d; border: 1px solid rgba(0,255,65,0.2);">04</span>
+            </div>
+
+            <!-- Agent: Running -->
+            <div class="node-brutal-running p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 brutal-blink" style="background: #00ff41; box-shadow: 0 0 6px rgba(0,255,65,0.5);"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00ff41;">DIRECTOR</span>
+                    </div>
+                    <span class="text-[9px]" style="color: rgba(0,255,65,0.35);">#001</span>
+                </div>
+                <div class="text-[9px]" style="color: rgba(0,255,65,0.45);">Swarm orchestration</div>
+                <div class="node-progress">
+                    <div class="node-progress-fill" style="width: 72%;"></div>
+                </div>
+            </div>
+
+            <!-- Agent: Running -->
+            <div class="node-brutal-running p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 brutal-blink" style="background: #00ff41; box-shadow: 0 0 6px rgba(0,255,65,0.5);"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00ff41;">CODER</span>
+                    </div>
+                    <span class="text-[9px]" style="color: rgba(0,255,65,0.35);">#002</span>
+                </div>
+                <div class="text-[9px]" style="color: rgba(0,255,65,0.45);">Frontend implementation</div>
+                <div class="node-progress">
+                    <div class="node-progress-fill" style="width: 45%;"></div>
+                </div>
+            </div>
+
+            <!-- Agent: Idle -->
+            <div class="node-brutal-idle p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2" style="background: rgba(0,255,65,0.3);"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00b32d;">REVIEWER</span>
+                    </div>
+                    <span class="text-[9px]" style="color: rgba(0,255,65,0.35);">#003</span>
+                </div>
+                <div class="text-[9px]" style="color: rgba(0,255,65,0.45);">Code review queue</div>
+            </div>
+
+            <!-- Agent: Error -->
+            <div class="node-brutal-error p-3 space-y-2 cursor-pointer">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 brutal-blink" style="background: #ff1744; box-shadow: 0 0 6px rgba(255,23,68,0.5);"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #ff1744;">DEVOPS</span>
+                    </div>
+                    <span class="text-[9px]" style="color: rgba(0,255,65,0.35);">#004</span>
+                </div>
+                <div class="text-[9px]" style="color: rgba(255,23,68,0.7);">Connection timeout</div>
+            </div>
+        </nav>
+
+        <!-- CENTER: Topology -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <div class="px-4 py-3 border-b-2 flex items-center justify-between" style="background: rgba(2,8,2,0.8);">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="git-branch" class="w-4 h-4" style="color: #00ff41;"></i>
+                    <span class="text-xs font-black uppercase tracking-wider" style="color: #00ff41; text-shadow: 0 0 10px rgba(0,255,65,0.4);">SWARM_TOPOLOGY</span>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-[10px] px-2 py-1 rounded" style="background: rgba(0,255,65,0.08); color: #00ff41; border: 1px solid rgba(0,255,65,0.2);">RUN: 02</span>
+                    <span class="text-[10px] px-2 py-1 rounded" style="background: rgba(0,229,255,0.06); color: #00e5ff; border: 1px solid rgba(0,229,255,0.15);">IDLE: 01</span>
+                    <span class="text-[10px] px-2 py-1 rounded" style="background: rgba(255,23,68,0.08); color: #ff1744; border: 1px solid rgba(255,23,68,0.2);">ERR: 01</span>
+                </div>
+            </div>
+
+            <!-- Canvas -->
+            <div class="flex-1 relative overflow-hidden p-4">
+                <svg class="absolute inset-0 w-full h-full" style="z-index: 0;">
+                    <line x1="120" y1="80" x2="240" y2="120" class="brutal-edge" stroke="#003b00" stroke-width="1"/>
+                    <line x1="240" y1="120" x2="380" y2="100" class="brutal-edge" stroke="#003b00" stroke-width="1"/>
+                    <line x1="240" y1="120" x2="380" y2="180" class="brutal-edge" stroke="#003b00" stroke-width="1"/>
+                    <line x1="380" y1="100" x2="520" y2="140" class="brutal-edge" stroke="#003b00" stroke-width="1"/>
+                </svg>
+
+                <!-- Node: DIRECTOR -->
+                <div class="node-brutal-running p-3 w-40 cursor-pointer relative" style="z-index: 1; position: absolute; top: 40px; left: 60px;">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-2 h-2 brutal-blink" style="background: #00ff41; box-shadow: 0 0 6px rgba(0,255,65,0.5);"></div>
+                        <span class="text-[10px] font-black text-white uppercase">DIRECTOR</span>
+                    </div>
+                    <div class="text-[9px]" style="color: rgba(0,255,65,0.5);">Mission: #2847</div>
+                    <div class="node-progress mt-2">
+                        <div class="node-progress-fill" style="width: 72%;"></div>
+                    </div>
+                </div>
+
+                <!-- Node: CODER -->
+                <div class="node-brutal-running p-3 w-40 cursor-pointer relative" style="z-index: 1; position: absolute; top: 80px; left: 260px;">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-2 h-2 brutal-blink" style="background: #00ff41; box-shadow: 0 0 6px rgba(0,255,65,0.5);"></div>
+                        <span class="text-[10px] font-black text-white uppercase">CODER</span>
+                    </div>
+                    <div class="text-[9px]" style="color: rgba(0,255,65,0.5);">Task: #9021</div>
+                    <div class="node-progress mt-2">
+                        <div class="node-progress-fill" style="width: 45%;"></div>
+                    </div>
+                </div>
+
+                <!-- Node: REVIEWER -->
+                <div class="node-brutal-idle p-3 w-40 cursor-pointer relative" style="z-index: 1; position: absolute; top: 40px; left: 400px;">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-2 h-2" style="background: rgba(0,255,65,0.4);"></div>
+                        <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00b32d;">REVIEWER</span>
+                    </div>
+                    <div class="text-[9px]" style="color: rgba(0,255,65,0.5);">Queue: 03</div>
+                </div>
+
+                <!-- Node: DEVOPS -->
+                <div class="node-brutal-error p-3 w-40 cursor-pointer relative" style="z-index: 1; position: absolute; top: 140px; left: 400px;">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-2 h-2 brutal-blink" style="background: #ff1744; box-shadow: 0 0 6px rgba(255,23,68,0.5);"></div>
+                        <span class="text-[10px] font-black text-white uppercase">DEVOPS</span>
+                    </div>
+                    <div class="text-[9px]" style="color: rgba(255,23,68,0.7);">Timeout #12</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Task Board -->
+        <div class="w-72 flex flex-col border-l-2">
+            <!-- Header -->
+            <div class="px-4 py-3 border-b-2 flex items-center justify-between" style="background: rgba(2,8,2,0.8);">
+                <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00ff41;">// TASK_BOARD</span>
+            </div>
+
+            <!-- Running -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <div class="px-3 py-2 border-b-2 flex items-center gap-2" style="border-color: rgba(0,255,65,0.15);">
+                    <div class="w-2 h-2 brutal-blink" style="background: #00ff41; box-shadow: 0 0 6px rgba(0,255,65,0.5);"></div>
+                    <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00ff41;">// RUNNING</span>
+                    <span class="text-[9px] px-1.5 py-0.5 ml-auto" style="background: rgba(0,255,65,0.06); color: #00b32d; border: 1px solid rgba(0,255,65,0.15);">01</span>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                    <div class="brutal-panel-active p-3 cursor-pointer">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-[10px] font-black text-white uppercase tracking-wider">REFACTOR_TOPOLOGY_CSS</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-[9px]" style="color: rgba(0,255,65,0.4);">
+                            <span>#9021</span>
+                            <span>—</span>
+                            <span>CODER</span>
+                        </div>
+                        <div class="w-full h-2 mt-2" style="background: rgba(0,255,65,0.06); border: none;">
+                            <div class="h-full" style="width: 68%; background: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,0.4);"></div>
+                        </div>
+                        <div class="text-[9px] mt-1" style="color: rgba(0,255,65,0.6);">68%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Queue -->
+            <div class="flex-1 flex flex-col border-t-2" style="border-color: rgba(0,229,255,0.1);">
+                <div class="px-3 py-2 border-b-2 flex items-center gap-2" style="border-color: rgba(0,229,255,0.1);">
+                    <div class="w-2 h-2" style="background: #00e5ff;"></div>
+                    <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00e5ff;">// QUEUE</span>
+                    <span class="text-[9px] px-1.5 py-0.5 ml-auto" style="background: rgba(0,229,255,0.04); color: #00e5ff; border: 1px solid rgba(0,229,255,0.1);">03</span>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                    <div class="brutal-panel p-3 cursor-pointer">
+                        <div class="text-[10px] font-black text-white uppercase tracking-wider">IMPL_AUTH_FLOW</div>
+                        <div class="flex items-center gap-2 text-[9px] mt-1" style="color: rgba(0,255,65,0.4);">
+                            <span>#0894</span>
+                            <span>—</span>
+                            <span>DEVOPS</span>
+                        </div>
+                    </div>
+                    <div class="brutal-panel p-3 cursor-pointer">
+                        <div class="text-[10px] font-black text-white uppercase tracking-wider">FIX_TTY_RENDER</div>
+                        <div class="flex items-center gap-2 text-[9px] mt-1" style="color: rgba(0,255,65,0.4);">
+                            <span>#0891</span>
+                            <span>—</span>
+                            <span>REVIEWER</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Done -->
+            <div class="flex-1 flex flex-col border-t-2" style="border-color: rgba(0,255,65,0.1);">
+                <div class="px-3 py-2 border-b-2 flex items-center gap-2" style="border-color: rgba(0,255,65,0.1);">
+                    <i data-lucide="check" class="w-3 h-3" style="color: #00ff41;"></i>
+                    <span class="text-[10px] font-black uppercase tracking-wider" style="color: #00ff41;">// DONE</span>
+                    <span class="text-[9px] px-1.5 py-0.5 ml-auto" style="background: rgba(0,255,65,0.04); color: #00b32d; border: 1px solid rgba(0,255,65,0.1);">03</span>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 space-y-2">
+                    <div class="brutal-panel p-3 cursor-pointer opacity-60">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] font-black line-through" style="color: rgba(0,255,65,0.5);">SETUP_MESSAGE_BUS</span>
+                            <i data-lucide="check" class="w-3 h-3" style="color: #00ff41;"></i>
+                        </div>
+                        <div class="flex items-center gap-2 text-[9px] mt-1" style="color: rgba(0,255,65,0.3);">
+                            <span>#0880</span>
+                            <span>—</span>
+                            <span>DIRECTOR</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Status Bar -->
+    <div class="px-4 py-2 border-t-2 flex items-center justify-between" style="background: rgba(2,8,2,0.9); border-color: rgba(0,255,65,0.1);">
+        <div class="flex items-center gap-3">
+            <div style="width: 6px; height: 6px; border-radius: 50%; background: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,0.6);"></div>
+            <span class="text-[10px] sys-status">sys.status: nominal</span>
+            <span class="text-[10px]" style="color: #005700;">mem: 128MB</span>
+            <span class="text-[10px]" style="color: #005700;">uptime: 14d 7h</span>
+        </div>
+        <span class="text-[10px] brutal-blink" style="color: #00ff41;">_</span>
+    </div>
+</body>
+</html>

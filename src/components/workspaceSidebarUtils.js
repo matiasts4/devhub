@@ -37,7 +37,7 @@ export function isAgentActive(agent, nowMs, heartbeatFreshMs, activeStatuses) {
 }
 
 export function shouldShowPlanningSignal(key, planningStatus) {
-  return key === 'swarm' && planningStatus === 'pending';
+  return key === 'planificacion' && planningStatus === 'pending';
 }
 
 export function getSidebarChromeStyle() {

@@ -4,6 +4,12 @@
  * This is intentionally strict: the workspace tools included below are the current supported
  * DevHub MCP surface. If the product adds/removes tools, update this snapshot
  * together with README/docs so clients do not drift from the real server.
+ *
+ * devhub-cloud-foundation (PR 3): the surface grew from 24 to 32 tools.
+ * The 8 new tools are:
+ *   - devhub_list_actions, devhub_operate (operator surface; pre-existing)
+ *   - workspace.add_member, workspace.create, workspace.list,
+ *     workspace.members, workspace.remove_member, workspace.update_member_role
  */
 
 import { readFileSync } from 'fs';
@@ -23,6 +29,8 @@ const SUPPORTED_TOOL_NAMES = [
   'create_project',
   'create_task',
   'delete_project',
+  'devhub_list_actions',
+  'devhub_operate',
   'dismiss_inbox_item',
   'get_execution_queue',
   'get_agent_run',
@@ -40,6 +48,12 @@ const SUPPORTED_TOOL_NAMES = [
   'update_milestone',
   'update_project',
   'update_task',
+  'workspace.add_member',
+  'workspace.create',
+  'workspace.list',
+  'workspace.members',
+  'workspace.remove_member',
+  'workspace.update_member_role',
 ];
 
 const UNSUPPORTED_TOOL_NAMES = [
@@ -66,12 +80,15 @@ const UNSUPPORTED_TOOL_NAMES = [
   'create_agent_run',
   'complete_agent_run',
   'append_agent_artifact',
+  // devhub-cloud-foundation: invitation tools must NEVER appear on MCP.
+  'workspace.invite',
+  'workspace.accept_invite',
 ];
 
 function extractReadmeToolNames(markdown) {
   return [
     ...markdown.matchAll(
-      /^\|\s*`([^`]+)`\s*\|\s*(crud|portable-contract|external-integration)\s*\|/gm
+      /^\|\s*`([^`]+)`\s*\|\s*(crud|portable-contract|external-integration|workspace-membership)\s*\|/gm
     ),
   ].map((match) => match[1]);
 }
@@ -120,10 +137,13 @@ describe('MCP Tool Catalog', () => {
 
   it('documents the same supported MCP contract in the README', () => {
     const readme = readFileSync(README_PATH, 'utf8');
-    const supportedContractSection = extractSection(readme, 'Supported MCP Contract (24 tools)');
+    // devhub-cloud-foundation: 32-tool surface (24 base + 2 devhub_operate
+    // / devhub_list_actions + 6 workspace.*). README documents the new
+    // contract.
+    const supportedContractSection = extractSection(readme, 'Supported MCP Contract (32 tools)');
     const contractTable = extractContractTable(supportedContractSection);
 
-    expect(readme).toContain('Supported MCP Contract (24 tools)');
+    expect(readme).toContain('Supported MCP Contract (32 tools)');
     expect(extractReadmeToolNames(contractTable).sort()).toEqual([...SUPPORTED_TOOL_NAMES].sort());
 
     for (const toolName of UNSUPPORTED_TOOL_NAMES) {

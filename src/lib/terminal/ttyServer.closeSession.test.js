@@ -40,6 +40,9 @@ describe('closeSession()', () => {
   });
 
   test('kills the PTY process before removing the session', async () => {
+    const childProcess = require('child_process');
+    childProcess.spawnSync.mockReturnValue({ status: 0 });
+
     const { createSession, closeSession } = await import('./ttyServer.js');
 
     createSession({ id: 'p3', cwd: '/tmp', shell: '/bin/zsh' });
@@ -47,6 +50,11 @@ describe('closeSession()', () => {
 
     closeSession('p3');
 
+    expect(childProcess.spawnSync).toHaveBeenCalledWith(
+      'tmux',
+      ['kill-session', '-t', 'devhub-p3'],
+      expect.objectContaining({ stdio: 'ignore' })
+    );
     expect(mockPtyProcess.kill).toHaveBeenCalledTimes(1);
     const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
     expect(sessions.has('p3')).toBe(false);
