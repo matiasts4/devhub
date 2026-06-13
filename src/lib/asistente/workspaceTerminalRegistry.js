@@ -32,21 +32,45 @@ function normalizeEntry(entry) {
 export function mergeWorkspaceTerminalProcesses(workspaceTerminals, apiProcesses) {
   const byId = new Map();
 
-  const apiList = Array.isArray(apiProcesses) ? apiProcesses : [];
-  for (const raw of apiList) {
+  const clientList = Array.isArray(workspaceTerminals) ? workspaceTerminals : [];
+  for (const raw of clientList) {
     const entry = normalizeEntry(raw);
     if (entry) byId.set(entry.terminalId, entry);
   }
 
-  const clientList = Array.isArray(workspaceTerminals) ? workspaceTerminals : [];
-  for (const raw of clientList) {
+  const apiList = Array.isArray(apiProcesses) ? apiProcesses : [];
+  for (const raw of apiList) {
     const entry = normalizeEntry(raw);
     if (!entry) continue;
     const existing = byId.get(entry.terminalId);
-    byId.set(entry.terminalId, existing ? { ...existing, ...entry, displayName: entry.displayName } : entry);
+    if (existing) {
+      byId.set(entry.terminalId, {
+        ...entry,
+        ...existing,
+        displayName: existing.displayName || entry.displayName,
+      });
+    } else {
+      byId.set(entry.terminalId, entry);
+    }
   }
 
   return [...byId.values()];
+}
+
+/**
+ * Build the terminal catalog Zed should trust: client UI registry first,
+ * optional API/tmux enrichment via mergeWorkspaceTerminalProcesses.
+ *
+ * @param {object|null|undefined} context
+ * @param {Array<object>|null|undefined} [apiProcesses]
+ * @returns {Array<object>}
+ */
+export function buildZedTerminalCatalog(context, apiProcesses = null) {
+  const client = workspaceTerminalsFromContext(context);
+  if (apiProcesses === null) {
+    return client.map((raw) => normalizeEntry(raw)).filter(Boolean);
+  }
+  return mergeWorkspaceTerminalProcesses(client, apiProcesses);
 }
 
 /**

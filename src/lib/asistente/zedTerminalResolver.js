@@ -116,13 +116,11 @@ function resolve(name, terminals) {
     };
   }
 
-  // 2) Substring / prefix (dictation truncates: "Ces" → Cesar)
+  // 2) Substring / prefix (dictation truncates: "Ces" → Cesar, "ex" → Alex)
   if (queryNorm.length >= MIN_PREFIX_LEN) {
     const prefixOrContains = entries.filter(
       (t) =>
-        t.norm.startsWith(queryNorm) ||
-        queryNorm.startsWith(t.norm) ||
-        (queryNorm.length >= 3 && t.norm.includes(queryNorm))
+        t.norm.startsWith(queryNorm) || queryNorm.startsWith(t.norm) || t.norm.includes(queryNorm)
     );
     if (prefixOrContains.length === 1) {
       const t = prefixOrContains[0];

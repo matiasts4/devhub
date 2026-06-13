@@ -14,6 +14,7 @@ import { nameFromId, resolveTerminalByName } from '../zedTerminalResolver';
 import { acquire as acquireDisplayName, DISPLAY_NAME_POOL } from '@/lib/terminal/displayNamePool';
 import { formatZedToolError } from '../zedChat/errors';
 import {
+  buildZedTerminalCatalog,
   mergeWorkspaceTerminalProcesses,
   workspaceTerminalsFromContext,
 } from '../workspaceTerminalRegistry';
@@ -55,12 +56,14 @@ export const terminalTool = {
     },
     program: {
       type: 'string',
-      description: 'Agent program to launch in the terminal (opencode, codex, hermes). Only when user explicitly requests the TUI. The tool will compute the correct command.',
+      description:
+        'Agent program to launch in the terminal (opencode, codex, hermes). Only when user explicitly requests the TUI. The tool will compute the correct command.',
     },
     cwd: { type: 'string', description: 'Working directory' },
     command: {
       type: 'string',
-      description: 'Command to execute immediately after opening the terminal (for normal shells). When program=agent is used, this is usually omitted and the tool provides the launch command.',
+      description:
+        'Command to execute immediately after opening the terminal (for normal shells). When program=agent is used, this is usually omitted and the tool provides the launch command.',
     },
     confirm: {
       type: 'boolean',
@@ -99,7 +102,10 @@ export const terminalTool = {
           interactiveBootstrapPrompt: true,
           // No prompt → launches the interactive TUI / chat
         });
-        zedLog.info('TOOL', 'open_terminal (agent TUI via launch command)', { program: normalizedProgram, effectiveCommand: effectiveCommand?.slice(0, 120) });
+        zedLog.info('TOOL', 'open_terminal (agent TUI via launch command)', {
+          program: normalizedProgram,
+          effectiveCommand: effectiveCommand?.slice(0, 120),
+        });
       } catch (e) {
         return {
           error: `Could not build launch command for program=${normalizedProgram}: ${e?.message || e}`,
@@ -108,13 +114,19 @@ export const terminalTool = {
     }
 
     const cmdToRun = effectiveCommand || command;
-    const skipPolicyForAgentTui = Boolean(normalizedProgram && AGENT_PROGRAMS.has(normalizedProgram));
+    const skipPolicyForAgentTui = Boolean(
+      normalizedProgram && AGENT_PROGRAMS.has(normalizedProgram)
+    );
     if (cmdToRun && !skipPolicyForAgentTui) {
       const policyBlock = guardZedTerminalCommand(cmdToRun, confirm, context, 'open_terminal');
       if (policyBlock) return policyBlock;
     }
 
-    zedLog.info('TOOL', 'open_terminal (workspace UI)', { cwd, command: cmdToRun, name: requestedName });
+    zedLog.info('TOOL', 'open_terminal (workspace UI)', {
+      cwd,
+      command: cmdToRun,
+      name: requestedName,
+    });
 
     // T-103 / ZTT-003: when the model passes `name`, reserve that displayName
     // from the pool against the current activeNames, mint a fresh terminalId,
@@ -180,7 +192,8 @@ export const terminalTool = {
 
 export const listTerminalsTool = {
   name: 'list_terminals',
-  description: 'List active terminal sessions visible in the workspace. Sources: sidecar PTYs (main Tauri-visible panels for shells and agent TUIs like OpenCode/Hermes), ttyServer tracked sessions, and tmux discovery fallback. Use the terminalId values with review_terminal_output to read their current contents/scrollback, or execute_in_terminal to send input to controllable ones.',
+  description:
+    'List active terminal sessions visible in the workspace. Sources: sidecar PTYs (main Tauri-visible panels for shells and agent TUIs like OpenCode/Hermes), ttyServer tracked sessions, and tmux discovery fallback. Use the terminalId values with review_terminal_output to read their current contents/scrollback, or execute_in_terminal to send input to controllable ones.',
   parameters: {},
   async execute(_params, context = {}) {
     zedLog.info('TOOL', 'list_terminals', {});
@@ -191,12 +204,12 @@ export const listTerminalsTool = {
       const response = await fetch(`${baseUrl}/api/terminal/processes`);
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
-        processes = mergeWorkspaceTerminalProcesses(clientTerminals, data.processes || []);
+        processes = buildZedTerminalCatalog(context, data.processes || []);
       } else {
-        processes = mergeWorkspaceTerminalProcesses(clientTerminals, []);
+        processes = buildZedTerminalCatalog(context, []);
       }
     } catch (err) {
-      processes = mergeWorkspaceTerminalProcesses(clientTerminals, []);
+      processes = buildZedTerminalCatalog(context, []);
     }
 
     // Enrich with tmux sessions (visible in workspace, often host the orchestrator/OpenCode/etc.)
@@ -227,7 +240,9 @@ export const listTerminalsTool = {
               cwd: null,
             };
           })
-          .filter((t) => !processes.some((p) => p.terminalId === t.terminalId || p.id === t.terminalId));
+          .filter(
+            (t) => !processes.some((p) => p.terminalId === t.terminalId || p.id === t.terminalId)
+          );
         processes = [...processes, ...discovered];
       }
     } catch {
@@ -273,30 +288,28 @@ export { _resetOpenTerminalCounterForTests, _nextTerminalId };
 // setting both MUST short-circuit with a Spanish both_name_and_session
 // error before any HTTP call.
 
-
 async function fetchTerminalProcessList(context) {
   const baseUrl = getBaseUrl();
   const clientTerminals = workspaceTerminalsFromContext(context);
   try {
     const res = await fetch(`${baseUrl}/api/terminal/processes`, { cache: 'no-store' });
     if (!res.ok) {
-      return mergeWorkspaceTerminalProcesses(clientTerminals, []);
+      return buildZedTerminalCatalog(context, []);
     }
     const data = await res.json().catch(() => ({}));
-    return mergeWorkspaceTerminalProcesses(clientTerminals, data?.processes || []);
+    return buildZedTerminalCatalog(context, data?.processes || []);
   } catch {
-    return mergeWorkspaceTerminalProcesses(clientTerminals, []);
+    return buildZedTerminalCatalog(context, []);
   }
 }
 
 async function resolveSessionIdFromNameOrId(toolName, params, context = {}, options = {}) {
   const { allowImplicitSingle = false } = options;
-  const name = typeof params?.name === 'string' && params.name.trim()
-    ? params.name.trim()
-    : null;
-  const sessionId = typeof params?.session_id === 'string' && params.session_id.trim()
-    ? params.session_id.trim()
-    : null;
+  const name = typeof params?.name === 'string' && params.name.trim() ? params.name.trim() : null;
+  const sessionId =
+    typeof params?.session_id === 'string' && params.session_id.trim()
+      ? params.session_id.trim()
+      : null;
 
   if (name && sessionId) {
     return {
@@ -419,7 +432,8 @@ export const executeInTerminalTool = {
   parameters: {
     name: {
       type: 'string',
-      description: 'Display name (e.g. "Chase", "César"). Mutually exclusive with session_id. Tolerates dictation typos.',
+      description:
+        'Display name (e.g. "Chase", "César"). Mutually exclusive with session_id. Tolerates dictation typos.',
     },
     session_id: {
       type: 'string',
@@ -431,7 +445,8 @@ export const executeInTerminalTool = {
     },
     program: {
       type: 'string',
-      description: 'Launch opencode/codex/hermes TUI in the named existing panel (builds launch command).',
+      description:
+        'Launch opencode/codex/hermes TUI in the named existing panel (builds launch command).',
     },
     confirm: {
       type: 'boolean',

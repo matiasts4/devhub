@@ -428,6 +428,41 @@ describe('refreshTerminalViewport()', () => {
     expect(refreshTerminalViewport(term)).toBe(false);
     expect(term.refresh).not.toHaveBeenCalled();
   });
+
+  test('skips repaint when the renderer slot is not ready', () => {
+    const term = {
+      rows: 24,
+      refresh: jest.fn(),
+      _core: {
+        _renderService: {
+          _renderer: { value: undefined },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+        },
+      },
+    };
+
+    expect(refreshTerminalViewport(term)).toBe(false);
+    expect(term.refresh).not.toHaveBeenCalled();
+  });
+
+  test('swallows stale renderer refresh errors', () => {
+    const term = {
+      rows: 24,
+      refresh: jest.fn(() => {
+        throw new TypeError(
+          "undefined is not an object (evaluating 'this._renderer.value.dimensions')"
+        );
+      }),
+      _core: {
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+        },
+      },
+    };
+
+    expect(refreshTerminalViewport(term)).toBe(false);
+  });
 });
 
 describe('proposeTerminalViewportDimensions()', () => {

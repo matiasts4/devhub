@@ -119,11 +119,30 @@ function applyZedOpenUrlDockUpdate(currentState, { url, focus = false } = {}) {
   return applyZedOpenUrlDockFocus(base, { focus: true });
 }
 
+/**
+ * Dock state after selecting a workspace window (V1, V2…).
+ * Pizarra stays in pizarra — switching views must not bump to normal/window mode.
+ *
+ * @param {object} currentState
+ * @returns {object}
+ */
+function applyWorkspaceWindowSelectDockState(currentState = {}) {
+  if (currentState.maximized !== true) return currentState;
+  if (currentState.maximizedView === 'pizarra') return currentState;
+  return {
+    ...currentState,
+    visible: true,
+    maximized: true,
+    maximizedView: 'window',
+  };
+}
+
 module.exports = {
   WORKSPACE_DOCK_TABS,
   applyRightDockTabSelect,
   applyZedOpenUrlDockFocus,
   applyZedOpenUrlDockUpdate,
+  applyWorkspaceWindowSelectDockState,
   isRightDockWorkspacePaneVisible,
   isWorkspaceDockTab,
 };

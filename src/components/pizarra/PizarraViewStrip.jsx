@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { setSwipeNavigationEnabled, isSwipeNavigationEnabled } from '@/lib/pizarra/pizarraViewLayout';
+import {
+  setSwipeNavigationEnabled,
+  isSwipeNavigationEnabled,
+} from '@/lib/pizarra/pizarraViewLayout';
 
 export default function PizarraViewStrip({
   views = [],
@@ -148,6 +151,24 @@ export default function PizarraViewStrip({
       >
         {swipeOn ? '2-finger' : 'swipe off'}
       </button>
+      <span
+        style={{
+          height: 28,
+          padding: '0 8px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.06)',
+          color: '#64748b',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 9,
+          fontWeight: 600,
+          flexShrink: 0,
+        }}
+        title="Arrastra desde el borde izquierdo o derecho para cambiar de ventana"
+      >
+        borde ←/→
+      </span>
       <span
         style={{
           height: 28,

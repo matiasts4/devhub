@@ -18,6 +18,7 @@ import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
 import PizarraMinimap from './PizarraMinimap';
 import PizarraZoneGuides from './PizarraZoneGuides';
 import PizarraViewStrip from './PizarraViewStrip';
+import PizarraEdgeSwipeZones from './PizarraEdgeSwipeZones';
 import PizarraZoomControls from './PizarraZoomControls';
 import CommandBar from '@/components/commandBar/CommandBar';
 import { PIZARRA_ACTIONS, usePizarraState } from '@/lib/pizarra/pizarraReducer';
@@ -25,7 +26,10 @@ import { CanvasViewportProvider, useCanvasViewport } from '@/lib/pizarra/canvasV
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { createShape } from '@/lib/pizarra/shapeModel';
 import { createPizarraSurfaceController } from '@/lib/commandBar/surface/pizarraSurfaceController';
-import { LiveSurfaceRegistryContext, useSharedSurfaceRegistry } from '@/lib/pizarra/useLiveSurfaceRegistry';
+import {
+  LiveSurfaceRegistryContext,
+  useSharedSurfaceRegistry,
+} from '@/lib/pizarra/useLiveSurfaceRegistry';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 import { runCircleMigration } from '@/lib/pizarra/circleMigration';
 import { closeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
@@ -45,7 +49,12 @@ import {
   getViewWorldOrigin,
   surfaceBelongsToView,
 } from '@/lib/pizarra/pizarraViewLayout';
-import { animatePanTransition, prefersReducedMotion } from '@/lib/pizarra/pizarraViewTransition';
+import {
+  animatePanTransition,
+  prefersReducedMotion,
+  resolvePanTransitionDuration,
+} from '@/lib/pizarra/pizarraViewTransition';
+import { computeQuantizedEdgePan, edgeDragToProgress } from '@/lib/pizarra/pizarraEdgeViewSwipe';
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
 import {
   computeDevSplitSlots,
@@ -506,6 +515,37 @@ function PizarraInner({
   const surfaceDragCountRef = useRef(0);
   const [stripHovered, setStripHovered] = useState(false);
   const stripVisible = stripHovered || views.length >= 2;
+  const panAnimCancelRef = useRef(null);
+  const edgeSwipeRef = useRef(null);
+  const skipViewAutoFitRef = useRef(false);
+
+  const cancelPanAnimation = useCallback(() => {
+    if (typeof panAnimCancelRef.current === 'function') {
+      panAnimCancelRef.current();
+      panAnimCancelRef.current = null;
+    }
+  }, []);
+
+  const animateToPan = useCallback(
+    (toPan, { fromPan = pan } = {}) => {
+      cancelPanAnimation();
+      if (prefersReducedMotion()) {
+        setPan(toPan);
+        return;
+      }
+      const duration = resolvePanTransitionDuration({ fromPan, toPan });
+      panAnimCancelRef.current = animatePanTransition({
+        fromPan,
+        toPan,
+        duration,
+        onFrame: setPan,
+        onComplete: () => {
+          panAnimCancelRef.current = null;
+        },
+      });
+    },
+    [pan, setPan, cancelPanAnimation]
+  );
 
   const liveSurfacesForZones = useMemo(() => {
     return (mergedElements || []).filter((el) => {
@@ -570,24 +610,111 @@ function PizarraInner({
   }, [canvasSize.width, canvasSize.height, zoom, pan.x, pan.y]);
 
   const handleSelectView = useCallback(
-    (viewId) => {
+    (viewId, options = {}) => {
       if (!viewId) return;
       onWorkspaceWindowSelect?.(viewId);
       const idx = getViewIndex(viewId, views);
       const origin = getViewWorldOrigin(idx);
       const toPan = getCameraPanForView(origin, canvasSize.width, canvasSize.height, zoom);
-      if (prefersReducedMotion()) {
-        setPan(toPan);
+      const fromPan = options.fromPan ?? pan;
+      if (options.skipAutoFit !== false) {
+        skipViewAutoFitRef.current = true;
+      }
+      animateToPan(toPan, { fromPan });
+    },
+    [onWorkspaceWindowSelect, views, canvasSize.width, canvasSize.height, zoom, pan, animateToPan]
+  );
+
+  const canGoPrevView = viewIndex > 0;
+  const canGoNextView = viewIndex < views.length - 1;
+
+  const handleEdgeSwipeDragStart = useCallback(
+    (side) => {
+      cancelPanAnimation();
+      const restPan = getCameraPanForView(viewOrigin, canvasSize.width, canvasSize.height, zoom);
+      const targetIdx =
+        side === 'right' ? Math.min(views.length - 1, viewIndex + 1) : Math.max(0, viewIndex - 1);
+      const targetOrigin = getViewWorldOrigin(targetIdx);
+      const targetPan = getCameraPanForView(
+        targetOrigin,
+        canvasSize.width,
+        canvasSize.height,
+        zoom
+      );
+      const hasTarget = (side === 'right' && canGoNextView) || (side === 'left' && canGoPrevView);
+
+      edgeSwipeRef.current = {
+        side,
+        fromPan: restPan,
+        toPan: hasTarget ? targetPan : restPan,
+        hasTarget,
+      };
+    },
+    [
+      cancelPanAnimation,
+      viewOrigin,
+      canvasSize.width,
+      canvasSize.height,
+      zoom,
+      views.length,
+      viewIndex,
+      canGoNextView,
+      canGoPrevView,
+    ]
+  );
+
+  const handleEdgeSwipeDragMove = useCallback(
+    (side, deltaX) => {
+      const drag = edgeSwipeRef.current;
+      if (!drag || drag.side !== side) return;
+      const viewportW = typeof window !== 'undefined' ? window.innerWidth : canvasSize.width;
+      const progress = edgeDragToProgress(deltaX, viewportW, side);
+      const atBoundary = !drag.hasTarget;
+      setPan(
+        computeQuantizedEdgePan(drag.fromPan, drag.toPan, progress, {
+          rubberBand: atBoundary,
+        })
+      );
+    },
+    [canvasSize.width, setPan]
+  );
+
+  const handleEdgeSwipeDragEnd = useCallback(
+    (outcome) => {
+      const drag = edgeSwipeRef.current;
+      edgeSwipeRef.current = null;
+      if (!drag) return;
+
+      const restPan = getCameraPanForView(viewOrigin, canvasSize.width, canvasSize.height, zoom);
+
+      if (outcome === 'cancel') {
+        animateToPan(restPan, { fromPan: pan });
         return;
       }
-      animatePanTransition({
-        fromPan: pan,
-        toPan,
-        duration: 220,
-        onFrame: setPan,
-      });
+
+      const nextIdx =
+        outcome === 'next' ? Math.min(views.length - 1, viewIndex + 1) : Math.max(0, viewIndex - 1);
+      const nextView = views[nextIdx];
+      if (!nextView?.id || nextView.id === (activeWorkspaceWindowId || fallbackViewId)) {
+        animateToPan(restPan, { fromPan: pan });
+        return;
+      }
+
+      handleSelectView(nextView.id, { fromPan: pan });
     },
-    [onWorkspaceWindowSelect, views, canvasSize.width, canvasSize.height, zoom, pan, setPan]
+    [
+      viewOrigin,
+      canvasSize.width,
+      canvasSize.height,
+      zoom,
+      pan,
+      animateToPan,
+      views,
+      viewIndex,
+      activeWorkspaceWindowId,
+      fallbackViewId,
+      handleSelectView,
+    ]
   );
 
   const applyAdaptiveVisibleLayout = useCallback(
@@ -721,8 +848,9 @@ function PizarraInner({
         clearTimeout(autoFitTimerRef.current);
         autoFitTimerRef.current = null;
       }
+      cancelPanAnimation();
     },
-    []
+    [cancelPanAnimation]
   );
 
   const collectTerminalPanelIds = useCallback((surfaces = []) => {
@@ -739,7 +867,7 @@ function PizarraInner({
   useEffect(() => {
     if (canvasSize.width < 200 || canvasSize.height < 200) return undefined;
 
-    const settleMs = prefersReducedMotion() ? 40 : 120;
+    const settleMs = prefersReducedMotion() ? 24 : 60;
     const timer = setTimeout(() => {
       if (liveSurfacesForZones.length === 0) return;
       handleFitAllView();
@@ -767,6 +895,10 @@ function PizarraInner({
       return;
     }
     prevViewIdRef.current = activeWorkspaceWindowId;
+    if (skipViewAutoFitRef.current) {
+      skipViewAutoFitRef.current = false;
+      return;
+    }
     if (liveSurfacesForZones.length > 0) {
       scheduleAutoFitView(260);
     } else {
@@ -796,7 +928,7 @@ function PizarraInner({
     // Always run full adaptive layout when live surfaces first appear — even if
     // they already have saved x/y from a prior visit. Camera-only fit left cards
     // at stale sizes after workspace/mode switches.
-    scheduleAutoFitView(280);
+    scheduleAutoFitView(100);
   }, [liveSurfacesForZones, canvasSize.width, scheduleAutoFitView]);
 
   useEffect(() => {
@@ -1895,6 +2027,16 @@ function PizarraInner({
           onResetView={() => centerActiveView(1)}
         />
 
+        <PizarraEdgeSwipeZones
+          enabled={views.length >= 2 && !isSurfaceDragging}
+          canvasHeight={canvasSize.height}
+          canGoPrev={canGoPrevView}
+          canGoNext={canGoNextView}
+          onDragStart={handleEdgeSwipeDragStart}
+          onDragMove={handleEdgeSwipeDragMove}
+          onDragEnd={handleEdgeSwipeDragEnd}
+        />
+
         <div
           data-testid="pizarra-view-strip-hover-zone"
           style={{
@@ -1951,4 +2093,3 @@ function PizarraInner({
     </>
   );
 }
-

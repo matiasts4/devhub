@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import TerminalTTY from '@/components/TerminalTTY';
 import SurfacePortal from '@/components/workspace/SurfacePortal';
 import {
@@ -109,9 +109,39 @@ function TerminalSurfaceContent({ surfaceId }) {
     () => registry?.getVersion() ?? 0
   );
 
+  const hasActiveProjection = terminalProps ? Boolean(registry?.getActiveTarget(surfaceId)) : false;
+  const prevProjectionRef = useRef(false);
+
+  useEffect(() => {
+    if (!terminalProps) return;
+    const becameReady = hasActiveProjection && !prevProjectionRef.current;
+    prevProjectionRef.current = hasActiveProjection;
+    if (!becameReady) return;
+
+    let cancelled = false;
+    const dispatchIfLive = (reason) => {
+      if (cancelled || !propsBySurfaceId.has(surfaceId)) return;
+      dispatchTerminalLayoutSettled({
+        reason,
+        panelIds: [surfaceId],
+      });
+    };
+
+    dispatchIfLive('shared-surface-projection-ready');
+    requestAnimationFrame(() => {
+      dispatchIfLive('shared-surface-projection-ready-raf');
+    });
+    const timer = window.setTimeout(() => {
+      dispatchIfLive('shared-surface-projection-ready-delay');
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hasActiveProjection, surfaceId, terminalProps]);
+
   if (!terminalProps) return null;
 
-  const hasActiveProjection = Boolean(registry?.getActiveTarget(surfaceId));
   const preferredHostId = registry?.getPreferredHostForSurface(surfaceId) ?? null;
   const isVisibleInLayout = resolveSharedTerminalVisibility({
     pizarraOwnsLiveSurfaces: terminalProps.pizarraOwnsLiveSurfaces,
@@ -177,19 +207,44 @@ export function SharedTerminalSurfacePortal({
 
   useLayoutEffect(() => {
     if (!enabled || !isActiveHost || !surfaceId || !hostId || !registry) return undefined;
-    registry.setPreferredHostForSurface(surfaceId, hostId);
-    dispatchTerminalLayoutSettled({
-      reason: hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit',
-      panelIds: [surfaceId],
-    });
-    const raf = requestAnimationFrame(() => {
+
+    let mounted = true;
+    let resizeObserver = null;
+
+    const dispatchIfLive = (reason) => {
+      if (!mounted || !propsBySurfaceId.has(surfaceId)) return;
       dispatchTerminalLayoutSettled({
-        reason: hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit',
+        reason,
         panelIds: [surfaceId],
       });
+    };
+
+    registry.setPreferredHostForSurface(surfaceId, hostId);
+    dispatchIfLive(hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit');
+
+    const raf = requestAnimationFrame(() => {
+      if (!mounted) return;
+      dispatchIfLive(hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit');
+
+      const hostEl = registry.getActiveTarget(surfaceId);
+      if (!hostEl || typeof ResizeObserver !== 'function') return;
+
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!mounted || !propsBySurfaceId.has(surfaceId)) return;
+        const rect = entries?.[0]?.contentRect;
+        if (!rect || rect.width <= 1 || rect.height <= 1) return;
+        dispatchTerminalLayoutSettled({
+          reason: 'shared-surface-host-resize',
+          panelIds: [surfaceId],
+        });
+      });
+      resizeObserver.observe(hostEl);
     });
+
     return () => {
+      mounted = false;
       cancelAnimationFrame(raf);
+      resizeObserver?.disconnect();
       if (registry.getPreferredHostForSurface(surfaceId) === hostId) {
         registry.clearPreferredHostForSurface(surfaceId);
       }

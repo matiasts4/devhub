@@ -4,10 +4,8 @@
  */
 
 import { resolveTerminalByName } from './zedTerminalResolver';
-import {
-  mergeWorkspaceTerminalProcesses,
-  workspaceTerminalsFromContext,
-} from './workspaceTerminalRegistry';
+import { resolveNamedTerminalFromMessage } from './zedTerminalNamePhrase';
+import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
 
 const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes']);
 const OPEN_VERBS = /\b(abre|abr[eía]s?|abrir|abramos|open|crea|crear|nueva|lanza|lanzar)\b/;
@@ -23,10 +21,7 @@ const CLOSE_VERBS = /\b(cierra|cerra|cerr[aá]|cerrar|close|cierres|cierren|mata
  */
 
 function normalizeText(text) {
-  return text
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase();
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
 /** Normalize STT variants like "open code" → opencode */
@@ -37,10 +32,7 @@ export function normalizeAgentAliases(text) {
 }
 
 function mergedTerminals(context) {
-  return mergeWorkspaceTerminalProcesses(
-    workspaceTerminalsFromContext(context),
-    []
-  );
+  return buildZedTerminalCatalog(context);
 }
 
 function hit(steps, intent, confidence, matched) {
@@ -71,11 +63,9 @@ export function extractTerminalNameFromMessage(message, terminals = []) {
   const firstWord = remainder.split(/\s+/)[0]?.toLowerCase();
   if (firstWord && AGENT_PROGRAMS.has(firstWord)) return null;
 
-  const candidates = [
-    remainder,
-    remainder.split(/\s+/)[0],
-    remainder.split(/\s+/).pop(),
-  ].filter(Boolean);
+  const candidates = [remainder, remainder.split(/\s+/)[0], remainder.split(/\s+/).pop()].filter(
+    Boolean
+  );
 
   const seen = new Set();
   for (const cand of candidates) {
@@ -161,18 +151,7 @@ export function wantsNewTerminal(lower) {
  * @returns {{ ok: true, displayName: string } | { code: 'ambiguous' } | null}
  */
 export function resolveExplicitExistingTerminalTarget(message, terminals) {
-  const patterns = [
-    /(?:opencode|codex|hermes|open\s+code)[^\n]{0,48}?(?:en|in|a|al|dentro de?)\s+([\p{L}\p{N}_-]+)/iu,
-    /(?:en|in|a|al)\s+([\p{L}\p{N}_-]+)[^\n]{0,48}(?:opencode|codex|hermes|open\s+code)/iu,
-  ];
-  for (const pattern of patterns) {
-    const match = message.match(pattern);
-    if (!match) continue;
-    const lookup = resolveTerminalByName(match[1], terminals);
-    if (lookup.ok) return { ok: true, displayName: lookup.displayName };
-    if (lookup.code === 'ambiguous') return { code: 'ambiguous' };
-  }
-  return null;
+  return resolveNamedTerminalFromMessage(message, terminals);
 }
 
 function extractAgentInTerminal(message, terminals) {
@@ -195,7 +174,7 @@ function isListTerminalsIntent(lower, text) {
     /\b(cuant|cuánt|que|cuál|cual|list|mostr|decime|dime)\b.*\b(terminal(?:es|s)?|panel(?:es|s)?)\b.*\b(hay|abiert|activ|tengo|tenes|tienes|ahora|momento)\b/.test(
       lower
     ) ||
-    term.test(lower) && /\b(abiert|activ|hay|tengo|tenes|tienes)\b/.test(lower) ||
+    (term.test(lower) && /\b(abiert|activ|hay|tengo|tenes|tienes)\b/.test(lower)) ||
     /^terminales\b.*\b(hay|abiert|activ|abier)/.test(lower) ||
     /\b(cuantas|cuántas)\s+(terminal(?:es|s)?|panel(?:es|s)?)/.test(lower)
   );
@@ -232,10 +211,7 @@ export function resolveZedFastPathIntent(message, context = {}) {
   }
 
   // --- open NEW terminal (before execute-in-existing; never reuse when user asks for new panel) ---
-  if (
-    isOpenTerminalIntent(lower) &&
-    (wantsNewTerminal(lower) || !explicitTarget?.ok)
-  ) {
+  if (isOpenTerminalIntent(lower) && (wantsNewTerminal(lower) || !explicitTarget?.ok)) {
     if (program) {
       return hit(
         [{ tool: 'open_terminal', input: { program } }],
@@ -252,7 +228,12 @@ export function resolveZedFastPathIntent(message, context = {}) {
   if (agentTarget === 'AMBIGUOUS') return null;
   if (agentTarget && !wantsNewTerminal(lower)) {
     return hit(
-      [{ tool: 'execute_in_terminal', input: { name: agentTarget.name, program: agentTarget.program } }],
+      [
+        {
+          tool: 'execute_in_terminal',
+          input: { name: agentTarget.name, program: agentTarget.program },
+        },
+      ],
       'execute_agent_in_terminal',
       0.93,
       `agent:${agentTarget.program}`
@@ -308,7 +289,12 @@ export function resolveZedFastPathIntent(message, context = {}) {
 
   // --- list terminals (strict — never when user wants to open/close) ---
   if (isListTerminalsIntent(lower, text)) {
-    return hit([{ tool: 'list_terminals', input: {} }], 'list_terminals', 0.96, 'list_terminals_pattern');
+    return hit(
+      [{ tool: 'list_terminals', input: {} }],
+      'list_terminals',
+      0.96,
+      'list_terminals_pattern'
+    );
   }
 
   return null;

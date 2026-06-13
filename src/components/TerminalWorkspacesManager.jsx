@@ -65,6 +65,7 @@ import {
   resolvePanelSurfaceLabel,
 } from '@/lib/terminal/panelDisplayName';
 import { buildPanelHeaderDisplay } from './terminal/utils/panelHeaderDisplay';
+import { nameFromId } from '@/lib/asistente/zedTerminalResolver';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 import NotificationCenter from './NotificationCenter';
 import TerminalSettingsModal from './TerminalSettingsModal';
@@ -90,6 +91,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { formatDistanceToNow } from 'date-fns';
 import WorkspaceRightDock from './workspace/WorkspaceRightDock';
+import WorkspaceWindowSwitcher, {
+  MAX_WORKSPACE_WINDOWS,
+} from './terminal/components/WorkspaceWindowSwitcher';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
 import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
@@ -100,7 +104,11 @@ import {
   sanitizeRightDockState,
   writeRightDockState,
 } from './workspace/rightDockState';
-import { applyRightDockTabSelect, applyZedOpenUrlDockUpdate } from './workspace/rightDockLayout';
+import {
+  applyRightDockTabSelect,
+  applyWorkspaceWindowSelectDockState,
+  applyZedOpenUrlDockUpdate,
+} from './workspace/rightDockLayout';
 import { coerceZedOpenUrlFocus, isValidZedOpenUrlEvent } from './zedOpenUrlEvent';
 import {
   buildBrowserWindowLabel,
@@ -1016,9 +1024,7 @@ function renderWorkspacePanel(
           }}
         >
           {renameEditing ? (
-            <span
-              className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--text-primary)]"
-            >
+            <span className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--text-primary)]">
               <input
                 autoFocus
                 type="text"
@@ -1428,39 +1434,34 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setRenameError(null);
   }, []);
 
-  const commitPanelRename = useCallback(
-    (panel, workspaceId, overrideValue) => {
-      const value = typeof overrideValue === 'string' ? overrideValue : editingValueRef.current;
-      const result = setPanelDisplayNameInStore(panel.id, workspaceId, value);
-      if (result && result.ok) {
-        setWorkspaces((prev) =>
-          prev.map((ws) => {
-            if (ws.id !== workspaceId) return ws;
-            return {
-              ...ws,
-              columns: ws.columns.map((col) => ({
-                ...col,
-                panels: col.panels.map((p) =>
-                  p.id === panel.id ? { ...p, displayName: value } : p
-                ),
-              })),
-            };
-          })
-        );
-        setEditingPanelId(null);
-        setEditingValue('');
-        editingValueRef.current = '';
-        setRenameError(null);
-      } else {
-        const previousName =
-          panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || '';
-        setRenameError((result && (result.reason || result.error)) || 'rename-failed');
-        setEditingValue(previousName);
-        editingValueRef.current = previousName;
-      }
-    },
-    []
-  );
+  const commitPanelRename = useCallback((panel, workspaceId, overrideValue) => {
+    const value = typeof overrideValue === 'string' ? overrideValue : editingValueRef.current;
+    const result = setPanelDisplayNameInStore(panel.id, workspaceId, value);
+    if (result && result.ok) {
+      setWorkspaces((prev) =>
+        prev.map((ws) => {
+          if (ws.id !== workspaceId) return ws;
+          return {
+            ...ws,
+            columns: ws.columns.map((col) => ({
+              ...col,
+              panels: col.panels.map((p) => (p.id === panel.id ? { ...p, displayName: value } : p)),
+            })),
+          };
+        })
+      );
+      setEditingPanelId(null);
+      setEditingValue('');
+      editingValueRef.current = '';
+      setRenameError(null);
+    } else {
+      const previousName =
+        panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || '';
+      setRenameError((result && (result.reason || result.error)) || 'rename-failed');
+      setEditingValue(previousName);
+      editingValueRef.current = previousName;
+    }
+  }, []);
 
   const updateEditingValue = useCallback((val) => {
     setEditingValue(val);
@@ -3185,25 +3186,39 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return ws.columns
       .flatMap((col) => col.panels || [])
       .map(
-        (panel) =>
-          panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null
+        (panel) => panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null
       )
       .filter((name) => typeof name === 'string' && name.length > 0);
   }, []);
 
   const getWorkspaceTerminals = useCallback(() => {
-    const workspaceId = activeWsIdRef.current || activeWsId;
-    const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
-    if (!workspace) return [];
-    return workspace.columns.flatMap((col) => col.panels || []).map((panel) => ({
-      terminalId: panel.id,
-      displayName:
-        panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null,
-      cwd: panel.cwd || null,
-      program: inferProgramFromPanelCommand(panel.initialCommand),
-      tuiReady: true,
-    }));
-  }, [activeWsId, inferProgramFromPanelCommand]);
+    const seen = new Set();
+    const results = [];
+
+    for (const workspace of workspacesRef.current) {
+      const workspaceId = workspace.id;
+      for (const col of workspace.columns || []) {
+        for (const panel of col.panels || []) {
+          if (!panel?.id || seen.has(panel.id)) continue;
+          seen.add(panel.id);
+          const displayName =
+            panel.displayName ||
+            getPanelDisplayNameFromStore(panel.id, workspaceId) ||
+            nameFromId(panel.id);
+          results.push({
+            terminalId: panel.id,
+            displayName,
+            workspaceId,
+            cwd: panel.cwd || null,
+            program: inferProgramFromPanelCommand(panel.initialCommand),
+            tuiReady: true,
+          });
+        }
+      }
+    }
+
+    return results;
+  }, [inferProgramFromPanelCommand]);
 
   const buildNativeWorkspaceSyncDetail = useCallback(
     (reason = 'workspace-switch') => {
@@ -3669,37 +3684,43 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [activeWindowIds]
   );
 
-  const addWindowToWorkspace = useCallback((wsId) => {
-    panelCounterRef.current += 1;
-    colCounterRef.current += 1;
-    windowCounterRef.current += 1;
+  const addWindowToWorkspace = useCallback(
+    (wsId) => {
+      const existing = workspaceWindowsRef.current?.[wsId] || [];
+      if (existing.length >= MAX_WORKSPACE_WINDOWS) return;
 
-    const newPanelId = `p${panelCounterRef.current}`;
-    const newColId = `c${colCounterRef.current}`;
-    const newWindowId = `v${windowCounterRef.current}`;
-    const newColumns = [createColumn(newColId, newPanelId)];
+      panelCounterRef.current += 1;
+      colCounterRef.current += 1;
+      windowCounterRef.current += 1;
 
-    setWorkspaceWindows((prev) => {
-      const existing = prev[wsId] || [];
-      return {
-        ...prev,
-        [wsId]: [
-          ...existing,
-          createWindow(newWindowId, `V${existing.length + 1}`, newColumns, newPanelId),
-        ],
-      };
-    });
+      const newPanelId = `p${panelCounterRef.current}`;
+      const newColId = `c${colCounterRef.current}`;
+      const newWindowId = `v${windowCounterRef.current}`;
+      const newColumns = [createColumn(newColId, newPanelId)];
 
-    setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
-    setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
-    setTerminalRendererPreferences((prev) =>
-      setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
-    );
+      setWorkspaceWindows((prev) => {
+        const existing = prev[wsId] || [];
+        return {
+          ...prev,
+          [wsId]: [
+            ...existing,
+            createWindow(newWindowId, `V${existing.length + 1}`, newColumns, newPanelId),
+          ],
+        };
+      });
 
-    setWorkspaces((prev) =>
-      prev.map((ws) => (ws.id === wsId ? { ...ws, columns: newColumns } : ws))
-    );
-  }, []);
+      setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
+      setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
+      setTerminalRendererPreferences((prev) =>
+        setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+      );
+
+      setWorkspaces((prev) =>
+        prev.map((ws) => (ws.id === wsId ? { ...ws, columns: newColumns } : ws))
+      );
+    },
+    [workspaceWindows]
+  );
 
   const switchWindowInWorkspace = useCallback(
     (wsId, windowId) => {
@@ -4452,11 +4473,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   onClick={() => {
                     switchWindowInWorkspace(ws.id, view.id);
                     if (isFullscreenMode) {
-                      updateWsDockState({
-                        visible: true,
-                        maximized: true,
-                        maximizedView: 'window',
-                      });
+                      updateWsDockState((current) => applyWorkspaceWindowSelectDockState(current));
                     }
                   }}
                   className={`group h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
@@ -4686,6 +4703,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const targetId = panelIdToClose || activePanelId;
       if (!targetId || !activeWorkspace) return;
 
+      panelsClosingRef.current.add(targetId);
+
       await closeTerminalSessions([targetId]);
 
       // Force-close the native VTE (the actual terminal "window") for this panel.
@@ -4713,6 +4732,23 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       setWorkspaces((prev) =>
         prev.map((ws) => (ws.id === activeWsId ? { ...ws, columns: nextColumnsSnapshot } : ws))
       );
+
+      const survivorPanelIds = getPanelIdsFromColumns(nextColumnsSnapshot);
+      if (survivorPanelIds.length > 0) {
+        dispatchTerminalLayoutSettled({
+          reason: 'panel-closed',
+          workspaceId: activeWsId,
+          panelIds: survivorPanelIds,
+        });
+        requestAnimationFrame(() => {
+          dispatchTerminalLayoutSettled({
+            reason: 'panel-closed-raf',
+            workspaceId: activeWsId,
+            panelIds: survivorPanelIds,
+          });
+        });
+        notifyNativeLayoutSettled('panel-closed');
+      }
 
       const fallbackPanel = nextColumnsSnapshot.flatMap((col) => col.panels || [])[0]?.id || null;
       if (activePanelId === targetId) {
@@ -4770,8 +4806,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       } catch {
         // Non-critical
       }
+
+      window.setTimeout(() => panelsClosingRef.current.delete(targetId), 2000);
     },
-    [activeWorkspace, activeWsId, activePanelId, projectId, syncActiveWindowSnapshot]
+    [
+      activeWorkspace,
+      activeWsId,
+      activePanelId,
+      notifyNativeLayoutSettled,
+      projectId,
+      syncActiveWindowSnapshot,
+    ]
   );
 
   const clearClosePanelShortcutArm = useCallback(() => {
@@ -5368,7 +5413,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const fallback = `opencode --agent ${selectedAgent || DEFAULT_OPENCODE_AGENT}`;
       const cmdToRun =
         launchOrigin === 'planning-launch'
-          ? (command || fallback)
+          ? command || fallback
           : enforceDocOpsGateOnLaunchCommand(command || fallback);
       // Use split right by default for agents
       const createdPanelId = handleSplit('horizontal', activePanelId, cmdToRun, cwd);
@@ -5913,8 +5958,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const handleZedTerminalInput = (e) => {
       const detail = e?.detail;
       if (!detail || typeof detail.input !== 'string') return;
-      const panelId =
-        detail.terminalId || detail.session_id || detail.panelId || null;
+      const panelId = detail.terminalId || detail.session_id || detail.panelId || null;
       if (!panelId) return;
       window.dispatchEvent(
         new CustomEvent('devhub:zed-terminal-input', {
@@ -6275,6 +6319,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
+
+              <WorkspaceWindowSwitcher
+                variant="header"
+                views={workspaceWindows[activeWsId] || []}
+                activeViewId={activeWindowIds[activeWsId] || workspaceWindows[activeWsId]?.[0]?.id}
+                visible={isVisible && !pizarraOwnsLiveSurfaces}
+                onSelectView={(windowId) => switchWindowInWorkspace(activeWsId, windowId)}
+                onAddView={() => addWindowToWorkspace(activeWsId)}
+              />
+
+              <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
 
               {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
               <div className="flex items-center gap-0.5 shrink-0">
@@ -6656,13 +6711,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         panelRenderOptions.visibleTerminalPanelCount ?? visibleTerminalPanelCount,
                       panelLabel: getPanelDisplayLabel(ws, panel.id),
                       renameEditing: editingPanelId === panel.id,
-                      renameValue:
-                        editingPanelId === panel.id ? editingValue : '',
-                      renameError:
-                        editingPanelId === panel.id ? renameError : null,
+                      renameValue: editingPanelId === panel.id ? editingValue : '',
+                      renameError: editingPanelId === panel.id ? renameError : null,
                       onStartRename: (pnl, label) => startPanelRename(pnl, label),
                       onRenameValueChange: (val) => updateEditingValue(val),
-                      onCommitRename: (pnl, overrideValue) => commitPanelRename(pnl, ws.id, overrideValue),
+                      onCommitRename: (pnl, overrideValue) =>
+                        commitPanelRename(pnl, ws.id, overrideValue),
                       onCancelRename: () => cancelPanelRename(),
                       cwd,
                       wsId: ws.id,
@@ -6908,11 +6962,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       onWorkspaceWindowSelect={(windowId) => {
                         switchWindowInWorkspace(activeWorkspace.id, windowId);
                         if (effectiveRightDockState.maximized) {
-                          updateRightDockState({
-                            visible: true,
-                            maximized: true,
-                            maximizedView: 'window',
-                          });
+                          updateRightDockState((current) =>
+                            applyWorkspaceWindowSelectDockState(current)
+                          );
                         }
                       }}
                       onWorkspaceWindowAdd={() => addWindowToWorkspace(activeWorkspace.id)}

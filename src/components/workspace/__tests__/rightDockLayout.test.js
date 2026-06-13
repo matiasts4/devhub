@@ -1,5 +1,6 @@
 const {
   applyRightDockTabSelect,
+  applyWorkspaceWindowSelectDockState,
   applyZedOpenUrlDockFocus,
   isRightDockWorkspacePaneVisible,
 } = require('../rightDockLayout');
@@ -53,5 +54,25 @@ describe('rightDockLayout', () => {
     const state = sanitizeRightDockState({ activeTab: 'zed', visible: true });
     expect(state.activeTab).toBe('browser');
     expect(state.zedVisible).toBeUndefined();
+  });
+
+  test('workspace window select stays in pizarra when maximized', () => {
+    const pizarra = {
+      visible: true,
+      maximized: true,
+      maximizedView: 'pizarra',
+      activeTab: 'pizarra',
+    };
+    expect(applyWorkspaceWindowSelectDockState(pizarra)).toEqual(pizarra);
+  });
+
+  test('workspace window select enters window takeover from browser fullscreen', () => {
+    const next = applyWorkspaceWindowSelectDockState({
+      visible: true,
+      maximized: true,
+      maximizedView: 'browser',
+      activeTab: 'browser',
+    });
+    expect(next.maximizedView).toBe('window');
   });
 });
