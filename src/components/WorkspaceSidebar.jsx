@@ -48,6 +48,7 @@ const HEARTBEAT_FRESH_MS = 90_000;
 
 const allNavItems = {
   dashboard: { icon: LayoutDashboard, label: 'Dashboard' },
+  planificacion: { icon: Sparkles, label: 'Planificación' },
   tareas: { icon: ListTodo, label: 'Tareas' },
   editor: { icon: FolderOpen, label: 'Sistema de Archivos' },
   scaffolding: { icon: Layers, label: 'Scaffolding' },
@@ -62,9 +63,18 @@ const configNavItems = {
   ajustes: { icon: Settings, label: 'Ajustes' },
 };
 
-const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm', 'telegram'];
+const DEFAULT_NAV = [
+  'dashboard',
+  'planificacion',
+  'tareas',
+  'editor',
+  'roadmap',
+  'historial',
+  'swarm',
+  'telegram',
+];
 
-const SECTION_CORE = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial'];
+const SECTION_CORE = ['dashboard', 'planificacion', 'tareas', 'editor', 'roadmap', 'historial'];
 const SECTION_AI = ['swarm', 'telegram'];
 
 // Transition used consistently for slide/fade in collapsed ↔ expanded

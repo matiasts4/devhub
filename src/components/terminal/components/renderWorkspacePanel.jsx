@@ -6,6 +6,7 @@ import React from 'react';
 import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
 import { derivePanelCommandMetadata } from '../utils/semanticMetadata';
+import { buildPanelHeaderDisplay } from '../utils/panelHeaderDisplay';
 import PanelRendererSelect from './PanelRendererSelect';
 import { SHOW_RENDERER_SWITCH } from './terminalRendererPreferences';
 
@@ -35,12 +36,17 @@ function renderWorkspacePanel(
     nativeSurfacePolicy,
     /** When pizarra canvas owns live surfaces, skip mounting a second TTY here. */
     deferLiveSurfaceToPizarra = false,
+    pizarraOwnsLiveSurfaces = false,
+    connectionState,
+    visibleTerminalPanelCount = 1,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
   const panelChromeSafeZoneMinTop = 34;
-  const semanticMetadata =
-    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand);
+  const semanticMetadata = buildPanelHeaderDisplay(
+    panelLabel,
+    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
+  );
   const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
 
   return (
@@ -226,7 +232,9 @@ function renderWorkspacePanel(
               autoFocus={isActive}
               isActivePanel={Boolean(isActivePanel ?? isActive)}
               isVisibleInLayout={Boolean(isVisibleInLayout)}
+              visibleTerminalPanelCount={visibleTerminalPanelCount}
               initialCommand={panel.initialCommand}
+              connectionState={connectionState}
               requestedRendererMode={requestedRendererMode}
               onResetRendererToXterm={onResetRendererToXterm}
               onActivatePanel={onActivatePanel}

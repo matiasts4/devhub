@@ -5,6 +5,10 @@
 
 import { stripAnsi } from '../zedAnsiStrip';
 import { resolveTerminalByName } from '../zedTerminalResolver';
+import {
+  mergeWorkspaceTerminalProcesses,
+  workspaceTerminalsFromContext,
+} from '../workspaceTerminalRegistry';
 import { formatZedToolError } from '../zedChat/errors';
 
 const CACHE_TTL_MS = 2000;
@@ -135,14 +139,17 @@ function _buildDigest({ terminalId, displayName, program, cleanTail, capturedAt 
  *                | { ok: false, code: 'not_found' | 'ambiguous',
  *                    candidates?: Array<{terminalId: string, displayName: string}> }>}
  */
-async function resolveByName(baseUrl, name) {
-  const res = await fetch(`${baseUrl}/api/terminal/processes`, { cache: 'no-store' });
-  if (!res.ok) return { ok: false, code: 'not_found' };
-  const data = await res.json().catch(() => ({}));
-  const list = Array.isArray(data?.processes) ? data.processes : [];
-  // Normalize: every entry must have a displayName by the time it leaves
-  // list_terminals, but we apply the resolver's contract here too.
-  return resolveTerminalByName(name, list);
+async function resolveByName(baseUrl, name, context = {}) {
+  const clientTerminals = workspaceTerminalsFromContext(context);
+  try {
+    const res = await fetch(`${baseUrl}/api/terminal/processes`, { cache: 'no-store' });
+    const data = res.ok ? await res.json().catch(() => ({})) : {};
+    const list = mergeWorkspaceTerminalProcesses(clientTerminals, data?.processes || []);
+    return resolveTerminalByName(name, list);
+  } catch {
+    const list = mergeWorkspaceTerminalProcesses(clientTerminals, []);
+    return resolveTerminalByName(name, list);
+  }
 }
 
 /**
@@ -193,7 +200,7 @@ export const summarizeTerminalTool = {
         "Opcional: hint sobre qué agente corre adentro ('opencode', 'codex', 'hermes', 'bash'). Mejora la heurística de status.",
     },
   },
-  async execute(params /* , context */) {
+  async execute(params, context = {}) {
     const { name, terminalId: rawId, program } = params || {};
     const baseUrl = getBaseUrl();
     const capturedAt = nowMs();
@@ -202,7 +209,7 @@ export const summarizeTerminalTool = {
     let displayName = null;
 
     if (typeof name === 'string' && name.trim()) {
-      const lookup = await resolveByName(baseUrl, name.trim());
+      const lookup = await resolveByName(baseUrl, name.trim(), context);
       if (!lookup.ok) {
         return { error: lookup.code, ...formatZedToolError(SUMMARIZE_TOOL_NAME, lookup) };
       }

@@ -615,6 +615,66 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(terminal.dispose).toHaveBeenCalled();
   });
 
+  // A.4 — dispose hardening guard (isDisposingRef).
+  //
+  // A resize callback that fires WHILE disposeXtermRuntime is running must bail
+  // out instead of driving a fit()/resize() against the half-cleared renderer
+  // slot (the WebKitGTK `_renderer.value.handleResize` race). We hook the mock
+  // terminal's `dispose()` — invoked from inside disposeXtermRuntime while the
+  // guard is armed — to synchronously fire the captured ResizeObserver
+  // callback. The guard must keep teardown crash-free and still dispose the
+  // terminal.
+  test('resize landing mid-dispose is ignored and teardown completes cleanly (A.4 guard)', async () => {
+    const harness = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-xw-dispose-guard',
+        requestedRendererMode: 'xterm-webgl',
+        autoFocus: false,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+
+    const terminal = mockTerminalInstances[0];
+    expect(terminal).toBeDefined();
+
+    // The xterm boot path installs exactly one ResizeObserver (native VTE is
+    // unavailable in this harness, so no native observer is created).
+    expect(mockResizeObserverInstances.length).toBeGreaterThanOrEqual(1);
+    const xtermObserver = mockResizeObserverInstances[mockResizeObserverInstances.length - 1];
+
+    // Re-enter via the resize observer at the exact moment teardown disposes
+    // the terminal (guard is armed for the whole disposeXtermRuntime body).
+    let firedDuringDispose = false;
+    let observerThrew = null;
+    const originalDispose = terminal.dispose;
+    terminal.dispose = jest.fn(() => {
+      firedDuringDispose = true;
+      try {
+        xtermObserver.callback?.([], xtermObserver);
+      } catch (err) {
+        observerThrew = err;
+      }
+      return originalDispose?.call(terminal);
+    });
+
+    expect(() => {
+      flushSync(() => {
+        harness.root.unmount();
+      });
+    }).not.toThrow();
+    await flushTerminalEffects();
+
+    // Teardown ran, the mid-dispose resize did not throw, and the terminal was
+    // still disposed.
+    expect(firedDuringDispose).toBe(true);
+    expect(observerThrew).toBeNull();
+    expect(terminal.dispose).toHaveBeenCalled();
+  });
+
   test('visible split panels attach Canvas 2D on every visible sibling', async () => {
     await renderIntoDom(
       React.createElement(

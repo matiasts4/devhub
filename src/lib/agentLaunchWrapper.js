@@ -583,17 +583,27 @@ export function buildViewportReadyWaitBlock({
  * Poll /tmp/devhub-opencode-ready-<tmux> instead of a fixed sleep before bootstrap.
  * The sidecar/client writes this marker when OpenCode session/TUI footer is detected.
  */
+export const BOOTSTRAP_OPENCODE_READY_REASONS = ['client-tui-footer', 'sidecar-tui-footer'];
+export const BOOTSTRAP_POST_READY_SETTLE_SECONDS = 2;
+
 export function buildOpencodeReadyWaitBlock({
   pollIntervalSeconds = 0.25,
   maxWaitSeconds = 12,
+  postReadySettleSeconds = BOOTSTRAP_POST_READY_SETTLE_SECONDS,
 } = {}) {
   const maxAttempts = Math.max(1, Math.ceil(maxWaitSeconds / pollIntervalSeconds));
   const sleepArg =
     Number(pollIntervalSeconds)
       .toFixed(2)
       .replace(/\.?0+$/, '') || '0.25';
+  const settleArg =
+    Number(postReadySettleSeconds)
+      .toFixed(2)
+      .replace(/\.?0+$/, '') || '2';
   return [
-    '# Wait until OpenCode TUI is ready (marker file) before bootstrap injection.',
+    '# Wait until OpenCode TUI footer is detected before bootstrap injection.',
+    '# Viewport-ready alone is NOT sufficient — it fires when the DevHub client',
+    '# attaches, often before OpenCode accepts keyboard input.',
     '_devhub_wait_opencode_ready() {',
     '  local _tmux_session="${DEVHUB_TMUX_SESSION:-}"',
     '  if [ -z "${_tmux_session:-}" ]; then',
@@ -604,19 +614,23 @@ export function buildOpencodeReadyWaitBlock({
     '    return 0',
     '  fi',
     '  local _ready_file="/tmp/devhub-opencode-ready-${_tmux_session}"',
-    '  local _viewport_file="/tmp/devhub-viewport-ready-${_tmux_session}"',
     `  local _attempt=0`,
     `  local _max_attempts=${maxAttempts}`,
     '  while [ $_attempt -lt $_max_attempts ]; do',
     '    if [ -f "$_ready_file" ]; then',
-    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] OpenCode ready marker found: $_ready_file"`,
-    '      cat "$_ready_file" 2>/dev/null || true',
-    '      return 0',
-    '    fi',
-    '    if [ -f "$_viewport_file" ]; then',
-    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Viewport ready marker found (TUI fallback): $_viewport_file"`,
-    '      cat "$_viewport_file" 2>/dev/null || true',
-    '      return 0',
+    '      local _reason',
+    '      _reason=$(sed -n \'s/.*"reason":"\\([^"]*\\)".*/\\1/p\' "$_ready_file" 2>/dev/null | head -1)',
+    '      case "${_reason:-}" in',
+    '        client-tui-footer|sidecar-tui-footer)',
+    `          echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] OpenCode TUI footer ready ($_reason): $_ready_file"`,
+    '          cat "$_ready_file" 2>/dev/null || true',
+    `          sleep ${settleArg}`,
+    '          return 0',
+    '          ;;',
+    '        viewport-ready-fallback|client-detected|*)',
+    `          echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Weak ready signal (\${_reason:-unknown}); waiting for TUI footer"`,
+    '          ;;',
+    '      esac',
     '    fi',
     `    sleep ${sleepArg}`,
     '    _attempt=$((_attempt + 1))',
@@ -676,13 +690,11 @@ function buildBootstrapPromptBlock(
     '',
     '_devhub_bootstrap_prompt() {',
     '  {',
-    '    # Deduplication: skip if already injected',
+    '    # Deduplication: skip if already injected successfully',
     '    if [ -f "$BOOTSTRAP_LOCK" ]; then',
     `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] SKIP: Prompt already injected (lock exists: $BOOTSTRAP_LOCK)"`,
     '      return 0',
     '    fi',
-    '    # Create lock file with PID to identify which process injected',
-    '    echo "$$" > "$BOOTSTRAP_LOCK"',
     `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Starting bootstrap prompt injection..."`,
     '    if ! command -v tmux >/dev/null 2>&1; then',
     `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: tmux not found. Cannot inject prompt."`,
@@ -1668,9 +1680,10 @@ export function buildChunkedBootstrapPromptBlock(prompt, options = {}) {
     `tmux load-buffer - <<'${heredocTag}'`,
     text,
     heredocTag,
-    `tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: paste-buffer failed"`,
+    `tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || TMUX= tmux paste-buffer -d -t "\${_tmux_target}" >/dev/null 2>&1 || { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: paste-buffer failed"; return 1; }`,
     `tmux send-keys -t "\${_tmux_target}" C-m >/dev/null 2>&1 || TMUX= tmux send-keys -t "\${_tmux_target}" C-m >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: send-keys C-m failed"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] chunked emission complete (${plan.chunkCount} chunks, ${plan.totalBytes}B total)"`,
+    `echo "$$" > "$BOOTSTRAP_LOCK"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Prompt injection complete (chunked)."`,
   ].join('\n');
 }

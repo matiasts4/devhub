@@ -82,10 +82,11 @@ describe('isAgentActive()', () => {
 });
 
 describe('planning affordances', () => {
-  test('shows the planning signal on swarm only while planning is pending', () => {
-    expect(shouldShowPlanningSignal('swarm', 'pending')).toBe(true);
+  test('shows the planning signal on planificacion only while planning is pending', () => {
+    expect(shouldShowPlanningSignal('planificacion', 'pending')).toBe(true);
     expect(shouldShowPlanningSignal('dashboard', 'pending')).toBe(false);
-    expect(shouldShowPlanningSignal('swarm', 'completed')).toBe(false);
+    expect(shouldShowPlanningSignal('swarm', 'pending')).toBe(false);
+    expect(shouldShowPlanningSignal('planificacion', 'completed')).toBe(false);
   });
 
   test('does not keep legacy agenthub navigation metadata in the sidebar', () => {

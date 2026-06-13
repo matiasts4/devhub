@@ -3,7 +3,7 @@
  * No `strip-ansi` dep — we test the local regex-based helper directly.
  */
 
-import { stripAnsi } from '../zedAnsiStrip';
+import { stripAnsi, WELCOME_LINE } from '../zedAnsiStrip';
 
 describe('zedAnsiStrip.stripAnsi', () => {
   test('plain text passes through unchanged', () => {
@@ -62,5 +62,12 @@ describe('zedAnsiStrip.stripAnsi', () => {
     const input =
       '\u001b[?25l\u001b[2J\u001b[H\u001b]8;;http://x\u0007home\u001b]8;;\u0007\u001b[0m done';
     expect(stripAnsi(input)).toBe('home done');
+  });
+});
+
+describe('zedAnsiStrip.WELCOME_LINE (T-1.6)', () => {
+  test('exports the canonical Zed welcome line for Phase 4 reuse', () => {
+    expect(WELCOME_LINE).toMatch(/^sos Zed, tu copiloto de terminales/);
+    expect(WELCOME_LINE).toMatch(/usá el Pod\.$/);
   });
 });

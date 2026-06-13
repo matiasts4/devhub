@@ -81,6 +81,132 @@ export function schedulePostLayoutNativeSync({
 }
 
 /**
+ * Reasons that re-attach / re-position the native VTE against the *final*
+ * layout. During a mode transition they must be deferred to idle and emitted
+ * exactly once, as the very last sync, so the widget never paints against an
+ * intermediate (mid-animation) rect. A.3.
+ */
+export const NATIVE_REATTACH_REASONS = Object.freeze(['pizarra-mode-enter', 'pizarra-mode-exit']);
+
+const REATTACH_REASON_SET = new Set(NATIVE_REATTACH_REASONS);
+
+/**
+ * Serialized native-IPC layout sync queue (A.3 — terminal-pizarra-stability).
+ *
+ * Problem: while a workspace↔pizarra transition animates, `panel-group-layout`
+ * / `popup-avoid-rects` syncs fire on every frame and the reattach can target
+ * an intermediate rect → the native terminal "vanishes"/desyncs. This queue
+ * serializes them:
+ *   - Not animating: apply immediately (preserves legacy immediate+rAF+settle).
+ *   - Animating: buffer + coalesce per reason; on `flushOnIdle()` apply the
+ *     buffered syncs in insertion order, then emit a SINGLE final reattach
+ *     (the last `pizarra-mode-*` seen) against the settled layout.
+ *
+ * `apply(reason, { workspaceDetail, includeFollowUpPasses })` is injected for
+ * tests; it defaults to `schedulePostLayoutNativeSync`. The queue owns the
+ * cleanup returned by the previous apply so callers don't have to.
+ *
+ * @param {{ apply?: (reason: string, opts: object) => (void | (() => void)) }} [deps]
+ */
+export function createNativeLayoutSyncQueue({ apply } = {}) {
+  const applyFn =
+    typeof apply === 'function'
+      ? apply
+      : (reason, opts = {}) =>
+          schedulePostLayoutNativeSync({
+            layoutReason: reason,
+            workspaceDetail: opts.workspaceDetail ?? null,
+            includeFollowUpPasses: opts.includeFollowUpPasses !== false,
+          });
+
+  let animating = false;
+  let lastCleanup = null;
+  let seq = 0;
+  const pending = new Map(); // reason -> { opts, seq } (coalesced per reason)
+
+  function runLastCleanup() {
+    if (typeof lastCleanup === 'function') {
+      try {
+        lastCleanup();
+      } catch {
+        // diagnostic-only path; never crash layout
+      }
+    }
+    lastCleanup = null;
+  }
+
+  function applyImmediate(reason, opts = {}) {
+    runLastCleanup();
+    const cleanup = applyFn(reason, opts);
+    lastCleanup = typeof cleanup === 'function' ? cleanup : null;
+  }
+
+  return {
+    isAnimating: () => animating,
+    setAnimating(next) {
+      animating = Boolean(next);
+    },
+    /**
+     * Enqueue a layout sync. Applied now unless a transition is animating, in
+     * which case it is buffered (coalesced by reason) until `flushOnIdle()`.
+     */
+    enqueue(reason, opts = {}) {
+      if (!reason) return;
+      if (!animating) {
+        applyImmediate(reason, opts);
+        return;
+      }
+      const existing = pending.get(reason);
+      pending.set(reason, { opts, seq: existing ? existing.seq : seq++ });
+    },
+    /**
+     * End the animating window and apply buffered syncs: non-reattach reasons
+     * first (insertion order), then a single final reattach (last one seen).
+     */
+    flushOnIdle() {
+      animating = false;
+      if (pending.size === 0) return;
+
+      const ordered = [...pending.entries()].sort((a, b) => a[1].seq - b[1].seq);
+      pending.clear();
+
+      const reattaches = [];
+      for (const [reason, { opts }] of ordered) {
+        if (REATTACH_REASON_SET.has(reason)) {
+          reattaches.push([reason, opts]);
+          continue;
+        }
+        applyImmediate(reason, opts);
+      }
+      if (reattaches.length > 0) {
+        const [reason, opts] = reattaches[reattaches.length - 1];
+        applyImmediate(reason, opts);
+      }
+    },
+    /** Cancel the in-flight follow-up passes from the last applied sync. */
+    cancel() {
+      runLastCleanup();
+    },
+    /** Drop everything (unmount / safety reset). */
+    reset() {
+      animating = false;
+      pending.clear();
+      runLastCleanup();
+    },
+    /** Test seam. */
+    _pendingSize: () => pending.size,
+  };
+}
+
+/**
+ * @param {string} reason
+ * @returns {boolean} whether the reason is a deferred-to-idle native reattach.
+ */
+export function isNativeReattachReason(reason) {
+  return REATTACH_REASON_SET.has(reason);
+}
+
+/**
  * Simple rect overlap test for carve/avoid calculations.
  */
 export function rectsOverlap(a, b) {

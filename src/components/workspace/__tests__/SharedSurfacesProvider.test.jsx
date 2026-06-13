@@ -340,3 +340,154 @@ describe('SurfacePortal — portal host targeting', () => {
     expect(host.querySelector('[data-testid="surface-content"]')).toBeNull();
   });
 });
+
+describe('SharedSurfacesProvider — preferred host arbitration', () => {
+  test('setPreferredHostForSurface projects into the preferred host even when another host registered later', () => {
+    const { root } = makeRoot();
+    let registry;
+
+    function Setup() {
+      registry = useSurfaceRegistry();
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(HiddenSurfaceMount, {
+          surfaceId: 'term-1',
+          content: React.createElement('div', {
+            'data-testid': 'surface-content',
+            'data-surface': 'term-1',
+          }),
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'workspace-dock',
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'pizarra-canvas',
+        })
+      );
+    }
+
+    renderInto(
+      root,
+      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
+    );
+
+    const hostWorkspace = document.querySelector(
+      '[data-testid="surface-portal-host-workspace-dock-term-1"]'
+    );
+    const hostPizarra = document.querySelector(
+      '[data-testid="surface-portal-host-pizarra-canvas-term-1"]'
+    );
+    expect(hostWorkspace).toBeTruthy();
+    expect(hostPizarra).toBeTruthy();
+
+    // Most-recent registration is pizarra-canvas.
+    expect(hostPizarra.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      true
+    );
+
+    act(() => {
+      registry.setPreferredHostForSurface('term-1', 'workspace-dock');
+    });
+
+    expect(registry.getPreferredHostForSurface('term-1')).toBe('workspace-dock');
+    expect(
+      hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))
+    ).toBe(true);
+    expect(hostPizarra.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      false
+    );
+  });
+
+  test('clearPreferredHostForSurface falls back to the most-recently registered host', () => {
+    const { root } = makeRoot();
+    let registry;
+
+    function Setup() {
+      registry = useSurfaceRegistry();
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(HiddenSurfaceMount, {
+          surfaceId: 'term-1',
+          content: React.createElement('div', {
+            'data-testid': 'surface-content',
+            'data-surface': 'term-1',
+          }),
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'workspace-dock',
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'pizarra-canvas',
+        })
+      );
+    }
+
+    renderInto(
+      root,
+      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
+    );
+
+    const hostPizarra = document.querySelector(
+      '[data-testid="surface-portal-host-pizarra-canvas-term-1"]'
+    );
+
+    act(() => {
+      registry.setPreferredHostForSurface('term-1', 'workspace-dock');
+      registry.clearPreferredHostForSurface('term-1');
+    });
+
+    expect(registry.getPreferredHostForSurface('term-1')).toBeUndefined();
+    expect(hostPizarra.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      true
+    );
+  });
+
+  test('preferred host without target uses hidden mount instead of zero-sized fallback', () => {
+    const { root } = makeRoot();
+    let registry;
+
+    function Setup() {
+      registry = useSurfaceRegistry();
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(HiddenSurfaceMount, {
+          surfaceId: 'term-1',
+          content: React.createElement('div', {
+            'data-testid': 'surface-content',
+            'data-surface': 'term-1',
+          }),
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'workspace-dock',
+        })
+      );
+    }
+
+    renderInto(
+      root,
+      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
+    );
+
+    const hostWorkspace = document.querySelector(
+      '[data-testid="surface-portal-host-workspace-dock-term-1"]'
+    );
+
+    act(() => {
+      registry.setPreferredHostForSurface('term-1', 'pizarra-canvas');
+    });
+
+    expect(registry.getPreferredHostForSurface('term-1')).toBe('pizarra-canvas');
+    expect(
+      hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))
+    ).toBe(false);
+    expect(document.querySelector('[data-testid="surface-hidden-mount-term-1"]')).not.toBeNull();
+  });
+});

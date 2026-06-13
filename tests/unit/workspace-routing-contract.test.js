@@ -2,13 +2,17 @@ const fs = require('fs');
 const path = require('path');
 const {
   getProjectEntryPath,
+  getProjectPlanningPath,
   getLegacyWorkspaceRedirectPath,
 } = require('../../src/lib/workspaceRouting.js');
 
 describe('workspace routing contract', () => {
-  test('sends planning-enabled project creation to swarm instead of legacy agenthub', () => {
-    expect(getProjectEntryPath('proj-1', true)).toBe('/project/proj-1/swarm');
-    expect(getProjectEntryPath('proj-1', false)).toBe('/project/proj-1/dashboard');
+  test('sends new projects to dashboard and planning to dedicated page', () => {
+    expect(getProjectEntryPath('proj-1')).toBe('/project/proj-1/dashboard');
+    expect(getProjectPlanningPath('proj-1')).toBe('/project/proj-1/planificacion');
+    expect(getProjectPlanningPath('proj-1', 'continue')).toBe(
+      '/project/proj-1/planificacion?mode=continue'
+    );
   });
 
   test('redirects stale agenthub links to swarm preserving query params', () => {

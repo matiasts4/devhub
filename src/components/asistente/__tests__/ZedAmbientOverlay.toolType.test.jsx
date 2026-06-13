@@ -67,6 +67,7 @@ function renderOverlay() {
 
 function baseChatMock(overrides = {}) {
   return {
+    messages: [],
     input: '',
     setInput: jest.fn(),
     isLoading: false,
@@ -74,8 +75,18 @@ function baseChatMock(overrides = {}) {
     handleStop: jest.fn(),
     handleKeyDown: jest.fn(),
     handlePaste: jest.fn(),
+    textareaRef: { current: null },
     lastAssistantMessage: null,
     lastToolType: null,
+    currentStep: null,
+    activityExpanded: false,
+    setActivityExpanded: jest.fn(),
+    pendingApproval: null,
+    auditTrail: [],
+    handleApproveCommand: jest.fn(),
+    handleRejectApproval: jest.fn(),
+    applySuggestion: jest.fn(),
+    quickSuggestions: [],
     ...overrides,
   };
 }

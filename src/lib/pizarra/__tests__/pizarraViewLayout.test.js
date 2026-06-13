@@ -1,5 +1,6 @@
 import {
   BROWSER_ZONE_RATIO,
+  computeAdaptiveVisibleLayout,
   computeViewDevSplitSlots,
   computeViewZones,
   fitSurfaceToViewZone,
@@ -79,5 +80,22 @@ describe('pizarraViewLayout', () => {
     const views = [{ id: 'v1' }, { id: 'v2' }];
     expect(getViewIndex('v2', views)).toBe(1);
     expect(getViewIndex('missing', views)).toBe(0);
+  });
+
+  test('computeAdaptiveVisibleLayout fills the visible viewport region', () => {
+    const vis = { x: 100, y: 50, width: 1200, height: 800 };
+    const surfaces = [
+      { id: 'b1', type: 'browser', pizarra: { visible: true } },
+      { id: 't1', type: 'terminal', pizarra: { visible: true } },
+      { id: 't2', type: 'terminal', pizarra: { visible: true } },
+    ];
+    const { layouts } = computeAdaptiveVisibleLayout(vis, surfaces);
+    expect(layouts).toHaveLength(3);
+    for (const layout of layouts) {
+      expect(layout.x).toBeGreaterThanOrEqual(vis.x);
+      expect(layout.y).toBeGreaterThanOrEqual(vis.y);
+      expect(layout.x + layout.width).toBeLessThanOrEqual(vis.x + vis.width + 4);
+      expect(layout.y + layout.height).toBeLessThanOrEqual(vis.y + vis.height + 4);
+    }
   });
 });

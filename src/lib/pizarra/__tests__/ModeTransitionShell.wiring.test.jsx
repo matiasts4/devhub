@@ -1,5 +1,5 @@
 /**
- * ModeTransitionShell wiring — wraps PizarraPane and WorkspaceRightDock
+ * ModeTransitionShell wiring — wraps WorkspaceRightDock
  * in <ModeTransitionShell> when the feature flag is ON, and renders
  * the children UNWRAPPED when the flag is OFF.
  *
@@ -10,23 +10,21 @@
  * the feature flag and `maximizedView`.
  *
  * Contract (this file pins):
- *   1. PizarraPane renders its children inside <ModeTransitionShell>
- *      when isPizarraSharedViewEnabled() === true.
- *   2. PizarraPane renders its children UNWRAPPED when the flag is
- *      OFF (legacy hard-cut behavior preserved).
- *   3. WorkspaceRightDock renders its children inside
+ *   1. PizarraPane renders pure content; it does NOT own
+ *      <ModeTransitionShell>.
+ *   2. WorkspaceRightDock renders its children inside
  *      <ModeTransitionShell> when the flag is ON.
- *   4. WorkspaceRightDock renders its children UNWRAPPED when the
+ *   3. WorkspaceRightDock renders its children UNWRAPPED when the
  *      flag is OFF.
- *   5. A maximizedView change at the parent (PizarraPane or
- *      WorkspaceRightDock) drives the shell into the leaving phase
- *      via useModeTransition (asserted by spying on the hook).
- *   6. prefers-reduced-motion: reduce collapses the transition to
+ *   4. A maximizedView change at WorkspaceRightDock drives the
+ *      shell into the leaving phase via useModeTransition.
+ *   5. prefers-reduced-motion: reduce collapses the transition to
  *      a <= 50 ms cross-fade.
  *
  * The mode prop drives the AnimatePresence `key` so workspace↔
  * pizarra flips play the transition. Reduced motion collapses to
- * opacity-only; full motion runs the fade + slide + scale.
+ * opacity-only; full motion also stays opacity-only because native
+ * VTE/WebKit surfaces are positioned via IPC.
  */
 
 const React = require('react');
@@ -202,7 +200,7 @@ function setEnvFlag(value) {
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe('ModeTransitionShell wiring — PizarraPane', () => {
-  test('1. PizarraPane wraps its children in <ModeTransitionShell> when the feature flag is ON', () => {
+  test('1. PizarraPane renders pure content and does not own <ModeTransitionShell>', () => {
     const restore = setEnvFlag('true');
     try {
       const PizarraPane = require('@/components/pizarra/PizarraPane').default;
@@ -215,19 +213,14 @@ describe('ModeTransitionShell wiring — PizarraPane', () => {
           dockState: { activeTab: 'pizarra', maximizedView: 'pizarra' },
         })
       );
-      const shell = document.querySelector('[data-testid="mode-transition-shell"]');
-      expect(shell).toBeTruthy();
-      // The shell sits inside the pizarra root; the pizarra chrome
-      // (tool palette) is still mounted under it.
-      expect(shell.contains(document.querySelector('[data-testid="pizarra-add-terminal"]'))).toBe(
-        true
-      );
+      expect(document.querySelector('[data-testid="mode-transition-shell"]')).toBeNull();
+      expect(document.querySelector('[data-testid="pizarra-add-terminal"]')).toBeTruthy();
     } finally {
       restore();
     }
   });
 
-  test('2. PizarraPane renders its children UNWRAPPED when the feature flag is OFF', () => {
+  test('2. PizarraPane remains unwrapped when the feature flag is OFF', () => {
     const restore = setEnvFlag('false');
     try {
       const PizarraPane = require('@/components/pizarra/PizarraPane').default;
@@ -259,7 +252,7 @@ describe('ModeTransitionShell wiring — WorkspaceRightDock', () => {
         React.createElement(WorkspaceRightDock, {
           project: { id: 'p1' },
           workspaceId: 'w1',
-          dockState: { activeTab: 'browser', maximizedView: 'browser' },
+          dockState: { activeTab: 'browser', maximized: false, maximizedView: 'browser' },
           onDockStateChange: () => {},
           browserWindowState: {},
           onBrowserWindowStateChange: () => {},
@@ -291,7 +284,7 @@ describe('ModeTransitionShell wiring — WorkspaceRightDock', () => {
         React.createElement(WorkspaceRightDock, {
           project: { id: 'p1' },
           workspaceId: 'w1',
-          dockState: { activeTab: 'browser', maximizedView: 'browser' },
+          dockState: { activeTab: 'browser', maximized: false, maximizedView: 'browser' },
           onDockStateChange: () => {},
           browserWindowState: {},
           onBrowserWindowStateChange: () => {},
@@ -333,7 +326,11 @@ describe('ModeTransitionShell wiring — phase machine drives the shell', () => 
       return React.createElement(WorkspaceRightDock, {
         project: { id: 'p1' },
         workspaceId: 'w1',
-        dockState: { activeTab: v === 'pizarra' ? 'pizarra' : 'browser', maximizedView: v },
+        dockState: {
+          activeTab: v === 'pizarra' ? 'pizarra' : 'browser',
+          maximized: v === 'pizarra',
+          maximizedView: v,
+        },
         onDockStateChange: () => {},
         browserWindowState: {},
         onBrowserWindowStateChange: () => {},
@@ -354,13 +351,13 @@ describe('ModeTransitionShell wiring — phase machine drives the shell', () => 
     expect(shell.getAttribute('data-transition-phase')).toBe('idle');
     expect(shell.style.pointerEvents).toBe('auto');
 
-    // Flip maximizedView to 'pizarra'. After the 200ms debounce
-    // the shell enters the 'leaving' phase.
+    // Flip maximizedView to 'pizarra'. debounceMs defaults to 0, so
+    // the shell enters the 'leaving' phase immediately.
     act(() => {
       setView('pizarra');
     });
     act(() => {
-      jest.advanceTimersByTime(210);
+      jest.advanceTimersByTime(1);
     });
     shell = document.querySelector('[data-testid="mode-transition-shell"]');
     expect(shell.getAttribute('data-transition-phase')).toBe('leaving');
@@ -389,7 +386,7 @@ describe('ModeTransitionShell wiring — phase machine drives the shell', () => 
       setView('browser');
     });
     act(() => {
-      jest.advanceTimersByTime(210);
+      jest.advanceTimersByTime(1);
     });
     shell = document.querySelector('[data-testid="mode-transition-shell"]');
     expect(shell.getAttribute('data-transition-phase')).toBe('leaving');
@@ -412,15 +409,29 @@ describe('ModeTransitionShell wiring — reduced motion', () => {
     });
 
     try {
-      const PizarraPane = require('@/components/pizarra/PizarraPane').default;
+      const WorkspaceRightDock = require('@/components/workspace/WorkspaceRightDock').default;
       let setView;
       // The Tree wrapper holds a stateful maximizedView so the
       // shell actually animates when we flip it.
       function Tree() {
         const [view, set] = React.useState('workspace');
         setView = set;
-        return React.createElement(PizarraPane, {
-          dockState: { activeTab: 'pizarra', maximizedView: view },
+        return React.createElement(WorkspaceRightDock, {
+          project: { id: 'p1' },
+          workspaceId: 'w1',
+          dockState: {
+            activeTab: view === 'pizarra' ? 'pizarra' : 'browser',
+            maximized: view === 'pizarra',
+            maximizedView: view,
+          },
+          onDockStateChange: () => {},
+          browserWindowState: {},
+          onBrowserWindowStateChange: () => {},
+          workspaceWindows: [],
+          activeWorkspaceWindowId: null,
+          onWorkspaceWindowSelect: () => {},
+          onWorkspaceWindowAdd: () => {},
+          onWorkspaceWindowRemove: () => {},
         });
       }
       const { container, root } = makeRoot();
@@ -430,10 +441,9 @@ describe('ModeTransitionShell wiring — reduced motion', () => {
         setView('pizarra');
       });
 
-      // Debounce 200ms + <= 50ms reduced-motion total = under 250ms
-      // the shell should be back at phase=idle.
+      // debounceMs=0 + <= 50ms reduced-motion total.
       act(() => {
-        jest.advanceTimersByTime(260);
+        jest.advanceTimersByTime(55);
       });
 
       const shell = document.querySelector('[data-testid="mode-transition-shell"]');

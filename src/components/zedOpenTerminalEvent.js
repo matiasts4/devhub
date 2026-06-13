@@ -47,8 +47,17 @@ export function isValidZedOpenTerminalEvent(detail) {
  * @returns {string} The panel id to pass to `handleSplit`.
  */
 export function resolveZedOpenTerminalPanelId(detail, fallback) {
-  const sid = detail && typeof detail === 'object' ? detail.session_id : null;
-  if (typeof sid === 'string' && sid.length > 0) return sid;
+  if (detail && typeof detail === 'object') {
+    const terminalId =
+      typeof detail.terminalId === 'string' && detail.terminalId.length > 0
+        ? detail.terminalId
+        : null;
+    if (terminalId) return terminalId;
+    const sid = typeof detail.session_id === 'string' && detail.session_id.length > 0
+      ? detail.session_id
+      : null;
+    if (sid) return sid;
+  }
   return fallback;
 }
 

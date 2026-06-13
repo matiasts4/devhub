@@ -876,9 +876,12 @@ function WorkspaceBrowserPane({
                 onError={handleIframeError}
                 loading="eager"
                 referrerPolicy="no-referrer"
-                className="block w-full h-full border-0 bg-white"
+                className={`block w-full h-full border-0 ${
+                  isPizarraContext ? 'bg-[#050814]' : 'bg-white'
+                }`}
                 style={{
                   ...IFRAME_GPU_STYLE,
+                  backgroundColor: isPizarraContext ? '#050814' : '#ffffff',
                   pointerEvents: suspendNativeSurface ? 'none' : 'auto',
                 }}
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"

@@ -130,7 +130,7 @@ async function renderIntoDom(element) {
   return { container, root };
 }
 
-describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', () => {
+describe('Ajustes appearance tab — interactive controls', () => {
   let dom;
   let rendered;
 
@@ -158,7 +158,7 @@ describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', 
     jest.clearAllMocks();
   });
 
-  test('legacy Ajustes appearance tab no longer renders theme/morphology/accent form controls', async () => {
+  test('renders theme/morphology/accent form controls in the appearance tab', async () => {
     rendered = await renderIntoDom(React.createElement(Ajustes));
 
     const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
@@ -170,22 +170,20 @@ describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', 
     });
     await flushEffects();
 
-    // The legacy form controls are gone; the deprecation banner is in their place.
     expect(
       rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]')
-    ).toBeNull();
+    ).toBeTruthy();
     expect(
       rendered.container.querySelector('[data-testid="ajustes-morphology-option-default"]')
-    ).toBeNull();
+    ).toBeTruthy();
 
-    // The appearance shell + deprecation banner are still mounted.
     const appearanceShell = rendered.container.querySelector(
       '[data-testid="ajustes-appearance-shell"]'
     );
     expect(appearanceShell).toBeTruthy();
     expect(
       rendered.container.querySelector('[data-testid="ajustes-appearance-deprecation-banner"]')
-    ).toBeTruthy();
+    ).toBeNull();
 
     // The shell still routes chrome through the shared morphology surface factory.
     const appearanceShellStyle = ajustesModule.getSettingsShellStyle({ emphasized: true });
@@ -195,7 +193,7 @@ describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', 
     expect(appearanceShellStyle.background).not.toContain('var(--surface-card)');
   });
 
-  test('legacy Ajustes appearance tab is read-only — the banner CTA does not invoke legacy writers', async () => {
+  test('accent selection invokes setAccent without broken settings navigation', async () => {
     rendered = await renderIntoDom(React.createElement(Ajustes));
 
     const appearanceTab = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
@@ -207,25 +205,17 @@ describe('Ajustes appearance tab (deprecated, routes to /settings/appearance)', 
     });
     await flushEffects();
 
-    const cta = Array.from(rendered.container.querySelectorAll('button')).find((button) =>
-      /open new settings/i.test(button.textContent || '')
+    const amberOption = rendered.container.querySelector(
+      '[data-testid="ajustes-accent-option-amber"]'
     );
-    expect(cta).toBeTruthy();
-
-    // Snapshot the call counts *after* the appearance tab is mounted but *before* the CTA click.
-    const themeCallsBefore = themeModule.setTheme.mock.calls.length;
-    const morphologyCallsBefore = themeModule.setMorphology.mock.calls.length;
-    const accentCallsBefore = themeModule.setAccent.mock.calls.length;
+    expect(amberOption).toBeTruthy();
 
     flushSync(() => {
-      cta.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      amberOption.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
     await flushEffects();
 
-    // The CTA navigates; it must not invoke any of the legacy writers.
-    expect(mockNavigate).toHaveBeenCalledWith('/settings/appearance');
-    expect(themeModule.setTheme.mock.calls.length).toBe(themeCallsBefore);
-    expect(themeModule.setMorphology.mock.calls.length).toBe(morphologyCallsBefore);
-    expect(themeModule.setAccent.mock.calls.length).toBe(accentCallsBefore);
+    expect(themeModule.setAccent).toHaveBeenCalledWith('amber');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/settings/appearance');
   });
 });

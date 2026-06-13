@@ -244,6 +244,27 @@ describe('panelDisplayName.nextDisplayNameForPanel', () => {
   });
 });
 
+describe('panelDisplayName.nextDisplayNameForPanel with extra siblings', () => {
+  test('skips names passed in extraUsed even when not yet persisted', () => {
+    const { nextDisplayNameForPanel } = loadModule();
+    const next = nextDisplayNameForPanel('ws1', ['Alex', 'Avery']);
+    expect(next).toBe('Blake');
+  });
+});
+
+describe('panelDisplayName.resolvePanelSurfaceLabel', () => {
+  test('prefers panel.displayName over generic fallback', () => {
+    const { resolvePanelSurfaceLabel } = loadModule();
+    expect(resolvePanelSurfaceLabel({ id: 'p2', displayName: 'Chase' }, 'ws1')).toBe('Chase');
+  });
+
+  test('reads displayName from store when panel object omits it', () => {
+    const { setDisplayName, resolvePanelSurfaceLabel } = loadModule();
+    setDisplayName('p3', 'ws1', 'Nate');
+    expect(resolvePanelSurfaceLabel({ id: 'p3' }, 'ws1')).toBe('Nate');
+  });
+});
+
 describe('panelDisplayName SSR safety', () => {
   test('getDisplayName returns null when window is undefined', () => {
     // Re-require fresh, then delete window to simulate SSR.

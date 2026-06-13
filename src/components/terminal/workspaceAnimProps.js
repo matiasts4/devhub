@@ -21,14 +21,15 @@ export function getRightDockAnimProps({ isVisible, isDragging = false, isFullscr
   // Fullscreen takeover (pizarra / browser / swarm maximized): the dock fills
   // the whole workspace, so the default `x: '100%'` slide is a slow horizontal
   // sweep across the entire screen (280ms) that feels sluggish when entering
-  // the pizarra. For takeovers we use a quick opacity-only fade so the mode
-  // switch reads as near-instant. Opacity stays on the GPU and keeps native
-  // surface bounds in sync (no transform on the shell).
+  // the pizarra. For takeovers we use an opacity-only fade timed to match
+  // useModeTransition enter (220ms) so workspace↔pizarra cross-fades feel
+  // synchronized. Opacity stays on the GPU and keeps native surface bounds
+  // in sync (no transform on the shell).
   if (isFullscreen) {
     return {
       initial: { opacity: 0 },
       animate: isVisible ? { opacity: 1 } : { opacity: 0 },
-      transition: isDragging ? { duration: 0 } : { duration: 0.12, ease: [0.22, 1, 0.36, 1] },
+      transition: isDragging ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
     };
   }
   return {

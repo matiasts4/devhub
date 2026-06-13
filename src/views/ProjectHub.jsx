@@ -1,12 +1,11 @@
 /* eslint-disable no-unused-vars */
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import TitleBar from '@/components/TitleBar';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { UiHeader } from '@/components/ui/system';
 import {
   Plus,
@@ -17,16 +16,6 @@ import {
   Loader2,
   X,
   Brain,
-  Upload,
-  FileText,
-  Trash2,
-  Zap,
-  MonitorSmartphone,
-  GraduationCap,
-  FlaskConical,
-  Shield,
-  BarChart3,
-  Palette,
   Cpu,
   FolderOpen,
 } from 'lucide-react';
@@ -43,53 +32,8 @@ import {
   pillStyle,
   sectionSurfaceStyle,
 } from '@/chrome/morphology';
-import {
-  DOCUMENTATION_POLICY_OPTIONS,
-  DEFAULT_DOCUMENTATION_POLICY,
-  DEFAULT_PROJECT_TYPE,
-  PROJECT_TYPE_OPTIONS,
-  buildProjectCreatePayload,
-} from '@/lib/projectClassification';
+import { buildProjectCreatePayload } from '@/lib/projectClassification';
 import { getProjectEntryPath } from '@/lib/workspaceRouting';
-
-const PROJECT_TYPES_MODAL = [
-  {
-    key: 'software',
-    label: 'Software',
-    Icon: MonitorSmartphone,
-    color: 'var(--project-type-software, var(--accent-primary, #58A6FF))',
-  },
-  {
-    key: 'university',
-    label: 'Universidad',
-    Icon: GraduationCap,
-    color: 'var(--project-type-university, #D2A8FF)',
-  },
-  {
-    key: 'research',
-    label: 'Investigación',
-    Icon: FlaskConical,
-    color: 'var(--project-type-research, var(--success, #3FB950))',
-  },
-  {
-    key: 'security',
-    label: 'Seguridad',
-    Icon: Shield,
-    color: 'var(--project-type-security, var(--warning, #E3B341))',
-  },
-  {
-    key: 'business',
-    label: 'Negocio',
-    Icon: BarChart3,
-    color: 'var(--project-type-business, #F78166)',
-  },
-  {
-    key: 'creative',
-    label: 'Creativo',
-    Icon: Palette,
-    color: 'var(--project-type-creative, #FF79C6)',
-  },
-];
 
 const STATUS_CONFIG = {
   active: {
@@ -162,54 +106,8 @@ export default function ProjectHub() {
     description: '',
     color: 'var(--accent-primary, #6366f1)',
     local_path: '',
-    planning_prompt: '',
-    project_type: DEFAULT_PROJECT_TYPE,
-    documentation_policy: DEFAULT_DOCUMENTATION_POLICY,
   });
   const [creating, setCreating] = useState(false);
-  const [enablePlanning, setEnablePlanning] = useState(true);
-  const [pendingFiles, setPendingFiles] = useState([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const dropRef = useRef(null);
-  const ACCEPTED_TYPES = [
-    '.txt',
-    '.md',
-    '.json',
-    '.yaml',
-    '.yml',
-    '.csv',
-    '.js',
-    '.ts',
-    '.py',
-    '.jsx',
-    '.tsx',
-  ];
-
-  function processFileList(fileList) {
-    Array.from(fileList).forEach((file) => {
-      const ext = '.' + file.name.split('.').pop().toLowerCase();
-      if (!ACCEPTED_TYPES.includes(ext)) {
-        toast.error(`Tipo no soportado: ${file.name}`);
-        return;
-      }
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error(`Demasiado grande: ${file.name}`);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (ev) =>
-        setPendingFiles((prev) => [
-          ...prev,
-          {
-            file_name: file.name,
-            content: ev.target.result,
-            file_type: ext.replace('.', ''),
-            size: file.size,
-          },
-        ]);
-      reader.readAsText(file);
-    });
-  }
 
   // Local-first: no auth needed
   const localUser = { id: 'local-user', email: 'local@devhub.local' };
@@ -260,13 +158,7 @@ export default function ProjectHub() {
     e.preventDefault();
     setCreating(true);
     const payload = {
-      ...buildProjectCreatePayload(
-        {
-          ...newProject,
-          planning_prompt: newProject.planning_prompt,
-        },
-        user?.id || localUser.id
-      ),
+      ...buildProjectCreatePayload(newProject, user?.id || localUser.id),
       workspace_id: activeWorkspaceId || 'local-ws',
     };
 
@@ -279,15 +171,6 @@ export default function ProjectHub() {
       return;
     }
 
-    // Subir archivos de contexto si hay
-    if (enablePlanning && pendingFiles.length > 0 && data) {
-      await fetch(`/api/projects/${data.id}/files`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: pendingFiles, user_id: localUser.id }),
-      });
-    }
-
     setCreating(false);
     if (data) {
       setShowNewModal(false);
@@ -296,13 +179,9 @@ export default function ProjectHub() {
         description: '',
         color: 'var(--accent-primary, #6366f1)',
         local_path: '',
-        planning_prompt: '',
-        project_type: DEFAULT_PROJECT_TYPE,
-        documentation_policy: DEFAULT_DOCUMENTATION_POLICY,
       });
-      setPendingFiles([]);
-      setEnablePlanning(true);
-      navigate(getProjectEntryPath(data.id, enablePlanning));
+      navigate(getProjectEntryPath(data.id));
+      toast.success('Proyecto creado — podés planificar desde Planificación en el sidebar');
     }
   }
 
@@ -549,7 +428,7 @@ export default function ProjectHub() {
                 <p className="text-sm font-medium text-text-muted group-hover:text-text-primary transition-colors cursor-pointer">
                   Nuevo Proyecto
                 </p>
-                <p className="text-[11px] text-text-muted">Software, Universidad, Personal...</p>
+                <p className="text-[11px] text-text-muted">Creá el proyecto y planificá después</p>
               </div>
             </div>
           </div>
@@ -561,17 +440,14 @@ export default function ProjectHub() {
           <div className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-card)] p-6 shadow-[8px_8px_0_0_var(--border-strong)]">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[var(--project-type-university, #D2A8FF)]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
-                  <Brain className="w-4 h-4 text-[var(--project-type-university, #D2A8FF)]" strokeWidth={1.5} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[var(--accent-primary)]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
+                  <Plus className="w-4 h-4 text-[var(--accent-primary)]" strokeWidth={1.5} />
                 </div>
                 <h2 className="font-mono font-bold text-text-primary">Nuevo Proyecto</h2>
               </div>
               <Button
                 type="button"
-                onClick={() => {
-                  setShowNewModal(false);
-                  setPendingFiles([]);
-                }}
+                onClick={() => setShowNewModal(false)}
                 variant="devhubGhost"
                 size="icon"
                 className="h-8 w-8 rounded-none border-2 border-[var(--border-strong)]"
@@ -581,11 +457,11 @@ export default function ProjectHub() {
             </div>
 
             <form onSubmit={createProject} className="space-y-4">
-              <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted shadow-[3px_3px_0_0_var(--border-strong)]">
-                Definí la clasificación y la política de documentación antes de arrancar el
-                planning. Ese gate decide cómo se guarda el contexto y qué documentos deja generar
-                DevHub antes de empezar a planificar.
-              </div>
+              <p className="text-[11px] leading-relaxed text-text-muted">
+                Solo los datos básicos. La investigación y el roadmap van en{' '}
+                <span className="text-text-primary font-medium">Planificación</span> dentro del
+                workspace.
+              </p>
 
               {/* Nombre */}
               <div>
@@ -664,215 +540,10 @@ export default function ProjectHub() {
                 </div>
               </div>
 
-              {/* Toggle Planning IA */}
-              <div className="rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-elevated)] p-4 text-[11px] leading-relaxed text-text-muted">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <Brain className="w-4 h-4 text-[var(--project-type-university, #D2A8FF)]" strokeWidth={1.5} />
-                    <span className="text-sm font-semibold text-text-primary">
-                      Planning IA automático
-                    </span>
-                  </div>
-                  <Switch
-                    checked={enablePlanning}
-                    onCheckedChange={setEnablePlanning}
-                    aria-label="Activar planning IA automático"
-                    className="data-[state=checked]:border-[var(--project-type-university, #D2A8FF)]/35 data-[state=checked]:bg-[linear-gradient(135deg,rgba(210,168,255,0.96),rgba(188,139,255,0.9))]"
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <p className={modalLabelClass}>Tipo de proyecto</p>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {PROJECT_TYPE_OPTIONS.map(({ value, label }) => {
-                        const spec = PROJECT_TYPES_MODAL.find((item) => item.key === value);
-                        const sel = newProject.project_type === value;
-                        const Icon = spec?.Icon || MonitorSmartphone;
-                        const color = spec?.color || 'var(--accent-primary, #58A6FF)';
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setNewProject((p) => ({ ...p, project_type: value }))}
-                            className="flex items-center gap-2 border px-2.5 py-2 text-left transition-all cursor-pointer"
-                            style={
-                              sel
-                                ? {
-                                    background: `${color}14`,
-                                    borderColor: `${color}42`,
-                                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
-                                  }
-                                : {
-                                    background: 'rgba(255,255,255,0.018)',
-                                    borderColor: 'rgba(255,255,255,0.05)',
-                                  }
-                            }
-                          >
-                            <Icon
-                              className="w-3.5 h-3.5 flex-shrink-0"
-                              strokeWidth={1.5}
-                              style={{ color: sel ? color : 'var(--text-muted)' }}
-                            />
-                            <span
-                              className="text-[11px] font-medium truncate"
-                              style={{ color: sel ? color : 'var(--text-muted)' }}
-                            >
-                              {label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className={modalLabelClass}>
-                      Política de documentación (gate previo)
-                    </label>
-                    <div className="grid gap-2">
-                      {DOCUMENTATION_POLICY_OPTIONS.map(({ value, label, description }) => {
-                        const sel = newProject.documentation_policy === value;
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() =>
-                              setNewProject((p) => ({ ...p, documentation_policy: value }))
-                            }
-                            className="rounded-none border-2 px-3 py-2.5 text-left transition-all cursor-pointer"
-                            style={
-                              sel
-                                ? {
-                                    background:
-                                      'color-mix(in srgb, var(--accent-primary) 9%, rgba(255,255,255,0.02))',
-                                    borderColor:
-                                      'color-mix(in srgb, var(--accent-primary) 28%, transparent)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
-                                  }
-                                : {
-                                    background: 'rgba(255,255,255,0.018)',
-                                    borderColor: 'rgba(255,255,255,0.05)',
-                                  }
-                            }
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-semibold text-text-primary">
-                                {label}
-                              </span>
-                              <span
-                                className="text-[10px] uppercase tracking-wide"
-                                style={{
-                                  color: sel ? 'var(--accent-primary)' : 'var(--text-muted)',
-                                }}
-                              >
-                                {sel ? 'Seleccionada' : 'Disponible'}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-[11px] text-text-muted">{description}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <textarea
-                    value={newProject.planning_prompt}
-                    onChange={(e) =>
-                      setNewProject((p) => ({ ...p, planning_prompt: e.target.value }))
-                    }
-                    rows={3}
-                    placeholder="Describe tu proyecto: qué construirás, contexto, recursos, plazos, requerimientos específicos..."
-                    className="w-full resize-none font-mono text-xs placeholder:text-text-muted"
-                    style={modalFieldStyle}
-                  />
-
-                  {enablePlanning && (
-                    <>
-                      {/* Mini dropzone */}
-                      <div
-                        ref={dropRef}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          setIsDragging(true);
-                        }}
-                        onDragLeave={() => setIsDragging(false)}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setIsDragging(false);
-                          processFileList(e.dataTransfer.files);
-                        }}
-                        onClick={() => document.getElementById('modal-file-input').click()}
-                        className={`border border-dashed px-4 py-3 flex items-center gap-3 cursor-pointer transition-all ${
-                          isDragging
-                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5'
-                            : 'border-borders-strong hover:border-[var(--project-type-university)]/30 hover:bg-surface-elevated'
-                        }`}
-                      >
-                        <input
-                          id="modal-file-input"
-                          type="file"
-                          multiple
-                          accept=".txt,.md,.json,.yaml,.yml,.js,.ts,.py,.jsx,.tsx,.csv"
-                          className="hidden"
-                          onChange={(e) => processFileList(e.target.files)}
-                        />
-                        <Upload
-                          className="w-4 h-4 text-text-muted flex-shrink-0"
-                          strokeWidth={1.5}
-                        />
-                        <div>
-                          <p className="text-xs text-text-muted">
-                            Arrastra archivos de contexto (specs, READMEs, wireframes...)
-                          </p>
-                          <p className="text-xs text-[var(--text-muted)]">
-                            Opcional · .txt .md .json .py .js .ts — máx 2MB
-                          </p>
-                        </div>
-                      </div>
-
-                      {pendingFiles.length > 0 && (
-                        <div className="space-y-1.5">
-                          {pendingFiles.map((f, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center gap-2 bg-surface-elevated px-3 py-1.5"
-                            >
-                              <FileText className="w-3 h-3 text-[var(--accent-primary)] flex-shrink-0" />
-                              <span className="text-xs font-mono text-text-primary flex-1 truncate">
-                                {f.file_name}
-                              </span>
-                              <span className="text-xs text-text-muted">
-                                {(f.size / 1024).toFixed(1)}KB
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
-                                className="text-text-muted hover:text-danger transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2 text-xs text-[var(--project-type-university)]">
-                        <Zap className="w-3 h-3" />
-                        Se generarán 40-60+ tareas organizadas en hitos — plan exhaustivo
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
               <div className="flex gap-3 pt-1">
                 <Button
                   type="button"
-                  onClick={() => {
-                    setShowNewModal(false);
-                    setPendingFiles([]);
-                  }}
+                  onClick={() => setShowNewModal(false)}
                   variant="devhubGlass"
                   className="h-10 flex-1 rounded-none border-2 border-[var(--border-strong)] text-sm"
                 >
@@ -889,11 +560,7 @@ export default function ProjectHub() {
                   ) : (
                     <Plus className="w-4 h-4" />
                   )}
-                  {creating
-                    ? 'Creando...'
-                    : enablePlanning
-                      ? 'Crear e ir a Planning'
-                      : 'Crear Proyecto'}
+                  {creating ? 'Creando...' : 'Crear Proyecto'}
                 </Button>
               </div>
             </form>

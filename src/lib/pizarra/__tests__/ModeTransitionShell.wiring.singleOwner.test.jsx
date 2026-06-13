@@ -8,12 +8,10 @@
  * their content in `<ModeTransitionShell>`, producing two sibling shells
  * that ran parallel phase machines (NFR-P03 violation).
  *
- * After the fix, `WorkspaceRightDock` drops the outer wrap; the inner
- * shell in `PizarraPane` is the SINGLE owner. This test asserts:
+ * After the transition-polish fix, `WorkspaceRightDock` is the SINGLE
+ * owner because it exists before/after the pizarra pane itself. This test asserts:
  *   1. Exactly one shell testid is in the rendered tree.
- *   2. The shell is a descendant of the pizarra canvas mount
- *      (i.e. inside `PizarraPane`, NOT inside `WorkspaceRightDock`'s
- *      outermost section).
+ *   2. The shell wraps the right dock host and contains the pizarra canvas.
  *   3. With the feature flag OFF, zero shells appear (no-op path).
  *
  * This file is intentionally self-contained: it does NOT depend on
@@ -247,7 +245,7 @@ describe('ModeTransitionShell wiring — single owner (P-MP-3)', () => {
     }
   });
 
-  test('the lone shell is a descendant of the pizarra canvas, NOT a direct child of WorkspaceRightDock root', () => {
+  test('the lone shell wraps the right dock host and contains the pizarra canvas', () => {
     const restore = setEnvFlag('true');
     try {
       const WorkspaceRightDock = require('@/components/workspace/WorkspaceRightDock').default;
@@ -276,19 +274,12 @@ describe('ModeTransitionShell wiring — single owner (P-MP-3)', () => {
       const shells = document.querySelectorAll('[data-testid="mode-transition-shell"]');
       expect(shells.length).toBe(1);
 
-      // The shell MUST be the ancestor of the pizarra canvas (pizarra canvas
-      // is a CHILD of the shell, not the other way around). The shell is
-      // the outer ModeTransitionShell that wraps PizarraPane's paneBody.
+      // The shell is the dock-level owner: it wraps WorkspaceRightDock and
+      // therefore also contains the pizarra canvas when the pizarra tab is active.
       expect(shells[0].contains(pizarraCanvas)).toBe(true);
-      // The dock MUST NOT have the shell as a direct child of its own root.
-      // The shell lives inside the pizarra-host div, which is a child of
-      // the dock's own section — so the dock does contain the shell
-      // transitively, but NOT as a direct child. The strict test is on
-      // dock's direct children only.
-      const dockDirectChildren = Array.from(dock.children).filter(
-        (el) => el.getAttribute('data-testid') === 'mode-transition-shell'
-      );
-      expect(dockDirectChildren.length).toBe(0);
+      expect(shells[0].contains(dock)).toBe(true);
+      const pizarraHost = document.querySelector('[data-testid="pizarra-host"]');
+      expect(pizarraHost.contains(shells[0])).toBe(false);
     } finally {
       restore();
     }

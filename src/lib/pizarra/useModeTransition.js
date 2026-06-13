@@ -14,9 +14,13 @@
  * the returned `animProps` to drive framer-motion's
  * `AnimatePresence` keyed on `maximizedView`.
  *
+ * The visual channel is OPACITY-ONLY (cross-fade). The shell wraps
+ * a tree containing native VTE/WebKit surfaces, which are positioned
+ * via IPC and do not follow CSS transforms; animating translate/scale
+ * on the wrapper desyncs them (NFR-P02 / terminal-pizarra-stability A.5).
+ *
  * Reduced motion: when `prefers-reduced-motion: reduce` is
- * reported by the OS, the entire transition (leaving + entering)
- * collapses to a <= 50 ms cross-fade with no translate or scale.
+ * reported by the OS, the cross-fade collapses to <= 50 ms.
  *
  * All durations / easings are read from `surfaceMotion.js`
  * tokens. No timing values are hard-coded in the hook itself.
@@ -52,7 +56,7 @@ const REDUCED_MOTION_TOTAL_MS = 50;
 
 // Default durations match the spec: 110ms leaving + 220ms entering.
 const DEFAULT_LEAVE_MS = 110;
-const DEFAULT_ENTER_MS = 220;
+const DEFAULT_ENTER_MS = DUR.base;
 // Debounce intentionally set to 0: any non-zero value introduces
 // perceptible lag between the user's click and the start of the
 // animation. The phase machine (leaving → entering) already
@@ -232,20 +236,33 @@ export function useModeTransition({
     };
   }, []);
 
-  // The framer-motion transition spec. Reduced motion collapses
-  // to opacity-only with a very short duration; otherwise we use
-  // a cubic-bezier approximation of EASE_OUT and the enterMs.
+  // The framer-motion transition spec. OPACITY-ONLY by design.
+  //
+  // terminal-pizarra-stability A.5 / NFR-P02: the shell wraps a tree
+  // that contains native surfaces (PizarraPane → CanvasTerminal →
+  // TerminalTTY → GTK VTE, and WebKit browser panes). Native widgets
+  // are positioned in absolute screen coordinates via IPC and do NOT
+  // follow CSS transforms, so animating `y`/`scale` on this wrapper
+  // desyncs the chrome from the native surface — the visible "jump"
+  // when toggling workspace↔pizarra with a live terminal. We therefore
+  // cross-fade ONLY (matching getWorkspaceAnimProps / getRightDockAnimProps
+  // on the workspace side, which are already opacity-only). Richer
+  // chrome motion (slide/scale) becomes safe only once surfaces are
+  // lifted into SharedSurfacesProvider's hidden layer (A.1), outside
+  // this animated subtree — tracked as a follow-up, not done here.
   const animProps = useMemo(() => {
     if (reducedMotion) {
       return {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
+        exit: { opacity: 0 },
         transition: { duration: REDUCED_MOTION_TOTAL_MS / 1000, ease: 'linear' },
       };
     }
     return {
-      initial: { opacity: 0, y: 16, scale: 0.96 },
-      animate: { opacity: 1, y: 0, scale: 1 },
+      initial: { opacity: 0 },
+      animate: { opacity: 1 },
+      exit: { opacity: 0 },
       transition: { duration: enterMs / 1000, ease: [0.22, 1, 0.36, 1] },
     };
   }, [reducedMotion, enterMs]);

@@ -20,11 +20,10 @@
  *     {maximizedView === 'pizarra' ? <PizarraCanvas /> : <WorkspaceChrome />}
  *   </ModeTransitionShell>
  *
- * The shell is intentionally tiny so it can be dropped into any
- * chrome tree without disturbing the existing layout. The
- * `useModeTransition` hook does all the timing work; the shell
- * just wires the result to framer-motion's `motion.div` and the
- * pointer-events guard.
+ * The shell uses an overlapped grid instead of `mode="wait"` so
+ * exit and enter layers cross-fade in the same visual slot. This
+ * avoids the one-frame blank gap that can happen when the old layer
+ * fully exits before the new pizarra chrome is mounted.
  */
 
 'use client';
@@ -54,21 +53,30 @@ export function ModeTransitionShell({
       data-transition-active={isAnimating ? 'true' : 'false'}
       className={className}
       style={{
+        display: 'grid',
+        minHeight: 0,
+        isolation: 'isolate',
         // Block pointer events while the chrome is animating so
         // the user can't click on a half-faded-in control.
         pointerEvents: isAnimating ? 'none' : 'auto',
         ...style,
       }}
     >
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="sync" initial={false}>
         <motion.div
           key={maximizedView}
           data-testid={`mode-transition-layer-${maximizedView}`}
           initial={animProps.initial}
           animate={animProps.animate}
-          exit={animProps.initial}
+          exit={animProps.exit}
           transition={animProps.transition}
-          style={{ width: '100%', height: '100%' }}
+          style={{
+            gridArea: '1 / 1',
+            width: '100%',
+            height: '100%',
+            minHeight: 0,
+            willChange: isAnimating ? 'opacity' : 'auto',
+          }}
         >
           {children}
         </motion.div>

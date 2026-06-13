@@ -2,10 +2,14 @@ import {
   clampElementPosition,
   clampElementRect,
   clampPanToContent,
+  computeElementsBounds,
   computeLayoutZones,
+  computeViewportFitToBounds,
   detectZoneAtPoint,
   getPreferredZoneForType,
   getVisibleCanvasBounds,
+  isLayoutPlacementPlaceholder,
+  resolveFitBoundsForView,
   resolveZoneSnap,
 } from '../canvasBounds';
 
@@ -85,5 +89,44 @@ describe('canvasBounds', () => {
     const cx = zones.right.x + zones.right.width / 2;
     const cy = zones.right.y + zones.right.height / 2;
     expect(detectZoneAtPoint(cx, cy, zones)).toBe('right');
+  });
+
+  test('isLayoutPlacementPlaceholder flags off-screen provisional surfaces', () => {
+    expect(isLayoutPlacementPlaceholder({ x: -10000, y: -10000, _layoutResolved: false })).toBe(
+      true
+    );
+    expect(isLayoutPlacementPlaceholder({ x: 120, y: 80, width: 640, height: 400 })).toBe(false);
+  });
+
+  test('computeElementsBounds ignores off-screen placeholders', () => {
+    const bbox = computeElementsBounds([
+      { x: 200, y: 100, width: 640, height: 400 },
+      { x: -10000, y: -10000, width: 640, height: 400, _layoutResolved: false },
+    ]);
+    expect(bbox.x).toBeGreaterThan(150);
+    expect(bbox.width).toBeLessThan(800);
+  });
+
+  test('computeViewportFitToBounds does not floor to 12% for normal view bounds', () => {
+    const { zoom } = computeViewportFitToBounds(
+      { x: 0, y: 0, width: 1680, height: 960 },
+      1400,
+      900,
+      { padding: 24, maxZoom: 1.25 }
+    );
+    expect(zoom).toBeGreaterThan(0.5);
+    expect(zoom).toBeLessThanOrEqual(1.25);
+  });
+
+  test('resolveFitBoundsForView rejects outlier layout bounds', () => {
+    const viewBounds = { x: 0, y: 0, width: 1680, height: 960 };
+    const outlier = { x: -500, y: 0, width: 12000, height: 960 };
+    expect(resolveFitBoundsForView(outlier, viewBounds)).toEqual(viewBounds);
+    expect(resolveFitBoundsForView({ x: 10, y: 10, width: 800, height: 600 }, viewBounds)).toEqual({
+      x: 10,
+      y: 10,
+      width: 800,
+      height: 600,
+    });
   });
 });

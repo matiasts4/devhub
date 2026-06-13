@@ -13,21 +13,26 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
       { terminalId: 'p1', displayName: 'Nate' },
       { terminalId: 'p2', displayName: 'Chase' },
     ]);
-    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase' });
+    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase', match: 'exact' });
   });
 
   test('exact match with mixed case in input also wins', () => {
     const result = resolve('ChAsE', [{ terminalId: 'p2', displayName: 'chase' }]);
-    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'chase' });
+    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'chase', match: 'exact' });
   });
 
   test('Levenshtein ≤ 1 fallback (e.g. "Chaze" → "Chase")', () => {
     const result = resolve('Chaze', [{ terminalId: 'p2', displayName: 'Chase' }]);
-    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase' });
+    expect(result.ok).toBe(true);
+    expect(result.terminalId).toBe('p2');
+    expect(result.displayName).toBe('Chase');
   });
 
-  test('Levenshtein > 1 returns not_found (e.g. "Chazza" → "Chase")', () => {
-    const result = resolve('Chazza', [{ terminalId: 'p2', displayName: 'Chase' }]);
+  test('Levenshtein > 1 returns not_found when multiple panels (e.g. "Chazza" → "Chase")', () => {
+    const result = resolve('Chazza', [
+      { terminalId: 'p1', displayName: 'Chase' },
+      { terminalId: 'p2', displayName: 'Nova' },
+    ]);
     expect(result).toEqual({ ok: false, code: 'not_found' });
   });
 
@@ -39,33 +44,24 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
       { terminalId: 'p2', displayName: 'Chaze' },
     ]);
     // Exact match wins against p2 first.
-    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chaze' });
+    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chaze', match: 'exact' });
   });
 
-  test('ambiguous: two close matches with no exact hit returns candidates sorted by distance', () => {
-    // Neither name is exactly "Chasee", but both Chase and Chaser are within
-    // distance 1. Sorted by distance asc (both are 1), then alpha.
+  test('dictation elongation Chasee resolves to Chase when prefix is unique', () => {
     const result = resolve('Chasee', [
-      { terminalId: 'p1', displayName: 'Chaser' }, // distance 1
-      { terminalId: 'p2', displayName: 'Chase' }, // distance 1
+      { terminalId: 'p1', displayName: 'Chaser' },
+      { terminalId: 'p2', displayName: 'Chase' },
+    ]);
+    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase', match: 'prefix' });
+  });
+
+  test('ambiguous when two panels share the same prefix stem', () => {
+    const result = resolve('Cha', [
+      { terminalId: 'p1', displayName: 'Chase' },
+      { terminalId: 'p2', displayName: 'Chaser' },
     ]);
     expect(result.ok).toBe(false);
     expect(result.code).toBe('ambiguous');
-    // Both at distance 1; alphabetical tie-break: Chase (p2) < Chaser (p1)
-    expect(result.candidates.map((c) => c.terminalId)).toEqual(['p2', 'p1']);
-  });
-
-  test('ambiguous: two close matches with no exact hit returns candidates sorted by distance', () => {
-    // Neither name is exactly "Chasee", but both Chase and Chaser are within
-    // distance 1. Sorted by distance asc (both are 1), then alpha.
-    const result = resolve('Chasee', [
-      { terminalId: 'p1', displayName: 'Chaser' }, // distance 1
-      { terminalId: 'p2', displayName: 'Chase' }, // distance 1
-    ]);
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('ambiguous');
-    // Both at distance 1; alphabetical tie-break: Chase (p2) < Chaser (p1)
-    expect(result.candidates.map((c) => c.terminalId)).toEqual(['p2', 'p1']);
   });
 
   test('"Chase" exact wins even when "Chaser" (distance 2) also exists', () => {
@@ -74,7 +70,7 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
       { terminalId: 'p2', displayName: 'Chaser' },
     ]);
     // exact match wins; the Chaser entry is distance 2 anyway
-    expect(result).toEqual({ ok: true, terminalId: 'p1', displayName: 'Chase' });
+    expect(result).toEqual({ ok: true, terminalId: 'p1', displayName: 'Chase', match: 'exact' });
   });
 
   test('empty string returns not_found', () => {
@@ -106,12 +102,43 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
     });
   });
 
-  test('invalid format (length > 24, space, slash) returns not_found', () => {
-    const longName = 'x'.repeat(25);
+  test('César (dictation accent) matches Cesar', () => {
+    const result = resolve('César', [{ terminalId: 'p3', displayName: 'Cesar' }]);
+    expect(result).toEqual({
+      ok: true,
+      terminalId: 'p3',
+      displayName: 'Cesar',
+      match: 'exact',
+    });
+  });
+
+  test('partial prefix Ces matches Cesar when unique', () => {
+    const result = resolve('Ces', [{ terminalId: 'p3', displayName: 'Cesar' }]);
+    expect(result.ok).toBe(true);
+    expect(result.displayName).toBe('Cesar');
+  });
+
+  test('dictation typo Cas matches Cesar when it is the only panel', () => {
+    const result = resolve('Cas', [{ terminalId: 'p3', displayName: 'Cesar' }]);
+    expect(result.ok).toBe(true);
+    expect(result.displayName).toBe('Cesar');
+  });
+
+  test('STT typo Chace matches Chase', () => {
+    const result = resolve('Chace', [{ terminalId: 'p2', displayName: 'Chase' }]);
+    expect(result.ok).toBe(true);
+    expect(result.displayName).toBe('Chase');
+  });
+
+  test('invalid format (length > 48) returns not_found', () => {
+    const longName = 'x'.repeat(49);
     expect(resolve(longName, [{ terminalId: 'p2', displayName: 'Chase' }])).toEqual({
       ok: false,
       code: 'not_found',
     });
+  });
+
+  test('garbled phrase without match returns not_found', () => {
     expect(resolve('with space', [{ terminalId: 'p2', displayName: 'Chase' }])).toEqual({
       ok: false,
       code: 'not_found',
@@ -135,7 +162,7 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
       { terminalId: 'p1' }, // no displayName
       { terminalId: 'p2', displayName: 'Chase' },
     ]);
-    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase' });
+    expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase', match: 'exact' });
   });
 });
 

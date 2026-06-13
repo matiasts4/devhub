@@ -173,13 +173,15 @@ function gridSlots(rect, items, { cols = 2, gap = 16 } = {}) {
 }
 
 /**
- * Adaptive layout inside a view region — allocates space from what is present,
- * not fixed browser-left / terminal-right roles.
- * Returns [{ id, x, y, width, height }, ...] and { hiddenBrowserIds }.
+ * Adaptive layout inside an arbitrary world-space rectangle.
+ * Used for manual auto-fit (visible viewport) and fixed view regions.
  */
-export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 12, pad = 6 } = {}) {
-  const zones = computeViewZones(viewOrigin, { gap });
-  const inner = padRect(zones.bounds, pad);
+export function computeAdaptiveRectLayout(
+  containerBounds,
+  surfaces = [],
+  { gap = 12, pad = 6 } = {}
+) {
+  const inner = padRect(containerBounds, pad);
   const { browsers, terminals, hiddenBrowsers } = partitionSurfacesForAutoLayout(surfaces);
   const layouts = [];
   const bCount = browsers.length;
@@ -189,7 +191,7 @@ export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 12,
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
   }
 
-  // Terminals only — use full view width
+  // Terminals only — use full container width
   if (bCount === 0) {
     if (tCount === 1) {
       layouts.push({ id: terminals[0].id, ...inner });
@@ -297,6 +299,33 @@ export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 12,
   }
 
   return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
+}
+
+/** Layout surfaces inside the region currently visible on screen (pan/zoom aware). */
+export function computeAdaptiveVisibleLayout(visibleRegion, surfaces = [], options = {}) {
+  if (!visibleRegion?.width || !visibleRegion?.height) {
+    return { layouts: [], hiddenBrowserIds: [] };
+  }
+  return computeAdaptiveRectLayout(
+    {
+      x: visibleRegion.x ?? 0,
+      y: visibleRegion.y ?? 0,
+      width: visibleRegion.width,
+      height: visibleRegion.height,
+    },
+    surfaces,
+    options
+  );
+}
+
+/**
+ * Adaptive layout inside a view region — allocates space from what is present,
+ * not fixed browser-left / terminal-right roles.
+ * Returns [{ id, x, y, width, height }, ...] and { hiddenBrowserIds }.
+ */
+export function computeAdaptiveViewLayout(viewOrigin, surfaces = [], { gap = 12, pad = 6 } = {}) {
+  const zones = computeViewZones(viewOrigin, { gap });
+  return computeAdaptiveRectLayout(zones.bounds, surfaces, { gap, pad });
 }
 
 export function surfaceTypeLabel(type) {

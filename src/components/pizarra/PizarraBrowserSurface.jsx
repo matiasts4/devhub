@@ -16,14 +16,18 @@
 
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 // eslint-disable-next-line no-unused-vars -- false positive: these icon names are JSX-tag references (lucide-react proxies)
 import { RefreshCw, X } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars -- false positive: WorkspaceBrowserPane is rendered inside the JSX below; eslint-plugin-react v7.37.5 + ESLint 9.23.0 fails to track the JSX usage
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
-import { raiseNativeBrowser, resizeNativeBrowser } from '@/lib/browser/nativeBrowserBridge';
+import {
+  raiseNativeBrowser,
+  resizeNativeBrowser,
+  setNativeBrowserVisibility,
+} from '@/lib/browser/nativeBrowserBridge';
 // pizarra-shared-view-state Phase 3: same tab strip as the
 // workspace right-dock (single source of truth). Pizarra is
 // always opt-in: tabsMode defaults to 'multi' on this surface.
@@ -35,13 +39,18 @@ import {
   resolveHandleSizing,
   FRAME_TRANSITION,
   SURFACE_ENTER_OPACITY_ONLY,
+  PIZARRA_SURFACE_FRAME_INSET,
+  PIZARRA_SURFACE_HEADER_HEIGHT,
+  PIZARRA_SURFACE_BORDER_RADIUS,
+  PIZARRA_SURFACE_HEADER_STYLE,
+  PIZARRA_SURFACE_FRAME_BG,
 } from '@/lib/pizarra/surfaceMotion';
 import {
   useSurfaceEnterAnimation,
   SURFACE_ENTER_STATE_ATTRIBUTE,
 } from '@/lib/pizarra/useSurfaceEnterAnimation';
 
-const FRAME_INSET = 10;
+const FRAME_INSET = PIZARRA_SURFACE_FRAME_INSET;
 
 // pizarra-ux-overhaul: 5s build-time constant. Exported for tests.
 export const PIZARRA_BROWSER_LOAD_TIMEOUT_MS = 5000;
@@ -313,36 +322,46 @@ export default function PizarraBrowserSurface({
     raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
   }, [nativePanelId]); // mount only
 
+  const syncCarriedNativeBrowserBounds = useCallback(() => {
+    const shell = surfaceRootRef.current?.querySelector?.('[data-testid="browser-viewport-shell"]');
+    if (!shell) return false;
+    const r = shell.getBoundingClientRect();
+    if (r.width <= 10 || r.height <= 10) return false;
+    const nextBounds = {
+      x: Math.round(r.left),
+      y: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
+    resizeNativeBrowser({ panelId: nativePanelId, bounds: nextBounds }).catch(() => {});
+    setNativeBrowserVisibility({
+      panelId: nativePanelId,
+      visible: true,
+      bounds: nextBounds,
+    }).catch(() => {});
+    return true;
+  }, [nativePanelId]);
+
   // Immediate native bounds sync for carried browsers on pizarra mount/switch.
-  // Ensures the live webview (from normal mode) gets raised + resized to *this card's*
-  // screen rect right away. Combined with starting as native-gtk + loaded=true,
-  // the content appears instantly without "cargando todo el rato" or broken view.
-  // Uses RAF so the shell ref and DOM are ready; re-runs if bounds change early.
-  useEffect(() => {
+  // The layout pass attempts the handoff before paint; the RAF is only a
+  // correction for cases where the shell rect settles one frame later.
+  useLayoutEffect(() => {
     if (!isCarriedFromWorkspace) return;
-    const pid = nativePanelId;
-    raiseNativeBrowser({ panelId: pid }).catch(() => {});
+    raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
+    syncCarriedNativeBrowserBounds();
     const raf = requestAnimationFrame(() => {
-      const shell = surfaceRootRef.current?.querySelector?.(
-        '[data-testid="browser-viewport-shell"]'
-      );
-      if (shell) {
-        const r = shell.getBoundingClientRect();
-        if (r.width > 10 && r.height > 10) {
-          resizeNativeBrowser({
-            panelId: pid,
-            bounds: {
-              x: Math.round(r.left),
-              y: Math.round(r.top),
-              width: Math.round(r.width),
-              height: Math.round(r.height),
-            },
-          }).catch(() => {});
-        }
-      }
+      syncCarriedNativeBrowserBounds();
     });
     return () => cancelAnimationFrame(raf);
-  }, [isCarriedFromWorkspace, nativePanelId, bounds.x, bounds.y, bounds.width, bounds.height]);
+  }, [
+    isCarriedFromWorkspace,
+    nativePanelId,
+    bounds.x,
+    bounds.y,
+    bounds.width,
+    bounds.height,
+    syncCarriedNativeBrowserBounds,
+  ]);
 
   const handleFrameMouseDown = useCallback(
     (event) => {
@@ -549,6 +568,7 @@ export default function PizarraBrowserSurface({
     hovered: isHovered,
     dragging: isManipulating,
   });
+  const headerHeight = PIZARRA_SURFACE_HEADER_HEIGHT;
   const handleSizing = resolveHandleSizing(zoom);
   // pizarra-motion-polish (P-MP-6): apply the opacity-only enter
   // animation to the inner chrome frame (not the positioned wrapper,
@@ -595,52 +615,76 @@ export default function PizarraBrowserSurface({
           position: 'absolute',
           inset: FRAME_INSET,
           overflow: 'hidden',
-          borderRadius: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          borderRadius: PIZARRA_SURFACE_BORDER_RADIUS,
           border: frameVisual.border,
           outline: isButtonActive ? '1px inset var(--accent-primary)' : 'none',
-          background: 'rgba(8, 14, 24, 0.94)',
+          background: PIZARRA_SURFACE_FRAME_BG,
           boxShadow: frameVisual.boxShadow,
-          // pizarra-motion-polish (P-MP-6): opacity-only enter animation
-          // applied on mount. Animation name 'pizarraSurfaceEnterOpacity'
-          // (see surfaceMotion.js). `both` fill mode prevents a flash of
-          // the un-faded state.
           animation: enterAnim.animation,
-          // During resize or drag: kill ALL transitions on the chrome frame (header,
-          // buttons, content container). This eliminates the "delay entre header y cuerpo"
-          // the user sees — the header chrome (move/close buttons, tabstrip, browser
-          // toolbar) and the body now resize in lockstep because there's no lingering
-          // cubic-bezier delay fighting the direct style mutation from the handles.
           transition: isManipulating ? 'none' : FRAME_TRANSITION,
           pointerEvents: 'auto',
         }}
       >
-        {/* Browser card "header" is now the tabstrip itself (standard browser UI pattern).
-            Tabs sit directly as the top chrome of the pizarra browser container.
-            This fixes the "pestañas sobre el browser" looking bad / double-header feel.
-            Drag the card by mousedown on the tab bar area (empty space or tabs bg).
-            Card-level close button (the "borrar ventana") is placed at the far right of the
-            tab bar for clear, accessible location – next to the + add-tab.
-            Styled to blend with the tabstrip's bar (no extra 24px label bar above).
-            Better space, modern look, buttons well positioned. */}
+        <div
+          data-testid="pizarra-drag-handle"
+          data-pizarra-browser-surface-header="true"
+          data-pizarra-surface-drag-handle="true"
+          onMouseDown={handleDragStart}
+          style={{
+            height: headerHeight,
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 8px',
+            cursor: 'move',
+            userSelect: 'none',
+            ...PIZARRA_SURFACE_HEADER_STYLE,
+          }}
+        >
+          <span>{shape.label || 'Browser'}</span>
+          <button
+            type="button"
+            data-testid="pizarra-browser-close"
+            data-pizarra-close-button="true"
+            title="Cerrar ventana del navegador (en pizarra)"
+            aria-label="Cerrar ventana del navegador"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose?.(shape.id);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 18,
+              height: 18,
+              padding: 0,
+              borderRadius: 4,
+              border: 'none',
+              background: 'transparent',
+              color: '#9fb5d1',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
         <div
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
+            position: 'relative',
+            flex: '1 1 auto',
             minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
           }}
           data-tabs-mode={tabsMode}
         >
           {showTabStrip ? (
-            <div
-              style={{ position: 'relative' }}
-              onMouseDown={handleDragStart}
-              data-pizarra-browser-tab-header="true"
-              data-testid="pizarra-drag-handle"
-              data-pizarra-surface-drag-handle="true"
-            >
+            <div style={{ position: 'relative', flexShrink: 0 }}>
               <BrowserTabStrip
                 tabs={tabStripApi.tabs}
                 activeTabId={tabStripApi.activeTabId}
@@ -649,40 +693,6 @@ export default function PizarraBrowserSurface({
                 onAddTab={tabStripApi.addTab}
                 currentUrl={resolvedDockState.browserUrl}
               />
-              {/* Card/window close button – far right of the tab bar (browser "header").
-                  Better location than floating small bar. Accessible, clear target.
-                  Stops drag/select. Calls the same onClose as before (removes the surface/ventana). */}
-              <button
-                type="button"
-                data-testid="pizarra-browser-close"
-                data-pizarra-close-button="true"
-                title="Cerrar ventana del navegador (en pizarra)"
-                aria-label="Cerrar ventana del navegador"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose?.(shape.id);
-                }}
-                style={{
-                  position: 'absolute',
-                  right: 6,
-                  top: 6,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 20,
-                  height: 20,
-                  padding: 0,
-                  borderRadius: 4,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(6, 16, 27, 0.9)',
-                  color: '#9fb5d1',
-                  cursor: 'pointer',
-                  zIndex: 10,
-                }}
-              >
-                <X size={12} />
-              </button>
             </div>
           ) : null}
           <WorkspaceBrowserPane

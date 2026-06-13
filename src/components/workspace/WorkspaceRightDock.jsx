@@ -7,6 +7,7 @@ import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
 import PizarraPane from '@/components/pizarra/PizarraPane';
+import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 
 export default function WorkspaceRightDock({
@@ -35,12 +36,13 @@ export default function WorkspaceRightDock({
   const isSwarmActive = dockState.activeTab === 'swarm';
   const isPizarraActive = dockState.activeTab === 'pizarra';
 
-  // pizarra-motion-polish (P-MP-3): the OUTER <ModeTransitionShell> wrap
-  // was removed. The inner shell in PizarraPane is the SINGLE owner
-  // (NFR-P03). Previously both WorkspaceRightDock AND PizarraPane
-  // wrapped their content, producing two sibling shells that ran
-  // parallel phase machines. The shell stays inside PizarraPane;
-  // this file returns dockBody directly.
+  // Pizarra transition owner: the shell must live at the dock host
+  // because this component exists before/after the pizarra pane itself.
+  // PizarraPane renders pure content; this outer shell is the single
+  // transition owner for normal ↔ pizarra chrome.
+  const transitionEnabled = isPizarraSharedViewEnabled();
+  const shellMaximizedView =
+    dockState?.maximized && dockState?.maximizedView === 'pizarra' ? 'pizarra' : 'workspace';
 
   const dockBody = (
     <section
@@ -117,5 +119,22 @@ export default function WorkspaceRightDock({
     </section>
   );
 
-  return dockBody;
+  if (!transitionEnabled) {
+    return dockBody;
+  }
+
+  return (
+    <ModeTransitionShell
+      maximizedView={shellMaximizedView}
+      testId="mode-transition-shell"
+      className="h-full min-h-0"
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'linear-gradient(180deg,#0b121d 0%,#08101a 100%)',
+      }}
+    >
+      {dockBody}
+    </ModeTransitionShell>
+  );
 }

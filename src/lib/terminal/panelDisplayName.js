@@ -37,10 +37,24 @@ function safeParse(json) {
   }
 }
 
+function hasLocalStorage() {
+  return typeof globalThis !== 'undefined' && globalThis.localStorage != null;
+}
+
+function readLocalStorage(key) {
+  if (!hasLocalStorage()) return null;
+  return globalThis.localStorage.getItem(key);
+}
+
+function writeLocalStorage(key, value) {
+  if (!hasLocalStorage()) return;
+  globalThis.localStorage.setItem(key, value);
+}
+
 function loadFromStorage(workspaceId) {
-  if (typeof globalThis.window === 'undefined') return {};
+  if (!hasLocalStorage()) return {};
   try {
-    const raw = globalThis.window.localStorage.getItem(panelDisplayNameStorageKey(workspaceId));
+    const raw = readLocalStorage(panelDisplayNameStorageKey(workspaceId));
     return safeParse(raw);
   } catch {
     return {};
@@ -48,9 +62,9 @@ function loadFromStorage(workspaceId) {
 }
 
 function writeToStorage(workspaceId, map) {
-  if (typeof globalThis.window === 'undefined') return;
+  if (!hasLocalStorage()) return;
   try {
-    globalThis.window.localStorage.setItem(
+    writeLocalStorage(
       panelDisplayNameStorageKey(workspaceId),
       JSON.stringify(map)
     );
@@ -121,13 +135,47 @@ function usedNamesInWorkspace(workspaceId) {
   if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
     return new Set();
   }
-  const stored = loadFromStorage(workspaceId);
-  const names = Object.values(stored).filter((n) => typeof n === 'string');
+  // Use the in-memory map (kept in sync with localStorage) so concurrent
+  // panel creates in the same tick see names assigned earlier in the session.
+  const m = mapFor(workspaceId);
+  const names = [...m.values()].filter((n) => typeof n === 'string');
   return new Set(names.map((n) => n.toLowerCase()));
 }
 
-function nextDisplayNameForPanel(workspaceId) {
-  return acquireFromPool(usedNamesInWorkspace(workspaceId));
+/**
+ * @param {string} workspaceId
+ * @param {Array<string>|null|undefined} [extraUsed] - names already on panels
+ *   in React state that may not be persisted yet (sibling panels).
+ */
+function nextDisplayNameForPanel(workspaceId, extraUsed = []) {
+  const used = usedNamesInWorkspace(workspaceId);
+  const extras = Array.isArray(extraUsed) ? extraUsed : [];
+  for (const raw of extras) {
+    if (typeof raw === 'string' && raw.trim()) {
+      used.add(raw.trim().toLowerCase());
+    }
+  }
+  return acquireFromPool(used);
+}
+
+/**
+ * Label for pizarra canvas cards and registry surfaces.
+ *
+ * @param {{ id?: string, displayName?: string|null }|null|undefined} panel
+ * @param {string} workspaceId
+ * @returns {string}
+ */
+function resolvePanelSurfaceLabel(panel, workspaceId) {
+  const fromStore =
+    typeof panel?.id === 'string' ? getDisplayName(panel.id, workspaceId) : null;
+  const displayName = panel?.displayName || fromStore;
+  if (typeof displayName === 'string' && displayName.length > 0) return displayName;
+  if (typeof panel?.id === 'string' && panel.id.length > 0) return `Terminal ${panel.id}`;
+  return 'Terminal';
+}
+
+function _resetWorkspaceMapForTests() {
+  workspaceMap.clear();
 }
 
 module.exports = {
@@ -138,4 +186,6 @@ module.exports = {
   removeDisplayName,
   usedNamesInWorkspace,
   nextDisplayNameForPanel,
+  resolvePanelSurfaceLabel,
+  _resetWorkspaceMapForTests,
 };

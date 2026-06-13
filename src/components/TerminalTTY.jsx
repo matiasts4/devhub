@@ -45,8 +45,12 @@ import {
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
 } from '@/lib/terminal/terminalNoiseFilter';
+import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
 import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
-import { detectOpenCodeTuiReady } from '@/lib/terminal/opencodeReadyMarker';
+import {
+  detectOpenCodeTuiReady,
+  shouldDiscardOpenCodeCatchupReplay,
+} from '@/lib/terminal/opencodeReadyMarker';
 import {
   isSwarmLaunchWrapperDispatched,
   markSwarmLaunchWrapperDispatched,
@@ -57,6 +61,11 @@ import {
   shouldSkipRedundantInitialCommandSend,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import {
+  takeTerminalPanelBridge,
+  stashTerminalPanelBridge,
+} from '@/lib/terminal/terminalPanelBridge';
+import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -143,13 +152,15 @@ export function disableTerminalFocusReporting(term, { disableMouse = false } = {
   }
 }
 
-/** Active TUI panels: silence focus leaks and restore mouse modes xterm needs for wheel SGR. */
+/** Active panels: silence focus leaks. Live TUIs keep/rebind mouse modes; shells drop stale mouse tracking. */
 export function prepareActiveTuiTerminalFocus(term, { tuiSessionActive = false } = {}) {
   if (!term || typeof term.write !== 'function') return;
   try {
     term.write(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
     if (tuiSessionActive) {
       term.write(TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+    } else {
+      term.write(TERMINAL_DISABLE_MOUSE_REPORTING_SEQ);
     }
   } catch {
     // terminal may be mid-dispose
@@ -206,8 +217,12 @@ export function shouldPassthroughNativeTuiWheel({
   grokTuiReady = false,
   opencodeFooterConfirmed = false,
 } = {}) {
-  if (isGrokSession) return grokTuiReady;
-  return opencodeFooterConfirmed;
+  if (isGrokSession) {
+    const adapter = getTuiAdapter('grok');
+    return adapter.wheelStrategy.passThrough && grokTuiReady;
+  }
+  const adapter = getTuiAdapter('opencode');
+  return adapter.wheelStrategy.passThrough && opencodeFooterConfirmed;
 }
 
 export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand = '') {
@@ -502,6 +517,27 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
   return clampTerminalViewportDimensions({ cols, rows });
 }
 
+/** True when the fitted grid fills too little of the container — defer WS until refit. */
+export function isTerminalViewportUndersized({ containerRect, term, minFillRatio = 0.72 } = {}) {
+  const height = Number(containerRect?.height ?? 0);
+  const rows = Number(term?.rows ?? 0);
+  const cellH = Number(term?._core?._renderService?.dimensions?.css?.cell?.height ?? 0);
+  if (height <= 0 || rows <= 0 || cellH <= 0) return true;
+  return rows * cellH < height * minFillRatio;
+}
+
+export function shouldDeferTerminalConnectUntilViewportFitted({
+  ready = false,
+  fitWorked = false,
+  containerRect = null,
+  term = null,
+  hasConnectedOnce = false,
+} = {}) {
+  if (!ready || !fitWorked || !term) return true;
+  if (hasConnectedOnce) return false;
+  return isTerminalViewportUndersized({ containerRect, term });
+}
+
 export function fitTerminalViewport({
   container,
   fitAddon,
@@ -731,9 +767,24 @@ export function isTerminalViewportNearBottom(term, threshold = 2) {
 export const TERMINAL_PAGE_UP_SEQ = '\x1b[5~';
 export const TERMINAL_PAGE_DOWN_SEQ = '\x1b[6~';
 
-/** Shift+wheel uses xterm scrollback; plain wheel scrolls the TUI transcript. */
+/** Shift+wheel always uses xterm scrollback (shell and TUI). */
 export function shouldUseTerminalScrollbackWheel(event) {
   return Boolean(event?.shiftKey);
+}
+
+/** Only Ink/OpenCode/grok TUIs need wheel bytes injected into the PTY. */
+export function shouldInjectTerminalWheelIntoPty(isTuiSession = false) {
+  return Boolean(isTuiSession);
+}
+
+/** Scroll the xterm viewport locally — never send escape sequences to a plain shell. */
+export function scrollTerminalViewport(term, direction, deltaY, { lineHeight = 40, linesPerStep = 3 } = {}) {
+  if (!term || typeof term.scrollLines !== 'function') return false;
+  const steps = resolveTerminalWheelPageSteps(deltaY, { lineHeight });
+  if (!steps) return false;
+  const lines = steps * linesPerStep;
+  term.scrollLines(direction === 'up' ? -lines : lines);
+  return true;
 }
 
 export function resolveTerminalWheelScrollDirection(deltaY) {
@@ -979,6 +1030,105 @@ export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)
   return !prevVisible && nextVisible;
 }
 
+/** Skip redundant fit/PTY resize when layout-settled fires but cols/rows are already correct. */
+export function shouldSkipRedundantLayoutSettleViewportSync({
+  reason = '',
+  sizeUnchanged,
+  pendingWebglRecovery = false,
+  hasGpuRenderer = false,
+} = {}) {
+  if (!sizeUnchanged || pendingWebglRecovery || !hasGpuRenderer) return false;
+  const normalized = String(reason);
+  if (normalized.includes('pizarra-mode-exit') || normalized.includes('pizarra-mode-enter')) {
+    return true;
+  }
+  return /layout-settled-|workspace-switch/.test(normalized);
+}
+
+/** Drop PTY output while layout-hidden without a GPU renderer to avoid corrupting parser/atlas. */
+export function shouldSkipTerminalOutputWhileLayoutHidden({
+  isVisibleInLayout = true,
+  webglAttached = false,
+  canvasAttached = false,
+  operationalRendererMode,
+} = {}) {
+  if (isVisibleInLayout) return false;
+  if (!shouldUseGpuTerminalRenderer({ operationalRendererMode })) return false;
+  return !webglAttached && !canvasAttached;
+}
+
+export const HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX = 256 * 1024;
+
+export function appendHiddenTerminalOutputBuffer(
+  bufferRef,
+  chunk,
+  maxBytes = HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX
+) {
+  if (typeof chunk !== 'string' || !chunk || !bufferRef) return 0;
+  const next = `${bufferRef.value || ''}${chunk}`;
+  bufferRef.value = next.length > maxBytes ? next.slice(-maxBytes) : next;
+  return chunk.length;
+}
+
+export function takeHiddenTerminalOutputBuffer(bufferRef) {
+  if (!bufferRef) return '';
+  const value = bufferRef.value || '';
+  bufferRef.value = '';
+  return value;
+}
+
+export const HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES = 32 * 1024;
+export const HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES = 8 * 1024;
+
+/** Stale mega-buffers after reattach do more harm than good — PTY redraw beats replay. */
+export function shouldDiscardHiddenOutputCatchup({
+  bufferedBytes = 0,
+  sessionReattached = false,
+  tuiSessionActive = false,
+  bufferText = '',
+  maxBytes = HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES,
+} = {}) {
+  if (sessionReattached) return true;
+  if (tuiSessionActive) return true;
+  if (shouldDiscardOpenCodeCatchupReplay(bufferText)) return true;
+  return bufferedBytes > maxBytes;
+}
+
+export function chunkTerminalOutputForCatchup(
+  buffer,
+  chunkSize = HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES
+) {
+  if (typeof buffer !== 'string' || !buffer) return [];
+  const chunks = [];
+  for (let offset = 0; offset < buffer.length; offset += chunkSize) {
+    chunks.push(buffer.slice(offset, offset + chunkSize));
+  }
+  return chunks;
+}
+
+/** Nudge PTY dimensions so TUIs redraw after a layout-hidden catch-up flush. */
+export function nudgeTerminalPtyResize({
+  term,
+  socket,
+  lastPtySizeRef = null,
+  websocketOpenState = WebSocket.OPEN,
+} = {}) {
+  if (!term || !socket || socket.readyState !== websocketOpenState) return false;
+  const cols = Number(term.cols ?? 0);
+  const rows = Number(term.rows ?? 0);
+  if (cols <= 0 || rows <= 0 || typeof term.resize !== 'function') return false;
+  if (rows > 2) {
+    term.resize(cols, rows - 1);
+    term.resize(cols, rows);
+  }
+  socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+  if (lastPtySizeRef) {
+    lastPtySizeRef.cols = cols;
+    lastPtySizeRef.rows = rows;
+  }
+  return true;
+}
+
 /** Canvas uses release-on-hide + reattach-on-show; avoid repeated atlas clears on delayed bursts. */
 export function shouldClearGpuAtlasOnWorkspaceShow({
   operationalRendererMode,
@@ -1186,6 +1336,7 @@ export default function TerminalTTY({
   showQuickCopyButton = true,
   swarmContext = null,
   connectionState: externalConnectionState,
+  surfaceHost = 'workspace',
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
@@ -1197,6 +1348,12 @@ export default function TerminalTTY({
   const nativePlaceholderRef = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
+  // True only while disposeXtermRuntime is tearing the runtime down. Async
+  // callbacks queued before teardown (fit rAFs, resize observers, ws onmessage,
+  // font-size refit) re-check this and bail, so they cannot touch a terminal
+  // whose renderer slot is being cleared — the WebKitGTK `_renderer.value
+  // .handleResize` stale-renderer race (docs/errores/03-*). A.4.
+  const isDisposingRef = useRef(false);
   const resizeObserverRef = useRef(null);
   const nativeResizeObserverRef = useRef(null);
   const nativeResizeRafRef = useRef(null);
@@ -1307,6 +1464,7 @@ export default function TerminalTTY({
   const workspaceShowRecoverTimerRef = useRef(null);
   const inactiveRepaintRafRef = useRef(null);
   const pendingWebglRecoveryRef = useRef(false);
+  const webglReleasedOnLayoutHideRef = useRef(false);
   const webglRecoveryTimerRef = useRef(null);
   const handleWebglContextLossRef = useRef(null);
   const prevIsActivePanelRef = useRef(false);
@@ -1314,11 +1472,17 @@ export default function TerminalTTY({
   const reactivateCoalesceTimerRef = useRef(null);
   const tryReattachWebglAddonRef = useRef(null);
   const tryReattachCanvasAddonRef = useRef(null);
+  const outputPendingRef = useRef({ value: '' });
+  const hiddenOutputBufferRef = useRef({ value: '' });
+  const hiddenOutputCatchupPendingRef = useRef(false);
+  const surfaceHostRef = useRef(surfaceHost);
+  const connectPendingUntilFitRef = useRef(false);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
   const initTimeoutRef = useRef(null);
   const autoScrollRafRef = useRef(null);
+  const tuiResizeDebounceTimerRef = useRef(null);
   const effectiveRendererModeRef = useRef(operationalRendererMode);
   const operationalRendererModeRef = useRef(operationalRendererMode);
   const visibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
@@ -1382,6 +1546,10 @@ export default function TerminalTTY({
       cancelAnimationFrame(autoScrollRafRef.current);
       autoScrollRafRef.current = null;
     }
+    if (tuiResizeDebounceTimerRef.current) {
+      clearTimeout(tuiResizeDebounceTimerRef.current);
+      tuiResizeDebounceTimerRef.current = null;
+    }
 
     if (webglRecoveryTimerRef.current) {
       clearTimeout(webglRecoveryTimerRef.current);
@@ -1408,6 +1576,27 @@ export default function TerminalTTY({
   }, []);
 
   const disposeXtermRuntime = useCallback(() => {
+    // 0. Mark disposing BEFORE touching anything. Any callback that re-enters
+    //    during teardown (or a stray rAF/observer that fires while the renderer
+    //    slot is half-cleared) sees this and bails. Cleared in the finally so a
+    //    later boot is never wrongly blocked. A.4.
+    if (isDisposingRef.current) return;
+    isDisposingRef.current = true;
+    // A.0 lifecycle telemetry: capture renderer + dims BEFORE refs are nulled.
+    // This is the dispose-count-per-toggle signal A.1 must drive to zero.
+    cliLog(
+      `LIFECYCLE:${id}`,
+      'dispose',
+      buildTerminalLifecycleEvent({
+        event: 'dispose',
+        panelId: id,
+        renderer: requestedRendererModeRef.current,
+        isVisible: isVisibleInLayoutRef.current,
+        cols: termRef.current?.cols,
+        rows: termRef.current?.rows,
+      })
+    );
+    try {
     // 1. Stop observing the container FIRST so no new resize callbacks queue.
     resizeObserverRef.current?.disconnect();
     resizeObserverRef.current = null;
@@ -1452,6 +1641,26 @@ export default function TerminalTTY({
     const term = termRef.current;
     webglAddonRef.current = null;
     canvasAddonRef.current = null;
+    const bufferedOutput = hiddenOutputBufferRef.current?.value || '';
+    const pendingOutput = outputPendingRef.current?.value || '';
+    if (bufferedOutput || pendingOutput || hiddenOutputCatchupPendingRef.current) {
+      stashTerminalPanelBridge(id, {
+        buffer: bufferedOutput,
+        catchupPending: hiddenOutputCatchupPendingRef.current || Boolean(bufferedOutput),
+        outputPending: pendingOutput,
+        lastPtySize: { ...lastPtySizeRef.current },
+        host: surfaceHostRef.current,
+        reason: 'xterm-dispose',
+      });
+    }
+    if (outputPendingRef.current) {
+      outputPendingRef.current.value = '';
+    }
+    if (hiddenOutputBufferRef.current) {
+      hiddenOutputBufferRef.current.value = '';
+    }
+    hiddenOutputCatchupPendingRef.current = false;
+    connectPendingUntilFitRef.current = false;
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
@@ -1499,7 +1708,10 @@ export default function TerminalTTY({
         }
       }
     }
-  }, [clearTimers]);
+    } finally {
+      isDisposingRef.current = false;
+    }
+  }, [clearTimers, id]);
 
   const shouldRetryNativeVteProbe =
     ENABLE_NATIVE_VTE &&
@@ -1549,7 +1761,7 @@ export default function TerminalTTY({
     [clearNativeVteProbeRetryTimer]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     isVisibleInLayoutRef.current = isVisibleInLayout;
   }, [isVisibleInLayout]);
 
@@ -1903,16 +2115,16 @@ export default function TerminalTTY({
               }),
             });
             cliLog(`CLIENT:${id}`, 'viewport-ready-notified', { tmuxSession, cols, rows });
-            // Swarm panels attach after OpenCode is already running — viewport-ready
-            // is a reliable fallback when the legacy footer regex never appears in a chunk.
-            void notifyOpencodeReady(null, 'viewport-ready-fallback');
+            // Bootstrap waits for client-tui-footer (OpenCode MCP /status row), not
+            // viewport attach — posting opencode-ready here caused premature paste and
+            // ANSI garbage while OpenCode was still starting.
           } catch (error) {
             cliLog(`CLIENT:${id}`, 'viewport-ready-failed', { error: error?.message });
           }
         })();
       }, 200);
     },
-    [id, resolveSwarmTmuxSessionName, notifyOpencodeReady]
+    [id, resolveSwarmTmuxSessionName]
   );
 
   const skipRedundantInitialCommandSend = useCallback(
@@ -2051,8 +2263,45 @@ export default function TerminalTTY({
     [notifyViewportReady, scheduleInitialCommandAfterViewport]
   );
 
+  const maybeConnectAfterViewportFit = useCallback((fitWorked) => {
+      if (!fitWorked || !termRef.current || !containerRef.current) {
+        if (!hasConnectedOnceRef.current) {
+          connectPendingUntilFitRef.current = true;
+        }
+        return false;
+      }
+
+      const rect = containerRef.current.getBoundingClientRect();
+      if (
+        shouldDeferTerminalConnectUntilViewportFitted({
+          ready: true,
+          fitWorked,
+          containerRect: rect,
+          term: termRef.current,
+          hasConnectedOnce: hasConnectedOnceRef.current,
+        })
+      ) {
+        if (!hasConnectedOnceRef.current) {
+          connectPendingUntilFitRef.current = true;
+        }
+        return false;
+      }
+
+      connectPendingUntilFitRef.current = false;
+      if (!hasConnectedOnceRef.current || wsRef.current?.readyState !== WebSocket.OPEN) {
+        connectRef.current?.();
+      }
+      return true;
+    }, []);
+
   const fitAndResize = useCallback(
     (options = {}) => {
+      // Never fit/resize while the runtime is being disposed: the WebGL/Canvas
+      // addon's renderer slot may be half-cleared (A.4 guard).
+      if (isDisposingRef.current) {
+        logViewportDiagnostic('fit-skip');
+        return false;
+      }
       const clearAtlas = options.clearAtlas ?? isActivePanelRef.current;
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
@@ -2067,9 +2316,14 @@ export default function TerminalTTY({
         confirmViewportFit(termRef.current.cols, termRef.current.rows);
       }
 
+      if (connectPendingUntilFitRef.current) {
+        maybeConnectAfterViewportFit(fitWorked);
+      }
+
       logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
+      return fitWorked;
     },
-    [confirmViewportFit, logViewportDiagnostic]
+    [confirmViewportFit, logViewportDiagnostic, maybeConnectAfterViewportFit]
   );
 
   const scrollTerminalToBottom = useCallback((force = false) => {
@@ -2113,6 +2367,11 @@ export default function TerminalTTY({
         });
         if (fitWorked && termRef.current) {
           confirmViewportFit(termRef.current.cols, termRef.current.rows);
+          nudgeTerminalPtyResize({
+            term: termRef.current,
+            socket: wsRef.current,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
         }
       }
       refreshTerminalViewport(termRef.current);
@@ -2158,6 +2417,7 @@ export default function TerminalTTY({
       }
       webglAddonRef.current = null;
       pendingWebglRecoveryRef.current = true;
+      webglReleasedOnLayoutHideRef.current = true;
 
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
       return true;
@@ -2233,6 +2493,7 @@ export default function TerminalTTY({
         termRef.current.loadAddon(webglAddon);
         setWebglFallback(null);
         pendingWebglRecoveryRef.current = false;
+        webglReleasedOnLayoutHideRef.current = false;
 
         const colsBefore = Number(termRef.current.cols ?? 0);
         const rowsBefore = Number(termRef.current.rows ?? 0);
@@ -2356,9 +2617,33 @@ export default function TerminalTTY({
             clearAtlas: false,
             skipFitWhenUnchanged: true,
           });
+        } else if (
+          webglReleasedOnLayoutHideRef.current &&
+          shouldAttachWebglRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          })
+        ) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+          refreshTerminalViewport(termRef.current);
+          webglReleasedOnLayoutHideRef.current = false;
         } else {
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         }
+        return;
+      }
+
+      if (
+        shouldSkipRedundantLayoutSettleViewportSync({
+          reason,
+          sizeUnchanged,
+          pendingWebglRecovery: pendingWebglRecoveryRef.current,
+          hasGpuRenderer: Boolean(webglAddonRef.current || canvasAddonRef.current),
+        }) &&
+        !hiddenOutputCatchupPendingRef.current
+      ) {
+        needsViewportSyncOnShowRef.current = false;
+        logViewportDiagnostic(`${reason}-skipped-unchanged-dims`);
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         return;
       }
 
@@ -2409,14 +2694,66 @@ export default function TerminalTTY({
       ) {
         void tryReattachCanvasAddonRef.current?.();
       }
+
+      if (hiddenOutputCatchupPendingRef.current && termRef.current) {
+        const buffered = takeHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current);
+        hiddenOutputCatchupPendingRef.current = false;
+        if (buffered) {
+          const discardCatchup = shouldDiscardHiddenOutputCatchup({
+            bufferedBytes: buffered.length,
+            sessionReattached: sessionReattachedRef.current,
+            tuiSessionActive: tuiSessionActiveRef.current,
+            bufferText: buffered,
+          });
+          if (discardCatchup) {
+            nudgeTerminalPtyResize({
+              term: termRef.current,
+              socket: wsRef.current,
+              lastPtySizeRef: lastPtySizeRef.current,
+            });
+            stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+            refreshTerminalViewport(termRef.current);
+          } else {
+            for (const chunk of chunkTerminalOutputForCatchup(buffered)) {
+              termRef.current.write(chunk);
+            }
+            stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+            refreshTerminalViewport(termRef.current);
+            nudgeTerminalPtyResize({
+              term: termRef.current,
+              socket: wsRef.current,
+              lastPtySizeRef: lastPtySizeRef.current,
+            });
+          }
+        }
+      }
+
+      if (
+        fitWorked &&
+        visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT &&
+        canvasAddonRef.current &&
+        termRef.current
+      ) {
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
+      }
     },
-    [confirmViewportFit, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
+    [confirmViewportFit, id, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
   );
 
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
+
+    if (connectPendingUntilFitRef.current) {
+      const worked = fitAndResize({ clearAtlas: true });
+      maybeConnectAfterViewportFit(worked);
+      return;
+    }
 
     if (!isVisibleInLayoutRef.current) {
       needsViewportSyncOnShowRef.current = true;
@@ -2441,7 +2778,13 @@ export default function TerminalTTY({
       fitAndResize({ clearAtlas: false });
       scrollTerminalToBottom();
     });
-  }, [clearTimers, fitAndResize, scheduleInactiveViewportRepaint, scrollTerminalToBottom]);
+  }, [
+    clearTimers,
+    fitAndResize,
+    maybeConnectAfterViewportFit,
+    scheduleInactiveViewportRepaint,
+    scrollTerminalToBottom,
+  ]);
 
   const scheduleReactivateTerminalViewport = useCallback((options = {}) => {
     if (reactivateCoalesceTimerRef.current) {
@@ -3092,6 +3435,7 @@ export default function TerminalTTY({
     if (typeof ResizeObserver !== 'undefined' && observedElement) {
       nativeResizeObserverRef.current?.disconnect();
       nativeResizeObserverRef.current = new ResizeObserver(() => {
+        if (isDisposingRef.current) return;
         scheduleNativeResize();
       });
       nativeResizeObserverRef.current.observe(observedElement);
@@ -3127,6 +3471,38 @@ export default function TerminalTTY({
       window.removeEventListener('devhub:terminal-session-closing', handleSessionClosing);
     };
   }, [id, tearDownClientSession]);
+
+  useEffect(() => {
+    surfaceHostRef.current = surfaceHost;
+  }, [surfaceHost]);
+
+  useEffect(() => {
+    const bridge = takeTerminalPanelBridge(id);
+    if (!bridge) return;
+    if (bridge.buffer) {
+      const crossHostRemount =
+        bridge.host && surfaceHost && bridge.host !== surfaceHost;
+      if (
+        crossHostRemount ||
+        shouldDiscardHiddenOutputCatchup({ bufferedBytes: bridge.buffer.length })
+      ) {
+        hiddenOutputBufferRef.current.value = '';
+        hiddenOutputCatchupPendingRef.current = false;
+      } else {
+        hiddenOutputBufferRef.current.value = bridge.buffer;
+        hiddenOutputCatchupPendingRef.current = bridge.catchupPending || true;
+      }
+    }
+    if (bridge.outputPending) {
+      outputPendingRef.current.value = bridge.outputPending;
+    }
+    if (bridge.lastPtySize?.cols > 0 && bridge.lastPtySize?.rows > 0) {
+      lastPtySizeRef.current = {
+        cols: bridge.lastPtySize.cols,
+        rows: bridge.lastPtySize.rows,
+      };
+    }
+  }, [id, surfaceHost]);
 
   useEffect(() => {
     if (!shouldUseNativeRenderer) return undefined;
@@ -3304,17 +3680,29 @@ export default function TerminalTTY({
             webglAttached: Boolean(webglAddonRef.current),
           });
         }
-        const filtered = filterTerminalOutputForSession(null, chunk);
+        const filtered = filterTerminalOutputForSession(null, chunk, outputPendingRef.current);
+        if (
+          shouldSkipTerminalOutputWhileLayoutHidden({
+            isVisibleInLayout: isVisibleInLayoutRef.current,
+            webglAttached: Boolean(webglAddonRef.current),
+            canvasAttached: Boolean(canvasAddonRef.current),
+            operationalRendererMode: operationalRendererModeRef.current,
+          })
+        ) {
+          if (typeof filtered === 'string' && filtered.length > 0) {
+            appendHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current, filtered);
+            hiddenOutputCatchupPendingRef.current = true;
+          }
+          return;
+        }
         if (typeof filtered !== 'string' || filtered.length === 0) return;
         termRef.current?.write(filtered);
         handleTuiReadyFromOutput(filtered);
         scrollIfActivePanel();
-        if (!isActivePanelRef.current || !isVisibleInLayoutRef.current) {
-          scheduleInactiveViewportRepaint();
-        }
       };
 
       socket.onmessage = (event) => {
+        if (isDisposingRef.current) return;
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
             writeTerminalOutput(event.data);
@@ -3330,8 +3718,19 @@ export default function TerminalTTY({
               sessionReattachedRef.current = true;
               hasSentInitialCommand.current = true;
               markPanelInitialCommandDispatched(id, initialCommand);
+              hiddenOutputCatchupPendingRef.current = false;
+              if (hiddenOutputBufferRef.current) {
+                hiddenOutputBufferRef.current.value = '';
+              }
               if (payload.mode === 'tui') {
                 tuiSessionActiveRef.current = true;
+              } else {
+                tuiSessionActiveRef.current = false;
+                isGrokSessionRef.current = false;
+                grokTuiReadyRef.current = false;
+                tuiSessionFooterConfirmedRef.current = false;
+                setNativeWheelPassthrough(false);
+                disableTerminalFocusReporting(termRef.current, { disableMouse: true });
               }
             }
             return;
@@ -3346,6 +3745,12 @@ export default function TerminalTTY({
             processExitedRef.current = true;
             cliLog(`CLIENT:${id}`, 'received exit from server');
             setConnectionState('terminated');
+            tuiSessionActiveRef.current = false;
+            isGrokSessionRef.current = false;
+            grokTuiReadyRef.current = false;
+            tuiSessionFooterConfirmedRef.current = false;
+            setNativeWheelPassthrough(false);
+            disableTerminalFocusReporting(termRef.current, { disableMouse: true });
             termRef.current?.writeln(
               '\r\n\x1b[33m[Sesión finalizada. Reconectá para iniciar una nueva shell.]\x1b[0m'
             );
@@ -3434,7 +3839,7 @@ export default function TerminalTTY({
       } catch {
         /* ignore */
       }
-      if (termRef.current) {
+      if (termRef.current && !isDisposingRef.current) {
         termRef.current.options.fontSize = next;
         try {
           fitRef.current?.fit();
@@ -3490,6 +3895,47 @@ export default function TerminalTTY({
   }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
 
   useLayoutEffect(() => {
+    if (
+      connectionState !== 'error' &&
+      connectionState !== 'disconnected' &&
+      connectionState !== 'terminated'
+    ) {
+      return;
+    }
+    tuiSessionActiveRef.current = false;
+    isGrokSessionRef.current = false;
+    grokTuiReadyRef.current = false;
+    tuiSessionFooterConfirmedRef.current = false;
+    setNativeWheelPassthrough(false);
+    disableTerminalFocusReporting(termRef.current, { disableMouse: true });
+  }, [connectionState]);
+
+  useLayoutEffect(() => {
+    if (!isVisibleInLayout || !termRef.current) return;
+    if (!hasConnectedOnceRef.current && connectPendingUntilFitRef.current) {
+      const fitWorked = fitTerminalViewport({
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+        term: termRef.current,
+        socket: wsRef.current,
+        clearAtlas: false,
+        lastPtySizeRef: lastPtySizeRef.current,
+      });
+      maybeConnectAfterViewportFit(fitWorked);
+      return;
+    }
+    if (!hasConnectedOnceRef.current) return;
+    connectPendingUntilFitRef.current = false;
+    const raf = requestAnimationFrame(() => {
+      if (!isVisibleInLayoutRef.current || !termRef.current) return;
+      syncTerminalViewportOnWorkspaceShow('projection-host-ready', {
+        clearAtlas: webglReleasedOnLayoutHideRef.current,
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isVisibleInLayout, maybeConnectAfterViewportFit, syncTerminalViewportOnWorkspaceShow]);
+
+  useLayoutEffect(() => {
     const prevVisible = prevVisibleInLayoutRef.current;
 
     if (workspaceShowSyncTimerRef.current) {
@@ -3526,10 +3972,20 @@ export default function TerminalTTY({
     }
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
-      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', { clearAtlas: false });
-      if (visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) {
+      const gpuShowRecover =
+        pendingWebglRecoveryRef.current || webglReleasedOnLayoutHideRef.current;
+      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
+        clearAtlas: gpuShowRecover,
+      });
+      if (
+        shouldAttachWebglRenderer({ operationalRendererMode }) ||
+        visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
+      ) {
         requestAnimationFrame(() => {
-          syncTerminalViewportOnWorkspaceShow('workspace-show-raf', { clearAtlas: false });
+          if (!isVisibleInLayoutRef.current) return;
+          syncTerminalViewportOnWorkspaceShow('workspace-show-raf', {
+            clearAtlas: gpuShowRecover,
+          });
         });
       }
     } else if (!isVisibleInLayout) {
@@ -3827,7 +4283,20 @@ export default function TerminalTTY({
         }
 
         terminal.onData((data) => {
-          const filtered = filterTerminalInputForSession(null, data);
+          const sessionContext = {
+            mode: tuiSessionActiveRef.current ? 'tui' : 'shell',
+            tuiReady: isGrokSessionRef.current
+              ? grokTuiReadyRef.current === true
+              : tuiSessionFooterConfirmedRef.current === true,
+            tuiAdapter: isGrokSessionRef.current
+              ? 'grok'
+              : tuiSessionActiveRef.current
+                ? 'opencode'
+                : 'shell',
+            panelHidden: isVisibleInLayoutRef.current !== true,
+            panelInactive: isActivePanelRef.current !== true,
+          };
+          const filtered = filterTerminalInputForSession(sessionContext, data);
           if (filtered === null) return;
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             if (transportRef.current === 'raw') {
@@ -3839,6 +4308,7 @@ export default function TerminalTTY({
         });
 
         resizeObserverRef.current = new ResizeObserver(() => {
+          if (isDisposingRef.current) return;
           if (!isVisibleInLayoutRef.current) {
             needsViewportSyncOnShowRef.current = true;
             return;
@@ -3855,13 +4325,38 @@ export default function TerminalTTY({
             scheduleInactiveViewportRepaint();
             return;
           }
-          sendResizeRef.current?.();
+          const scheduleResize = () => sendResizeRef.current?.();
+          if (tuiSessionActiveRef.current) {
+            if (tuiResizeDebounceTimerRef.current) {
+              clearTimeout(tuiResizeDebounceTimerRef.current);
+            }
+            tuiResizeDebounceTimerRef.current = setTimeout(() => {
+              tuiResizeDebounceTimerRef.current = null;
+              scheduleResize();
+            }, 160);
+            return;
+          }
+          scheduleResize();
         });
         resizeObserverRef.current.observe(containerRef.current);
 
         termRef.current = terminal;
         fitRef.current = fitAddon;
         searchRef.current = searchAddon;
+
+        // A.0 lifecycle telemetry: a fresh xterm runtime came online.
+        cliLog(
+          `LIFECYCLE:${id}`,
+          'boot',
+          buildTerminalLifecycleEvent({
+            event: 'boot',
+            panelId: id,
+            renderer: requestedRendererModeRef.current,
+            isVisible: isVisibleInLayoutRef.current,
+            cols: terminal?.cols,
+            rows: terminal?.rows,
+          })
+        );
 
         setInitError(null);
         setIsInitializing(false);
@@ -3880,8 +4375,9 @@ export default function TerminalTTY({
 
             logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
 
+            let fitWorked = false;
             if (ready) {
-              fitTerminalViewport({
+              fitWorked = fitTerminalViewport({
                 container: containerRef.current,
                 fitAddon,
                 term: termRef.current,
@@ -3892,12 +4388,15 @@ export default function TerminalTTY({
               stabilizeTerminalRenderer(termRef.current);
             } else {
               logViewportDiagnostic('terminal-open-timeout');
+              connectPendingUntilFitRef.current = true;
             }
 
-            connectRef.current?.();
-
             if (ready) {
-              sendResizeRef.current?.();
+              if (!maybeConnectAfterViewportFit(fitWorked)) {
+                connectPendingUntilFitRef.current = true;
+              } else {
+                sendResizeRef.current?.();
+              }
             }
           })
           .catch((error) => {
@@ -3954,6 +4453,8 @@ export default function TerminalTTY({
     shouldBootXterm,
     waitForVisibleDimensions,
     xtermBootNonce,
+    id,
+    maybeConnectAfterViewportFit,
   ]);
 
   useEffect(() => {
@@ -3975,6 +4476,21 @@ export default function TerminalTTY({
 
     window.addEventListener('devhub:terminal-search', handleSearch);
     return () => window.removeEventListener('devhub:terminal-search', handleSearch);
+  }, [id]);
+
+  useEffect(() => {
+    const handleZedInput = (event) => {
+      const detail = event?.detail;
+      const target = detail?.terminalId || detail?.session_id || detail?.panelId;
+      if (!detail || target !== id) return;
+      sendTerminalPasteInput({
+        socket: wsRef.current,
+        transport: transportRef.current,
+        text: detail.input,
+      });
+    };
+    window.addEventListener('devhub:zed-terminal-input', handleZedInput);
+    return () => window.removeEventListener('devhub:zed-terminal-input', handleZedInput);
   }, [id]);
 
   useEffect(() => {
@@ -4152,26 +4668,55 @@ export default function TerminalTTY({
 
       layoutSettleBurstCleanupRef.current?.();
 
-      if (
-        String(reason).includes('workspace-switch') &&
-        visibleTerminalPanelCountRef.current <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT &&
-        shouldAttachWebglRenderer({
-          operationalRendererMode: operationalRendererModeRef.current,
-        })
-      ) {
+      if (String(reason).includes('workspace-switch')) {
         if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
-          void tryReattachWebglAddonRef.current?.({
-            clearAtlas: false,
-            skipFitWhenUnchanged: true,
+          if (isVisibleInLayoutRef.current) {
+            void tryReattachWebglAddonRef.current?.({
+              clearAtlas: false,
+              skipFitWhenUnchanged: true,
+            });
+          } else {
+            needsViewportSyncOnShowRef.current = true;
+          }
+        } else if (
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) &&
+          !canvasAddonRef.current
+        ) {
+          if (isVisibleInLayoutRef.current) {
+            void tryReattachCanvasAddonRef.current?.();
+          } else {
+            needsViewportSyncOnShowRef.current = true;
+          }
+        } else if (isVisibleInLayoutRef.current) {
+          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+            clearAtlas: webglReleasedOnLayoutHideRef.current,
           });
+        } else {
+          needsViewportSyncOnShowRef.current = true;
+        }
+        return;
+      }
+
+      if (String(reason).includes('pizarra-mode-exit') || String(reason).includes('pizarra-mode-enter')) {
+        if (isVisibleInLayoutRef.current) {
+          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+            clearAtlas: webglReleasedOnLayoutHideRef.current,
+          });
+          if (tuiSessionActiveRef.current && termRef.current) {
+            scrollTerminalToBottom(true);
+            refreshTerminalViewport(termRef.current);
+          }
+        } else {
+          needsViewportSyncOnShowRef.current = true;
         }
         return;
       }
 
       const extraDelaysMs = String(reason).includes('workspace-removed')
         ? []
-        : String(reason).includes('workspace-switch') &&
-            visibleTerminalPanelCountRef.current <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
+        : String(reason).includes('workspace-switch')
           ? []
           : String(reason).includes('swarm-launch')
             ? [180, 340, 500, 1000]
@@ -4201,7 +4746,7 @@ export default function TerminalTTY({
       layoutSettleBurstCleanupRef.current = null;
       window.removeEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
     };
-  }, [id, syncTerminalViewportOnWorkspaceShow]);
+  }, [id, scrollTerminalToBottom, syncTerminalViewportOnWorkspaceShow]);
 
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
@@ -4263,6 +4808,25 @@ export default function TerminalTTY({
         tuiSessionActive: tuiSessionActiveRef.current,
       });
       term?.focus?.();
+
+      const tuiReady = grokSession
+        ? grokTuiReadyRef.current === true
+        : tuiSessionFooterConfirmedRef.current === true;
+      const tuiActive = tuiSessionActiveRef.current || grokSession;
+      if (
+        inTranscript &&
+        cell &&
+        tuiActive &&
+        tuiReady &&
+        isVisibleInLayoutRef.current === true
+      ) {
+        const payload = buildTerminalMousePressSequence(cell.col, cell.row);
+        sendTerminalPasteInput({
+          socket: wsRef.current,
+          transport: transportRef.current,
+          text: payload,
+        });
+      }
     },
     [
       handleNativeLeaseCommandError,
@@ -4295,6 +4859,7 @@ export default function TerminalTTY({
 
   useEffect(() => {
     const handler = (e) => {
+      if (isDisposingRef.current) return;
       const rootElement = terminalRootRef.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
@@ -4347,6 +4912,18 @@ export default function TerminalTTY({
       }
 
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
+      const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
+
+      // Plain shells: scroll xterm scrollback locally — Page/arrow/SGR leaks as visible garbage.
+      if (!shouldInjectTerminalWheelIntoPty(isTuiSession)) {
+        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+        if (!direction) return;
+        if (scrollTerminalViewport(term, direction, event.deltaY)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
 
       // Live grok/OpenCode: xterm forwards wheel as native SGR at the pointer row.
       if (
@@ -4359,7 +4936,6 @@ export default function TerminalTTY({
         return;
       }
 
-      const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
       const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession });
 
       const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
@@ -4393,16 +4969,11 @@ export default function TerminalTTY({
       const wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
       const wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
 
-      let payload = null;
-      if (isTuiSession) {
-        const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
-        payload =
-          scrollPrefer === 'sgr'
-            ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
-            : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
-      } else {
-        payload = buildTerminalWheelPageSequence(direction, steps);
-      }
+      const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
+      const payload =
+        scrollPrefer === 'sgr'
+          ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
+          : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
 
       const sent = sendTerminalPasteInput({
         socket: wsRef.current,

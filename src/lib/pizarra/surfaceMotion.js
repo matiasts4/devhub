@@ -48,6 +48,54 @@ export const SURFACE_BORDER = {
   selected: '1.5px solid rgba(88, 166, 255, 0.95)',
 };
 
+/** Pizarra surface container chrome — compact but readable headers. */
+export const PIZARRA_SURFACE_FRAME_INSET = 6;
+export const PIZARRA_SURFACE_HEADER_HEIGHT = 26;
+export const PIZARRA_SURFACE_BORDER_RADIUS = 12;
+
+export const PIZARRA_SURFACE_HEADER_STYLE = {
+  background: 'rgba(7, 17, 28, 0.97)',
+  borderBottom: '1px solid rgba(88, 166, 255, 0.14)',
+  color: '#d6e2ff',
+  fontFamily: "'JetBrains Mono', monospace",
+  fontSize: 10,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+};
+
+export const PIZARRA_SURFACE_FRAME_BG = 'rgba(6, 12, 22, 0.94)';
+
+/**
+ * Minimal frame visuals for chromeless pizarra surfaces.
+ * Rest state is invisible; selection/drag show a thin accent outline only.
+ * @deprecated Prefer resolveFrameVisual + PIZARRA_SURFACE_* tokens for containers.
+ */
+export function resolveChromelessFrameVisual({
+  selected = false,
+  hovered = false,
+  dragging = false,
+} = {}) {
+  if (dragging || selected) {
+    return {
+      border: dragging ? SURFACE_BORDER.selected : '1px solid rgba(88, 166, 255, 0.55)',
+      boxShadow: 'none',
+      transform: 'none',
+    };
+  }
+  if (hovered) {
+    return {
+      border: '1px solid rgba(88, 166, 255, 0.35)',
+      boxShadow: 'none',
+      transform: 'none',
+    };
+  }
+  return {
+    border: '1px solid transparent',
+    boxShadow: 'none',
+    transform: 'none',
+  };
+}
+
 /**
  * Resize handle sizing. Hit areas are sized generously (and inverse-scaled
  * with zoom) so resize is easy to target via cursor change even without

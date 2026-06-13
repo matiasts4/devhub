@@ -252,6 +252,44 @@ app.get('/sessions/:id/output', (req, res) => {
   });
 });
 
+// HTTP input for Zed assistant (symmetric to /output — Phase 1)
+app.put('/sessions/:id/input', (req, res) => {
+  const sessionId = req.params.id;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const data = req.body?.data;
+  if (data === undefined || data === null || typeof data !== 'string') {
+    return res.status(400).json({ error: 'data field (string) is required' });
+  }
+
+  const filteredInput = filterTerminalInputForSession(session, data);
+  if (filteredInput === null) {
+    return res.status(400).json({ error: 'input rejected by session filter' });
+  }
+
+  updateSessionModeFromInput(session, filteredInput);
+
+  const detectedSessionId = detectOpenCodeSessionId(filteredInput);
+  if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+    session.opencodeSessionId = detectedSessionId;
+    broadcastSessionPayload(session, {
+      type: 'opencode-session-detected',
+      sessionId: detectedSessionId,
+    });
+  }
+
+  try {
+    session.ptyProcess.write(filteredInput);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'write failed' });
+  }
+
+  return res.json({ session_id: sessionId, sent: true, source: 'sidecar' });
+});
+
 app.delete('/sessions/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);

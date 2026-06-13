@@ -948,111 +948,222 @@ export default function Ajustes() {
     </div>
   );
 
-  const renderThemeTab = () => {
-    const activeThemeLabel =
-      THEME_OPTIONS.find((option) => option.id === activeTheme)?.label ?? activeTheme;
-    const activeMorphologyLabel =
-      MORPHOLOGY_OPTIONS.find((option) => option.id === activeMorphology)?.label ??
-      activeMorphology;
-    const activeAccentLabel =
-      ACCENT_OPTIONS.find((option) => option.id === activeAccent)?.label ?? activeAccent;
-    return (
-      <div className="space-y-6">
-        {/* Active theme banner — DEPRECATED in favor of /settings/appearance */}
-        <ChromeSurface asChild surface="panel" emphasized>
+  const renderThemeTab = () => (
+    <div className="space-y-6">
+      <ChromeSurface asChild surface="panel" emphasized>
+        <div
+          data-testid="ajustes-appearance-shell"
+          className="overflow-hidden"
+          style={getSettingsShellStyle({ emphasized: true })}
+        >
           <div
-            data-testid="ajustes-appearance-shell"
-            className="overflow-hidden"
-            style={getSettingsShellStyle({ emphasized: true })}
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
           >
-            <div
-              data-testid="ajustes-appearance-deprecation-banner"
-              className="flex items-center justify-between gap-3 px-4 py-3"
-              style={{
-                borderBottom: '1px solid var(--border-subtle)',
-                background:
-                  'color-mix(in srgb, var(--warning, var(--accent-primary)) 12%, var(--chrome-panel-fill))',
-              }}
-            >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-none flex items-center justify-center"
+                style={{
+                  ...pillStyle({ tone: 'accent' }),
+                  borderRadius: 0,
+                  background: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 14%, var(--chrome-control-fill))`,
+                  borderColor: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 28%, var(--chrome-border-color))`,
+                }}
+              >
+                <Palette className="w-4 h-4" style={{ color: activeThemeData?.accent }} />
+              </div>
               <div>
                 <h3
                   className="font-mono text-sm font-semibold"
                   style={{ color: 'var(--text-primary)' }}
                 >
-                  Appearance moved
+                  Apariencia
                 </h3>
-                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Edit theme, morphology, and accent on the App Router surface (
-                  <strong style={{ color: 'var(--text-primary)' }}>Settings → Appearance</strong>).
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Tema activo:{' '}
+                  <span className="font-medium" style={{ color: activeThemeData?.accent }}>
+                    {activeThemeData?.label}
+                  </span>
                 </p>
               </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWizardOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-none text-xs"
+              style={{
+                ...getSettingsControlStyle(),
+                color: 'var(--text-secondary)',
+                borderRadius: 0,
+              }}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Onboarding
+            </button>
+          </div>
+
+          <div
+            className="px-6 py-3 flex items-center gap-2"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            {[
+              { key: 'all', label: 'Todos', icon: LayoutGrid },
+              { key: 'dark', label: 'Oscuros', icon: Moon },
+              { key: 'light', label: 'Claro', icon: Sun },
+            ].map(({ key, label, icon: Icon }) => (
               <button
-                type="button"
-                onClick={() => navigate('/settings/appearance')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
+                key={key}
+                onClick={() => setThemeFilter(key)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none text-xs font-medium transition-all"
+                style={
+                  themeFilter === key
+                    ? {
+                        ...pillStyle({ tone: 'accent' }),
+                        color: 'var(--text-primary)',
+                        borderRadius: 0,
+                      }
+                    : {
+                        ...pillStyle(),
+                        color: 'var(--text-muted)',
+                        borderRadius: 0,
+                      }
+                }
+              >
+                <Icon className="w-3 h-3" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredThemes.map((option) => (
+                <ThemeOptionCard
+                  key={option.id}
+                  option={option}
+                  active={activeTheme === option.id}
+                  onClick={handleThemeChange}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h4
+                  className="font-mono text-sm font-semibold uppercase tracking-[0.18em]"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Color de tema
+                </h4>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Elegí una señal brutalist independiente del tema base.
+                </p>
+              </div>
+              <span
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em]"
                 style={{
                   ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
                   color: 'var(--text-primary)',
                   borderRadius: 0,
                 }}
               >
-                Open new settings
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+                <Palette className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
+                {ACCENT_OPTIONS.find((option) => option.id === activeAccent)?.label ?? 'Theme sync'}
+              </span>
             </div>
 
-            {/* Read-only summary of the currently active values */}
-            <div className="p-6">
-              <p
-                className="font-mono text-xs uppercase tracking-[0.18em] mb-3"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                Active values (read-only)
-              </p>
-              <dl
-                className="grid grid-cols-1 sm:grid-cols-3 gap-3"
-                data-testid="ajustes-appearance-summary"
-              >
-                <div className="space-y-1">
-                  <dt
-                    className="text-[10px] uppercase tracking-wider"
-                    style={{ color: 'var(--text-muted)' }}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {ACCENT_OPTIONS.map((option) => {
+                const isActive = activeAccent === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    data-testid={`ajustes-accent-option-${option.id}`}
+                    type="button"
+                    onClick={() => handleAccentChange(option.id)}
+                    className="border p-4 text-left transition-all"
+                    style={getSettingsAccentOptionStyle(isActive, option.primary)}
                   >
-                    Theme
-                  </dt>
-                  <dd className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {activeThemeLabel}
-                  </dd>
-                </div>
-                <div className="space-y-1">
-                  <dt
-                    className="text-[10px] uppercase tracking-wider"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Morphology
-                  </dt>
-                  <dd className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {activeMorphologyLabel}
-                  </dd>
-                </div>
-                <div className="space-y-1">
-                  <dt
-                    className="text-[10px] uppercase tracking-wider"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    Accent
-                  </dt>
-                  <dd className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {activeAccentLabel}
-                  </dd>
-                </div>
-              </dl>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p
+                          className="text-sm font-semibold uppercase tracking-[0.18em]"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {option.label}
+                        </p>
+                        <p
+                          className="mt-1 text-[11px] leading-relaxed"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {option.description}
+                        </p>
+                      </div>
+                      {isActive ? (
+                        <span
+                          className="h-5 min-w-5 px-1 rounded-full inline-flex items-center justify-center text-xs font-medium"
+                          style={{ background: 'var(--accent-primary)', color: 'white' }}
+                        >
+                          <Check className="w-3 h-3" />
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2">
+                      {[0, 1, 2].map((index) => (
+                        <span
+                          key={`${option.id}-accent-preview-${index}`}
+                          className="h-8 flex-1 border"
+                          style={{
+                            borderRadius: 0,
+                            borderColor:
+                              'color-mix(in srgb, var(--settings-accent-preview) 42%, var(--chrome-border-color))',
+                            background:
+                              index === 1
+                                ? 'color-mix(in srgb, var(--settings-accent-preview) 18%, var(--chrome-panel-fill-emphasis))'
+                                : 'color-mix(in srgb, var(--settings-accent-preview) 10%, var(--chrome-panel-fill))',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        </ChromeSurface>
-      </div>
-    );
-  };
+
+          <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="mb-4">
+              <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Morphology
+              </h4>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                Separa el lenguaje de chrome del color del tema activo.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {MORPHOLOGY_OPTIONS.map((option) => (
+                <ChromeSurface
+                  key={option.id}
+                  asChild
+                  surface="panel"
+                  emphasized={activeMorphology === option.id}
+                >
+                  <MorphologyOptionCard
+                    option={option}
+                    active={activeMorphology === option.id}
+                    onClick={handleMorphologyChange}
+                  />
+                </ChromeSurface>
+              ))}
+            </div>
+          </div>
+        </div>
+      </ChromeSurface>
+    </div>
+  );
 
   const renderLlmTab = () => <LLMProviderSettings embedded />;
 

@@ -20,6 +20,7 @@ import Tareas from './views/Tareas';
 import CodeEditor from './views/CodeEditor';
 import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
+import Planificacion from './views/Planificacion';
 import Historial from './views/Historial';
 import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
@@ -65,6 +66,7 @@ const PAGE_LABELS = {
   swarm: 'swarm control',
   telegram: 'telegram monitor',
   planning: 'planning',
+  planificacion: 'planificación',
 };
 
 function WorkspaceLayout() {
@@ -395,6 +397,7 @@ function App() {
             <Route path="/project/:projectId" element={<WorkspaceLayout />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<ProjectDashboard />} />
+              <Route path="planificacion" element={<Planificacion />} />
               <Route path="tareas" element={<Tareas />} />
               <Route path="editor" element={<CodeEditor />} />
               <Route path="scaffolding" element={<Scaffolding />} />

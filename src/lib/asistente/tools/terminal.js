@@ -13,6 +13,10 @@ import { zedLog } from '../utils/zed-logger';
 import { nameFromId, resolveTerminalByName } from '../zedTerminalResolver';
 import { acquire as acquireDisplayName, DISPLAY_NAME_POOL } from '@/lib/terminal/displayNamePool';
 import { formatZedToolError } from '../zedChat/errors';
+import {
+  mergeWorkspaceTerminalProcesses,
+  workspaceTerminalsFromContext,
+} from '../workspaceTerminalRegistry';
 
 function guardZedTerminalCommand(command, confirm, context, sourceTool) {
   const decision = evaluateZedCommandExecution({ command, confirm, context });
@@ -120,6 +124,18 @@ export const terminalTool = {
     let displayName = null;
     if (typeof requestedName === 'string' && requestedName.trim()) {
       const cleanName = requestedName.trim();
+      const clientTerminals = workspaceTerminalsFromContext(context);
+      const merged = mergeWorkspaceTerminalProcesses(clientTerminals, []);
+      const existing = resolveTerminalByName(cleanName, merged);
+      if (existing.ok && normalizedProgram && AGENT_PROGRAMS.has(normalizedProgram)) {
+        return {
+          error: 'terminal_already_exists',
+          message: `Ya existe el panel ${existing.displayName} (${existing.terminalId}). Usá execute_in_terminal con program="${normalizedProgram}" y name="${existing.displayName}" — no abras otro panel.`,
+          terminalId: existing.terminalId,
+          displayName: existing.displayName,
+          hint: 'execute_in_terminal',
+        };
+      }
       // Pool helper: picks the name unless already in use; falls back to
       // "Panel-N" when the requested name is not in the canonical pool.
       const reserved = acquireDisplayName([...DISPLAY_NAME_POOL, cleanName]);
@@ -166,23 +182,30 @@ export const listTerminalsTool = {
   name: 'list_terminals',
   description: 'List active terminal sessions visible in the workspace. Sources: sidecar PTYs (main Tauri-visible panels for shells and agent TUIs like OpenCode/Hermes), ttyServer tracked sessions, and tmux discovery fallback. Use the terminalId values with review_terminal_output to read their current contents/scrollback, or execute_in_terminal to send input to controllable ones.',
   parameters: {},
-  async execute(/* params, context */) {
+  async execute(_params, context = {}) {
     zedLog.info('TOOL', 'list_terminals', {});
     const baseUrl = getBaseUrl();
+    const clientTerminals = workspaceTerminalsFromContext(context);
     let processes = [];
     try {
       const response = await fetch(`${baseUrl}/api/terminal/processes`);
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
-        processes = data.processes || [];
+        processes = mergeWorkspaceTerminalProcesses(clientTerminals, data.processes || []);
+      } else {
+        processes = mergeWorkspaceTerminalProcesses(clientTerminals, []);
       }
     } catch (err) {
-      // fall through to tmux discovery
+      processes = mergeWorkspaceTerminalProcesses(clientTerminals, []);
     }
 
     // Enrich with tmux sessions (visible in workspace, often host the orchestrator/OpenCode/etc.)
     // This makes list_terminals truthful even for terminals not created via the Zed open_terminal path
     // or when a TUI (OpenCode) takes over the PTY and the internal tracker drops it.
+    // Skip under Jest so unit tests expecting empty processes are not polluted by live tmux.
+    if (process.env.JEST_WORKER_ID !== undefined) {
+      return { processes: augmentDisplayNames(processes) };
+    }
     try {
       const { execSync } = await import('child_process');
       const tmuxOut = execSync(
@@ -251,7 +274,23 @@ export { _resetOpenTerminalCounterForTests, _nextTerminalId };
 // error before any HTTP call.
 
 
-async function resolveSessionIdFromNameOrId(toolName, params) {
+async function fetchTerminalProcessList(context) {
+  const baseUrl = getBaseUrl();
+  const clientTerminals = workspaceTerminalsFromContext(context);
+  try {
+    const res = await fetch(`${baseUrl}/api/terminal/processes`, { cache: 'no-store' });
+    if (!res.ok) {
+      return mergeWorkspaceTerminalProcesses(clientTerminals, []);
+    }
+    const data = await res.json().catch(() => ({}));
+    return mergeWorkspaceTerminalProcesses(clientTerminals, data?.processes || []);
+  } catch {
+    return mergeWorkspaceTerminalProcesses(clientTerminals, []);
+  }
+}
+
+async function resolveSessionIdFromNameOrId(toolName, params, context = {}, options = {}) {
+  const { allowImplicitSingle = false } = options;
   const name = typeof params?.name === 'string' && params.name.trim()
     ? params.name.trim()
     : null;
@@ -268,6 +307,41 @@ async function resolveSessionIdFromNameOrId(toolName, params) {
     };
   }
   if (!name && !sessionId) {
+    if (allowImplicitSingle) {
+      try {
+        const list = await fetchTerminalProcessList(context);
+        const eligible = list.filter((t) => typeof t?.terminalId === 'string');
+        if (eligible.length === 1) {
+          const t = eligible[0];
+          return {
+            sessionId: t.terminalId,
+            displayName: t.displayName || null,
+            resolved: 'implicit_single',
+          };
+        }
+        if (eligible.length > 1) {
+          const candidates = eligible.map((t) => ({
+            terminalId: t.terminalId,
+            displayName: t.displayName || t.terminalId,
+          }));
+          return {
+            error: {
+              code: 'ambiguous',
+              candidates,
+              ...formatZedToolError(toolName, { code: 'ambiguous', candidates }),
+            },
+          };
+        }
+        return {
+          error: {
+            code: 'not_found',
+            ...formatZedToolError(toolName, { code: 'not_found', activeNames: [] }),
+          },
+        };
+      } catch (err) {
+        return { error: { code: 'not_found', message: err.message } };
+      }
+    }
     return {
       error: {
         code: 'missing required parameter: session_id',
@@ -278,21 +352,23 @@ async function resolveSessionIdFromNameOrId(toolName, params) {
   if (sessionId) {
     return { sessionId, displayName: null, resolved: 'session_id' };
   }
-  // name-only: resolve via /api/terminal/processes.
-  const baseUrl = getBaseUrl();
+  // name-only: resolve via merged client registry + /api/terminal/processes.
   try {
-    const res = await fetch(`${baseUrl}/api/terminal/processes`, { cache: 'no-store' });
-    if (!res.ok) {
-      return {
-        error: { code: 'not_found', ...formatZedToolError(toolName, { code: 'not_found' }) },
-      };
-    }
-    const data = await res.json().catch(() => ({}));
-    const list = Array.isArray(data?.processes) ? data.processes : [];
+    const list = await fetchTerminalProcessList(context);
+    const activeNames = list.map((t) => t.displayName).filter(Boolean);
     const lookup = resolveTerminalByName(name, list);
     if (!lookup.ok) {
       return {
-        error: { code: lookup.code, ...formatZedToolError(toolName, lookup) },
+        error: {
+          code: lookup.code,
+          activeNames,
+          candidates: lookup.candidates,
+          ...formatZedToolError(toolName, {
+            code: lookup.code,
+            activeNames,
+            candidates: lookup.candidates,
+          }),
+        },
       };
     }
     return { sessionId: lookup.terminalId, displayName: lookup.displayName, resolved: 'name' };
@@ -312,8 +388,8 @@ export const reviewTerminalTool = {
     },
     session_id: { type: 'string', required: true },
   },
-  async execute(params /* , context */) {
-    const lookup = await resolveSessionIdFromNameOrId('review_terminal_output', params);
+  async execute(params, context = {}) {
+    const lookup = await resolveSessionIdFromNameOrId('review_terminal_output', params, context);
     if (lookup.error) {
       return { error: lookup.error.code, message: lookup.error.message };
     }
@@ -339,14 +415,24 @@ export const reviewTerminalTool = {
 export const executeInTerminalTool = {
   name: 'execute_in_terminal',
   description:
-    'Send input (keystrokes) to a running terminal session. Pass `name` (display name) OR `session_id` (terminalId) — never both. session_id is the terminalId from list_terminals (e.g. p2), not a term-* orphan id. Destructive commands are blocked; uncommon commands need confirm: true after user approval.',
+    'Send input (keystrokes) to a running terminal session. Pass `name` (display name) OR `session_id` (terminalId) — never both. Use `program=opencode` (or codex/hermes) to launch an agent TUI inside an existing panel (e.g. user says "abre opencode en Chase"). Destructive commands are blocked; uncommon commands need confirm: true after user approval.',
   parameters: {
     name: {
       type: 'string',
-      description: 'Display name (e.g. "Chase"). Mutually exclusive with session_id.',
+      description: 'Display name (e.g. "Chase", "César"). Mutually exclusive with session_id. Tolerates dictation typos.',
     },
-    session_id: { type: 'string', required: true },
-    input: { type: 'string', required: true },
+    session_id: {
+      type: 'string',
+      description: 'Panel id from list_terminals (e.g. p2). Mutually exclusive with name.',
+    },
+    input: {
+      type: 'string',
+      description: 'Keystrokes/command to send. Omit when using program= to launch agent TUI.',
+    },
+    program: {
+      type: 'string',
+      description: 'Launch opencode/codex/hermes TUI in the named existing panel (builds launch command).',
+    },
     confirm: {
       type: 'boolean',
       description:
@@ -354,15 +440,40 @@ export const executeInTerminalTool = {
     },
   },
   async execute(params, context = {}) {
-    const lookup = await resolveSessionIdFromNameOrId('execute_in_terminal', params);
+    const lookup = await resolveSessionIdFromNameOrId('execute_in_terminal', params, context);
     if (lookup.error) {
       return { error: lookup.error.code, message: lookup.error.message };
     }
     const session_id = lookup.sessionId;
-    const guardInput = requireParam(params, 'input');
+
+    const normalizedProgram =
+      typeof params?.program === 'string' ? params.program.trim().toLowerCase() : '';
+    let input = params?.input;
+
+    if ((!input || input === '') && normalizedProgram && AGENT_PROGRAMS.has(normalizedProgram)) {
+      try {
+        const { buildAgentLaunchCommand } = await import('../../agentLaunchCommand.shared.js');
+        input = buildAgentLaunchCommand(normalizedProgram, '', {
+          opencodeAgent: DEFAULT_OPENCODE_AGENT,
+          cwd: process.cwd(),
+          disableTmuxWrap: true,
+          interactiveBootstrapPrompt: true,
+        });
+        zedLog.info('TOOL', 'execute_in_terminal (agent TUI)', {
+          session_id,
+          program: normalizedProgram,
+        });
+      } catch (e) {
+        return {
+          error: `Could not build launch command for program=${normalizedProgram}: ${e?.message || e}`,
+        };
+      }
+    }
+
+    const guardInput = requireParam({ input }, 'input');
     if (guardInput) return guardInput;
 
-    const { input, confirm } = params;
+    const { confirm } = params;
     const policyBlock = guardZedTerminalCommand(input, confirm, context, 'execute_in_terminal');
     if (policyBlock) return policyBlock;
 
@@ -381,7 +492,13 @@ export const executeInTerminalTool = {
         }
       );
       if (!response.ok) {
-        return { error: `Failed to send input: ${response.status}` };
+        return {
+          error: `Failed to send input: ${response.status}`,
+          action: 'send_input',
+          terminalId: session_id,
+          session_id,
+          input,
+        };
       }
       const base = await response.json().catch(() => ({ session_id, sent: true }));
 
@@ -413,36 +530,64 @@ export const executeInTerminalTool = {
 export const closeTerminalTool = {
   name: 'close_terminal',
   description:
-    'Close a terminal session. Pass `name` (display name) OR `session_id` (terminalId) — never both. Destructive — requires explicit confirm: true. Without confirm, returns a dry-run preview.',
+    'Close a terminal session. Pass `name` (display name) OR `session_id` (terminalId) — never both. If the user did not name a panel and exactly one terminal is active, omit both. Destructive — requires explicit confirm: true after user approval. Without confirm, returns a dry-run preview (pending_confirmation). Call list_terminals first when unsure which panel to close.',
   parameters: {
     name: {
       type: 'string',
       description: 'Display name (e.g. "Chase"). Mutually exclusive with session_id.',
     },
-    session_id: { type: 'string', required: true },
-    confirm: { type: 'boolean' },
+    session_id: {
+      type: 'string',
+      description: 'Panel id from list_terminals (e.g. p2). Mutually exclusive with name.',
+    },
+    confirm: {
+      type: 'boolean',
+      description: 'Must be true only after the user explicitly confirms the close.',
+    },
   },
-  async execute(params /* , context */) {
-    const lookup = await resolveSessionIdFromNameOrId('close_terminal', params);
+  async execute(params, context = {}) {
+    const lookup = await resolveSessionIdFromNameOrId('close_terminal', params, context, {
+      allowImplicitSingle: true,
+    });
     if (lookup.error) {
       return { error: lookup.error.code, message: lookup.error.message };
     }
     const session_id = lookup.sessionId;
-    const { confirm } = params;
+    const displayName = lookup.displayName || null;
+    let { confirm } = params;
 
-    zedLog.info('TOOL', 'close_terminal', { session_id, confirm });
+    // Block model from bypassing UI confirmation — only confirm_tool path sets this flag.
+    if (confirm === true && context?._zed_user_confirmed_close !== true) {
+      zedLog.warn('TOOL', 'close_terminal confirm ignored (no user approval)', { session_id });
+      confirm = false;
+    }
+
+    zedLog.info('TOOL', 'close_terminal', { session_id, confirm, displayName });
 
     if (confirm !== true) {
+      const label = displayName ? `${displayName} (${session_id})` : session_id;
       return {
         action: 'would close',
         session_id,
-        hint: 'call again with confirm: true to actually close the session',
+        displayName,
+        pending_confirmation: true,
+        message: `¿Cerrar la terminal ${label}?`,
+        hint: 'User must confirm via UI before confirm: true',
       };
     }
 
     const { closeTerminalSessionById } = await import('@/lib/terminal/closeTerminalSession');
     try {
-      return await closeTerminalSessionById(session_id);
+      const result = await closeTerminalSessionById(session_id);
+      const panelId = /^p\d+$/i.test(session_id) ? session_id : session_id;
+      return {
+        ...result,
+        success: true,
+        session_id: panelId,
+        sessionId: panelId,
+        displayName,
+        panel_closed: true,
+      };
     } catch (err) {
       return { error: err.message, status: err.status || 500 };
     }

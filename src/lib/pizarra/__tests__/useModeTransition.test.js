@@ -321,15 +321,25 @@ describe('useModeTransition — reduced motion', () => {
 });
 
 describe('useModeTransition — animProps shape', () => {
-  test('default animProps include opacity, y, scale, and a framer-motion transition', () => {
+  test('default animProps are opacity-only (no transform on native-surface wrapper) with a framer-motion transition', () => {
     jest.useFakeTimers('modern');
     try {
       const { useModeTransition } = getHook();
       const { result } = renderHook(() => useModeTransition({ maximizedView: 'workspace' }));
       expect(result.current.animProps.initial).toMatchObject({ opacity: 0 });
       expect(result.current.animProps.animate).toMatchObject({ opacity: 1 });
+      expect(result.current.animProps.exit).toMatchObject({ opacity: 0 });
       expect(result.current.animProps.transition).toBeDefined();
       expect(typeof result.current.animProps.transition.duration).toBe('number');
+      // terminal-pizarra-stability A.5 / NFR-P02: the shell wraps a tree
+      // that contains native VTE/WebKit surfaces. Transforming the wrapper
+      // (y / scale) desyncs those IPC-positioned widgets, so the transition
+      // MUST stay opacity-only. Guard against a regression that reintroduces
+      // translate/scale.
+      expect(result.current.animProps.initial).not.toHaveProperty('y');
+      expect(result.current.animProps.initial).not.toHaveProperty('scale');
+      expect(result.current.animProps.animate).not.toHaveProperty('y');
+      expect(result.current.animProps.animate).not.toHaveProperty('scale');
     } finally {
       jest.useRealTimers();
     }
@@ -342,6 +352,8 @@ describe('useModeTransition — animProps shape', () => {
       const { result } = renderHook(() => useModeTransition({ maximizedView: 'workspace' }));
       expect(result.current.animProps.transition.duration).toBeGreaterThan(0);
       expect(result.current.animProps.transition.duration).toBeLessThanOrEqual(1);
+      expect(result.current.animProps.transition.duration).toBe(surfaceMotion.DUR.base / 1000);
+      expect(result.current.durations.enterMs).toBe(surfaceMotion.DUR.base);
     } finally {
       jest.useRealTimers();
     }

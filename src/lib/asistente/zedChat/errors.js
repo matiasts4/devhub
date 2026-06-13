@@ -37,7 +37,8 @@ const SPANISH = Object.freeze({
   tooLong: 'el script es demasiado largo (máximo 64 líneas × 256 caracteres).',
   multilineBlocked: 'el comando no se puede ejecutar: tiene {N} líneas, excede el máximo (64).',
   bothNameAndSession: 'no podés pasar name y session_id a la vez.',
-  generic: '{message}',
+  command_blocked: 'ese comando está bloqueado por seguridad. Podés ejecutarlo manualmente en tu terminal.',
+  command_requires_approval: 'necesito tu confirmación para ejecutar: {command}',
   unknown: 'error desconocido',
 });
 
@@ -203,6 +204,22 @@ function formatZedToolError(toolName, error) {
       };
     }
     default: {
+      if (error && typeof error === 'object') {
+        if (error.error === 'command_blocked') {
+          return { kind: 'policy_blocked', message: SPANISH.command_blocked, details };
+        }
+        if (error.error === 'command_requires_approval') {
+          const cmd = error.command || error.full_command || '';
+          return {
+            kind: 'policy_blocked',
+            message: SPANISH.command_requires_approval.replace('{command}', cmd),
+            details,
+          };
+        }
+        if (error.error === 'script_too_long') {
+          return { kind: 'too_long', message: SPANISH.tooLong, details };
+        }
+      }
       if (!recognized) {
         // Unknown tool name: still pass through the error message but
         // marked generic, so the caller can apply its own policy.

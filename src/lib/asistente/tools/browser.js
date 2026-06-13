@@ -43,3 +43,30 @@ export const browserTool = {
     };
   },
 };
+
+export const closeUrlTool = {
+  name: 'close_url',
+  description:
+    'Cierra el navegador integrado del workspace (vista normal y pizarra). No cierra pestañas del sistema. Requiere confirm: true.',
+  parameters: {
+    confirm: {
+      type: 'boolean',
+      description: 'Debe ser true para cerrar el navegador integrado.',
+    },
+  },
+  async execute(params /* , context */) {
+    const { confirm } = params || {};
+    zedLog.info('TOOL', 'close_url', { confirm });
+    if (confirm !== true) {
+      return {
+        action: 'would close',
+        hint: 'call again with confirm: true to close the in-app browser',
+      };
+    }
+    return {
+      closed: true,
+      workspace: true,
+      message: 'Navegador integrado cerrado.',
+    };
+  },
+};

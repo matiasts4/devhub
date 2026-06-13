@@ -1,11 +1,9 @@
 /**
- * Zed terminal command safety policy.
- *
- * Tiers:
- * - blocked: never executed (destructive / irreversible)
- * - allowed: auto-authorized (read-only or common dev workflows)
- * - approval_required: dry-run until confirm:true (and user was asked)
+ * Zed terminal command safety policy (multiline-aware — FR-Z09 / ZCP-001).
  */
+
+export const MAX_SCRIPT_LINES = 64;
+export const MAX_SCRIPT_BYTES = 16384;
 
 const BLOCKED_PATTERNS = [
   { id: 'rm-recursive', pattern: /\brm\s+.*(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b/i, reason: 'recursive file deletion (rm -rf)' },
@@ -115,6 +113,28 @@ const ALLOWED_EXACT = new Set([
   'pnpm start',
 ]);
 
+const TIER_RANK = { allowed: 0, approval_required: 1, blocked: 2 };
+
+export function splitCommandLines(raw) {
+  if (raw === undefined || raw === null) return [];
+  return String(raw)
+    .replace(/\r\n/g, '\n')
+    .split('\n');
+}
+
+export function validateCommandPayload(raw) {
+  const text = String(raw ?? '');
+  const lines = splitCommandLines(text);
+  const bytes = new TextEncoder().encode(text).length;
+  if (lines.length > MAX_SCRIPT_LINES) {
+    return { ok: false, error: 'script_too_long', lineCount: lines.length };
+  }
+  if (bytes > MAX_SCRIPT_BYTES) {
+    return { ok: false, error: 'script_too_long', byteCount: bytes };
+  }
+  return { ok: true, lineCount: lines.length, byteCount: bytes };
+}
+
 export function normalizeZedTerminalCommand(raw) {
   if (raw === undefined || raw === null) return '';
   const text = String(raw).replace(/\r\n/g, '\n').trim();
@@ -123,8 +143,8 @@ export function normalizeZedTerminalCommand(raw) {
   return firstLine.replace(/[;&|]+.*$/, '').trim();
 }
 
-export function classifyZedTerminalCommand(rawCommand) {
-  const command = normalizeZedTerminalCommand(rawCommand);
+function classifySingleLine(rawLine) {
+  const command = normalizeZedTerminalCommand(rawLine);
   if (!command) {
     return { tier: 'allowed', command: '', reason: 'empty-command' };
   }
@@ -151,7 +171,52 @@ export function classifyZedTerminalCommand(rawCommand) {
     }
   }
 
+  // Agent TUI launches (opencode/codex/hermes) — explicit user intent via Zed tools.
+  if (
+    /\bopencode\b.*--agent\b/i.test(command) ||
+    /\/opencode\/bin\/opencode\b/i.test(command)
+  ) {
+    return { tier: 'allowed', command, reason: 'agent-launch-opencode' };
+  }
+  if (/\bcodex\b\s+exec\b/i.test(command) || /\/codex\b/i.test(command)) {
+    return { tier: 'allowed', command, reason: 'agent-launch-codex' };
+  }
+  if (/\bhermes\b\s+chat\b/i.test(command) || /\/hermes\b/i.test(command)) {
+    return { tier: 'allowed', command, reason: 'agent-launch-hermes' };
+  }
+
   return { tier: 'approval_required', command, reason: 'not-in-allowlist' };
+}
+
+export function classifyZedTerminalCommand(rawCommand) {
+  const payloadCheck = validateCommandPayload(rawCommand);
+  if (!payloadCheck.ok) {
+    return {
+      tier: 'blocked',
+      command: normalizeZedTerminalCommand(rawCommand),
+      reason: 'script_too_long',
+      error: payloadCheck.error,
+      lineCount: payloadCheck.lineCount,
+      byteCount: payloadCheck.byteCount,
+    };
+  }
+
+  const lines = splitCommandLines(rawCommand).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return { tier: 'allowed', command: '', reason: 'empty-command' };
+  }
+
+  let worst = { tier: 'allowed', command: normalizeZedTerminalCommand(rawCommand), reason: 'multiline' };
+  for (const line of lines) {
+    const part = classifySingleLine(line);
+    if (TIER_RANK[part.tier] > TIER_RANK[worst.tier]) {
+      worst = { ...part, multiline: lines.length > 1 };
+    }
+  }
+  worst.command = normalizeZedTerminalCommand(rawCommand.split('\n')[0]);
+  worst.full_command = String(rawCommand);
+  worst.line_count = lines.length;
+  return worst;
 }
 
 function trackCommandInsist(context, command) {
@@ -168,7 +233,18 @@ function trackCommandInsist(context, command) {
 export function evaluateZedCommandExecution({ command, confirm = false, context = null } = {}) {
   const classification = classifyZedTerminalCommand(command);
 
-  if (!classification.command) {
+  if (classification.error === 'script_too_long') {
+    return {
+      allowed: false,
+      error: 'script_too_long',
+      command: classification.command,
+      lineCount: classification.lineCount,
+      byteCount: classification.byteCount,
+      hint: 'Payload exceeds 64 lines or 16KB.',
+    };
+  }
+
+  if (!classification.command && !classification.full_command) {
     return { allowed: true, classification };
   }
 
@@ -198,6 +274,7 @@ export function evaluateZedCommandExecution({ command, confirm = false, context 
     error: 'command_requires_approval',
     action: 'would_execute',
     command: classification.command,
+    full_command: classification.full_command || classification.command,
     requires_approval: true,
     insist_count: insistCount,
     hint:

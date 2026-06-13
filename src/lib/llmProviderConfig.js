@@ -30,6 +30,56 @@ async function loadConfig() {
 }
 
 /**
+ * List the provider keys present in the config (regardless of `enabled`).
+ * Server-side enumeration helper for the `/api/agenthub/llm/status` route.
+ *
+ * @param {{ useCache?: boolean }} [opts]
+ * @returns {Promise<string[]>} e.g. ['openrouter', 'copilot', 'opencode', 'minimax']
+ */
+export async function listLlmProviderKeys(opts = {}) {
+  const useCache = opts.useCache !== false;
+  if (useCache && _cache) {
+    return Object.keys(_cache?.providers || {});
+  }
+  const config = await loadConfig();
+  return Object.keys(config?.providers || {});
+}
+
+/**
+ * Synchronous variant of {@link listLlmProviderKeys}.
+ * @returns {string[]}
+ */
+export function listLlmProviderKeysSync() {
+  if (_cache) return Object.keys(_cache?.providers || {});
+  try {
+    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Object.keys(parsed?.providers || {});
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * List the human-readable `name` for every provider in the config. The
+ * contract is: `name === providerKey` (no separate `name` field is stored in
+ * `data/llm-providers-config.json`; the key IS the name). The route uses
+ * this to populate the `provider` field of the response without leaking any
+ * per-provider config object.
+ *
+ * @param {{ useCache?: boolean }} [opts]
+ * @returns {Promise<string[]>}
+ */
+export async function listLlmProviderNames(opts = {}) {
+  const keys = await listLlmProviderKeys(opts);
+  return keys.slice();
+}
+
+export function listLlmProviderNamesSync() {
+  return listLlmProviderKeysSync().slice();
+}
+
+/**
  * Get the config for a named LLM provider.
  *
  * @param {string} providerKey - e.g. 'minimax', 'openrouter', 'opencode'

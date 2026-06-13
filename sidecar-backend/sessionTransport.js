@@ -23,6 +23,7 @@
 const SHELL_TERMINAL_RESPONSE_RE =
   /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
 const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
+const TERMINAL_MOUSE_MOTION_LEAK_RE = /\x1b\[<(?!0;|[1-3];|64;|65;)\d+;[\d;]*[mM]/g;
 
 function getTransportMode(requestUrl = '/') {
   const pathname = new URL(requestUrl, 'http://localhost').pathname;
@@ -98,9 +99,16 @@ function stripShellTerminalResponseNoise(chunk) {
   return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
 }
 
+function stripTerminalMouseMotionLeak(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(TERMINAL_MOUSE_MOTION_LEAK_RE, '');
+}
+
 function stripTerminalInputNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk));
+  return stripTerminalMouseMotionLeak(
+    stripTerminalFocusReporting(stripShellTerminalResponseNoise(chunk))
+  );
 }
 
 function filterTerminalOutputForSession(session, chunk) {

@@ -27,6 +27,16 @@ describe('zedCommandPolicy', () => {
     expect(classifyZedTerminalCommand('./scripts/deploy.sh').tier).toBe('approval_required');
   });
 
+  test('agent launch commands are auto-allowed', () => {
+    expect(
+      classifyZedTerminalCommand(
+        '/home/matias/.opencode/bin/opencode --agent gentle-orchestrator'
+      ).tier
+    ).toBe('allowed');
+    expect(classifyZedTerminalCommand('codex exec --sandbox workspace-write').tier).toBe('allowed');
+    expect(classifyZedTerminalCommand('hermes chat -q hello').tier).toBe('allowed');
+  });
+
   test('evaluateZedCommandExecution dry-run until confirm', () => {
     const context = {};
     const first = evaluateZedCommandExecution({
@@ -62,5 +72,16 @@ describe('zedCommandPolicy', () => {
     });
     expect(result.error).toBe('command_blocked');
     expect(result.allowed).toBe(false);
+  });
+
+  test('multiline: blocked line in script fails entire payload', () => {
+    const tier = classifyZedTerminalCommand('echo ok\nrm -rf /tmp/x');
+    expect(tier.tier).toBe('blocked');
+  });
+
+  test('rejects payloads over 64 lines', () => {
+    const cmd = Array.from({ length: 65 }, (_, i) => `echo ${i}`).join('\n');
+    const result = evaluateZedCommandExecution({ command: cmd, confirm: false, context: {} });
+    expect(result.error).toBe('script_too_long');
   });
 });

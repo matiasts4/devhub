@@ -64,6 +64,32 @@ function renderOverlay() {
   return { container, root };
 }
 
+function defaultZedChatMock(overrides = {}) {
+  return {
+    messages: [],
+    input: '',
+    setInput: jest.fn(),
+    isLoading: false,
+    handleSend: jest.fn(),
+    handleStop: jest.fn(),
+    handleKeyDown: jest.fn(),
+    handlePaste: jest.fn(),
+    textareaRef: { current: null },
+    lastAssistantMessage: null,
+    lastToolType: null,
+    currentStep: null,
+    activityExpanded: false,
+    setActivityExpanded: jest.fn(),
+    pendingApproval: null,
+    auditTrail: [],
+    handleApproveCommand: jest.fn(),
+    handleRejectApproval: jest.fn(),
+    applySuggestion: jest.fn(),
+    quickSuggestions: [],
+    ...overrides,
+  };
+}
+
 describe('ZedAmbientOverlay', () => {
   let dom;
 
@@ -75,16 +101,7 @@ describe('ZedAmbientOverlay', () => {
       close: jest.fn(),
       toggle: jest.fn(),
     });
-    mockUseZedChat.mockReturnValue({
-      input: '',
-      setInput: jest.fn(),
-      isLoading: false,
-      handleSend: jest.fn(),
-      handleStop: jest.fn(),
-      handleKeyDown: jest.fn(),
-      handlePaste: jest.fn(),
-      lastAssistantMessage: null,
-    });
+    mockUseZedChat.mockReturnValue(defaultZedChatMock());
   });
 
   afterEach(() => {
@@ -93,16 +110,7 @@ describe('ZedAmbientOverlay', () => {
   });
 
   test('renders executing pill when loading without open overlay', () => {
-    mockUseZedChat.mockReturnValue({
-      input: '',
-      setInput: jest.fn(),
-      isLoading: true,
-      handleSend: jest.fn(),
-      handleStop: jest.fn(),
-      handleKeyDown: jest.fn(),
-      handlePaste: jest.fn(),
-      lastAssistantMessage: null,
-    });
+    mockUseZedChat.mockReturnValue(defaultZedChatMock({ isLoading: true }));
 
     const { container, root } = renderOverlay();
 
@@ -113,30 +121,25 @@ describe('ZedAmbientOverlay', () => {
 
   test('status line auto-dismisses after a few seconds', () => {
     jest.useFakeTimers();
-    mockUseZedChat.mockReturnValue({
-      input: '',
-      setInput: jest.fn(),
-      isLoading: false,
-      handleSend: jest.fn(),
-      handleStop: jest.fn(),
-      handleKeyDown: jest.fn(),
-      handlePaste: jest.fn(),
-      lastAssistantMessage: {
-        role: 'assistant',
-        content: 'Listo.',
-        timestamp: '2026-06-09T22:01:00.000Z',
-        tool_results: [
-          {
-            tool: 'open_terminal',
-            result: {
-              workspace: true,
-              program: 'opencode',
-              command_sent: 'opencode --agent gentle-orchestrator',
+    mockUseZedChat.mockReturnValue(
+      defaultZedChatMock({
+        lastAssistantMessage: {
+          role: 'assistant',
+          content: 'Listo.',
+          timestamp: '2026-06-09T22:01:00.000Z',
+          tool_results: [
+            {
+              tool: 'open_terminal',
+              result: {
+                workspace: true,
+                program: 'opencode',
+                command_sent: 'opencode --agent gentle-orchestrator',
+              },
             },
-          },
-        ],
-      },
-    });
+          ],
+        },
+      })
+    );
 
     const { container, root } = renderOverlay();
     expect(container.textContent).toContain('Listo. Abrí OpenCode.');
@@ -154,23 +157,18 @@ describe('ZedAmbientOverlay', () => {
   });
 
   test('shows assistant feedback in collapsed pill after a turn', () => {
-    mockUseZedChat.mockReturnValue({
-      input: '',
-      setInput: jest.fn(),
-      isLoading: false,
-      handleSend: jest.fn(),
-      handleStop: jest.fn(),
-      handleKeyDown: jest.fn(),
-      handlePaste: jest.fn(),
-      lastAssistantMessage: {
-        role: 'assistant',
-        content: 'Listo, abrí GitHub en el navegador integrado.',
-        timestamp: '2026-06-09T22:00:00.000Z',
-        tool_results: [
-          { tool: 'open_url', result: { url: 'https://github.com/', label: 'GitHub' } },
-        ],
-      },
-    });
+    mockUseZedChat.mockReturnValue(
+      defaultZedChatMock({
+        lastAssistantMessage: {
+          role: 'assistant',
+          content: 'Listo, abrí GitHub en el navegador integrado.',
+          timestamp: '2026-06-09T22:00:00.000Z',
+          tool_results: [
+            { tool: 'open_url', result: { url: 'https://github.com/', label: 'GitHub' } },
+          ],
+        },
+      })
+    );
 
     const { container, root } = renderOverlay();
 

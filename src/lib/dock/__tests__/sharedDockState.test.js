@@ -32,6 +32,7 @@ const {
   writeSharedDockState,
   mergeDockState,
   migrateDockState,
+  mergeRightDockChromeIntoSharedDock,
 } = require('../sharedDockState');
 
 function createStorage(initial = {}) {
@@ -249,5 +250,25 @@ describe('sharedDockState — migrateDockState (legacy keys)', () => {
     expect(second).toEqual(first);
     expect(storage.getItem('pizarra_dockState_v1_p_w.bak')).toBe(bakAfterFirst);
     expect(storage.getItem('devhub_shared_dock_state_p_w')).toBe(newKeyAfterFirst);
+  });
+});
+
+describe('mergeRightDockChromeIntoSharedDock (B.2c)', () => {
+  test('mirrors right-dock chrome fields into shared dock state', () => {
+    const base = sanitizeSharedDockState(DEFAULT_SHARED_DOCK_STATE);
+    const merged = mergeRightDockChromeIntoSharedDock(base, {
+      visible: true,
+      activeTab: 'pizarra',
+      maximized: true,
+      maximizedView: 'pizarra',
+      size: 40,
+    });
+    expect(merged.rightDockChrome).toEqual({
+      visible: true,
+      activeTab: 'pizarra',
+      maximized: true,
+      maximizedView: 'pizarra',
+      size: 40,
+    });
   });
 });

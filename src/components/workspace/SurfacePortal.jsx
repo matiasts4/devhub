@@ -31,7 +31,7 @@
 
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useSurfaceRegistry } from './SharedSurfacesProvider';
 
 /**
@@ -48,7 +48,7 @@ function SurfacePortal({ surfaceId, hostId, className, style, children }) {
   const hostRef = useRef(null);
   const [registered, setRegistered] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!surfaceId || !hostId || !hostRef.current) return undefined;
     const unregister = registry.registerSurfaceTarget(surfaceId, hostId, hostRef.current);
     setRegistered(true);

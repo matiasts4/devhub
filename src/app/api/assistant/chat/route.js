@@ -10,7 +10,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { ToolRegistry } from '@/lib/asistente/tools/registry';
-import { parseToolCalls } from '@/lib/asistente/parseToolCalls';
 import {
   terminalTool,
   listTerminalsTool,
@@ -19,12 +18,14 @@ import {
   closeTerminalTool,
 } from '@/lib/asistente/tools/terminal';
 import { summarizeTerminalTool } from '@/lib/asistente/tools/summarizeTerminal';
-import { browserTool } from '@/lib/asistente/tools/browser';
+import { browserTool, closeUrlTool } from '@/lib/asistente/tools/browser';
 import { fileTool, reviewLogFileTool } from '@/lib/asistente/tools/files';
 import { swarmTool } from '@/lib/asistente/tools/swarm';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
+import { runZedChatLoop, createZedSseStream } from '@/lib/asistente/runZedChatLoop';
+import { tryZedFastPath, createZedFastPathSseStream } from '@/lib/asistente/runZedFastPath';
 
 export const MODEL = 'minimax-coding-plan/MiniMax-M3';
 export const BASE_URL = 'https://api.minimax.io/anthropic/v1/messages';
@@ -44,7 +45,7 @@ function clamp(value, min, max) {
   return value;
 }
 
-export let MAX_TURNS = clamp(parseInt(process.env.ZED_MAX_TURNS, 10) || 6, 1, 20);
+export let MAX_TURNS = clamp(parseInt(process.env.ZED_MAX_TURNS, 10) || 10, 1, 20);
 
 let SYSTEM_PROMPT = null;
 function loadSystemPrompt() {
@@ -112,20 +113,40 @@ function buildRegistry() {
   registry.register(closeTerminalTool);
   registry.register(summarizeTerminalTool);
   registry.register(browserTool);
+  registry.register(closeUrlTool);
   registry.register(fileTool);
   registry.register(reviewLogFileTool);
   registry.register(swarmTool);
   return registry;
 }
 
-// T-015: a tool's `parameters` schema may have zero required keys
-// (e.g. list_terminals, get_swarm_status). The no-params check below MUST
-// only short-circuit when at least one schema entry is `required: true`.
-// Otherwise it incorrectly surfaces a canonical error for tools that
-// legitimately accept zero parameters.
-function toolHasRequiredSchema(toolDef) {
-  if (!toolDef || !toolDef.parameters) return false;
-  return Object.values(toolDef.parameters).some((p) => p && p.required === true);
+// T-015: a tool's `parameters` schema may have zero required keys — see toolHasRequiredSchema in runZedChatLoop.
+
+function wantsZedStream(request, body) {
+  if (body?.stream === true) return true;
+  const accept = request.headers.get('accept') || '';
+  return accept.includes('text/event-stream');
+}
+
+function appendExecutionIntentHint(systemPrompt, message) {
+  if (!message || typeof message !== 'string') return systemPrompt;
+  const lower = message.toLowerCase();
+  const runVerbs =
+    /\b(ejecuta|ejecutar|corre|correr|run|execute|lanza|launch)\b/.test(lower) ||
+    /\babre.*\b(y|and|con|with)\b.*\b(ejecut|run|npm|yarn|pnpm|ls|git)\b/.test(lower);
+  const newTerminalWithAgent =
+    /\b(nueva|nuevo|otra|otro|una\s+terminal)\b/.test(lower) &&
+    /\b(opencode|open\s+code|codex|hermes)\b/.test(lower);
+  let hint = '';
+  if (runVerbs) {
+    hint +=
+      '\n\n### Turn hint\nThe user asked to run/execute something. Prefer `open_terminal({ command })` for new panels or `execute_in_terminal` for existing ones. Do not describe the action in prose only.';
+  }
+  if (newTerminalWithAgent) {
+    hint +=
+      '\n\n### Turn hint\nThe user asked for a NEW terminal with an agent TUI. Use `open_terminal({ program })` — do NOT `execute_in_terminal` into an existing panel unless they named one with "en [nombre]".';
+  }
+  return hint ? `${systemPrompt}${hint}` : systemPrompt;
 }
 
 export async function POST(request) {
@@ -142,6 +163,9 @@ export async function POST(request) {
       max_terminal_panels:
         Number(clientContext?.max_terminal_panels) || MAX_ZED_TERMINAL_PANELS,
       terminal_panel_count: Number(clientContext?.terminal_panel_count) || 0,
+      workspace_terminals: Array.isArray(clientContext?.workspace_terminals)
+        ? clientContext.workspace_terminals
+        : [],
       _terminal_opens_this_request: 0,
     };
 
@@ -166,7 +190,68 @@ export async function POST(request) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
 
+    const registry = buildRegistry();
+
+    if (body.confirm_tool && typeof body.confirm_tool === 'object') {
+      const { tool, input: toolInput } = body.confirm_tool;
+      if (typeof tool === 'string' && toolInput && typeof toolInput === 'object') {
+        zedLog.orchestration('confirm_tool', { tool, input: toolInput });
+        requestContext._zed_user_confirmed_close = tool === 'close_terminal';
+        requestContext._zed_user_confirmed_command = tool === 'execute_in_terminal';
+        let result;
+        try {
+          result = await registry.execute(tool, toolInput, requestContext);
+        } catch (err) {
+          result = { error: err.message };
+        }
+        const closeOk =
+          tool === 'close_terminal' && result?.success === true && !result?.error;
+        const execOk = tool !== 'close_terminal' && !result?.error;
+        let text = 'Listo.';
+        if (tool === 'close_terminal') {
+          text = closeOk ? 'Listo. Terminal cerrada.' : 'No pude cerrar la terminal.';
+        } else if (execOk) {
+          text = 'Listo. Comando ejecutado.';
+        } else {
+          text = 'No pude completar la acción.';
+        }
+        return NextResponse.json({
+          text,
+          tool_results: [{ tool, input: toolInput, result }],
+          model: MODEL,
+          msgId,
+        });
+      }
+    }
+
     zedLog.sessionStart(msgId, message);
+
+    const fastPath = await tryZedFastPath({
+      message,
+      registry,
+      requestContext,
+      msgId,
+    });
+    if (fastPath.hit) {
+      zedLog.sessionEnd(msgId, fastPath.text, fastPath.toolResults.length);
+      if (wantsZedStream(request, body)) {
+        zedLog.orchestration('fast_path_stream', { msgId, intent: fastPath.intent.intent });
+        const stream = createZedFastPathSseStream({
+          text: fastPath.text,
+          toolResults: fastPath.toolResults,
+          intent: fastPath.intent,
+          msgId,
+        });
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+          },
+        });
+      }
+      return NextResponse.json(fastPath.body);
+    }
 
     const { apiKey, source: apiKeySource } = resolveZedApiKey();
     if (!apiKey) {
@@ -185,182 +270,61 @@ export async function POST(request) {
 
     let systemPrompt;
     try {
-      systemPrompt = loadSystemPrompt();
+      systemPrompt = appendExecutionIntentHint(loadSystemPrompt(), message);
     } catch (err) {
       zedLog.error('CONFIG', 'Failed to load system prompt', { error: err.message });
       return NextResponse.json({ error: err.message }, { status: 500 });
     }
 
-    // T-033: prepend the client's history (if any), then append the current
-    // user message as the last entry. Each per-turn tool loop iteration
-    // still appends assistant + tool-result messages after this point —
-    // those stay server-side and never round-trip.
     const conversation = [...safeHistory, { role: 'user', content: message }];
-    const registry = buildRegistry();
     const anthropicTools = registry.toAnthropicTools();
 
-    let turn = 0;
+    const loopParams = {
+      systemPrompt,
+      conversation,
+      registry,
+      anthropicTools,
+      apiKey,
+      requestContext,
+      maxTurns: MAX_TURNS,
+      callMinimax,
+      model: MODEL,
+    };
+
+    if (wantsZedStream(request, body)) {
+      zedLog.orchestration('stream_start', { msgId });
+      const stream = createZedSseStream({ ...loopParams, msgId, model: MODEL });
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        },
+      });
+    }
+
     let finalText = '';
     let allToolResults = [];
     let meta = {};
 
-    while (turn < MAX_TURNS) {
-      turn++;
-      zedLog.info('TURN', `Starting turn ${turn}`, {
-        conversationLength: conversation.length,
+    try {
+      const loopResult = await runZedChatLoop(loopParams);
+      finalText = loopResult.finalText;
+      allToolResults = loopResult.allToolResults;
+      meta = loopResult.meta;
+    } catch (err) {
+      const upstreamStatus = err?.upstream_status;
+      zedLog.error('API', 'MiniMax call failed', {
+        error: err.message,
+        upstream_status: upstreamStatus,
       });
-
-      // T-031: collect THIS turn's tool results in a fresh array. The bug was
-      // re-pushing the cumulative `allToolResults` into `conversation` each
-      // turn, which made the prompt grow quadratically (1, 3, 6, 10, 15, …).
-      // We still aggregate into `allToolResults` for the final response
-      // payload, but the conversation only receives this turn's new entries.
-      const turnToolResults = [];
-
-      let data;
-      try {
-        data = await callMinimax({
-          model: MODEL,
-          maxTokens: 2048,
-          system: systemPrompt,
-          messages: conversation,
-          apiKey,
-          tools: anthropicTools,
-        });
-      } catch (err) {
-        const upstreamStatus = err?.upstream_status;
-        zedLog.error('API', 'MiniMax call failed', {
+      return NextResponse.json(
+        {
           error: err.message,
-          upstream_status: upstreamStatus,
-        });
-        return NextResponse.json(
-          {
-            error: err.message,
-            ...(upstreamStatus ? { upstream_status: upstreamStatus } : {}),
-          },
-          { status: 500 }
-        );
-      }
-
-      if (!data.content || !Array.isArray(data.content)) {
-        zedLog.error('API', 'No content in response', {
-          data: JSON.stringify(data).slice(0, 300),
-        });
-        finalText = 'No pude procesar tu mensaje. Error interno.';
-        break;
-      }
-
-      const content = data.content;
-      const toolUseBlocks = content.filter((b) => b.type === 'tool_use');
-      const textBlocks = content.filter((b) => b.type === 'text');
-      const thinkingBlocks = content.filter((b) => b.type === 'thinking');
-
-      const hasNativeToolUse = toolUseBlocks.length > 0;
-      let toolCalls = [];
-      let rawText = '';
-
-      if (hasNativeToolUse) {
-        // Native Anthropic-style tool calling (preferred — no mangling, parsed inputs)
-        toolCalls = toolUseBlocks.map((b) => ({
-          name: b.name,
-          input: b.input || {},
-          id: b.id,
-        }));
-        rawText = textBlocks.map((b) => b.text || '').join('\n');
-        if (!rawText.trim() && thinkingBlocks.length) {
-          rawText = thinkingBlocks.map((b) => b.thinking || b.text || '').join('\n');
-        }
-      } else {
-        // Legacy textual TOOL:/PARAM: fallback (for tests + transition)
-        rawText = textBlocks.map((b) => b.text).join('\n');
-        toolCalls = parseToolCalls(rawText);
-      }
-
-      zedLog.info('MODEL', `Raw response text (${rawText.length} chars)`, {
-        preview: rawText.slice(0, 300),
-        nativeToolUse: hasNativeToolUse,
-        toolCallCount: toolCalls.length,
-      });
-
-      if (toolCalls.length > 0) {
-        zedLog.info('MODEL', `Found ${toolCalls.length} tool call(s)`, {
-          mode: hasNativeToolUse ? 'native' : 'textual',
-          toolCalls: toolCalls.map((c) => ({ name: c.name, hasId: !!c.id })),
-        });
-
-        for (const tc of toolCalls) {
-          const name = tc.name;
-          let effectiveInput = tc.input || {};
-          // T-010a (C1) + T-015: no-params handling (works for both modes)
-          if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
-            const toolDef = registry.get(name);
-            if (toolHasRequiredSchema(toolDef)) {
-              const result = { error: 'missing required parameters' };
-              zedLog.toolResult(name, result, 0);
-              turnToolResults.push({ tool: name, input: effectiveInput || {}, result, id: tc.id });
-              continue;
-            }
-            effectiveInput = {};
-          }
-
-          const toolStart = Date.now();
-          zedLog.toolCall(name, effectiveInput);
-
-          let result;
-          try {
-            result = await registry.execute(name, effectiveInput, requestContext);
-          } catch (err) {
-            result = { error: err.message };
-          }
-
-          const duration = Date.now() - toolStart;
-          zedLog.toolResult(name, result, duration);
-          turnToolResults.push({ tool: name, input: effectiveInput, result, id: tc.id });
-        }
-
-        // Feed back to conversation using the right format for the mode.
-        // Native: use full content blocks + proper tool_result blocks (with id).
-        // Textual (legacy): use the raw text containing TOOL: + "Tool xxx result: json" strings.
-        if (hasNativeToolUse) {
-          conversation.push({ role: 'assistant', content });
-          for (const r of turnToolResults) {
-            conversation.push({
-              role: 'user',
-              content: [
-                {
-                  type: 'tool_result',
-                  tool_use_id: r.id || `textual-${r.tool}`,
-                  content: JSON.stringify(r.result),
-                },
-              ],
-            });
-          }
-        } else {
-          conversation.push({ role: 'assistant', content: rawText });
-          for (const r of turnToolResults) {
-            conversation.push({
-              role: 'user',
-              content: `Tool ${r.tool} result: ${JSON.stringify(r.result)}`,
-            });
-          }
-        }
-
-        allToolResults.push(...turnToolResults);
-      } else {
-        finalText = rawText;
-        if (!finalText.trim() && thinkingBlocks.length > 0) {
-          finalText =
-            thinkingBlocks.map((b) => b.thinking || b.text || '').join('\n').trim() ||
-            '(El modelo está razonando, aún no tiene respuesta final...)';
-        }
-        break;
-      }
-
-      // Check loop exit AFTER processing a turn
-      if (turn >= MAX_TURNS) {
-        meta.max_turns_reached = true;
-        break;
-      }
+          ...(upstreamStatus ? { upstream_status: upstreamStatus } : {}),
+        },
+        { status: 500 }
+      );
     }
 
     zedLog.sessionEnd(msgId, finalText, allToolResults.length);

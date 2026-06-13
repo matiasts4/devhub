@@ -105,6 +105,27 @@ export function isPizarraSharedViewEnabled() {
 }
 
 /**
+ * getRolloutStage — maps the current process to a rollout stage
+ * (see `openspec/changes/terminal-pizarra-stability/specs/phase-b-rollout.md`).
+ *
+ *   dev     — NODE_ENV !== 'production'
+ *   staging — NODE_ENV === 'production' && getFlagSource() === 'env-explicit'
+ *   prod    — NODE_ENV === 'production' && getFlagSource() === 'env-default-prod'
+ */
+export function getRolloutStage() {
+  let env = null;
+  try {
+    env = typeof process !== 'undefined' ? process.env : null;
+  } catch {
+    env = null;
+  }
+  if (!env || env.NODE_ENV !== 'production') {
+    return 'dev';
+  }
+  return getFlagSource() === 'env-explicit' ? 'staging' : 'prod';
+}
+
+/**
  * getFlagSource — for tests + diagnostics. Returns one of
  *   - 'env-explicit' (the env var was set)
  *   - 'env-default-dev' (env var unset, dev default applied)

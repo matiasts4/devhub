@@ -1,8 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
+import {
+  SharedTerminalSurfacePortal,
+  mergeSharedTerminalSurfaceProps,
+  useSharedTerminalSurfacesEnabled,
+} from '@/components/terminal/SharedTerminalSurface';
 import {
   openNativeVtePanel,
   raiseNativeVtePanel,
@@ -16,7 +21,11 @@ import {
   resolveHandleSizing,
   FRAME_TRANSITION,
   SURFACE_ENTER_OPACITY_ONLY,
-  ACCENT,
+  PIZARRA_SURFACE_FRAME_INSET,
+  PIZARRA_SURFACE_HEADER_HEIGHT,
+  PIZARRA_SURFACE_BORDER_RADIUS,
+  PIZARRA_SURFACE_HEADER_STYLE,
+  PIZARRA_SURFACE_FRAME_BG,
 } from '@/lib/pizarra/surfaceMotion';
 import {
   useSurfaceEnterAnimation,
@@ -72,6 +81,7 @@ export default function CanvasTerminal({
   requestedRendererMode = 'xterm-webgl',
   onUpdateRendererMode,
   visibleTerminalPanelCount = 1,
+  pizarraOwnsLiveSurfaces = false,
 }) {
   // Siempre usamos la terminal nativa (VTE widget) para superficies de tipo terminal
   // dentro de la pizarra. Posicionamos el widget exactamente sobre el rect de
@@ -95,6 +105,7 @@ export default function CanvasTerminal({
   // (the chrome switcher, the TerminalTTY prop) sees the requested
   // mode directly.
   const isVteExperimental = requestedRendererMode === 'vte-experimental';
+  const sharedSurfacesEnabled = useSharedTerminalSurfacesEnabled();
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
     () =>
@@ -144,16 +155,19 @@ export default function CanvasTerminal({
   useEffect(() => {
     if (!isVteExperimental || !terminalId || nativeOpenedRef.current) return;
     const b = resolvedBounds;
-    const contentW = Math.max(10, (b.width || 800) - 20);
-    const contentH = Math.max(10, (b.height || 600) - 20 - 28);
+    const contentW = Math.max(10, (b.width || 800) - PIZARRA_SURFACE_FRAME_INSET * 2);
+    const contentH = Math.max(
+      10,
+      (b.height || 600) - PIZARRA_SURFACE_FRAME_INSET * 2 - PIZARRA_SURFACE_HEADER_HEIGHT
+    );
     nativeOpenedRef.current = true;
     openNativeVtePanel({
       panelId: terminalId,
       cwd,
       initialCommand,
       bounds: {
-        x: (b.screenX ?? b.x ?? 0) + 10,
-        y: (b.screenY ?? b.y ?? 0) + 10 + 28,
+        x: (b.screenX ?? b.x ?? 0) + PIZARRA_SURFACE_FRAME_INSET,
+        y: (b.screenY ?? b.y ?? 0) + PIZARRA_SURFACE_FRAME_INSET + PIZARRA_SURFACE_HEADER_HEIGHT,
         width: contentW,
         height: contentH,
       },
@@ -172,8 +186,8 @@ export default function CanvasTerminal({
     // Para pizarra terminales: siempre native VTE. Posicionamos el widget exactamente
     // sobre el área de contenido de la card (inset por el header web del frame).
     if (isVteExperimental && resolvedBounds) {
-      const inset = 10;
-      const headerH = 28;
+      const inset = PIZARRA_SURFACE_FRAME_INSET;
+      const headerH = PIZARRA_SURFACE_HEADER_HEIGHT;
       resizeNativeVtePanel({
         panelId: terminalId,
         bounds: {
@@ -234,6 +248,39 @@ export default function CanvasTerminal({
   // transform). NEVER drives suspendNativeSurface — that is the whole
   // point of the flicker fix.
   const isDragging = pointerDown || isLiveDragging;
+
+  useLayoutEffect(() => {
+    if (!sharedSurfacesEnabled || !terminalId || !pizarraOwnsLiveSurfaces) return;
+    mergeSharedTerminalSurfaceProps(terminalId, {
+      surfaceHost: 'pizarra',
+      pizarraOwnsLiveSurfaces: true,
+      isVisibleInLayout: true,
+      suspendNativeSurface: isLiveDragging,
+      autoFocus: autoFocus || isActivePanel,
+      isActivePanel,
+      onClose,
+      onResize,
+      onActivatePanel,
+      cwd,
+      initialCommand,
+      requestedRendererMode,
+      visibleTerminalPanelCount,
+    });
+  }, [
+    sharedSurfacesEnabled,
+    terminalId,
+    pizarraOwnsLiveSurfaces,
+    isLiveDragging,
+    autoFocus,
+    isActivePanel,
+    onClose,
+    onResize,
+    onActivatePanel,
+    cwd,
+    initialCommand,
+    requestedRendererMode,
+    visibleTerminalPanelCount,
+  ]);
 
   // pizarra-shared-view-state (Phase 1 — flicker fix): synchronous
   // reattach. When isLiveDragging flips back to false, the next
@@ -380,8 +427,8 @@ export default function CanvasTerminal({
         // Prevents the prompt/path text from "leaking" or duplicating into the header area after repeated resizes,
         // wrong section colors (bg leaking), or cut-off text. The React effect will reconcile on commit.
         if (isVteExperimental && terminalId) {
-          const inset = 10;
-          const headerH = 28;
+          const inset = PIZARRA_SURFACE_FRAME_INSET;
+          const headerH = PIZARRA_SURFACE_HEADER_HEIGHT;
           const contentW = Math.max(1, screenW - inset * 2);
           const contentH = Math.max(1, screenH - inset * 2 - headerH);
           // use the just-mutated liveWrapper position if available, else fall back to current resolved
@@ -502,8 +549,14 @@ export default function CanvasTerminal({
   // PizarraPane.jsx).
   void onClose; // keep the prop in the signature for the X button below
 
-  const frameVisual = resolveFrameVisual({ selected, hovered: isHovered, dragging: isDragging });
+  const frameVisual = resolveFrameVisual({
+    selected,
+    hovered: isHovered,
+    dragging: isDragging,
+  });
   const handleSizing = resolveHandleSizing(zoom);
+  const frameInset = PIZARRA_SURFACE_FRAME_INSET;
+  const headerHeight = PIZARRA_SURFACE_HEADER_HEIGHT;
   // pizarra-motion-polish (P-MP-6): apply the opacity-only enter
   // animation to the inner frame (not the positioned wrapper, which
   // is IPC-locked to the native VTE rect). The animation runs once
@@ -542,23 +595,16 @@ export default function CanvasTerminal({
           : {})}
         style={{
           position: 'absolute',
-          inset: 10,
+          inset: frameInset,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          borderRadius: 18,
+          borderRadius: PIZARRA_SURFACE_BORDER_RADIUS,
           border: frameVisual.border,
           boxShadow: frameVisual.boxShadow,
           transform: frameVisual.transform,
-          // pizarra-motion-polish (P-MP-6): opacity-only enter animation
-          // applied on mount. Animation name is 'pizarraSurfaceEnterOpacity'
-          // (see surfaceMotion.js). `both` fill mode prevents a flash of
-          // the un-faded state.
+          background: PIZARRA_SURFACE_FRAME_BG,
           animation: enterAnim.animation,
-          // Kill transitions on the chrome frame (header bar + body container) while
-          // actively manipulating (drag or resize). Removes the visual delay/lag
-          // between the header and the resizable content (VTE body follows the
-          // container size change instantly via our direct mutations + onResize).
           transition: isDragging ? 'none' : FRAME_TRANSITION,
           pointerEvents: 'auto',
         }}
@@ -568,20 +614,15 @@ export default function CanvasTerminal({
           data-pizarra-surface-drag-handle="true"
           onMouseDown={handleHeaderMouseDown}
           style={{
-            height: 28,
+            height: headerHeight,
+            flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 10px',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            background: 'rgba(7, 17, 28, 0.96)',
-            color: '#d6e2ff',
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
+            padding: '0 8px',
             cursor: 'move',
             userSelect: 'none',
+            ...PIZARRA_SURFACE_HEADER_STYLE,
           }}
         >
           <span>{resolvedShape.label || 'Terminal'}</span>
@@ -594,62 +635,74 @@ export default function CanvasTerminal({
                 onChange={onUpdateRendererMode}
               />
             ) : null}
-            <button
-              type="button"
-              data-testid="canvas-terminal-close"
-              data-pizarra-close-button="true"
-              title="Cerrar terminal"
-              aria-label="Cerrar terminal"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose?.(resolvedShape.id);
-              }}
-              style={{
-                width: 18,
-                height: 18,
-                padding: 2,
-                background: 'transparent',
-                border: 'none',
-                color: '#9fb5d1',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 4,
-              }}
-            >
-              <X size={12} />
-            </button>
+            {onClose ? (
+              <button
+                type="button"
+                data-testid="canvas-terminal-close"
+                data-pizarra-close-button="true"
+                title="Cerrar terminal"
+                aria-label="Cerrar terminal"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose?.(resolvedShape.id);
+                }}
+                style={{
+                  width: 18,
+                  height: 18,
+                  padding: 2,
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#9fb5d1',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                }}
+              >
+                <X size={12} />
+              </button>
+            ) : null}
           </span>
         </div>
 
         <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
-          <TerminalTTY
-            id={terminalId}
-            requestedRendererMode={requestedRendererMode}
-            hideTitleBar
-            onClose={onClose}
-            onResize={onResize}
-            onActivatePanel={onActivatePanel}
-            cwd={cwd}
-            initialCommand={initialCommand}
-            autoFocus={autoFocus || isActivePanel}
-            isVisibleInLayout
-            isActivePanel={isActivePanel}
-            visibleTerminalPanelCount={visibleTerminalPanelCount}
-            showQuickCopyButton={false}
-            // pizarra-shared-view-state (Phase 1 — flicker fix):
-            // suspendNativeSurface is driven by isLiveDragging, not
-            // isDragging. A pure selection click leaves isLiveDragging
-            // false (pointerDown is true but the threshold was never
-            // crossed), so the native VTE panel stays visible — no
-            // IPC round-trip, no flicker. See design §6.1.
-            // En pizarra con native VTE: suspendemos solo durante el drag real de la card
-            // para que el widget nativo no pelee con la transformación web del contenedor.
-            // El threshold + isResizing ya evita flicker en clicks puros.
-            suspendNativeSurface={isLiveDragging}
-          />
+          {sharedSurfacesEnabled ? (
+            <SharedTerminalSurfacePortal
+              surfaceId={terminalId}
+              hostId="pizarra-canvas"
+              isActiveHost={pizarraOwnsLiveSurfaces}
+              style={{ height: '100%', width: '100%' }}
+            />
+          ) : (
+            <TerminalTTY
+              id={terminalId}
+              requestedRendererMode={requestedRendererMode}
+              hideTitleBar
+              onClose={onClose}
+              onResize={onResize}
+              onActivatePanel={onActivatePanel}
+              cwd={cwd}
+              initialCommand={initialCommand}
+              autoFocus={autoFocus || isActivePanel}
+              isVisibleInLayout
+              isActivePanel={isActivePanel}
+              visibleTerminalPanelCount={visibleTerminalPanelCount}
+              showQuickCopyButton={false}
+              surfaceHost="pizarra"
+              // pizarra-shared-view-state (Phase 1 — flicker fix):
+              // suspendNativeSurface is driven by isLiveDragging, not
+              // isDragging. A pure selection click leaves isLiveDragging
+              // false (pointerDown is true but the threshold was never
+              // crossed), so the native VTE panel stays visible — no
+              // IPC round-trip, no flicker. See design §6.1.
+              // En pizarra con native VTE: suspendemos solo durante el drag real de la card
+              // para que el widget nativo no pelee con la transformación web del contenedor.
+              // El threshold + isResizing ya evita flicker en clicks puros.
+              suspendNativeSurface={isLiveDragging}
+            />
+          )}
         </div>
       </div>
 
@@ -668,7 +721,7 @@ export default function CanvasTerminal({
           const e = handleSizing.edge;
           const c = handleSizing.corner;
           const ins = handleSizing.inset;
-          const FI = 10;
+          const FI = frameInset;
           const edgeStyle = (extra) => ({
             position: 'absolute',
             pointerEvents: 'auto',

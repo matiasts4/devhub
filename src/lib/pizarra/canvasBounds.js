@@ -132,6 +132,15 @@ export function clampPanToContent({
   return { x: nextX, y: nextY };
 }
 
+/** Surfaces parked off-screen while layout resolves must not inflate fit bounds. */
+export function isLayoutPlacementPlaceholder(el) {
+  if (!el || typeof el !== 'object') return true;
+  if (el._layoutResolved === false) return true;
+  if (typeof el.x === 'number' && el.x < -5000) return true;
+  if (typeof el.y === 'number' && el.y < -5000) return true;
+  return false;
+}
+
 /**
  * Compute bounding box of all elements for pan clamping.
  */
@@ -142,6 +151,7 @@ export function computeElementsBounds(elements = []) {
   let maxY = -Infinity;
 
   for (const el of elements) {
+    if (isLayoutPlacementPlaceholder(el)) continue;
     if (typeof el.x !== 'number' || typeof el.y !== 'number') continue;
     const w = el.width ?? 640;
     const h = el.height ?? 400;
@@ -191,6 +201,22 @@ export function computeViewportFitToBounds(
       y: canvasHeight / 2 - cy * z,
     },
   };
+}
+
+/** Prefer tighter layout bounds; fall back to the view region when coords are stale/outliers. */
+export function resolveFitBoundsForView(layoutBounds, viewBounds) {
+  if (!viewBounds?.width || !viewBounds?.height) {
+    return layoutBounds || viewBounds;
+  }
+  if (!layoutBounds?.width || !layoutBounds?.height) {
+    return viewBounds;
+  }
+  const maxW = viewBounds.width * 1.15;
+  const maxH = viewBounds.height * 1.15;
+  if (layoutBounds.width <= maxW && layoutBounds.height <= maxH) {
+    return layoutBounds;
+  }
+  return viewBounds;
 }
 
 /**

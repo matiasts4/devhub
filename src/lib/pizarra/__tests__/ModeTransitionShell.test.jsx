@@ -80,8 +80,12 @@ describe('ModeTransitionShell — idle state', () => {
       expect(shell.getAttribute('data-transition-phase')).toBe('idle');
       expect(shell.getAttribute('data-transition-active')).toBe('false');
       expect(shell.style.pointerEvents).toBe('auto');
+      expect(shell.style.display).toBe('grid');
+      expect(shell.style.isolation).toBe('isolate');
       // The child for the current view must be in the DOM.
       expect(document.querySelector('[data-testid="child-workspace"]')).toBeTruthy();
+      const layer = document.querySelector('[data-testid="mode-transition-layer-workspace"]');
+      expect(layer.style.gridArea).toBe('1 / 1');
     } finally {
       jest.useRealTimers();
     }
@@ -116,15 +120,9 @@ describe('ModeTransitionShell — pointer-events guard', () => {
       act(() => {
         setView('pizarra');
       });
-      // Debounce 200ms — still idle, still pointer-events auto.
+      // debounceMs default is 0 — leaving starts immediately.
       act(() => {
-        jest.advanceTimersByTime(150);
-      });
-      expect(shell.style.pointerEvents).toBe('auto');
-
-      // Past debounce — leaving — pointer-events none.
-      act(() => {
-        jest.advanceTimersByTime(60);
+        jest.advanceTimersByTime(1);
       });
       expect(shell.getAttribute('data-transition-phase')).toBe('leaving');
       expect(shell.getAttribute('data-transition-active')).toBe('true');
@@ -169,9 +167,8 @@ describe('ModeTransitionShell — does not unmount children during transition', 
       act(() => {
         setView('pizarra');
       });
-      // Debounce window.
       act(() => {
-        jest.advanceTimersByTime(200);
+        jest.advanceTimersByTime(1);
       });
       expect(shell.getAttribute('data-transition-phase')).toBe('leaving');
 
@@ -216,7 +213,10 @@ describe('ModeTransitionShell — reduced motion', () => {
       act(() => {
         setView('pizarra');
       });
-      // After the debounce (200ms) the reduced-motion total of
+      // debounceMs=0; reduced-motion total <= 50ms after flip.
+      act(() => {
+        jest.advanceTimersByTime(55);
+      });
       // <= 50ms should have completed.
       act(() => {
         jest.advanceTimersByTime(250);

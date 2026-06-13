@@ -1708,6 +1708,64 @@ code {
   }
 }
 
+@keyframes zed-aura-flash-success {
+  0% {
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 0.45;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes zed-aura-flash-error {
+  0% {
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.zed-aura-outcome-success {
+  animation: zed-aura-flash-success 0.9s ease-out forwards;
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 100%,
+    color-mix(in srgb, #4ad3c0 22%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.zed-aura-outcome-error {
+  animation: zed-aura-flash-error 0.9s ease-out forwards;
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 100%,
+    color-mix(in srgb, #ef4444 18%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.zed-loading-dot {
+  animation: zed-dot-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zed-aura-outcome-success,
+  .zed-aura-outcome-error {
+    animation: none;
+    opacity: 0.2;
+  }
+}
+
 /* ─── Semantic accent escape hatch (FR-D06) ───
  * Tailwind's `accent` slot is reserved for the shadcn palette
  * (`hsl(var(--accent))`). Use these classes when a class site wants the

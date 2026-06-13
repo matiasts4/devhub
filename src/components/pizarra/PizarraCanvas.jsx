@@ -76,6 +76,8 @@ export default function PizarraCanvas({
   // empty canvas. null when inactive. `moved` flips true once the drag
   // exceeds a small threshold so a plain click still deselects.
   const [marquee, setMarquee] = useState(null);
+  const [isPanDragging, setIsPanDragging] = useState(false);
+  const panDragRef = useRef(null);
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
 
   // ── Effects ─────────────────────────────────────────────────────────────
@@ -215,11 +217,7 @@ export default function PizarraCanvas({
       if (!clickedOnEmpty) return;
 
       if (activeTool === 'select') {
-        // pizarra-fluidity: a plain drag on empty canvas PANS the board (handled
-        // by the useGesture `bind()` on the wrapper). Drawing a marquee on every
-        // empty drag fought the pan and prevented free navigation. The marquee
-        // multi-select is now opt-in with Shift held; a plain empty click just
-        // clears the current selection.
+        // Shift+drag draws a marquee; plain drag on empty canvas pans the board.
         if (e.evt?.shiftKey) {
           const pos = e.target.getStage().getPointerPosition();
           setMarquee({
@@ -234,7 +232,14 @@ export default function PizarraCanvas({
           });
           return;
         }
-        onDeselect();
+        const pos = e.target.getStage().getPointerPosition();
+        panDragRef.current = {
+          startX: pos.x,
+          startY: pos.y,
+          originPanX: pan.x,
+          originPanY: pan.y,
+          moved: false,
+        };
         return;
       }
 
@@ -252,11 +257,31 @@ export default function PizarraCanvas({
       setDrawing({ startX: pos.x, startY: pos.y, type: shapeType });
       onDeselect();
     },
-    [activeTool, onDeselect]
+    [activeTool, onDeselect, pan.x, pan.y]
   );
 
   const handleMouseMove = useCallback(
     (e) => {
+      if (panDragRef.current) {
+        const pos = e.target.getStage().getPointerPosition();
+        const dx = pos.x - panDragRef.current.startX;
+        const dy = pos.y - panDragRef.current.startY;
+        if (
+          !panDragRef.current.moved &&
+          (Math.abs(dx) > 3 || Math.abs(dy) > 3)
+        ) {
+          panDragRef.current.moved = true;
+          setIsPanDragging(true);
+        }
+        if (panDragRef.current.moved) {
+          setPan({
+            x: panDragRef.current.originPanX + dx,
+            y: panDragRef.current.originPanY + dy,
+          });
+        }
+        return;
+      }
+
       if (marquee) {
         const pos = e.target.getStage().getPointerPosition();
         const x = Math.min(marquee.startX, pos.x);
@@ -319,11 +344,21 @@ export default function PizarraCanvas({
       }
       setPreviewShape(preview);
     },
-    [marquee, drawing]
+    [marquee, drawing, setPan, onDeselect]
   );
 
   const handleMouseUp = useCallback(
     (e) => {
+      if (panDragRef.current) {
+        const wasPan = panDragRef.current.moved;
+        panDragRef.current = null;
+        setIsPanDragging(false);
+        if (!wasPan) {
+          onDeselect();
+        }
+        return;
+      }
+
       if (marquee) {
         if (marquee.moved) {
           const rect = {
@@ -559,6 +594,9 @@ export default function PizarraCanvas({
 
   const { Stage, Layer, Rect, Line, Transformer } = konva;
 
+  const stageCursor =
+    activeTool === 'select' ? (isPanDragging ? 'grabbing' : 'grab') : 'crosshair';
+
   return (
     <div
       {...bind()}
@@ -583,9 +621,10 @@ export default function PizarraCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         style={{
           background: 'transparent',
-          cursor: activeTool === 'select' ? 'default' : 'crosshair',
+          cursor: stageCursor,
         }}
       >
         {/* Shapes layer */}

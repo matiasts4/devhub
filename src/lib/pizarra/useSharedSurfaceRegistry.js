@@ -354,15 +354,24 @@ const SharedSurfaceRegistryContext = createContext(null);
 
 export { SharedSurfaceRegistryContext };
 
-export function SharedSurfaceRegistryProvider({ children, projectId, workspaceId, storage }) {
-  // One registry per (projectId, workspaceId, storage) triple.
-  const registryRef = useRef(null);
+export function SharedSurfaceRegistryProvider({
+  children,
+  projectId,
+  workspaceId,
+  storage,
+  registryInstance = null,
+}) {
+  // One registry per (projectId, workspaceId, storage) triple, or an
+  // external instance from useWorkspaceSurfaceRegistry (Phase B.2b).
+  const registryRef = useRef(registryInstance || null);
   if (registryRef.current === null) {
     registryRef.current = createSharedSurfaceRegistry({
       projectId,
       workspaceId,
       storage,
     });
+  } else if (registryInstance && registryRef.current !== registryInstance) {
+    registryRef.current = registryInstance;
   }
   const registry = registryRef.current;
 

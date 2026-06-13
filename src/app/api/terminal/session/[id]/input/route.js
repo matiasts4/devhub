@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pushSessionInput } from '@/lib/terminal/ttyServer';
+import { trySidecarInput } from '@/lib/terminal/sidecarSessionApi';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,9 +23,22 @@ export async function PUT(request, { params }) {
   }
 
   const ok = pushSessionInput(id, data);
-  if (!ok) {
-    return NextResponse.json({ error: 'unknown session' }, { status: 404 });
+  if (ok) {
+    return NextResponse.json({ session_id: id, sent: true, source: 'tty' });
   }
 
-  return NextResponse.json({ session_id: id, sent: true });
+  const sidecar = await trySidecarInput(id, data);
+  if (sidecar) {
+    return NextResponse.json(sidecar);
+  }
+
+  return NextResponse.json(
+    {
+      error: 'unknown session',
+      action: 'send_input',
+      terminalId: id,
+      hint: 'Client may dispatch devhub:zed-terminal-input to active WebSocket panel.',
+    },
+    { status: 404 }
+  );
 }

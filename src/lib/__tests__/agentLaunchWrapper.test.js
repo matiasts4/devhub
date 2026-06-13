@@ -582,7 +582,9 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain('_devhub_wait_opencode_ready');
       expect(result).toContain('/tmp/devhub-opencode-ready-${_tmux_session}');
-      expect(result).toContain('/tmp/devhub-viewport-ready-${_tmux_session}');
+      expect(result).toContain('client-tui-footer|sidecar-tui-footer');
+      expect(result).toContain('Weak ready signal');
+      expect(result).not.toContain('Viewport ready marker found (TUI fallback)');
       expect(result).not.toMatch(/^sleep 10$/m);
     });
 

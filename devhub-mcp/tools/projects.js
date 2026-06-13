@@ -358,13 +358,15 @@ export function registerProjectTools(server, deps) {
 
   server.tool(
     'get_project_context',
-    'Lee el contexto completo de planificación de un proyecto: planning_prompt y todos los archivos subidos por el usuario. Usar ANTES de generar un plan exhaustivo.',
+    'Lee el contexto completo de planificación de un proyecto: planning_prompt, archivos, hitos y tareas existentes. Usar ANTES de generar o continuar un plan.',
     { project_id: PROJECT_ID_SCHEMA.describe('UUID del proyecto a planificar') },
     async ({ project_id }) => {
-      const [projRes, filesRes] = await Promise.all([
+      const [projRes, filesRes, milestonesRes, tasksRes] = await Promise.all([
         supabase
           .from('projects')
-          .select('id, name, description, planning_prompt, planning_status, created_at')
+          .select(
+            'id, name, description, planning_prompt, planning_status, project_type, documentation_policy, progress, created_at'
+          )
           .eq('id', project_id)
           .single(),
         supabase
@@ -372,13 +374,30 @@ export function registerProjectTools(server, deps) {
           .select('id, file_name, file_type, content, size_chars, created_at')
           .eq('project_id', project_id)
           .order('created_at', { ascending: true }),
+        supabase
+          .from('milestones')
+          .select('id, title, description, status, due_date, created_at')
+          .eq('project_id', project_id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('tasks')
+          .select('id, title, description, status, priority, milestone_id, due_date, created_at')
+          .eq('project_id', project_id)
+          .order('created_at', { ascending: true }),
       ]);
       if (projRes.error) return err(projRes.error.message);
       const files = filesRes.data || [];
+      const milestones = milestonesRes.data || [];
+      const tasks = tasksRes.data || [];
       const totalChars = files.reduce(
         (acc, f) => acc + (f.size_chars || f.content?.length || 0),
         0
       );
+      const tasksByStatus = tasks.reduce((acc, task) => {
+        const status = task.status || 'pending';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
       return ok({
         project: {
           id: projRes.data.id,
@@ -386,6 +405,9 @@ export function registerProjectTools(server, deps) {
           description: projRes.data.description,
           planning_prompt: projRes.data.planning_prompt,
           planning_status: projRes.data.planning_status,
+          project_type: projRes.data.project_type,
+          documentation_policy: projRes.data.documentation_policy,
+          progress: projRes.data.progress,
           created_at: projRes.data.created_at,
         },
         files: files.map((f) => ({
@@ -395,11 +417,32 @@ export function registerProjectTools(server, deps) {
           size_chars: f.size_chars || f.content?.length || 0,
           content: f.content,
         })),
+        roadmap: {
+          milestones: milestones.map((m) => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            status: m.status,
+            due_date: m.due_date,
+          })),
+          tasks: tasks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            priority: t.priority,
+            milestone_id: t.milestone_id,
+            due_date: t.due_date,
+          })),
+        },
         summary: {
           total_files: files.length,
           total_chars: totalChars,
           has_planning_prompt: !!projRes.data.planning_prompt,
           planning_status: projRes.data.planning_status,
+          total_milestones: milestones.length,
+          total_tasks: tasks.length,
+          tasks_by_status: tasksByStatus,
         },
       });
     }

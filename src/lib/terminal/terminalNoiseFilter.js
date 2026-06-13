@@ -45,12 +45,23 @@ export const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
 /** SGR mouse wheel/click reports (e.g. ESC[<0;3;3M) leaked on scroll/focus churn. */
 export const TERMINAL_MOUSE_REPORT_RE = /\x1b\[<[\d;]*[mM]/g;
 
+/** Motion/drag SGR reports (button 32+) — shells echo them as visible garbage on hover. */
+export const TERMINAL_MOUSE_MOTION_LEAK_RE = /\x1b\[<(?!0;|[1-3];|64;|65;)\d+;[\d;]*[mM]/g;
+
+/** Page Up/Down echoed when a plain shell receives synthetic wheel injection. */
+export const TERMINAL_WHEEL_PAGE_LEAK_RE = /\x1b\[[56]~/g;
+
 /** Click/drag only (buttons 0–3) — wheel buttons 64/65 must reach TUIs (OpenCode/grok). */
 export const TERMINAL_MOUSE_CLICK_LEAK_RE = /\x1b\[<(0|[1-3]);[\d;]*[mM]/g;
 
 export function stripTerminalFocusReporting(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
+}
+
+export function stripTerminalMouseMotionLeak(chunk) {
+  if (typeof chunk !== 'string' || !chunk) return chunk;
+  return chunk.replace(TERMINAL_MOUSE_MOTION_LEAK_RE, '');
 }
 
 export function stripTerminalMouseReporting(chunk) {
@@ -69,32 +80,45 @@ export function stripShellTerminalResponseNoise(chunk) {
   return chunk
     .replace(TERMINAL_WINDOW_REPORT_RE, '')
     .replace(TERMINAL_MOUSE_REPORT_RE, '')
+    .replace(TERMINAL_WHEEL_PAGE_LEAK_RE, '')
     .replace(SHELL_TERMINAL_RESPONSE_RE, '');
 }
 
-export function stripTerminalInputNoise(chunk) {
+/**
+ * @param {string} chunk
+ * @param {{ mode?: 'tui' | 'shell'; tuiReady?: boolean; panelHidden?: boolean; panelInactive?: boolean } | null | undefined} [ctx]
+ */
+export function stripTerminalInputNoise(chunk, ctx) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return stripTerminalMouseClickLeak(
-    stripTerminalFocusReporting(
-      chunk.replace(TERMINAL_WINDOW_REPORT_RE, '').replace(SHELL_TERMINAL_RESPONSE_RE, '')
-    )
-  );
+  const baseStripped = chunk
+    .replace(TERMINAL_WINDOW_REPORT_RE, '')
+    .replace(SHELL_TERMINAL_RESPONSE_RE, '');
+  const focusStripped = stripTerminalFocusReporting(baseStripped);
+  const motionStripped = stripTerminalMouseMotionLeak(focusStripped);
+  const tuiLive =
+    ctx &&
+    ctx.mode === 'tui' &&
+    ctx.tuiReady === true &&
+    ctx.panelHidden !== true &&
+    ctx.panelInactive !== true;
+  if (tuiLive) {
+    return motionStripped;
+  }
+  return stripTerminalMouseReporting(motionStripped);
 }
 
-/** Input noise check — wheel SGR (64/65) is intentional TUI scroll, not leak noise. */
+/** Input noise check — treats any SGR mouse report as noise; tui-ready strip path still preserves it. */
 export function containsTerminalInputNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return false;
-  const withoutWheel = chunk.replace(/\x1b\[<(64|65);[\d;]*[mM]/g, '');
-  if (!withoutWheel) return false;
   SHELL_TERMINAL_RESPONSE_RE.lastIndex = 0;
   TERMINAL_FOCUS_REPORTING_RE.lastIndex = 0;
   TERMINAL_WINDOW_REPORT_RE.lastIndex = 0;
-  TERMINAL_MOUSE_CLICK_LEAK_RE.lastIndex = 0;
+  TERMINAL_MOUSE_REPORT_RE.lastIndex = 0;
   return (
-    SHELL_TERMINAL_RESPONSE_RE.test(withoutWheel) ||
-    TERMINAL_FOCUS_REPORTING_RE.test(withoutWheel) ||
-    TERMINAL_WINDOW_REPORT_RE.test(withoutWheel) ||
-    TERMINAL_MOUSE_CLICK_LEAK_RE.test(withoutWheel)
+    SHELL_TERMINAL_RESPONSE_RE.test(chunk) ||
+    TERMINAL_FOCUS_REPORTING_RE.test(chunk) ||
+    TERMINAL_WINDOW_REPORT_RE.test(chunk) ||
+    TERMINAL_MOUSE_REPORT_RE.test(chunk)
   );
 }
 
@@ -123,15 +147,14 @@ export function containsTerminalResponseNoise(chunk) {
  *           removed and the surrounding input (user keystrokes, etc.) is
  *           forwarded as-is.
  *
- * The `session` argument is currently informational and accepted for
- * symmetry with the output filter; future gating by session.mode can be
- * added here without changing call sites.
+ * `ctx` gates SGR click passthrough when `mode === 'tui' && tuiReady === true`.
+ * Null/undefined preserves legacy shell behavior (strip click leaks).
  */
 
-export function filterTerminalInputForSession(_session, chunk) {
+export function filterTerminalInputForSession(ctx, chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   if (!containsTerminalInputNoise(chunk)) return chunk;
-  const stripped = stripTerminalInputNoise(chunk);
+  const stripped = stripTerminalInputNoise(chunk, ctx);
   return stripped.length === 0 ? null : stripped;
 }
 

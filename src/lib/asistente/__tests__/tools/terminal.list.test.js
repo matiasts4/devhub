@@ -139,7 +139,10 @@ describe('list_terminals (listTerminalsTool)', () => {
     });
     const result = await listTerminalsTool.execute({}, {});
     expect(calls[0].url).toMatch(/\/api\/terminal\/processes$/);
-    expect(result.processes).toEqual([{ terminalId: 'p1' }, { terminalId: 'p2' }]);
+    expect(result.processes).toEqual([
+      { terminalId: 'p1', displayName: 'Alex' },
+      { terminalId: 'p2', displayName: 'Avery' },
+    ]);
   });
 
   test('returns empty processes array when backend has none', async () => {

@@ -41,6 +41,11 @@ import {
   Settings,
 } from 'lucide-react';
 import TerminalTTY from './TerminalTTY';
+import {
+  SharedTerminalSurfacePortal,
+  SharedTerminalSurfaceRegistrar,
+} from './terminal/SharedTerminalSurface';
+import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
@@ -57,7 +62,9 @@ import {
   getDisplayName as getPanelDisplayNameFromStore,
   setDisplayName as setPanelDisplayNameInStore,
   nextDisplayNameForPanel as nextPoolNameForWorkspace,
+  resolvePanelSurfaceLabel,
 } from '@/lib/terminal/panelDisplayName';
+import { buildPanelHeaderDisplay } from './terminal/utils/panelHeaderDisplay';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 import NotificationCenter from './NotificationCenter';
 import TerminalSettingsModal from './TerminalSettingsModal';
@@ -180,10 +187,10 @@ import {
   SWARM_LAUNCH_MATERIALIZED_EVENT,
 } from '@/lib/terminal/swarmLaunchBatch';
 import {
-  schedulePostLayoutNativeSync,
   dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
   computeCarvedBounds,
+  createNativeLayoutSyncQueue,
 } from '@/components/terminal/nativeLayoutSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
@@ -197,15 +204,14 @@ import {
   hydrateSwarmLaunchWrapperFlags,
   markSwarmLaunchWrapperDispatched,
 } from '@/lib/terminal/swarmLaunchWrapperLifecycle';
-import {
-  useLiveSurfaceRegistry,
-  LiveSurfaceRegistryContext,
-} from '@/lib/pizarra/useLiveSurfaceRegistry';
+import { useWorkspaceSurfaceRegistry } from '@/lib/pizarra/useWorkspaceSurfaceRegistry';
+import WorkspaceSurfaceRegistryProvider from '@/components/workspace/WorkspaceSurfaceRegistryProvider';
 // pizarra-shared-view-state Phase 2: TWM is the canonical owner
 // of sharedDockState. Mounting SharedDockStoreProvider at the
 // TWM root gives every workspace + pizarra consumer in the same
 // tab the same store instance.
 import { SharedDockStoreProvider } from './workspace/hooks/useSharedDockState';
+import RightDockSharedMirror from './workspace/RightDockSharedMirror';
 // Phase 4: SharedSurfacesProvider sits ABOVE the dock store.
 // It owns the singleton lifecycle of every terminal/browser
 // surface mounted in workspace + pizarra. Toggling the
@@ -220,7 +226,39 @@ const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null
   cwd: panelCwd,
   swarmRole: metadata?.swarmRole || null,
   swarmContext: metadata?.swarmContext || null,
+  displayName: metadata?.displayName ?? null,
 });
+
+function createPanelWithDisplayNameFactory(workspaceId, getSiblingNames = () => []) {
+  return (id, initialCommand = null, panelCwd = null, metadata = null) => {
+    const existing = getPanelDisplayNameFromStore(id, workspaceId);
+    if (existing) {
+      return createPanel(id, initialCommand, panelCwd, {
+        ...(metadata || {}),
+        displayName: existing,
+      });
+    }
+    const reserved =
+      typeof metadata?.displayName === 'string' && metadata.displayName.trim()
+        ? metadata.displayName.trim()
+        : null;
+    if (reserved) {
+      setPanelDisplayNameInStore(id, workspaceId, reserved);
+      return createPanel(id, initialCommand, panelCwd, {
+        ...(metadata || {}),
+        displayName: reserved,
+      });
+    }
+    const siblings = typeof getSiblingNames === 'function' ? getSiblingNames() : [];
+    const assigned = nextPoolNameForWorkspace(workspaceId, siblings);
+    setPanelDisplayNameInStore(id, workspaceId, assigned);
+    return createPanel(id, initialCommand, panelCwd, {
+      ...(metadata || {}),
+      displayName: assigned,
+    });
+  };
+}
+
 const createColumn = (colId, panelId, initialCommand = null, panelCwd = null) => ({
   id: colId,
   panels: [createPanel(panelId, initialCommand, panelCwd)],
@@ -434,16 +472,18 @@ function readWorkspaceSwarmLaunchSummary(
 }
 
 function createDefaultWorkspaceState() {
+  const wsId = 'ws1';
+  const createPanelFn = createPanelWithDisplayNameFactory(wsId);
   return {
     workspaces: [
       {
-        id: 'ws1',
+        id: wsId,
         name: 'Workspace 1',
-        columns: [createColumn('c1', 'p1')],
+        columns: [{ id: 'c1', panels: [createPanelFn('p1')] }],
       },
     ],
-    activeWsId: 'ws1',
-    activePanelIds: { ws1: 'p1' },
+    activeWsId: wsId,
+    activePanelIds: { [wsId]: 'p1' },
   };
 }
 
@@ -527,6 +567,7 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
           cwd: panel?.cwd || null,
           initialCommand: panel?.initialCommand || null,
           swarmRole: panel?.swarmRole || null,
+          displayName: panel?.displayName || null,
         };
       });
 
@@ -825,14 +866,45 @@ function renderWorkspacePanel(
     connectionState,
     visibleTerminalPanelCount = 1,
     deferLiveSurfaceToPizarra = false,
+    pizarraOwnsLiveSurfaces = false,
     inboxPendingCount = 0,
+    renameEditing = false,
+    renameValue = '',
+    renameError = null,
+    onStartRename = null,
+    onRenameValueChange = null,
+    onCommitRename = null,
+    onCancelRename = null,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
+  const sharedViewEnabled = isPizarraSharedViewEnabled();
   const panelChromeSafeZoneMinTop = 30;
-  const semanticMetadata =
-    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand);
+  const semanticMetadata = buildPanelHeaderDisplay(
+    panelLabel,
+    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
+  );
   const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
+  const sharedTerminalProps = {
+    id: panel.id,
+    cwd: panel.cwd || cwd,
+    swarmContext: panel.swarmContext || null,
+    hideTitleBar: true,
+    showQuickCopyButton: false,
+    autoFocus: isActive,
+    isActivePanel: Boolean(isActivePanel ?? isActive),
+    isVisibleInLayout: Boolean(isVisibleInLayout),
+    visibleTerminalPanelCount,
+    initialCommand: panel.initialCommand,
+    connectionState,
+    requestedRendererMode,
+    onResetRendererToXterm,
+    onActivatePanel,
+    suspendNativeSurface: Boolean(suspendNativeSurface),
+    nativeSurfacePolicy: nativeSurfacePolicy || 'live',
+    surfaceHost: pizarraOwnsLiveSurfaces ? 'pizarra' : 'workspace',
+    pizarraOwnsLiveSurfaces: Boolean(pizarraOwnsLiveSurfaces),
+  };
 
   return (
     <div
@@ -927,8 +999,65 @@ function renderWorkspacePanel(
           className="pointer-events-none absolute right-1 top-0.5 z-10"
           data-testid={`panel-chrome-overlay-${panel.id}`}
           data-floating-placement="inside-top-right"
-          aria-label={`Panel ${panelLabel || panel.id} controls`}
+          aria-label={
+            renameEditing
+              ? `Rename panel ${panelLabel || panel.id}`
+              : `Panel ${panelLabel || panel.id} controls`
+          }
+          title={
+            renameEditing
+              ? `Rename panel ${panelLabel || panel.id}`
+              : `Panel ${panelLabel || panel.id} actions`
+          }
+          onDoubleClick={(e) => {
+            if (renameEditing) return;
+            e.stopPropagation();
+            onStartRename?.(panel, panelLabel);
+          }}
         >
+          {renameEditing ? (
+            <span
+              className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--text-primary)]"
+            >
+              <input
+                autoFocus
+                type="text"
+                data-testid={`panel-rename-input-${panel.id}`}
+                value={renameValue}
+                onChange={(e) => onRenameValueChange?.(e.target.value || '')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onRenameValueChange?.(e.currentTarget.value || '');
+                    onCommitRename?.(panel);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancelRename?.();
+                  }
+                }}
+                onBlur={(e) => {
+                  onRenameValueChange?.(e.currentTarget.value || '');
+                  onCommitRename?.(panel);
+                }}
+                className="w-[120px] bg-transparent outline-none"
+                aria-label={`Rename panel ${panel.id}`}
+              />
+            </span>
+          ) : null}
+          {renameError && renameEditing ? (
+            <span
+              data-testid={`panel-rename-error-${panel.id}`}
+              className="pointer-events-auto absolute right-0 top-full mt-1 inline-flex items-center rounded-md border border-[rgba(251,113,133,0.45)] bg-[rgba(251,113,133,0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(251,113,133)]"
+            >
+              {renameError === 'name-in-use'
+                ? 'Name already in use in this workspace'
+                : renameError === 'invalid-name' || renameError === 'empty-name'
+                  ? 'Invalid name'
+                  : renameError === 'collision'
+                    ? 'Name already in use in this workspace'
+                    : renameError}
+            </span>
+          ) : null}
           <div
             className="pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors"
             data-testid={`panel-header-actions-${panel.id}`}
@@ -1011,12 +1140,28 @@ function renderWorkspacePanel(
         data-testid={`panel-body-${panel.id}`}
         style={getTerminalPanelBodyStyle({ withBackground: false })}
       >
+        {sharedViewEnabled ? (
+          <SharedTerminalSurfaceRegistrar
+            surfaceId={panel.id}
+            terminalProps={sharedTerminalProps}
+          />
+        ) : null}
         <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
-          {deferLiveSurfaceToPizarra ? (
+          {sharedViewEnabled ? (
+            pizarraOwnsLiveSurfaces ? null : (
+              <SharedTerminalSurfacePortal
+                surfaceId={panel.id}
+                hostId="workspace-dock"
+                isActiveHost={true}
+                className="h-full w-full"
+              />
+            )
+          ) : deferLiveSurfaceToPizarra ? (
             <div
               data-testid={`panel-body-deferred-pizarra-${panel.id}`}
               className="h-full w-full"
               aria-hidden="true"
+              style={{ background: 'var(--surface-app, #050814)' }}
             />
           ) : (
             <TerminalTTY
@@ -1271,6 +1416,63 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
   const [focusedPanelByWorkspace, setFocusedPanelByWorkspace] = useState(() => ({}));
   const [panelNavPulseId, setPanelNavPulseId] = useState(null);
+  const [editingPanelId, setEditingPanelId] = useState(null);
+  const [editingValue, setEditingValue] = useState('');
+  const editingValueRef = useRef('');
+  const [renameError, setRenameError] = useState(null);
+
+  const startPanelRename = useCallback((panel, currentLabel) => {
+    setEditingPanelId(panel.id);
+    setEditingValue(currentLabel);
+    editingValueRef.current = currentLabel;
+    setRenameError(null);
+  }, []);
+
+  const commitPanelRename = useCallback(
+    (panel, workspaceId, overrideValue) => {
+      const value = typeof overrideValue === 'string' ? overrideValue : editingValueRef.current;
+      const result = setPanelDisplayNameInStore(panel.id, workspaceId, value);
+      if (result && result.ok) {
+        setWorkspaces((prev) =>
+          prev.map((ws) => {
+            if (ws.id !== workspaceId) return ws;
+            return {
+              ...ws,
+              columns: ws.columns.map((col) => ({
+                ...col,
+                panels: col.panels.map((p) =>
+                  p.id === panel.id ? { ...p, displayName: value } : p
+                ),
+              })),
+            };
+          })
+        );
+        setEditingPanelId(null);
+        setEditingValue('');
+        editingValueRef.current = '';
+        setRenameError(null);
+      } else {
+        const previousName =
+          panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || '';
+        setRenameError((result && (result.reason || result.error)) || 'rename-failed');
+        setEditingValue(previousName);
+        editingValueRef.current = previousName;
+      }
+    },
+    []
+  );
+
+  const updateEditingValue = useCallback((val) => {
+    setEditingValue(val);
+    editingValueRef.current = val;
+  }, []);
+
+  const cancelPanelRename = useCallback(() => {
+    setEditingPanelId(null);
+    setEditingValue('');
+    editingValueRef.current = '';
+    setRenameError(null);
+  }, []);
   const [terminalRendererPreferences, setTerminalRendererPreferences] = useState(() =>
     createDefaultTerminalRendererPreferences()
   );
@@ -2365,6 +2567,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const rightDockAnimProps = getRightDockAnimProps({
     isVisible: dockLayerVisible,
     isDragging: isDraggingDock,
+    // pizarra-fluidity: fullscreen takeovers (pizarra/browser/swarm maximized)
+    // fade in fast instead of sliding the whole screen from the right.
+    isFullscreen: isFullscreenBrowser,
   });
   // With carve/avoid rects we can show web popups (Grillas, swarm wizard, etc)
   // over *live* (carved) terminals without full suspend for most cases.
@@ -2948,6 +3153,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const getPanelDisplayLabel = (ws, panelId) => {
     const flatPanels = ws.columns.flatMap((col) => col.panels);
     const index = flatPanels.findIndex((panel) => panel.id === panelId);
+    if (index < 0) return `P${flatPanels.length + 1}`;
+    const fromMap = getPanelDisplayNameFromStore(panelId, ws.id);
+    if (fromMap) return fromMap;
+    const fromPanel = flatPanels[index]?.displayName;
+    if (fromPanel) return fromPanel;
     return `P${index + 1}`;
   };
 
@@ -2960,6 +3170,40 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
     return countPanelsInColumns(workspace?.columns || []);
   }, [activeWsId]);
+
+  const inferProgramFromPanelCommand = useCallback((command) => {
+    const normalized = String(command || '').toLowerCase();
+    if (normalized.includes('opencode')) return 'opencode';
+    if (normalized.includes('codex')) return 'codex';
+    if (normalized.includes('hermes')) return 'hermes';
+    return null;
+  }, []);
+
+  const collectSiblingPanelNames = useCallback((workspaceId) => {
+    const ws = workspacesRef.current.find((w) => w.id === workspaceId);
+    if (!ws) return [];
+    return ws.columns
+      .flatMap((col) => col.panels || [])
+      .map(
+        (panel) =>
+          panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null
+      )
+      .filter((name) => typeof name === 'string' && name.length > 0);
+  }, []);
+
+  const getWorkspaceTerminals = useCallback(() => {
+    const workspaceId = activeWsIdRef.current || activeWsId;
+    const workspace = workspacesRef.current.find((entry) => entry.id === workspaceId);
+    if (!workspace) return [];
+    return workspace.columns.flatMap((col) => col.panels || []).map((panel) => ({
+      terminalId: panel.id,
+      displayName:
+        panel.displayName || getPanelDisplayNameFromStore(panel.id, workspaceId) || null,
+      cwd: panel.cwd || null,
+      program: inferProgramFromPanelCommand(panel.initialCommand),
+      tuiReady: true,
+    }));
+  }, [activeWsId, inferProgramFromPanelCommand]);
 
   const buildNativeWorkspaceSyncDetail = useCallback(
     (reason = 'workspace-switch') => {
@@ -3002,37 +3246,92 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [activeWsId, focusedPanelByWorkspace, getAllPanelIds, isVisible, workspaces, overlayAvoidRects]
   );
 
-  const layoutSettleCleanupRef = useRef(null);
+  // A.3 — serialized native-IPC sync queue. While a workspace↔pizarra
+  // transition animates, frame-by-frame panel-group-layout syncs are buffered
+  // and the native VTE reattach is deferred to a single pass against the final
+  // layout (see nativeLayoutSync.createNativeLayoutSyncQueue).
+  const nativeSyncQueueRef = useRef(null);
+  if (nativeSyncQueueRef.current === null) {
+    nativeSyncQueueRef.current = createNativeLayoutSyncQueue();
+  }
+  const nativeSyncIdleTimerRef = useRef(null);
 
   const notifyNativeLayoutSettled = useCallback(
     (reason) => {
       if (typeof window === 'undefined') return;
 
-      layoutSettleCleanupRef.current?.();
-      const isSinglePanelWorkspaceSwitch =
-        reason === 'workspace-switch' && getActiveWorkspaceTerminalPanelCount() <= 1;
-      layoutSettleCleanupRef.current = schedulePostLayoutNativeSync({
-        layoutReason: reason,
+      nativeSyncQueueRef.current?.enqueue(reason, {
         workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
-        includeFollowUpPasses: !isSinglePanelWorkspaceSwitch,
+        includeFollowUpPasses: true,
       });
     },
-    [buildNativeWorkspaceSyncDetail, getActiveWorkspaceTerminalPanelCount]
+    [buildNativeWorkspaceSyncDetail]
   );
 
   useEffect(
     () => () => {
-      layoutSettleCleanupRef.current?.();
-      layoutSettleCleanupRef.current = null;
+      if (nativeSyncIdleTimerRef.current) {
+        clearTimeout(nativeSyncIdleTimerRef.current);
+        nativeSyncIdleTimerRef.current = null;
+      }
+      nativeSyncQueueRef.current?.reset();
     },
     []
   );
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isClientLoaded) return undefined;
+    if (pizarraOwnsLiveSurfaces) {
+      const timer = setTimeout(() => {
+        notifyNativeLayoutSettled('workspace-switch');
+      }, 320);
+      return () => clearTimeout(timer);
+    }
     notifyNativeLayoutSettled('workspace-switch');
     return undefined;
-  }, [activeWsId, isClientLoaded, notifyNativeLayoutSettled]);
+  }, [activeWsId, isClientLoaded, notifyNativeLayoutSettled, pizarraOwnsLiveSurfaces]);
+
+  const prevPizarraOwnsLiveSurfacesRef = useRef(pizarraOwnsLiveSurfaces);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isClientLoaded) return undefined;
+    const prev = prevPizarraOwnsLiveSurfacesRef.current;
+    prevPizarraOwnsLiveSurfacesRef.current = pizarraOwnsLiveSurfaces;
+    if (prev === pizarraOwnsLiveSurfaces) return undefined;
+
+    const reason = pizarraOwnsLiveSurfaces ? 'pizarra-mode-enter' : 'pizarra-mode-exit';
+    const queue = nativeSyncQueueRef.current;
+    if (!queue) {
+      notifyNativeLayoutSettled(reason);
+      return undefined;
+    }
+
+    // A.3 — enter the animating window: buffer mid-transition layout syncs and
+    // emit the reattach once, at idle, against the settled layout. The settle
+    // delay is sized above the transition durations (enter 220ms / exit 110ms;
+    // see useModeTransition) and doubles as the safety timeout if the
+    // transition is cancelled.
+    queue.setAnimating(true);
+    queue.enqueue(reason, {
+      workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
+      includeFollowUpPasses: false,
+    });
+
+    if (nativeSyncIdleTimerRef.current) {
+      clearTimeout(nativeSyncIdleTimerRef.current);
+    }
+    const settleMs = pizarraOwnsLiveSurfaces ? 120 : 80;
+    nativeSyncIdleTimerRef.current = setTimeout(() => {
+      nativeSyncIdleTimerRef.current = null;
+      queue.flushOnIdle();
+    }, settleMs);
+
+    return undefined;
+  }, [
+    isClientLoaded,
+    notifyNativeLayoutSettled,
+    pizarraOwnsLiveSurfaces,
+    buildNativeWorkspaceSyncDetail,
+  ]);
 
   // When avoid rects change (popup opened/closed/resized), immediately tell active
   // terminals so they carve (or restore full) without waiting for a layout event.
@@ -3497,7 +3796,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (safeCount > 0) {
         const built = buildWorkspaceColumnsForTerminalCount({
           terminalCount: safeCount,
-          createPanel,
+          createPanel: createPanelWithDisplayNameFactory(newWsId, () =>
+            collectSiblingPanelNames(newWsId)
+          ),
           allocateColumnId: () => {
             colCounterRef.current += 1;
             return `c${colCounterRef.current}`;
@@ -3535,7 +3836,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         );
       }
     },
-    [cwd]
+    [collectSiblingPanelNames, cwd]
   );
 
   const addWorkspace = () => {
@@ -4007,6 +4308,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       // Empty workspace: spawn the first panel (pizarra "Add Terminal", Zed, etc.).
       if (currentPanelCount === 0) {
         const spawned = spawnFirstTerminalPanelColumns({
+          createPanel: createPanelWithDisplayNameFactory(targetWorkspaceId, () =>
+            collectSiblingPanelNames(targetWorkspaceId)
+          ),
           allocateColumnId: () => {
             colCounterRef.current += 1;
             return `c${colCounterRef.current}`;
@@ -4057,7 +4361,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           : `p${panelCounterRef.current + 1}`;
       if (newPanelId === `p${panelCounterRef.current + 1}`) {
         panelCounterRef.current += 1;
+      } else {
+        const explicitNumeric = /^p(\d+)$/.exec(newPanelId);
+        if (explicitNumeric) {
+          const n = Number(explicitNumeric[1]);
+          if (Number.isFinite(n) && n > panelCounterRef.current) {
+            panelCounterRef.current = n;
+          }
+        }
       }
+      const makePanel = createPanelWithDisplayNameFactory(targetWorkspaceId, () =>
+        collectSiblingPanelNames(targetWorkspaceId)
+      );
       setWorkspaces((prev) =>
         prev.map((ws) => {
           if (ws.id !== targetWorkspaceId) return ws;
@@ -4076,18 +4391,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             // Split Right: Agregar una nueva columna a la derecha
             colCounterRef.current += 1;
             const newColId = `c${colCounterRef.current}`;
-            nextColumnsSnapshot.splice(
-              colIndex + 1,
-              0,
-              createColumn(newColId, newPanelId, initialCommand, panelCwd)
-            );
+            nextColumnsSnapshot.splice(colIndex + 1, 0, {
+              id: newColId,
+              panels: [makePanel(newPanelId, initialCommand, panelCwd)],
+            });
           } else {
             // Split Down: Agregar un nuevo panel debajo en la misma columna
             const panelIndex = nextColumnsSnapshot[colIndex].panels.findIndex(
               (p) => p.id === targetId
             );
             const newPanels = [...nextColumnsSnapshot[colIndex].panels];
-            newPanels.splice(panelIndex + 1, 0, createPanel(newPanelId, initialCommand, panelCwd));
+            newPanels.splice(panelIndex + 1, 0, makePanel(newPanelId, initialCommand, panelCwd));
             nextColumnsSnapshot[colIndex] = { ...nextColumnsSnapshot[colIndex], panels: newPanels };
           }
 
@@ -4107,7 +4421,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       );
       return newPanelId;
     },
-    [activeWsId, activePanelId, syncActiveWindowSnapshot]
+    [activeWsId, activePanelId, collectSiblingPanelNames, syncActiveWindowSnapshot]
   );
 
   const renderWorkspaceWindowBar = useCallback(
@@ -4589,7 +4903,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activateWorkspacePanel, applyTerminalNavigationAction, applyTerminalWorkspaceAction]);
 
   // ─── Shared Live Surface Registry Hook & Interceptors ───────────────────
-  const registry = useLiveSurfaceRegistry(projectId, activeWorkspace?.id);
+  const registry = useWorkspaceSurfaceRegistry(projectId, activeWorkspace?.id);
 
   // Distinguishes the single dedicated/detached browser window (tied to
   // browserWindowState.open + WebviewWindow) from independent embedded
@@ -4617,17 +4931,33 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           panelCount: countPanelsInColumns(activeWorkspace.columns || []),
         });
         if (newPanelId) {
+          const panelLabel = resolvePanelSurfaceLabel(
+            {
+              id: newPanelId,
+              displayName: getPanelDisplayNameFromStore(newPanelId, activeWorkspace.id),
+            },
+            activeWorkspace.id
+          );
           const finalSurface = {
             ...surface,
             id: `shape-term-${newPanelId}`,
             panelId: newPanelId,
-            label: `Terminal ${newPanelId}`,
+            label: panelLabel,
             pizarra: {
               ...surface.pizarra,
               visible: true,
             },
           };
           registry.addSurface(finalSurface);
+          if (
+            effectiveRightDockState?.maximized &&
+            effectiveRightDockState?.maximizedView === 'pizarra' &&
+            typeof window !== 'undefined'
+          ) {
+            window.setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+            }, 400);
+          }
           return finalSurface;
         }
         logPizarraBrowser('registry-add-terminal:failed', {
@@ -4659,7 +4989,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         return surface;
       }
     },
-    [activeWorkspace, handleSplit, registry.addSurface]
+    [activeWorkspace, handleSplit, registry.addSurface, effectiveRightDockState]
   );
 
   const registryRemoveSurface = useCallback(
@@ -4740,7 +5070,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             id: `shape-term-${p.id}`,
             type: 'terminal',
             panelId: p.id,
-            label: p.initialCommand || `Terminal ${p.id}`,
+            label: resolvePanelSurfaceLabel(p, activeWorkspace.id),
             cwd: p.cwd || null,
             initialCommand: p.initialCommand || null,
             requestedRendererMode: resolveRequestedRenderer({
@@ -4859,7 +5189,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     });
 
     if (changed) {
-      registry.resetSurfaces(finalSurfaces);
+      try {
+        registry.resetSurfaces(finalSurfaces);
+      } catch (err) {
+        console.error('[TerminalWorkspacesManager] registry reconcile failed:', err);
+      }
     }
 
     const browserSurfaces = finalSurfaces.filter((s) => s.type === 'browser');
@@ -5026,9 +5360,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         return;
       }
 
-      const cmdToRun = enforceDocOpsGateOnLaunchCommand(
-        command || `opencode --agent ${selectedAgent || DEFAULT_OPENCODE_AGENT}`
-      );
+      // Fase 4 (planning-launch-hardening): the planning path uses a dedicated
+      // launch command that does NOT go through the DocOps gate. The dispatcher
+      // (see `dispatchPlanningAgentRun.js`) is waiting on a matching
+      // `devhub:run-agent-accepted` ack — fire it after a successful split so
+      // the retry loop can short-circuit.
+      const fallback = `opencode --agent ${selectedAgent || DEFAULT_OPENCODE_AGENT}`;
+      const cmdToRun =
+        launchOrigin === 'planning-launch'
+          ? (command || fallback)
+          : enforceDocOpsGateOnLaunchCommand(command || fallback);
       // Use split right by default for agents
       const createdPanelId = handleSplit('horizontal', activePanelId, cmdToRun, cwd);
 
@@ -5038,6 +5379,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           createdPanelId,
           cmdToRun
         );
+        // Ack the dispatcher (design Decision 8). Minimal shape: { taskId }.
+        try {
+          window.dispatchEvent(
+            new window.CustomEvent('devhub:run-agent-accepted', { detail: { taskId } })
+          );
+        } catch {
+          // window/CustomEvent may be undefined in tests — best-effort ack.
+        }
       }
     };
 
@@ -5466,7 +5815,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // or a string (open + run). See `zedOpenTerminalEvent.js`.
     const handleZedOpenTerminal = (e) => {
       if (!isValidZedOpenTerminalEvent(e.detail)) return;
-      const { command, cwd, session_id, focus = false } = e.detail;
+      const { command, cwd, session_id, focus = false, displayName: zedDisplayName } = e.detail;
       const explicitPanelId = resolveZedOpenTerminalPanelId(e.detail, null);
 
       const targetWsId = activeWsIdRef.current || activeWsId;
@@ -5520,11 +5869,81 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         }
       );
 
+      if (typeof zedDisplayName === 'string' && zedDisplayName.trim()) {
+        const cleanName = zedDisplayName.trim();
+        const renameResult = setPanelDisplayNameInStore(newPanelId, targetWsId, cleanName);
+        if (renameResult?.ok) {
+          setWorkspaces((prev) =>
+            prev.map((ws) => {
+              if (ws.id !== targetWsId) return ws;
+              return {
+                ...ws,
+                columns: ws.columns.map((col) => ({
+                  ...col,
+                  panels: col.panels.map((p) =>
+                    p.id === newPanelId ? { ...p, displayName: cleanName } : p
+                  ),
+                })),
+              };
+            })
+          );
+        }
+      }
+
       if (maximizedView === 'pizarra' && typeof window !== 'undefined') {
         logPizarraBrowser('zed-open-terminal:in-pizarra', { panelId: newPanelId, focus });
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
         }, 400);
+      } else if (focus === true && typeof window !== 'undefined') {
+        updateRightDockState((currentState) => ({
+          ...currentState,
+          visible: true,
+          maximizedView: 'pizarra',
+        }));
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        }, 400);
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        }, 720);
+      }
+    };
+
+    const handleZedTerminalInput = (e) => {
+      const detail = e?.detail;
+      if (!detail || typeof detail.input !== 'string') return;
+      const panelId =
+        detail.terminalId || detail.session_id || detail.panelId || null;
+      if (!panelId) return;
+      window.dispatchEvent(
+        new CustomEvent('devhub:zed-terminal-input', {
+          detail: { panelId, terminalId: panelId, input: detail.input },
+        })
+      );
+    };
+
+    const handleZedCloseTerminal = (e) => {
+      const sessionId = e?.detail?.session_id;
+      if (typeof sessionId === 'string' && sessionId.length > 0) {
+        handleClosePanel(sessionId);
+      }
+    };
+
+    const handleZedCloseUrl = () => {
+      const wsId = activeWsIdRef.current || activeWsId;
+      if (wsId) {
+        updateBrowserWindowState(wsId, {
+          open: false,
+          updatedAt: Date.now(),
+        });
+      }
+      updateRightDockState((currentState) => ({
+        ...currentState,
+        browserUrl: null,
+      }));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
       }
     };
 
@@ -5535,6 +5954,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
     window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
     window.addEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
+    window.addEventListener('devhub:zed-close-terminal', handleZedCloseTerminal);
+    window.addEventListener('devhub:zed-close-url', handleZedCloseUrl);
+    window.addEventListener('devhub:zed-terminal-input', handleZedTerminalInput);
 
     const handleZedOpenUrl = (e) => {
       logPizarraBrowser('zed-open-url:received', { detail: e?.detail ?? null });
@@ -5599,12 +6021,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       );
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
       window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
+      window.removeEventListener('devhub:zed-close-terminal', handleZedCloseTerminal);
+      window.removeEventListener('devhub:zed-close-url', handleZedCloseUrl);
+      window.removeEventListener('devhub:zed-terminal-input', handleZedTerminalInput);
       window.removeEventListener('devhub:zed-open-url', handleZedOpenUrl);
     };
   }, [
     activeWsId,
     applyPanelRelaunchCommand,
     failPendingReopen,
+    handleClosePanel,
     projectId,
     storage,
     terminalStateStorageKey,
@@ -5666,7 +6092,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? getAllPanelIds(activeWorkspace.columns).length
     : 0;
   return (
-    <LiveSurfaceRegistryContext.Provider value={registryValue}>
+    <WorkspaceSurfaceRegistryProvider
+      projectId={projectId}
+      workspaceId={activeWsId}
+      registryValue={registryValue}
+      registryInstance={registry.registryInstance}
+    >
       <SharedSurfacesProvider
         onSurfaceDestroy={(surfaceId) => {
           // Phase 4: when a surface is hard-destroyed, also
@@ -5684,6 +6115,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           projectId={projectId || 'global'}
           workspaceId={activeWsId || 'workspace'}
         >
+          <RightDockSharedMirror
+            rightDockState={rightDockState}
+            projectId={projectId || 'global'}
+            workspaceId={activeWsId || 'workspace'}
+          />
           <motion.div
             ref={managerRootRef}
             className="relative flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
@@ -6219,6 +6655,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       visibleTerminalPanelCount:
                         panelRenderOptions.visibleTerminalPanelCount ?? visibleTerminalPanelCount,
                       panelLabel: getPanelDisplayLabel(ws, panel.id),
+                      renameEditing: editingPanelId === panel.id,
+                      renameValue:
+                        editingPanelId === panel.id ? editingValue : '',
+                      renameError:
+                        editingPanelId === panel.id ? renameError : null,
+                      onStartRename: (pnl, label) => startPanelRename(pnl, label),
+                      onRenameValueChange: (val) => updateEditingValue(val),
+                      onCommitRename: (pnl, overrideValue) => commitPanelRename(pnl, ws.id, overrideValue),
+                      onCancelRename: () => cancelPanelRename(),
                       cwd,
                       wsId: ws.id,
                       setActivePanelIds,
@@ -6254,6 +6699,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       onSetPanelRenderer: (mode) => handleSetPanelRenderer(ws.id, panel.id, mode),
                       connectionState: getPanelConnectionState(panel),
                       deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
+                      pizarraOwnsLiveSurfaces,
                     });
                   return (
                     <div
@@ -6527,10 +6973,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             <ZedAmbientOverlay
               sessionKey={`devhub-zed-chat-${projectId || 'default'}`}
               getTerminalPanelCount={getActiveWorkspaceTerminalPanelCount}
+              getWorkspaceTerminals={getWorkspaceTerminals}
             />
           </motion.div>
         </SharedDockStoreProvider>
       </SharedSurfacesProvider>
-    </LiveSurfaceRegistryContext.Provider>
+    </WorkspaceSurfaceRegistryProvider>
   );
 }

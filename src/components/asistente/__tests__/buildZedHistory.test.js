@@ -26,7 +26,7 @@ describe('buildZedHistory (T-033)', () => {
       { role: 'assistant', content: 'ok, opening' },
       {
         role: 'user',
-        content: 'Tool open_terminal result: {"session_id":"s1"}',
+        content: 'Previous tool results from assistant turn:\n[tool:open_terminal] {"session_id":"s1"}',
       },
       { role: 'user', content: 'try again' },
     ]);
@@ -100,7 +100,10 @@ describe('buildZedHistory (T-033)', () => {
     const out = buildZedHistory(messages);
     expect(out).toEqual([
       { role: 'assistant', content: 'partial' },
-      { role: 'user', content: 'Tool real result: {"y":2}' },
+      {
+        role: 'user',
+        content: 'Previous tool results from assistant turn:\n[tool:real] {"y":2}',
+      },
     ]);
   });
 
@@ -136,7 +139,7 @@ describe('buildZedHistory (T-033)', () => {
       (entry) =>
         entry.role === 'user' &&
         typeof entry.content === 'string' &&
-        entry.content.startsWith('Tool open_terminal result:')
+        entry.content.includes('[tool:open_terminal]')
     );
     expect(toolLine).toBeDefined();
     expect(toolLine.content).toContain('term-X');

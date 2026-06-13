@@ -112,6 +112,8 @@ const {
   createTerminalViewportDiagnosticLogger,
   fitTerminalViewport,
   proposeTerminalViewportDimensions,
+  isTerminalViewportUndersized,
+  shouldDeferTerminalConnectUntilViewportFitted,
   clampTerminalViewportDimensions,
   isPlausibleTerminalCellSize,
   shouldReleaseWebglRendererOnLayoutHide,
@@ -136,6 +138,13 @@ const {
   sendTerminalPasteInput,
   scheduleTerminalViewportSyncBurst,
   shouldSyncTerminalViewportOnLayoutShow,
+  shouldSkipRedundantLayoutSettleViewportSync,
+  shouldSkipTerminalOutputWhileLayoutHidden,
+  appendHiddenTerminalOutputBuffer,
+  takeHiddenTerminalOutputBuffer,
+  shouldDiscardHiddenOutputCatchup,
+  chunkTerminalOutputForCatchup,
+  nudgeTerminalPtyResize,
   shouldClearGpuAtlasOnWorkspaceShow,
   shouldBlockLateInitialCommandSend,
   shouldReleaseCanvasRendererOnLayoutHide,
@@ -149,6 +158,8 @@ const {
   getTerminalViewportScrollOffset,
   restoreTerminalViewportScroll,
   shouldUseTerminalScrollbackWheel,
+  shouldInjectTerminalWheelIntoPty,
+  scrollTerminalViewport,
   resolveTerminalWheelScrollDirection,
   resolveTerminalWheelPageSteps,
   buildTerminalWheelPageSequence,
@@ -615,6 +626,162 @@ describe('shouldAttachCanvasRenderer()', () => {
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-canvas' })).toBe(true);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-webgl' })).toBe(false);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm' })).toBe(false);
+  });
+});
+
+describe('shouldSkipRedundantLayoutSettleViewportSync()', () => {
+  test('skips unchanged layout-settled sync when a GPU renderer is attached', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: true,
+        hasGpuRenderer: true,
+      })
+    ).toBe(true);
+  });
+
+  test('does not skip when dimensions changed or renderer is recovering', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: false,
+        hasGpuRenderer: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-panel-group-layout-immediate',
+        sizeUnchanged: true,
+        pendingWebglRecovery: true,
+        hasGpuRenderer: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('terminal viewport undersize detection', () => {
+  test('isTerminalViewportUndersized flags a short fitted grid', () => {
+    const term = {
+      rows: 12,
+      _core: { _renderService: { dimensions: { css: { cell: { height: 20, width: 10 } } } } },
+    };
+    expect(isTerminalViewportUndersized({ containerRect: { height: 900 }, term })).toBe(true);
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { height: 900 },
+        term,
+      })
+    ).toBe(true);
+  });
+
+  test('shouldDeferTerminalConnectUntilViewportFitted allows a filled grid', () => {
+    const term = {
+      rows: 40,
+      _core: { _renderService: { dimensions: { css: { cell: { height: 20, width: 10 } } } } },
+    };
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { height: 900 },
+        term,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('hidden output catchup policy', () => {
+  test('shouldDiscardHiddenOutputCatchup rejects reattach and mega-buffers', () => {
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 1000, sessionReattached: true })).toBe(
+      true
+    );
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 40000 })).toBe(true);
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 4000 })).toBe(false);
+  });
+
+  test('shouldDiscardHiddenOutputCatchup rejects active TUI and OpenCode footer replay', () => {
+    expect(shouldDiscardHiddenOutputCatchup({ bufferedBytes: 400, tuiSessionActive: true })).toBe(
+      true
+    );
+    expect(
+      shouldDiscardHiddenOutputCatchup({
+        bufferedBytes: 200,
+        bufferText: '~/devhub § 6 MCP /status 1.16.2',
+      })
+    ).toBe(true);
+  });
+
+  test('shouldSkipRedundantLayoutSettleViewportSync skips pizarra mode transitions when size unchanged', () => {
+    expect(
+      shouldSkipRedundantLayoutSettleViewportSync({
+        reason: 'layout-settled-pizarra-mode-exit-immediate',
+        sizeUnchanged: true,
+        pendingWebglRecovery: false,
+        hasGpuRenderer: true,
+      })
+    ).toBe(true);
+  });
+
+  test('chunkTerminalOutputForCatchup splits large replay safely', () => {
+    const buffer = 'x'.repeat(20000);
+    const chunks = chunkTerminalOutputForCatchup(buffer, 8192);
+    expect(chunks).toHaveLength(3);
+    expect(chunks.join('')).toBe(buffer);
+  });
+});
+
+describe('hidden terminal output buffer helpers', () => {
+  test('appendHiddenTerminalOutputBuffer caps retained bytes', () => {
+    const bufferRef = { value: '' };
+    appendHiddenTerminalOutputBuffer(bufferRef, 'abc', 5);
+    appendHiddenTerminalOutputBuffer(bufferRef, 'def', 5);
+    expect(bufferRef.value).toBe('bcdef');
+    expect(takeHiddenTerminalOutputBuffer(bufferRef)).toBe('bcdef');
+    expect(bufferRef.value).toBe('');
+  });
+
+  test('nudgeTerminalPtyResize sends restore resize to the PTY', () => {
+    const sends = [];
+    const term = { cols: 80, rows: 24, resize: jest.fn() };
+    const socket = {
+      readyState: 1,
+      send: (payload) => sends.push(JSON.parse(payload)),
+    };
+    expect(nudgeTerminalPtyResize({ term, socket, websocketOpenState: 1 })).toBe(true);
+    expect(term.resize).toHaveBeenCalledWith(80, 23);
+    expect(term.resize).toHaveBeenCalledWith(80, 24);
+    expect(sends.at(-1)).toEqual({ type: 'resize', cols: 80, rows: 24 });
+  });
+});
+
+describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
+  test('drops output for hidden canvas/webgl panels after renderer release', () => {
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: false,
+        canvasAttached: false,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(true);
+  });
+
+  test('keeps output while visible or renderer is still attached', () => {
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: true,
+        canvasAttached: false,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: false,
+        canvasAttached: true,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(false);
   });
 });
 
@@ -1360,6 +1527,8 @@ describe('TERMINAL_NATIVE_CONTENT_BODY_STYLE', () => {
 
 describe('TerminalTTY renderer fallback UI', () => {
   beforeEach(() => {
+    const { _clearAllTerminalPanelBridges } = require('@/lib/terminal/terminalPanelBridge');
+    _clearAllTerminalPanelBridges();
     installTerminalDom();
     installTerminalRuntimeMocks();
     mockTerminalInstances.length = 0;
@@ -1704,6 +1873,21 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(shouldUseTerminalScrollbackWheel({ shiftKey: false })).toBe(false);
     });
 
+    test('plain shells never inject wheel bytes into the PTY', () => {
+      expect(shouldInjectTerminalWheelIntoPty(false)).toBe(false);
+      expect(shouldInjectTerminalWheelIntoPty(true)).toBe(true);
+    });
+
+    test('scrollTerminalViewport scrolls xterm locally without PTY input', () => {
+      const term = { scrollLines: jest.fn() };
+      expect(scrollTerminalViewport(term, 'up', 120)).toBe(true);
+      expect(term.scrollLines).toHaveBeenCalledWith(-9);
+      term.scrollLines.mockClear();
+      expect(scrollTerminalViewport(term, 'down', 40)).toBe(true);
+      expect(term.scrollLines).toHaveBeenCalledWith(3);
+      expect(scrollTerminalViewport(null, 'up', 120)).toBe(false);
+    });
+
     test('buildTerminalWheelPageSequence emits Page Up/Down sequences', () => {
       expect(buildTerminalWheelPageSequence('up', 2)).toBe(
         TERMINAL_PAGE_UP_SEQ + TERMINAL_PAGE_UP_SEQ
@@ -1913,15 +2097,15 @@ describe('TerminalTTY renderer fallback UI', () => {
       );
     });
 
-    test('prepareActiveTuiTerminalFocus re-enables xterm mouse modes for live TUIs', () => {
+    test('prepareActiveTuiTerminalFocus re-enables xterm mouse modes for live TUIs and disables them for shells', () => {
       const term = { write: jest.fn() };
       prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
       expect(term.write).toHaveBeenNthCalledWith(1, TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
       expect(term.write).toHaveBeenNthCalledWith(2, TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
       term.write.mockClear();
       prepareActiveTuiTerminalFocus(term, { tuiSessionActive: false });
-      expect(term.write).toHaveBeenCalledTimes(1);
-      expect(term.write).toHaveBeenCalledWith(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      expect(term.write).toHaveBeenNthCalledWith(1, TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+      expect(term.write).toHaveBeenNthCalledWith(2, TERMINAL_DISABLE_MOUSE_REPORTING_SEQ);
     });
   });
 

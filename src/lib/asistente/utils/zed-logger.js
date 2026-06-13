@@ -126,6 +126,19 @@ export const zedLog = {
     }
   },
 
+  /** Orchestration telemetry (Phase 0 baseline) */
+  orchestration(kind, payload = {}) {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      level: 'INFO',
+      category: 'ORCHESTRATION',
+      message: kind,
+      data: payload,
+    }
+    writeJsonLog(entry)
+    writeZedLog(`[ORCH] ${kind}${Object.keys(payload).length ? ' → ' + JSON.stringify(payload) : ''}`)
+  },
+
   // API response
   apiResponse(duration, contentTypes, hasText, hasThinking, hasToolUse) {
     writeZedLog(`  └─ API Response (${duration}ms): blocks=[${contentTypes.join(', ')}] text=${hasText} thinking=${hasThinking} tool_use=${hasToolUse}`)

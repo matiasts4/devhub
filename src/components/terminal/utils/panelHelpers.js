@@ -367,6 +367,7 @@ function spawnFirstTerminalPanelColumns({
   initialCommand = null,
   panelCwd = null,
   explicitPanelId = null,
+  createPanel: createPanelFn = createPanel,
 }) {
   const panelId =
     typeof explicitPanelId === 'string' && explicitPanelId.length > 0
@@ -374,7 +375,12 @@ function spawnFirstTerminalPanelColumns({
       : allocatePanelId();
   const colId = allocateColumnId();
   return {
-    columns: [createColumn(colId, panelId, initialCommand, panelCwd)],
+    columns: [
+      {
+        id: colId,
+        panels: [createPanelFn(panelId, initialCommand, panelCwd)],
+      },
+    ],
     panelId,
   };
 }

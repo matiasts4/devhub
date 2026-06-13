@@ -62,6 +62,7 @@ const DEFAULT_SHARED_DOCK_STATE = Object.freeze({
   // version is bumped whenever the on-disk shape changes
   // incompatibly; migrateDockState uses it to short-circuit.
   version: SHARED_DOCK_STATE_VERSION,
+  rightDockChrome: null,
 });
 
 function buildSharedDockStorageKey(projectId, workspaceId) {
@@ -134,7 +135,42 @@ function sanitizeSharedDockState(rawState = {}) {
     browserUrl,
     browserHistory: browserHistory.length ? browserHistory : [browserUrl],
     version: SHARED_DOCK_STATE_VERSION,
+    rightDockChrome: sanitizeRightDockChrome(source.rightDockChrome),
   };
+}
+
+/** B.2c — optional mirror of TWM right-dock chrome when shared-view is ON. */
+function sanitizeRightDockChrome(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const activeTab =
+    typeof raw.activeTab === 'string' && raw.activeTab ? raw.activeTab.slice(0, 32) : 'browser';
+  const maximizedView =
+    typeof raw.maximizedView === 'string' && raw.maximizedView
+      ? raw.maximizedView.slice(0, 32)
+      : 'browser';
+  const size = typeof raw.size === 'number' ? Math.min(82, Math.max(20, raw.size)) : 32;
+  return {
+    visible: raw.visible === true,
+    activeTab,
+    maximized: raw.maximized === true,
+    maximizedView,
+    size,
+  };
+}
+
+function mergeRightDockChromeIntoSharedDock(sharedState, rightDockState) {
+  const base = sanitizeSharedDockState(sharedState);
+  if (!rightDockState || typeof rightDockState !== 'object') return base;
+  return sanitizeSharedDockState({
+    ...base,
+    rightDockChrome: {
+      visible: Boolean(rightDockState.visible),
+      activeTab: rightDockState.activeTab || 'browser',
+      maximized: Boolean(rightDockState.maximized),
+      maximizedView: rightDockState.maximizedView || 'browser',
+      size: typeof rightDockState.size === 'number' ? rightDockState.size : 32,
+    },
+  });
 }
 
 function readSharedDockState(storage, projectId, workspaceId) {
@@ -260,4 +296,6 @@ module.exports = {
   writeSharedDockState,
   mergeDockState,
   migrateDockState,
+  mergeRightDockChromeIntoSharedDock,
+  sanitizeRightDockChrome,
 };

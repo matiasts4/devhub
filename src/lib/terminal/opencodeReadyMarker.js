@@ -24,6 +24,15 @@ export function detectOpenCodeTuiReady(text) {
   return false;
 }
 
+/**
+ * OpenCode footers replayed after a resize/mode transition paint a second
+ * status row in scrollback — discard small catchup buffers that are mostly footer.
+ */
+export function shouldDiscardOpenCodeCatchupReplay(text) {
+  if (!text || typeof text !== 'string') return false;
+  return detectOpenCodeTuiReady(text);
+}
+
 /** DevHub client attached and rendered the tmux pane (bootstrap/inbox gate fallback). */
 export function detectViewportReadyMarkerPath(tmuxSession) {
   const normalized = String(tmuxSession || '').trim();

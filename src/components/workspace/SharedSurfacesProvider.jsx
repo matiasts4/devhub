@@ -112,6 +112,7 @@ export function useActiveSurfaceId() {
  *   surfaces: Map<surfaceId, { id, type, refCount, lastTouchedAt, onDestroy? }>
  *   targets:  Map<hostId, Map<surfaceId, HTMLElement>> — a host can target multiple surfaces
  *   activeTargetBySurface: Map<surfaceId, hostId> — the most recent target for each surface
+ *   preferredHostBySurface: Map<surfaceId, hostId> — explicit host priority when set
  *   content:   Map<surfaceId, ReactNode> — the live surface content tree
  *   activeSurfaceId: string | null
  */
@@ -119,6 +120,7 @@ function createRegistry() {
   const surfaces = new Map();
   const targets = new Map(); // hostId -> Map<surfaceId, HTMLElement>
   const activeTargetBySurface = new Map();
+  const preferredHostBySurface = new Map();
   const content = new Map(); // surfaceId -> ReactNode
   let activeSurfaceId = null;
   let version = 0; // bumped on every notify
@@ -152,12 +154,82 @@ function createRegistry() {
     return s ? s.refCount : 0;
   }
 
-  function getActiveTarget(id) {
-    const hostId = activeTargetBySurface.get(id);
+  function resolveTargetForHost(id, hostId) {
     if (!hostId) return undefined;
     const hostMap = targets.get(hostId);
     if (!hostMap) return undefined;
     return hostMap.get(id);
+  }
+
+  function collectTargetsForSurface(id) {
+    const out = [];
+    for (const [hostId, hostMap] of targets) {
+      const el = hostMap.get(id);
+      if (el) out.push({ hostId, el });
+    }
+    return out;
+  }
+
+  function isNonZeroTarget(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 1 && rect.height > 1;
+  }
+
+  function getActiveTarget(id) {
+    const preferredHostId = preferredHostBySurface.get(id);
+    const allTargets = collectTargetsForSurface(id);
+    const nonZeroTargets = allTargets.filter(({ el }) => isNonZeroTarget(el));
+    const hasMeasuredLayout = nonZeroTargets.length > 0;
+
+    if (preferredHostId) {
+      const preferredTarget = resolveTargetForHost(id, preferredHostId);
+      if (!preferredTarget) {
+        return undefined;
+      }
+      if (hasMeasuredLayout) {
+        if (isNonZeroTarget(preferredTarget)) {
+          return preferredTarget;
+        }
+        if (preferredHostId === 'pizarra-canvas') {
+          const pizarraTarget = nonZeroTargets.find(({ hostId }) => hostId === 'pizarra-canvas');
+          if (pizarraTarget) return pizarraTarget.el;
+          return undefined;
+        }
+        return nonZeroTargets[0]?.el;
+      }
+      return preferredTarget;
+    }
+
+    const hostId = activeTargetBySurface.get(id);
+    const activeTarget = resolveTargetForHost(id, hostId);
+    if (hasMeasuredLayout) {
+      if (activeTarget && isNonZeroTarget(activeTarget)) return activeTarget;
+      if (nonZeroTargets.length > 0) return nonZeroTargets[0].el;
+    }
+    if (activeTarget) return activeTarget;
+    return allTargets[0]?.el;
+  }
+
+  function setPreferredHostForSurface(id, hostId) {
+    if (!id) return;
+    if (hostId === null || hostId === undefined) {
+      preferredHostBySurface.delete(id);
+    } else {
+      preferredHostBySurface.set(id, hostId);
+    }
+    notify();
+  }
+
+  function clearPreferredHostForSurface(id) {
+    if (!id) return;
+    if (preferredHostBySurface.delete(id)) {
+      notify();
+    }
+  }
+
+  function getPreferredHostForSurface(id) {
+    return preferredHostBySurface.get(id);
   }
 
   function registerSurface(id, owner = {}) {
@@ -216,6 +288,7 @@ function createRegistry() {
         }
       }
       activeTargetBySurface.delete(id);
+      preferredHostBySurface.delete(id);
       if (activeSurfaceId === id) activeSurfaceId = null;
       content.delete(id);
     } else {
@@ -307,11 +380,14 @@ function createRegistry() {
     get,
     getRefCount,
     getActiveTarget,
+    getPreferredHostForSurface,
     getActiveSurfaceId,
     list,
     registerSurface,
     releaseSurface,
     registerSurfaceTarget,
+    setPreferredHostForSurface,
+    clearPreferredHostForSurface,
     setActiveSurfaceId,
     subscribe,
     subscribeActive,
@@ -339,12 +415,19 @@ function SurfaceMount({ surfaceId, content }) {
   // it).
   const target = registry.getActiveTarget(surfaceId);
   if (!target) {
-    // No target registered yet; render an invisible hidden
-    // mount so the React subtree stays alive and ready.
+    // No target registered yet; render an invisible hidden mount with
+    // plausible dimensions so TerminalTTY can fit/connect while the
+    // pizarra portal finishes registering (avoids 0×0 connect deadlock).
     return (
       <div
         data-testid={`surface-hidden-mount-${surfaceId}`}
-        style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none' }}
+        style={{
+          position: 'absolute',
+          visibility: 'hidden',
+          pointerEvents: 'none',
+          width: 960,
+          height: 540,
+        }}
       >
         {content}
       </div>

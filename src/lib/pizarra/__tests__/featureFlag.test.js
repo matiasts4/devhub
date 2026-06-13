@@ -140,6 +140,68 @@ describe('featureFlag — getFlagSource diagnostics', () => {
   });
 });
 
+describe('featureFlag — getRolloutStage (B.1)', () => {
+  beforeEach(() => {
+    delete require.cache[require.resolve('../featureFlag')];
+  });
+
+  test('returns dev when NODE_ENV is not production', () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevFlag = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    process.env.NODE_ENV = 'development';
+    delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    const { getRolloutStage, _resetFlagForTests } = require('../featureFlag');
+    _resetFlagForTests();
+    expect(getRolloutStage()).toBe('dev');
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prevNodeEnv;
+    if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prevFlag;
+  });
+
+  test('returns prod in production when env var is unset (default OFF)', () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevFlag = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    process.env.NODE_ENV = 'production';
+    delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    const { getRolloutStage, _resetFlagForTests } = require('../featureFlag');
+    _resetFlagForTests();
+    expect(getRolloutStage()).toBe('prod');
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prevNodeEnv;
+    if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prevFlag;
+  });
+
+  test('returns staging in production when env var is explicitly set', () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevFlag = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    process.env.NODE_ENV = 'production';
+    process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = '1';
+    const { getRolloutStage, _resetFlagForTests } = require('../featureFlag');
+    _resetFlagForTests();
+    expect(getRolloutStage()).toBe('staging');
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prevNodeEnv;
+    if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prevFlag;
+  });
+
+  test('returns staging in production when env var is explicitly OFF (kill switch QA)', () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevFlag = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    process.env.NODE_ENV = 'production';
+    process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = '0';
+    const { getRolloutStage, _resetFlagForTests } = require('../featureFlag');
+    _resetFlagForTests();
+    expect(getRolloutStage()).toBe('staging');
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prevNodeEnv;
+    if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
+    else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prevFlag;
+  });
+});
+
 // pizarra-motion-polish (P-MP-10): the rollout stages for
 // NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE are documented inline in
 // featureFlag.js. The contract test pins the comment strings so

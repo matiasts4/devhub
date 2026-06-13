@@ -178,14 +178,137 @@ describe('filterTerminalInputForSession', () => {
     expect(filterTerminalInputForSession(null, '\u001b[<2;12;4m')).toBeNull();
   });
 
-  it('forwards SGR mouse wheel reports (64/65) for TUI transcript scroll', () => {
-    expect(filterTerminalInputForSession(null, '\u001b[<65;12;4m')).toBe('\u001b[<65;12;4m');
-    expect(filterTerminalInputForSession(null, '\u001b[<64;8;3M')).toBe('\u001b[<64;8;3M');
+  it('strips SGR mouse wheel reports (64/65) in shell mode', () => {
+    expect(filterTerminalInputForSession(null, '\u001b[<65;12;4m')).toBeNull();
+    expect(filterTerminalInputForSession(null, '\u001b[<64;8;3M')).toBeNull();
+    expect(filterTerminalInputForSession({ mode: 'shell' }, '\u001b[<65;12;4m')).toBeNull();
+  });
+
+  it('forwards SGR mouse wheel reports only for live, visible TUIs', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, '\u001b[<65;12;4m')
+    ).toBe('\u001b[<65;12;4m');
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true, panelHidden: true }, '\u001b[<64;8;3M')
+    ).toBeNull();
   });
 
   it('strips SGR mouse click leaks from mixed input and forwards the rest', () => {
     expect(filterTerminalInputForSession(null, '\u001b[<0;3;3Ml')).toBe('l');
-    expect(filterTerminalInputForSession(null, 'x\u001b[<65;12;4my')).toBe('x\u001b[<65;12;4my');
+    expect(filterTerminalInputForSession(null, 'x\u001b[<65;12;4my')).toBe('xy');
+  });
+});
+
+const SGR_CLICK = '\u001b[<0;3;3M';
+const SGR_WHEEL_UP = '\u001b[<64;8;3M';
+const SGR_WHEEL_DOWN = '\u001b[<65;12;4m';
+
+describe('filterTerminalInputForSession — sessionContext gate', () => {
+  test('forwards SGR press when ctx.mode=tui and ctx.tuiReady=true', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_CLICK)
+    ).toBe(SGR_CLICK);
+  });
+
+  test('strips SGR press when ctx.mode=tui and ctx.tuiReady=false', () => {
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: false }, SGR_CLICK)).toBeNull();
+  });
+
+  test('strips SGR press when ctx.mode=shell', () => {
+    expect(filterTerminalInputForSession({ mode: 'shell' }, SGR_CLICK)).toBeNull();
+  });
+
+  test('strips SGR press when ctx.panelInactive=true even if tuiReady=true', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true, panelInactive: true }, SGR_CLICK)
+    ).toBeNull();
+  });
+
+  test('strips SGR press when ctx.panelHidden=true even if tuiReady=true', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true, panelHidden: true }, SGR_CLICK)
+    ).toBeNull();
+  });
+
+  test('preserves null/undefined ctx as legacy behavior (strips)', () => {
+    expect(filterTerminalInputForSession(null, SGR_CLICK)).toBeNull();
+    expect(filterTerminalInputForSession(undefined, SGR_CLICK)).toBeNull();
+  });
+
+  test('preserves wheel 64/65 only for live, visible TUIs', () => {
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_WHEEL_UP)).toBe(
+      SGR_WHEEL_UP
+    );
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_WHEEL_DOWN)).toBe(
+      SGR_WHEEL_DOWN
+    );
+  });
+
+  test('strips wheel 64/65 in shell or non-ready TUI contexts', () => {
+    const shapes = [null, { mode: 'shell' }, { mode: 'tui', tuiReady: false }];
+    for (const ctx of shapes) {
+      expect(filterTerminalInputForSession(ctx, SGR_WHEEL_UP)).toBeNull();
+      expect(filterTerminalInputForSession(ctx, SGR_WHEEL_DOWN)).toBeNull();
+    }
+  });
+});
+
+describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
+  test('strips wheel 64 when ctx is null', () => {
+    expect(filterTerminalInputForSession(null, SGR_WHEEL_UP)).toBeNull();
+  });
+
+  test('strips wheel 65 when ctx is null', () => {
+    expect(filterTerminalInputForSession(null, SGR_WHEEL_DOWN)).toBeNull();
+  });
+
+  test('strips wheel 64 when ctx.mode=shell', () => {
+    expect(filterTerminalInputForSession({ mode: 'shell' }, SGR_WHEEL_UP)).toBeNull();
+  });
+
+  test('strips wheel 64 when ctx.mode=tui and tuiReady=false (bootstrap)', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: false }, SGR_WHEEL_UP)
+    ).toBeNull();
+  });
+
+  test('forwards wheel 64 only when ctx.mode=tui and tuiReady=true', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_WHEEL_UP)
+    ).toBe(SGR_WHEEL_UP);
+  });
+
+  test('strips SGR motion reports (button 35) in all contexts including live TUIs', () => {
+    const motion = '\u001b[<35;10;20M';
+    expect(filterTerminalInputForSession(null, motion)).toBeNull();
+    expect(filterTerminalInputForSession({ mode: 'shell' }, motion)).toBeNull();
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, motion)).toBeNull();
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true, panelHidden: true }, motion)
+    ).toBeNull();
+  });
+
+  test('strips SGR motion on inactive visible panels (pizarra hover)', () => {
+    const motion = '\u001b[<35;10;20M';
+    expect(
+      filterTerminalInputForSession(
+        { mode: 'tui', tuiReady: true, panelInactive: true },
+        motion
+      )
+    ).toBeNull();
+    expect(
+      filterTerminalInputForSession(
+        { mode: 'tui', tuiReady: true, panelInactive: true },
+        '\u001b[<65;12;4m'
+      )
+    ).toBeNull();
+  });
+
+  test('click-then-scroll combined sequence preserved in tui-ready mode', () => {
+    const combined = `${SGR_CLICK}${SGR_WHEEL_DOWN}`;
+    expect(
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, combined)
+    ).toBe(combined);
   });
 });
 
@@ -199,6 +322,11 @@ describe('filterTerminalOutputForSession', () => {
   it('strips SGR mouse reports from PTY output', () => {
     expect(filterTerminalOutputForSession({ mode: 'tui' }, '\u001b[<0;3;3M')).toBe('');
     expect(filterTerminalOutputForSession({ mode: 'tui' }, 'ok\u001b[<65;12;4m')).toBe('ok');
+  });
+
+  it('strips Page Up/Down wheel leak echoes from PTY output', () => {
+    expect(filterTerminalOutputForSession({ mode: 'shell' }, '\u001b[5~')).toBe('');
+    expect(filterTerminalOutputForSession({ mode: 'shell' }, 'prompt\u001b[6~')).toBe('prompt');
   });
 });
 

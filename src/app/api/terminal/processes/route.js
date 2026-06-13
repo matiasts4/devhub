@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
+import { nameFromId } from '@/lib/asistente/zedTerminalResolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ async function readSidecarSessions() {
     const list = data?.sessions || data || [];
     return list.map((s) => ({
       terminalId: s.id,
+      displayName: nameFromId(s.id),
       type: 'sidecar',
       cwd: s.cwd || null,
       createdAt: s.createdAt || null,
@@ -50,6 +52,7 @@ export async function GET() {
       if (!already) {
         processes.push({
           terminalId: s.id,
+          displayName: nameFromId(s.id),
           sessionId: s.opencodeSessionId || null,
           type: s.type || 'pty',
           cwd: s.cwd || null,

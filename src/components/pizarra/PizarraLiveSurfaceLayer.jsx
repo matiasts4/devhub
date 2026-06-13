@@ -7,6 +7,12 @@ import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { resizeNativeBrowser, setNativeBrowserVisibility } from '@/lib/browser/nativeBrowserBridge';
 
+export function resolvePizarraOwnsLiveSurfaces(dockState) {
+  return Boolean(
+    dockState?.visible && dockState?.maximized && dockState?.maximizedView === 'pizarra'
+  );
+}
+
 export default function PizarraLiveSurfaceLayer({
   elements,
   selectedElementIds,
@@ -41,6 +47,7 @@ export default function PizarraLiveSurfaceLayer({
   onDividerMouseDown,
 }) {
   const { projectRect, zoom } = useCanvasViewport();
+  const pizarraOwnsLiveSurfaces = resolvePizarraOwnsLiveSurfaces(dockState);
 
   // pizarra-drag-desync-v2: mirror the latest onMoveElement into a
   // ref so the stable `handleMove` inside each LiveSurfaceItem can
@@ -133,6 +140,7 @@ export default function PizarraLiveSurfaceLayer({
             onWorkspaceWindowAdd={onWorkspaceWindowAdd}
             onWorkspaceWindowRemove={onWorkspaceWindowRemove}
             visibleTerminalPanelCount={visibleTerminalPanelCount}
+            pizarraOwnsLiveSurfaces={pizarraOwnsLiveSurfaces}
           />
         );
       })}
@@ -183,6 +191,7 @@ function LiveSurfaceItem({
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
   visibleTerminalPanelCount = 1,
+  pizarraOwnsLiveSurfaces = false,
 }) {
   const shapeRef = useRef(shape);
   useEffect(() => {
@@ -461,6 +470,7 @@ function LiveSurfaceItem({
           onUpdateRendererMode={(mode) => onUpdateRendererMode?.(shape.id, mode)}
           onClose={() => onRemoveElement?.(shape.id)}
           visibleTerminalPanelCount={visibleTerminalPanelCount}
+          pizarraOwnsLiveSurfaces={pizarraOwnsLiveSurfaces}
         />
       </div>
     );

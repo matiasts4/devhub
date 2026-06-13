@@ -5,6 +5,9 @@ export const ZED_OVERLAY_TOGGLE_EVENT = 'devhub:zed-overlay-toggle';
 export const ZED_OVERLAY_OPEN_EVENT = 'devhub:zed-overlay-open';
 export const ZED_OVERLAY_CLOSE_EVENT = 'devhub:zed-overlay-close';
 export const ZED_AURA_TOOL_TYPE_EVENT = 'devhub:zed-aura-tool-type';
+export const ZED_AURA_OUTCOME_EVENT = 'devhub:zed-aura-outcome';
+
+/** @typedef {'success' | 'error' | null} ZedAuraOutcome */
 
 export function dispatchZedOverlayToggle() {
   if (typeof window === 'undefined') return;
@@ -29,6 +32,16 @@ export function dispatchZedOverlayClose() {
 export function dispatchZedAuraToolType(toolType) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(ZED_AURA_TOOL_TYPE_EVENT, { detail: { toolType } }));
+}
+
+/**
+ * Brief success/error pulse for ambient aura (Phase 5.4).
+ * @param {ZedAuraOutcome} outcome
+ */
+export function dispatchZedAuraOutcome(outcome) {
+  if (typeof window === 'undefined') return;
+  if (outcome !== 'success' && outcome !== 'error') return;
+  window.dispatchEvent(new CustomEvent(ZED_AURA_OUTCOME_EVENT, { detail: { outcome } }));
 }
 
 /**

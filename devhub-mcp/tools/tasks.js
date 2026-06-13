@@ -2,10 +2,12 @@ import { z } from 'zod';
 
 import {
   AGENT_ID_SCHEMA,
+  LEGACY_ID_REGEX,
   PROJECT_ID_SCHEMA,
   RUN_ID_SCHEMA,
   TASK_ID_SCHEMA,
   UUID_OR_LEGACY_ID_SCHEMA,
+  UUID_REGEX,
   WORKSPACE_ID_SCHEMA,
 } from './schemas/common.js';
 
@@ -1104,7 +1106,13 @@ export function registerTaskTools(server, deps) {
       status: z.enum(['pending', 'in_progress', 'qa_ready', 'completed', 'blocked']).optional(),
       priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
       due_date: z.string().nullable().optional(),
-      milestone_id: UUID_OR_LEGACY_ID_SCHEMA.nullable()
+      milestone_id: z
+        .string()
+        .refine(
+          (value) => UUID_REGEX.test(String(value)) || LEGACY_ID_REGEX.test(String(value)),
+          { message: 'Debe ser UUID o ID legacy (<tipo>-<timestamp>-<suffix>)' }
+        )
+        .nullable()
         .optional()
         .describe('ID del hito (UUID o legacy). null para desvincular'),
       assigned_to: z

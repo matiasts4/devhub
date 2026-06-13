@@ -159,6 +159,8 @@ describe('close_terminal (closeTerminalTool)', () => {
     expect(calls).toHaveLength(0);
     expect(result.action).toBe('would close');
     expect(result.session_id).toBe('sess-1');
+    expect(result.pending_confirmation).toBe(true);
+    expect(result.message).toMatch(/cerrar/i);
     expect(result.hint).toMatch(/confirm: true/i);
     expect(closeTerminalSessionById).not.toHaveBeenCalled();
   });
@@ -170,18 +172,75 @@ describe('close_terminal (closeTerminalTool)', () => {
     expect(closeTerminalSessionById).not.toHaveBeenCalled();
   });
 
-  test('confirm: true calls closeTerminalSessionById and returns its result', async () => {
+  test('confirm: true without user approval is downgraded to dry-run', async () => {
     mockFetch(async () => ({ ok: true, status: 200, json: async () => ({}) }));
-    const result = await closeTerminalTool.execute({ session_id: 'sess-1', confirm: true }, {});
-    expect(closeTerminalSessionById).toHaveBeenCalledWith('sess-1');
-    expect(result).toEqual({ success: true, sessionId: 'sess-1' });
+    const result = await closeTerminalTool.execute(
+      { session_id: 'p1', confirm: true },
+      { workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }] }
+    );
+    expect(result.action).toBe('would close');
+    expect(closeTerminalSessionById).not.toHaveBeenCalled();
+  });
+
+  test('confirm: true with user approval flag closes', async () => {
+    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    const result = await closeTerminalTool.execute(
+      { session_id: 'p1', confirm: true },
+      {
+        workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }],
+        _zed_user_confirmed_close: true,
+      }
+    );
+    expect(closeTerminalSessionById).toHaveBeenCalledWith('p1');
+    expect(result.success).toBe(true);
   });
 
   test('missing session_id returns error and does NOT call closeTerminalSessionById', async () => {
-    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ processes: [] }) }));
     const result = await closeTerminalTool.execute({ confirm: true }, {});
-    expect(result.error).toBe('missing required parameter: session_id');
+    expect(result.error).toBe('not_found');
     expect(closeTerminalSessionById).not.toHaveBeenCalled();
+  });
+
+  test('implicit single terminal when no name/session_id', async () => {
+    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ processes: [] }) }));
+    const result = await closeTerminalTool.execute(
+      {},
+      { workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }] }
+    );
+    expect(result.action).toBe('would close');
+    expect(result.session_id).toBe('p1');
+    expect(result.displayName).toBe('Chase');
+  });
+
+  test('ambiguous when multiple terminals and no name/session_id', async () => {
+    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ processes: [] }) }));
+    const result = await closeTerminalTool.execute(
+      {},
+      {
+        workspace_terminals: [
+          { terminalId: 'p1', displayName: 'Chase' },
+          { terminalId: 'p2', displayName: 'Nova' },
+        ],
+      }
+    );
+    expect(result.error).toBe('ambiguous');
+    expect(result.message).toMatch(/Chase|Nova/i);
+    expect(closeTerminalSessionById).not.toHaveBeenCalled();
+  });
+
+  test('not_found by name lists active terminals in message', async () => {
+    mockFetch(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ processes: [{ id: 'p1', displayName: 'Chase' }] }),
+    }));
+    const result = await closeTerminalTool.execute(
+      { name: 'Zzzzz' },
+      { workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }] }
+    );
+    expect(result.error).toBe('not_found');
+    expect(result.message).toMatch(/Chase/);
   });
 
   test('both name and session_id set on close_terminal: Spanish error, NO HTTP call', async () => {

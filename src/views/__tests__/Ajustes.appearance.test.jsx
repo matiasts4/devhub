@@ -132,7 +132,7 @@ function findButton(container, predicate) {
   return Array.from(container.querySelectorAll('button')).find(predicate);
 }
 
-describe('Ajustes appearance tab — deprecation banner', () => {
+describe('Ajustes appearance tab — interactive controls', () => {
   let dom;
   let rendered;
 
@@ -156,7 +156,7 @@ describe('Ajustes appearance tab — deprecation banner', () => {
     jest.clearAllMocks();
   });
 
-  test('renders deprecation banner inside the appearance shell with a CTA pointing to /settings/appearance', async () => {
+  test('renders interactive accent and morphology controls', async () => {
     rendered = await renderIntoDom(React.createElement(Ajustes));
 
     // The default tab is "project" — switch to the appearance tab first
@@ -169,27 +169,9 @@ describe('Ajustes appearance tab — deprecation banner', () => {
     });
     await flushEffects();
 
-    const banner = rendered.container.querySelector(
-      '[data-testid="ajustes-appearance-deprecation-banner"]'
-    );
-    expect(banner).toBeTruthy();
-
-    const appearanceShell = rendered.container.querySelector(
-      '[data-testid="ajustes-appearance-shell"]'
-    );
-    expect(appearanceShell).toBeTruthy();
-    expect(appearanceShell.contains(banner)).toBe(true);
-
-    const cta = findButton(banner, (button) =>
-      /open new settings|go to new settings|abrir nuevo settings/i.test(button.textContent || '')
-    );
-    expect(cta).toBeTruthy();
-
-    flushSync(() => {
-      cta.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    });
-    await flushEffects();
-
-    expect(mockNavigate).toHaveBeenCalledWith('/settings/appearance');
+    expect(rendered.container.querySelector('[data-testid="ajustes-appearance-shell"]')).toBeTruthy();
+    expect(rendered.container.querySelector('[data-testid="ajustes-appearance-deprecation-banner"]')).toBeNull();
+    expect(rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]')).toBeTruthy();
+    expect(rendered.container.querySelector('[data-testid="ajustes-morphology-option-default"]')).toBeTruthy();
   });
 });

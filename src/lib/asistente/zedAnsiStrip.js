@@ -56,4 +56,8 @@ function stripAnsi(input) {
     .join('\n');
 }
 
-export { stripAnsi };
+/** Canonical Zed welcome line (ZCX-002); reused by chat UX in Phase 4. */
+const WELCOME_LINE =
+  'sos Zed, tu copiloto de terminales. para tareas del swarm o lanzar agentes, usá el Pod.';
+
+export { stripAnsi, WELCOME_LINE };

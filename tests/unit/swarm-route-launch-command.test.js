@@ -59,4 +59,5 @@ describe('route buildLaunchCommand (visible swarm)', () => {
     expect(launch.wrapper).toContain('DEVHUB_AGENT_ID="launch-test5678-coder"');
     expect(launch.wrapper).toContain('/home/matias/.opencode/bin/opencode --agent swarm-coder');
   });
+
 });

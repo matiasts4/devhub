@@ -119,6 +119,33 @@ describe('zed-system-prompt.md (T-027 regression)', () => {
   });
 
   // ----- T-WSR-zed-002 (ASST-CHAT-003) -----
+  // ----- T-401 / ZCX-002 (Terminales nombradas) -----
+  test('T-401: Terminales nombradas section sits between get_swarm_status and ZED Orchestrator Pod', () => {
+    const prompt = readPrompt();
+    const swarmIdx = prompt.indexOf('### 9. get_swarm_status');
+    const namedIdx = prompt.indexOf('### Terminales nombradas');
+    const podIdx = prompt.indexOf('## ZED Orchestrator Pod');
+    expect(swarmIdx).toBeGreaterThan(-1);
+    expect(namedIdx).toBeGreaterThan(-1);
+    expect(podIdx).toBeGreaterThan(-1);
+    expect(namedIdx).toBeGreaterThan(swarmIdx);
+    expect(podIdx).toBeGreaterThan(namedIdx);
+  });
+
+  test('T-401: Terminales nombradas section is ≤8 lines and codifies displayName, Levenshtein, two-sentence digest', () => {
+    const prompt = readPrompt();
+    const match = prompt.match(/### Terminales nombradas[\s\S]*?(?=\n## )/);
+    expect(match).not.toBeNull();
+    const section = match[0].trimEnd();
+    const lineCount = section.split('\n').length;
+    expect(lineCount).toBeLessThanOrEqual(8);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/displayname/);
+    expect(lower).toMatch(/levenshtein/);
+    expect(lower).toMatch(/dos frases|2 frases/);
+    expect(lower).toMatch(/summarize_terminal/);
+  });
+
   test('T-WSR-zed-002: prompt has a "Prior-turn context" section that tells the model to use history for anaphoric resolution', () => {
     // ASST-CHAT-003: the closure fix (drop .slice(0, -1)) sends the full
     // history to the model. The model must be told to USE that history
