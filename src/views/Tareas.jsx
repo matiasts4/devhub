@@ -66,18 +66,6 @@ const COLOR_VARS = {
   medium: 'var(--warning, var(--accent-primary))',
 };
 
-const COLOR_VARS = {
-  muted: 'var(--text-muted)',
-  primary: 'var(--accent-primary)',
-  pending: 'var(--warning, var(--accent-secondary))',
-  in_progress: 'var(--accent-cyan)',
-  pink: 'var(--accent-pink)',
-  danger: 'var(--danger)',
-  success: 'var(--success)',
-  high: 'var(--accent-orange, var(--accent-secondary))',
-  medium: 'var(--warning, var(--accent-primary))',
-};
-
 const COLUMNS = [
   {
     id: 'pending',
@@ -883,6 +871,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
                     </span>
                   </div>
                 </div>
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={(e) => {

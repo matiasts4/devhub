@@ -20,11 +20,6 @@ import {
   getWorkspaceTabChromeStyle,
 } from './terminal/terminalChromeStyles';
 import {
-  getTerminalFloatingControlStyle,
-  getWorkspaceShellChromeStyle,
-  getWorkspaceTabChromeStyle,
-} from './terminal/terminalChromeStyles';
-import {
   Plus,
   X,
   Minus,
@@ -474,63 +469,6 @@ function readWorkspaceSwarmLaunchSummary(
   }
 
   return null;
-}
-
-function readAgentRuns(storage) {
-  if (!storage) return {};
-  try {
-    return JSON.parse(storage.getItem('devhub_agent_runs') || '{}');
-  } catch {
-    return {};
-  }
-}
-
-const SWARM_LAUNCH_BATCH_DEADLINE_MS = 4500;
-
-function getPanelIdsFromColumns(columns = []) {
-  return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
-}
-
-function readWorkspaceSwarmLaunchSummary(storage, workspace) {
-  const workspacePanelIds = new Set(getPanelIdsFromColumns(workspace?.columns || []));
-  if (workspacePanelIds.size === 0) return null;
-
-  const runs = Object.values(readAgentRuns(storage)).filter(
-    (run) =>
-      run?.launchOrigin === 'swarm-control-launch' && workspacePanelIds.has(String(run?.panelId || ''))
-  );
-  if (runs.length === 0) return null;
-
-  const groups = new Map();
-  runs.forEach((run) => {
-    const taskLaunchId = String(run?.taskId || '').split(':')[0];
-    const launchId = run?.launchId || taskLaunchId;
-    if (!launchId) return;
-    const current = groups.get(launchId) || [];
-    current.push(run);
-    groups.set(launchId, current);
-  });
-
-  const [launchId, launchRuns] = [...groups.entries()].sort(([, leftRuns], [, rightRuns]) => {
-    const leftAt = Math.max(...leftRuns.map((run) => Number(run?.launchedAt) || 0));
-    const rightAt = Math.max(...rightRuns.map((run) => Number(run?.launchedAt) || 0));
-    return rightAt - leftAt;
-  })[0] || [null, null];
-
-  if (!launchId || !launchRuns?.length) return null;
-
-  const latestRun = launchRuns.reduce((latest, run) => {
-    const latestAt = Number(latest?.launchedAt) || 0;
-    const nextAt = Number(run?.launchedAt) || 0;
-    return nextAt >= latestAt ? run : latest;
-  }, launchRuns[0]);
-
-  return {
-    launchId,
-    title:
-      latestRun?.taskTitle?.split(' · ')?.[0] || latestRun?.taskTitle || 'Active swarm launch',
-    count: launchRuns.length,
-  };
 }
 
 function createDefaultWorkspaceState() {
@@ -1462,10 +1400,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
-    submitting: false,
-    error: null,
-  });
-  const [swarmTerminateState, setSwarmTerminateState] = useState({
     submitting: false,
     error: null,
   });
@@ -3021,68 +2955,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
   }, [projectId, swarmLaunchPreview?.draft]);
 
-  const handleTerminateSwarmLaunch = useCallback(async () => {
-    if (!projectId || !activeSwarmLaunchSummary?.launchId) return;
-
-    setSwarmTerminateState({ submitting: true, error: null });
-
-    try {
-      const response = await fetch('/api/agenthub/operations/health', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'terminate_swarm_local',
-          project_id: projectId,
-          launch_id: activeSwarmLaunchSummary.launchId,
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || 'No se pudo terminar el swarm desde terminales.');
-      }
-
-      if (payload.control_room_snapshot_input) {
-        try {
-          localStorage.setItem(
-            getSwarmSnapshotStorageKey(projectId),
-            JSON.stringify(payload.control_room_snapshot_input)
-          );
-        } catch {
-          // Ignore localStorage failures.
-        }
-      }
-
-      (payload?.terminate_result?.terminals?.attempted || []).forEach((panelId) => {
-        window.dispatchEvent(
-          new CustomEvent('devhub:terminal-session-closing', {
-            detail: { panelId },
-          })
-        );
-      });
-
-      try {
-        const runs = readAgentRuns(storage);
-        Object.keys(runs).forEach((taskId) => {
-          const taskLaunchId = String(taskId || '').split(':')[0];
-          if ((runs[taskId]?.launchId || taskLaunchId) === activeSwarmLaunchSummary.launchId) {
-            delete runs[taskId];
-          }
-        });
-        storage?.setItem('devhub_agent_runs', JSON.stringify(runs));
-      } catch {
-        // Ignore localStorage failures.
-      }
-
-      setSwarmTerminateState({ submitting: false, error: null });
-    } catch (error) {
-      setSwarmTerminateState({
-        submitting: false,
-        error: error?.message || 'No se pudo terminar el swarm desde terminales.',
-      });
-    }
-  }, [activeSwarmLaunchSummary?.launchId, projectId, storage]);
-
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
       const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
@@ -3447,7 +3319,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     if (nativeSyncIdleTimerRef.current) {
       clearTimeout(nativeSyncIdleTimerRef.current);
     }
-    const settleMs = pizarraOwnsLiveSurfaces ? 120 : 80;
+    const settleMs = pizarraOwnsLiveSurfaces ? 50 : 80;
     nativeSyncIdleTimerRef.current = setTimeout(() => {
       nativeSyncIdleTimerRef.current = null;
       queue.flushOnIdle();
@@ -4343,22 +4215,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     },
     [cwd, notifyNativeLayoutSettled, persistAgentRunMetadata, syncActiveWindowSnapshot]
-  );
-
-  const flushSwarmLaunchBatch = useCallback(
-    (launchId) => {
-      const batch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
-      if (!batch) return;
-
-      if (batch.timer) {
-        window.clearTimeout(batch.timer);
-        batch.timer = null;
-      }
-
-      pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
-      createWorkspaceForSwarmLaunchRequests(batch.requests);
-    },
-    [createWorkspaceForSwarmLaunchRequests]
   );
 
   const flushSwarmLaunchBatch = useCallback(
@@ -5610,33 +5466,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           };
           localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
         }
-
-        if (
-          runMetadata?.launchOrigin === 'swarm-control-launch' &&
-          runMetadata?.sessionId &&
-          runMetadata?.workspaceId &&
-          runMetadata?.runId
-        ) {
-          fetch(`/api/agenthub/sessions/${runMetadata.sessionId}/binding`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              workspace_id: runMetadata.workspaceId,
-              run_id: runMetadata.runId,
-              opencode_session_id: sessionId,
-            }),
-          }).catch(() => {});
-        }
-      } catch {
-        // Ignore best-effort canonical reconciliation failures in UI layer.
-      }
-
-      try {
-        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-        const taskEntry = Object.entries(runs || {}).find(
-          ([, value]) => value?.panelId === panelId
-        );
-        const runMetadata = taskEntry?.[1] || null;
 
         if (
           runMetadata?.launchOrigin === 'swarm-control-launch' &&

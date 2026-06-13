@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Monitor, Palette, Plus, RotateCcw } from 'lucide-react';
@@ -132,91 +132,6 @@ export function getAppearanceAccentSwatchStyle(isActive, color) {
       emphasized: isActive,
       tone: isActive ? 'accent' : 'neutral',
     }),
-    background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
-    borderColor: isActive
-      ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'
-      : 'var(--chrome-border-color)',
-    boxShadow: isActive ? 'var(--chrome-shadow-panel)' : '6px 6px 0 rgba(1, 4, 9, 0.18)',
-    transform: isActive ? 'translate(-2px, -2px)' : 'translate(0, 0)',
-    '--appearance-accent-preview': color ?? 'var(--accent-primary)',
-  };
-}
-
-
-const PREVIEW_BY_THEME = {
-  [THEMES.DEEP_SEA]: {
-    panel: '#0F1521',
-    body: '#0B1019',
-    line: '#1A2740',
-    highlight: '#58A6FF',
-    dots: ['#f87171', '#fbbf24', '#22c55e'],
-  },
-  [THEMES.NORD]: {
-    panel: '#3B4252',
-    body: '#2E3440',
-    line: '#4C566A',
-    highlight: '#88C0D0',
-    dots: ['#d08770', '#ebcb8b', '#a3be8c'],
-  },
-  [THEMES.DRACULA]: {
-    panel: '#2A2C44',
-    body: '#191A2A',
-    line: '#44475A',
-    highlight: '#BD93F9',
-    dots: ['#ff5555', '#f1fa8c', '#50fa7b'],
-  },
-  [THEMES.LIGHT]: {
-    panel: '#F8FAFC',
-    body: '#FFFFFF',
-    line: '#D0D7DE',
-    highlight: '#0969DA',
-    dots: ['#ef4444', '#f59e0b', '#16a34a'],
-  },
-  [THEMES.BRUTALIST_STAGE]: {
-    panel: '#0d0d0d',
-    body: '#080808',
-    line: '#222222',
-    highlight: '#e3b341',
-    dots: ['#f85149', '#e3b341', '#3fb950'],
-  },
-};
-
-export function getAppearanceSectionStyle() {
-  return {
-    ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
-    background: 'linear-gradient(180deg, var(--chrome-panel-fill-emphasis), var(--chrome-panel-fill))',
-  };
-}
-
-export function getAppearanceBadgeStyle() {
-  return {
-    ...chromeSurfaceStyle({ surface: 'pill', tone: 'accent' }),
-    color: 'var(--text-primary)',
-  };
-}
-
-export function getAppearanceOptionStyle(isActive) {
-  return {
-    ...chromeSurfaceStyle({ surface: 'panel', emphasized: isActive }),
-    background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
-    borderColor: isActive
-      ? 'color-mix(in srgb, var(--accent-primary) 35%, var(--chrome-border-color))'
-      : 'var(--chrome-border-color)',
-    transform: isActive ? 'translateY(-1px)' : 'translateY(0)',
-  };
-}
-
-export function getAppearanceControlStyle() {
-  return {
-    ...chromeSurfaceStyle({ surface: 'pill' }),
-    background: 'var(--chrome-control-fill)',
-    color: 'var(--text-primary)',
-  };
-}
-
-export function getAppearanceAccentSwatchStyle(isActive, color) {
-  return {
-    ...chromeSurfaceStyle({ surface: 'panel', emphasized: isActive, tone: isActive ? 'accent' : 'neutral' }),
     background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
     borderColor: isActive
       ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'

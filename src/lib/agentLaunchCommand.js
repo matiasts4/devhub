@@ -83,27 +83,6 @@ function shellQuote(value = '') {
   return `'${String(value).replace(/'/g, `'`)}'`;
 }
 
-function shellQuote(value = '') {
-  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
-}
-
-/**
- * Build a tmux-wrapped command for swarm agents.
- * The tmux session survives PTY death (page refresh, network drop).
- * Session name: devhub-swarm-{launchId}-{roleKey}
- * Status bar disabled to save vertical space.
- */
-export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = null) {
-  const sessionTarget = shellQuote(tmuxSessionName);
-  const startDirectory = cwd ? ` -c ${shellQuote(cwd)}` : '';
-  const command = shellQuote(innerCommand);
-  return [
-    `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
-    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
-    `tmux attach-session -t ${sessionTarget}`,
-  ].join('; ');
-}
-
 export function buildAgentLaunchCommand(programId, prompt, options = {}) {
   const executable = resolveAgentProgramExecutable(programId);
   const opencodeAgent = options.opencodeAgent || DEFAULT_OPENCODE_AGENT;

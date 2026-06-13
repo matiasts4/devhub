@@ -103,6 +103,9 @@ export function shouldShowTerminalViewport(isInitializing, initError) {
   return !isInitializing && !initError;
 }
 
+/** Max wait before first connect when viewport fit keeps deferring (mode-switch undersize). */
+export const TERMINAL_CONNECT_DEFER_MAX_MS = 1800;
+
 /** Full-screen blocking loader — only on first boot, never on panel-switch reconnects. */
 export function shouldShowTerminalLoadingOverlay(
   isInitializing,
@@ -1477,6 +1480,7 @@ export default function TerminalTTY({
   const hiddenOutputCatchupPendingRef = useRef(false);
   const surfaceHostRef = useRef(surfaceHost);
   const connectPendingUntilFitRef = useRef(false);
+  const connectDeferTimerRef = useRef(null);
   const processExitedRef = useRef(false);
   const rafRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -1565,7 +1569,39 @@ export default function TerminalTTY({
       cancelAnimationFrame(inactiveRepaintRafRef.current);
       inactiveRepaintRafRef.current = null;
     }
+
+    if (connectDeferTimerRef.current) {
+      clearTimeout(connectDeferTimerRef.current);
+      connectDeferTimerRef.current = null;
+    }
   }, []);
+
+  const clearConnectDeferTimer = useCallback(() => {
+    if (connectDeferTimerRef.current) {
+      clearTimeout(connectDeferTimerRef.current);
+      connectDeferTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleConnectDeferForce = useCallback(() => {
+    if (hasConnectedOnceRef.current || connectDeferTimerRef.current) return;
+    connectDeferTimerRef.current = setTimeout(() => {
+      connectDeferTimerRef.current = null;
+      if (
+        hasConnectedOnceRef.current ||
+        sessionClosingRef.current ||
+        !termRef.current ||
+        !containerRef.current
+      ) {
+        return;
+      }
+      connectPendingUntilFitRef.current = false;
+      cliLog(`CLIENT:${id}`, 'connect defer timeout — forcing connect', {
+        maxMs: TERMINAL_CONNECT_DEFER_MAX_MS,
+      });
+      connectRef.current?.();
+    }, TERMINAL_CONNECT_DEFER_MAX_MS);
+  }, [id]);
 
   const clearNativeVteProbeRetryTimer = useCallback(() => {
     if (!nativeVteProbeRetryTimerRef.current) return;
@@ -1661,6 +1697,10 @@ export default function TerminalTTY({
     }
     hiddenOutputCatchupPendingRef.current = false;
     connectPendingUntilFitRef.current = false;
+    if (connectDeferTimerRef.current) {
+      clearTimeout(connectDeferTimerRef.current);
+      connectDeferTimerRef.current = null;
+    }
     termRef.current = null;
     fitRef.current = null;
     searchRef.current = null;
@@ -2026,7 +2066,7 @@ export default function TerminalTTY({
 
       await new Promise((resolve) => {
         rafRef.current = requestAnimationFrame(() => {
-          timeoutRef.current = setTimeout(resolve, 40);
+          timeoutRef.current = setTimeout(resolve, 16);
         });
       });
     }
@@ -2263,10 +2303,12 @@ export default function TerminalTTY({
     [notifyViewportReady, scheduleInitialCommandAfterViewport]
   );
 
-  const maybeConnectAfterViewportFit = useCallback((fitWorked) => {
+  const maybeConnectAfterViewportFit = useCallback(
+    (fitWorked) => {
       if (!fitWorked || !termRef.current || !containerRef.current) {
         if (!hasConnectedOnceRef.current) {
           connectPendingUntilFitRef.current = true;
+          scheduleConnectDeferForce();
         }
         return false;
       }
@@ -2283,16 +2325,20 @@ export default function TerminalTTY({
       ) {
         if (!hasConnectedOnceRef.current) {
           connectPendingUntilFitRef.current = true;
+          scheduleConnectDeferForce();
         }
         return false;
       }
 
+      clearConnectDeferTimer();
       connectPendingUntilFitRef.current = false;
       if (!hasConnectedOnceRef.current || wsRef.current?.readyState !== WebSocket.OPEN) {
         connectRef.current?.();
       }
       return true;
-    }, []);
+    },
+    [clearConnectDeferTimer, scheduleConnectDeferForce]
+  );
 
   const fitAndResize = useCallback(
     (options = {}) => {
@@ -3725,6 +3771,7 @@ export default function TerminalTTY({
 
       socket.onopen = () => {
         clearTimeout(connectionTimeout);
+        clearConnectDeferTimer();
         console.log(`[TTY:${id}] WebSocket connected`);
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
         hasConnectedOnceRef.current = true;
@@ -4012,7 +4059,7 @@ export default function TerminalTTY({
 
   useLayoutEffect(() => {
     if (!isVisibleInLayout || !termRef.current) return;
-    if (!hasConnectedOnceRef.current && connectPendingUntilFitRef.current) {
+    if (!hasConnectedOnceRef.current) {
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
         fitAddon: fitRef.current,
@@ -4022,9 +4069,9 @@ export default function TerminalTTY({
         lastPtySizeRef: lastPtySizeRef.current,
       });
       maybeConnectAfterViewportFit(fitWorked);
-      return;
+      if (!hasConnectedOnceRef.current) return;
     }
-    if (!hasConnectedOnceRef.current) return;
+    clearConnectDeferTimer();
     connectPendingUntilFitRef.current = false;
     const raf = requestAnimationFrame(() => {
       if (!isVisibleInLayoutRef.current || !termRef.current) return;
@@ -4033,7 +4080,12 @@ export default function TerminalTTY({
       });
     });
     return () => cancelAnimationFrame(raf);
-  }, [isVisibleInLayout, maybeConnectAfterViewportFit, syncTerminalViewportOnWorkspaceShow]);
+  }, [
+    clearConnectDeferTimer,
+    isVisibleInLayout,
+    maybeConnectAfterViewportFit,
+    syncTerminalViewportOnWorkspaceShow,
+  ]);
 
   useLayoutEffect(() => {
     const prevVisible = prevVisibleInLayoutRef.current;
@@ -4114,22 +4166,6 @@ export default function TerminalTTY({
     shouldUseNativeRenderer,
     syncTerminalViewportOnWorkspaceShow,
   ]);
-
-  const adjustFontSize = useCallback((delta) => {
-    setFontSize((prev) => {
-      const next = Math.min(24, Math.max(8, prev + delta));
-      try {
-        window.localStorage.setItem(FONT_SIZE_KEY, String(next));
-      } catch {
-        /* ignore */
-      }
-      if (termRef.current) {
-        termRef.current.options.fontSize = next;
-        fitRef.current?.fit();
-      }
-      return next;
-    });
-  }, []);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -4218,77 +4254,6 @@ export default function TerminalTTY({
     },
     [handleNativeLeaseCommandError, id, shouldUseNativeRenderer]
   );
-
-  const copyTextToClipboard = useCallback(async (text) => {
-    if (!text) return false;
-
-    try {
-      const clipboardApi = getClipboardApi();
-      if (!clipboardApi?.writeText) {
-        throw new Error('clipboard-unavailable');
-      }
-      await clipboardApi.writeText(text);
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    }
-
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-    return true;
-  }, []);
-
-  const handleCopySelection = useCallback(async () => {
-    const text = termRef.current?.getSelection?.() || contextMenu?.text || '';
-    return copyTextToClipboard(text);
-  }, [contextMenu?.text, copyTextToClipboard]);
-
-  const handlePasteIntoTerminal = useCallback(async () => {
-    cliLog('[paste]', 'handlePasteIntoTerminal called');
-    if (shouldUseNativeRenderer) {
-      // Read clipboard content in JS (not GTK) and send it directly to VTE via paste_text.
-      // This bypasses GTK clipboard semantics entirely, ensuring Ctrl+Shift+V and
-      // Shift+Insert paste the exact same content as Ctrl+C/Ctrl+V.
-      const clipboardApi = getClipboardApi();
-      const text = clipboardApi?.readText ? await clipboardApi.readText() : null;
-      cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text?.length ?? 0}`);
-      if (text) {
-        await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-          handleNativeLeaseCommandError
-        );
-        const result = await pasteNativeVtePanel({ panelId: id, text });
-        cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
-        return Boolean(result?.supported);
-      }
-      return false;
-    }
-
-    const clipboardApi = getClipboardApi();
-    if (!clipboardApi?.readText) return false;
-
-    const text = await clipboardApi.readText();
-    if (!text) return false;
-
-    if (typeof termRef.current?.paste === 'function') {
-      termRef.current.paste(text);
-      return true;
-    }
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      if (transportRef.current === 'raw') {
-        wsRef.current.send(text);
-      } else {
-        wsRef.current.send(JSON.stringify({ type: 'input', data: text }));
-      }
-      return true;
-    }
-
-    return false;
-  }, [handleNativeLeaseCommandError, id, shouldUseNativeRenderer]);
 
   useEffect(() => {
     let mounted = true;
@@ -4887,6 +4852,22 @@ export default function TerminalTTY({
       }
 
       if (String(reason).includes('pizarra-mode-exit') || String(reason).includes('pizarra-mode-enter')) {
+        if (
+          !hasConnectedOnceRef.current &&
+          isVisibleInLayoutRef.current &&
+          containerRef.current &&
+          termRef.current
+        ) {
+          const fitWorked = fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
+          maybeConnectAfterViewportFit(fitWorked);
+        }
         if (isVisibleInLayoutRef.current) {
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
             clearAtlas: webglReleasedOnLayoutHideRef.current,
@@ -4933,7 +4914,7 @@ export default function TerminalTTY({
       layoutSettleBurstCleanupRef.current = null;
       window.removeEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
     };
-  }, [id, scrollTerminalToBottom, syncTerminalViewportOnWorkspaceShow]);
+  }, [id, maybeConnectAfterViewportFit, scrollTerminalToBottom, syncTerminalViewportOnWorkspaceShow]);
 
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
