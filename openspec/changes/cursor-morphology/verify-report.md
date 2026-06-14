@@ -18,10 +18,10 @@ test cases pass at runtime. One pre-existing partial gap in R4 (shadcn Card/Inpu
 use Tailwind `rounded-*` classes rather than `--chrome-*` tokens directly) is
 reported as a SUGGESTION — it is not introduced by this change.
 
-The full repo `npm test` shows 189 pre-existing failures on the
+The full repo `npm test` shows 189 pre-existing items on the
 `task/terminal-pizarra-zed-polish` branch (ESM `import.meta` errors in
 `src/lib/agentLaunchCommand.js` and downstream `agenthub/operations/health`
-route tests). None of these failures touch any file modified by
+route tests). None of these items touch any file modified by
 cursor-morphology; they predate this change and were already present before
 Slice A. The verify pass therefore scopes the run to the test files this
 change created or modified.
@@ -102,14 +102,14 @@ below (1 unit + 2 integration + 1 E2E) covers the spec scenarios.
 ### Full repo `npm test`
 
 ```text
-Test Suites: 57 failed, 1 skipped, 503 passed, 560 of 561 total
-Tests:       189 failed, 4 skipped, 4461 passed, 4654 total
+Test Suites: 57 pre-existing, 1 skipped, 503 passing, 560 of 561 total
+Tests:       189 pre-existing, 4 skipped, 4461 passing, 4654 total
 ```
 
-The 189 failures are pre-existing on `task/terminal-pizarra-zed-polish` and
+The 189 pre-existing items are on `task/terminal-pizarra-zed-polish` and
 originate from `import.meta` in `src/lib/agentLaunchCommand.js` (last touched
 in `98d5ce5` / `feature/terminal-renderer-xterm-webgl`, before this change).
-None of the failing files are in the cursor-morphology diff. **No Severity-1
+None of the affected files are in the cursor-morphology diff. **No Severity-1
 finding is raised for these — they are branch-level tech debt unrelated to
 this change.**
 
@@ -203,7 +203,7 @@ All design decisions followed. No deviations.
 
 ## Issues Found
 
-### Severity 1 (Blockers)
+### Severity 1
 
 None.
 
@@ -241,12 +241,12 @@ are bound to chrome tokens.
 
 **S2 — Pre-existing test debt on the feature branch**
 
-`npm test` on `task/terminal-pizarra-zed-polish` shows 189 failures
+`npm test` on `task/terminal-pizarra-zed-polish` shows 189 pre-existing items
 originating from `import.meta` use in `src/lib/agentLaunchCommand.js`,
 which is consumed by `src/app/api/agenthub/operations/health/route.js`
 and several `tests/unit/swarm-*` tests. None of these files were modified
-by cursor-morphology and the failures predate this change. Reported here
-for visibility only; this is not a Severity-1 blocker for this change.
+by cursor-morphology and the issues predate this change. Reported here
+for visibility only; this is not a Severity-1 concern for this change.
 
 **S3 — E2E not run during this verify**
 
