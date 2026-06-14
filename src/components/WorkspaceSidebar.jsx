@@ -60,7 +60,7 @@ const allNavItems = {
 
 const configNavItems = {
   conexiones: { icon: Plug2, label: 'Conexiones MCP' },
-  ajustes: { icon: Settings, label: 'Ajustes' },
+  settings: { icon: Settings, label: 'Ajustes' },
 };
 
 const DEFAULT_NAV = [
@@ -208,13 +208,19 @@ export default function WorkspaceSidebar({
       ? activeStyle || getSidebarNavActiveStyle()
       : { background: 'transparent', borderColor: 'transparent', boxShadow: 'none' };
 
+    const href =
+      key === 'settings'
+        ? `/project/${project?.id}/settings/appearance`
+        : `/project/${project?.id}/${key}`;
+
     return (
       <Link
         key={key}
-        to={`/project/${project?.id}/${key}`}
+        to={href}
         data-testid={`ws-nav-${key}`}
         title={collapsed ? label : undefined}
         aria-label={collapsed ? label : undefined}
+        aria-current={active ? 'page' : undefined}
         className={navItemCls(active)}
         style={activeInlineStyle}
       >
