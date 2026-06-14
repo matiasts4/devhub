@@ -1,3 +1,7 @@
+/**
+ * @jest-environment jsdom
+ */
+
 // Regression test for Bug: TypeError: undefined is not an object (evaluating 'config.icon')
 // in src/components/settings/LLMProviderSettings.jsx
 //
@@ -51,6 +55,39 @@ function installDom() {
   global.localStorage = dom.window.localStorage;
   return dom;
 }
+
+const { deriveSchemaForUnknown } = require('../../../lib/llmProviderConfig');
+
+describe('deriveSchemaForUnknown schema hints', () => {
+  test('maps _API_KEY suffix to a password field', () => {
+    expect(deriveSchemaForUnknown('FUTURE_API_KEY')).toEqual({
+      label: 'FUTURE_API_KEY',
+      type: 'password',
+    });
+  });
+
+  test('maps _BASE_URL suffix to a url field', () => {
+    expect(deriveSchemaForUnknown('FUTURE_BASE_URL')).toEqual({
+      label: 'FUTURE_BASE_URL',
+      type: 'url',
+    });
+  });
+
+  test('maps _MODEL suffix to a select field with empty options', () => {
+    expect(deriveSchemaForUnknown('FUTURE_MODEL')).toEqual({
+      label: 'FUTURE_MODEL',
+      type: 'select',
+      options: [],
+    });
+  });
+
+  test('defaults any other key to a text field', () => {
+    expect(deriveSchemaForUnknown('FUTURE_TIMEOUT')).toEqual({
+      label: 'FUTURE_TIMEOUT',
+      type: 'text',
+    });
+  });
+});
 
 describe('LLMProviderSettings — stale priorityOrder safety', () => {
   let dom;
@@ -156,5 +193,186 @@ describe('LLMProviderSettings — stale priorityOrder safety', () => {
     expect(Array.isArray(reconcilePriorityOrder(null))).toBe(true);
     expect(Array.isArray(reconcilePriorityOrder(undefined))).toBe(true);
     expect(reconcilePriorityOrder([]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('reconcilePriorityOrder with backend provider keys', () => {
+  test('drops stale keys and backfills using backend order', () => {
+    const LLMProviderSettingsModule = require('../LLMProviderSettings');
+    const { reconcilePriorityOrder } = LLMProviderSettingsModule;
+
+    const out = reconcilePriorityOrder(
+      ['openrouter', 'stale-key', 'copilot'],
+      ['copilot', 'minimax', 'openrouter']
+    );
+
+    expect(out).toEqual(['openrouter', 'copilot', 'minimax']);
+  });
+
+  test('includes unknown backend providers in the reconciled order', () => {
+    const LLMProviderSettingsModule = require('../LLMProviderSettings');
+    const { reconcilePriorityOrder } = LLMProviderSettingsModule;
+
+    const out = reconcilePriorityOrder([], ['copilot', 'future-ai']);
+
+    expect(out).toContain('copilot');
+    expect(out).toContain('future-ai');
+    expect(out).toHaveLength(2);
+  });
+
+  test('falls back to known metadata keys when no backend list is provided', () => {
+    const LLMProviderSettingsModule = require('../LLMProviderSettings');
+    const { reconcilePriorityOrder } = LLMProviderSettingsModule;
+
+    const out = reconcilePriorityOrder(['minimax']);
+
+    expect(out).toContain('minimax');
+    expect(out.length).toBeGreaterThan(1);
+  });
+});
+
+describe('ProviderCard', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = installDom();
+  });
+
+  afterEach(() => {
+    if (global.window) dom.window.close();
+    delete global.window;
+    delete global.document;
+    delete global.navigator;
+    delete global.HTMLElement;
+    delete global.Event;
+    delete global.MouseEvent;
+    delete global.localStorage;
+    jest.clearAllMocks();
+  });
+
+  function renderProviderCard(props) {
+    const ProviderCard = require('../ProviderCard').default;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    flushSync(() => root.render(React.createElement(ProviderCard, props)));
+    return { container, root };
+  }
+
+  test('renders a known provider using metadata', () => {
+    const { container, root } = renderProviderCard({
+      providerKey: 'minimax',
+      meta: {
+        name: 'MiniMax',
+        description: 'MiniMax M2.7 provider',
+        envVars: {
+          MINIMAX_API_KEY: { label: 'API Key', type: 'password' },
+        },
+      },
+      providerData: { MINIMAX_API_KEY: 'secret' },
+      index: 0,
+      isFirst: true,
+      isLast: true,
+      onToggle: () => {},
+      onMoveUp: () => {},
+      onMoveDown: () => {},
+    });
+
+    expect(container.textContent).toMatch(/MiniMax/);
+    expect(container.textContent).toMatch(/MiniMax M2.7 provider/);
+    expect(container.textContent).toMatch(/API Key/);
+
+    flushSync(() => root.unmount());
+  });
+
+  test('renders an unknown provider with a generic key/value UI', () => {
+    const { container, root } = renderProviderCard({
+      providerKey: 'future-ai',
+      meta: null,
+      providerData: {
+        FUTURE_API_KEY: 'secret',
+        FUTURE_MODEL: 'model-x',
+      },
+      index: 0,
+      isFirst: true,
+      isLast: true,
+      onToggle: () => {},
+      onMoveUp: () => {},
+      onMoveDown: () => {},
+    });
+
+    expect(container.textContent).toMatch(/future-ai/);
+    expect(container.textContent).toMatch(/FUTURE_API_KEY/);
+    expect(container.textContent).toMatch(/FUTURE_MODEL/);
+
+    flushSync(() => root.unmount());
+  });
+});
+
+describe('LLMProviderSettings — backend-driven provider registry', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = installDom();
+  });
+
+  afterEach(() => {
+    if (global.window) dom.window.close();
+    delete global.window;
+    delete global.document;
+    delete global.navigator;
+    delete global.HTMLElement;
+    delete global.Event;
+    delete global.MouseEvent;
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  test('renders minimax and a synthetic unknown provider from the backend response', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ({
+          providers: {
+            copilot: { enabled: true },
+            minimax: { enabled: true, MINIMAX_API_KEY: 'secret' },
+            'future-ai': { enabled: true, FUTURE_API_KEY: 'secret' },
+          },
+          priorityOrder: ['copilot', 'minimax', 'future-ai'],
+          globalTemperature: 0.7,
+          globalMaxTokens: 4000,
+          bridgeEnabled: true,
+          modelOptions: {},
+          favoriteModels: {},
+        }),
+      })
+    );
+
+    const LLMProviderSettings = require('../LLMProviderSettings').default;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    let renderError = null;
+    let capturedText = '';
+    try {
+      flushSync(() => root.render(React.createElement(LLMProviderSettings, { embedded: false })));
+      for (let i = 0; i < 8; i++) {
+        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        flushSync(() => {});
+      }
+      capturedText = container.textContent || '';
+    } catch (err) {
+      renderError = err;
+    } finally {
+      flushSync(() => root.unmount());
+    }
+
+    expect(renderError).toBeNull();
+    expect(capturedText).toMatch(/MiniMax/);
+    expect(capturedText).toMatch(/future-ai/);
   });
 });

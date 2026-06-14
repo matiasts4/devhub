@@ -96,6 +96,22 @@ export async function getLlmProviderConfig(providerKey) {
 }
 
 /**
+ * Derive a generic field schema for an unknown provider's env-var key.
+ * Used by the frontend UI as a fallback when a backend provider has no
+ * entry in the lightweight `PROVIDER_META` map.
+ *
+ * @param {string} key - Env-var name, e.g. 'FUTURE_API_KEY'
+ * @returns {{ label: string; type: 'password' | 'url' | 'select' | 'text'; options?: string[] }}
+ */
+export function deriveSchemaForUnknown(key) {
+  if (!key) return { label: String(key), type: 'text' };
+  if (key.endsWith('_API_KEY')) return { label: key, type: 'password' };
+  if (key.endsWith('_BASE_URL')) return { label: key, type: 'url' };
+  if (key.endsWith('_MODEL')) return { label: key, type: 'select', options: [] };
+  return { label: key, type: 'text' };
+}
+
+/**
  * Synchronous variant — reads from the in-memory cache only.
  * Callers should prefer the async version if cache may be cold.
  *
