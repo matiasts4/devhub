@@ -28,6 +28,12 @@ Recommended flow:
 - `update_task`, `add_task_comment`, `update_milestone`: report progress and outcomes.
 - `register_agent`, `heartbeat_agent`, `update_agent_status`, `unregister_agent`: coordinate multi-agent runs.
 
+## Project Skills
+
+The following skills are shipped inside this repo and should be loaded when the task context matches their trigger:
+
+- `devhub-morphology` — `skills/devhub-morphology/SKILL.md`: Trigger when adding, removing, or modifying a DevHub morphology (registry entry, CSS token block, selector wiring, factory usage, tests, and common pitfalls).
+
 ## Safety
 
 - Never invent project/task IDs. Read them from DevHub MCP first.

@@ -30,9 +30,9 @@ Add the `cursor` morphology, canonicalize settings routing under `HashRouter`, a
 
 ### Phase 4: Slice D — `devhub-morphology` skill
 
-- [ ] 4.1 Write project-local skill
-- [ ] 4.2 Install skill globally
-- [ ] 4.3 Verify skill discoverability
+- [x] 4.1 Write project-local skill
+- [x] 4.2 Install skill globally
+- [x] 4.3 Verify skill discoverability
 
 ### Phase 5: Verification
 

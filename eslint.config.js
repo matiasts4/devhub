@@ -45,6 +45,7 @@ const commonJsAndJestFiles = [
   'src/**/*.test.js',
   'src/**/*.spec.js',
   'src/**/__tests__/**/*.js',
+  'skills/**/__tests__/**/*.js',
 ];
 
 /** @type {import('eslint').Linter.Config[]} */
