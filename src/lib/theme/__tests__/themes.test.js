@@ -1,4 +1,7 @@
 const { JSDOM } = require('jsdom');
+const fs = require('fs');
+const path = require('path');
+const postcss = require('postcss');
 
 const {
   ACCENTS,
@@ -55,6 +58,7 @@ describe('theme morphology helpers', () => {
     expect(normalizeMorphology(MORPHOLOGIES.DEFAULT)).toBe(MORPHOLOGIES.DEFAULT);
     expect(normalizeMorphology(MORPHOLOGIES.BRUTALIST_STAGE)).toBe(MORPHOLOGIES.BRUTALIST_STAGE);
     expect(normalizeMorphology(MORPHOLOGIES.SWITCHYARD)).toBe(MORPHOLOGIES.SWITCHYARD);
+    expect(normalizeMorphology(MORPHOLOGIES.CURSOR)).toBe(MORPHOLOGIES.CURSOR);
   });
 
   test('normalizes supported accent values', () => {
@@ -108,12 +112,13 @@ describe('theme morphology helpers', () => {
     expect(document.documentElement.getAttribute('data-accent')).toBe(ACCENTS.AMBER);
   });
 
-  test('exposes brutalist stage and switchyard as first-class morphology options', () => {
+  test('exposes brutalist stage, switchyard, and cursor as first-class morphology options', () => {
     expect(MORPHOLOGY_OPTIONS).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: MORPHOLOGIES.DEFAULT }),
         expect.objectContaining({ id: MORPHOLOGIES.BRUTALIST_STAGE }),
         expect.objectContaining({ id: MORPHOLOGIES.SWITCHYARD }),
+        expect.objectContaining({ id: MORPHOLOGIES.CURSOR, label: 'Cursor' }),
       ])
     );
   });
@@ -269,5 +274,86 @@ describe('warning token helper (FR-D06)', () => {
     expect(document.documentElement.style.getPropertyValue('--warning')).toBe(
       WARNING[THEMES.DRACULA]
     );
+  });
+});
+
+describe('cursor morphology token block', () => {
+  const globalsCssPath = path.resolve(__dirname, '../../../app/globals.css');
+
+  test('globals.css defines a cursor morphology token block with expected values', async () => {
+    const css = fs.readFileSync(globalsCssPath, 'utf8');
+    const root = postcss.parse(css);
+
+    const cursorRule = root.nodes.find(
+      (node) => node.type === 'rule' && node.selector === "[data-morphology='cursor']"
+    );
+
+    expect(cursorRule).toBeDefined();
+
+    const declarations = Object.fromEntries(
+      cursorRule.nodes.filter((node) => node.type === 'decl').map((node) => [node.prop, node.value])
+    );
+
+    expect(declarations['--chrome-radius-panel']).toBe('18px');
+    expect(declarations['--chrome-radius-control']).toBe('8px');
+    expect(declarations['--chrome-border-width']).toBe('1px');
+    expect(declarations['--accent-primary']).toBe('oklch(0.74 0.16 57)');
+    expect(declarations['--accent-glow']).toBe('rgba(227, 179, 65, 0.16)');
+  });
+
+  test('cursor token block uses morphology chrome variables and warm amber accent', () => {
+    const css = fs.readFileSync(globalsCssPath, 'utf8');
+    const root = postcss.parse(css);
+
+    const cursorRule = root.nodes.find(
+      (node) => node.type === 'rule' && node.selector === "[data-morphology='cursor']"
+    );
+
+    const declarations = Object.fromEntries(
+      cursorRule.nodes.filter((node) => node.type === 'decl').map((node) => [node.prop, node.value])
+    );
+
+    expect(declarations['--chrome-panel-fill']).toBeDefined();
+    expect(declarations['--chrome-panel-fill-emphasis']).toBeDefined();
+    expect(declarations['--chrome-control-fill']).toBeDefined();
+    expect(declarations['--chrome-control-fill-hover']).toBeDefined();
+    expect(declarations['--chrome-shadow-panel']).toBeDefined();
+    expect(declarations['--chrome-shadow-control']).toBeDefined();
+  });
+
+  test('existing morphology token blocks are unchanged', () => {
+    const css = fs.readFileSync(globalsCssPath, 'utf8');
+    const root = postcss.parse(css);
+
+    const getBlock = (selector) =>
+      root.nodes.find((node) => node.type === 'rule' && node.selector === selector);
+
+    const defaultBlock = getBlock("[data-morphology='default']");
+    const brutalistBlock = getBlock("[data-morphology='brutalist-stage']");
+    const auraBlock = getBlock("[data-morphology='aura']");
+    const switchyardBlock = getBlock("[data-morphology='switchyard']");
+
+    expect(defaultBlock).toBeDefined();
+    expect(brutalistBlock).toBeDefined();
+    expect(auraBlock).toBeDefined();
+    expect(switchyardBlock).toBeDefined();
+
+    const defaultDecls = Object.fromEntries(
+      defaultBlock.nodes
+        .filter((node) => node.type === 'decl')
+        .map((node) => [node.prop, node.value])
+    );
+
+    expect(defaultDecls['--chrome-radius-panel']).toBe('1rem');
+    expect(defaultDecls['--chrome-radius-control']).toBe('999px');
+
+    const switchyardDecls = Object.fromEntries(
+      switchyardBlock.nodes
+        .filter((node) => node.type === 'decl')
+        .map((node) => [node.prop, node.value])
+    );
+
+    expect(switchyardDecls['--chrome-radius-panel']).toBe('18px');
+    expect(switchyardDecls['--accent-primary']).toBe('#63d0c2');
   });
 });

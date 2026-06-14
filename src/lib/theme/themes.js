@@ -104,6 +104,7 @@ export const MORPHOLOGIES = {
   BRUTALIST_STAGE: 'brutalist-stage',
   AURA: 'aura',
   SWITCHYARD: 'switchyard',
+  CURSOR: 'cursor',
 };
 
 export const ACCENTS = {
@@ -241,6 +242,11 @@ export const MORPHOLOGY_OPTIONS = [
     id: MORPHOLOGIES.SWITCHYARD,
     label: 'Switchyard',
     description: 'Metallic dark with teal/cobalt/bronze palette axis.',
+  },
+  {
+    id: MORPHOLOGIES.CURSOR,
+    label: 'Cursor',
+    description: 'Warm amber, softer shadows, and rounded Cursor-style chrome.',
   },
 ];
 

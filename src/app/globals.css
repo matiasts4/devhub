@@ -194,6 +194,26 @@
     auto;
 }
 
+[data-morphology='cursor'] {
+  --chrome-radius-panel: 18px;
+  --chrome-radius-control: 8px;
+  --chrome-border-width: 1px;
+  --chrome-border-color: color-mix(in srgb, var(--accent-primary) 22%, var(--border-subtle));
+  --chrome-shadow-panel: 0 14px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --chrome-shadow-control: 0 4px 12px rgba(0, 0, 0, 0.18);
+  --chrome-panel-fill: color-mix(in srgb, var(--surface-card) 96%, var(--accent-primary) 4%);
+  --chrome-panel-fill-emphasis: color-mix(
+    in srgb,
+    var(--surface-elevated) 94%,
+    var(--accent-primary) 6%
+  );
+  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 90%, transparent);
+  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  --chrome-press-offset: 0px;
+  --accent-primary: oklch(0.74 0.16 57);
+  --accent-glow: rgba(227, 179, 65, 0.16);
+}
+
 /* ─── Terminal Zone — base fallbacks applied before header style overrides ─── */
 [data-terminal-container] {
   --terminal-bg: var(--surface-app);
