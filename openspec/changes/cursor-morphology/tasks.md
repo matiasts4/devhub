@@ -14,11 +14,11 @@ Add the `cursor` morphology, canonicalize settings routing under `HashRouter`, a
 
 ### Phase 2: Slice B — Settings route canonicalization
 
-- [ ] 2.1 Create `SettingsLayoutRouter` wrapper
-- [ ] 2.2 Mount settings routes and redirect legacy `/ajustes`
-- [ ] 2.3 Update sidebar settings link
-- [ ] 2.4 Update profile account link
-- [ ] 2.5 Test settings routing
+- [x] 2.1 Create `SettingsLayoutRouter` wrapper
+- [x] 2.2 Mount settings routes and redirect legacy `/ajustes`
+- [x] 2.3 Update sidebar settings link
+- [x] 2.4 Update profile account link
+- [x] 2.5 Test settings routing
 
 ### Phase 3: Slice C — LLM provider registry alignment
 
