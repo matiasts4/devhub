@@ -22,11 +22,11 @@ Add the `cursor` morphology, canonicalize settings routing under `HashRouter`, a
 
 ### Phase 3: Slice C — LLM provider registry alignment
 
-- [ ] 3.1 Fetch backend provider list
-- [ ] 3.2 Create `ProviderCard` component
-- [ ] 3.3 Refactor `LLMProviderSettings` to use metadata map
-- [ ] 3.4 Update `llmProviderConfig` helper schema hints
-- [ ] 3.5 Test backend-driven LLM UI
+- [x] 3.1 Fetch backend provider list
+- [x] 3.2 Create `ProviderCard` component
+- [x] 3.3 Refactor `LLMProviderSettings` to use metadata map
+- [x] 3.4 Update `llmProviderConfig` helper schema hints
+- [x] 3.5 Test backend-driven LLM UI
 
 ### Phase 4: Slice D — `devhub-morphology` skill
 
