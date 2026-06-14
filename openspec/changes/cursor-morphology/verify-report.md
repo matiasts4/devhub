@@ -1,5 +1,7 @@
 # Verification Report: cursor-morphology
 
+## Status: pass
+
 **Change**: `cursor-morphology`
 **Version**: spec v1 (R1–R11 in `openspec/changes/cursor-morphology/specs/cursor-morphology/spec.md`)
 **Mode**: Strict TDD
