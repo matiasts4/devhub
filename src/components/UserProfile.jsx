@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth/AuthContext';
 import {
   User,
@@ -52,6 +52,10 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
+  const { projectId } = useParams();
+  const accountSettingsPath = projectId
+    ? `/project/${projectId}/settings/account`
+    : '/settings/account';
 
   // Modal Auth States
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -384,7 +388,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
               />
 
               <button
-                onClick={() => handleNavigate('/settings/account')}
+                onClick={() => handleNavigate(accountSettingsPath)}
                 className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-text-primary hover:bg-white/[0.04] rounded transition-colors cursor-pointer"
               >
                 <Settings className="w-3.5 h-3.5 text-text-muted" />
