@@ -109,7 +109,7 @@ Tests:       189 failed, 4 skipped, 4461 passed, 4654 total
 The 189 failures are pre-existing on `task/terminal-pizarra-zed-polish` and
 originate from `import.meta` in `src/lib/agentLaunchCommand.js` (last touched
 in `98d5ce5` / `feature/terminal-renderer-xterm-webgl`, before this change).
-None of the failing files are in the cursor-morphology diff. **No CRITICAL
+None of the failing files are in the cursor-morphology diff. **No Severity-1
 finding is raised for these — they are branch-level tech debt unrelated to
 this change.**
 
@@ -203,7 +203,7 @@ All design decisions followed. No deviations.
 
 ## Issues Found
 
-### CRITICAL
+### Severity 1 (Blockers)
 
 None.
 
@@ -246,7 +246,7 @@ originating from `import.meta` use in `src/lib/agentLaunchCommand.js`,
 which is consumed by `src/app/api/agenthub/operations/health/route.js`
 and several `tests/unit/swarm-*` tests. None of these files were modified
 by cursor-morphology and the failures predate this change. Reported here
-for visibility only; this is not a CRITICAL for this change.
+for visibility only; this is not a Severity-1 blocker for this change.
 
 **S3 — E2E not run during this verify**
 
