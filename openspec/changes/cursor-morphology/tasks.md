@@ -36,8 +36,8 @@ Add the `cursor` morphology, canonicalize settings routing under `HashRouter`, a
 
 ### Phase 5: Verification
 
-- [ ] 5.1 Add E2E smoke spec
-- [ ] 5.2 Visual regression check for existing morphologies
+- [x] 5.1 Add E2E smoke spec
+- [x] 5.2 Visual regression check for existing morphologies
 
 ## Review Workload Forecast
 

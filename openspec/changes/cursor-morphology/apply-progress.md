@@ -1,8 +1,8 @@
-# Apply Progress: cursor-morphology — Slice A + Slice B + Slice C + Slice D
+# Apply Progress: cursor-morphology — Slice A + Slice B + Slice C + Slice D + Slice E
 
 **Change**: cursor-morphology  
 **Mode**: Strict TDD  
-**PR**: 4 of 5 (stacked-to-main)  
+**PR**: 5 of 5 (stacked-to-main)  
 **Date**: 2026-06-14
 
 ## Completed Tasks
@@ -25,54 +25,70 @@
 - [x] 4.1 Write project-local `devhub-morphology` skill
 - [x] 4.2 Install skill globally
 - [x] 4.3 Verify skill discoverability
+- [x] 5.1 Add E2E smoke spec
+- [x] 5.2 Visual regression check for existing morphologies
 
-## Files Changed — Slice D
+## Files Changed — Slice E
 
-| File                                                   | Action    | What Was Done                                                                                                                    |
-| ------------------------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `skills/devhub-morphology/SKILL.md`                    | Created   | Reusable agent skill documenting morphology registry, tokens, selectors, factories, tests, and common pitfalls.                  |
-| `skills/devhub-morphology/__tests__/skill.test.js`     | Created   | Strict TDD validation tests for skill frontmatter, content, global install parity, AGENTS.md registration, and registry listing. |
-| `~/.config/opencode/skills/devhub-morphology/SKILL.md` | Created   | Global copy of the project skill for cross-session discoverability.                                                              |
-| `AGENTS.md`                                            | Modified  | Added `devhub-morphology` to the project skills section.                                                                         |
-| `eslint.config.js`                                     | Modified  | Added `skills/**/__tests__/**/*.js` to `commonJsAndJestFiles` so skill tests pass linting and pre-commit hooks.                  |
-| `.atl/skill-registry.md`                               | Generated | Skill registry refreshed via `gentle-ai skill-registry refresh --force`; lists `devhub-morphology`.                              |
+| File                                       | Action   | What Was Done                                                                                                                                                        |
+| ------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/e2e/09_settings_morphology.spec.ts` | Created  | Playwright E2E smoke spec verifying canonical settings route reachability, legacy `/ajustes` redirect, existing morphology baseline tokens, and cursor token values. |
+| `src/App.js`                               | Modified | Fixed legacy `/ajustes` redirect to use relative `../settings/appearance` so it resolves to `/project/:id/settings/appearance`.                                      |
+| `src/__tests__/App.routes.test.jsx`        | Modified | Updated redirect assertion to match the corrected relative redirect path.                                                                                            |
 
 ## TDD Cycle Evidence
 
-| Task | Test File                                          | Layer | Safety Net | RED     | GREEN  | TRIANGULATE                                | REFACTOR |
-| ---- | -------------------------------------------------- | ----- | ---------- | ------- | ------ | ------------------------------------------ | -------- |
-| 4.1  | `skills/devhub-morphology/__tests__/skill.test.js` | Unit  | N/A (new)  | Written | Passed | 3 cases (frontmatter, checklist, pitfalls) | Clean    |
-| 4.2  | `skills/devhub-morphology/__tests__/skill.test.js` | Unit  | N/A (new)  | Written | Passed | 1 case (global matches project)            | Clean    |
-| 4.3  | `skills/devhub-morphology/__tests__/skill.test.js` | Unit  | N/A (new)  | Written | Passed | 2 cases (AGENTS.md, registry listing)      | Clean    |
+| Task | Test File                                  | Layer | Safety Net     | RED     | GREEN  | TRIANGULATE                              | REFACTOR |
+| ---- | ------------------------------------------ | ----- | -------------- | ------- | ------ | ---------------------------------------- | -------- |
+| 5.1  | `tests/e2e/09_settings_morphology.spec.ts` | E2E   | ✅ 5/5 passing | Written | ✅ 4/4 | ✅ 4 route + morphology cases            | ✅ Clean |
+| 5.2  | `tests/e2e/09_settings_morphology.spec.ts` | E2E   | N/A            | Written | ✅ 4/4 | ✅ 4 existing morphologies token-checked | ✅ Clean |
 
 ### Test Summary
 
-- **Total tests written**: 6
-- **Total tests passing**: 6/6 in `skills/devhub-morphology/__tests__/skill.test.js`
-- **Layers used**: Unit (6)
+- **Total tests written**: 4
+- **Total tests passing**: 4/4 in `tests/e2e/09_settings_morphology.spec.ts`
+- **Layers used**: E2E (4)
 - **Approval tests**: None — no refactoring tasks
-- **Pure functions created**: 0 (skill is documentation artifact)
+- **Pure functions created**: 0
+
+## Visual Regression Check (Task 5.2)
+
+No pre-existing automated visual baseline exists for DevHub morphologies, so the check was performed as an **automated CSS token diff** inside the E2E spec:
+
+- For each existing morphology (`default`, `brutalist-stage`, `aura`, `switchyard`), the spec selects the option and reads the resolved computed values of `--chrome-radius-panel`, `--chrome-radius-control`, `--chrome-border-width`, and `--chrome-press-offset` from `document.documentElement`.
+- Each value is asserted against the baseline declared in `design.md` / `src/app/globals.css`.
+- The `cursor` morphology is verified separately with its own expected token values.
+- All checks passed; no drift was detected in existing morphology tokens.
+
+Evidence:
+
+```text
+✅ default           → --chrome-radius-panel: 1rem, --chrome-radius-control: 999px, --chrome-border-width: 1px, --chrome-press-offset: 0px
+✅ brutalist-stage   → --chrome-radius-panel: 0,   --chrome-radius-control: 0,   --chrome-border-width: 2px, --chrome-press-offset: 1px
+✅ aura              → --chrome-radius-panel: 1.25rem, --chrome-radius-control: 1rem, --chrome-border-width: 1px, --chrome-press-offset: 0px
+✅ switchyard        → --chrome-radius-panel: 18px, --chrome-radius-control: 12px, --chrome-border-width: 1px, --chrome-press-offset: 0px
+✅ cursor            → --chrome-radius-panel: 18px, --chrome-radius-control: 8px,  --chrome-border-width: 1px, --chrome-press-offset: 0px
+```
 
 ## Deviations from Design
 
-None — implementation matches `design.md`. The skill is installed at both project and global paths, registered in `AGENTS.md`, and appears in the local skill registry.
+1. **Redirect path fix**: `App.js` originally used `to="settings/appearance"` inside the `/project/:id/ajustes` route. Because `Navigate` resolves relative paths against the current location, this produced `/project/:id/ajustes/settings/appearance`, which does not match any route. Changed to `to="../settings/appearance"` so the redirect resolves to `/project/:id/settings/appearance` as specified in `design.md` and `spec.md`. This is a bug fix in previously-committed Slice B code discovered during Slice E E2E verification; the design intent was correct but the implementation was one segment off.
 
 ## Issues Found
 
-1. **Test-harness fix**: the new skill test at `skills/devhub-morphology/__tests__/skill.test.js` was not covered by the existing `commonJsAndJestFiles` ESLint glob, causing pre-commit to fail with `no-undef` for `require`/`__dirname`/`describe`/`expect`. Added `skills/**/__tests__/**/*.js` to `eslint.config.js` so skill tests are linted as CommonJS + Jest. This is harness maintenance, not production code.
+1. **Slice B redirect bug**: The legacy `/project/:id/ajustes` redirect was relative and appended `settings/appearance` to the current path instead of replacing `ajustes`. The E2E spec for task 5.1 caught this. Fixed in `src/App.js` and the corresponding unit test in `src/__tests__/App.routes.test.jsx` was updated to assert the corrected path.
 
 ## Remaining Tasks
 
-- [ ] 5.1 Add E2E smoke spec
-- [ ] 5.2 Visual regression check for existing morphologies
+None. All 20 tasks are complete.
 
 ## Workload / PR Boundary
 
 - **Mode**: stacked-to-main
-- **Current work unit**: Slice D — create and install `devhub-morphology` skill
-- **Boundary**: This PR builds on Slice C and ends after task 4.3. It does not include E2E verification (Slice E).
-- **Estimated review budget impact**: ~200 changed lines in Slice D (well under the 400-line single-commit guideline and the 800-line slice budget).
+- **Current work unit**: Slice E — E2E smoke spec and visual regression check
+- **Boundary**: This PR depends on Slices A–D and ends after task 5.2. It is the final PR in the stack.
+- **Estimated review budget impact**: ~180 changed lines in Slice E (well under the 400-line single-commit guideline and the 800-line slice budget).
 
 ## Status
 
-18/18 Phase 1 + Phase 2 + Phase 3 + Phase 4 tasks complete. Slice D is ready for verify or the next PR in the stack.
+20/20 tasks complete. Slice E is ready for verify.

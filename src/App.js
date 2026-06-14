@@ -415,7 +415,7 @@ function App() {
                 <Route path="llm-providers" element={<LLMProvidersPage />} />
                 <Route path="*" element={<Navigate to="appearance" replace />} />
               </Route>
-              <Route path="ajustes" element={<Navigate to="settings/appearance" replace />} />
+              <Route path="ajustes" element={<Navigate to="../settings/appearance" replace />} />
               <Route path="swarm" element={<SwarmControl />} />
               <Route path="telegram" element={<TelegramMonitor />} />
               <Route path="agenthub" element={<LegacyAgentHubRedirect />} />

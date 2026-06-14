@@ -51,7 +51,7 @@ describe('App.js — canonical settings routes and legacy redirect', () => {
 
   test('redirects /project/:projectId/ajustes to /settings/appearance', () => {
     expect(app).toMatch(
-      /<Route\s+path=["']ajustes["']\s+element=\{<Navigate\s+to=["']settings\/appearance["']\s+replace\s*\/>\}\s*\/>/
+      /<Route\s+path=["']ajustes["']\s+element=\{\u003cNavigate\s+to=["']\.\.\/settings\/appearance["']\s+replace\s*\/\u003e\}\s*\/\u003e/
     );
   });
 });
