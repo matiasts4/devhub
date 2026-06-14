@@ -8,6 +8,14 @@ function defineIfMissing(target, key, value) {
   }
 }
 
+// Polyfill TextEncoder/TextDecoder before any fetch implementation is loaded.
+// Jest's jsdom environment does not always expose these globals during
+// setupFiles, but some dependencies (e.g. Next.js compiled fetch primitives)
+// require them at require-time. This is a no-op when they already exist.
+const { TextEncoder, TextDecoder } = require('util');
+defineIfMissing(globalThis, 'TextEncoder', TextEncoder);
+defineIfMissing(globalThis, 'TextDecoder', TextDecoder);
+
 // requestAnimationFrame / cancelAnimationFrame shim.
 //
 // Why this exists:
