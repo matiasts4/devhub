@@ -73,6 +73,7 @@ jest.mock('@/lib/theme/themes', () => ({
   MORPHOLOGIES: {
     DEFAULT: 'default',
     BRUTALIST_STAGE: 'brutalist-stage',
+    CURSOR: 'cursor',
   },
   THEME_OPTIONS: [
     { id: 'deep-sea', label: 'Deep Sea', description: 'desc', accent: '#58A6FF' },
@@ -81,6 +82,7 @@ jest.mock('@/lib/theme/themes', () => ({
   MORPHOLOGY_OPTIONS: [
     { id: 'default', label: 'Default', description: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
+    { id: 'cursor', label: 'Cursor', description: 'Warm amber Cursor-style chrome.' },
   ],
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
@@ -91,6 +93,7 @@ jest.mock('@/lib/theme/themes', () => ({
 }));
 
 const Ajustes = require('../Ajustes').default;
+const themeModule = require('@/lib/theme/themes');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -169,9 +172,43 @@ describe('Ajustes appearance tab — interactive controls', () => {
     });
     await flushEffects();
 
-    expect(rendered.container.querySelector('[data-testid="ajustes-appearance-shell"]')).toBeTruthy();
-    expect(rendered.container.querySelector('[data-testid="ajustes-appearance-deprecation-banner"]')).toBeNull();
-    expect(rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]')).toBeTruthy();
-    expect(rendered.container.querySelector('[data-testid="ajustes-morphology-option-default"]')).toBeTruthy();
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-appearance-shell"]')
+    ).toBeTruthy();
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-appearance-deprecation-banner"]')
+    ).toBeNull();
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-accent-option-amber"]')
+    ).toBeTruthy();
+    expect(
+      rendered.container.querySelector('[data-testid="ajustes-morphology-option-default"]')
+    ).toBeTruthy();
+  });
+
+  test('renders the cursor morphology option and applies it when selected', async () => {
+    rendered = await renderIntoDom(React.createElement(Ajustes));
+
+    const appearanceTab = findButton(rendered.container, (button) =>
+      /apariencia|appearance/i.test(button.textContent || '')
+    );
+    flushSync(() => {
+      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    const cursorButton = rendered.container.querySelector(
+      '[data-testid="ajustes-morphology-option-cursor"]'
+    );
+
+    expect(cursorButton).toBeTruthy();
+    expect(cursorButton.textContent).toContain('Cursor');
+
+    flushSync(() => {
+      cursorButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.setMorphology).toHaveBeenCalledWith('cursor');
   });
 });

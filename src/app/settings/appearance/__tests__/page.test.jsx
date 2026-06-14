@@ -26,6 +26,7 @@ jest.mock('@/lib/theme/themes', () => ({
     DEFAULT: 'default',
     BRUTALIST_STAGE: 'brutalist-stage',
     SWITCHYARD: 'switchyard',
+    CURSOR: 'cursor',
   },
   PALETTES: {
     MINERAL: 'mineral',
@@ -60,7 +61,14 @@ jest.mock('@/lib/theme/themes', () => ({
     { id: 'default', label: 'Default', description: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
     { id: 'switchyard', label: 'Switchyard', description: 'Metallic dark with palette axis.' },
+    { id: 'cursor', label: 'Cursor', description: 'Warm amber Cursor-style chrome.' },
   ],
+  TERMINAL_HEADER_STYLES: {
+    DRAGON: 'dragon',
+    MINIMAL: 'minimal',
+    GRADIENT: 'gradient',
+    PLAIN: 'plain',
+  },
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
@@ -71,6 +79,16 @@ jest.mock('@/lib/theme/themes', () => ({
   setPalette: jest.fn((value) => value),
   getStoredZoom: jest.fn(() => 1),
   setZoom: jest.fn((value) => value),
+  getStoredTerminalHeaderStyle: jest.fn(() => 'dragon'),
+  setTerminalHeaderStyle: jest.fn((value) => value),
+  getTerminalHeaderStyleOptions: jest.fn(() => [
+    { id: 'dragon', label: 'Dragon', description: 'Gradient header with accent bar.' },
+    { id: 'minimal', label: 'Minimal', description: 'Flat solid header.' },
+    { id: 'gradient', label: 'Gradient', description: 'Header gradient.' },
+    { id: 'plain', label: 'Plain', description: 'Flat solid background.' },
+  ]),
+  getStoredTerminalAccentBarVisible: jest.fn(() => true),
+  setStoredTerminalAccentBarVisible: jest.fn(),
 }));
 
 jest.mock('@/lib/terminal/restorePreferences', () => ({
@@ -139,7 +157,9 @@ describe('Settings appearance page terminal renderer', () => {
   test('shows terminal renderer preference in Settings with xterm-webgl, vte-experimental, and xterm options; xterm-webgl is pre-selected', async () => {
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const select = rendered.container.querySelector('[data-testid="settings-terminal-renderer-select"]');
+    const select = rendered.container.querySelector(
+      '[data-testid="settings-terminal-renderer-select"]'
+    );
     const options = Array.from(select.querySelectorAll('option')).map((option) => option.value);
 
     expect(rendered.container.textContent).toContain('Terminal renderer');
@@ -152,7 +172,9 @@ describe('Settings appearance page terminal renderer', () => {
 
     rendered = await renderIntoDom(React.createElement(AppearancePage));
 
-    const select = rendered.container.querySelector('[data-testid="settings-terminal-renderer-select"]');
+    const select = rendered.container.querySelector(
+      '[data-testid="settings-terminal-renderer-select"]'
+    );
     expect(select.value).toBe('xterm');
 
     flushSync(() => {
@@ -234,6 +256,27 @@ describe('Settings appearance page terminal renderer', () => {
     await flushEffects();
 
     expect(themeModule.setMorphology).toHaveBeenCalledWith('brutalist-stage');
+    expect(themeModule.setTheme).not.toHaveBeenCalled();
+  });
+
+  test('renders the cursor morphology option and calls setMorphology when selected', async () => {
+    rendered = await renderIntoDom(React.createElement(AppearancePage));
+
+    expect(rendered.container.textContent).toContain('Cursor');
+
+    const cursorButton = rendered.container.querySelector(
+      '[data-testid="appearance-morphology-option-cursor"]'
+    );
+
+    expect(cursorButton).toBeTruthy();
+    expect(cursorButton.textContent).toContain('Cursor');
+
+    flushSync(() => {
+      cursorButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.setMorphology).toHaveBeenCalledWith('cursor');
     expect(themeModule.setTheme).not.toHaveBeenCalled();
   });
 });
