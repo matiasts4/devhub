@@ -16,14 +16,15 @@ import {
   Copy,
   ExternalLink,
 } from 'lucide-react';
-
-function deriveSchemaForUnknown(key) {
-  if (!key) return { label: String(key), type: 'text' };
-  if (key.endsWith('_API_KEY')) return { label: key, type: 'password' };
-  if (key.endsWith('_BASE_URL')) return { label: key, type: 'url' };
-  if (key.endsWith('_MODEL')) return { label: key, type: 'select', options: [] };
-  return { label: key, type: 'text' };
-}
+import {
+  panelStyle,
+  pillStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
+  btnDangerStyle,
+  inputStyle,
+} from '@/chrome/morphology';
+import { deriveSchemaForUnknown } from '@/lib/llmProviderConfig';
 
 function buildEnvVarSchema(meta, providerData) {
   if (meta?.envVars) return meta.envVars;
@@ -69,26 +70,15 @@ export default function ProviderCard({
 
   return (
     <section
-      className="rounded-2xl border p-6 transition-all"
-      style={{
-        background:
-          'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
-        borderColor: 'var(--border-subtle)',
-        boxShadow: 'var(--shadow-soft)',
-        opacity: isEnabled ? 1 : 0.6,
-      }}
+      className="p-6 transition-opacity"
+      style={{ ...panelStyle(), opacity: isEnabled ? 1 : 0.6 }}
     >
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-5">
         <div
-          className="w-9 h-9 rounded-xl flex shrink-0 items-center justify-center cursor-pointer transition-colors"
+          className="w-9 h-9 flex shrink-0 items-center justify-center cursor-pointer"
           onClick={onToggle}
           title={isEnabled ? 'Haz click para desactivar' : 'Haz click para activar'}
-          style={{
-            background: isEnabled
-              ? 'color-mix(in srgb, var(--accent-primary) 18%, transparent)'
-              : 'color-mix(in srgb, var(--surface-muted) 80%, black)',
-            border: `1px solid ${isEnabled ? 'color-mix(in srgb, var(--accent-primary) 34%, transparent)' : 'var(--border-strong)'}`,
-          }}
+          style={pillStyle({ tone: isEnabled ? 'accent' : 'neutral' })}
         >
           <Icon
             className="w-4 h-4"
@@ -106,34 +96,27 @@ export default function ProviderCard({
 
         <div className="flex items-center gap-3 mt-2 sm:mt-0">
           <span
-            className="text-xs font-mono px-2 py-0.5 rounded shadow-sm flex items-center gap-1.5"
-            style={{
-              background: 'var(--surface-sunken)',
-              border: '1px solid var(--border-strong)',
-              color: 'var(--text-secondary)',
-            }}
+            className="text-xs font-mono px-2 py-0.5 flex items-center gap-1.5"
+            style={pillStyle()}
           >
             <Zap size={11} style={{ color: 'var(--accent-primary)' }} />
             PRIORIDAD: {index + 1}
           </span>
 
-          <div className="flex gap-1 bg-surface-sunken rounded-lg overflow-hidden border">
+          <div className="flex gap-1">
             <button
               onClick={onMoveUp}
               disabled={isFirst}
-              className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-muted)] cursor-pointer"
-              style={{
-                background: 'var(--surface-sunken)',
-                borderRight: '1px solid var(--border-subtle)',
-              }}
+              className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              style={pillStyle({ tone: 'neutral' })}
             >
               <ArrowUp size={12} style={{ color: 'var(--text-primary)' }} />
             </button>
             <button
               onClick={onMoveDown}
               disabled={isLast}
-              className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-muted)] cursor-pointer"
-              style={{ background: 'var(--surface-sunken)' }}
+              className="p-1 px-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              style={pillStyle({ tone: 'neutral' })}
             >
               <ArrowDown size={12} style={{ color: 'var(--text-primary)' }} />
             </button>
@@ -141,17 +124,13 @@ export default function ProviderCard({
 
           <button
             onClick={onToggle}
+            role="switch"
+            aria-checked={isEnabled}
             className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none ml-1 cursor-pointer"
-            style={{
-              background: isEnabled
-                ? 'var(--success, #22c55e)'
-                : 'color-mix(in srgb, var(--surface-muted) 80%, black)',
-              border: '1px solid var(--border-strong)',
-            }}
+            style={{ background: isEnabled ? 'var(--accent-primary)' : 'var(--surface-muted)' }}
           >
             <span
-              className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${isEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'}`}
-              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+              className={`w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${isEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'}`}
             />
           </button>
         </div>
@@ -164,41 +143,28 @@ export default function ProviderCard({
           <div className="space-y-4 pt-2">
             {copilotAuth?.state === 'success' ? (
               <div
-                className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl"
-                style={{
-                  background: 'color-mix(in srgb, #22c55e 8%, var(--surface-sunken))',
-                  border: '1px solid color-mix(in srgb, #22c55e 25%, transparent)',
-                }}
+                className="flex items-center justify-between gap-3 px-4 py-3"
+                style={panelStyle({ tone: 'success' })}
               >
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 size={16} style={{ color: '#22c55e' }} />
+                  <CheckCircle2 size={16} style={{ color: 'var(--success)' }} />
                   <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
                     Autenticado como{' '}
-                    <span className="font-mono font-semibold" style={{ color: '#22c55e' }}>
+                    <span className="font-mono font-semibold" style={{ color: 'var(--success)' }}>
                       {copilotAuth.username}
                     </span>
                   </span>
                 </div>
                 <button
                   onClick={onLogoutCopilot}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
-                  style={{
-                    background: 'color-mix(in srgb, #ef4444 12%, transparent)',
-                    border: '1px solid color-mix(in srgb, #ef4444 25%, transparent)',
-                    color: '#ef4444',
-                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs transition-all"
+                  style={btnDangerStyle({ size: 'xs' })}
                 >
                   <LogOut size={12} /> Cerrar sesión
                 </button>
               </div>
             ) : copilotAuth?.state === 'pending' ? (
-              <div
-                className="rounded-xl p-4 space-y-3"
-                style={{
-                  background: 'color-mix(in srgb, var(--accent-primary) 5%, var(--surface-sunken))',
-                  border: '1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
-                }}
-              >
+              <div className="p-4 space-y-3" style={panelStyle({ tone: 'accent' })}>
                 <div className="flex items-center gap-2">
                   <Loader2
                     size={14}
@@ -229,26 +195,15 @@ export default function ProviderCard({
                 </p>
                 <div className="flex items-center gap-2">
                   <span
-                    className="font-mono text-2xl font-bold tracking-widest px-4 py-2 rounded-xl"
-                    style={{
-                      background: 'var(--surface-card)',
-                      border: '2px solid var(--accent-primary)',
-                      color: 'var(--accent-primary)',
-                      letterSpacing: '0.25em',
-                    }}
+                    className="font-mono text-2xl font-bold tracking-widest px-4 py-2"
+                    style={panelStyle({ tone: 'accent' })}
                   >
                     {copilotAuth?.userCode}
                   </span>
                   <button
                     onClick={onCopyUserCode}
-                    className="p-2 rounded-lg transition-all"
-                    style={{
-                      background: copilotAuth?.copied
-                        ? 'color-mix(in srgb, #22c55e 15%, transparent)'
-                        : 'var(--surface-card)',
-                      border: '1px solid var(--border-subtle)',
-                      color: copilotAuth?.copied ? '#22c55e' : 'var(--text-muted)',
-                    }}
+                    className="p-2 transition-all"
+                    style={pillStyle({ tone: copilotAuth?.copied ? 'success' : 'neutral' })}
                     title="Copiar código"
                   >
                     {copilotAuth?.copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
@@ -266,12 +221,8 @@ export default function ProviderCard({
               <div className="space-y-2">
                 {copilotAuth?.state === 'error' && (
                   <div
-                    className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg"
-                    style={{
-                      background: 'color-mix(in srgb, #ef4444 10%, transparent)',
-                      border: '1px solid color-mix(in srgb, #ef4444 25%, transparent)',
-                      color: '#ef4444',
-                    }}
+                    className="flex items-center gap-2 text-xs px-3 py-2"
+                    style={panelStyle({ tone: 'danger' })}
                   >
                     <XCircle size={13} /> {copilotAuth?.error}
                   </div>
@@ -279,13 +230,8 @@ export default function ProviderCard({
                 <button
                   onClick={onStartCopilotLogin}
                   disabled={copilotAuth?.state === 'loading'}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-                  style={{
-                    background: 'var(--accent-primary)',
-                    color: 'white',
-                    boxShadow:
-                      '0 2px 8px color-mix(in srgb, var(--accent-primary) 30%, transparent)',
-                  }}
+                  className="flex items-center gap-2 text-sm font-semibold transition-all disabled:opacity-50"
+                  style={btnPrimaryStyle({ size: 'md' })}
                 >
                   {copilotAuth?.state === 'loading' ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -324,26 +270,16 @@ export default function ProviderCard({
                         value={modelSearch}
                         onChange={(e) => onModelSearchChange?.(e.target.value)}
                         placeholder="Buscar modelo (ej: gpt-4, claude, sonnet)..."
-                        className="w-full bg-transparent text-sm pl-9 pr-3 py-2 rounded-xl outline-none"
-                        style={{
-                          border: '1px solid var(--border-subtle)',
-                          color: 'var(--text-primary)',
-                          background: 'var(--surface-sunken)',
-                        }}
+                        className="w-full text-sm pl-9 pr-3 py-2 outline-none"
+                        style={inputStyle()}
                       />
                     </div>
 
                     <div className="flex items-center gap-2 mt-2">
                       <button
                         onClick={onToggleFavoritesOnly}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                        style={{
-                          background: showFavoritesOnly
-                            ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
-                            : 'var(--surface-sunken)',
-                          border: `1px solid ${showFavoritesOnly ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                          color: showFavoritesOnly ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        }}
+                        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-all"
+                        style={pillStyle({ tone: showFavoritesOnly ? 'accent' : 'neutral' })}
                       >
                         <Star size={12} fill={showFavoritesOnly ? 'currentColor' : 'none'} />
                         Solo Favoritos
@@ -393,38 +329,31 @@ export default function ProviderCard({
                         return filtered.map((opt, index) => {
                           const active = (providerData?.[key] || field.default || '') === opt;
                           const fav = favs.includes(opt);
+                          const tone = active ? 'accent' : fav ? 'warning' : 'neutral';
                           return (
                             <div
                               key={`${opt}::${index}`}
                               onClick={() => onUpdateConfig?.(key, opt)}
-                              className="group relative border rounded-xl px-3 py-2 text-[11px] font-mono cursor-pointer transition-colors truncate"
+                              className="group relative px-3 py-2 text-[11px] font-mono cursor-pointer transition-colors truncate"
                               title={opt}
-                              style={{
-                                borderColor: active
-                                  ? 'var(--accent-primary)'
-                                  : fav
-                                    ? 'var(--accent-warning, #f59e0b)'
-                                    : 'var(--border-subtle)',
-                                background: active
-                                  ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
-                                  : fav
-                                    ? 'color-mix(in srgb, var(--accent-warning, #f59e0b) 5%, var(--surface-sunken))'
-                                    : 'var(--surface-sunken)',
-                                color: active ? 'var(--accent-primary)' : 'var(--text-primary)',
-                              }}
+                              style={pillStyle({ tone })}
                             >
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onToggleFavorite?.(opt);
                                 }}
-                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-white/10"
                                 title={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                               >
                                 <Star
                                   size={12}
-                                  fill={fav ? '#f59e0b' : 'none'}
-                                  style={{ color: fav ? '#f59e0b' : 'var(--text-muted)' }}
+                                  fill={fav ? 'var(--accent-warning, #f59e0b)' : 'none'}
+                                  style={{
+                                    color: fav
+                                      ? 'var(--accent-warning, #f59e0b)'
+                                      : 'var(--text-muted)',
+                                  }}
                                 />
                               </button>
                               <div className="pr-4">{opt}</div>
@@ -442,14 +371,8 @@ export default function ProviderCard({
                         <button
                           key={opt}
                           onClick={() => onUpdateConfig?.(key, opt)}
-                          className="font-mono text-[11px] px-3 py-1.5 rounded-lg border transition-all"
-                          style={{
-                            borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                            background: active
-                              ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
-                              : 'var(--surface-sunken)',
-                            color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                          }}
+                          className="font-mono text-[11px] px-3 py-1.5 transition-all"
+                          style={pillStyle({ tone: active ? 'accent' : 'neutral' })}
                         >
                           {opt}
                         </button>
@@ -462,11 +385,8 @@ export default function ProviderCard({
                     value={providerData?.[key] || ''}
                     onChange={(e) => onUpdateConfig?.(key, e.target.value)}
                     placeholder={field.placeholder}
-                    className="w-full bg-transparent text-sm px-3 py-2 rounded-xl transition-all outline-none"
-                    style={{
-                      border: '1px solid var(--border-subtle)',
-                      color: 'var(--text-primary)',
-                    }}
+                    className="w-full text-sm px-3 py-2 transition-all outline-none"
+                    style={inputStyle()}
                   />
                 )}
               </div>
@@ -482,12 +402,8 @@ export default function ProviderCard({
             <button
               onClick={onLoadModels}
               disabled={loadingModels}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors hover:opacity-80 disabled:opacity-50 cursor-pointer"
-              style={{
-                background: 'var(--surface-sunken)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-secondary)',
-              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+              style={btnSecondaryStyle({ size: 'xs' })}
             >
               {loadingModels ? (
                 <Loader2 size={13} className="animate-spin" />
@@ -499,12 +415,8 @@ export default function ProviderCard({
             <button
               onClick={onTest}
               disabled={testing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors hover:opacity-80 disabled:opacity-50 cursor-pointer"
-              style={{
-                background: 'var(--surface-sunken)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-secondary)',
-              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+              style={btnSecondaryStyle({ size: 'xs' })}
             >
               {testing ? <Loader2 size={13} className="animate-spin" /> : <TestTube2 size={13} />}
               Validar Credencial
@@ -514,16 +426,8 @@ export default function ProviderCard({
           <div className="flex flex-col items-end gap-1">
             {testResult && (
               <div
-                className="flex text-[11px] px-2 py-0.5 rounded font-mono border"
-                style={{
-                  background: testResult.valid
-                    ? 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)'
-                    : 'color-mix(in srgb, var(--danger, #ef4444) 15%, transparent)',
-                  borderColor: testResult.valid
-                    ? 'color-mix(in srgb, var(--success, #22c55e) 30%, transparent)'
-                    : 'color-mix(in srgb, var(--danger, #ef4444) 30%, transparent)',
-                  color: testResult.valid ? 'var(--success, #22c55e)' : 'var(--danger, #ef4444)',
-                }}
+                className="flex text-[11px] px-2 py-0.5 font-mono"
+                style={pillStyle({ tone: testResult.valid ? 'success' : 'danger' })}
               >
                 {testResult.valid ? (
                   <span className="flex items-center gap-1">
@@ -538,12 +442,8 @@ export default function ProviderCard({
             )}
             {modelError && (
               <div
-                className="flex text-[11px] px-2 py-0.5 rounded font-mono border"
-                style={{
-                  background: 'color-mix(in srgb, #eab308 15%, transparent)',
-                  borderColor: 'color-mix(in srgb, #eab308 30%, transparent)',
-                  color: '#eab308',
-                }}
+                className="flex text-[11px] px-2 py-0.5 font-mono"
+                style={pillStyle({ tone: 'warning' })}
               >
                 <span className="flex items-center gap-1">
                   <XCircle size={12} /> {modelError}

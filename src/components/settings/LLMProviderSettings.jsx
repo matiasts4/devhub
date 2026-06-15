@@ -1,8 +1,20 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Zap, Loader2, Save, Shield, Globe, Plug, Cpu, Terminal } from 'lucide-react';
+import {
+  Zap,
+  Loader2,
+  Save,
+  Shield,
+  Globe,
+  Plug,
+  Cpu,
+  Terminal,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { panelStyle, pillStyle, btnPrimaryStyle } from '@/chrome/morphology';
 import ProviderCard from './ProviderCard';
 
 // Reconcile a persisted priorityOrder against the current provider registry.
@@ -544,18 +556,8 @@ export default function LLMProviderSettings({ embedded = false }) {
       {/* Save message */}
       {saveMessage && (
         <div
-          className="rounded-xl border px-4 py-3 text-sm flex items-center gap-2"
-          style={{
-            background:
-              saveMessage.type === 'success'
-                ? 'color-mix(in srgb, #22c55e 10%, var(--surface-card))'
-                : 'color-mix(in srgb, #ef4444 10%, var(--surface-card))',
-            borderColor:
-              saveMessage.type === 'success'
-                ? 'color-mix(in srgb, #22c55e 30%, var(--border-subtle))'
-                : 'color-mix(in srgb, #ef4444 30%, var(--border-subtle))',
-            color: saveMessage.type === 'success' ? '#22c55e' : '#ef4444',
-          }}
+          className="px-4 py-3 text-sm flex items-center gap-2"
+          style={pillStyle({ tone: saveMessage.type === 'success' ? 'success' : 'danger' })}
         >
           {saveMessage.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
           {saveMessage.text}
@@ -563,25 +565,12 @@ export default function LLMProviderSettings({ embedded = false }) {
       )}
 
       {/* Master toggle */}
-      <section
-        className="rounded-2xl border p-6"
-        style={{
-          background:
-            'linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 94%, transparent), color-mix(in srgb, var(--surface-elevated) 45%, transparent))',
-          borderColor: 'var(--border-subtle)',
-          boxShadow: 'var(--shadow-soft)',
-        }}
-      >
+      <section className="p-6" style={panelStyle({ tone: bridgeEnabled ? 'accent' : 'neutral' })}>
         <div className="flex items-center gap-3">
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors"
+            className="w-9 h-9 flex items-center justify-center cursor-pointer"
             onClick={() => setBridgeEnabled(!bridgeEnabled)}
-            style={{
-              background: bridgeEnabled
-                ? 'color-mix(in srgb, var(--accent-primary) 18%, transparent)'
-                : 'color-mix(in srgb, var(--surface-muted) 80%, black)',
-              border: `1px solid ${bridgeEnabled ? 'color-mix(in srgb, var(--accent-primary) 34%, transparent)' : 'var(--border-strong)'}`,
-            }}
+            style={pillStyle({ tone: bridgeEnabled ? 'accent' : 'neutral' })}
           >
             <Cpu
               className="w-4 h-4"
@@ -604,17 +593,15 @@ export default function LLMProviderSettings({ embedded = false }) {
           <div>
             <button
               onClick={() => setBridgeEnabled(!bridgeEnabled)}
+              role="switch"
+              aria-checked={bridgeEnabled}
               className="relative w-11 h-6 flex items-center rounded-full transition-colors duration-200 focus:outline-none cursor-pointer"
               style={{
-                background: bridgeEnabled
-                  ? 'var(--success, #22c55e)'
-                  : 'color-mix(in srgb, var(--surface-muted) 80%, black)',
-                border: '1px solid var(--border-strong)',
+                background: bridgeEnabled ? 'var(--accent-primary)' : 'var(--surface-muted)',
               }}
             >
               <span
-                className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${bridgeEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'}`}
-                style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+                className={`w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${bridgeEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'}`}
               />
             </button>
           </div>
@@ -670,11 +657,8 @@ export default function LLMProviderSettings({ embedded = false }) {
         <button
           onClick={saveConfig}
           disabled={saving}
-          className="inline-flex items-center gap-2 px-5 py-2 font-mono text-sm shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 rounded"
-          style={{
-            background: 'var(--accent-primary)',
-            color: 'white',
-          }}
+          className="font-mono transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
+          style={btnPrimaryStyle({ size: 'md' })}
         >
           {saving ? (
             <>
