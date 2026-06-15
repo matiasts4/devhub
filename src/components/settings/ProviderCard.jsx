@@ -24,7 +24,7 @@ import {
   btnDangerStyle,
   inputStyle,
 } from '@/chrome/morphology';
-import { deriveSchemaForUnknown } from '@/lib/llmProviderConfig';
+import { deriveSchemaForUnknown } from '@/lib/llmProviderConfig.shared';
 
 function buildEnvVarSchema(meta, providerData) {
   if (meta?.envVars) return meta.envVars;

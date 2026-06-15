@@ -117,12 +117,14 @@ describe('LLM tab — chrome-token alignment (source-level guard)', () => {
       expect(src).not.toMatch(/linear-gradient\(/);
     });
 
-    test('does not redefine `deriveSchemaForUnknown` (lives in @/lib/llmProviderConfig)', () => {
-      // Deduplication check: the function is exported by llmProviderConfig
+    test('does not redefine `deriveSchemaForUnknown` (lives in @/lib/llmProviderConfig.shared)', () => {
+      // Deduplication check: the function is exported by llmProviderConfig.shared
       // and ProviderCard.jsx must import it from there, not redeclare it.
+      // The .shared file is client-safe (no Node fs/path imports) so it can
+      // be bundled into Client Components.
       expect(src).not.toMatch(/function\s+deriveSchemaForUnknown\s*\(/);
       expect(src).toMatch(
-        /import\s+\{[^}]*deriveSchemaForUnknown[^}]*\}\s+from\s+['"]@\/lib\/llmProviderConfig['"]/
+        /import\s+\{[^}]*deriveSchemaForUnknown[^}]*\}\s+from\s+['"]@\/lib\/llmProviderConfig\.shared['"]/
       );
     });
   });
