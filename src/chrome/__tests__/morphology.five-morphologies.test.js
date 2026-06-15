@@ -32,16 +32,27 @@ function extractMorphologyBlock(src, morphologyKey) {
 }
 
 // Chrome-surface call sites in Ajustes — these are the panels/controls
-// that MUST resolve through the token layer. We exclude the 5 preview
-// inner blocks and the 2 shadow overrides (which are chrome deletes).
-function isChromeSurfaceLine(line) {
-  // Exclude ThemeOptionCard preview inner blocks (3 of them around
-  // lines 261, 269, 275, 282) and the accent-preview blocks (line 1120).
-  // These are decorative swatches, not chrome.
+// that MUST resolve through the token layer. We exclude the 5 theme
+// preview inner blocks and the accent preview swatches (decoration, not
+// chrome) by detecting them through context (the lines around a
+// `borderRadius: 0` line are inspected for `preview.*` or
+// `accent-preview` references — both indicate the swatch block).
+function isChromeSurfaceLine(line, context) {
   if (line.includes('preview.body') || line.includes('preview.line')) return false;
   if (line.includes('preview.highlight')) return false;
   if (line.includes('preview.panel')) return false;
   if (line.includes('settings-accent-preview')) return false;
+  for (const ctx of context) {
+    if (
+      ctx.includes('preview.body') ||
+      ctx.includes('preview.line') ||
+      ctx.includes('preview.highlight') ||
+      ctx.includes('preview.panel') ||
+      ctx.includes('settings-accent-preview')
+    ) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -66,9 +77,14 @@ describe('Ajustes morphology chrome coverage (R5)', () => {
     // should remain on chrome surfaces.
     const lines = src.split('\n');
     const chromeViolations = lines
-      .map((line, i) => ({ line: line.trim(), num: i + 1 }))
+      .map((line, i) => ({ line, num: i + 1 }))
       .filter(({ line }) => /borderRadius:\s*0/.test(line))
-      .filter(({ line }) => isChromeSurfaceLine(line));
+      .filter(({ line, num }) => {
+        const start = Math.max(0, num - 6);
+        const end = Math.min(lines.length, num + 4);
+        const context = lines.slice(start, end);
+        return isChromeSurfaceLine(line, context);
+      });
 
     expect(chromeViolations).toEqual([]);
   });
@@ -76,9 +92,14 @@ describe('Ajustes morphology chrome coverage (R5)', () => {
   test('Ajustes.jsx source no longer hardcodes 4px 4px 0 0 shadow on chrome surfaces', () => {
     const lines = src.split('\n');
     const shadowViolations = lines
-      .map((line, i) => ({ line: line.trim(), num: i + 1 }))
+      .map((line, i) => ({ line, num: i + 1 }))
       .filter(({ line }) => /['"]4px 4px 0 0 var\(--border-strong\)['"]/.test(line))
-      .filter(({ line }) => isChromeSurfaceLine(line));
+      .filter(({ line, num }) => {
+        const start = Math.max(0, num - 6);
+        const end = Math.min(lines.length, num + 4);
+        const context = lines.slice(start, end);
+        return isChromeSurfaceLine(line, context);
+      });
 
     expect(shadowViolations).toEqual([]);
   });

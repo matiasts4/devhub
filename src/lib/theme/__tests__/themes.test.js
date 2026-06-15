@@ -321,7 +321,7 @@ describe('cursor morphology token block', () => {
     expect(declarations['--chrome-shadow-control']).toBeDefined();
   });
 
-  test('existing morphology token blocks are unchanged', () => {
+  test('existing morphology token blocks are unchanged (R6 default-radius exception)', () => {
     const css = fs.readFileSync(globalsCssPath, 'utf8');
     const root = postcss.parse(css);
 
@@ -344,7 +344,10 @@ describe('cursor morphology token block', () => {
         .map((node) => [node.prop, node.value])
     );
 
-    expect(defaultDecls['--chrome-radius-panel']).toBe('1rem');
+    // R6 amendment: default MAY set --chrome-radius-panel: 0 to preserve
+    // the legacy Ajustes square look. All other default tokens remain at
+    // pre-cursor values.
+    expect(defaultDecls['--chrome-radius-panel']).toBe('0');
     expect(defaultDecls['--chrome-radius-control']).toBe('999px');
 
     const switchyardDecls = Object.fromEntries(
