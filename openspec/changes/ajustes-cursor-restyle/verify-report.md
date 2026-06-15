@@ -34,22 +34,22 @@
 
 ### Build / Tests / Coverage Evidence
 
-| Layer                              | Command                                                              | Result                                                                             |
-| ---------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| PR-1 unit (chrome token layer)     | `npx jest src/chrome/__tests__/morphology.default-radius.test.js`    | **PASS** 3/3                                                                       |
-| PR-1 unit (chrome 5 morphologies)  | `npx jest src/chrome/__tests__/morphology.five-morphologies.test.js` | **PASS** 4/4                                                                       |
-| PR-1 component (terminal flag off) | `npx jest src/views/__tests__/Ajustes.terminalSection.test.jsx`      | **PASS** 1/1                                                                       |
-| PR-1 component (terminal flag on)  | `npx jest src/views/__tests__/Ajustes.terminalSection.flag.test.jsx` | **PASS** 1/1                                                                       |
-| PR-1 component (Ajustes core)      | `npx jest src/views/__tests__/Ajustes.test.jsx`                      | **PASS**                                                                           |
-| PR-1 component (appearance)        | `npx jest src/views/__tests__/Ajustes.appearance.test.jsx`           | **PASS**                                                                           |
-| PR-1 component (project type)      | `npx jest src/views/__tests__/Ajustes.projectType.test.jsx`          | **PASS**                                                                           |
-| PR-2 unit (App routes contract)    | `npx jest src/__tests__/App.routes.test.jsx`                         | **PASS** 5/5                                                                       |
-| PR-2 unit (terminal UI in Ajustes) | `npx jest tests/unit/terminal-renderer-default-settings-ui.test.js`  | **PASS** 2/2                                                                       |
-| PR-2 collateral (sidebar)          | `npx jest src/components/__tests__/WorkspaceSidebar.routes.test.jsx` | **PASS**                                                                           |
-| PR-2 collateral (user profile)     | `npx jest src/components/__tests__/UserProfile.routes.test.jsx`      | **PASS**                                                                           |
-| PR-affected aggregate              | `npx jest <9 PR-affected paths>`                                     | **22/22 green**                                                                    |
-| e2e contract rewrite               | `tests/e2e/09_settings_morphology.spec.ts`                           | Source updated, contract green; browser run pending PR review (per apply-progress) |
-| Full `npm test` aggregate          | `npm test`                                                           | 4,424/4,625 suites green; pre-existing items in unrelated slices (see Notes 1/3)   |
+| Layer                              | Command                                                              | Result                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| PR-1 unit (chrome token layer)     | `npx jest src/chrome/__tests__/morphology.default-radius.test.js`    | **PASS** 3/3                                                                             |
+| PR-1 unit (chrome 5 morphologies)  | `npx jest src/chrome/__tests__/morphology.five-morphologies.test.js` | **PASS** 4/4                                                                             |
+| PR-1 component (terminal flag off) | `npx jest src/views/__tests__/Ajustes.terminalSection.test.jsx`      | **PASS** 1/1                                                                             |
+| PR-1 component (terminal flag on)  | `npx jest src/views/__tests__/Ajustes.terminalSection.flag.test.jsx` | **PASS** 1/1                                                                             |
+| PR-1 component (Ajustes core)      | `npx jest src/views/__tests__/Ajustes.test.jsx`                      | **PASS**                                                                                 |
+| PR-1 component (appearance)        | `npx jest src/views/__tests__/Ajustes.appearance.test.jsx`           | **PASS**                                                                                 |
+| PR-1 component (project type)      | `npx jest src/views/__tests__/Ajustes.projectType.test.jsx`          | **PASS**                                                                                 |
+| PR-2 unit (App routes contract)    | `npx jest src/__tests__/App.routes.test.jsx`                         | **PASS** 5/5                                                                             |
+| PR-2 unit (terminal UI in Ajustes) | `npx jest tests/unit/terminal-renderer-default-settings-ui.test.js`  | **PASS** 2/2                                                                             |
+| PR-2 collateral (sidebar)          | `npx jest src/components/__tests__/WorkspaceSidebar.routes.test.jsx` | **PASS**                                                                                 |
+| PR-2 collateral (user profile)     | `npx jest src/components/__tests__/UserProfile.routes.test.jsx`      | **PASS**                                                                                 |
+| PR-affected aggregate              | `npx jest <9 PR-affected paths>`                                     | **22/22 green**                                                                          |
+| e2e contract rewrite               | `tests/e2e/09_settings_morphology.spec.ts`                           | Source updated, contract green; browser run scheduled for PR review (per apply-progress) |
+| Full `npm test` aggregate          | `npm test`                                                           | 4,424/4,625 suites green; pre-existing items in unrelated slices (see Notes 1/3)         |
 
 PR-2 pre-merge grep gates (design §8.1, §8.2) verified at zero production matches (only absence-assertion hits inside test files).
 
