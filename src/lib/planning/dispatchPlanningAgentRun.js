@@ -31,6 +31,16 @@
  * @returns {Promise<{ accepted: boolean, attempts: number }>}
  */
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    // Node-only: keep the timer from blocking process exit. No-op in browsers.
+    if (timer && typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+}
+
 export const MAX_ATTEMPTS = 20;
 export const RETRY_MS = 100;
 
@@ -43,13 +53,6 @@ function resolveEventTarget(optsTarget) {
   return g.window || g;
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    if (timer && typeof timer.unref === 'function') timer.unref();
-  });
-}
-
 export async function dispatchPlanningAgentRun(detail, opts = {}) {
   const maxAttempts = Number.isFinite(opts.MAX_ATTEMPTS) ? opts.MAX_ATTEMPTS : MAX_ATTEMPTS;
   const retryMs = Number.isFinite(opts.RETRY_MS) ? opts.RETRY_MS : RETRY_MS;
@@ -58,7 +61,9 @@ export async function dispatchPlanningAgentRun(detail, opts = {}) {
   // Edge case: no event target available (pure SSR / test env without a window).
   // Fall back to a no-op target so the helper still resolves deterministically.
   const safeTarget =
-    target && typeof target.dispatchEvent === 'function' && typeof target.addEventListener === 'function'
+    target &&
+    typeof target.dispatchEvent === 'function' &&
+    typeof target.addEventListener === 'function'
       ? target
       : { dispatchEvent: () => true, addEventListener: () => {}, removeEventListener: () => {} };
 
@@ -106,9 +111,7 @@ export async function dispatchPlanningAgentRun(detail, opts = {}) {
       if (settled) return;
       attempts += 1;
       try {
-        safeTarget.dispatchEvent(
-          new CustomEventCtor(RUN_AGENT_EVENT, { detail })
-        );
+        safeTarget.dispatchEvent(new CustomEventCtor(RUN_AGENT_EVENT, { detail }));
       } catch {
         // Listener may throw in a test stub; keep going up to the cap.
       }

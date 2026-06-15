@@ -14,7 +14,6 @@ const path = require('path');
 const USE_OPENCODE = process.env.TELEGRAM_USE_OPENCODE !== 'false'; // default: true
 const USE_MULTI_TURN = process.env.TELEGRAM_MULTI_TURN !== 'false'; // default: true
 const LLM_BRIDGE_ENABLED = process.env.LLM_BRIDGE_ENABLED !== 'false';
-const TRACE_PERSISTENCE = process.env.TRACE_PERSISTENCE_ENABLED !== 'false'; // default: true
 const SETTINGS_PATH = path.join(__dirname, '..', '..', 'data', 'llm-providers-config.json');
 const TOOL_EVENT_REGEX = /\[🔧 Ejecutando (.+?)\.\.\.\]/;
 const DEFAULT_PROGRESS_INTERVAL_MS =
@@ -695,13 +694,6 @@ async function runOpenCodeHeadless(bot, agent, text, chatId, onEvent) {
     throw lastError;
   }
 
-  // 3. Persist traces to Next.js API (if enabled)
-  if (TRACE_PERSISTENCE && result?.events?.length > 0) {
-    persistTraces(session.id, result.events, String(chatId)).catch((err) => {
-      logger.warn(`Failed to persist traces: ${err.message}`);
-    });
-  }
-
   // 4. Store usage stats
   if (result?.durationMs != null) {
     const { upsertUsage } = require('../lib/db-bridge');
@@ -726,57 +718,6 @@ async function runOpenCodeHeadless(bot, agent, text, chatId, onEvent) {
       toolsSeen
     ),
   };
-}
-
-/**
- * Persist trace events to the Next.js API for web UI visibility.
- *
- * @param {string} sessionId - AgentHub session ID.
- * @param {Array} events - SSE events from OpenCode.
- * @param {string} telegramChatId - Telegram chat ID.
- */
-async function persistTraces(sessionId, events, telegramChatId) {
-  const traces = [];
-
-  for (const event of events) {
-    const props = event.properties || {};
-    const eventType = event.type || '';
-
-    let traceType = 'text';
-    if (eventType.includes('tool')) {
-      traceType =
-        eventType.includes('start') || eventType.includes('execute') ? 'tool_start' : 'tool_end';
-    } else if (eventType.includes('session.status')) {
-      traceType = 'session_status';
-    } else if (eventType.includes('message.assistant') || eventType.includes('text.delta')) {
-      traceType = 'text';
-    }
-
-    traces.push({
-      session_id: sessionId,
-      trace_type: traceType,
-      tool_name: props.name || props.tool || null,
-      tool_input: props.input ? JSON.stringify(props.input) : null,
-      tool_output: props.output || null,
-      tool_status: eventType.includes('error') ? 'error' : 'ok',
-      content: props.text || props.delta || props.message || null,
-      metadata: JSON.stringify({
-        source: 'telegram',
-        telegram_chat_id: telegramChatId,
-        event_type: eventType,
-      }),
-    });
-  }
-
-  if (traces.length === 0) return;
-
-  const NEXT_JS_URL = process.env.NEXT_JS_URL || 'http://127.0.0.1:3400';
-
-  await fetch(`${NEXT_JS_URL}/api/agenthub/traces/persist`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ traces }),
-  });
 }
 
 /**

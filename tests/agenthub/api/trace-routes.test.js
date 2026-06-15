@@ -2,7 +2,6 @@
  * Test: Trace sub-routes
  *
  * Tests:
- * - POST /api/agenthub/traces/persist — trace persistence (may be deprecated 410)
  * - GET /api/agenthub/sessions/:id/traces/:traceId — single trace detail
  * - GET /api/agenthub/sessions/:id/traces/search?q=... — FTS5 search
  */
@@ -22,45 +21,6 @@ async function serverReachable() {
     return false;
   }
 }
-
-describe('POST /api/agenthub/traces/persist', () => {
-  let harness;
-
-  beforeEach(async () => {
-    harness = new ApiTestHarness({
-      baseUrl: BASE_URL,
-      dbPath: ':memory:',
-      lockOwner: 'test-traces-persist',
-    });
-    harness.setupDb();
-  });
-
-  afterEach(async () => {
-    if (harness._activeLocks.length > 0) {
-      await harness.releaseLocks(harness._activeLocks);
-    }
-    harness.teardownDb();
-  });
-
-  test('returns 410 Gone (deprecated endpoint)', async () => {
-    const reachable = await serverReachable();
-    if (!reachable) {
-      console.warn('SKIP: Next.js server not reachable at', BASE_URL);
-      return;
-    }
-
-    const { response, body } = await harness.requestJson('POST', '/api/agenthub/traces/persist', {
-      session_id: 'test-session',
-      trace_type: 'tool',
-      tool_name: 'read_file',
-      content: 'test content',
-    });
-
-    harness.assertStatus(response, 410);
-    expect(body.success).toBe(false);
-    expect(body.message || body.error).toMatch(/deprecated/i);
-  });
-});
 
 describe('GET /api/agenthub/sessions/:id/traces/:traceId', () => {
   let harness;

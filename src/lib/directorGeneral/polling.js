@@ -3,8 +3,15 @@
  * Polling loop with AbortController, exponential backoff, and terminal-state detection.
  * Per design Section 5: polling starts after config.pollIntervalMs delay.
  */
+/* eslint-env node */
 
 'use strict';
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'rejected']);
 const NON_TRANSIENT_STATUSES = new Set([403, 404, 409]);
@@ -17,10 +24,6 @@ function getBaseUrl() {
     return window.location.origin;
   }
   return process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isTransientError(status) {
@@ -51,9 +54,11 @@ function startPolling(missionId, config = {}, callbacks = {}) {
   let interval = pollIntervalMs;
   let retries = 0;
   let stopped = false;
-  let pollingStartTime = Date.now();
+  const pollingStartTime = Date.now();
   let resolveDone;
-  const done = new Promise((r) => { resolveDone = r; });
+  const done = new Promise((r) => {
+    resolveDone = r;
+  });
 
   const stop = () => {
     stopped = true;
@@ -62,15 +67,27 @@ function startPolling(missionId, config = {}, callbacks = {}) {
   };
 
   // Background polling — runs without blocking the return
-  runPollingLoop(missionId, abortController, fetcher, base, callbacks, {
-    getInterval: () => interval,
-    setInterval: (v) => { interval = v; },
-    getRetries: () => retries,
-    setRetries: (v) => { retries = v; },
-    getStopped: () => stopped,
-    getPollingStartTime: () => pollingStartTime,
-    resolveDone,
-  }, { pollIntervalMs, stop });
+  runPollingLoop(
+    missionId,
+    abortController,
+    fetcher,
+    base,
+    callbacks,
+    {
+      getInterval: () => interval,
+      setInterval: (v) => {
+        interval = v;
+      },
+      getRetries: () => retries,
+      setRetries: (v) => {
+        retries = v;
+      },
+      getStopped: () => stopped,
+      getPollingStartTime: () => pollingStartTime,
+      resolveDone,
+    },
+    { pollIntervalMs, stop }
+  );
 
   return { stop, done };
 }
@@ -88,14 +105,11 @@ async function runPollingLoop(missionId, abortController, fetcher, base, callbac
     let payload = null;
 
     try {
-      const response = await fetcher(
-        `${base}/api/agenthub/missions/${missionId}/status`,
-        {
-          method: 'GET',
-          signal: abortController.signal,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+      const response = await fetcher(`${base}/api/agenthub/missions/${missionId}/status`, {
+        method: 'GET',
+        signal: abortController.signal,
+        headers: { 'Content-Type': 'application/json' },
+      });
 
       if (abortController.signal.aborted || state.getStopped()) break;
 
@@ -114,7 +128,9 @@ async function runPollingLoop(missionId, abortController, fetcher, base, callbac
         if (isTransientError(statusCode)) {
           state.setRetries(state.getRetries() + 1);
           if (state.getRetries() <= MAX_RETRIES) {
-            state.setInterval(Math.min(state.getInterval() * 2, pollIntervalMs * Math.pow(2, MAX_RETRIES)));
+            state.setInterval(
+              Math.min(state.getInterval() * 2, pollIntervalMs * Math.pow(2, MAX_RETRIES))
+            );
             continue;
           }
           await onFailure({
@@ -142,7 +158,7 @@ async function runPollingLoop(missionId, abortController, fetcher, base, callbac
       const isStale = Date.now() - state.getPollingStartTime() > STALE_THRESHOLD_MS;
       const enriched = {
         ...payload,
-        freshness: isStale ? 'stale' : (payload.freshness || 'just_now'),
+        freshness: isStale ? 'stale' : payload.freshness || 'just_now',
       };
 
       if (TERMINAL_STATUSES.has(payload.status)) {
@@ -157,7 +173,9 @@ async function runPollingLoop(missionId, abortController, fetcher, base, callbac
 
       state.setRetries(state.getRetries() + 1);
       if (state.getRetries() <= MAX_RETRIES) {
-        state.setInterval(Math.min(state.getInterval() * 2, pollIntervalMs * Math.pow(2, MAX_RETRIES)));
+        state.setInterval(
+          Math.min(state.getInterval() * 2, pollIntervalMs * Math.pow(2, MAX_RETRIES))
+        );
         continue;
       }
       await onFailure({
@@ -172,4 +190,5 @@ async function runPollingLoop(missionId, abortController, fetcher, base, callbac
   state.resolveDone();
 }
 
+// eslint-disable-next-line no-undef -- CommonJS barrel export
 module.exports = { startPolling, TERMINAL_STATUSES, STALE_THRESHOLD_MS };

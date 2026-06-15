@@ -249,19 +249,6 @@ program
   .allowUnknownOption(true)
   .action(supervisorCommand);
 
-// Stub commands — not yet implemented
-const STUB_COMMANDS = [];
-
-STUB_COMMANDS.forEach((name) => {
-  program
-    .command(name)
-    .description('(not yet implemented)')
-    .action(() => {
-      process.stderr.write(`Command '${name}' is not yet implemented.\n`);
-      process.exit(1);
-    });
-});
-
 // Handle unknown commands
 program.on('command:*', () => {
   const [unknownCmd] = program.args;

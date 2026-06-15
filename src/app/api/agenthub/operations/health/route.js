@@ -2462,6 +2462,9 @@ export const POST = withAuth(async function POST(request, _context, dependencies
 
       return NextResponse.json({
         ok: true,
+        status: 'queued_for_ui',
+        message:
+          'Worker queued for UI materialization. tmux starts when DevHub adds the panel — poll tmux has-session before claiming live.',
         provision,
         runtime_request: provision.runtime_request,
       });
