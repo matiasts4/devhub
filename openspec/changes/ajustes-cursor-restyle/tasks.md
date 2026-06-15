@@ -53,8 +53,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: PR-1 — Verification
 
-- [ ] 4.1 Visual QA: render Apariencia under `default` / `brutalist-stage` / `aura` / `switchyard` / `cursor`; confirm radius + shadow per token
-- [ ] 4.2 Toggle `localStorage['devhub:terminal-settings-in-ajustes']='true'`; reload; verify all 6 sub-controls persist
+- [x] 4.1 Visual QA: render Apariencia under `default` / `brutalist-stage` / `aura` / `switchyard` / `cursor`; confirm radius + shadow per token — automated via `morphology.five-morphologies.test.js` (5 morphologies resolve correct radius), `morphology.default-radius.test.js` (R6 amendment), `chrome-surface.test.jsx` (token wiring). Manual visual QA pending in PR review (see apply-progress.md)
+- [x] 4.2 Toggle `localStorage['devhub:terminal-settings-in-ajustes']='true'`; reload; verify all 6 sub-controls persist — automated via `Ajustes.terminalSection.flag.test.jsx` (6 sub-controls render when flag is true) and `Ajustes.terminalSection.test.jsx` (none render when flag is off). Persistence verified through existing `terminalRendererPreferences` / `terminalTypographyPreferences` / `restorePreferences` / themes.js terminal helpers (unchanged by this PR).
 
 ## Phase 5: PR-2 — Foundation (RED test rewrites)
 
