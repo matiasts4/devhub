@@ -104,9 +104,11 @@ jest.mock('react-konva', () => {
   return { ...Konva, default: Konva };
 });
 
-function buildWheelEvent(deltaY, clientX = 100, clientY = 100) {
+function buildWheelEvent(deltaY, clientX = 100, clientY = 100, deltaX = 0, deltaMode = 0) {
   const event = new global.Event('wheel', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'deltaY', { value: deltaY, configurable: true });
+  Object.defineProperty(event, 'deltaX', { value: deltaX, configurable: true });
+  Object.defineProperty(event, 'deltaMode', { value: deltaMode, configurable: true });
   Object.defineProperty(event, 'clientX', { value: clientX, configurable: true });
   Object.defineProperty(event, 'clientY', { value: clientY, configurable: true });
   return event;
@@ -249,6 +251,40 @@ describe('PizarraCanvas — wheel routing via shouldCanvasConsumeWheel (P-MP-4)'
     expect(call.focalY).toBe(200);
     expect(mockSetZoom).toHaveBeenCalledTimes(1);
     expect(mockSetZoom).toHaveBeenCalledWith(1.25);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  test('horizontal wheel with onWheelViewNavigate: callback consumes event, setPan NOT called', async () => {
+    mockShouldCanvasConsumeWheel.mockReturnValue(true);
+    const onWheelViewNavigate = jest.fn(() => true);
+
+    flushSync(() => {
+      root.render(
+        React.createElement(PizarraCanvas, {
+          elements: [],
+          selectedElementIds: [],
+          activeTool: 'select',
+          toolSettings: {},
+          onShapeCreate: () => {},
+          onSelect: () => {},
+          onDeselect: () => {},
+          onUpdateElement: () => {},
+          width: 800,
+          height: 600,
+          onWheelViewNavigate,
+        })
+      );
+    });
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flushSync(() => {});
+
+    const wrapper = container.querySelector('[data-testid="pizarra-canvas-wrapper"]');
+    const event = buildWheelEvent(0, 400, 200, -80);
+    wrapper.dispatchEvent(event);
+
+    expect(onWheelViewNavigate).toHaveBeenCalledWith(-80, 0);
+    expect(mockSetPan).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
   });
 });

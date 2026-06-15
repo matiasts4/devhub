@@ -1,6 +1,4 @@
-const {
-  createResumableSession,
-} = require('@/test-support/resumableSessionFixtures');
+const { createResumableSession } = require('@/test-support/resumableSessionFixtures');
 
 describe('resumableSessionAdapters', () => {
   test('normalizes OpenCode sessions into the shared resumable-session shape', async () => {
@@ -34,27 +32,15 @@ describe('resumableSessionAdapters', () => {
     expect(createResumableSessionKey({ provider: 'opencode', sessionId: 'oc-123' })).toBe(
       'opencode:oc-123'
     );
-    expect(createResumableSessionKey({ provider: 'hermes', sessionId: 'hm-9' })).toBe(
-      'hermes:hm-9'
+    expect(createResumableSessionKey({ provider: 'opencode', sessionId: 'oc-9' })).toBe(
+      'opencode:oc-9'
     );
   });
 
-  test('returns only durable providers by default and keeps Hermes available as unsupported scaffolding', async () => {
-    const {
-      getResumableSessionAdapters,
-      hermesResumableSessionAdapter,
-    } = await import('./resumableSessionAdapters.js');
+  test('returns only durable providers by default', async () => {
+    const { getResumableSessionAdapters } = await import('./resumableSessionAdapters.js');
 
     expect(getResumableSessionAdapters().map((adapter) => adapter.id)).toEqual(['opencode']);
-    expect(hermesResumableSessionAdapter.supportsDurableResume()).toBe(false);
-    await expect(
-      hermesResumableSessionAdapter.listSessions({ cwd: '/workspace/devhub' })
-    ).resolves.toEqual({
-      provider: 'hermes',
-      status: 'empty',
-      sessions: [],
-      error: null,
-    });
   });
 
   test('dedupes merged resumable sessions by provider+session and keeps newest entries first', async () => {
@@ -65,7 +51,11 @@ describe('resumableSessionAdapters', () => {
         provider: 'opencode',
         status: 'success',
         sessions: [
-          createResumableSession({ sessionId: 'oc-1', title: 'Older', updatedAt: '2026-04-29T10:00:00.000Z' }),
+          createResumableSession({
+            sessionId: 'oc-1',
+            title: 'Older',
+            updatedAt: '2026-04-29T10:00:00.000Z',
+          }),
           createResumableSession({
             sessionId: 'oc-2',
             title: 'Newest',
@@ -98,7 +88,11 @@ describe('resumableSessionAdapters', () => {
           isActive: true,
           activePanelId: 'panel-2',
         }),
-        createResumableSession({ sessionId: 'oc-1', title: 'Older', updatedAt: '2026-04-29T10:00:00.000Z' }),
+        createResumableSession({
+          sessionId: 'oc-1',
+          title: 'Older',
+          updatedAt: '2026-04-29T10:00:00.000Z',
+        }),
       ],
       error: null,
     });

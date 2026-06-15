@@ -73,6 +73,7 @@ describe('T-003 — wrapper bus helpers', () => {
     expect(block).toContain('_devhub_event()');
     expect(block).toContain('_devhub_presence()');
     expect(block).toContain('_devhub_inbox_check()');
+    expect(block).toContain('_devhub_provision_worker()');
   });
 
   test('buildBusHelpersBlock output passes bash -n syntax check', () => {

@@ -25,16 +25,20 @@ import { DUR, SURFACE_ENTER_OPACITY_ONLY } from './surfaceMotion';
 export const SURFACE_ENTER_STATE_ATTRIBUTE = 'data-surface-state';
 export const SURFACE_ENTER_STATE_ENTERING = 'entering';
 
-export function useSurfaceEnterAnimation() {
-  const [surfaceState, setSurfaceState] = useState(SURFACE_ENTER_STATE_ENTERING);
+export function useSurfaceEnterAnimation(enabled = true) {
+  const [surfaceState, setSurfaceState] = useState(enabled ? SURFACE_ENTER_STATE_ENTERING : '');
 
   useEffect(() => {
+    if (!enabled) {
+      setSurfaceState('');
+      return undefined;
+    }
     if (typeof window === 'undefined') return undefined;
     const handle = window.setTimeout(() => {
       setSurfaceState('');
     }, DUR.enter);
     return () => window.clearTimeout(handle);
-  }, []);
+  }, [enabled]);
 
   return {
     animation: SURFACE_ENTER_OPACITY_ONLY,

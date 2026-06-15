@@ -63,7 +63,8 @@ function buildSidecarSpawnConfig({
   }
 
   if (tmuxSession && hasTmux() && os.platform() !== 'win32') {
-    const attachCommand = `tmux set -g status off 2>/dev/null || true; tmux new-session -A -s ${shellQuote(tmuxSession)} -c ${shellQuote(cwd)}`;
+    const { buildTmuxPanelAttachCommand } = require('../src/lib/terminal/tmuxStatusBar.js');
+    const attachCommand = buildTmuxPanelAttachCommand(tmuxSession, cwd);
     return {
       shell: resolvedShell,
       args: ['-lc', attachCommand],

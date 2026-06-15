@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext } from 'react';
 
 export const LiveSurfaceRegistryContext = createContext(null);
 
@@ -7,16 +7,6 @@ export const LiveSurfaceRegistryContext = createContext(null);
  * Re-export preserves backward compatibility for callers not yet migrated.
  */
 export { useWorkspaceSurfaceRegistry as useLiveSurfaceRegistry } from './useWorkspaceSurfaceRegistry';
-
-export function useLiveSurfaceRegistryContext() {
-  const context = useContext(LiveSurfaceRegistryContext);
-  if (!context) {
-    throw new Error(
-      'useLiveSurfaceRegistryContext must be used within a LiveSurfaceRegistryContext.Provider'
-    );
-  }
-  return context;
-}
 
 export {
   createSharedSurfaceRegistry,

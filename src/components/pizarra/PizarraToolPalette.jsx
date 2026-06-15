@@ -28,6 +28,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 
@@ -184,7 +186,14 @@ function Divider() {
   );
 }
 
-export default function PizarraToolPalette({ value, onChange, onAddElement, onApplyLayout }) {
+export default function PizarraToolPalette({
+  value,
+  onChange,
+  onAddElement,
+  onApplyLayout,
+  isViewLocked,
+  onToggleViewLocked,
+}) {
   const { viewportToCanvas, canvasRect } = useCanvasViewport();
   const [layoutsCollapsed, setLayoutsCollapsed] = useState(true);
   const [shapeCollapsed, setShapeCollapsed] = useState(true);
@@ -412,6 +421,41 @@ export default function PizarraToolPalette({ value, onChange, onAddElement, onAp
 
           <ToolSection>
             <StaticSectionLabel>Vista</StaticSectionLabel>
+            <button
+              type="button"
+              data-testid="pizarra-toggle-view-locked"
+              aria-label={isViewLocked ? 'Liberar vista (auto-ajustar)' : 'Fijar vista'}
+              aria-pressed={isViewLocked}
+              onClick={() => onToggleViewLocked?.()}
+              onMouseEnter={(e) =>
+                showTooltip(
+                  e,
+                  isViewLocked ? 'Liberar vista' : 'Fijar vista',
+                  isViewLocked
+                    ? 'Permite que la pizarra auto-ajuste tarjetas al cambiar de ventana o agregar elementos'
+                    : 'Bloquea el layout actual: no se auto-ajustan las tarjetas; tú las ordenas'
+                )
+              }
+              onMouseLeave={() => setTooltip(null)}
+              style={{
+                ...TOOL_BTN,
+                ...(isViewLocked
+                  ? {
+                      background:
+                        'color-mix(in srgb, var(--accent-primary, #58a6ff) 16%, transparent)',
+                      border:
+                        '1px solid color-mix(in srgb, var(--accent-primary, #58a6ff) 45%, transparent)',
+                      color: 'var(--accent-primary, #58a6ff)',
+                    }
+                  : {}),
+              }}
+            >
+              {isViewLocked ? (
+                <Pin size={15} strokeWidth={2.2} />
+              ) : (
+                <PinOff size={15} strokeWidth={2.2} />
+              )}
+            </button>
             {ARRANGE_ACTIONS.map(({ value: arrangeVal, label, description, Icon, accent }) => (
               <button
                 key={arrangeVal}

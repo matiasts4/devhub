@@ -5,6 +5,7 @@ import CanvasTerminal from './CanvasTerminal';
 import PizarraBrowserSurface from './PizarraBrowserSurface';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
+import { getSurfaceViewId } from '@/lib/pizarra/pizarraViewLayout';
 import { resizeNativeBrowser, setNativeBrowserVisibility } from '@/lib/browser/nativeBrowserBridge';
 
 export function resolvePizarraOwnsLiveSurfaces(dockState) {
@@ -40,7 +41,10 @@ export default function PizarraLiveSurfaceLayer({
   onWorkspaceWindowSelect,
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
-  // New (optional) — for draggable "zonas" / layout dividers between adjacent live surfaces.
+  visibleViewIds = [],
+  isViewTransitioning = false,
+  transitionFromViewId = null,
+  // Draggable layout dividers (optional)
   // The parent (PizarraPane) computes them and provides the handler that performs
   // the paired resize when a divider is dragged.
   layoutDividers = [],
@@ -81,6 +85,9 @@ export default function PizarraLiveSurfaceLayer({
   ).length;
 
   const resolvedZoom = zoom > 0 ? zoom : 1;
+  const views = workspaceWindows || [];
+  const fallbackViewId = activeWorkspaceWindowId || views[0]?.id || null;
+  const visibleIdSet = new Set(visibleViewIds);
 
   return (
     <div
@@ -107,6 +114,11 @@ export default function PizarraLiveSurfaceLayer({
         if (shape._layoutResolved === false) {
           return null;
         }
+
+        const surfaceViewId = getSurfaceViewId(shape, views, null);
+        const isShown = Boolean(surfaceViewId && visibleIdSet.has(surfaceViewId));
+        const surfaceOpacity =
+          isShown && isViewTransitioning && surfaceViewId === transitionFromViewId ? 0.88 : 1;
 
         return (
           <LiveSurfaceItem
@@ -141,6 +153,9 @@ export default function PizarraLiveSurfaceLayer({
             onWorkspaceWindowRemove={onWorkspaceWindowRemove}
             visibleTerminalPanelCount={visibleTerminalPanelCount}
             pizarraOwnsLiveSurfaces={pizarraOwnsLiveSurfaces}
+            isShown={isShown}
+            surfaceOpacity={surfaceOpacity}
+            suspendDuringViewTransition={isViewTransitioning && isShown}
           />
         );
       })}
@@ -192,6 +207,9 @@ function LiveSurfaceItem({
   onWorkspaceWindowRemove,
   visibleTerminalPanelCount = 1,
   pizarraOwnsLiveSurfaces = false,
+  isShown = true,
+  surfaceOpacity = 1,
+  suspendDuringViewTransition = false,
 }) {
   const shapeRef = useRef(shape);
   useEffect(() => {
@@ -447,8 +465,11 @@ function LiveSurfaceItem({
           top: bounds.y,
           width: bounds.width,
           height: bounds.height,
-          pointerEvents: 'none',
+          pointerEvents: isShown ? 'none' : 'none',
+          visibility: isShown ? 'visible' : 'hidden',
+          opacity: isShown ? surfaceOpacity : 0,
           zIndex,
+          transition: suspendDuringViewTransition ? 'opacity 0.18s ease-out' : 'none',
         }}
       >
         <CanvasTerminal
@@ -471,6 +492,9 @@ function LiveSurfaceItem({
           onClose={() => onRemoveElement?.(shape.id)}
           visibleTerminalPanelCount={visibleTerminalPanelCount}
           pizarraOwnsLiveSurfaces={pizarraOwnsLiveSurfaces}
+          suspendDuringViewTransition={suspendDuringViewTransition}
+          skipEnterAnimation={suspendDuringViewTransition}
+          isShown={isShown}
         />
       </div>
     );
@@ -488,8 +512,11 @@ function LiveSurfaceItem({
         top: bounds.y,
         width: bounds.width,
         height: bounds.height,
-        pointerEvents: 'none',
+        pointerEvents: isShown ? 'none' : 'none',
+        visibility: isShown ? 'visible' : 'hidden',
+        opacity: isShown ? surfaceOpacity : 0,
         zIndex,
+        transition: suspendDuringViewTransition ? 'opacity 0.18s ease-out' : 'none',
       }}
     >
       <PizarraBrowserSurface
@@ -513,6 +540,8 @@ function LiveSurfaceItem({
         onWorkspaceWindowSelect={onWorkspaceWindowSelect}
         onWorkspaceWindowAdd={onWorkspaceWindowAdd}
         onWorkspaceWindowRemove={onWorkspaceWindowRemove}
+        suspendDuringViewTransition={suspendDuringViewTransition}
+        skipEnterAnimation={suspendDuringViewTransition}
       />
     </div>
   );

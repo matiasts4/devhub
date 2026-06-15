@@ -82,6 +82,9 @@ export default function CanvasTerminal({
   onUpdateRendererMode,
   visibleTerminalPanelCount = 1,
   pizarraOwnsLiveSurfaces = false,
+  suspendDuringViewTransition = false,
+  skipEnterAnimation = false,
+  isShown = true,
 }) {
   // Siempre usamos la terminal nativa (VTE widget) para superficies de tipo terminal
   // dentro de la pizarra. Posicionamos el widget exactamente sobre el rect de
@@ -248,14 +251,15 @@ export default function CanvasTerminal({
   // transform). NEVER drives suspendNativeSurface — that is the whole
   // point of the flicker fix.
   const isDragging = pointerDown || isLiveDragging;
+  const suspendNative = isLiveDragging || suspendDuringViewTransition;
 
   useLayoutEffect(() => {
     if (!sharedSurfacesEnabled || !terminalId || !pizarraOwnsLiveSurfaces) return;
     mergeSharedTerminalSurfaceProps(terminalId, {
       surfaceHost: 'pizarra',
       pizarraOwnsLiveSurfaces: true,
-      isVisibleInLayout: true,
-      suspendNativeSurface: isLiveDragging,
+      isVisibleInLayout: isShown,
+      suspendNativeSurface: suspendNative,
       autoFocus: autoFocus || isActivePanel,
       isActivePanel,
       onClose,
@@ -270,7 +274,7 @@ export default function CanvasTerminal({
     sharedSurfacesEnabled,
     terminalId,
     pizarraOwnsLiveSurfaces,
-    isLiveDragging,
+    suspendNative,
     autoFocus,
     isActivePanel,
     onClose,
@@ -280,6 +284,7 @@ export default function CanvasTerminal({
     initialCommand,
     requestedRendererMode,
     visibleTerminalPanelCount,
+    isShown,
   ]);
 
   // pizarra-shared-view-state (Phase 1 — flicker fix): synchronous
@@ -562,7 +567,7 @@ export default function CanvasTerminal({
   // is IPC-locked to the native VTE rect). The animation runs once
   // on mount and the data-surface-state="entering" attribute is
   // dropped after DUR.enter ms so the chrome settles.
-  const enterAnim = useSurfaceEnterAnimation();
+  const enterAnim = useSurfaceEnterAnimation(!skipEnterAnimation);
 
   return (
     <div
@@ -686,7 +691,7 @@ export default function CanvasTerminal({
               cwd={cwd}
               initialCommand={initialCommand}
               autoFocus={autoFocus || isActivePanel}
-              isVisibleInLayout
+              isVisibleInLayout={isShown}
               isActivePanel={isActivePanel}
               visibleTerminalPanelCount={visibleTerminalPanelCount}
               showQuickCopyButton={false}
@@ -700,7 +705,7 @@ export default function CanvasTerminal({
               // En pizarra con native VTE: suspendemos solo durante el drag real de la card
               // para que el widget nativo no pelee con la transformación web del contenedor.
               // El threshold + isResizing ya evita flicker en clicks puros.
-              suspendNativeSurface={isLiveDragging}
+              suspendNativeSurface={suspendNative}
             />
           )}
         </div>

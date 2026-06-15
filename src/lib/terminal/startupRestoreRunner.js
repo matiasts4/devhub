@@ -1,4 +1,10 @@
 import { RESTORE_ACTION } from './startupRestoreCoordinator';
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 import { inferPanelSessionKind } from './restorePolicyResolver';
 
 export const STARTUP_RESTORE_MAX_CONCURRENCY = 2;
@@ -54,10 +60,6 @@ export function markStartupRestoreCompletedForSession(sessionStorage) {
   } catch {
     // ignore
   }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isMutexHeld(storage, keys) {

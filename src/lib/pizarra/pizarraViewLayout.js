@@ -71,11 +71,6 @@ export function getCameraPanForView(viewOrigin, canvasWidth, canvasHeight, zoom 
   };
 }
 
-/** @deprecated Snap/placement is position-based; all types default to center. */
-export function getPreferredZoneForViewType(_type) {
-  return 'center';
-}
-
 export function isSurfaceVisibleForLayout(surface) {
   return surface?.pizarra?.visible !== false;
 }
@@ -414,6 +409,42 @@ export function setSwipeNavigationEnabled(enabled) {
   } catch {
     // ignore
   }
+}
+
+export const HORIZONTAL_WHEEL_NAV_THRESHOLD = 45;
+export const HORIZONTAL_WHEEL_ACCUM_RESET_MS = 350;
+
+/** Linux trackpads often emit DOM_DELTA_LINE — scale to pixel-equivalent deltas. */
+export function normalizeWheelDelta(delta, deltaMode = 0) {
+  const d = delta || 0;
+  if (deltaMode === 1) return d * 16;
+  if (deltaMode === 2) return d * 400;
+  return d;
+}
+
+/** True when a trackpad/wheel event is primarily horizontal (view-switch gesture). */
+export function shouldHorizontalWheelSwitchView(deltaX, deltaY) {
+  const adx = Math.abs(deltaX);
+  const ady = Math.abs(deltaY);
+  if (adx < 5) return false;
+  return adx > ady * 1.1;
+}
+
+/**
+ * Accumulate horizontal wheel deltas; returns 'prev' | 'next' when threshold crossed.
+ * Mutates `accumState` ({ x, t }).
+ */
+export function accumulateHorizontalWheelNav(accumState, deltaX, now = Date.now()) {
+  if (!accumState || typeof deltaX !== 'number') return null;
+  if (now - (accumState.t ?? 0) > HORIZONTAL_WHEEL_ACCUM_RESET_MS) {
+    accumState.x = 0;
+  }
+  accumState.x = (accumState.x ?? 0) + deltaX;
+  accumState.t = now;
+  if (Math.abs(accumState.x) < HORIZONTAL_WHEEL_NAV_THRESHOLD) return null;
+  const direction = accumState.x > 0 ? 'prev' : 'next';
+  accumState.x = 0;
+  return direction;
 }
 
 /** Resolve which workspace window a surface belongs to. */

@@ -19,25 +19,10 @@ export function stashTerminalPanelBridge(panelId, snapshot = {}) {
   });
 }
 
-export function peekTerminalPanelBridge(panelId) {
-  if (!panelId) return null;
-  return bridges.get(panelId) || null;
-}
-
 export function takeTerminalPanelBridge(panelId) {
   if (!panelId) return null;
   const snapshot = bridges.get(panelId);
   if (!snapshot) return null;
   bridges.delete(panelId);
   return snapshot;
-}
-
-export function clearTerminalPanelBridge(panelId) {
-  if (!panelId) return false;
-  return bridges.delete(panelId);
-}
-
-/** Test-only */
-export function _clearAllTerminalPanelBridges() {
-  bridges.clear();
 }

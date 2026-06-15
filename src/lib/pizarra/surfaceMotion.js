@@ -66,37 +66,6 @@ export const PIZARRA_SURFACE_HEADER_STYLE = {
 export const PIZARRA_SURFACE_FRAME_BG = 'rgba(6, 12, 22, 0.94)';
 
 /**
- * Minimal frame visuals for chromeless pizarra surfaces.
- * Rest state is invisible; selection/drag show a thin accent outline only.
- * @deprecated Prefer resolveFrameVisual + PIZARRA_SURFACE_* tokens for containers.
- */
-export function resolveChromelessFrameVisual({
-  selected = false,
-  hovered = false,
-  dragging = false,
-} = {}) {
-  if (dragging || selected) {
-    return {
-      border: dragging ? SURFACE_BORDER.selected : '1px solid rgba(88, 166, 255, 0.55)',
-      boxShadow: 'none',
-      transform: 'none',
-    };
-  }
-  if (hovered) {
-    return {
-      border: '1px solid rgba(88, 166, 255, 0.35)',
-      boxShadow: 'none',
-      transform: 'none',
-    };
-  }
-  return {
-    border: '1px solid transparent',
-    boxShadow: 'none',
-    transform: 'none',
-  };
-}
-
-/**
  * Resize handle sizing. Hit areas are sized generously (and inverse-scaled
  * with zoom) so resize is easy to target via cursor change even without
  * strong permanent visuals. We keep the hit areas large for usability

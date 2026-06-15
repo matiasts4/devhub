@@ -118,6 +118,8 @@ export default function PizarraBrowserSurface({
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
   tabsMode = 'multi',
+  suspendDuringViewTransition = false,
+  skipEnterAnimation = false,
 }) {
   // Compute early (before any hooks/state) so initial dockState can use it.
   // isCarriedFromWorkspace: the surface was auto-registered by TWM from the
@@ -575,7 +577,7 @@ export default function PizarraBrowserSurface({
   // which is IPC-locked to the native WebKitGTK rect). The
   // animation runs once on mount and the data-surface-state
   // attribute is dropped after DUR.enter ms.
-  const enterAnim = useSurfaceEnterAnimation();
+  const enterAnim = useSurfaceEnterAnimation(!skipEnterAnimation);
 
   return (
     <div
@@ -714,7 +716,7 @@ export default function PizarraBrowserSurface({
             // useNativeBrowserSurface will pick up the live size changes from our
             // direct style mutations on the ancestors. This makes the "cuerpo"
             // (web content / terminal lines) follow the header without pop-in on release.
-            suspendNativeSurface={isDragging}
+            suspendNativeSurface={isDragging || suspendDuringViewTransition}
             isPizarraContext={true}
             // pizarra-shared-view-state Phase 3: pass tabsMode through
             // so the inner WorkspaceBrowserPane does not render a

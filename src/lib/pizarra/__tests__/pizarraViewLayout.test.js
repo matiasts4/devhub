@@ -1,5 +1,6 @@
 import {
   BROWSER_ZONE_RATIO,
+  accumulateHorizontalWheelNav,
   computeAdaptiveVisibleLayout,
   computeViewDevSplitSlots,
   computeViewZones,
@@ -9,7 +10,10 @@ import {
   getViewIndex,
   getViewWorldOrigin,
   getWorldBoundsForViewCount,
+  HORIZONTAL_WHEEL_NAV_THRESHOLD,
+  shouldHorizontalWheelSwitchView,
   surfaceBelongsToView,
+  normalizeWheelDelta,
   VIEW_WORLD_GAP,
   VIEW_WORLD_HEIGHT,
   VIEW_WORLD_WIDTH,
@@ -97,5 +101,24 @@ describe('pizarraViewLayout', () => {
       expect(layout.x + layout.width).toBeLessThanOrEqual(vis.x + vis.width + 4);
       expect(layout.y + layout.height).toBeLessThanOrEqual(vis.y + vis.height + 4);
     }
+  });
+
+  test('shouldHorizontalWheelSwitchView detects horizontal-dominant gestures', () => {
+    expect(shouldHorizontalWheelSwitchView(40, 5)).toBe(true);
+    expect(shouldHorizontalWheelSwitchView(5, 40)).toBe(false);
+    expect(shouldHorizontalWheelSwitchView(0, 0)).toBe(false);
+  });
+
+  test('normalizeWheelDelta scales line-mode deltas for Linux trackpads', () => {
+    expect(normalizeWheelDelta(3, 1)).toBe(48);
+    expect(normalizeWheelDelta(10, 0)).toBe(10);
+  });
+
+  test('accumulateHorizontalWheelNav commits when threshold crossed', () => {
+    const state = { x: 0, t: 0 };
+    const half = HORIZONTAL_WHEEL_NAV_THRESHOLD / 2;
+    expect(accumulateHorizontalWheelNav(state, -half, 1000)).toBeNull();
+    expect(accumulateHorizontalWheelNav(state, -half, 1100)).toBe('next');
+    expect(state.x).toBe(0);
   });
 });

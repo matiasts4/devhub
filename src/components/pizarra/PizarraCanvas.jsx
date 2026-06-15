@@ -23,6 +23,7 @@ import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
 import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { shouldCanvasConsumeWheel } from '@/lib/pizarra/pizarraWheel';
+import { normalizeWheelDelta } from '@/lib/pizarra/pizarraViewLayout';
 import ShapePreviewOverlay from './ShapePreviewOverlay';
 
 // pizarra-ux-overhaul: module-scope env read for the texture.
@@ -51,6 +52,7 @@ export default function PizarraCanvas({
   onUpdateElement,
   width = 800,
   height = 600,
+  onWheelViewNavigate,
 }) {
   // ── Refs ────────────────────────────────────────────────────────────────
   const stageRef = useRef(null);
@@ -162,15 +164,23 @@ export default function PizarraCanvas({
     if (!wrapper) return;
 
     const handleWheel = (event) => {
+      const dx = normalizeWheelDelta(event.deltaX, event.deltaMode);
+      const dy = normalizeWheelDelta(event.deltaY, event.deltaMode);
+
+      if (!event.ctrlKey && !event.metaKey) {
+        if (typeof onWheelViewNavigate === 'function' && onWheelViewNavigate(dx, dy)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
+
       if (!shouldCanvasConsumeWheel(event)) return; // inner surface scrolls
       event.preventDefault();
       // pizarra-fluidity: stop the event here so the CanvasViewportProvider's
       // container-level wheel listener (an ancestor) does NOT also handle the
       // same wheel — that double-handling doubled the zoom/pan speed.
       event.stopPropagation();
-
-      const dx = event.deltaX || 0;
-      const dy = event.deltaY || 0;
 
       // pizarra-fluidity: a wheel/trackpad gesture without a zoom modifier is a
       // PAN (two-finger drag → navigate the board), matching modern canvas apps
@@ -196,7 +206,7 @@ export default function PizarraCanvas({
     return () => {
       wrapper.removeEventListener('wheel', handleWheel);
     };
-  }, [setZoom, setPan, zoom, pan, konva]);
+  }, [setZoom, setPan, zoom, pan, konva, onWheelViewNavigate]);
 
   const bind = useGesture(
     {
@@ -266,10 +276,7 @@ export default function PizarraCanvas({
         const pos = e.target.getStage().getPointerPosition();
         const dx = pos.x - panDragRef.current.startX;
         const dy = pos.y - panDragRef.current.startY;
-        if (
-          !panDragRef.current.moved &&
-          (Math.abs(dx) > 3 || Math.abs(dy) > 3)
-        ) {
+        if (!panDragRef.current.moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
           panDragRef.current.moved = true;
           setIsPanDragging(true);
         }
@@ -594,8 +601,7 @@ export default function PizarraCanvas({
 
   const { Stage, Layer, Rect, Line, Transformer } = konva;
 
-  const stageCursor =
-    activeTool === 'select' ? (isPanDragging ? 'grabbing' : 'grab') : 'crosshair';
+  const stageCursor = activeTool === 'select' ? (isPanDragging ? 'grabbing' : 'grab') : 'crosshair';
 
   return (
     <div

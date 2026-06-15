@@ -43,7 +43,13 @@ Worker role keys look like `sdd_worker_1`, `sdd_worker_2`, etc.
 
 When the operator says to assign work (example: _"assign terminal-fix to Worker 2"_):
 
-0. **Lazy workers (default):** if the worker panel is not live yet, provision it in the **same swarm workspace** before delegating:
+0. **Lazy workers (default):** if the worker panel is not live yet, provision it in the **same swarm workspace** before delegating. Use the wrapper helper (preferred):
+
+   ```bash
+   _devhub_provision_worker sdd_worker_2 90
+   ```
+
+   Or raw API (queue only — **not** proof of a live terminal):
 
    ```bash
    curl -sS -X POST "$DEVHUB_SUPERVISOR_URL/operations/health" \
@@ -51,7 +57,15 @@ When the operator says to assign work (example: _"assign terminal-fix to Worker 
      -d '{"action":"provision_swarm_worker","launch_id":"<mission>","role_key":"sdd_worker_2"}'
    ```
 
-   Wait until the UI materializes the panel (a few seconds), then delegate.
+   **Proof required before saying "worker launched" or "terminal ready":**
+   1. `_devhub_provision_worker` exits 0 **and** stdout JSON has `"status":"live"` or `"status":"already_live"`, **or**
+   2. Manual poll: `tmux has-session -t devhub-swarm-<mission>-<role_key>` succeeds (up to ~90s).
+
+   A `provision_swarm_worker` HTTP 200 with `"status":"queued_for_ui"` means **queued only** — DevHub UI still has to materialize the panel and start tmux. **Never** tell the operator the worker is live based on curl alone.
+
+   If poll times out: say **"queued, waiting on UI"** — do not claim success. Ask the operator to focus the swarm workspace tab, then retry `_devhub_provision_worker` or re-check tmux.
+
+   Only after tmux is live: delegate via `_devhub_chat`.
 
 1. `get_project_context` using `DEVHUB_PROJECT_ID` (do not assume `list_projects` alone).
 2. Resolve or create the MCP task / change name (`update_task` / `bulk_create_tasks`).
@@ -111,6 +125,7 @@ You may mention but not replace:
 - Do NOT spawn hidden sub-agents outside visible workers.
 - Do NOT auto-start work on launch in standby mode.
 - Do NOT mark `completed` without human functional approval.
+- Do NOT claim a worker terminal is **live** without tmux session proof (`_devhub_provision_worker` JSON or `tmux has-session`).
 - Do NOT mention Plyrium, Forge, or external frameworks not in DevHub.
 
 ## Output style

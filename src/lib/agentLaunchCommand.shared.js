@@ -7,8 +7,13 @@
 
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
+import { buildTmuxDisableStatusFragment } from '@/lib/terminal/tmuxStatusBar.js';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
+
+function shellQuote(value = '') {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
 
 /**
  * Read minimax config lazily — only runs in Node.js (server-side).
@@ -41,16 +46,6 @@ export function resolveAgentProgramExecutable(programId = 'hermes') {
   return AGENT_PROGRAM_EXECUTABLES[programId] || AGENT_PROGRAM_EXECUTABLES.hermes;
 }
 
-function shellQuote(value = '') {
-  return `'${String(value).replace(/'/g, `'`)}'`;
-}
-
-/**
- * Build a tmux-wrapped command for swarm agents.
- * The tmux session survives PTY death (page refresh, network drop).
- * Session name: devhub-swarm-{launchId}-{roleKey}
- * Status bar disabled to save vertical space.
- */
 /**
  * Build a tmux-wrapped command for swarm agents.
  * The tmux session survives PTY death (page refresh, network drop).
@@ -71,9 +66,11 @@ export function buildTmuxWrappedCommand(innerCommand, tmuxSessionName, cwd = nul
   // background loops started by the wrapper shell to continue running.
   const command = shellQuote(`(${innerCommand}); exec zsh`);
   return [
+    buildTmuxDisableStatusFragment(tmuxSessionName),
     `tmux new-session -A -d -s ${sessionTarget}${startDirectory} ${command} 2>/dev/null || true`,
-    `tmux set-option -t ${sessionTarget} status off 2>/dev/null || true`,
+    buildTmuxDisableStatusFragment(tmuxSessionName),
     `tmux attach-session -t ${sessionTarget}`,
+    buildTmuxDisableStatusFragment(tmuxSessionName),
   ].join('; ');
 }
 

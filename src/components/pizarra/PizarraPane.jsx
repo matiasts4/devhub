@@ -17,7 +17,6 @@ import PizarraToolPalette from './PizarraToolPalette';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
 import PizarraMinimap from './PizarraMinimap';
 import PizarraZoneGuides from './PizarraZoneGuides';
-import PizarraViewStrip from './PizarraViewStrip';
 import PizarraEdgeSwipeZones from './PizarraEdgeSwipeZones';
 import PizarraZoomControls from './PizarraZoomControls';
 import CommandBar from '@/components/commandBar/CommandBar';
@@ -44,15 +43,26 @@ import {
   computeAdaptiveViewLayout,
   computeAdaptiveVisibleLayout,
   computeViewZones,
+  computeViewDevSplitSlots,
   getCameraPanForView,
   getViewIndex,
   getViewWorldOrigin,
   surfaceBelongsToView,
+  getSurfaceViewId,
+  VIEW_WORLD_WIDTH,
+  VIEW_WORLD_HEIGHT,
+  isSwipeNavigationEnabled,
+  shouldHorizontalWheelSwitchView,
+  accumulateHorizontalWheelNav,
+  normalizeWheelDelta,
+  HORIZONTAL_WHEEL_ACCUM_RESET_MS,
 } from '@/lib/pizarra/pizarraViewLayout';
 import {
   animatePanTransition,
+  easeInOutQuint,
   prefersReducedMotion,
   resolvePanTransitionDuration,
+  VIEW_SWITCH_BASE_DURATION,
 } from '@/lib/pizarra/pizarraViewTransition';
 import { computeQuantizedEdgePan, edgeDragToProgress } from '@/lib/pizarra/pizarraEdgeViewSwipe';
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
@@ -503,7 +513,8 @@ function PizarraInner({
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
 }) {
-  const { zoom, pan, setZoom, setPan, viewportToCanvas } = useCanvasViewport();
+  const { zoom, pan, setZoom, setPan, viewportToCanvas, setWheelViewNavigateHandler } =
+    useCanvasViewport();
 
   const views = workspaceWindows || [];
   const fallbackViewId = activeWorkspaceWindowId || views[0]?.id || null;
@@ -513,11 +524,43 @@ function PizarraInner({
   const [highlightZone, setHighlightZone] = useState(null);
   const [isSurfaceDragging, setIsSurfaceDragging] = useState(false);
   const surfaceDragCountRef = useRef(0);
-  const [stripHovered, setStripHovered] = useState(false);
-  const stripVisible = stripHovered || views.length >= 2;
+
+  const [viewTransitionPair, setViewTransitionPair] = useState(null);
+  const [pendingViewId, setPendingViewId] = useState(null);
   const panAnimCancelRef = useRef(null);
   const edgeSwipeRef = useRef(null);
+  const wheelNavAccumRef = useRef({ x: 0, t: 0 });
+  const wheelIdleTimerRef = useRef(null);
+  const panRef = useRef(pan);
   const skipViewAutoFitRef = useRef(false);
+  const viewSwitchGenRef = useRef(0);
+
+  // pizarra-view-lock: default locked so the user freely arranges cards.
+  // Persist the choice across sessions.
+  const [isViewLocked, setIsViewLocked] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const stored = window.localStorage?.getItem('devhub_pizarra_view_locked');
+      return stored !== '0'; // default true when missing
+    } catch {
+      return true;
+    }
+  });
+  const toggleViewLocked = useCallback(() => {
+    setIsViewLocked((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage?.setItem('devhub_pizarra_view_locked', next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
 
   const cancelPanAnimation = useCallback(() => {
     if (typeof panAnimCancelRef.current === 'function') {
@@ -527,39 +570,62 @@ function PizarraInner({
   }, []);
 
   const animateToPan = useCallback(
-    (toPan, { fromPan = pan } = {}) => {
+    (
+      toPan,
+      {
+        fromPan = panRef.current,
+        duration,
+        easing = easeInOutQuint,
+        onComplete,
+        lockVertical = false,
+      } = {}
+    ) => {
       cancelPanAnimation();
+      const resolvedToPan = lockVertical ? { x: toPan.x, y: fromPan?.y ?? toPan.y ?? 0 } : toPan;
       if (prefersReducedMotion()) {
-        setPan(toPan);
+        setPan(resolvedToPan);
+        onComplete?.();
         return;
       }
-      const duration = resolvePanTransitionDuration({ fromPan, toPan });
+      const resolvedDuration =
+        duration ??
+        resolvePanTransitionDuration({
+          fromPan,
+          toPan: resolvedToPan,
+          baseDuration: VIEW_SWITCH_BASE_DURATION,
+        });
       panAnimCancelRef.current = animatePanTransition({
         fromPan,
-        toPan,
-        duration,
+        toPan: resolvedToPan,
+        duration: resolvedDuration,
+        easing,
         onFrame: setPan,
         onComplete: () => {
           panAnimCancelRef.current = null;
+          onComplete?.();
         },
       });
     },
-    [pan, setPan, cancelPanAnimation]
+    [setPan, cancelPanAnimation]
   );
+
+  const visibleViewIds = useMemo(() => {
+    if (viewTransitionPair) {
+      return [viewTransitionPair.from, viewTransitionPair.to].filter(Boolean);
+    }
+    return [pendingViewId || activeWorkspaceWindowId || fallbackViewId].filter(Boolean);
+  }, [viewTransitionPair, pendingViewId, activeWorkspaceWindowId, fallbackViewId]);
+
+  const isViewTransitioning = Boolean(viewTransitionPair);
 
   const liveSurfacesForZones = useMemo(() => {
     return (mergedElements || []).filter((el) => {
       if (el.type !== SHAPE_TYPES.TERMINAL && el.type !== SHAPE_TYPES.BROWSER) return false;
       if (el.pizarra?.visible === false) return false;
       if (el._layoutResolved === false) return false;
-      return surfaceBelongsToView(
-        el,
-        activeWorkspaceWindowId || fallbackViewId,
-        views,
-        fallbackViewId
-      );
+      return visibleViewIds.some((viewId) => surfaceBelongsToView(el, viewId, views, null));
     });
-  }, [mergedElements, activeWorkspaceWindowId, views, fallbackViewId]);
+  }, [mergedElements, views, fallbackViewId, visibleViewIds]);
 
   const activeSnapZones = useMemo(() => {
     if (liveSurfacesForZones.length === 0) return null;
@@ -609,21 +675,97 @@ function PizarraInner({
     };
   }, [canvasSize.width, canvasSize.height, zoom, pan.x, pan.y]);
 
+  const finishViewSwitch = useCallback(
+    (viewId) => {
+      setViewTransitionPair(null);
+      setPendingViewId(null);
+      onWorkspaceWindowSelect?.(viewId);
+      skipViewAutoFitRef.current = true;
+      const panelIds = (mergedElements || [])
+        .filter(
+          (el) =>
+            (el.type === SHAPE_TYPES.TERMINAL || el.type === 'terminal') &&
+            // Use the destination viewId as fallback so surfaces that haven't
+            // been assigned a pizarra.viewId yet are still included in the
+            // layout-settled notification. Otherwise they never recover when
+            // switching back to this view.
+            surfaceBelongsToView(el, viewId, views, viewId)
+        )
+        .map((el) => el.panelId || String(el.id || '').replace(/^shape-term-/, ''))
+        .filter(Boolean);
+      dispatchTerminalLayoutSettled({
+        reason: 'pizarra-view-switch',
+        panelIds,
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('devhub:pizarra-view-switch-complete', {
+            detail: { workspaceId, viewId },
+          })
+        );
+      }
+    },
+    [onWorkspaceWindowSelect, mergedElements, views, fallbackViewId, workspaceId]
+  );
+
   const handleSelectView = useCallback(
     (viewId, options = {}) => {
       if (!viewId) return;
-      onWorkspaceWindowSelect?.(viewId);
+      const effectiveViewId = pendingViewId || activeWorkspaceWindowId || fallbackViewId;
+      if (viewId === effectiveViewId && !isViewTransitioning) return;
+
+      const fromViewId = activeWorkspaceWindowId || fallbackViewId;
       const idx = getViewIndex(viewId, views);
       const origin = getViewWorldOrigin(idx);
       const toPan = getCameraPanForView(origin, canvasSize.width, canvasSize.height, zoom);
-      const fromPan = options.fromPan ?? pan;
-      if (options.skipAutoFit !== false) {
-        skipViewAutoFitRef.current = true;
+      const fromPan = options.fromPan ?? panRef.current;
+
+      if (fromViewId && fromViewId !== viewId) {
+        setViewTransitionPair({ from: fromViewId, to: viewId });
       }
-      animateToPan(toPan, { fromPan });
+      setPendingViewId(viewId);
+
+      // When the view is locked we skip the post-switch auto-fit so the user's
+      // manual layout is preserved. When unlocked, the switch effect may refit.
+      skipViewAutoFitRef.current = isViewLocked || options.skipAutoFit === true;
+
+      const switchGen = viewSwitchGenRef.current + 1;
+      viewSwitchGenRef.current = switchGen;
+
+      animateToPan(toPan, {
+        fromPan,
+        lockVertical: true,
+        onComplete: () => {
+          if (viewSwitchGenRef.current !== switchGen) return;
+          finishViewSwitch(viewId);
+        },
+      });
     },
-    [onWorkspaceWindowSelect, views, canvasSize.width, canvasSize.height, zoom, pan, animateToPan]
+    [
+      views,
+      canvasSize.width,
+      canvasSize.height,
+      zoom,
+      animateToPan,
+      activeWorkspaceWindowId,
+      fallbackViewId,
+      viewTransitionPair,
+      pendingViewId,
+      isViewTransitioning,
+      finishViewSwitch,
+      isViewLocked,
+    ]
   );
+
+  useEffect(() => {
+    const handler = (event) => {
+      const windowId = event?.detail?.windowId;
+      if (!windowId || event?.detail?.workspaceId !== workspaceId) return;
+      handleSelectView(windowId);
+    };
+    window.addEventListener('devhub:pizarra-select-view', handler);
+    return () => window.removeEventListener('devhub:pizarra-select-view', handler);
+  }, [handleSelectView, workspaceId]);
 
   const canGoPrevView = viewIndex > 0;
   const canGoNextView = viewIndex < views.length - 1;
@@ -716,6 +858,95 @@ function PizarraInner({
       handleSelectView,
     ]
   );
+
+  const clearWheelIdleTimer = useCallback(() => {
+    if (wheelIdleTimerRef.current) {
+      clearTimeout(wheelIdleTimerRef.current);
+      wheelIdleTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleWheelSnapBack = useCallback(() => {
+    clearWheelIdleTimer();
+    wheelIdleTimerRef.current = setTimeout(() => {
+      wheelIdleTimerRef.current = null;
+      wheelNavAccumRef.current = { x: 0, t: 0 };
+      const restPan = getCameraPanForView(viewOrigin, canvasSize.width, canvasSize.height, zoom);
+      animateToPan(restPan, { fromPan: panRef.current, duration: 260 });
+    }, HORIZONTAL_WHEEL_ACCUM_RESET_MS);
+  }, [clearWheelIdleTimer, viewOrigin, canvasSize.width, canvasSize.height, zoom, animateToPan]);
+
+  const handleWheelViewNavigate = useCallback(
+    (deltaX, deltaY) => {
+      if (!isSwipeNavigationEnabled() || views.length < 2 || isSurfaceDragging) return false;
+      if (!shouldHorizontalWheelSwitchView(deltaX, deltaY)) return false;
+
+      clearWheelIdleTimer();
+      cancelPanAnimation();
+
+      const restPan = getCameraPanForView(viewOrigin, canvasSize.width, canvasSize.height, zoom);
+      const goingNext = deltaX < 0;
+      const goingPrev = deltaX > 0;
+      const side = goingNext ? 'right' : 'left';
+      const canSwitch = (goingNext && canGoNextView) || (goingPrev && canGoPrevView);
+
+      let targetPan = restPan;
+      if (canSwitch) {
+        const targetIdx = goingNext ? viewIndex + 1 : viewIndex - 1;
+        const targetOrigin = getViewWorldOrigin(targetIdx);
+        targetPan = getCameraPanForView(targetOrigin, canvasSize.width, canvasSize.height, zoom);
+      }
+
+      const direction = accumulateHorizontalWheelNav(wheelNavAccumRef.current, deltaX);
+      const progress = edgeDragToProgress(wheelNavAccumRef.current.x, canvasSize.width, side);
+      setPan(
+        computeQuantizedEdgePan(restPan, targetPan, progress, {
+          rubberBand: !canSwitch,
+        })
+      );
+
+      if (direction === 'next' && canGoNextView) {
+        wheelNavAccumRef.current = { x: 0, t: 0 };
+        clearWheelIdleTimer();
+        const nextView = views[viewIndex + 1];
+        if (nextView?.id) handleSelectView(nextView.id, { fromPan: panRef.current });
+        return true;
+      }
+      if (direction === 'prev' && canGoPrevView) {
+        wheelNavAccumRef.current = { x: 0, t: 0 };
+        clearWheelIdleTimer();
+        const prevView = views[viewIndex - 1];
+        if (prevView?.id) handleSelectView(prevView.id, { fromPan: panRef.current });
+        return true;
+      }
+
+      scheduleWheelSnapBack();
+      return true;
+    },
+    [
+      views,
+      viewIndex,
+      viewOrigin,
+      canvasSize.width,
+      canvasSize.height,
+      zoom,
+      canGoPrevView,
+      canGoNextView,
+      isSurfaceDragging,
+      handleSelectView,
+      setPan,
+      cancelPanAnimation,
+      clearWheelIdleTimer,
+      scheduleWheelSnapBack,
+    ]
+  );
+
+  useEffect(() => {
+    setWheelViewNavigateHandler?.(handleWheelViewNavigate);
+    return () => setWheelViewNavigateHandler?.(null);
+  }, [handleWheelViewNavigate, setWheelViewNavigateHandler]);
+
+  useEffect(() => () => clearWheelIdleTimer(), [clearWheelIdleTimer]);
 
   const applyAdaptiveVisibleLayout = useCallback(
     (surfaces = liveSurfacesForZones, region = null) => {
@@ -863,14 +1094,17 @@ function PizarraInner({
   // pizarra-workspace-switch: remounting this inner tree (key=workspaceId) with
   // already-positioned surfaces used to run camera-only fit, leaving cards at
   // stale/provisional sizes and terminals stuck on "Conectando…". After the mode
-  // transition settles, run a full adaptive refit + viewport sync once.
+  // transition settles, run a full adaptive refit + viewport sync once — unless
+  // the view is locked, in which case we only notify native layout.
   useEffect(() => {
     if (canvasSize.width < 200 || canvasSize.height < 200) return undefined;
 
     const settleMs = prefersReducedMotion() ? 24 : 60;
     const timer = setTimeout(() => {
-      if (liveSurfacesForZones.length === 0) return;
-      handleFitAllView();
+      if (liveSurfacesForZones.length === 0 || isViewTransitioning) return;
+      if (!isViewLocked) {
+        handleFitAllView();
+      }
       const panelIds = collectTerminalPanelIds(liveSurfacesForZones);
       if (panelIds.length > 0) {
         dispatchTerminalLayoutSettled({ reason: 'workspace-switch', panelIds });
@@ -885,6 +1119,8 @@ function PizarraInner({
     liveSurfacesForZones,
     handleFitAllView,
     collectTerminalPanelIds,
+    isViewLocked,
+    isViewTransitioning,
   ]);
 
   const prevViewIdRef = useRef(null);
@@ -899,6 +1135,13 @@ function PizarraInner({
       skipViewAutoFitRef.current = false;
       return;
     }
+    // View locked or mid-transition: never auto-refit on window switch.
+    if (isViewLocked || isViewTransitioning) {
+      if (liveSurfacesForZones.length === 0) {
+        centerActiveView(1);
+      }
+      return;
+    }
     if (liveSurfacesForZones.length > 0) {
       scheduleAutoFitView(260);
     } else {
@@ -911,6 +1154,8 @@ function PizarraInner({
     centerActiveView,
     liveSurfacesForZones.length,
     scheduleAutoFitView,
+    isViewLocked,
+    isViewTransitioning,
   ]);
 
   // Surfaces often arrive after mount (carried from normal view or workspace return).
@@ -925,11 +1170,22 @@ function PizarraInner({
     prevSurfaceCountRef.current = count;
     if (!hadNoSurfaces) return;
 
+    // When locked or mid-transition we preserve the user's layout; the
+    // unpositioned effect already placed carried surfaces once. Only auto-fit on
+    // first appearance if unlocked and settled.
+    if (isViewLocked || isViewTransitioning) return;
+
     // Always run full adaptive layout when live surfaces first appear — even if
     // they already have saved x/y from a prior visit. Camera-only fit left cards
     // at stale sizes after workspace/mode switches.
     scheduleAutoFitView(100);
-  }, [liveSurfacesForZones, canvasSize.width, scheduleAutoFitView]);
+  }, [
+    liveSurfacesForZones,
+    canvasSize.width,
+    scheduleAutoFitView,
+    isViewLocked,
+    isViewTransitioning,
+  ]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -988,54 +1244,40 @@ function PizarraInner({
     });
     if (needs.length === 0) return;
 
-    const bNeeds = needs.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
-    const tNeeds = needs.filter((s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL);
-
-    const vis = getVisibleCanvasRegion
-      ? getVisibleCanvasRegion()
-      : { width: canvasSize.width || 900, height: canvasSize.height || 600, x: 0, y: 0 };
-    const cx = vis.x + vis.width / 2;
-    const cy = vis.y + vis.height / 2;
+    const groupsByView = new Map();
+    needs.forEach((s) => {
+      const viewId = getSurfaceViewId(s, views, fallbackViewId);
+      if (!viewId) return;
+      if (!groupsByView.has(viewId)) groupsByView.set(viewId, []);
+      groupsByView.get(viewId).push(s);
+    });
+    if (groupsByView.size === 0) return;
 
     let assigned = false;
-    if (!didAutoStructureRef.current) {
-      if (bNeeds.length === 1 && tNeeds.length === 1) {
-        didAutoStructureRef.current = true;
-        const slots = computeDevSplitSlots(vis);
-        registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
-        registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
-        laidOutRegistryRef.current.add(bNeeds[0].id);
-        laidOutRegistryRef.current.add(tNeeds[0].id);
-        assigned = true;
-      } else if (bNeeds.length === 1 && tNeeds.length === 2) {
-        didAutoStructureRef.current = true;
-        const slots = computeDevTrioSlots(vis);
-        registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
-        registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
-        registry.updatePizarraLayout(tNeeds[1].id, { ...slots.terminals[1], visible: true });
-        laidOutRegistryRef.current.add(bNeeds[0].id);
-        laidOutRegistryRef.current.add(tNeeds[0].id);
-        laidOutRegistryRef.current.add(tNeeds[1].id);
-        assigned = true;
-      } else if (bNeeds.length === 2 && tNeeds.length === 0) {
-        didAutoStructureRef.current = true;
-        const slots = computeDualBrowserSlots(vis);
-        bNeeds.forEach((s, i) => {
-          if (slots.browsers[i]) {
-            registry.updatePizarraLayout(s.id, { ...slots.browsers[i], visible: true });
-            laidOutRegistryRef.current.add(s.id);
-          }
-        });
-        assigned = true;
-      }
-    }
+    for (const [viewId, group] of groupsByView) {
+      const viewOrigin = getViewWorldOrigin(getViewIndex(viewId, views));
+      const viewRegion = {
+        x: viewOrigin.x,
+        y: viewOrigin.y,
+        width: VIEW_WORLD_WIDTH,
+        height: VIEW_WORLD_HEIGHT,
+      };
+      const bNeeds = group.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
+      const tNeeds = group.filter((s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL);
 
-    if (!assigned) {
-      const vis = getVisibleCanvasRegion
-        ? getVisibleCanvasRegion()
-        : { width: canvasSize.width || 900, height: canvasSize.height || 600, x: 0, y: 0 };
-      const slotMap = computeAutoFitSlotMap(vis, needs);
-      needs.forEach((s) => {
+      if (!didAutoStructureRef.current && bNeeds.length === 1 && tNeeds.length === 1) {
+        didAutoStructureRef.current = groupsByView.size === 1;
+        const slots = computeViewDevSplitSlots(viewOrigin);
+        registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
+        registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
+        laidOutRegistryRef.current.add(bNeeds[0].id);
+        laidOutRegistryRef.current.add(tNeeds[0].id);
+        assigned = true;
+        continue;
+      }
+
+      const slotMap = computeAutoFitSlotMap(viewRegion, group);
+      group.forEach((s) => {
         if (laidOutRegistryRef.current.has(s.id)) return;
         const slot = slotMap.get(s.id);
         if (!slot) return;
@@ -1046,10 +1288,12 @@ function PizarraInner({
         }
         laidOutRegistryRef.current.add(s.id);
       });
+      assigned = true;
     }
 
-    if (needs.length > 0) {
+    if (needs.length > 0 && assigned && !isViewLocked) {
       // First-time placement: fit immediately (no 120–200ms dead zone).
+      // When locked we already assigned slots above and leave the user in control.
       handleFitAllView();
     }
   }, [
@@ -1058,8 +1302,10 @@ function PizarraInner({
     registry.updatePizarraLayout,
     canvasSize,
     SHAPE_TYPES,
-    getVisibleCanvasRegion,
+    views,
+    fallbackViewId,
     handleFitAllView,
+    isViewLocked,
   ]);
 
   // ── handleAddElement — spawns at current visible viewport center ─────────
@@ -1142,10 +1388,10 @@ function PizarraInner({
         const addedSurface = registry.addSurface(surfaceData);
         if (addedSurface && addedSurface.id) {
           selectElement(addedSurface.id);
-          // Auto-refit: if there were already cards on the canvas, re-fit all
-          // after a short delay so the new card appears first, then everything
-          // snaps into a clean layout.
-          if (hadExistingCards) {
+          // Auto-refit: if there were already cards on the canvas and the view is
+          // not locked, re-fit all after a short delay so the new card appears
+          // first, then everything snaps into a clean layout.
+          if (hadExistingCards && !isViewLocked) {
             scheduleAutoFitView(350);
           }
         }
@@ -1169,6 +1415,7 @@ function PizarraInner({
       registry.addSurface,
       fallbackViewId,
       scheduleAutoFitView,
+      isViewLocked,
     ]
   );
 
@@ -1944,12 +2191,15 @@ function PizarraInner({
       {/* Konva canvas — dynamically imported, client-only */}
       <div
         ref={canvasContainerRef}
+        data-testid="pizarra-canvas-container"
+        data-view-transitioning={isViewTransitioning ? 'true' : 'false'}
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
           width: '100%',
           height: '100%',
+          overflow: 'hidden',
         }}
       >
         <PizarraZoneGuides
@@ -1972,6 +2222,7 @@ function PizarraInner({
           onUpdateElement={onUpdateElement}
           width={canvasSize.width}
           height={canvasSize.height}
+          onWheelViewNavigate={handleWheelViewNavigate}
         />
 
         <PizarraLiveSurfaceLayer
@@ -1998,6 +2249,9 @@ function PizarraInner({
           onWorkspaceWindowSelect={onWorkspaceWindowSelect}
           onWorkspaceWindowAdd={onWorkspaceWindowAdd}
           onWorkspaceWindowRemove={onWorkspaceWindowRemove}
+          visibleViewIds={visibleViewIds}
+          isViewTransitioning={isViewTransitioning}
+          transitionFromViewId={viewTransitionPair?.from ?? null}
           // Draggable zonas / dividers
           layoutDividers={layoutDividers}
           onDividerMouseDown={handleDividerMouseDown}
@@ -2018,6 +2272,8 @@ function PizarraInner({
           onChange={setTool}
           onAddElement={handleAddElement}
           onApplyLayout={handleApplyLayout}
+          isViewLocked={isViewLocked}
+          onToggleViewLocked={toggleViewLocked}
         />
 
         <PizarraZoomControls
@@ -2037,30 +2293,20 @@ function PizarraInner({
           onDragEnd={handleEdgeSwipeDragEnd}
         />
 
-        <div
-          data-testid="pizarra-view-strip-hover-zone"
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 52,
-            pointerEvents: 'auto',
-          }}
-          onMouseEnter={() => setStripHovered(true)}
-          onMouseLeave={() => setStripHovered(false)}
-        />
-
-        <PizarraViewStrip
-          views={views}
-          activeViewId={activeWorkspaceWindowId || fallbackViewId}
-          visible={stripVisible}
-          onSelectView={handleSelectView}
-          onAddView={() => onWorkspaceWindowAdd?.()}
-          onRemoveView={(viewId) => onWorkspaceWindowRemove?.(viewId)}
-          onMouseEnter={() => setStripHovered(true)}
-          onMouseLeave={() => setStripHovered(false)}
-        />
+        {isViewTransitioning ? (
+          <div
+            aria-hidden
+            data-testid="pizarra-view-transition-vignette"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              zIndex: 10002,
+              background:
+                'linear-gradient(90deg, rgba(2,6,16,0.42) 0%, transparent 14%, transparent 86%, rgba(2,6,16,0.42) 100%)',
+            }}
+          />
+        ) : null}
       </div>
 
       {/* Element count badge */}

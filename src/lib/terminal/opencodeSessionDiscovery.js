@@ -6,7 +6,7 @@ import {
   normalizeWorkspacesOpenCodeCommands,
 } from './restorePolicyResolver';
 
-export function buildOpenCodeCatalogIndex(catalogSessions = []) {
+function buildOpenCodeCatalogIndex(catalogSessions = []) {
   const bySessionId = new Map();
   const byActivePanelId = new Map();
   const byCwd = new Map();
@@ -37,7 +37,7 @@ export function buildOpenCodeCatalogIndex(catalogSessions = []) {
  * Resolves an OpenCode session id for a panel using CLI catalog data (OpenChamber-style),
  * without requiring `opencode --session` in initialCommand.
  */
-export function resolvePanelOpenCodeSessionFromCatalog({
+function resolvePanelOpenCodeSessionFromCatalog({
   panel = null,
   agentRun = null,
   catalogIndex = null,

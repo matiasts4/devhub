@@ -76,7 +76,10 @@ import WorkspaceTerminalSetupModal from './WorkspaceTerminalSetupModal';
 import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
 import { applyZedOpenTerminalFocus } from './asistente/zedOpenTerminalFocus';
 import ZedAmbientOverlay from './asistente/ZedAmbientOverlay';
-import { countPanelsInColumns } from '@/lib/terminal/workspaceSurfaceReconcile';
+import {
+  buildTerminalSurfacesFromWindows,
+  countPanelsInColumns,
+} from '@/lib/terminal/workspaceSurfaceReconcile';
 import {
   MAX_WORKSPACE_TERMINAL_PANELS,
   MAX_ZED_TERMINAL_PANELS,
@@ -1456,6 +1459,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [browserWindowStates, setBrowserWindowStates] = useState(() => ({}));
   const [workspaceWindows, setWorkspaceWindows] = useState(() => ({}));
   const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
+  const [pizarraPendingViewId, setPizarraPendingViewId] = useState(null);
   const [focusedPanelByWorkspace, setFocusedPanelByWorkspace] = useState(() => ({}));
   const [panelNavPulseId, setPanelNavPulseId] = useState(null);
   const [editingPanelId, setEditingPanelId] = useState(null);
@@ -3809,6 +3813,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [workspaceWindows]
   );
 
+  // pizarra-view-switch-complete: consolidate the active window so the workspace
+  // state reflects the destination view. Without this the pane keeps receiving
+  // the old activeWorkspaceWindowId and the visible view collapses back to the
+  // previous window after the animation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onComplete = (event) => {
+      if (event?.detail?.workspaceId === activeWsId) {
+        setPizarraPendingViewId(null);
+        const viewId = event?.detail?.viewId;
+        if (viewId) {
+          switchWindowInWorkspace(activeWsId, viewId);
+        }
+      }
+    };
+    window.addEventListener('devhub:pizarra-view-switch-complete', onComplete);
+    return () => window.removeEventListener('devhub:pizarra-view-switch-complete', onComplete);
+  }, [activeWsId, switchWindowInWorkspace]);
+
   const removeWindowFromWorkspace = useCallback(
     async (wsId, windowId) => {
       const windows = workspaceWindows[wsId] || [];
@@ -4350,7 +4373,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   );
 
   useEffect(() => {
-    if (!projectId || !isVisible) return undefined;
+    // Poll even when TWM is not the focused view — lazy worker provision must not
+    // stall until the operator returns to the terminal workspace tab.
+    if (!projectId) return undefined;
 
     let cancelled = false;
 
@@ -4380,7 +4405,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [isVisible, materializeSwarmWorkerInPlace, projectId]);
+  }, [materializeSwarmWorkerInPlace, projectId]);
 
   const reorderWorkspaceTabs = useCallback((sourceWsId, targetWsId) => {
     if (!sourceWsId || !targetWsId || sourceWsId === targetWsId) return;
@@ -5272,38 +5297,26 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ]
   );
 
-  // Auto-register terminal panels and browser window into the shared registry.
+  // Auto-register terminal panels (all workspace windows) and browser into the registry.
   useEffect(() => {
     if (!registry.isLoaded || !activeWorkspace) return;
 
-    // 1. Gather all current terminal panel IDs and details
-    const terminals = [];
-    activeWorkspace.columns.forEach((col) => {
-      if (col.panels) {
-        col.panels.forEach((p) => {
-          terminals.push({
-            id: `shape-term-${p.id}`,
-            type: 'terminal',
-            panelId: p.id,
-            label: resolvePanelSurfaceLabel(p, activeWorkspace.id),
-            cwd: p.cwd || null,
-            initialCommand: p.initialCommand || null,
-            requestedRendererMode: resolveRequestedRenderer({
-              workspaceId: activeWorkspace.id,
-              panelId: p.id,
-              prefs: terminalRendererPreferences,
-            }),
-            pizarra: {
-              x: null, // Let PizarraPane place it if not already placed
-              y: null,
-              width: 640,
-              height: 400,
-              visible: true,
-            },
-          });
-        });
-      }
+    const wsId = activeWorkspace.id;
+    const windows = workspaceWindows[wsId] || [];
+    const activeWindowId = activeWindowIds[wsId] || windows[0]?.id || null;
+
+    const { terminals: builtTerminals } = buildTerminalSurfacesFromWindows({
+      workspaceId: wsId,
+      windows,
+      activeWindowId,
+      liveColumns: activeWorkspace.columns,
+      resolveRequestedRenderer: ({ workspaceId, panelId, prefs }) =>
+        resolveRequestedRenderer({ workspaceId, panelId, prefs }),
+      terminalRendererPreferences,
+      resolveLabel: (panel) => resolvePanelSurfaceLabel(panel, wsId),
     });
+
+    const terminals = builtTerminals;
 
     // 2. Browser surface for the workspace — only include if the ws "browser is open"
     // (controlled by dock/browser state in normal view, or set via pizarra close).
@@ -5379,6 +5392,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           existing.requestedRendererMode = as.requestedRendererMode;
           itemChanged = true;
         }
+        const nextViewId = as.pizarra?.viewId;
+        if (nextViewId && existing.pizarra?.viewId !== nextViewId) {
+          existing.pizarra = { ...(existing.pizarra || {}), viewId: nextViewId };
+          itemChanged = true;
+        }
         if (itemChanged) {
           changed = true;
         }
@@ -5427,6 +5445,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
   }, [
     activeWorkspace,
+    activeWindowIds,
+    workspaceWindows,
     browserWindowStates,
     registry.isLoaded,
     registry.surfaces,
@@ -6493,9 +6513,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               <WorkspaceWindowSwitcher
                 variant="header"
                 views={workspaceWindows[activeWsId] || []}
-                activeViewId={activeWindowIds[activeWsId] || workspaceWindows[activeWsId]?.[0]?.id}
-                visible={isVisible && !pizarraOwnsLiveSurfaces}
-                onSelectView={(windowId) => switchWindowInWorkspace(activeWsId, windowId)}
+                activeViewId={
+                  pizarraPendingViewId ||
+                  activeWindowIds[activeWsId] ||
+                  workspaceWindows[activeWsId]?.[0]?.id
+                }
+                visible={isVisible}
+                onSelectView={(windowId) => {
+                  const pizarraUiActive =
+                    pizarraOwnsLiveSurfaces ||
+                    (effectiveRightDockState.visible &&
+                      effectiveRightDockState.activeTab === 'pizarra');
+                  if (pizarraUiActive) {
+                    setPizarraPendingViewId(windowId);
+                    window.dispatchEvent(
+                      new CustomEvent('devhub:pizarra-select-view', {
+                        detail: { windowId, workspaceId: activeWsId },
+                      })
+                    );
+                    return;
+                  }
+                  switchWindowInWorkspace(activeWsId, windowId);
+                }}
                 onAddView={() => addWindowToWorkspace(activeWsId)}
               />
 
@@ -7172,6 +7211,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
                       activeWorkspaceWindowId={activeWindowIds?.[activeWorkspace.id] || null}
                       onWorkspaceWindowSelect={(windowId) => {
+                        const pizarraTabActive =
+                          pizarraOwnsLiveSurfaces ||
+                          effectiveRightDockState.activeTab === 'pizarra';
+                        if (pizarraTabActive) {
+                          // pizarra-view-switch-complete (dispatched by PizarraPane)
+                          // is the single source of truth for finalizing the switch.
+                          // Re-dispatching devhub:pizarra-select-view here created a
+                          // loop where the pane started the animation again before
+                          // activeWorkspaceWindowId could be updated.
+                          setPizarraPendingViewId(windowId);
+                          return;
+                        }
                         switchWindowInWorkspace(activeWorkspace.id, windowId);
                         if (effectiveRightDockState.maximized) {
                           updateRightDockState((current) =>

@@ -9,6 +9,7 @@ import {
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
 } from './terminalNoiseFilter.js';
+import { buildTmuxPanelAttachCommand } from './tmuxStatusBar.js';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
@@ -686,7 +687,7 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null, initialCo
     // Disable tmux status bar to save vertical space, then create/attach session.
     // If an initial command is provided, start the session with the shell running it
     // instead of relying on a later WebSocket injection, which races with tmux/shell.
-    const baseAttachCommand = `tmux set -g status off 2>/dev/null || true; tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
+    const baseAttachCommand = buildTmuxPanelAttachCommand(tmuxSession, cwd);
     let attachCommand;
     if (safeInitialCommand) {
       const launchCommand = `${escapeShellArg(resolvedShell)} -lc ${escapeShellArg(safeInitialCommand)}`;

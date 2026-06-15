@@ -1,5 +1,4 @@
 const OPENCODE_PROVIDER = 'opencode';
-const HERMES_PROVIDER = 'hermes';
 
 function normalizeUpdatedAt(value) {
   if (!value) return null;
@@ -114,24 +113,6 @@ export const openCodeResumableSessionAdapter = {
       status: payload?.status || (normalizedSessions.length ? 'success' : 'empty'),
       sessions: normalizedSessions,
       error: payload?.error || null,
-    };
-  },
-};
-
-export const hermesResumableSessionAdapter = {
-  id: HERMES_PROVIDER,
-  supportsDurableResume() {
-    return false;
-  },
-  buildResumeCommand() {
-    return 'hermes';
-  },
-  async listSessions() {
-    return {
-      provider: HERMES_PROVIDER,
-      status: 'empty',
-      sessions: [],
-      error: null,
     };
   },
 };

@@ -463,8 +463,8 @@ export function clampTerminalViewportDimensions(dims) {
   };
 }
 
-// Horizontal: always add one more column when slack remains so lateral bands disappear
-// (overflow:hidden clips the partial edge). Vertical: keep the cheaper clip/slack tradeoff.
+// Horizontal: add one more column when slack remains. Vertical: same — clip the
+// partial last row under overflow:hidden instead of leaving a dead band.
 function proposeTerminalAxisDimension({ available, cellSize, minValue, fillSlack = false }) {
   const avail = Number(available);
   const cell = Number(cellSize);
@@ -533,7 +533,7 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
     available: availH,
     cellSize: cellH,
     minValue: 1,
-    fillSlack: false,
+    fillSlack: true,
   });
 
   return clampTerminalViewportDimensions({ cols, rows });
@@ -1001,6 +1001,20 @@ export function shouldRecoverPanelOnActivation(previousActive, nextActive) {
 /** Keep WebGL atlases on split siblings; only clear when attaching WebGL for the first time. */
 export function shouldClearWebglAtlasOnPanelActivation(hasWebglAttached) {
   return !hasWebglAttached;
+}
+
+/** Skip fit/resize churn when a split sibling already has the correct grid and GPU renderer. */
+export function shouldSkipReactivateViewportOnPanelActivation({
+  hadGpuRenderer = false,
+  clearAtlas = false,
+  term = null,
+  container = null,
+  fitAddon = null,
+} = {}) {
+  if (!hadGpuRenderer || clearAtlas || !term || !container || !fitAddon) return false;
+  const dims = proposeTerminalViewportDimensions({ container, fitAddon, term });
+  if (!dims) return false;
+  return term.cols === dims.cols && term.rows === dims.rows;
 }
 
 /** WebGL attach/reattach is only allowed when the operational renderer is xterm-webgl. */
@@ -2528,27 +2542,39 @@ export default function TerminalTTY({
         needsViewportSyncOnShowRef.current = true;
         return;
       }
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (rect && rect.width > 0 && rect.height > 0 && fitRef.current) {
-        const splitCanvasClear = shouldClearAtlasForSplitCanvas({
-          operationalRendererMode: operationalRendererModeRef.current,
-          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
-        });
+      const term = termRef.current;
+      const container = containerRef.current;
+      const fitAddon = fitRef.current;
+      const rect = container?.getBoundingClientRect();
+      const splitCanvasClear = shouldClearAtlasForSplitCanvas({
+        operationalRendererMode: operationalRendererModeRef.current,
+        visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+      });
+      let colsBefore = term?.cols;
+      let rowsBefore = term?.rows;
+      let geometryChanged = false;
+
+      if (rect && rect.width > 0 && rect.height > 0 && fitAddon && term) {
+        colsBefore = term.cols;
+        rowsBefore = term.rows;
         const fitWorked = fitTerminalViewport({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
+          container,
+          fitAddon,
+          term,
           socket: wsRef.current,
-          clearAtlas: splitCanvasClear,
+          clearAtlas: false,
           lastPtySizeRef: lastPtySizeRef.current,
         });
-        if (fitWorked && termRef.current) {
-          confirmViewportFit(termRef.current.cols, termRef.current.rows);
-          nudgeTerminalPtyResize({
-            term: termRef.current,
-            socket: wsRef.current,
-            lastPtySizeRef: lastPtySizeRef.current,
-          });
+        geometryChanged = fitWorked && (term.cols !== colsBefore || term.rows !== rowsBefore);
+        if (fitWorked) {
+          confirmViewportFit(term.cols, term.rows);
+          if (geometryChanged) {
+            nudgeTerminalPtyResize({
+              term,
+              socket: wsRef.current,
+              lastPtySizeRef: lastPtySizeRef.current,
+            });
+          }
         }
       }
       if (
@@ -2565,12 +2591,11 @@ export default function TerminalTTY({
         return;
       }
       if (termRef.current && isTerminalRendererReady(termRef.current)) {
-        stabilizeTerminalRenderer(termRef.current, {
-          clearAtlas: shouldClearAtlasForSplitCanvas({
-            operationalRendererMode: operationalRendererModeRef.current,
-            visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
-          }),
-        });
+        if (geometryChanged) {
+          stabilizeTerminalRenderer(termRef.current, {
+            clearAtlas: splitCanvasClear,
+          });
+        }
         refreshTerminalViewport(termRef.current);
       }
     });
@@ -4281,9 +4306,6 @@ export default function TerminalTTY({
       } catch {
         // intentional: terminal may already be disposed during unmount
       }
-      if (isVisibleInLayoutRef.current) {
-        scheduleInactiveViewportRepaint();
-      }
       return;
     }
 
@@ -4957,6 +4979,27 @@ export default function TerminalTTY({
     const hadGpuRenderer = Boolean(webglAddonRef.current || canvasAddonRef.current);
     const canUseWebgl = shouldAttachWebglRenderer({ operationalRendererMode });
     const canUseCanvas = shouldAttachCanvasRenderer({ operationalRendererMode });
+    const clearAtlas =
+      (canUseWebgl || canUseCanvas) && shouldClearWebglAtlasOnPanelActivation(hadGpuRenderer);
+
+    if (
+      shouldSkipReactivateViewportOnPanelActivation({
+        hadGpuRenderer,
+        clearAtlas,
+        term,
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+      })
+    ) {
+      prepareActiveTuiTerminalFocus(term, {
+        tuiSessionActive: tuiSessionActiveRef.current,
+      });
+      if (autoFocus) {
+        term.focus?.();
+      }
+      return;
+    }
+
     logRenderHealth('panel-activated-recover');
     if (canUseWebgl) {
       void tryReattachWebglAddonRef.current?.();
@@ -4964,8 +5007,7 @@ export default function TerminalTTY({
       void tryReattachCanvasAddonRef.current?.();
     }
     reactivateTerminalViewportRef.current?.({
-      clearAtlas:
-        (canUseWebgl || canUseCanvas) && shouldClearWebglAtlasOnPanelActivation(hadGpuRenderer),
+      clearAtlas,
     });
 
     if (!autoFocus) return;

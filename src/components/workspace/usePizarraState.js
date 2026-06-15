@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
-import { createEmptyState, serialize, deserialize, validateState } from '../../lib/pizarra/stateHelpers';
+import {
+  createEmptyState,
+  serialize,
+  deserialize,
+  validateState,
+} from '../../lib/pizarra/stateHelpers';
 
 const STORAGE_KEY_PREFIX = 'devhub_pizarra_state:';
 
@@ -20,9 +25,7 @@ const STORAGE_KEY_PREFIX = 'devhub_pizarra_state:';
  *   addElement: function,
  *   updateElement: function,
  *   removeElement: function,
- *   clearCanvas: function,
- *   undo: function,
- *   redo: function
+ *   clearCanvas: function
  * }}
  */
 export function usePizarraState(projectId) {
@@ -71,9 +74,10 @@ export function usePizarraState(projectId) {
    * @returns {string} Generated elementId
    */
   const addElement = (element) => {
-    const elementId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const elementId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const now = Date.now();
     const fullElement = {
       ...element,
@@ -123,26 +127,6 @@ export function usePizarraState(projectId) {
     setState((prev) => ({ ...prev, elements: new Map() }));
   };
 
-  /**
-   * Undo last action — deferred to future SDD.
-   */
-  const undo = () => {
-    // TODO: deferred to future SDD
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[usePizarraState] undo() is not implemented — deferred to future SDD');
-    }
-  };
-
-  /**
-   * Redo last undone action — deferred to future SDD.
-   */
-  const redo = () => {
-    // TODO: deferred to future SDD
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[usePizarraState] redo() is not implemented — deferred to future SDD');
-    }
-  };
-
   return {
     state,
     setState,
@@ -150,7 +134,5 @@ export function usePizarraState(projectId) {
     updateElement,
     removeElement,
     clearCanvas,
-    undo,
-    redo,
   };
 }

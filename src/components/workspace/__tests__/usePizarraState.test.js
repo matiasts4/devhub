@@ -39,7 +39,12 @@ beforeEach(() => {
 
 // We test the pure functions from stateHelpers that the hook uses,
 // plus the hook's external behavior via mocks.
-const { createEmptyState, serialize, deserialize, validateState } = require('../../../lib/pizarra/stateHelpers');
+const {
+  createEmptyState,
+  serialize,
+  deserialize,
+  validateState,
+} = require('../../../lib/pizarra/stateHelpers');
 
 // Helper to simulate what the hook does with state
 function buildHookScenario(projectId) {
@@ -253,19 +258,6 @@ describe('usePizarraState — hook logic via stateHelpers', () => {
       expect(parsed).not.toBeNull();
       expect(parsed.elements.size).toBe(1);
       expect(parsed.elements.has(elementId)).toBe(true);
-    });
-  });
-
-  describe('undo/redo stubs', () => {
-    test('undo and redo are not implemented', () => {
-      // Per spec, undo/redo are explicitly excluded from this SDD
-      // We verify the spec requirement by confirming no history mechanism exists
-      const state = createEmptyState();
-      state.elements.set('el-1', { id: 'el-1' });
-      // No history stack in state — confirms deferred implementation
-      expect(state).not.toHaveProperty('history');
-      expect(state).not.toHaveProperty('undoStack');
-      expect(state).not.toHaveProperty('redoStack');
     });
   });
 });

@@ -179,7 +179,8 @@ export function buildIdentityVerificationBlock({ agentId, missionId, role, works
 
 /**
  * Build the bash block that defines the bus helpers:
- *   _devhub_chat, _devhub_event, _devhub_presence, _devhub_inbox_check.
+ *   _devhub_chat, _devhub_event, _devhub_presence, _devhub_inbox_check,
+ *   _devhub_provision_worker.
  *
  * Each helper is a thin shim around the `devhub-bus` binary. The bus is the
  * SINGLE path from bash to better-sqlite3 — workers never write to SQLite
@@ -301,6 +302,39 @@ export function buildBusHelpersBlock({ busBinaryPath, dbPath }) {
     '  echo "[$(date -Iseconds 2>/dev/null || date)] _devhub_inbox_check exit: $_bus_debug_rc" >> "$_DEVHUB_BUS_DEBUG_LOG" 2>/dev/null || true',
     '  return $_bus_debug_rc',
     '}',
+    '',
+    '_devhub_provision_worker() {',
+    '  local _role_key="${1:-}"',
+    '  local _wait_s="${2:-90}"',
+    '  echo "[$(date -Iseconds 2>/dev/null || date)] _devhub_provision_worker args: ${_role_key} ${_wait_s}" >> "$_DEVHUB_BUS_DEBUG_LOG" 2>/dev/null || true',
+    '  if [ -z "$_role_key" ]; then echo "devhub-helper: _devhub_provision_worker: usage: role_key [wait_seconds]" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_MISSION_ID:-}" ]; then echo "devhub-helper: _devhub_provision_worker: DEVHUB_MISSION_ID not set" >&2; return 64; fi',
+    '  if [ -z "${DEVHUB_SUPERVISOR_URL:-}" ]; then echo "devhub-helper: _devhub_provision_worker: DEVHUB_SUPERVISOR_URL not set" >&2; return 64; fi',
+    '  local _tmux_target="devhub-swarm-${DEVHUB_MISSION_ID}-${_role_key}"',
+    '  if tmux has-session -t "$_tmux_target" 2>/dev/null; then',
+    '    printf \'{"ok":true,"status":"already_live","role_key":"%s","tmux_session":"%s"}\\n\' "$_role_key" "$_tmux_target"',
+    '    return 0',
+    '  fi',
+    '  local _curl_body _curl_rc=0',
+    '  _curl_body=$(curl -sS -X POST "${DEVHUB_SUPERVISOR_URL}/operations/health" \\',
+    '    -H "Content-Type: application/json" \\',
+    '    -d "{\\"action\\":\\"provision_swarm_worker\\",\\"launch_id\\":\\"${DEVHUB_MISSION_ID}\\",\\"role_key\\":\\"${_role_key}\\"}" 2>&1) || _curl_rc=$?',
+    '  if [ "$_curl_rc" -ne 0 ]; then',
+    '    echo "devhub-helper: _devhub_provision_worker: curl failed: $_curl_body" >&2',
+    '    return 66',
+    '  fi',
+    '  local _i=0',
+    '  while [ "$_i" -lt "$_wait_s" ]; do',
+    '    if tmux has-session -t "$_tmux_target" 2>/dev/null; then',
+    '      printf \'{"ok":true,"status":"live","role_key":"%s","tmux_session":"%s","wait_seconds":%s}\\n\' "$_role_key" "$_tmux_target" "$_i"',
+    '      return 0',
+    '    fi',
+    '    sleep 1',
+    '    _i=$((_i + 1))',
+    '  done',
+    '  printf \'{"ok":false,"status":"timeout","role_key":"%s","tmux_session":"%s","wait_seconds":%s,"hint":"queued_for_ui — focus DevHub swarm workspace and retry tmux check"}\\n\' "$_role_key" "$_tmux_target" "$_wait_s"',
+    '  return 73',
+    '}',
     '# ===== end bus helpers =====',
   ].join('\n');
 }
@@ -338,7 +372,13 @@ export function buildBusHelpersShimBlock({ missionId }) {
   }
   const missionDir = `/tmp/devhub-mission-${missionId}`;
   const binDir = `${missionDir}/bin`;
-  const shimNames = ['_devhub_chat', '_devhub_event', '_devhub_presence', '_devhub_inbox_check'];
+  const shimNames = [
+    '_devhub_chat',
+    '_devhub_event',
+    '_devhub_presence',
+    '_devhub_inbox_check',
+    '_devhub_provision_worker',
+  ];
   const lines = [
     '# PATH shims for _devhub_* helpers (OpenCode bash tool compatibility).',
     `mkdir -p "${binDir}"`,
@@ -1369,6 +1409,18 @@ export function buildAgentLaunchWrapper({
     pathValidationBlock,
     cdBlock,
     '',
+    ...(tmuxSessionName
+      ? [
+          '# Hide tmux status bar (green band) — reclaim one terminal row.',
+          'if command -v tmux >/dev/null 2>&1; then',
+          '  tmux set -g status off 2>/dev/null || true',
+          '  tmux set -g status-interval 0 2>/dev/null || true',
+          `  tmux set-option -t "${tmuxSessionName}" status off 2>/dev/null || true`,
+          `  tmux set-option -t "${tmuxSessionName}" status-interval 0 2>/dev/null || true`,
+          'fi',
+          '',
+        ]
+      : []),
     buildAgentEnvExports({
       agentId,
       missionId,

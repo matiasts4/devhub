@@ -12,12 +12,25 @@ export function easeOutQuart(t) {
   return 1 - (1 - x) ** 4;
 }
 
+export function easeInOutCubic(t) {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+}
+
+export function easeInOutQuint(t) {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 16 * x ** 5 : 1 - (-2 * x + 2) ** 5 / 2;
+}
+
+/** Default duration for a full adjacent-view slide (V1 ↔ V2). */
+export const VIEW_SWITCH_BASE_DURATION = 480;
+
 /** Shorter finish when the user already dragged most of the way. */
 export function resolvePanTransitionDuration({
   fromPan,
   toPan,
-  baseDuration = 280,
-  minDuration = 120,
+  baseDuration = VIEW_SWITCH_BASE_DURATION,
+  minDuration = 180,
 } = {}) {
   const dx = Math.abs((toPan?.x ?? 0) - (fromPan?.x ?? 0));
   const dy = Math.abs((toPan?.y ?? 0) - (fromPan?.y ?? 0));

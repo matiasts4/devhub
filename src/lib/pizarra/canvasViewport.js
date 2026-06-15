@@ -128,6 +128,7 @@ export function zoomAtPoint({
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { shouldCanvasConsumeWheel } from './pizarraWheel';
+import { normalizeWheelDelta } from './pizarraViewLayout';
 
 const CanvasViewportContext = createContext(null);
 
@@ -147,6 +148,7 @@ export function CanvasViewportProvider({
   const [zoom, setZoom] = useState(initialZoom);
   const [pan, setPan] = useState(DEFAULT_PAN);
   const [canvasRect, setCanvasRect] = useState(null);
+  const wheelViewNavigateRef = useRef(null);
 
   // pizarra-motion: coalesce canvasRect updates. Previously every scroll
   // pixel / ResizeObserver tick called setCanvasRect, which re-projected
@@ -224,6 +226,22 @@ export function CanvasViewportProvider({
     if (!container) return;
 
     const handleWheel = (event) => {
+      const dx = normalizeWheelDelta(event.deltaX, event.deltaMode);
+      const dy = normalizeWheelDelta(event.deltaY, event.deltaMode);
+
+      // 2-finger horizontal swipe → switch workspace window (V1↔V2).
+      // Runs before shouldCanvasConsumeWheel so it works over terminals/browsers too.
+      if (
+        !event.ctrlKey &&
+        !event.metaKey &&
+        typeof wheelViewNavigateRef.current === 'function' &&
+        wheelViewNavigateRef.current(dx, dy)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       // pizarra-motion-polish (P-MP-5): route through the shared
       // helper so the provider's selector set cannot drift from
       // PizarraCanvas.jsx's. The helper returns false when the
@@ -260,9 +278,12 @@ export function CanvasViewportProvider({
           return;
         }
 
-        const dx = event.deltaX || 0;
-        const dy = event.deltaY || 0;
-        setPan((current) => ({ x: (current?.x ?? 0) - dx, y: (current?.y ?? 0) - dy }));
+        const panDx = normalizeWheelDelta(event.deltaX, event.deltaMode);
+        const panDy = normalizeWheelDelta(event.deltaY, event.deltaMode);
+        setPan((current) => ({
+          x: (current?.x ?? 0) - panDx,
+          y: (current?.y ?? 0) - panDy,
+        }));
       }
     };
 
@@ -291,6 +312,9 @@ export function CanvasViewportProvider({
       [zoom, pan, canvasRect]
     ),
     measureCanvasRect,
+    setWheelViewNavigateHandler: (handler) => {
+      wheelViewNavigateRef.current = typeof handler === 'function' ? handler : null;
+    },
   };
 
   return <CanvasViewportContext.Provider value={value}>{children}</CanvasViewportContext.Provider>;

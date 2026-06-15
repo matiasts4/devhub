@@ -32,6 +32,7 @@ export function buildTerminalSurfacesFromWindows({
   liveColumns = [],
   resolveRequestedRenderer,
   terminalRendererPreferences = {},
+  resolveLabel,
 } = {}) {
   const activePanelIds = new Set();
   const terminals = [];
@@ -53,7 +54,10 @@ export function buildTerminalSurfacesFromWindows({
           id: `shape-term-${p.id}`,
           type: 'terminal',
           panelId: p.id,
-          label: p.initialCommand || `Terminal ${p.id}`,
+          label:
+            typeof resolveLabel === 'function'
+              ? resolveLabel(p, { workspaceId, viewId, win })
+              : p.initialCommand || `Terminal ${p.id}`,
           cwd: p.cwd || null,
           initialCommand: p.initialCommand || null,
           requestedRendererMode: resolveRequestedRenderer({

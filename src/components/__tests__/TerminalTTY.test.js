@@ -131,6 +131,7 @@ const {
   shouldRunPanelClickViewportRecovery,
   shouldRecoverPanelOnActivation,
   shouldClearWebglAtlasOnPanelActivation,
+  shouldSkipReactivateViewportOnPanelActivation,
   shouldAttachWebglRenderer,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
@@ -494,7 +495,7 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 25 });
+    ).toEqual({ cols: 80, rows: 26 });
   });
 
   test('keeps floored rows when slack is smaller than half a cell', () => {
@@ -508,7 +509,7 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 25 });
+    ).toEqual({ cols: 80, rows: 26 });
   });
 
   test('adds one extra row when slack is larger than the clip cost of an extra cell', () => {
@@ -650,6 +651,53 @@ describe('shouldClearWebglAtlasOnPanelActivation()', () => {
   test('skips atlas clears when WebGL is already attached', () => {
     expect(shouldClearWebglAtlasOnPanelActivation(true)).toBe(false);
     expect(shouldClearWebglAtlasOnPanelActivation(false)).toBe(true);
+  });
+});
+
+describe('shouldSkipReactivateViewportOnPanelActivation()', () => {
+  test('skips fit churn when GPU renderer is attached and grid already matches container', () => {
+    const term = {
+      cols: 80,
+      rows: 24,
+      _core: {
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+        },
+      },
+    };
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 480 }),
+    };
+    const fitAddon = { proposeDimensions: () => ({ cols: 80, rows: 24 }) };
+
+    expect(
+      shouldSkipReactivateViewportOnPanelActivation({
+        hadGpuRenderer: true,
+        clearAtlas: false,
+        term,
+        container,
+        fitAddon,
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipReactivateViewportOnPanelActivation({
+        hadGpuRenderer: false,
+        clearAtlas: false,
+        term,
+        container,
+        fitAddon,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipReactivateViewportOnPanelActivation({
+        hadGpuRenderer: true,
+        clearAtlas: true,
+        term,
+        container,
+        fitAddon,
+      })
+    ).toBe(false);
   });
 });
 
@@ -1638,8 +1686,6 @@ describe('TERMINAL_NATIVE_CONTENT_BODY_STYLE', () => {
 
 describe('TerminalTTY renderer fallback UI', () => {
   beforeEach(() => {
-    const { _clearAllTerminalPanelBridges } = require('@/lib/terminal/terminalPanelBridge');
-    _clearAllTerminalPanelBridges();
     installTerminalDom();
     installTerminalRuntimeMocks();
     mockTerminalInstances.length = 0;
@@ -1847,6 +1893,65 @@ describe('TerminalTTY renderer fallback UI', () => {
     await flushTerminalEffects();
 
     expect(formerlyActiveTerminal.clearTextureAtlas).not.toHaveBeenCalled();
+  });
+
+  test('switching the active canvas split panel does not nudge PTY resize on the panel that became inactive', async () => {
+    const splitProps = {
+      requestedRendererMode: 'xterm',
+      visibleTerminalPanelCount: 5,
+      isVisibleInLayout: true,
+      showQuickCopyButton: false,
+    };
+    const view = await renderIntoDom(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-split-a',
+          autoFocus: true,
+          isActivePanel: true,
+          ...splitProps,
+        }),
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-split-b',
+          autoFocus: false,
+          isActivePanel: false,
+          ...splitProps,
+        })
+      )
+    );
+
+    await flushTerminalEffects();
+
+    const formerlyActiveTerminal = mockTerminalInstances[0];
+    formerlyActiveTerminal.resize = jest.fn();
+    formerlyActiveTerminal.clearTextureAtlas.mockClear();
+
+    await rerenderIntoRoot(
+      view.root,
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-split-a',
+          autoFocus: false,
+          isActivePanel: false,
+          ...splitProps,
+        }),
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-split-b',
+          autoFocus: true,
+          isActivePanel: true,
+          ...splitProps,
+        })
+      )
+    );
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    await flushTerminalEffects();
+
+    expect(formerlyActiveTerminal.clearTextureAtlas).not.toHaveBeenCalled();
+    expect(formerlyActiveTerminal.resize).not.toHaveBeenCalled();
   });
 
   test('clicking an already-active xterm panel does not rerun atlas-clearing recovery', async () => {
