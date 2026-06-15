@@ -390,12 +390,12 @@ export default function ProviderCard({
                           );
                         }
 
-                        return filtered.map((opt) => {
+                        return filtered.map((opt, index) => {
                           const active = (providerData?.[key] || field.default || '') === opt;
                           const fav = favs.includes(opt);
                           return (
                             <div
-                              key={opt}
+                              key={`${opt}::${index}`}
                               onClick={() => onUpdateConfig?.(key, opt)}
                               className="group relative border rounded-xl px-3 py-2 text-[11px] font-mono cursor-pointer transition-colors truncate"
                               title={opt}
