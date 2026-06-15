@@ -63,16 +63,17 @@ Dimensions: panel count × interaction × renderer × build.
 
 > Scenarios from [04-terminal-lifecycle-coverage-gaps](../04-terminal-lifecycle-coverage-gaps/README.md). Fill after Fase 1+ remediation.
 
-| #   | Panels    | Interaction                       | Renderer | Build  | dispose/action | boot/action | Glyph corruption? | Crash? | Notes                    |
-| --- | --------- | --------------------------------- | -------- | ------ | -------------- | ----------- | ----------------- | ------ | ------------------------ |
-| 8   | 5 (swarm) | swarm-launch ZED+4 workers        | canvas   | dev    | _TBD_          | _TBD_       |                   |        | OpenCode standby workers |
-| 9   | 5 (swarm) | swarm-launch                      | canvas   | `.deb` | _TBD_          | _TBD_       |                   |        | WebKitGTK multi-TUI      |
-| 10  | 4 (split) | close 3 tabs sequentially         | canvas   | dev    | _TBD_          | _TBD_       |                   |        | panel-closed burst       |
-| 11  | 3 (split) | split-right + OpenCode active     | canvas   | dev    | _TBD_          | _TBD_       |                   |        | panel-split sync         |
-| 12  | 2         | relaunch panel (OpenCode session) | webgl    | dev    | _TBD_          | _TBD_       |                   |        | panel-relaunch           |
-| 13  | 3         | workspace-switch + swarm ws       | canvas   | dev    | _TBD_          | _TBD_       |                   |        | V1↔V2 with swarm grid    |
-| 14  | 1         | run-agent planning-launch         | webgl    | dev    | _TBD_          | _TBD_       |                   |        | non-swarm path           |
-| 15  | 4         | grid launcher → 4 terminals       | canvas   | dev    | _TBD_          | _TBD_       |                   |        | suspend policy           |
+| #   | Panels    | Interaction                             | Renderer | Build  | dispose/action | boot/action | Glyph corruption? | Crash?         | Notes                                                                                                               |
+| --- | --------- | --------------------------------------- | -------- | ------ | -------------- | ----------- | ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 8   | 5 (swarm) | swarm-launch ZED+4 workers              | canvas   | dev    | _TBD_          | _TBD_       |                   |                | OpenCode standby workers                                                                                            |
+| 9   | 5 (swarm) | swarm-launch                            | canvas   | `.deb` | _TBD_          | _TBD_       |                   |                | WebKitGTK multi-TUI                                                                                                 |
+| 10  | 4 (split) | close 3 tabs sequentially               | canvas   | dev    | _TBD_          | _TBD_       |                   |                | panel-closed burst                                                                                                  |
+| 11  | 3 (split) | split-right + OpenCode active           | canvas   | dev    | _TBD_          | _TBD_       |                   |                | panel-split sync                                                                                                    |
+| 12  | 2         | relaunch panel (OpenCode session)       | webgl    | dev    | _TBD_          | _TBD_       |                   |                | panel-relaunch                                                                                                      |
+| 13  | 3         | workspace-switch + swarm ws             | canvas   | dev    | _TBD_          | _TBD_       |                   |                | V1↔V2 with swarm grid                                                                                               |
+| 14  | 1         | run-agent planning-launch               | webgl    | dev    | _TBD_          | _TBD_       |                   |                | non-swarm path                                                                                                      |
+| 15  | 4         | grid launcher → 4 terminals             | canvas   | dev    | _TBD_          | _TBD_       |                   |                | suspend policy                                                                                                      |
+| 16  | 1 (lazy)  | swarm-launch ZED only + bootstrap paste | webgl    | dev    | _TBD_          | _TBD_       | **Sí** (G-04)     | No (P2 visual) | [debug log](../04-terminal-lifecycle-coverage-gaps/05-swarm-bootstrap-injection-debug-2026-06-13.md) session 833db0 |
 
 ## Acceptance targets (post A.1)
 

@@ -2,6 +2,7 @@ import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayou
 
 export const PANEL_LIFECYCLE_REASONS = Object.freeze({
   SWARM_LAUNCH: 'swarm-launch',
+  WORKSPACE_CREATED: 'workspace-created',
   PANEL_CLOSED: 'panel-closed',
   PANEL_SPLIT: 'panel-split',
   PANEL_RELAUNCH: 'panel-relaunch',
@@ -16,6 +17,11 @@ export const LIFECYCLE_BURST_PHASES = Object.freeze({
     immediate: true,
     raf: true,
     delayMs: Object.freeze([120, 340]),
+  }),
+  [PANEL_LIFECYCLE_REASONS.WORKSPACE_CREATED]: Object.freeze({
+    immediate: true,
+    raf: true,
+    delayMs: Object.freeze([]),
   }),
   [PANEL_LIFECYCLE_REASONS.PANEL_FOCUS]: Object.freeze({
     immediate: true,

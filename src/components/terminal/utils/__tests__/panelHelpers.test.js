@@ -87,3 +87,41 @@ describe('createPanel / normalizeWorkspaceState — displayName round-trip', () 
     expect(allPanels[1].displayName).toBe('custom-p2');
   });
 });
+
+describe('resolveSplitCreatedPanelProps', () => {
+  const { resolveSplitCreatedPanelProps } = require('../panelHelpers');
+
+  test('user split inherits cwd but never launch commands from source panel', () => {
+    expect(
+      resolveSplitCreatedPanelProps({
+        sourcePanel: {
+          id: 'p1',
+          cwd: '/workspace/devhub',
+          initialCommand: 'opencode --session ses_abc',
+        },
+        workspaceCwd: '/fallback',
+      })
+    ).toEqual({
+      initialCommand: null,
+      panelCwd: '/workspace/devhub',
+    });
+  });
+
+  test('programmatic split keeps explicit launch command and cwd', () => {
+    expect(
+      resolveSplitCreatedPanelProps({
+        sourcePanel: {
+          id: 'p1',
+          cwd: '/workspace/devhub',
+          initialCommand: 'opencode --session ses_abc',
+        },
+        workspaceCwd: '/fallback',
+        explicitInitialCommand: 'opencode --agent zed',
+        explicitPanelCwd: '/tmp/zed',
+      })
+    ).toEqual({
+      initialCommand: 'opencode --agent zed',
+      panelCwd: '/tmp/zed',
+    });
+  });
+});

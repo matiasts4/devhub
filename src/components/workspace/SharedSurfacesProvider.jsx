@@ -44,6 +44,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -409,31 +410,51 @@ function createRegistry() {
  */
 function SurfaceMount({ surfaceId, content }) {
   const registry = useSurfaceRegistry();
-  // Mount the content exactly once. The portal below will
-  // re-target on every render, but the React subtree identity
-  // is preserved across re-renders (the parent component owns
-  // it).
-  const target = registry.getActiveTarget(surfaceId);
-  if (!target) {
-    // No target registered yet; render an invisible hidden mount with
-    // plausible dimensions so TerminalTTY can fit/connect while the
-    // pizarra portal finishes registering (avoids 0×0 connect deadlock).
-    return (
-      <div
-        data-testid={`surface-hidden-mount-${surfaceId}`}
-        style={{
-          position: 'absolute',
-          visibility: 'hidden',
-          pointerEvents: 'none',
-          width: 960,
-          height: 540,
-        }}
-      >
-        {content}
-      </div>
-    );
-  }
-  return createPortal(content, target);
+  const fallbackRef = useRef(null);
+  const version = useSyncExternalStore(
+    registry.subscribe,
+    () => registry.getVersion(),
+    () => registry.getVersion()
+  );
+  const [fallbackReady, setFallbackReady] = useState(false);
+
+  const liveTarget = registry.getActiveTarget(surfaceId);
+
+  useLayoutEffect(() => {
+    if (liveTarget) {
+      setFallbackReady(false);
+      return;
+    }
+    if (fallbackRef.current) {
+      setFallbackReady(true);
+    }
+  }, [liveTarget, version]);
+
+  const portalTarget = liveTarget || (fallbackReady ? fallbackRef.current : null);
+
+  // Always portal — never wrap content in a plain div (that remounts TerminalTTY when
+  // the target appears and causes double xterm / double PTY echo).
+  return (
+    <>
+      {!liveTarget && (
+        <div
+          ref={fallbackRef}
+          data-testid={`surface-hidden-mount-${surfaceId}`}
+          style={{
+            position: 'fixed',
+            left: -10000,
+            top: 0,
+            width: 960,
+            height: 540,
+            visibility: 'hidden',
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}
+        />
+      )}
+      {portalTarget ? createPortal(content, portalTarget) : null}
+    </>
+  );
 }
 
 export function SharedSurfacesProvider({ children, onSurfaceDestroy }) {
@@ -495,20 +516,14 @@ export function SharedSurfacesProvider({ children, onSurfaceDestroy }) {
  */
 export function useSurfaceContent(surfaceId, factory) {
   const registry = useSurfaceRegistry();
-  // Re-render whenever the target changes so the portal
-  // re-projects. The factory result is memoized per surfaceId
-  // so it is identity-stable across re-renders.
   const contentRef = useRef(null);
   if (contentRef.current === null) {
     contentRef.current = factory();
   }
   useEffect(() => {
+    if (!registry) return undefined;
     registry.setContent(surfaceId, contentRef.current);
-    return () => {
-      // On unmount, drop the content so the hidden layer
-      // stops rendering it.
-      registry.setContent(surfaceId, null);
-    };
+    return () => registry.setContent(surfaceId, null);
   }, [registry, surfaceId]);
   return contentRef.current;
 }

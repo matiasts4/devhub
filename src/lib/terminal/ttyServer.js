@@ -659,7 +659,7 @@ export function attachPtyLifecycle({ runtimeHint } = {}) {
   };
 }
 
-function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
+function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null, initialCommand = null) {
   const tmuxEnabled = hasTmux();
   const isSwarm = Boolean(
     swarmContext?.isSwarmRole && swarmContext?.launchId && swarmContext?.roleKey
@@ -678,18 +678,33 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
     HUSHLOGIN: 'true',
   });
 
+  const safeInitialCommand =
+    typeof initialCommand === 'string' && initialCommand.trim() ? initialCommand.trim() : null;
+
   let spawnArgs = [];
   if (tmuxEnabled && os.platform() !== 'win32') {
-    // Disable tmux status bar to save vertical space, then create/attach session
-    const attachCommand = `tmux set -g status off 2>/dev/null || true; tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
+    // Disable tmux status bar to save vertical space, then create/attach session.
+    // If an initial command is provided, start the session with the shell running it
+    // instead of relying on a later WebSocket injection, which races with tmux/shell.
+    const baseAttachCommand = `tmux set -g status off 2>/dev/null || true; tmux new-session -A -s ${escapeShellArg(tmuxSession)} -c ${escapeShellArg(cwd)}`;
+    let attachCommand;
+    if (safeInitialCommand) {
+      const launchCommand = `${escapeShellArg(resolvedShell)} -lc ${escapeShellArg(safeInitialCommand)}`;
+      attachCommand = `${baseAttachCommand} ${launchCommand}`;
+    } else {
+      attachCommand = baseAttachCommand;
+    }
     spawnArgs = ['-lc', attachCommand];
   } else if (path.basename(resolvedShell) === 'zsh') {
-    spawnArgs = ['-lic', 'exec zsh -i', 'devhub-shell', '--no-use'];
+    if (safeInitialCommand) {
+      spawnArgs = ['-lic', safeInitialCommand, 'devhub-shell', '--no-use'];
+    } else {
+      spawnArgs = ['-lic', 'exec zsh -i', 'devhub-shell', '--no-use'];
+    }
   } else if (os.platform() === 'win32') {
     const shellBase = path.basename(resolvedShell).toLowerCase();
     if (shellBase.includes('powershell') || shellBase.includes('pwsh')) {
       // Suppress the standard Windows PowerShell copyright / "Instale la versión más reciente..." banner.
-      // This gives a much cleaner initial view (just the prompt + any command output).
       // -NoLogo is the official way; we keep it minimal so user profiles can still run if present.
       // Applies to both regular terminals and swarm agent worktree shells.
       spawnArgs = ['-NoLogo'];
@@ -705,7 +720,14 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null) {
  *
  * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean }} opts
  */
-export function createSession({ id, cwd, shell, restored = false, swarmContext = null } = {}) {
+export function createSession({
+  id,
+  cwd,
+  shell,
+  restored = false,
+  swarmContext = null,
+  initialCommand = null,
+} = {}) {
   // Auto-generate id when caller does not provide one (e.g. POST /api/terminal/session).
   // Without this, the route returns { id: undefined } → JSON.stringify drops the key → the
   // open_terminal tool sees { port, wsPath } and reports "missing required fields".
@@ -752,7 +774,8 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
   const { env, spawnArgs, tmuxEnabled, tmuxSession } = buildSessionSpawnConfig(
     resolvedCwd,
     id,
-    swarmContext
+    swarmContext,
+    initialCommand
   );
 
   ttyLog('createSession', `spawning PTY`, {
@@ -764,6 +787,7 @@ export function createSession({ id, cwd, shell, restored = false, swarmContext =
     tmux: tmuxEnabled,
     spawnArgs,
     restored,
+    hasInitialCommand: Boolean(initialCommand),
   });
 
   let terminal;
@@ -986,7 +1010,40 @@ function handleSessionExit(sessions, session, exitCode, signal) {
   saveSessions(sessions);
 }
 
+/**
+ * Single-viewer policy: each panel session should have one live WebSocket client.
+ * Stale sockets (React strict-mode remount, fast reconnect) must not receive duplicate
+ * PTY output — that manifests as double PS1 lines and doubled keystroke echo in xterm.
+ */
+function replaceSessionSockets(session, socket) {
+  if (!session?.sockets || !socket) return;
+  for (const existingSocket of session.sockets) {
+    if (existingSocket === socket) continue;
+    existingSocket.onopen = null;
+    existingSocket.onmessage = null;
+    existingSocket.onerror = null;
+    existingSocket.onclose = null;
+    try {
+      if (
+        existingSocket.readyState === existingSocket.OPEN ||
+        existingSocket.readyState === existingSocket.CONNECTING
+      ) {
+        existingSocket.close();
+      }
+    } catch {
+      // ignore
+    }
+    session.sockets.delete(existingSocket);
+  }
+  session.sockets.add(socket);
+}
+
 function wireSessionPty(session, sessions) {
+  if (session._ptyWired) {
+    ttyLog('wireSessionPty', `already wired — skip duplicate handlers`, { id: session.id });
+    return;
+  }
+  session._ptyWired = true;
   ttyLog('wireSessionPty', `wiring PTY handlers`, { id: session.id });
 
   session.pty.onData((chunk) => {
@@ -1446,7 +1503,7 @@ export async function ensureTTYServer() {
       session = {
         pty: terminal,
         ptyPid: terminal.pid,
-        sockets: new Set([socket]),
+        sockets: new Set(),
         history: '',
         mode: 'shell',
         historyEnabled: true,
@@ -1466,6 +1523,7 @@ export async function ensureTTYServer() {
       };
 
       terminalSessions.set(terminalId, session);
+      replaceSessionSockets(session, socket);
       wireSessionPty(session, terminalSessions);
       saveSessions(terminalSessions);
 
@@ -1485,9 +1543,15 @@ export async function ensureTTYServer() {
         mode: session.mode,
         historyLen: session.history?.length ?? 0,
       });
-      session.sockets.add(socket);
+      replaceSessionSockets(session, socket);
       session.lastActivityAt = Date.now();
-      if (session.historyEnabled && session.history && socket.readyState === socket.OPEN) {
+      const isFirstClientAttach = session.sockets.size === 1;
+      if (
+        !isSessionReattach &&
+        session.historyEnabled &&
+        session.history &&
+        socket.readyState === socket.OPEN
+      ) {
         socket.send(
           JSON.stringify({
             type: 'output',
@@ -1496,9 +1560,14 @@ export async function ensureTTYServer() {
         );
       }
 
-      // For full-screen TUI apps (OpenCode/Vim/Nano style), replaying stale history
-      // tends to corrupt rendering on a fresh xterm canvas after reload.
-      if (session.mode === 'tui') {
+      // Full-screen TUIs and live shell reattaches: redraw from the live PTY instead of
+      // replaying stale history onto a fresh canvas (double PS1). Skip redraw on the first
+      // client attach after a server-only pre-spawn — the canvas is empty and Ctrl+L duplicates prompts.
+      if (
+        isSessionReattach &&
+        !isFirstClientAttach &&
+        (session.mode === 'tui' || session.mode === 'shell')
+      ) {
         setTimeout(() => {
           try {
             session.pty.write('\x0c'); // Ctrl+L redraw

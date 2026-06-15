@@ -57,6 +57,7 @@ import {
 } from './terminal/workspaceStateHelpers';
 import {
   buildWorkspaceColumnsForTerminalCount,
+  resolveSplitCreatedPanelProps,
   spawnFirstTerminalPanelColumns,
 } from './terminal/utils/panelHelpers';
 import {
@@ -906,7 +907,9 @@ function renderWorkspacePanel(
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
-  const sharedViewEnabled = isPizarraSharedViewEnabled();
+  // Shared-surface singleton only when pizarra owns projection — workspace docks mount
+  // TerminalTTY directly to avoid hidden→portal remount (double xterm / double echo).
+  const sharedViewEnabled = isPizarraSharedViewEnabled() && pizarraOwnsLiveSurfaces;
   const panelChromeSafeZoneMinTop = 30;
   const semanticMetadata = buildPanelHeaderDisplay(
     panelLabel,
@@ -3915,8 +3918,26 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           setPanelRendererPreference(prev, newWsId, firstPanelId, TERMINAL_RENDERER_INHERIT_MODE)
         );
       }
+
+      const newPanelIds = newColumns.flatMap((col) => col.panels?.map((p) => p.id) || []);
+      if (newPanelIds.length > 0) {
+        syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_CREATED, newWsId, newPanelIds);
+        // Projection burst is for shared-surface portal recovery (pizarra/swarm).
+        // Workspace docks mount TerminalTTY directly — the burst only adds redundant
+        // layout-settled storms that double PS1 / echo on fresh panels.
+        if (isPizarraSharedViewEnabled()) {
+          if (swarmProjectionBurstCleanupRef.current) {
+            swarmProjectionBurstCleanupRef.current();
+            swarmProjectionBurstCleanupRef.current = null;
+          }
+          swarmProjectionBurstCleanupRef.current = scheduleSwarmProjectionReadyBurst({
+            workspaceId: newWsId,
+            panelIds: newPanelIds,
+          });
+        }
+      }
     },
-    [collectSiblingPanelNames, cwd]
+    [collectSiblingPanelNames, cwd, syncPanelLifecycleLayout]
   );
 
   const addWorkspace = () => {
@@ -4484,13 +4505,23 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           );
           if (colIndex === -1) return ws;
 
+          const sourcePanel =
+            nextColumnsSnapshot[colIndex]?.panels?.find((panel) => panel.id === targetId) || null;
+          const { initialCommand: splitInitialCommand, panelCwd: splitPanelCwd } =
+            resolveSplitCreatedPanelProps({
+              sourcePanel,
+              workspaceCwd: cwd,
+              explicitInitialCommand: initialCommand,
+              explicitPanelCwd: panelCwd,
+            });
+
           if (direction === 'horizontal') {
             // Split Right: Agregar una nueva columna a la derecha
             colCounterRef.current += 1;
             const newColId = `c${colCounterRef.current}`;
             nextColumnsSnapshot.splice(colIndex + 1, 0, {
               id: newColId,
-              panels: [makePanel(newPanelId, initialCommand, panelCwd)],
+              panels: [makePanel(newPanelId, splitInitialCommand, splitPanelCwd)],
             });
           } else {
             // Split Down: Agregar un nuevo panel debajo en la misma columna
@@ -4498,7 +4529,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
               (p) => p.id === targetId
             );
             const newPanels = [...nextColumnsSnapshot[colIndex].panels];
-            newPanels.splice(panelIndex + 1, 0, makePanel(newPanelId, initialCommand, panelCwd));
+            newPanels.splice(
+              panelIndex + 1,
+              0,
+              makePanel(newPanelId, splitInitialCommand, splitPanelCwd)
+            );
             nextColumnsSnapshot[colIndex] = { ...nextColumnsSnapshot[colIndex], panels: newPanels };
           }
 

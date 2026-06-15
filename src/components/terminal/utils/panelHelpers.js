@@ -360,6 +360,29 @@ function buildWorkspaceColumnsForTerminalCount({
   return { columns: builtColumns, firstPanelId };
 }
 
+/**
+ * Resolve cwd/initialCommand for a panel created by split.
+ * User-driven splits inherit cwd only — never OpenCode/grok launch commands.
+ */
+function resolveSplitCreatedPanelProps({
+  sourcePanel = null,
+  workspaceCwd = null,
+  explicitInitialCommand = null,
+  explicitPanelCwd = null,
+} = {}) {
+  const panelCwd =
+    typeof explicitPanelCwd === 'string' && explicitPanelCwd.trim()
+      ? explicitPanelCwd.trim()
+      : sourcePanel?.cwd || workspaceCwd || null;
+
+  const initialCommand =
+    typeof explicitInitialCommand === 'string' && explicitInitialCommand.trim()
+      ? explicitInitialCommand.trim()
+      : null;
+
+  return { initialCommand, panelCwd };
+}
+
 /** First terminal panel when workspace has zero panels (split/add from empty). */
 function spawnFirstTerminalPanelColumns({
   allocateColumnId,
@@ -396,5 +419,6 @@ export {
   getWorkspaceTabStyle,
   resolveWorkspaceGridShape,
   buildWorkspaceColumnsForTerminalCount,
+  resolveSplitCreatedPanelProps,
   spawnFirstTerminalPanelColumns,
 };

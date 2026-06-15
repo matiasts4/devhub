@@ -1430,6 +1430,9 @@ export default function TerminalTTY({
   const nativeResizeRafRef = useRef(null);
   const nativeResizeSettleTimersRef = useRef([]);
   const wsRef = useRef(null);
+  const connectInFlightRef = useRef(false);
+  const connectEpochRef = useRef(0);
+  const connectAbortRef = useRef(null);
   const sessionClosingRef = useRef(false);
   const searchRef = useRef(null);
   const transportRef = useRef('json');
@@ -1465,6 +1468,7 @@ export default function TerminalTTY({
   });
 
   const [isInitializing, setIsInitializing] = useState(true);
+  const isInitializingRef = useRef(false);
   const [initError, setInitError] = useState(null);
   const [internalConnectionState, setInternalConnectionState] = useState('idle');
   const connectionState =
@@ -1484,6 +1488,8 @@ export default function TerminalTTY({
   const [xtermBootNonce, setXtermBootNonce] = useState(0);
   const webglAddonRef = useRef(null);
   const canvasAddonRef = useRef(null);
+  const webglFallbackRef = useRef(webglFallback);
+  webglFallbackRef.current = webglFallback;
   const terminalBlurCleanupRef = useRef(null);
   const tauriAvailable = isNativeVteRuntimeAvailable();
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
@@ -1686,6 +1692,11 @@ export default function TerminalTTY({
     //    later boot is never wrongly blocked. A.4.
     if (isDisposingRef.current) return;
     isDisposingRef.current = true;
+    connectEpochRef.current += 1;
+    if (connectAbortRef.current) {
+      connectAbortRef.current.abort();
+      connectAbortRef.current = null;
+    }
     // A.0 lifecycle telemetry: capture renderer + dims BEFORE refs are nulled.
     // This is the dispose-count-per-toggle signal A.1 must drive to zero.
     cliLog(
@@ -1772,6 +1783,14 @@ export default function TerminalTTY({
       termRef.current = null;
       fitRef.current = null;
       searchRef.current = null;
+
+      if (containerRef.current) {
+        try {
+          containerRef.current.replaceChildren();
+        } catch {
+          // ignore — container may already be detached
+        }
+      }
 
       // 5. Neutralize the WebGL addon's internal handleResize before any
       //    dispose runs. See neutralizeWebglAddonForDisposal — this is the
@@ -2887,11 +2906,17 @@ export default function TerminalTTY({
             termHasContent: terminalBufferHasRenderableContent(termRef.current),
           });
           if (discardCatchup) {
-            nudgeTerminalPtyResize({
-              term: termRef.current,
-              socket: wsRef.current,
-              lastPtySizeRef: lastPtySizeRef.current,
-            });
+            const discardBecauseTermHasContent =
+              terminalBufferHasRenderableContent(termRef.current) &&
+              !sessionReattachedRef.current &&
+              !tuiSessionActiveRef.current;
+            if (!discardBecauseTermHasContent) {
+              nudgeTerminalPtyResize({
+                term: termRef.current,
+                socket: wsRef.current,
+                lastPtySizeRef: lastPtySizeRef.current,
+              });
+            }
             stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
             refreshTerminalViewport(termRef.current);
           } else {
@@ -3851,6 +3876,10 @@ export default function TerminalTTY({
   }, [clearNativeVteProbeRetryTimer, id, onActivatePanel, shouldUseNativeRenderer]);
 
   const connect = useCallback(async () => {
+    if (connectInFlightRef.current) {
+      cliLog(`CLIENT:${id}`, 'connect() skipped — connect already in flight');
+      return;
+    }
     if (sessionClosingRef.current) {
       cliLog(`CLIENT:${id}`, 'connect() skipped — session is closing');
       return;
@@ -3874,6 +3903,14 @@ export default function TerminalTTY({
     }
 
     cliLog(`CLIENT:${id}`, 'connect() called', { cwd, autoFocus });
+
+    connectInFlightRef.current = true;
+    const connectEpoch = connectEpochRef.current;
+    if (connectAbortRef.current) {
+      connectAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    connectAbortRef.current = abortController;
 
     try {
       // Silence the stale socket BEFORE closing it so its onclose doesn't
@@ -3915,7 +3952,12 @@ export default function TerminalTTY({
       cliLog(`CLIENT:${id}`, 'fetching session API', { queryStr });
       const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
         cache: 'no-store',
+        signal: abortController.signal,
       });
+      if (connectEpoch !== connectEpochRef.current) {
+        cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch after session API');
+        return;
+      }
       if (!sessionResponse.ok) {
         const errText = await sessionResponse.text().catch(() => '');
         console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
@@ -3927,6 +3969,10 @@ export default function TerminalTTY({
       }
 
       const { port, wsPath } = await sessionResponse.json();
+      if (connectEpoch !== connectEpochRef.current) {
+        cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch before WebSocket');
+        return;
+      }
       console.log(`[TTY:${id}] Got port=${port}, wsPath=${wsPath}`);
       cliLog(`CLIENT:${id}`, 'session API ok', { port, wsPath });
       transportRef.current = wsPath === '/' ? 'raw' : 'json';
@@ -3935,6 +3981,15 @@ export default function TerminalTTY({
       console.log(`[TTY:${id}] WebSocket URL: ${wsUrl}`);
       cliLog(`CLIENT:${id}`, 'opening WebSocket', { wsUrl });
       const socket = new WebSocket(wsUrl);
+      if (connectEpoch !== connectEpochRef.current) {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        socket.close();
+        cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch after WebSocket create');
+        return;
+      }
       wsRef.current = socket;
 
       const connectionTimeout = setTimeout(() => {
@@ -3947,6 +4002,7 @@ export default function TerminalTTY({
       }, 10000);
 
       socket.onopen = () => {
+        if (connectEpoch !== connectEpochRef.current) return;
         clearTimeout(connectionTimeout);
         clearConnectDeferTimer();
         console.log(`[TTY:${id}] WebSocket connected`);
@@ -4020,12 +4076,21 @@ export default function TerminalTTY({
           return;
         }
         if (typeof filtered !== 'string' || filtered.length === 0) return;
+
+        // Projection can flip visible before catchup runs — keep buffering until
+        // syncTerminalViewportOnWorkspaceShow flushes once (avoids double PS1/echo).
+        if (hiddenOutputCatchupPendingRef.current) {
+          appendHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current, filtered);
+          return;
+        }
+
         termRef.current?.write(filtered);
         handleTuiReadyFromOutput(filtered);
         scrollIfActivePanel();
       };
 
       socket.onmessage = (event) => {
+        if (connectEpoch !== connectEpochRef.current) return;
         if (isDisposingRef.current) return;
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
@@ -4131,9 +4196,18 @@ export default function TerminalTTY({
         );
       };
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        cliLog(`CLIENT:${id}`, 'connect() aborted — fetch cancelled');
+        return;
+      }
       console.error(`[TTY:${id}] Connection failed:`, error);
       cliLog(`CLIENT:${id}`, 'connect() catch', { error: error?.message });
       setConnectionState('error');
+    } finally {
+      if (connectAbortRef.current === abortController) {
+        connectAbortRef.current = null;
+      }
+      connectInFlightRef.current = false;
     }
   }, [
     scheduleInactiveViewportRepaint,
@@ -4473,6 +4547,11 @@ export default function TerminalTTY({
     }
 
     async function initializeTerminal() {
+      if (isInitializingRef.current || termRef.current) {
+        cliLog(`CLIENT:${id}`, 'initializeTerminal() skipped — runtime exists or init in flight');
+        return;
+      }
+      isInitializingRef.current = true;
       cliLog(`CLIENT:${id}`, 'initializeTerminal() start', {
         cwd,
         autoFocus,
@@ -4530,6 +4609,11 @@ export default function TerminalTTY({
           return;
         }
 
+        if (termRef.current) {
+          cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — runtime won race after import');
+          return;
+        }
+
         const theme = getTerminalTheme();
         cliLog(`CLIENT:${id}`, 'computed theme colors', theme);
 
@@ -4565,6 +4649,7 @@ export default function TerminalTTY({
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(searchAddon);
 
+        containerRef.current.replaceChildren();
         terminal.open(containerRef.current);
         prepareActiveTuiTerminalFocus(terminal, {
           tuiSessionActive: tuiSessionActiveRef.current,
@@ -4763,6 +4848,8 @@ export default function TerminalTTY({
         disposeXtermRuntime();
         clearTimers();
         return;
+      } finally {
+        isInitializingRef.current = false;
       }
     }
 
@@ -4770,6 +4857,7 @@ export default function TerminalTTY({
 
     return () => {
       mounted = false;
+      isInitializingRef.current = false;
       clearTimers();
       resizeObserverRef.current?.disconnect();
       nativeResizeObserverRef.current?.disconnect();
@@ -4792,9 +4880,11 @@ export default function TerminalTTY({
       disposeXtermRuntime();
     };
   }, [
+    // NOTE: logViewportDiagnostic is intentionally omitted. It transitively
+    // depended on webglFallback.reason, so every WebGL fallback/recovery
+    // re-ran this effect and spawned a second xterm instance (TTY-DOUBLE).
     clearTimers,
     disposeXtermRuntime,
-    logViewportDiagnostic,
     requestedRendererMode,
     runtimePhase,
     shouldBootXterm,
@@ -5100,6 +5190,33 @@ export default function TerminalTTY({
         ) {
           refreshTerminalViewport(termRef.current);
         }
+        return;
+      }
+
+      if (String(reason).includes('workspace-created')) {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (
+          !hasConnectedOnceRef.current &&
+          containerRef.current &&
+          termRef.current &&
+          fitRef.current
+        ) {
+          const fitWorked = fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
+          maybeConnectAfterViewportFit(fitWorked);
+        }
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+          clearAtlas: false,
+        });
         return;
       }
 

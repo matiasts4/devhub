@@ -119,6 +119,7 @@ describe('scheduleTerminalLifecycleSync', () => {
   test('PANEL_LIFECYCLE_REASONS exposes lifecycle reason strings', () => {
     expect(PANEL_LIFECYCLE_REASONS).toEqual({
       SWARM_LAUNCH: 'swarm-launch',
+      WORKSPACE_CREATED: 'workspace-created',
       PANEL_CLOSED: 'panel-closed',
       PANEL_SPLIT: 'panel-split',
       PANEL_RELAUNCH: 'panel-relaunch',
@@ -128,8 +129,17 @@ describe('scheduleTerminalLifecycleSync', () => {
     });
   });
 
+  test('WORKSPACE_CREATED burst phases match workspace modal bootstrap contract', () => {
+    expect(LIFECYCLE_BURST_PHASES[PANEL_LIFECYCLE_REASONS.WORKSPACE_CREATED]).toEqual({
+      immediate: true,
+      raf: true,
+      delayMs: [],
+    });
+  });
+
   test('LIFECYCLE_BURST_PHASES defines presets for each lifecycle reason', () => {
     expect(LIFECYCLE_BURST_PHASES['swarm-launch'].delayMs).toEqual([120, 340]);
+    expect(LIFECYCLE_BURST_PHASES['workspace-created'].delayMs).toEqual([]);
     expect(LIFECYCLE_BURST_PHASES['panel-focus-toggle'].delayMs).toEqual([120, 340]);
     expect(LIFECYCLE_BURST_PHASES['panel-group-layout'].delayMs).toEqual([120, 340, 500]);
     expect(LIFECYCLE_BURST_PHASES['panel-closed'].delayMs).toEqual([120, 340]);

@@ -35,11 +35,12 @@ Si falta una capa en un camino, el crash reaparece aunque las demás estén bien
 
 ## Navegación
 
-| Doc                                                | Contenido                                                    |
-| -------------------------------------------------- | ------------------------------------------------------------ |
-| [01-crash-catalog.md](./01-crash-catalog.md)       | Firmas de crash, severidad, recuperabilidad, correlación TUI |
-| [02-coverage-matrix.md](./02-coverage-matrix.md)   | Tabla lifecycle × capas L1–L6                                |
-| [03-remediation-plan.md](./03-remediation-plan.md) | Fases, tareas, archivos, criterios de aceptación, tests      |
+| Doc                                                                                                    | Contenido                                                      |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [01-crash-catalog.md](./01-crash-catalog.md)                                                           | Firmas de crash, severidad, recuperabilidad, correlación TUI   |
+| [02-coverage-matrix.md](./02-coverage-matrix.md)                                                       | Tabla lifecycle × capas L1–L6                                  |
+| [03-remediation-plan.md](./03-remediation-plan.md)                                                     | Fases, tareas, archivos, criterios de aceptación, tests        |
+| [05-swarm-bootstrap-injection-debug-2026-06-13.md](./05-swarm-bootstrap-injection-debug-2026-06-13.md) | **Registro debug G-04** — hipótesis, fixes 1–8, evidencia logs |
 
 ---
 

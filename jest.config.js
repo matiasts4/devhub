@@ -6,6 +6,11 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^node:test$': '<rootDir>/tests/shims/node-test.js',
     '\\.module\\.css$': '<rootDir>/tests/jest.mocks/css-module.js',
+    // react-router-dom v7 ships a broken `main` field (dist/main.js missing)
+    // and uses `react-router/dom` subpath exports that Jest 27 cannot resolve.
+    // Force Jest to the real CJS entries so component/routing tests can import them.
+    '^react-router-dom$': '<rootDir>/node_modules/react-router-dom/dist/index.js',
+    '^react-router/dom$': '<rootDir>/node_modules/react-router/dist/development/dom-export.js',
   },
   modulePathIgnorePatterns: [
     '<rootDir>/.next/',

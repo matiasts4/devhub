@@ -317,6 +317,9 @@ function installTerminalRuntimeMocks() {
       setTimeout(() => {
         this.readyState = MockWebSocket.OPEN;
         this.onopen?.();
+        this.onmessage?.({
+          data: JSON.stringify({ type: 'ready', reattached: false, mode: 'shell' }),
+        });
       }, 0);
     }
   }
