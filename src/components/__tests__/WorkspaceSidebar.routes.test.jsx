@@ -131,7 +131,7 @@ describe('WorkspaceSidebar — settings route link', () => {
     planning_status: 'completed',
   };
 
-  test('points the Ajustes nav link to the canonical settings appearance route', async () => {
+  test('points the Ajustes nav link to the canonical /ajustes route', async () => {
     const WorkspaceSidebar = require('../WorkspaceSidebar').default;
 
     rendered = await renderComponent(WorkspaceSidebar, {
@@ -140,14 +140,14 @@ describe('WorkspaceSidebar — settings route link', () => {
       onToggleCollapse: jest.fn(),
     });
 
-    const settingsLink = rendered.container.querySelector('[data-testid="ws-nav-settings"]');
-    expect(settingsLink).toBeTruthy();
-    expect(settingsLink.getAttribute('href')).toBe('/project/proj-42/settings/appearance');
+    const ajustesLink = rendered.container.querySelector('[data-testid="ws-nav-ajustes"]');
+    expect(ajustesLink).toBeTruthy();
+    expect(ajustesLink.getAttribute('href')).toBe('/project/proj-42/ajustes');
   });
 
-  test('marks the settings link active on any /settings sub-route', async () => {
+  test('marks the Ajustes link active when the /ajustes route is current', async () => {
     const routerMock = require('react-router-dom');
-    routerMock.__setLocation('/project/proj-42/settings/account');
+    routerMock.__setLocation('/project/proj-42/ajustes');
 
     const WorkspaceSidebar = require('../WorkspaceSidebar').default;
     rendered = await renderComponent(WorkspaceSidebar, {
@@ -156,11 +156,11 @@ describe('WorkspaceSidebar — settings route link', () => {
       onToggleCollapse: jest.fn(),
     });
 
-    const settingsLink = rendered.container.querySelector('[data-testid="ws-nav-settings"]');
+    const ajustesLink = rendered.container.querySelector('[data-testid="ws-nav-ajustes"]');
     const dashboardLink = rendered.container.querySelector('[data-testid="ws-nav-dashboard"]');
 
-    expect(settingsLink).toBeTruthy();
-    expect(settingsLink.getAttribute('aria-current')).toBe('page');
+    expect(ajustesLink).toBeTruthy();
+    expect(ajustesLink.getAttribute('aria-current')).toBe('page');
     expect(dashboardLink).toBeTruthy();
     expect(dashboardLink.getAttribute('aria-current')).toBeNull();
   });

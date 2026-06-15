@@ -54,8 +54,8 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
   const navigate = useNavigate();
   const { projectId } = useParams();
   const accountSettingsPath = projectId
-    ? `/project/${projectId}/settings/account`
-    : '/settings/account';
+    ? `/project/${projectId}/ajustes`
+    : '/ajustes';
 
   // Modal Auth States
   const [showAuthModal, setShowAuthModal] = useState(false);

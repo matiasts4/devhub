@@ -26,10 +26,6 @@ import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
-import SettingsLayoutRouter from './components/settings/SettingsLayoutRouter';
-import AppearancePage from './app/settings/appearance/page';
-import AccountPage from './app/settings/account/page';
-import LLMProvidersPage from './app/settings/llm-providers/page';
 import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
@@ -408,14 +404,7 @@ function App() {
               <Route path="roadmap" element={<Roadmap />} />
               <Route path="historial" element={<Historial />} />
               <Route path="conexiones" element={<Conexiones />} />
-              <Route path="settings/*" element={<SettingsLayoutRouter />}>
-                <Route index element={<Navigate to="appearance" replace />} />
-                <Route path="appearance" element={<AppearancePage />} />
-                <Route path="account" element={<AccountPage />} />
-                <Route path="llm-providers" element={<LLMProvidersPage />} />
-                <Route path="*" element={<Navigate to="appearance" replace />} />
-              </Route>
-              <Route path="ajustes" element={<Navigate to="../settings/appearance" replace />} />
+              <Route path="ajustes" element={<Ajustes />} />
               <Route path="swarm" element={<SwarmControl />} />
               <Route path="telegram" element={<TelegramMonitor />} />
               <Route path="agenthub" element={<LegacyAgentHubRedirect />} />

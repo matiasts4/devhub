@@ -58,23 +58,23 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: PR-2 — Foundation (RED test rewrites)
 
-- [ ] 5.1 RED: rewrite `src/__tests__/App.routes.test.jsx` to assert `<Route path="ajustes" element={<Ajustes />} />` and no `settings/*` / `SettingsLayoutRouter` / `AppearancePage` imports
-- [ ] 5.2 RED: rewrite `tests/e2e/09_settings_morphology.spec.ts` to nav `/ajustes`, testid prefix `ajustes-morphology-option-*`, default radius `'0'`, drop legacy redirect test
-- [ ] 5.3 RED: update `tests/unit/terminal-renderer-default-settings-ui.test.js` line 25 to scan `src/views/Ajustes.jsx` instead of `page.jsx`
+- [x] 5.1 RED: rewrite `src/__tests__/App.routes.test.jsx` to assert `<Route path="ajustes" element={<Ajustes />} />` and no `settings/*` / `SettingsLayoutRouter` / `AppearancePage` imports
+- [x] 5.2 RED: rewrite `tests/e2e/09_settings_morphology.spec.ts` to nav `/ajustes`, testid prefix `ajustes-morphology-option-*`, default radius `'0'`, drop legacy redirect test
+- [x] 5.3 RED: update `tests/unit/terminal-renderer-default-settings-ui.test.js` line 25 to scan `src/views/Ajustes.jsx` instead of `page.jsx`
 
 ## Phase 6: PR-2 — Implementation (routing revert + dead-code removal)
 
-- [ ] 6.1 `src/App.js`: drop `settings/*` route block (411-417), drop 4 dead imports (29-30, 35-37), replace `ajustes → ../settings/appearance` redirect (418) with `<Route path="ajustes" element={<Ajustes />} />`
-- [ ] 6.2 `src/components/WorkspaceSidebar.jsx`: line 213 href → `/project/${id}/ajustes`; line 182 active check `'/settings'` → `'/ajustes'`
-- [ ] 6.3 `src/components/UserProfile.jsx`: lines 57-58 account nav → `/project/${projectId}/ajustes`
-- [ ] 6.4 Delete `src/app/settings/appearance/page.jsx` (1106 LOC)
-- [ ] 6.5 Delete `src/app/settings/appearance/__tests__/page.test.jsx`
-- [ ] 6.6 Delete `src/components/settings/SettingsLayoutRouter.jsx` (210 LOC)
-- [ ] 6.7 Delete `src/components/settings/SettingsLayoutRouter.test.jsx`
-- [ ] 6.8 Delete `src/components/settings/AppearanceSection.jsx` (372 LOC)
-- [ ] 6.9 Delete `src/app/settings/layout.jsx` (203 LOC)
-- [ ] 6.10 Delete `src/app/settings/account/page.jsx` (18 LOC) + `__tests__/page.test.jsx`
-- [ ] 6.11 Delete `src/app/settings/llm-providers/page.jsx` (7 LOC) + `__tests__/page.test.jsx` (if present)
+- [x] 6.1 `src/App.js`: drop `settings/*` route block (411-417), drop 4 dead imports (29-30, 35-37), replace `ajustes → ../settings/appearance` redirect (418) with `<Route path="ajustes" element={<Ajustes />} />`
+- [x] 6.2 `src/components/WorkspaceSidebar.jsx`: line 213 href → `/project/${id}/ajustes`; line 182 active check `'/settings'` → `'/ajustes'`
+- [x] 6.3 `src/components/UserProfile.jsx`: lines 57-58 account nav → `/project/${projectId}/ajustes`
+- [x] 6.4 Delete `src/app/settings/appearance/page.jsx` (1106 LOC)
+- [x] 6.5 Delete `src/app/settings/appearance/__tests__/page.test.jsx`
+- [x] 6.6 Delete `src/components/settings/SettingsLayoutRouter.jsx` (210 LOC)
+- [x] 6.7 Delete `src/components/settings/SettingsLayoutRouter.test.jsx`
+- [x] 6.8 Delete `src/components/settings/AppearanceSection.jsx` (372 LOC)
+- [x] 6.9 Delete `src/app/settings/layout.jsx` (203 LOC)
+- [x] 6.10 Delete `src/app/settings/account/page.jsx` (18 LOC) + `__tests__/page.test.jsx`
+- [x] 6.11 Delete `src/app/settings/llm-providers/page.jsx` (7 LOC) + `__tests__/page.test.jsx` (if present)
 
 ## Phase 7: PR-2 — Spec archive + skill
 
