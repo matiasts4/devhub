@@ -6,12 +6,14 @@
  *   - TRD-4: Surface xterm-webgl as pre-selected option; vte-experimental and
  *     xterm remain selectable; subtitle references the WebGL renderer.
  *
- * The existing `page.test.jsx` exercises the full Appearance page and pulls
- * in unrelated DOM chrome. This test is a focused contract for the
- * renderer select + badge + subtitle copy, kept independent of the rest
- * of the page chrome so it does not depend on the wider theme mocks.
+ * Source of truth is now `src/views/Ajustes.jsx` (the Apariencia tab) — the
+ * deprecated `src/app/settings/appearance/page.jsx` was removed in PR-2 of
+ * `ajustes-cursor-restyle`. PR-1 ported the terminal sub-controls into
+ * Ajustes behind the `devhub:terminal-settings-in-ajustes` localStorage
+ * flag (default off in production, but the renderer marker strings live in
+ * the source regardless of flag state).
  *
- * The assertions scan the page source as a string. This is a coarse but
+ * The assertions scan Ajustes.jsx source as a string. This is a coarse but
  * deterministic regression net — it would fail if the production code
  * stops exposing xterm-webgl as the pre-selected option, removes the
  * vte-experimental opt-in, or reverts the subtitle copy to the GTK/VTE
@@ -22,7 +24,7 @@ const fs = require('fs');
 const path = require('path');
 
 const pageSource = fs.readFileSync(
-  path.resolve(__dirname, '../../src/app/settings/appearance/page.jsx'),
+  path.resolve(__dirname, '../../src/views/Ajustes.jsx'),
   'utf8'
 );
 
@@ -33,22 +35,24 @@ describe('Settings Appearance — terminal renderer select (terminal-renderer-de
     expect(pageSource).toMatch(/value="vte-experimental"/);
     expect(pageSource).toMatch(/value="xterm"/);
 
-    // 2. The useState initial defaults to 'xterm-webgl' (fresh user, no stored value).
-    expect(pageSource).toMatch(/useState\(['"]xterm-webgl['"]\)/);
+    // 2. The useState initializer falls back to 'xterm-webgl' for fresh users.
+    //    Ajustes uses the function form (SSR-safe), so the assertion matches
+    //    either direct `useState('xterm-webgl')` or `useState(() => ... return 'xterm-webgl' ...)`.
+    expect(pageSource).toMatch(/useState\((['"]xterm-webgl['"]|\(\)\s*=>\s*\{[\s\S]{0,200}return\s+['"]xterm-webgl['"])/);
   });
 
   test('TRD-S9: subtitle copy references the WebGL renderer (not GTK/VTE as the default)', () => {
     // The new subtitle must mention the WebGL renderer as the default.
-    expect(pageSource).toMatch(/xterm-webgl/);
+    expect(pageSource).toMatch(/xterm-webgl is the only active renderer/);
     // The OLD subtitle phrasing "GTK VTE stays as the preferred Linux/Tauri path"
     // must be gone.
     expect(pageSource).not.toMatch(/GTK VTE stays as the preferred Linux\/Tauri path/);
   });
 
-  test('Active badge label is driven by the renderer mode and references xterm-webgl', () => {
-    // The badge rendering must look up the label by mode rather than hardcode
-    // a 'GTK VTE' or 'xterm' branch.
-    expect(pageSource).toMatch(/terminalRendererMode === ['"]vte-experimental['"]/);
-    expect(pageSource).toMatch(/xterm-webgl/);
+  test('Active option label exposes vte-experimental and references xterm-webgl', () => {
+    // The label for the legacy opt-in is present in the <option> text,
+    // and the default is still xterm-webgl.
+    expect(pageSource).toMatch(/vte-experimental \(legacy Linux\/Tauri opt-in\)/);
+    expect(pageSource).toMatch(/xterm-webgl \(always active\)/);
   });
 });
