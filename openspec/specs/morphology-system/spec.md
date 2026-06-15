@@ -133,9 +133,9 @@ The system MUST show a palette sub-picker (Mineral / Cobalt / Alloy) in the Appe
 
 ---
 
-### Requirement: All existing morphologies unchanged
+### Requirement: All existing morphologies unchanged (default-radius exception)
 
-The system MUST NOT modify any token values for Default, Brutalist Stage, Aura, or Switchyard morphology blocks. Each MUST produce the same visual output as before any later morphology was added. (Originally scoped to Default, Brutalist Stage, and Aura for the Switchyard integration; broadened on 2026-06-14 to include Switchyard for the `cursor` integration.)
+The system MUST NOT modify any token values for Brutalist Stage, Aura, Switchyard, or Cursor morphology blocks. Default MUST NOT modify any token EXCEPT `--chrome-radius-panel`, which it MAY set to `0` to preserve the legacy Ajustes square look under default. (Originally scoped to Default, Brutalist Stage, and Aura for the Switchyard integration; broadened on 2026-06-14 to include Switchyard for the `cursor` integration; default-radius exception added on 2026-06-15 by `ajustes-cursor-restyle` so the legacy Ajustes square geometry is preserved under default.)
 
 #### Scenario: Brutalist Stage radius unchanged
 
@@ -144,11 +144,12 @@ The system MUST NOT modify any token values for Default, Brutalist Stage, Aura, 
 - THEN `--chrome-radius-panel` equals `0`
 - AND `--chrome-shadow-panel` equals `4px 4px 0 0 var(--border-strong)`
 
-#### Scenario: Default morphology radius unchanged
+#### Scenario: Default radius is 0 by design (R6 amendment)
 
-- GIVEN Default was existing before any later morphology was added
-- WHEN the test runs or user selects Default
-- THEN `--chrome-radius-panel` equals `1rem`
+- GIVEN Default is the active morphology
+- WHEN the browser resolves `--chrome-radius-panel`
+- THEN it equals `0`
+- AND all other default-morphology tokens remain at pre-`cursor` values
 
 #### Scenario: Switchyard morphology radius and accent unchanged
 
@@ -161,11 +162,11 @@ The system MUST NOT modify any token values for Default, Brutalist Stage, Aura, 
 
 ### Requirement: Shared primitives consume chrome tokens or morphology factories
 
-Card, Input, Switch, Dialog, Select, and Button MUST derive chrome geometry (border radius, border width, shadow) from `--chrome-*` CSS variables or from `src/chrome/morphology.js` factory functions. The `ChromeSurface` component and `chromeSurfaceStyle()` helper are the canonical surface factory; `panelStyle`, `btnPrimaryStyle`, and related helpers are the canonical control/button factories.
+Card, Input, Switch, Dialog, Select, Button, AND the Ajustes settings page (`src/views/Ajustes.jsx`, all 7 tabs) MUST derive chrome geometry (border radius, border width, shadow) from `--chrome-*` CSS variables or from `src/chrome/morphology.js` factory functions. The Ajustes page MUST NOT ship `borderRadius: 0` overrides or `4px 4px 0 0 var(--border-strong)` shadows on chrome surfaces. The three local helpers `getSettingsShellStyle`, `getSettingsControlStyle`, `getSettingsAccentOptionStyle` (deleted on 2026-06-15 by `ajustes-cursor-restyle`) are forbidden; their call sites MUST use `chromeSurfaceStyle()` / `panelStyle()` / `pillStyle()` / `btnPrimaryStyle()` directly.
 
-**Files**: `src/chrome/morphology.js`, `src/components/ui/chrome-surface.jsx`, `src/components/ui/button.jsx`, `src/components/ui/card.jsx`, `src/components/ui/input.jsx`, `src/components/ui/switch.jsx`, `src/components/ui/dialog.jsx`, `src/components/ui/select.jsx`
+**Files**: `src/chrome/morphology.js`, `src/components/ui/chrome-surface.jsx`, `src/components/ui/button.jsx`, `src/components/ui/card.jsx`, `src/components/ui/input.jsx`, `src/components/ui/switch.jsx`, `src/components/ui/dialog.jsx`, `src/components/ui/select.jsx`, `src/views/Ajustes.jsx`
 
-> **Partial coverage note (2026-06-14)**: `Button` consumes chrome tokens via `morphology.js` factories. `Card` and `Input` (shadcn primitives) still use Tailwind `rounded-xl` / `rounded-md` directly. This is a pre-existing gap, not introduced by `cursor-morphology`. Tracked for a future change.
+> **Partial coverage note (2026-06-15)**: Ajustes now consumes chrome tokens directly. `Button` consumes via `morphology.js` factories. `Card` and `Input` (shadcn primitives) still use Tailwind `rounded-xl` / `rounded-md`. Pre-existing gap, tracked separately.
 
 #### Scenario: Radius follows morphology on shared primitives
 
@@ -173,6 +174,13 @@ Card, Input, Switch, Dialog, Select, and Button MUST derive chrome geometry (bor
 - WHEN Card and Button render
 - THEN Card radius resolves from `--chrome-radius-panel`
 - AND Button radius resolves from `--chrome-radius-control`
+
+#### Scenario: Ajustes Apariencia honors cursor chrome
+
+- GIVEN `data-morphology='cursor'` is active
+- WHEN Apariencia panel renders
+- THEN `--chrome-radius-panel` is `18px`
+- AND Apariencia's computed `border-radius` is `18px`
 
 ---
 

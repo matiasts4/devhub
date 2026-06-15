@@ -66,19 +66,55 @@ The system MUST preserve a stored per-panel or per-user renderer preference acro
 - WHEN the new panels are mounted
 - THEN each new panel uses `requestedRendererMode: 'xterm-webgl'`
 
-### Requirement: TRD-4 — Settings UI Surfaces the New Default
+### Requirement: TRD-4 — Settings UI Surfaces the New Default (Ajustes Apariencia)
 
-The system MUST surface `xterm-webgl` as the pre-selected option in Settings → Appearance → Terminal renderer, and MUST update the subtitle copy to reference the WebGL renderer. Both `vte-experimental` and `xterm` MUST remain selectable for explicit opt-in.
+The system MUST surface `xterm-webgl` as the pre-selected option in **Ajustes → Apariencia → Terminal renderer** (`src/views/Ajustes.jsx` Apariencia tab), and MUST update the subtitle copy to reference the WebGL renderer. `vte-experimental` and `xterm` MUST remain selectable. The previous location at `src/app/settings/appearance/page.jsx` is REMOVED on 2026-06-15 by the `ajustes-cursor-restyle` change.
 
-#### Scenario: TRD-S8 — Appearance page pre-selects the new default
+#### Scenario: TRD-S8 — Apariencia pre-selects the new default
 
-- GIVEN the user opens Settings → Appearance
-- WHEN the renderer default selector renders
-- THEN `'xterm-webgl'` is the pre-selected option
-- AND `'vte-experimental'` and `'xterm'` remain available as explicit opt-ins
+- GIVEN the user opens Ajustes → Apariencia
+- WHEN the renderer selector renders
+- THEN `'xterm-webgl'` is pre-selected
+- AND `'vte-experimental'` and `'xterm'` remain available
 
 #### Scenario: TRD-S9 — Subtitle copy references the WebGL renderer
 
-- GIVEN the Appearance page is open
+- GIVEN the Apariencia tab is open in Ajustes
 - WHEN the renderer selector renders
 - THEN the subtitle copy references the WebGL renderer (and not GTK/VTE) as the default
+
+### Requirement: TRD-5 — Terminal Sub-Controls in Apariencia
+
+The system MUST expose and persist the following terminal sub-controls in **Ajustes → Apariencia**, gated behind `localStorage['devhub:terminal-settings-in-ajustes'] === 'true'` (default off). Renderer mode is covered by TRD-4.
+
+- **Typography**: `TERMINAL_FONT_FAMILY_PRESETS` family select + fontSize / fontWeight / fontWeightBold / lineHeight / letterSpacing sliders/selects + Restablecer. Persists via `setTerminalTypography`; dispatches `devhub:terminal-typography-changed` so open `TerminalTTY` instances update live.
+- **Header style**: 4-card grid via `getTerminalHeaderStyleOptions()` (`dragon`, `minimal`, `gradient`, `plain`). Persists via `setTerminalHeaderStyle`; writes `data-terminal-header-style` on the active `[data-terminal-container]`.
+- **Accent bar**: toggle (visible/hidden). Persists via `setStoredTerminalAccentBarVisible`; writes `data-terminal-accent-bar` on the active `[data-terminal-container]`.
+- **Restore policies**: 3 `<select>` rows (opencode, generic, swarm) bound to `RESTORE_POLICY.{AUTO,MANUAL,OFF}`. Persists via `writeTerminalRestorePreferences`.
+- **Zoom**: `+` / `−` / reset buttons + track bar. Persists via `setZoom` / `getStoredZoom`.
+
+The feature flag MUST gate the entire sub-section as a unit; the Apariencia tab MUST remain visually identical to today when the flag is off.
+
+#### Scenario: TRD-S10 — Flag off: no terminal sub-section
+
+- GIVEN `localStorage['devhub:terminal-settings-in-ajustes']` is absent or `!== 'true'`
+- WHEN the user opens Ajustes → Apariencia
+- THEN no `data-testid="settings-terminal-renderer-select"` / `terminal-header-style-*` / `terminal-accent-bar-toggle` / `restore-policy-*` / `settings-zoom` element renders
+
+#### Scenario: TRD-S11 — Flag on: all six sub-controls render
+
+- GIVEN `localStorage['devhub:terminal-settings-in-ajustes'] === 'true'`
+- WHEN the user opens Ajustes → Apariencia
+- THEN the renderer `<select data-testid="settings-terminal-renderer-select">` renders
+- AND the typography family `<select>` + size/weight/lineHeight/letterSpacing controls render
+- AND the 4 header-style cards render with `data-testid="terminal-header-style-{dragon,minimal,gradient,plain}"`
+- AND the accent-bar toggle renders with `data-testid="terminal-accent-bar-toggle"`
+- AND the 3 restore-policy selects render with `data-testid="restore-policy-{opencode,generic,swarm}"`
+- AND the zoom container `[data-testid="settings-zoom"]` renders with −, +, reset buttons
+
+#### Scenario: TRD-S12 — All six sub-controls persist
+
+- GIVEN the user toggles the accent bar off in Apariencia
+- WHEN the page reloads
+- THEN `getStoredTerminalAccentBarVisible()` returns `false`
+- AND the persistence contracts for typography, header style, restore policies, zoom, and renderer remain unchanged from before the port
