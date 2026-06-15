@@ -93,6 +93,7 @@ jest.mock('@/lib/theme/themes', () => ({
 const themeModule = require('@/lib/theme/themes');
 const ajustesModule = require('../Ajustes');
 const Ajustes = ajustesModule.default;
+const { chromeSurfaceStyle } = require('@/components/ui/chrome-surface');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -186,11 +187,19 @@ describe('Ajustes appearance tab — interactive controls', () => {
     ).toBeNull();
 
     // The shell still routes chrome through the shared morphology surface factory.
-    const appearanceShellStyle = ajustesModule.getSettingsShellStyle({ emphasized: true });
+    // After PR-1, the local helpers are deleted; the shell must derive its
+    // style from chromeSurfaceStyle({ surface: 'panel', emphasized: true })
+    // so the morphology token layer is the single source of truth.
+    const appearanceShellStyle = chromeSurfaceStyle({ surface: 'panel', emphasized: true });
     expect(appearanceShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
     expect(appearanceShellStyle.background).toContain('var(--chrome-panel-fill)');
     expect(appearanceShellStyle.borderColor).toBe('var(--chrome-border-color)');
     expect(appearanceShellStyle.background).not.toContain('var(--surface-card)');
+
+    // The three deleted helpers MUST no longer be exported.
+    expect(ajustesModule.getSettingsShellStyle).toBeUndefined();
+    expect(ajustesModule.getSettingsControlStyle).toBeUndefined();
+    expect(ajustesModule.getSettingsAccentOptionStyle).toBeUndefined();
   });
 
   test('accent selection invokes setAccent without broken settings navigation', async () => {
