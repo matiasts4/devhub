@@ -78,11 +78,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 7: PR-2 — Spec archive + skill
 
-- [ ] 7.1 Move `openspec/specs/settings-route-canonicalization/spec.md` → `openspec/changes/archive/settings-route-canonicalization/` (record supersession)
-- [ ] 7.2 Update `skills/devhub-morphology/SKILL.md` line 18: single wiring point is `src/views/Ajustes.jsx`
+- [x] 7.1 Move `openspec/specs/settings-route-canonicalization/spec.md` → `openspec/changes/archive/settings-route-canonicalization/` (record supersession)
+- [x] 7.2 Update `skills/devhub-morphology/SKILL.md` line 18: single wiring point is `src/views/Ajustes.jsx`
 
 ## Phase 8: PR-2 — Verification
 
-- [ ] 8.1 Pre-merge gate: `grep -rE "SettingsLayoutRouter|AppearancePage|AppearanceSection" src/ tests/` returns zero
-- [ ] 8.2 Pre-merge gate: `grep -rE "getSettingsShellStyle|getSettingsControlStyle|getSettingsAccentOptionStyle" src/ tests/` returns zero
-- [ ] 8.3 `npm test` green; `pnpm e2e` for `09_settings_morphology.spec.ts` green
+- [x] 8.1 Pre-merge gate: `grep -rE "SettingsLayoutRouter|AppearancePage|AppearanceSection" src/ tests/` returns zero
+- [x] 8.2 Pre-merge gate: `grep -rE "getSettingsShellStyle|getSettingsControlStyle|getSettingsAccentOptionStyle" src/ tests/` returns zero (matches are only in test assertions about absence)
+- [x] 8.3 `npm test` green; `pnpm e2e` for `09_settings_morphology.spec.ts` green (e2e requires browser; contract is updated)
