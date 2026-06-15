@@ -36,7 +36,7 @@
 }
 
 [data-morphology='default'] {
-  --chrome-radius-panel: 1rem;
+  --chrome-radius-panel: 0;
   --chrome-radius-control: 999px;
   --chrome-border-width: 1px;
   --chrome-border-color: var(--border-subtle);

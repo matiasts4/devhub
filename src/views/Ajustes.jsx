@@ -27,6 +27,9 @@ import {
   Server,
   SlidersHorizontal,
   Power,
+  Minus,
+  Plus,
+  RotateCcw,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { toast } from 'sonner';
@@ -35,10 +38,18 @@ import {
   getStoredAccent,
   getStoredMorphology,
   getStoredTheme,
+  getStoredTerminalAccentBarVisible,
+  getStoredTerminalHeaderStyle,
+  getStoredZoom,
+  getTerminalHeaderStyleOptions,
   MORPHOLOGY_OPTIONS,
   setAccent,
   setMorphology,
+  setStoredTerminalAccentBarVisible,
+  setTerminalHeaderStyle,
   setTheme,
+  setZoom,
+  TERMINAL_HEADER_STYLES,
   THEMES,
   THEME_OPTIONS,
 } from '@/lib/theme/themes';
@@ -59,6 +70,24 @@ import {
   BarChart3,
   Palette as ProjectPalette,
 } from 'lucide-react';
+import {
+  readTerminalRendererDefaultModeSetting,
+  writeTerminalRendererDefaultModeSetting,
+} from '@/components/terminal/terminalRendererPreferences';
+import {
+  applyTerminalTypographyToDocument,
+  findPresetByValue,
+  getStoredTerminalTypography,
+  resetTerminalTypography,
+  resolveTerminalTypography,
+  setTerminalTypography,
+  TERMINAL_FONT_FAMILY_PRESETS,
+} from '@/components/terminal/terminalTypographyPreferences';
+import {
+  RESTORE_POLICY,
+  readTerminalRestorePreferences,
+  writeTerminalRestorePreferences,
+} from '@/lib/terminal/restorePreferences';
 import { getWorkspaceBreadcrumbStyle, getWorkspacePageContentStyle } from './workspacePageChrome';
 import {
   panelStyle,
@@ -162,40 +191,491 @@ const THEME_PREVIEW_BY_ID = {
   },
 };
 
-export function getSettingsShellStyle({ emphasized = false } = {}) {
-  return {
-    ...chromeSurfaceStyle({ surface: 'panel', emphasized }),
-    background: emphasized
-      ? 'linear-gradient(180deg, var(--chrome-panel-fill-emphasis), var(--chrome-panel-fill))'
-      : 'var(--chrome-panel-fill)',
-    borderRadius: 0,
-  };
+/* ── Feature flag — terminal sub-section in Ajustes ──────────────────── */
+
+const TERMINAL_SETTINGS_FLAG_KEY = 'devhub:terminal-settings-in-ajustes';
+
+function useTerminalSettingsFlag() {
+  const [enabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(TERMINAL_SETTINGS_FLAG_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  return enabled;
 }
 
-export function getSettingsControlStyle({ emphasized = false, tone = 'neutral' } = {}) {
-  return {
-    ...chromeSurfaceStyle({ surface: 'pill', emphasized, tone }),
-    background: emphasized ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-control-fill)',
-    borderRadius: 0,
-  };
-}
+/* ── Terminal sub-section (port from src/app/settings/appearance/page.jsx) ─ */
 
-export function getSettingsAccentOptionStyle(isActive, color) {
-  return {
-    ...chromeSurfaceStyle({
-      surface: 'panel',
-      emphasized: isActive,
-      tone: isActive ? 'accent' : 'neutral',
-    }),
-    background: isActive ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
-    borderColor: isActive
-      ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'
-      : 'var(--chrome-border-color)',
-    boxShadow: isActive ? 'var(--chrome-shadow-panel)' : '6px 6px 0 rgba(1, 4, 9, 0.18)',
-    transform: isActive ? 'translate(-2px, -2px)' : 'translate(0, 0)',
-    borderRadius: 0,
-    '--settings-accent-preview': color ?? 'var(--accent-primary)',
+function TerminalSubSection() {
+  const [rendererMode, setRendererMode] = useState(() => {
+    if (typeof window === 'undefined') return 'xterm-webgl';
+    return readTerminalRendererDefaultModeSetting(window.localStorage);
+  });
+
+  const [headerStyle, setHeaderStyleState] = useState(() => getStoredTerminalHeaderStyle());
+  const headerStyleOptions = getTerminalHeaderStyleOptions();
+
+  const [accentBarVisible, setAccentBarVisibleState] = useState(() =>
+    getStoredTerminalAccentBarVisible()
+  );
+
+  const [restorePrefs, setRestorePrefsState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return {
+        opencode: RESTORE_POLICY.AUTO,
+        generic: RESTORE_POLICY.AUTO,
+        swarm: RESTORE_POLICY.AUTO,
+      };
+    }
+    return readTerminalRestorePreferences(window.localStorage);
+  });
+
+  const [zoom, setZoomState] = useState(() => getStoredZoom());
+
+  const [typography, setTypographyState] = useState(() => {
+    if (typeof window === 'undefined') return resolveTerminalTypography();
+    return getStoredTerminalTypography(window.localStorage);
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    applyTerminalTypographyToDocument(typography);
+  }, [typography]);
+
+  const handleRendererChange = (event) => {
+    const next = event.target.value;
+    if (typeof window !== 'undefined') {
+      writeTerminalRendererDefaultModeSetting(window.localStorage, next);
+    }
+    setRendererMode(next);
   };
+
+  const handleHeaderStyleChange = (styleId) => {
+    const normalized = setTerminalHeaderStyle(styleId);
+    setHeaderStyleState(normalized);
+    if (typeof window !== 'undefined') {
+      const container = document.querySelector('[data-terminal-container]');
+      if (container) {
+        container.setAttribute('data-terminal-header-style', normalized);
+        container.setAttribute('data-terminal-accent-bar', String(accentBarVisible));
+      }
+    }
+  };
+
+  const handleAccentBarToggle = () => {
+    const next = !accentBarVisible;
+    setStoredTerminalAccentBarVisible(next);
+    setAccentBarVisibleState(next);
+    if (typeof window !== 'undefined') {
+      const container = document.querySelector('[data-terminal-container]');
+      if (container) {
+        container.setAttribute('data-terminal-accent-bar', String(next));
+      }
+    }
+  };
+
+  const handleRestorePolicyChange = (sessionType) => (event) => {
+    const next = event.target.value;
+    if (typeof window !== 'undefined') {
+      writeTerminalRestorePreferences(window.localStorage, { [sessionType]: next });
+    }
+    setRestorePrefsState((prev) => ({ ...prev, [sessionType]: next }));
+  };
+
+  const handleZoomChange = (newZoom) => {
+    const next = setZoom(newZoom);
+    setZoomState(next);
+  };
+
+  const commitTypography = (partial) => {
+    if (typeof window === 'undefined') return;
+    const next = setTerminalTypography(window.localStorage, partial);
+    setTypographyState(next);
+    applyTerminalTypographyToDocument(next);
+    window.dispatchEvent(
+      new CustomEvent('devhub:terminal-typography-changed', { detail: next })
+    );
+  };
+
+  const handleSelectTerminalFontFamily = (value) => {
+    const isKaliStyle =
+      value.includes('Noto Sans Mono') ||
+      value.includes('DejaVu Sans Mono') ||
+      value.includes('Liberation Mono') ||
+      value === TERMINAL_FONT_FAMILY_PRESETS[0]?.value;
+    const extra = isKaliStyle ? { fontWeight: '500', fontWeightBold: '800' } : {};
+    commitTypography({ fontFamily: value, ...extra });
+  };
+
+  const handleTypographyChange = (key) => (event) => {
+    let val = event?.target?.value;
+    if (key === 'fontSize' || key === 'lineHeight' || key === 'letterSpacing') {
+      val = parseFloat(val);
+    }
+    commitTypography({ [key]: val });
+  };
+
+  const handleResetTypography = () => {
+    if (typeof window === 'undefined') return;
+    const next = resetTerminalTypography(window.localStorage);
+    setTypographyState(next);
+    applyTerminalTypographyToDocument(next);
+    window.dispatchEvent(
+      new CustomEvent('devhub:terminal-typography-changed', { detail: next })
+    );
+  };
+
+  return (
+    <div
+      className="border-t px-6 py-5 space-y-6"
+      style={{ borderColor: 'var(--border-subtle)' }}
+    >
+      <div>
+        <h4
+          className="font-mono text-sm font-semibold"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          Terminal renderer
+        </h4>
+        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          xterm-webgl is the only active renderer (WebGL-accelerated, works on all platforms
+          including Windows).
+        </p>
+        <label className="flex flex-col gap-2 max-w-sm mt-3">
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            Default renderer
+          </span>
+          <select
+            data-testid="settings-terminal-renderer-select"
+            value={rendererMode}
+            onChange={handleRendererChange}
+            className="h-11 rounded-xl border px-3 text-sm"
+            style={{
+              ...chromeSurfaceStyle({ surface: 'pill' }),
+              color: 'var(--text-primary)',
+            }}
+          >
+            <option value="xterm-webgl">xterm-webgl (always active)</option>
+            <option value="vte-experimental">vte-experimental (legacy Linux/Tauri opt-in)</option>
+            <option value="xterm">xterm (DOM fallback)</option>
+          </select>
+        </label>
+      </div>
+
+      <div>
+        <h4
+          className="font-mono text-sm font-semibold"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          Header style
+        </h4>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+          {headerStyleOptions.map((option) => {
+            const isActive = option.id === headerStyle;
+            return (
+              <button
+                key={option.id}
+                data-testid={`terminal-header-style-${option.id}`}
+                type="button"
+                onClick={() => handleHeaderStyleChange(option.id)}
+                className="group text-left rounded-xl border p-3 transition-all"
+                style={chromeSurfaceStyle({
+                  surface: 'panel',
+                  emphasized: isActive,
+                  tone: isActive ? 'accent' : 'neutral',
+                })}
+              >
+                <p
+                  className="text-xs font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {option.label}
+                </p>
+                <p
+                  className="text-[10px] mt-0.5 leading-relaxed"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {option.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between max-w-sm">
+        <div>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            Accent bar
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            Show colored bar below terminal header.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={accentBarVisible}
+          data-testid="terminal-accent-bar-toggle"
+          onClick={handleAccentBarToggle}
+          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+          style={{
+            background: accentBarVisible ? 'var(--accent-primary)' : 'var(--surface-muted)',
+          }}
+        >
+          <span
+            className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+            style={{ transform: accentBarVisible ? 'translateX(22px)' : 'translateX(2px)' }}
+          />
+        </button>
+      </div>
+
+      <div>
+        <h4
+          className="font-mono text-sm font-semibold"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          Terminal restore
+        </h4>
+        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          Choose how terminals are restored at startup.
+        </p>
+        <div className="space-y-3 mt-3">
+          {[
+            { key: 'opencode', label: 'OpenCode' },
+            { key: 'generic', label: 'Shell Genérico' },
+            { key: 'swarm', label: 'Swarm' },
+          ].map(({ key, label }) => (
+            <div key={key} className="flex items-center justify-between max-w-sm">
+              <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {label}
+              </label>
+              <select
+                data-testid={`restore-policy-${key}`}
+                value={restorePrefs[key]}
+                onChange={handleRestorePolicyChange(key)}
+                className="h-11 rounded-xl border px-3 text-sm"
+                style={{
+                  ...chromeSurfaceStyle({ surface: 'pill' }),
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <option value={RESTORE_POLICY.AUTO}>Automático</option>
+                <option value={RESTORE_POLICY.MANUAL}>Manual</option>
+                <option value={RESTORE_POLICY.OFF}>Desactivado</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div data-testid="settings-zoom">
+        <h4
+          className="font-mono text-sm font-semibold"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          Zoom Level
+        </h4>
+        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          Adjust the overall size of the interface (Ctrl +/-).
+        </p>
+        <div className="flex items-center gap-3 mt-3">
+          <button
+            onClick={() => handleZoomChange(zoom - 0.1)}
+            disabled={zoom <= 0.5}
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            style={chromeSurfaceStyle({ surface: 'pill' })}
+            aria-label="zoom-out"
+          >
+            <Minus aria-hidden="true" className="w-4 h-4" />
+          </button>
+          <div
+            className="flex-1 h-2 rounded-full relative overflow-hidden"
+            style={{ ...chromeSurfaceStyle({ surface: 'pill' }), minHeight: '0.5rem', padding: 0 }}
+          >
+            <div
+              className="absolute inset-y-0 left-0 transition-all duration-300"
+              style={{
+                background: 'var(--accent-primary)',
+                width: `${((zoom - 0.5) / 1.5) * 100}%`,
+              }}
+            />
+          </div>
+          <button
+            onClick={() => handleZoomChange(zoom + 0.1)}
+            disabled={zoom >= 2}
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            style={chromeSurfaceStyle({ surface: 'pill' })}
+            aria-label="zoom-in"
+          >
+            <Plus aria-hidden="true" className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleZoomChange(1)}
+            title="Reset to 100%"
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all"
+            style={chromeSurfaceStyle({ surface: 'pill' })}
+            aria-label="zoom-reset"
+          >
+            <RotateCcw aria-hidden="true" className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h4
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Tipografía
+            </h4>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              Fuente mono, grosor, interlineado y espaciado de letra para todas las terminales
+              xterm-webgl.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleResetTypography}
+            className="text-[10px] px-2 py-1 rounded border"
+            style={chromeSurfaceStyle({ surface: 'pill' })}
+            title="Restablecer tipografía de terminal"
+          >
+            Restablecer
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <label
+            className="text-xs font-medium block mb-1.5"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Familia de fuente
+          </label>
+          <select
+            value={typography.fontFamily}
+            onChange={(e) => handleSelectTerminalFontFamily(e.target.value)}
+            className="w-full h-10 rounded-xl border px-3 text-sm"
+            style={chromeSurfaceStyle({ surface: 'pill' })}
+          >
+            {TERMINAL_FONT_FAMILY_PRESETS.map((p) => (
+              <option key={p.id} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+            {!findPresetByValue(typography.fontFamily) && (
+              <option value={typography.fontFamily}>Personalizada (actual)</option>
+            )}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div>
+            <label
+              className="text-xs font-medium block mb-1"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Tamaño ({typography.fontSize}px)
+            </label>
+            <input
+              type="range"
+              min={8}
+              max={24}
+              step={1}
+              value={typography.fontSize}
+              onChange={handleTypographyChange('fontSize')}
+              className="w-full"
+              style={{ accentColor: 'var(--accent-primary)' }}
+            />
+          </div>
+          <div>
+            <label
+              className="text-xs font-medium block mb-1"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Grosor normal
+            </label>
+            <select
+              value={String(typography.fontWeight)}
+              onChange={handleTypographyChange('fontWeight')}
+              className="w-full h-9 rounded-lg border px-2 text-sm"
+              style={chromeSurfaceStyle({ surface: 'pill' })}
+            >
+              {[300, 400, 500, 600, 700].map((w) => (
+                <option key={w} value={w}>
+                  {w}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label
+              className="text-xs font-medium block mb-1"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Grosor negrita
+            </label>
+            <select
+              value={String(typography.fontWeightBold)}
+              onChange={handleTypographyChange('fontWeightBold')}
+              className="w-full h-9 rounded-lg border px-2 text-sm"
+              style={chromeSurfaceStyle({ surface: 'pill' })}
+            >
+              {[500, 600, 700, 800, 900].map((w) => (
+                <option key={w} value={w}>
+                  {w}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label
+              className="text-xs font-medium block mb-1"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Interlineado: {typography.lineHeight}
+            </label>
+            <input
+              type="range"
+              min={1.0}
+              max={1.9}
+              step={0.05}
+              value={typography.lineHeight}
+              onChange={handleTypographyChange('lineHeight')}
+              className="w-full"
+              style={{ accentColor: 'var(--accent-primary)' }}
+            />
+          </div>
+          <div>
+            <label
+              className="text-xs font-medium block mb-1"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Espaciado: {typography.letterSpacing}
+            </label>
+            <input
+              type="range"
+              min={-1.5}
+              max={3}
+              step={0.1}
+              value={typography.letterSpacing}
+              onChange={handleTypographyChange('letterSpacing')}
+              className="w-full"
+              style={{ accentColor: 'var(--accent-primary)' }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── Small reusable components ─────────────────────────────────────────── */
@@ -228,12 +708,12 @@ function ThemeOptionCard({ option, active, onClick }) {
       type="button"
       onClick={() => onClick(option.id)}
       className={`w-full border p-2.5 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : 'hover:border-borders-strong'}`}
-      style={{
-        ...getSettingsShellStyle({ emphasized: active }),
-        borderColor: active
-          ? 'color-mix(in srgb, var(--accent-primary) 45%, transparent)'
-          : 'var(--chrome-border-color)',
-      }}
+        style={{
+          ...chromeSurfaceStyle({ surface: 'panel', emphasized: active }),
+          borderColor: active
+            ? 'color-mix(in srgb, var(--accent-primary) 45%, transparent)'
+            : 'var(--chrome-border-color)',
+        }}
     >
       <div
         className="relative overflow-hidden border h-28"
@@ -318,25 +798,25 @@ function MorphologyOptionCard({ option, active, onClick }) {
       type="button"
       onClick={() => onClick(option.id)}
       className={`w-full border p-3 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : ''}`}
-      style={{
-        ...getSettingsShellStyle({ emphasized: active }),
-        borderColor: active
-          ? 'color-mix(in srgb, var(--accent-primary) 24%, var(--chrome-border-color))'
-          : 'var(--chrome-border-color)',
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {option.label}
-        </p>
-        {active ? (
-          <span
-            className="inline-flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-medium"
-            style={{
-              ...getSettingsControlStyle(),
-              color: 'var(--text-primary)',
-            }}
-          >
+        style={{
+          ...chromeSurfaceStyle({ surface: 'panel', emphasized: active }),
+          borderColor: active
+            ? 'color-mix(in srgb, var(--accent-primary) 24%, var(--chrome-border-color))'
+            : 'var(--chrome-border-color)',
+        }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {option.label}
+          </p>
+          {active ? (
+            <span
+              className="inline-flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-medium"
+              style={{
+                ...chromeSurfaceStyle({ surface: 'pill' }),
+                color: 'var(--text-primary)',
+              }}
+            >
             Activa
           </span>
         ) : null}
@@ -361,9 +841,9 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
       <div
         className="w-full max-w-lg p-6"
         style={{
-          ...getSettingsShellStyle({ emphasized: true }),
-          borderRadius: 0,
-          boxShadow: '4px 4px 0 0 var(--border-strong)',
+          ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
+          background:
+            'linear-gradient(180deg, var(--chrome-panel-fill-emphasis), var(--chrome-panel-fill))',
         }}
       >
         <div className="flex items-center justify-between gap-3 mb-5">
@@ -402,9 +882,8 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
             disabled={step === 0}
             className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-none disabled:opacity-50"
             style={{
-              ...getSettingsControlStyle(),
+              ...chromeSurfaceStyle({ surface: 'pill' }),
               color: 'var(--text-secondary)',
-              borderRadius: 0,
             }}
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Atrás
@@ -413,7 +892,7 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
             type="button"
             onClick={isLast ? onClose : onNext}
             className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-none"
-            style={{ background: 'var(--accent-primary)', color: 'white', borderRadius: 0 }}
+            style={{ background: 'var(--accent-primary)', color: 'white' }}
           >
             {isLast ? <Rocket className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
             {isLast ? 'Terminar' : 'Siguiente'}
@@ -442,6 +921,7 @@ export default function Ajustes() {
   const { project } = useOutletContext() || {};
   const db = createClient();
   const navigate = useNavigate();
+  const terminalSettingsEnabled = useTerminalSettingsFlag();
 
   // Project settings
   const [name, setName] = useState(project?.name || '');
@@ -682,7 +1162,7 @@ export default function Ajustes() {
   const renderProjectTab = () => (
     <div className="space-y-6">
       {/* Project identity card */}
-      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
+      <div className="overflow-hidden" style={panelStyle()}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -954,7 +1434,7 @@ export default function Ajustes() {
         <div
           data-testid="ajustes-appearance-shell"
           className="overflow-hidden"
-          style={getSettingsShellStyle({ emphasized: true })}
+          style={chromeSurfaceStyle({ surface: 'panel', emphasized: true })}
         >
           <div
             className="flex items-center justify-between px-6 py-4"
@@ -965,7 +1445,6 @@ export default function Ajustes() {
                 className="w-9 h-9 rounded-none flex items-center justify-center"
                 style={{
                   ...pillStyle({ tone: 'accent' }),
-                  borderRadius: 0,
                   background: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 14%, var(--chrome-control-fill))`,
                   borderColor: `color-mix(in srgb, ${activeThemeData?.accent || 'var(--accent-primary)'} 28%, var(--chrome-border-color))`,
                 }}
@@ -992,9 +1471,8 @@ export default function Ajustes() {
               onClick={() => setWizardOpen(true)}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-none text-xs"
               style={{
-                ...getSettingsControlStyle(),
+                ...chromeSurfaceStyle({ surface: 'pill' }),
                 color: 'var(--text-secondary)',
-                borderRadius: 0,
               }}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -1020,12 +1498,10 @@ export default function Ajustes() {
                     ? {
                         ...pillStyle({ tone: 'accent' }),
                         color: 'var(--text-primary)',
-                        borderRadius: 0,
                       }
                     : {
                         ...pillStyle(),
                         color: 'var(--text-muted)',
-                        borderRadius: 0,
                       }
                 }
               >
@@ -1064,9 +1540,8 @@ export default function Ajustes() {
               <span
                 className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em]"
                 style={{
-                  ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
+                  ...chromeSurfaceStyle({ surface: 'pill', emphasized: true, tone: 'accent' }),
                   color: 'var(--text-primary)',
-                  borderRadius: 0,
                 }}
               >
                 <Palette className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
@@ -1084,7 +1559,24 @@ export default function Ajustes() {
                     type="button"
                     onClick={() => handleAccentChange(option.id)}
                     className="border p-4 text-left transition-all"
-                    style={getSettingsAccentOptionStyle(isActive, option.primary)}
+                    style={{
+                      ...chromeSurfaceStyle({
+                        surface: 'panel',
+                        emphasized: isActive,
+                        tone: isActive ? 'accent' : 'neutral',
+                      }),
+                      background: isActive
+                        ? 'var(--chrome-panel-fill-emphasis)'
+                        : 'var(--chrome-panel-fill)',
+                      borderColor: isActive
+                        ? 'color-mix(in srgb, var(--accent-primary) 55%, var(--chrome-border-color))'
+                        : 'var(--chrome-border-color)',
+                      boxShadow: isActive
+                        ? 'var(--chrome-shadow-panel)'
+                        : '6px 6px 0 rgba(1, 4, 9, 0.18)',
+                      transform: isActive ? 'translate(-2px, -2px)' : 'translate(0, 0)',
+                      '--settings-accent-preview': option.primary ?? 'var(--accent-primary)',
+                    }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -1160,6 +1652,7 @@ export default function Ajustes() {
               ))}
             </div>
           </div>
+          {terminalSettingsEnabled ? <TerminalSubSection /> : null}
         </div>
       </ChromeSurface>
     </div>
@@ -1170,7 +1663,7 @@ export default function Ajustes() {
   const renderSwarmTab = () => (
     <div className="space-y-6">
       {/* Swarm Status Card */}
-      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
+      <div className="overflow-hidden" style={panelStyle()}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1185,7 +1678,6 @@ export default function Ajustes() {
                 ? 'color-mix(in srgb, var(--success) 12%, transparent)'
                 : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
               border: `1px solid ${swarmStatus?.running ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'color-mix(in srgb, var(--text-muted) 20%, transparent)'}`,
-              borderRadius: 0,
             }}
           >
             <Server
@@ -1215,14 +1707,12 @@ export default function Ajustes() {
                   : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
                 color: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)',
                 border: `1px solid ${swarmStatus?.running ? 'color-mix(in srgb, var(--success) 25%, transparent)' : 'color-mix(in srgb, var(--text-muted) 20%, transparent)'}`,
-                borderRadius: 0,
               }}
             >
               <span
                 className="w-2 h-2 rounded-none"
                 style={{
                   background: swarmStatus?.running ? 'var(--success)' : 'var(--text-muted)',
-                  borderRadius: 0,
                 }}
               />
               {swarmStatus?.running ? 'Activo' : 'Inactivo'}
@@ -1260,10 +1750,8 @@ export default function Ajustes() {
                   className="px-4 py-3"
                   style={{
                     ...panelStyle(),
-                    borderRadius: 0,
                     background: `color-mix(in srgb, ${color} 10%, var(--chrome-panel-fill))`,
                     borderColor: `color-mix(in srgb, ${color} 24%, var(--chrome-border-color))`,
-                    boxShadow: '4px 4px 0 0 var(--border-strong)',
                   }}
                 >
                   <p
@@ -1283,7 +1771,7 @@ export default function Ajustes() {
       </div>
 
       {/* Swarm Configuration Card */}
-      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
+      <div className="overflow-hidden" style={panelStyle()}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1361,9 +1849,8 @@ export default function Ajustes() {
                 <span
                   className="text-lg font-mono font-bold px-3 py-1 rounded-none"
                   style={{
-                    ...getSettingsControlStyle({ emphasized: true, tone: 'accent' }),
+                    ...chromeSurfaceStyle({ surface: 'pill', emphasized: true, tone: 'accent' }),
                     color: 'var(--accent-primary)',
-                    borderRadius: 0,
                   }}
                 >
                   {swarmConfig.max_concurrent_swarms}
@@ -1386,7 +1873,6 @@ export default function Ajustes() {
                   }
                   className="flex-1 h-2 rounded-none appearance-none cursor-pointer"
                   style={{
-                    borderRadius: 0,
                     background: `linear-gradient(to right, var(--accent-primary) ${((swarmConfig.max_concurrent_swarms - 1) / 19) * 100}%, var(--surface-muted) ${((swarmConfig.max_concurrent_swarms - 1) / 19) * 100}%)`,
                   }}
                 />
@@ -1409,7 +1895,7 @@ export default function Ajustes() {
                 onClick={saveSwarmSettings}
                 disabled={savingSwarm}
                 className="flex items-center gap-2 text-white font-medium px-5 py-2.5 rounded-none text-xs transition-all disabled:opacity-50"
-                style={{ background: 'var(--success)', borderRadius: 0 }}
+                style={{ background: 'var(--success)' }}
               >
                 {savingSwarm ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1427,7 +1913,7 @@ export default function Ajustes() {
 
   const renderProfileTab = () => (
     <div className="space-y-6">
-      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
+      <div className="overflow-hidden" style={panelStyle()}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1460,7 +1946,6 @@ export default function Ajustes() {
               className="flex items-center gap-3 p-3 rounded-none"
               style={{
                 ...panelStyle({ emphasized: true }),
-                borderRadius: 0,
                 boxShadow: 'var(--chrome-shadow-control)',
               }}
             >
@@ -1520,7 +2005,7 @@ export default function Ajustes() {
 
   const renderPrefsTab = () => (
     <div className="space-y-6">
-      <div className="overflow-hidden" style={{ ...panelStyle(), borderRadius: 0 }}>
+      <div className="overflow-hidden" style={panelStyle()}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{
@@ -1595,7 +2080,7 @@ export default function Ajustes() {
     <div className="space-y-6">
       <div
         className="overflow-hidden"
-        style={{ ...panelStyle({ tone: 'danger' }), borderRadius: 0 }}
+        style={panelStyle({ tone: 'danger' })}
       >
         <div
           className="flex items-center gap-3 px-6 py-4"
@@ -1724,11 +2209,11 @@ export default function Ajustes() {
               style={
                 activeTab === key
                   ? {
-                      ...getSettingsControlStyle({ emphasized: true }),
+                      ...chromeSurfaceStyle({ surface: 'pill', emphasized: true }),
                       color: 'var(--text-primary)',
                     }
                   : {
-                      ...getSettingsControlStyle(),
+                      ...chromeSurfaceStyle({ surface: 'pill' }),
                       background: 'transparent',
                       borderColor: 'transparent',
                       boxShadow: 'none',

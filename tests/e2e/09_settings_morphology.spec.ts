@@ -35,9 +35,11 @@ async function mockWorkspaceQueries(page) {
   });
 }
 
+// PR-2: default morphology sets --chrome-radius-panel: 0 (R6 amendment).
+// All other tokens remain at their pre-cursor values.
 const MORPHOLOGY_BASELINES = {
   default: {
-    '--chrome-radius-panel': '1rem',
+    '--chrome-radius-panel': '0',
     '--chrome-radius-control': '999px',
     '--chrome-border-width': '1px',
     '--chrome-press-offset': '0px',
@@ -83,15 +85,15 @@ async function getResolvedChromeTokens(page) {
   });
 }
 
-async function waitForAppearancePageReady(page) {
+async function waitForAjustesPageReady(page) {
   await page.waitForLoadState('networkidle');
-  await expect(page.locator('[data-testid="appearance-morphology-option-default"]')).toBeVisible({
+  await expect(page.locator('[data-testid="ajustes-morphology-option-default"]')).toBeVisible({
     timeout: 10000,
   });
 }
 
 async function selectMorphology(page, morphologyId) {
-  const option = page.locator(`[data-testid="appearance-morphology-option-${morphologyId}"]`);
+  const option = page.locator(`[data-testid="ajustes-morphology-option-${morphologyId}"]`);
   await option.scrollIntoViewIfNeeded();
   await option.click();
   await page.waitForTimeout(150);
@@ -99,7 +101,7 @@ async function selectMorphology(page, morphologyId) {
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('settings morphology smoke', () => {
+test.describe('ajustes morphology smoke', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('devhub:morphology', 'default');
@@ -115,30 +117,28 @@ test.describe('settings morphology smoke', () => {
     });
   });
 
-  test('canonical appearance settings route is reachable', async ({ page }) => {
-    await page.goto(`/#/project/${PROJECT_ID}/settings/appearance`);
-    await waitForAppearancePageReady(page);
+  test('canonical /ajustes route is reachable and renders the morphology selector', async ({ page }) => {
+    await page.goto(`/#/project/${PROJECT_ID}/ajustes`);
+    await waitForAjustesPageReady(page);
 
     await expect(page.locator('html')).toHaveAttribute('data-morphology', 'default');
-    await expect(page.getByRole('heading', { name: 'Appearance' }).last()).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Morphology' }).first()).toBeVisible();
     await expect(
-      page.locator('[data-testid="appearance-morphology-option-default"]')
+      page.locator('[data-testid="ajustes-morphology-option-default"]')
     ).toBeVisible();
-    await expect(page.locator('[data-testid="appearance-morphology-option-cursor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="ajustes-morphology-option-cursor"]')).toBeVisible();
   });
 
-  test('legacy /ajustes route redirects to canonical settings appearance', async ({ page }) => {
-    await page.goto(`/#/project/${PROJECT_ID}/ajustes`);
-    await waitForAppearancePageReady(page);
-
-    await expect(page).toHaveURL(/\/settings\/appearance/);
-    await expect(page.getByRole('heading', { name: 'Appearance' }).last()).toBeVisible();
+  test('legacy /settings/appearance route no longer matches', async ({ page }) => {
+    await page.goto(`/#/project/${PROJECT_ID}/settings/appearance`);
+    // The App-Router settings/* block is removed; nothing matches.
+    // The HashRouter will render a blank root + no morphology selector.
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="ajustes-morphology-option-default"]')).toHaveCount(0);
   });
 
   test('existing morphologies keep their baseline token values', async ({ page }) => {
-    await page.goto(`/#/project/${PROJECT_ID}/settings/appearance`);
-    await waitForAppearancePageReady(page);
+    await page.goto(`/#/project/${PROJECT_ID}/ajustes`);
+    await waitForAjustesPageReady(page);
 
     for (const [morphologyId, expected] of Object.entries(MORPHOLOGY_BASELINES)) {
       await selectMorphology(page, morphologyId);
@@ -167,8 +167,8 @@ test.describe('settings morphology smoke', () => {
   });
 
   test('cursor morphology applies and resolves its token values', async ({ page }) => {
-    await page.goto(`/#/project/${PROJECT_ID}/settings/appearance`);
-    await waitForAppearancePageReady(page);
+    await page.goto(`/#/project/${PROJECT_ID}/ajustes`);
+    await waitForAjustesPageReady(page);
 
     await selectMorphology(page, 'cursor');
     const tokens = await getResolvedChromeTokens(page);

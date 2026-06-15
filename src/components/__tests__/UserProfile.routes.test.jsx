@@ -103,6 +103,6 @@ describe('UserProfile — account settings navigation', () => {
     accountButton.click();
     await flushEffects();
 
-    expect(mockNavigate).toHaveBeenCalledWith('/project/proj-42/settings/account');
+    expect(mockNavigate).toHaveBeenCalledWith('/project/proj-42/ajustes');
   });
 });

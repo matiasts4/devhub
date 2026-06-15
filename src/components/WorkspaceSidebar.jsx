@@ -60,7 +60,7 @@ const allNavItems = {
 
 const configNavItems = {
   conexiones: { icon: Plug2, label: 'Conexiones MCP' },
-  settings: { icon: Settings, label: 'Ajustes' },
+  ajustes: { icon: Settings, label: 'Ajustes' },
 };
 
 const DEFAULT_NAV = [
@@ -209,8 +209,8 @@ export default function WorkspaceSidebar({
       : { background: 'transparent', borderColor: 'transparent', boxShadow: 'none' };
 
     const href =
-      key === 'settings'
-        ? `/project/${project?.id}/settings/appearance`
+      key === 'ajustes'
+        ? `/project/${project?.id}/ajustes`
         : `/project/${project?.id}/${key}`;
 
     return (
