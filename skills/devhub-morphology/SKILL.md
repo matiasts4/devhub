@@ -15,7 +15,7 @@ Use this skill when asked to add, remove, or modify a DevHub morphology. A morph
 
 - Morphologies MUST be added to `MORPHOLOGIES` and `MORPHOLOGY_OPTIONS` in `src/lib/theme/themes.js`.
 - Chrome geometry MUST come from `--chrome-*` CSS variables consumed by `src/chrome/morphology.js` factories and `ChromeSurface`.
-- The new selector MUST be wired into both `src/app/settings/appearance/page.jsx` and `src/views/Ajustes.jsx`.
+- The new selector MUST be wired into `src/views/Ajustes.jsx` (single wiring point — the deprecated `src/app/settings/appearance/page.jsx` was removed in PR-2 of `ajustes-cursor-restyle`).
 - Never hardcode Tailwind radii, shadows, or border values for chrome surfaces; use token variables.
 - Never change existing morphology token values unless the task explicitly targets them.
 
@@ -31,7 +31,7 @@ Use this skill when asked to add, remove, or modify a DevHub morphology. A morph
 
 1. **Registry**: add `{KEY}: '{key}'` to `MORPHOLOGIES` and an entry to `MORPHOLOGY_OPTIONS` in `src/lib/theme/themes.js`.
 2. **Tokens**: append `[data-morphology='{key}']` to `src/app/globals.css` after existing blocks. Define at least `--chrome-radius-panel`, `--chrome-radius-control`, `--chrome-border-width`, `--chrome-border-color`, `--chrome-shadow-panel`, `--chrome-shadow-control`, `--chrome-panel-fill`, `--chrome-panel-fill-emphasis`, `--chrome-control-fill`, `--chrome-control-fill-hover`, `--chrome-press-offset`, and `--accent-primary`.
-3. **Selectors**: map the option in `src/app/settings/appearance/page.jsx` and `src/views/Ajustes.jsx`; clicking it must call `setMorphology('{key}')`.
+3. **Selectors**: map the option in `src/views/Ajustes.jsx`; clicking it must call `setMorphology('{key}')`. (The deprecated `src/app/settings/appearance/page.jsx` was removed in PR-2 of `ajustes-cursor-restyle`; Ajustes is the single wiring point.)
 4. **Factories**: verify `src/chrome/morphology.js` panel/button/input styles derive from `--chrome-*` tokens; no factory change needed unless a new chrome type is required.
 5. **Tests**: extend `src/lib/theme/__tests__/themes.test.js` to assert the new morphology option exists, tokens resolve, and existing blocks are unchanged.
 6. **Visual QA**: check the terminal header, kanban columns, and pizarra canvas under the new morphology; watch for hardcoded radii or shadows.
@@ -58,6 +58,5 @@ Return:
 - `src/lib/theme/themes.js` — morphology registry.
 - `src/app/globals.css` — morphology token blocks.
 - `src/chrome/morphology.js` — chrome factory functions.
-- `src/app/settings/appearance/page.jsx` — canonical appearance settings.
-- `src/views/Ajustes.jsx` — legacy appearance settings.
+- `src/views/Ajustes.jsx` — single wiring point for the morphology selector (canonical since PR-2 of `ajustes-cursor-restyle`).
 - `src/lib/theme/__tests__/themes.test.js` — morphology unit tests.
