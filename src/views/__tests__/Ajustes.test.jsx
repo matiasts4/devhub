@@ -192,9 +192,13 @@ describe('Ajustes appearance tab — interactive controls', () => {
     // so the morphology token layer is the single source of truth.
     const appearanceShellStyle = chromeSurfaceStyle({ surface: 'panel', emphasized: true });
     expect(appearanceShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
-    expect(appearanceShellStyle.background).toContain('var(--chrome-panel-fill)');
+    // Emphasized: true → emphasis fill (the panel-fill-emphasis token
+    // is the morphology-aware emphasized state; the pre-token
+    // `var(--surface-card)` raw fallback MUST NOT appear).
+    expect(appearanceShellStyle.background).toBe('var(--chrome-panel-fill-emphasis)');
     expect(appearanceShellStyle.borderColor).toBe('var(--chrome-border-color)');
     expect(appearanceShellStyle.background).not.toContain('var(--surface-card)');
+    expect(appearanceShellStyle.borderRadius).toBe('var(--chrome-radius-panel)');
 
     // The three deleted helpers MUST no longer be exported.
     expect(ajustesModule.getSettingsShellStyle).toBeUndefined();

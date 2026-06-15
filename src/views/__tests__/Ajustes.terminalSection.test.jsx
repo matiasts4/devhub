@@ -47,9 +47,10 @@ jest.mock('@/lib/db/localClient', () => ({
   }),
 }));
 
-jest.mock('@/components/settings/LLMProviderSettings', () => () =>
-  React.createElement('div', null, 'LLM Settings')
-);
+jest.mock('@/components/settings/LLMProviderSettings', () => {
+  const mockReact = require('react');
+  return () => mockReact.createElement('div', null, 'LLM Settings');
+});
 
 jest.mock('react-select', () => () => null);
 jest.mock('@/components/ui/date-picker', () => ({ DatePicker: () => null }));
