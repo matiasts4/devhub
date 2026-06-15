@@ -27,11 +27,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 1: PR-1 — Foundation (RED tests)
 
-- [ ] 1.1 RED: add `src/chrome/__tests__/morphology.default-radius.test.js` asserting `--chrome-radius-panel === '0'` under `data-morphology='default'`
-- [ ] 1.2 RED: add `src/chrome/__tests__/morphology.five-morphologies.test.js` asserting Ajustes panel resolves `--chrome-radius-panel` per morphology (0/0/1rem/18px/18px) and no chrome surface has `borderRadius: 0`
-- [ ] 1.3 RED: add `src/views/__tests__/Ajustes.terminalSection.test.jsx` — flag absent/missing renders NO terminal sub-section
-- [ ] 1.4 RED: add `src/views/__tests__/Ajustes.terminalSection.flag.test.jsx` — flag `true` renders 6 sub-controls (renderer select, typography family, header-style cards, accent-bar toggle, restore selects, zoom +/−)
-- [ ] 1.5 RED: rewrite `src/views/__tests__/Ajustes.test.jsx` line 189 to assert `chromeSurfaceStyle({ surface: 'panel', emphasized: true })` (helper gone)
+- [x] 1.1 RED: add `src/chrome/__tests__/morphology.default-radius.test.js` asserting `--chrome-radius-panel === '0'` under `data-morphology='default'`
+- [x] 1.2 RED: add `src/chrome/__tests__/morphology.five-morphologies.test.js` asserting Ajustes panel resolves `--chrome-radius-panel` per morphology (0/0/1rem/18px/18px) and no chrome surface has `borderRadius: 0`
+- [x] 1.3 RED: add `src/views/__tests__/Ajustes.terminalSection.test.jsx` — flag absent/missing renders NO terminal sub-section
+- [x] 1.4 RED: add `src/views/__tests__/Ajustes.terminalSection.flag.test.jsx` — flag `true` renders 6 sub-controls (renderer select, typography family, header-style cards, accent-bar toggle, restore selects, zoom +/−)
+- [x] 1.5 RED: rewrite `src/views/__tests__/Ajustes.test.jsx` line 189 to assert `chromeSurfaceStyle({ surface: 'panel', emphasized: true })` (helper gone)
 
 ## Phase 2: PR-1 — Implementation (GREEN)
 
