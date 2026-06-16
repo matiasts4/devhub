@@ -175,4 +175,6 @@ When the user asks to "launch ZED pod", "open ZED orchestrator", or coordinate S
 - Terminal workflow: open new with `command` when user wants to run something fresh; for follow-ups on an existing visible terminal, `list_terminals` (now also discovers tmux) then `execute_in_terminal` using the real session id from the prior result.
 - To run in a brand new visible terminal: `open_terminal` with the `command`.
 - To launch a visible agent TUI (OpenCode, etc.): `open_terminal` with `program=opencode` (tool builds the correct launch command so the TUI takes over the new panel).
-- After running commands, use `review_terminal_output` (or rely on `recent_output` included in results) so your final reply to the user can accurately describe what happened instead of guessing.
+- After `open_terminal` returns `command_sent` or `execute_in_terminal` returns `sent: true` (or includes `recent_output`), your **next** response MUST be the final user-facing reply — do NOT call `review_terminal_output` unless the user explicitly asked to see output, or the prior tool returned an `error`.
+- If `review_terminal_output` returns ANSI or output you cannot parse cleanly, do NOT call it again on the same `session_id` — summarize what you saw and stop.
+- Prefer `recent_output` from `execute_in_terminal` when present; only call `review_terminal_output` when you need more context than that preview.

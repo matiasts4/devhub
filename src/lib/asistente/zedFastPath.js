@@ -9,7 +9,9 @@ import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
 
 const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes']);
 const OPEN_VERBS = /\b(abre|abr[eía]s?|abrir|abramos|open|crea|crear|nueva|lanza|lanzar)\b/;
-const CLOSE_VERBS = /\b(cierra|cerra|cerr[aá]|cerrar|close|cierres|cierren|mata)\b/;
+const CLOSE_VERBS =
+  /\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|cerramen|close|cierres|cierren|mata)\b/;
+const TERMINAL_NOUN_RE = /\b(terminal(?:es)?|panel(?:es)?)\b/;
 
 /**
  * @typedef {{
@@ -50,7 +52,7 @@ export function extractTerminalNameFromMessage(message, terminals = []) {
 
   let remainder = raw
     .replace(
-      /^(por favor\s+)?(cierra|cerra|cerr[aá]|cerrar|close|cierres|cierren|mata|abr[eí]|abrir|open|lanza|lanzar|ejecuta|ejecut[aá]|run)\s+(la\s+)?(terminal\s+|panel\s+)?/i,
+      /^(por favor\s+)?(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|close|cierres|cierren|mata|abr[eí]|abrir|open|lanza|lanzar|ejecuta|ejecut[aá]|run)\s+(?:(?:la|las|el|los|todas?\s+las?|todos?\s+los?)\s+)?(?:terminal(?:es)?|panel(?:es)?)\s*/i,
       ''
     )
     .replace(/\s+(por favor|please|gracias)\.?$/i, '')
@@ -91,7 +93,7 @@ export function extractMultipleCloseNames(message, terminals = []) {
   if (!raw || !CLOSE_VERBS.test(normalizeText(raw))) return [];
 
   let rest = raw.replace(
-    /^.*?\b(cierra|cerra|cerr[aá]|cerrar|close|cierres|cierren|mata)\b\s*(la\s+)?(terminal\s+|panel\s+|las\s+terminales\s+|los\s+paneles\s+)?/i,
+    /^.*?\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|close|cierres|cierren|mata)\b\s*(?:(?:la|las|el|los|todas?\s+las?|todos?\s+los?)\s+)?(?:terminales?|paneles?)?\s*/i,
     ''
   );
   rest = rest.replace(/\s+(por favor|please|gracias)\.?$/i, '').trim();
@@ -181,7 +183,36 @@ function isListTerminalsIntent(lower, text) {
 }
 
 function isOpenTerminalIntent(lower) {
-  return OPEN_VERBS.test(lower) && /\b(terminal|panel)\b/.test(lower);
+  return OPEN_VERBS.test(lower) && TERMINAL_NOUN_RE.test(lower);
+}
+
+/**
+ * User wants every open panel closed (no specific name): "cierra las terminales abiertas".
+ *
+ * @param {string} lower
+ * @param {string} text
+ * @param {Array<{ terminalId: string, displayName?: string }>} terminals
+ * @returns {boolean}
+ */
+export function wantsCloseAllTerminals(lower, text, terminals = []) {
+  if (!CLOSE_VERBS.test(lower) || !TERMINAL_NOUN_RE.test(lower)) return false;
+
+  const multiNames = extractMultipleCloseNames(text, terminals);
+  if (multiNames === 'AMBIGUOUS' || multiNames.length > 0) return false;
+
+  const singleName = extractTerminalNameFromMessage(text, terminals);
+  if (singleName === 'AMBIGUOUS' || singleName) return false;
+
+  if (
+    /\b(todas?\s+las?\s+terminales?|todos?\s+los?\s+paneles?|todas?\s+las?\s+paneles?|all\s+terminals?)\b/.test(
+      lower
+    )
+  ) {
+    return true;
+  }
+  if (/\b(las|los)\s+(terminales|paneles)\b/.test(lower)) return true;
+  if (/\b(terminales|paneles)\s+(abiertas?|activas?|actuales?)\b/.test(lower)) return true;
+  return false;
 }
 
 /**
@@ -252,6 +283,19 @@ export function resolveZedFastPathIntent(message, context = {}) {
         'close_multiple'
       );
     }
+
+    if (wantsCloseAllTerminals(lower, text, terminals) && terminalCount > 0) {
+      return hit(
+        terminals.map((t) => ({
+          tool: 'close_terminal',
+          input: { name: t.displayName || t.terminalId },
+        })),
+        'close_multiple',
+        0.93,
+        'close_all_terminals'
+      );
+    }
+
     if (multiNames.length === 1) {
       return hit(
         [{ tool: 'close_terminal', input: { name: multiNames[0] } }],
@@ -261,12 +305,11 @@ export function resolveZedFastPathIntent(message, context = {}) {
       );
     }
 
-    if (/\b(terminal|panel)\b/.test(lower)) {
+    if (TERMINAL_NOUN_RE.test(lower)) {
       const name = extractTerminalNameFromMessage(text, terminals);
       if (name === 'AMBIGUOUS') return null;
       const input = name ? { name } : {};
       const confidence = name ? 0.94 : terminalCount === 1 ? 0.9 : terminalCount > 1 ? 0.75 : 0.85;
-      if (confidence < 0.85) return null;
       return hit(
         [{ tool: 'close_terminal', input }],
         'close_terminal',

@@ -1897,6 +1897,225 @@ code {
   }
 }
 
+/* ─── Zed ambient: live states (processing sweep + speaking color aura) ─── */
+
+/* Slow rotating conic sweep — gives "thinking/working" motion to the aura. */
+.zed-aura-sweep {
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  background: conic-gradient(
+    from 0deg at 50% 120%,
+    transparent 0deg,
+    color-mix(in srgb, var(--accent-primary) 22%, transparent) 60deg,
+    transparent 140deg,
+    color-mix(in srgb, var(--accent-primary) 14%, transparent) 230deg,
+    transparent 320deg
+  );
+  filter: blur(28px);
+  transform-origin: 50% 120%;
+}
+
+@keyframes zed-aura-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zed-aura-sweep-processing {
+    animation: zed-aura-spin 14s linear infinite;
+  }
+
+  .zed-aura-sweep-speaking {
+    animation: zed-aura-spin 7s linear infinite;
+  }
+}
+
+/* Speaking: a vivid, multi-color band that waves along the bottom (near the pill). */
+.zed-aura-speaking {
+  height: 46vh;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse 60% 100% at 28% 130%, rgba(74, 211, 192, 0.5) 0%, transparent 62%),
+    radial-gradient(ellipse 62% 100% at 72% 130%, rgba(155, 107, 255, 0.45) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 90% at 50% 140%, rgba(88, 166, 255, 0.38) 0%, transparent 66%);
+  filter: blur(34px);
+  transform: translateY(calc((1 - var(--zed-vu, 0.35)) * 6%));
+}
+
+@keyframes zed-aura-speak-wave {
+  0%,
+  100% {
+    background-position:
+      28% 130%,
+      72% 130%,
+      50% 140%;
+    opacity: 0.78;
+  }
+  50% {
+    background-position:
+      34% 122%,
+      66% 122%,
+      50% 132%;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zed-aura-speaking-animate {
+    background-size: 140% 140%;
+    animation: zed-aura-speak-wave 2.6s ease-in-out infinite;
+  }
+}
+
+/* ─── Zed pill surface: state-driven glow + animated topline ─── */
+.zed-pill-surface {
+  transition:
+    box-shadow 0.4s ease,
+    border-color 0.4s ease;
+}
+
+.zed-pill-surface[data-zed-state='executing'] {
+  border-color: color-mix(in srgb, var(--accent-primary) 42%, transparent);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in srgb, var(--accent-primary) 28%, transparent),
+    0 0 26px -4px color-mix(in srgb, var(--accent-primary) 55%, transparent);
+}
+
+.zed-pill-surface[data-zed-state='speaking'] {
+  border-color: color-mix(in srgb, #9b6bff 46%, transparent);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in srgb, #9b6bff 30%, transparent),
+    0 0 30px -2px rgba(155, 107, 255, 0.55);
+}
+
+.zed-pill-surface[data-zed-state='listening'] {
+  border-color: color-mix(in srgb, #f87171 44%, transparent);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in srgb, #f87171 26%, transparent),
+    0 0 26px -4px rgba(248, 113, 113, 0.5);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zed-pill-surface[data-zed-state='speaking'] {
+    animation: zed-pill-breathe 2.4s ease-in-out infinite;
+  }
+  .zed-pill-surface[data-zed-state='executing'] {
+    animation: zed-pill-breathe 3.2s ease-in-out infinite;
+  }
+}
+
+@keyframes zed-pill-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.08);
+  }
+}
+
+.zed-pill-topline {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent-primary) 55%, transparent),
+    transparent
+  );
+}
+
+.zed-pill-topline-active {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-primary) 10%, transparent) 30%,
+    color-mix(in srgb, var(--accent-primary) 90%, white 10%) 50%,
+    color-mix(in srgb, var(--accent-primary) 10%, transparent) 70%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: zed-topline-slide 2.2s linear infinite;
+}
+
+@keyframes zed-topline-slide {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+/* ─── Zed pill avatar: glow ring when active ─── */
+@media (prefers-reduced-motion: no-preference) {
+  .zed-pill-avatar[data-zed-state='speaking'] {
+    animation: zed-avatar-glow 1.8s ease-in-out infinite;
+  }
+  .zed-pill-avatar[data-zed-state='listening'] {
+    animation: zed-avatar-glow-red 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes zed-avatar-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(155, 107, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(155, 107, 255, 0.22);
+  }
+}
+
+@keyframes zed-avatar-glow-red {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.25);
+  }
+}
+
+/* ─── Zed equalizer (speaking indicator) ─── */
+.zed-eq {
+  height: 12px;
+}
+
+.zed-eq-bar {
+  height: 35%;
+  animation: zed-eq-bounce 0.9s ease-in-out infinite;
+}
+
+@keyframes zed-eq-bounce {
+  0%,
+  100% {
+    height: 30%;
+    opacity: 0.6;
+  }
+  50% {
+    height: 100%;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zed-aura-sweep-processing,
+  .zed-aura-sweep-speaking,
+  .zed-aura-speaking-animate,
+  .zed-pill-surface,
+  .zed-pill-topline-active,
+  .zed-pill-avatar,
+  .zed-eq-bar {
+    animation: none;
+  }
+  .zed-eq-bar {
+    height: 60%;
+  }
+}
+
 /* ─── Semantic accent escape hatch (FR-D06) ───
  * Tailwind's `accent` slot is reserved for the shadcn palette
  * (`hsl(var(--accent))`). Use these classes when a class site wants the

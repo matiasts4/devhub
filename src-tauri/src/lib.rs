@@ -7,7 +7,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use sysinfo::System;
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
 mod native_browser;
@@ -15,6 +15,8 @@ mod native_vte;
 mod native_window_host;
 mod alacritty_terminal_host;
 mod system_clipboard;
+mod voice_engine;
+mod voice_python_setup;
 
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
@@ -27,6 +29,10 @@ use native_vte::{
     native_vte_raise, native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
 use system_clipboard::read_system_clipboard_text;
+use voice_engine::{
+    spawn_audio_engine, voice_set_enabled, voice_set_settings, voice_speak, voice_start_engine,
+    voice_stop_engine, voice_stop_speak, voice_toggle_recording, VoiceState,
+};
 
 const NEXTJS_READY_POLL_MS: u64 = 500;
 // 30 s en release (antes 240 → 2 min), 15 s en dev. La ventana se muestra
@@ -851,6 +857,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(NativeVteState::default())
         .manage(NativeBrowserState::default())
+        .manage(VoiceState::default())
         .invoke_handler(tauri::generate_handler![
             native_browser_probe,
             native_browser_open,
@@ -874,6 +881,13 @@ pub fn run() {
             native_vte_close,
             read_system_clipboard_text,
             dh_dispatch_action,
+            voice_toggle_recording,
+            voice_set_enabled,
+            voice_set_settings,
+            voice_start_engine,
+            voice_stop_engine,
+            voice_stop_speak,
+            voice_speak,
         ])
         .setup(|app| {
             // Log plugin solo en debug
@@ -883,6 +897,26 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            if let Some(voice_state) = app.handle().try_state::<VoiceState>() {
+                let enabled = std::env::var("DEVHUB_VOICE_ENABLED")
+                    .ok()
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(cfg!(debug_assertions));
+                if let Ok(mut lock) = voice_state.enabled.lock() {
+                    *lock = enabled;
+                }
+                if enabled {
+                    let app_handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(state) = app_handle.try_state::<VoiceState>() {
+                            if let Err(err) = spawn_audio_engine(&app_handle, &state).await {
+                                let _ = app_handle.emit("voice-error", err);
+                            }
+                        }
+                    });
+                }
             }
 
             // Limpiar procesos zombie de sesiones anteriores (tauri dev, crashes, etc.)

@@ -206,6 +206,25 @@ function sanitizeRightDockState(rawState = {}) {
   };
 }
 
+function rightDockStatesEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.visible === b.visible &&
+    a.activeTab === b.activeTab &&
+    a.browserLayoutEpoch === b.browserLayoutEpoch &&
+    a.browserRuntime === b.browserRuntime &&
+    a.editMode === b.editMode &&
+    a.maximized === b.maximized &&
+    a.maximizedView === b.maximizedView &&
+    a.size === b.size &&
+    a.browserUrl === b.browserUrl &&
+    a.browserHistoryIndex === b.browserHistoryIndex &&
+    a.browserLoadFallback === b.browserLoadFallback &&
+    JSON.stringify(a.browserHistory) === JSON.stringify(b.browserHistory)
+  );
+}
+
 function readRightDockState(storage, projectId, wsId) {
   if (!storage || typeof storage.getItem !== 'function') {
     return { ...DEFAULT_RIGHT_DOCK_STATE };
@@ -243,6 +262,7 @@ module.exports = {
   buildRightDockStorageKey,
   normalizeBrowserUrl,
   readRightDockState,
+  rightDockStatesEqual,
   sanitizeRightDockState,
   writeRightDockState,
 };

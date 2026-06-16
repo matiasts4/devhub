@@ -109,12 +109,14 @@ describe('zed-system-prompt.md (T-027 regression)', () => {
     expect(openSec).not.toBeNull();
     expect(execSec).not.toBeNull();
     // Both should talk about output or review (we no longer forbid it)
-    expect(openSec[0].toLowerCase() + execSec[0].toLowerCase()).toMatch(/recent_output|review_terminal_output|output/);
+    expect(openSec[0].toLowerCase() + execSec[0].toLowerCase()).toMatch(
+      /recent_output|review_terminal_output|output/
+    );
   });
 
-  test('rules section describes terminal workflow including review for output', () => {
+  test('rules section forbids redundant review after tool already confirmed', () => {
     const prompt = readPrompt();
-    expect(prompt).toMatch(/After running commands, use `review_terminal_output`/);
+    expect(prompt).toMatch(/do NOT call `review_terminal_output`/i);
     expect(prompt).toMatch(/recent_output/);
   });
 

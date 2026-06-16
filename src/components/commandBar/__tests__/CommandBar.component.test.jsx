@@ -1,12 +1,12 @@
 /**
  * Component tests for CommandBar — UI behavior, accessibility, keyboard interactions.
- * 
+ *
  * Tests verify:
  * - ARIA attributes for screen readers
  * - Reduced motion support
  * - Input disabled during execution
  * - Basic rendering and interaction flows
- * 
+ *
  * @jest-environment jsdom
  */
 
@@ -45,10 +45,9 @@ jest.mock('@/lib/commandBar/featureFlag', () => ({
   isCommandBarEnabled: () => true,
 }));
 
-jest.mock('@/lib/commandBar/intent/ruleIntentRouter', () => ({
-  createRuleIntentRouter: () => ({
-    route: mockRoute,
-  }),
+jest.mock('@/lib/commandBar/zedIntentBridge', () => ({
+  buildCommandBarContext: () => ({}),
+  resolveCommandBarIntent: (...args) => mockRoute(...args),
 }));
 
 // Mock dispatchAction - will be configured per test
@@ -64,7 +63,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       intent: 'terminal-run',
       slots: { command: 'npm test' },
     });
-    
+
     // Default mock implementation
     mockDispatchActionImpl = async function* () {
       yield { phase: 'done' };
@@ -90,7 +89,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
 
@@ -107,10 +106,10 @@ describe('CommandBar ARIA and Accessibility', () => {
       // The component imports and uses useReducedMotion from framer-motion
       // This test verifies the feature is implemented (component renders and uses the hook)
       const { container } = render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       // CommandBar should render (may not render content if not open, but should not crash)
       expect(container).toBeInTheDocument();
-      
+
       // Verify that framer-motion's useReducedMotion hook is imported and used
       // (the fact that the component renders without error confirms the integration)
     });
@@ -124,7 +123,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
 
@@ -140,7 +139,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
 
@@ -157,7 +156,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
 
@@ -172,7 +171,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
 
@@ -187,7 +186,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
 
@@ -212,7 +211,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'read terminal build-output{Enter}');
 
@@ -236,7 +235,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'read terminal test{Enter}');
 
@@ -259,7 +258,7 @@ describe('CommandBar ARIA and Accessibility', () => {
       };
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'read terminal empty{Enter}');
 
@@ -272,10 +271,10 @@ describe('CommandBar ARIA and Accessibility', () => {
   describe('Keyboard interaction', () => {
     it('calls close when Escape is pressed', async () => {
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, '{Escape}');
-      
+
       expect(mockClose).toHaveBeenCalled();
     });
 
@@ -286,14 +285,13 @@ describe('CommandBar ARIA and Accessibility', () => {
       mockDispatchActionImpl = dispatchActionMock;
 
       render(<CommandBar surfaceController={mockSurfaceController} />);
-      
+
       const input = screen.getByRole('combobox');
       await userEvent.type(input, 'npm test{Enter}');
-      
+
       await waitFor(() => {
         expect(dispatchActionMock).toHaveBeenCalled();
       });
     });
   });
 });
-

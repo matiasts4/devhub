@@ -168,6 +168,35 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     expect(capturedWorkspacePaneProps.dockState.browserRuntime).toBe('native-gtk');
   });
 
+  test('parent dock sync does not loop when shape url matches canonical dock url', () => {
+    const { sanitizeRightDockState } = require('@/components/workspace/rightDockState');
+    const parentDock = sanitizeRightDockState({
+      browserUrl: 'http://localhost:3100/',
+      browserHistory: ['http://localhost:3100/'],
+      browserHistoryIndex: 0,
+    });
+    let dockState = parentDock;
+    const onDockStateChange = jest.fn((updater) => {
+      dockState =
+        typeof updater === 'function'
+          ? sanitizeRightDockState(updater(dockState))
+          : sanitizeRightDockState(updater);
+    });
+    const onUpdateElement = jest.fn();
+
+    renderSurface({
+      shape: { id: 'browser-1', label: 'Browser', url: 'http://localhost:3100' },
+      dockState: parentDock,
+      onDockStateChange,
+      onUpdateElement,
+    });
+
+    act(() => {});
+
+    expect(onDockStateChange.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(onUpdateElement).not.toHaveBeenCalled();
+  });
+
   test('manual reload button appears after 5s if native never resolves and runtime is iframe', () => {
     jest.useFakeTimers();
     mockUseNativeBrowserCapability = () => null;

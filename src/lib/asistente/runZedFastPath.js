@@ -1,8 +1,8 @@
 /**
- * Execute fast-path intent and build API/SSE payloads.
+ * Execute local intent router and build API/SSE payloads.
  */
 
-import { resolveZedFastPathIntent } from './zedFastPath';
+import { resolveZedIntent } from './zedIntentRouter';
 import { formatZedToolResultsReply } from './zedFastPathResponse';
 import { encodeZedSseEvent } from './zedStreamProtocol';
 import { labelForZedToolStart, labelForZedToolDone } from './zedToolLabels';
@@ -16,31 +16,80 @@ function toolResultOk(result) {
   return !r.error;
 }
 
+function buildConfirmationPreview(resolved) {
+  const stepSummary = (resolved.steps || [])
+    .map((s) => `${s.tool}${s.input?.name ? ` (${s.input.name})` : ''}`)
+    .join(' → ');
+  return `¿Confirmás esta acción? ${stepSummary || resolved.intent}`;
+}
+
 /**
  * @param {object} params
  * @param {string} params.message
  * @param {import('./tools/registry').ToolRegistry} params.registry
  * @param {object} params.requestContext
  * @param {string} [params.msgId]
- * @returns {Promise<{ hit: true, body: object, text: string, toolResults: Array, intent: object } | { hit: false }>}
+ * @param {boolean} [params.confirmed]
+ * @returns {Promise<{ hit: true, body: object, text: string, toolResults: Array, intent: object, needsConfirmation?: boolean } | { hit: false }>}
  */
-export async function tryZedFastPath({ message, registry, requestContext, msgId = '' }) {
-  const intent = resolveZedFastPathIntent(message, requestContext);
-  if (!intent || intent.confidence < 0.85) {
+export async function tryZedFastPath({
+  message,
+  registry,
+  requestContext,
+  msgId = '',
+  confirmed = false,
+}) {
+  if (process.env.ZED_FAST_PATH === '0') return { hit: false };
+
+  const resolved = resolveZedIntent(message, requestContext);
+  if (resolved.tier === 'llm' || !resolved.steps?.length) {
     return { hit: false };
+  }
+
+  if (resolved.needsConfirmation && !confirmed) {
+    const text = buildConfirmationPreview(resolved);
+    zedLog.orchestration('fast_path_confirm', {
+      msgId,
+      intent: resolved.intent,
+      tier: resolved.tier,
+      confidence: resolved.confidence,
+    });
+    return {
+      hit: true,
+      needsConfirmation: true,
+      intent: resolved,
+      text,
+      toolResults: [],
+      body: {
+        text,
+        tool_results: [],
+        model: 'zed-fast-path',
+        msgId,
+        meta: {
+          fast_path: true,
+          needs_confirmation: true,
+          tier: resolved.tier,
+          intent: resolved.intent,
+          confidence: resolved.confidence,
+          pending_steps: resolved.steps,
+        },
+      },
+    };
   }
 
   const started = Date.now();
   zedLog.orchestration('fast_path', {
     msgId,
-    intent: intent.intent,
-    steps: intent.steps.length,
-    confidence: intent.confidence,
-    matched: intent.matched,
+    intent: resolved.intent,
+    tier: resolved.tier,
+    steps: resolved.steps.length,
+    confidence: resolved.confidence,
+    matched: resolved.matched,
+    source: requestContext?.source || 'text',
   });
 
   const toolResults = [];
-  for (const step of intent.steps) {
+  for (const step of resolved.steps) {
     let result;
     try {
       result = await registry.execute(step.tool, step.input, requestContext);
@@ -56,7 +105,7 @@ export async function tryZedFastPath({ message, registry, requestContext, msgId 
 
   return {
     hit: true,
-    intent,
+    intent: resolved,
     text,
     toolResults,
     body: {
@@ -66,10 +115,11 @@ export async function tryZedFastPath({ message, registry, requestContext, msgId 
       msgId,
       meta: {
         fast_path: true,
-        intent: intent.intent,
-        confidence: intent.confidence,
+        tier: resolved.tier,
+        intent: resolved.intent,
+        confidence: resolved.confidence,
         duration_ms: duration,
-        steps: intent.steps.length,
+        steps: resolved.steps.length,
       },
     },
   };
@@ -77,11 +127,15 @@ export async function tryZedFastPath({ message, registry, requestContext, msgId 
 
 /**
  * Minimal SSE stream for fast path (same events useZedChat expects).
- *
- * @param {{ text: string, toolResults: Array, intent: object, msgId: string, model?: string }} payload
- * @returns {ReadableStream}
  */
-export function createZedFastPathSseStream({ text, toolResults, intent, msgId, model = 'zed-fast-path' }) {
+export function createZedFastPathSseStream({
+  text,
+  toolResults,
+  intent,
+  msgId,
+  model = 'zed-fast-path',
+  meta = {},
+}) {
   const encoder = new TextEncoder();
 
   return new ReadableStream({
@@ -120,7 +174,12 @@ export function createZedFastPathSseStream({ text, toolResults, intent, msgId, m
             tool_results: toolResults,
             model,
             msgId,
-            meta: { fast_path: true, intent: intent.intent, steps: intent.steps?.length || 1 },
+            meta: {
+              fast_path: true,
+              intent: intent?.intent,
+              steps: intent?.steps?.length || toolResults.length,
+              ...meta,
+            },
           })
         )
       );

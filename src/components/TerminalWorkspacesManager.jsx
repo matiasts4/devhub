@@ -106,6 +106,7 @@ import {
   DEFAULT_RIGHT_DOCK_STATE,
   MIN_RIGHT_DOCK_SIZE,
   readRightDockState,
+  rightDockStatesEqual,
   sanitizeRightDockState,
   writeRightDockState,
 } from './workspace/rightDockState';
@@ -3020,7 +3021,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         typeof nextValue === 'function'
           ? nextValue(currentState)
           : { ...currentState, ...nextValue };
-      return sanitizeRightDockState(resolvedState);
+      const nextState = sanitizeRightDockState(resolvedState);
+      // ponytail: sanitize always allocates — skip re-render when dock is unchanged
+      return rightDockStatesEqual(currentState, nextState) ? prev : nextState;
     });
   }, []);
 
@@ -6130,18 +6133,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
         }, 400);
-      } else if (focus === true && typeof window !== 'undefined') {
-        updateRightDockState((currentState) => ({
-          ...currentState,
-          visible: true,
-          maximizedView: 'pizarra',
-        }));
-        window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-        }, 400);
-        window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-        }, 720);
       }
     };
 

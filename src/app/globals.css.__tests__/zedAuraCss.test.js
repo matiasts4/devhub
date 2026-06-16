@@ -93,3 +93,35 @@ describe('globals.css — zed-aura-* block (ZAA-5)', () => {
     expect(region).toMatch(/\.zed-aura-pulse\s*\{[^}]*animation:\s*zed-aura-breathe/s);
   });
 });
+
+describe('globals.css — Zed live-state visuals (processing/speaking)', () => {
+  let css;
+  beforeAll(() => {
+    css = loadGlobals();
+  });
+
+  test('processing sweep layer + spin animation exist', () => {
+    expect(css).toMatch(/\.zed-aura-sweep\s*\{/);
+    expect(css).toMatch(/@keyframes\s+zed-aura-spin\b/);
+    expect(css).toMatch(/\.zed-aura-sweep-speaking\s*\{[^}]*animation:\s*zed-aura-spin/s);
+  });
+
+  test('speaking color aura + wave animation exist', () => {
+    expect(css).toMatch(/\.zed-aura-speaking\s*\{/);
+    expect(css).toMatch(/@keyframes\s+zed-aura-speak-wave\b/);
+  });
+
+  test('pill state glow + animated topline + equalizer exist', () => {
+    expect(css).toMatch(/\.zed-pill-surface\[data-zed-state='speaking'\]/);
+    expect(css).toMatch(/@keyframes\s+zed-topline-slide\b/);
+    expect(css).toMatch(/@keyframes\s+zed-eq-bounce\b/);
+  });
+
+  test('reduced-motion disables the new live-state animations', () => {
+    const blocks =
+      css.match(/@media\s+\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\n\}/g) || [];
+    const joined = blocks.join('\n');
+    expect(joined).toMatch(/\.zed-aura-speaking-animate/);
+    expect(joined).toMatch(/\.zed-eq-bar/);
+  });
+});

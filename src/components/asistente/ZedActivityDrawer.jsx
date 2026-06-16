@@ -47,7 +47,11 @@ export default function ZedActivityDrawer({
             </button>
           </div>
 
-          <div className="max-h-[min(280px,40vh)] space-y-2 overflow-y-auto px-3 py-2" role="log" aria-live="polite">
+          <div
+            className="max-h-[min(280px,40vh)] space-y-2 overflow-y-auto px-3 py-2"
+            role="log"
+            aria-live="polite"
+          >
             <ZedAuditTrace entries={auditTrail} />
 
             {currentStep ? (
@@ -73,6 +77,10 @@ export default function ZedActivityDrawer({
                         ? `¿Cerrar la terminal ${pendingApproval.displayName} (${pendingApproval.terminalId})?`
                         : `¿Cerrar la terminal ${pendingApproval.terminalId}?`)}
                   </p>
+                ) : pendingApproval.kind === 'local_intent' ? (
+                  <p className="mb-2 text-[11px] text-[var(--text-secondary)]">
+                    {pendingApproval.preview || '¿Confirmás esta acción local?'}
+                  </p>
                 ) : (
                   <p className="mb-2 text-[11px] text-[var(--text-secondary)]">
                     Confirmar comando:{' '}
@@ -88,7 +96,11 @@ export default function ZedActivityDrawer({
                     disabled={isLoading}
                     className="rounded-md bg-[var(--accent-primary)] px-2.5 py-1 text-[10px] font-medium text-white disabled:opacity-50"
                   >
-                    {pendingApproval.kind === 'close_terminal' ? 'Cerrar' : 'Aprobar'}
+                    {pendingApproval.kind === 'close_terminal'
+                      ? 'Cerrar'
+                      : pendingApproval.kind === 'local_intent'
+                        ? 'Ejecutar'
+                        : 'Aprobar'}
                   </button>
                   <button
                     type="button"
@@ -104,7 +116,9 @@ export default function ZedActivityDrawer({
             {[...assistantTurns].reverse().map((msg, idx) => (
               <div key={msg.timestamp || idx} className="space-y-1.5">
                 {typeof msg.content === 'string' && msg.content && msg.content !== 'initial' ? (
-                  <p className="text-[11px] leading-snug text-[var(--text-primary)]">{msg.content}</p>
+                  <p className="text-[11px] leading-snug text-[var(--text-primary)]">
+                    {msg.content}
+                  </p>
                 ) : null}
                 {Array.isArray(msg.tool_results)
                   ? msg.tool_results.map((entry, i) => (

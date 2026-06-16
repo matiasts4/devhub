@@ -100,7 +100,13 @@ async function callMinimax({ model, maxTokens, system, messages, apiKey, tools }
     hasToolUse,
   });
   // Also emit the detailed apiResponse for the readable log (includes tool_use flag)
-  zedLog.apiResponse?.(duration, contentTypes, contentTypes.includes('text'), contentTypes.includes('thinking'), hasToolUse);
+  zedLog.apiResponse?.(
+    duration,
+    contentTypes,
+    contentTypes.includes('text'),
+    contentTypes.includes('thinking'),
+    hasToolUse
+  );
   return data;
 }
 
@@ -157,11 +163,11 @@ export async function POST(request) {
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'malformed body' }, { status: 400 });
     }
-    const { message, context: clientContext = {}, history } = body;
+    const { message, context: clientContext = {}, history, source = 'text' } = body;
     const requestContext = {
       ...clientContext,
-      max_terminal_panels:
-        Number(clientContext?.max_terminal_panels) || MAX_ZED_TERMINAL_PANELS,
+      source,
+      max_terminal_panels: Number(clientContext?.max_terminal_panels) || MAX_ZED_TERMINAL_PANELS,
       terminal_panel_count: Number(clientContext?.terminal_panel_count) || 0,
       workspace_terminals: Array.isArray(clientContext?.workspace_terminals)
         ? clientContext.workspace_terminals
@@ -204,8 +210,7 @@ export async function POST(request) {
         } catch (err) {
           result = { error: err.message };
         }
-        const closeOk =
-          tool === 'close_terminal' && result?.success === true && !result?.error;
+        const closeOk = tool === 'close_terminal' && result?.success === true && !result?.error;
         const execOk = tool !== 'close_terminal' && !result?.error;
         let text = 'Listo.';
         if (tool === 'close_terminal') {
@@ -231,6 +236,7 @@ export async function POST(request) {
       registry,
       requestContext,
       msgId,
+      confirmed: body.confirmed === true,
     });
     if (fastPath.hit) {
       zedLog.sessionEnd(msgId, fastPath.text, fastPath.toolResults.length);
@@ -241,6 +247,7 @@ export async function POST(request) {
           toolResults: fastPath.toolResults,
           intent: fastPath.intent,
           msgId,
+          meta: fastPath.body?.meta,
         });
         return new Response(stream, {
           headers: {

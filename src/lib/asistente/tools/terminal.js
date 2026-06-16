@@ -408,6 +408,24 @@ export const reviewTerminalTool = {
     }
     const session_id = lookup.sessionId;
 
+    // ponytail: per-request map; upgrade to LRU if multi-session review loops persist
+    if (context && typeof context === 'object') {
+      if (!context._zed_review_guard || typeof context._zed_review_guard !== 'object') {
+        context._zed_review_guard = {};
+      }
+      const guard = context._zed_review_guard;
+      const prev = guard[session_id];
+      if (prev && prev.count >= 1 && !prev.inputSince) {
+        return {
+          error: 'no_new_output_since_last_review',
+          message:
+            'No hay salida nueva desde la última revisión de esta terminal; describí lo que ya viste y no vuelvas a llamar review_terminal_output en el mismo session_id.',
+          session_id,
+        };
+      }
+      guard[session_id] = { count: (prev?.count || 0) + 1, inputSince: false };
+    }
+
     zedLog.info('TOOL', 'review_terminal_output', { session_id });
     const baseUrl = getBaseUrl();
     try {
@@ -516,6 +534,11 @@ export const executeInTerminalTool = {
         };
       }
       const base = await response.json().catch(() => ({ session_id, sent: true }));
+
+      if (context && typeof context === 'object' && context._zed_review_guard) {
+        const row = context._zed_review_guard[session_id];
+        if (row) row.inputSince = true;
+      }
 
       // Observability boost (point 3): immediately capture recent output so the
       // model sees what the command produced without needing an explicit extra

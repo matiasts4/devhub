@@ -20,7 +20,8 @@
 .env.production.local
 .env
 
-# === Misc ===
+# === DevHub voice Python venv (built once via npm run voice:ensure) ===
+packages/veloce-audio/python/.venv/
 .DS_Store
 Thumbs.db
 .atl/

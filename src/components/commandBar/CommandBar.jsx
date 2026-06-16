@@ -1,16 +1,16 @@
 /**
  * CommandBar — Natural language command palette for DevHub.
- * 
+ *
  * Keyboard shortcut: Cmd+Shift+K (Mac) or Ctrl+Shift+K (Windows/Linux)
  * Slice 1: Terminal-run only (types command, spawns/focuses terminal)
- * 
+ *
  * Architecture:
  * - cmdk CommandDialog for accessible command palette UI
  * - Radix Dialog for modal overlay and focus trap
  * - framer-motion for smooth entrance/exit animations
  * - IntentRouter classifies user input
  * - dispatchAction executes actions via SurfaceController
- * 
+ *
  * @module components/commandBar/CommandBar
  */
 
@@ -21,12 +21,12 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Command } from 'cmdk';
 import { useCommandBar } from '@/lib/commandBar/useCommandBar';
 import { isCommandBarEnabled } from '@/lib/commandBar/featureFlag';
-import { createRuleIntentRouter } from '@/lib/commandBar/intent/ruleIntentRouter';
+import { buildCommandBarContext, resolveCommandBarIntent } from '@/lib/commandBar/zedIntentBridge';
 import { dispatchAction } from '@/lib/commandBar/actions/dispatchAction';
 
 /**
  * CommandBar component.
- * 
+ *
  * @param {Object} props
  * @param {import('@/lib/commandBar/types').SurfaceController} props.surfaceController
  */
@@ -35,8 +35,7 @@ export default function CommandBar({ surfaceController }) {
   const { isOpen, close } = useCommandBar();
   const [inputValue, setInputValue] = useState('');
   const [status, setStatus] = useState(null); // { phase, message, error, result }
-  const [intentRouter] = useState(() => createRuleIntentRouter());
-  
+
   // Detect reduced motion preference
   const prefersReducedMotion = useReducedMotion();
 
@@ -46,10 +45,9 @@ export default function CommandBar({ surfaceController }) {
       if (!value.trim()) return;
 
       const trimmedValue = value.trim();
-      
-      // Classify intent
-      const resolvedIntent = intentRouter.route(trimmedValue);
-      
+      const context = buildCommandBarContext(surfaceController);
+      const resolvedIntent = resolveCommandBarIntent(trimmedValue, context);
+
       // Dispatch action and track lifecycle
       try {
         for await (const actionStatus of dispatchAction(resolvedIntent, surfaceController)) {
@@ -78,7 +76,7 @@ export default function CommandBar({ surfaceController }) {
         });
       }
     },
-    [intentRouter, surfaceController, close]
+    [surfaceController, close]
   );
 
   // Reset state when dialog closes
@@ -170,8 +168,8 @@ export default function CommandBar({ surfaceController }) {
                     status.error
                       ? 'bg-destructive/10 text-destructive'
                       : status.phase === 'done'
-                      ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                      : 'bg-muted text-muted-foreground'
+                        ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                        : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -189,9 +187,7 @@ export default function CommandBar({ surfaceController }) {
                         {status.phase === 'done' && (
                           <div className="w-2 h-2 rounded-full bg-green-500" />
                         )}
-                        {status.error && (
-                          <div className="w-2 h-2 rounded-full bg-destructive" />
-                        )}
+                        {status.error && <div className="w-2 h-2 rounded-full bg-destructive" />}
                         {status.phase === 'queued' && (
                           <div className="w-2 h-2 rounded-full bg-blue-500/50" />
                         )}
@@ -205,7 +201,10 @@ export default function CommandBar({ surfaceController }) {
                     <motion.div
                       initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}
                       animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1 }}
-                      transition={{ duration: prefersReducedMotion ? 0.01 : 0.3, delay: prefersReducedMotion ? 0 : 0.1 }}
+                      transition={{
+                        duration: prefersReducedMotion ? 0.01 : 0.3,
+                        delay: prefersReducedMotion ? 0 : 0.1,
+                      }}
                       className="mt-3 space-y-2"
                     >
                       <div className="flex items-center gap-2 text-xs">
@@ -243,11 +242,20 @@ export default function CommandBar({ surfaceController }) {
 
               {/* Hints */}
               <div className="px-4 py-2 text-xs text-muted-foreground border-t border-border bg-muted/50">
-                <kbd className="px-1.5 py-0.5 rounded bg-background border border-border">Enter</kbd> to execute
+                <kbd className="px-1.5 py-0.5 rounded bg-background border border-border">
+                  Enter
+                </kbd>{' '}
+                to execute
                 {' · '}
-                <kbd className="px-1.5 py-0.5 rounded bg-background border border-border">Esc</kbd> to close
+                <kbd className="px-1.5 py-0.5 rounded bg-background border border-border">
+                  Esc
+                </kbd>{' '}
+                to close
                 {' · '}
-                <kbd className="px-1.5 py-0.5 rounded bg-background border border-border">Cmd+Shift+K</kbd> to toggle
+                <kbd className="px-1.5 py-0.5 rounded bg-background border border-border">
+                  Cmd+Shift+K
+                </kbd>{' '}
+                to toggle
               </div>
             </div>
           </motion.div>

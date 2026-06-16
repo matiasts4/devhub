@@ -41,11 +41,22 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["../sidecar-backend", "resources/standalone.zip"],
+    "resources": [
+      "../sidecar-backend",
+      "resources/standalone.zip",
+      "../packages/veloce-audio/python"
+    ],
     "externalBin": ["binaries/devhub-server"],
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1", "unzip"],
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "unzip",
+          "python3-venv",
+          "libportaudio2"
+        ],
         "postInstallScript": "../packaging/linux/postinst",
         "files": {
           "/usr/share/applications/DevHub.desktop": "../packaging/linux/DevHub.desktop",

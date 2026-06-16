@@ -2,6 +2,7 @@ const {
   resolveSharedTerminalVisibility,
   PIZARRA_SHARED_SURFACE_HOST,
   WORKSPACE_SHARED_SURFACE_HOST,
+  sharedTerminalSurfacePropsDataEqual,
 } = require('../SharedTerminalSurface');
 
 describe('resolveSharedTerminalVisibility (A.2 portal-hidden GPU release)', () => {
@@ -166,5 +167,41 @@ describe('resolveSharedTerminalVisibility — host switch GPU release path (A2.1
       expect(pizarraVisible).toBe(pizarraOwns);
       expect(workspaceVisible !== pizarraVisible).toBe(true);
     }
+  });
+});
+
+describe('sharedTerminalSurfacePropsDataEqual', () => {
+  const base = {
+    id: 'p1',
+    cwd: '/tmp',
+    autoFocus: true,
+    isActivePanel: true,
+    isVisibleInLayout: true,
+    surfaceHost: 'workspace',
+    pizarraOwnsLiveSurfaces: false,
+    onActivatePanel: () => {},
+  };
+
+  test('returns true when only callback refs differ', () => {
+    expect(
+      sharedTerminalSurfacePropsDataEqual(base, {
+        ...base,
+        onActivatePanel: () => {},
+        onResetRendererToXterm: () => {},
+      })
+    ).toBe(true);
+  });
+
+  test('returns false when a data field changes', () => {
+    expect(sharedTerminalSurfacePropsDataEqual(base, { ...base, autoFocus: false })).toBe(false);
+  });
+
+  test('returns true when swarmContext values match by structure', () => {
+    expect(
+      sharedTerminalSurfacePropsDataEqual(
+        { ...base, swarmContext: { role: 'a', n: 1 } },
+        { ...base, swarmContext: { role: 'a', n: 1 } }
+      )
+    ).toBe(true);
   });
 });

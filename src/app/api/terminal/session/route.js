@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
-import { createSession, ensureTTYServer } from '@/lib/terminal/ttyServer';
+import { createSession, ensureTTYServer, pushSessionInput } from '@/lib/terminal/ttyServer';
 
 export { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 
@@ -174,17 +174,25 @@ export async function POST(request) {
   } catch {
     body = {};
   }
-  const { cwd, program } = body;
+  const { cwd, program, command } = body;
   const shell = program || process.env.SHELL || 'bash';
 
   try {
     const { port, wsPath } = await ensureTTYServer(cwd);
     const session = createSession({ cwd, shell });
 
-    // Session id is reserved for Zed / execute_in_terminal. Command execution
-    // runs in the visible panel (initialCommand on connect), not on a hidden PTY.
+    let command_sent = false;
+    if (typeof command === 'string' && command.trim()) {
+      const payload = command.endsWith('\n') ? command : `${command}\n`;
+      command_sent = pushSessionInput(session.id, payload);
+    }
 
-    return NextResponse.json({ id: session.id, port, wsPath });
+    return NextResponse.json({
+      id: session.id,
+      port,
+      wsPath,
+      ...(command_sent ? { command_sent: true } : {}),
+    });
   } catch (error) {
     console.error('Failed to create terminal session:', error);
     return NextResponse.json(

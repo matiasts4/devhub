@@ -1,4 +1,9 @@
-const { terminalTool, listTerminalsTool, reviewTerminalTool, _resetOpenTerminalCounterForTests } = require('../../tools/terminal');
+const {
+  terminalTool,
+  listTerminalsTool,
+  reviewTerminalTool,
+  _resetOpenTerminalCounterForTests,
+} = require('../../tools/terminal');
 
 const REAL_FETCH = global.fetch;
 
@@ -20,10 +25,7 @@ describe('open_terminal (terminalTool)', () => {
       throw new Error('fetch should not be called');
     });
 
-    const result = await terminalTool.execute(
-      { cwd: '/tmp/devhub-x', command: 'ls' },
-      {}
-    );
+    const result = await terminalTool.execute({ cwd: '/tmp/devhub-x', command: 'ls' }, {});
 
     expect(result).toEqual({
       opened: true,
@@ -251,5 +253,18 @@ describe('review_terminal_output (reviewTerminalTool)', () => {
     expect(calls).toHaveLength(0);
     expect(result.error).toBe('both_name_and_session');
     expect(result.message).toBe('no podés pasar name y session_id a la vez.');
+  });
+
+  test('blocks duplicate review on same session_id without new input', async () => {
+    const ctx = { _zed_review_guard: {} };
+    mockFetch(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ output: 'same', session_id: 'p1' }),
+    }));
+    const first = await reviewTerminalTool.execute({ session_id: 'p1' }, ctx);
+    expect(first.output).toBe('same');
+    const second = await reviewTerminalTool.execute({ session_id: 'p1' }, ctx);
+    expect(second.error).toBe('no_new_output_since_last_review');
   });
 });

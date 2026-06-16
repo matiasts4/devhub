@@ -5,7 +5,9 @@ import { X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
 import {
   SharedTerminalSurfacePortal,
+  hasSharedTerminalSurfaceProps,
   mergeSharedTerminalSurfaceProps,
+  setSharedTerminalSurfaceProps,
   useSharedTerminalSurfacesEnabled,
 } from '@/components/terminal/SharedTerminalSurface';
 import {
@@ -255,7 +257,7 @@ export default function CanvasTerminal({
 
   useLayoutEffect(() => {
     if (!sharedSurfacesEnabled || !terminalId || !pizarraOwnsLiveSurfaces) return;
-    mergeSharedTerminalSurfaceProps(terminalId, {
+    const patch = {
       surfaceHost: 'pizarra',
       pizarraOwnsLiveSurfaces: true,
       isVisibleInLayout: isShown,
@@ -269,7 +271,12 @@ export default function CanvasTerminal({
       initialCommand,
       requestedRendererMode,
       visibleTerminalPanelCount,
-    });
+    };
+    if (!hasSharedTerminalSurfaceProps(terminalId)) {
+      setSharedTerminalSurfaceProps(terminalId, { id: terminalId, ...patch });
+      return;
+    }
+    mergeSharedTerminalSurfaceProps(terminalId, patch);
   }, [
     sharedSurfacesEnabled,
     terminalId,

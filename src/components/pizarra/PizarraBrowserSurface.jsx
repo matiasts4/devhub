@@ -45,6 +45,7 @@ import {
   PIZARRA_SURFACE_HEADER_STYLE,
   PIZARRA_SURFACE_FRAME_BG,
 } from '@/lib/pizarra/surfaceMotion';
+import { normalizeBrowserUrl } from '@/components/workspace/rightDockState';
 import {
   useSurfaceEnterAnimation,
   SURFACE_ENTER_STATE_ATTRIBUTE,
@@ -65,6 +66,10 @@ function resolveBrowserUrl(url) {
   const normalized = url.endsWith('/') ? url : url + '/';
   if (normalized === LEGACY_LOCALHOST_3200 || normalized === LEGACY_LOCALHOST_3000) return DEFAULT;
   return url;
+}
+
+function canonicalBrowserUrl(url) {
+  return normalizeBrowserUrl(url) || resolveBrowserUrl(url);
 }
 
 function createDockState(url) {
@@ -200,10 +205,10 @@ export default function PizarraBrowserSurface({
   const showTabStrip = tabsMode === 'multi';
 
   useEffect(() => {
-    const nextUrl = resolveBrowserUrl(shape.url);
-    persistedUrlRef.current = nextUrl;
+    const nextUrl = canonicalBrowserUrl(shape.url);
     resolvedOnDockStateChange((currentState) => {
-      if (currentState.browserUrl === nextUrl) return currentState;
+      const currentUrl = canonicalBrowserUrl(currentState.browserUrl);
+      if (currentUrl === nextUrl) return currentState;
 
       const nextHistory = currentState.browserHistory?.includes(nextUrl)
         ? currentState.browserHistory
@@ -219,11 +224,16 @@ export default function PizarraBrowserSurface({
   }, [shape.url, resolvedOnDockStateChange]);
 
   useEffect(() => {
-    const nextUrl = resolveBrowserUrl(resolvedDockState.browserUrl);
-    if (persistedUrlRef.current === nextUrl) return;
-    persistedUrlRef.current = nextUrl;
-    onUpdateElement?.(shape.id, { url: nextUrl });
-  }, [resolvedDockState.browserUrl, onUpdateElement, shape.id]);
+    const dockUrl = canonicalBrowserUrl(resolvedDockState.browserUrl);
+    const shapeUrl = canonicalBrowserUrl(shape.url);
+    if (dockUrl === shapeUrl) {
+      persistedUrlRef.current = dockUrl;
+      return;
+    }
+    if (persistedUrlRef.current === dockUrl) return;
+    persistedUrlRef.current = dockUrl;
+    onUpdateElement?.(shape.id, { url: dockUrl });
+  }, [resolvedDockState.browserUrl, shape.url, onUpdateElement, shape.id]);
 
   // pizarra-ux-overhaul: 5s explicit failure timer. Counts the time
   // the iframe is "stuck" (no load event AND no native readiness

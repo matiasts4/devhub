@@ -214,11 +214,15 @@ function createRegistry() {
 
   function setPreferredHostForSurface(id, hostId) {
     if (!id) return;
+    const current = preferredHostBySurface.get(id);
     if (hostId === null || hostId === undefined) {
+      if (!preferredHostBySurface.has(id)) return;
       preferredHostBySurface.delete(id);
-    } else {
-      preferredHostBySurface.set(id, hostId);
+      notify();
+      return;
     }
+    if (current === hostId) return;
+    preferredHostBySurface.set(id, hostId);
     notify();
   }
 

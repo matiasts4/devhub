@@ -87,6 +87,8 @@ function baseChatMock(overrides = {}) {
     handleRejectApproval: jest.fn(),
     applySuggestion: jest.fn(),
     quickSuggestions: [],
+    sendFromVoice: jest.fn(),
+    voiceSettings: { voiceEnabled: false, ttsEnabled: false, sttModel: 'base' },
     ...overrides,
   };
 }

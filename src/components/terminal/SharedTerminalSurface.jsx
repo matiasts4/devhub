@@ -53,6 +53,54 @@ const propsBySurfaceId = new Map();
 const propsListeners = new Set();
 let propsVersion = 0;
 
+/** Data fields that affect TerminalTTY render; callback refs are refreshed silently. */
+const TERMINAL_SURFACE_DATA_KEYS = [
+  'id',
+  'cwd',
+  'swarmContext',
+  'hideTitleBar',
+  'showQuickCopyButton',
+  'autoFocus',
+  'isActivePanel',
+  'isVisibleInLayout',
+  'visibleTerminalPanelCount',
+  'initialCommand',
+  'connectionState',
+  'requestedRendererMode',
+  'suspendNativeSurface',
+  'nativeSurfacePolicy',
+  'surfaceHost',
+  'pizarraOwnsLiveSurfaces',
+];
+
+export function sharedTerminalSurfacePropsDataEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  for (const key of TERMINAL_SURFACE_DATA_KEYS) {
+    const left = a[key];
+    const right = b[key];
+    if (left === right) continue;
+    // ponytail: swarmContext is a plain object — compare by value, not reference
+    if (key === 'swarmContext' && left != null && right != null) {
+      try {
+        if (JSON.stringify(left) === JSON.stringify(right)) continue;
+      } catch {
+        // fall through to !==
+      }
+    }
+    return false;
+  }
+  return true;
+}
+
+function refreshTerminalSurfacePropsInPlace(existing, terminalProps) {
+  Object.assign(existing, terminalProps);
+}
+
+export function hasSharedTerminalSurfaceProps(surfaceId) {
+  return Boolean(surfaceId && propsBySurfaceId.has(surfaceId));
+}
+
 function notifyPropsChanged() {
   propsVersion += 1;
   for (const listener of propsListeners) {
@@ -62,6 +110,12 @@ function notifyPropsChanged() {
 
 export function setSharedTerminalSurfaceProps(surfaceId, terminalProps) {
   if (!surfaceId || !terminalProps) return;
+  const existing = propsBySurfaceId.get(surfaceId);
+  // ponytail: skip store notify when only handler refs changed — breaks update-depth loops
+  if (existing && sharedTerminalSurfacePropsDataEqual(existing, terminalProps)) {
+    refreshTerminalSurfacePropsInPlace(existing, terminalProps);
+    return;
+  }
   propsBySurfaceId.set(surfaceId, terminalProps);
   notifyPropsChanged();
 }
@@ -77,7 +131,12 @@ export function mergeSharedTerminalSurfaceProps(surfaceId, partial) {
   if (!surfaceId || !partial) return;
   const existing = propsBySurfaceId.get(surfaceId);
   if (!existing) return;
-  propsBySurfaceId.set(surfaceId, { ...existing, ...partial });
+  const merged = { ...existing, ...partial };
+  if (sharedTerminalSurfacePropsDataEqual(existing, merged)) {
+    refreshTerminalSurfacePropsInPlace(existing, partial);
+    return;
+  }
+  propsBySurfaceId.set(surfaceId, merged);
   notifyPropsChanged();
 }
 
@@ -170,7 +229,7 @@ function TerminalSurfaceContent({ surfaceId }) {
       cancelAnimationFrame(raf2);
       window.clearTimeout(timer);
     };
-  }, [hasActiveProjection, registry, surfaceId, terminalProps]);
+  }, [hasActiveProjection, registry, surfaceId]);
 
   if (!terminalProps) return null;
 
@@ -193,14 +252,25 @@ function TerminalSurfaceContent({ surfaceId }) {
 }
 
 function SharedTerminalSurfaceRegistrarInner({ surfaceId, terminalProps }) {
+  const pizarraOwnsLiveSurfaces = Boolean(terminalProps?.pizarraOwnsLiveSurfaces);
   // Push props to the external store AFTER commit (not during render) so React
   // never schedules a re-render of TerminalSurfaceContent while this component
   // is still rendering. useLayoutEffect keeps the sync synchronous relative to
   // the same paint tick, preserving the original "workspace props win before
   // pizarra merge effects run" guarantee without the setState-in-render warning.
+  //
+  // In pizarra mode CanvasTerminal owns ongoing merges (visibility, suspend,
+  // drag). Re-setting full props here every frame fought CanvasTerminal and
+  // caused maximum update depth loops.
   useLayoutEffect(() => {
+    if (pizarraOwnsLiveSurfaces) {
+      if (!hasSharedTerminalSurfaceProps(surfaceId)) {
+        setSharedTerminalSurfaceProps(surfaceId, terminalProps);
+      }
+      return;
+    }
     setSharedTerminalSurfaceProps(surfaceId, terminalProps);
-  }, [surfaceId, terminalProps]);
+  }, [pizarraOwnsLiveSurfaces, surfaceId, terminalProps]);
 
   useEffect(() => {
     return () => clearSharedTerminalSurfaceProps(surfaceId);

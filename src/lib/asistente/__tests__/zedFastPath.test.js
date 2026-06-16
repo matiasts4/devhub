@@ -5,6 +5,7 @@ const {
   extractTerminalNameFromMessage,
   extractMultipleCloseNames,
   normalizeAgentAliases,
+  wantsCloseAllTerminals,
 } = require('../zedFastPath');
 const { formatZedFastPathReply, formatZedToolResultsReply } = require('../zedFastPathResponse');
 const { shouldShortCircuitAfterTools } = require('../zedShortCircuit');
@@ -96,6 +97,38 @@ describe('zedFastPath intent cache', () => {
     expect(hit?.intent).toBe('close_multiple');
     expect(hit?.steps).toHaveLength(2);
     expect(hit?.steps.map((s) => s.input.name).sort()).toEqual(['Cesar', 'Chase']);
+  });
+
+  test('close_all on plural "cierra las terminales abiertas"', () => {
+    const hit = resolveZedFastPathIntent('cierra las terminales abiertas', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('close_multiple');
+    expect(hit?.matched).toBe('close_all_terminals');
+    expect(hit?.steps).toHaveLength(2);
+    expect(hit?.steps.every((s) => s.tool === 'close_terminal')).toBe(true);
+  });
+
+  test('close_all on "cerrar las terminales que están abiertas"', () => {
+    const hit = resolveZedFastPathIntent('cerrar las terminales que están abiertas', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('close_multiple');
+    expect(hit?.steps.map((s) => s.input.name).sort()).toEqual(['Cesar', 'Chase']);
+  });
+
+  test('does NOT list when user asks to close plural terminales', () => {
+    const hit = resolveZedFastPathIntent('quiero que cierres las terminales actuales', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('close_multiple');
+    expect(hit?.steps[0]?.tool).toBe('close_terminal');
+  });
+
+  test('wantsCloseAllTerminals false for singular "cierra la terminal"', () => {
+    expect(wantsCloseAllTerminals('cierra la terminal', 'cierra la terminal', TERMINALS)).toBe(
+      false
+    );
   });
 
   test('close_terminal on "cerrá Chase"', () => {

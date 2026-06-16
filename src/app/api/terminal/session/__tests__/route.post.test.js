@@ -104,6 +104,29 @@ describe('POST /api/terminal/session (T-016)', () => {
     expect(response.body.error).toMatch(/ws bind failed|No se pudo/i);
   });
 
+  test('pushSessionInput runs command when body.command is set', async () => {
+    const request = {
+      json: async () => ({ cwd: '/tmp/devhub-z', command: 'ls -la' }),
+    };
+    const response = await POST(request);
+
+    expect(mockPushSessionInput).toHaveBeenCalledWith('sess-new-1', 'ls -la\n');
+    expect(response.body).toMatchObject({
+      id: 'sess-new-1',
+      port: 4001,
+      wsPath: '/terminal',
+      command_sent: true,
+    });
+  });
+
+  test('preserves trailing newline on command without adding another', async () => {
+    const request = {
+      json: async () => ({ command: 'pwd\n' }),
+    };
+    await POST(request);
+    expect(mockPushSessionInput).toHaveBeenCalledWith('sess-new-1', 'pwd\n');
+  });
+
   test('handles malformed JSON body gracefully (empty body → cwd undefined, shell default)', async () => {
     const request = {
       json: async () => {

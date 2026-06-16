@@ -2,6 +2,7 @@ const {
   DEFAULT_RIGHT_DOCK_STATE,
   normalizeBrowserUrl,
   readRightDockState,
+  rightDockStatesEqual,
   sanitizeRightDockState,
   writeRightDockState,
 } = require('../rightDockState');
@@ -95,5 +96,27 @@ describe('rightDockState — browserLoadFallback whitelist (pizarra-ux-overhaul 
     writeRightDockState(storage, 'p-1', 'ws-1', { browserLoadFallback: true });
     const read = readRightDockState(storage, 'p-1', 'ws-1');
     expect(read.browserLoadFallback).toBe(true);
+  });
+});
+
+describe('rightDockStatesEqual', () => {
+  test('returns true for sanitized-equivalent states', () => {
+    const a = sanitizeRightDockState(DEFAULT_RIGHT_DOCK_STATE);
+    const b = sanitizeRightDockState({ ...DEFAULT_RIGHT_DOCK_STATE });
+    expect(rightDockStatesEqual(a, b)).toBe(true);
+  });
+
+  test('returns false when browserUrl changes', () => {
+    const a = sanitizeRightDockState({
+      browserUrl: 'http://localhost:3100/',
+      browserHistory: ['http://localhost:3100/'],
+      browserHistoryIndex: 0,
+    });
+    const b = sanitizeRightDockState({
+      browserUrl: 'https://example.com/',
+      browserHistory: ['https://example.com/'],
+      browserHistoryIndex: 0,
+    });
+    expect(rightDockStatesEqual(a, b)).toBe(false);
   });
 });

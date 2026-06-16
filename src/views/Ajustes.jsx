@@ -54,6 +54,7 @@ import {
   THEME_OPTIONS,
 } from '@/lib/theme/themes';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
+import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
@@ -295,9 +296,7 @@ function TerminalSubSection() {
     const next = setTerminalTypography(window.localStorage, partial);
     setTypographyState(next);
     applyTerminalTypographyToDocument(next);
-    window.dispatchEvent(
-      new CustomEvent('devhub:terminal-typography-changed', { detail: next })
-    );
+    window.dispatchEvent(new CustomEvent('devhub:terminal-typography-changed', { detail: next }));
   };
 
   const handleSelectTerminalFontFamily = (value) => {
@@ -323,21 +322,13 @@ function TerminalSubSection() {
     const next = resetTerminalTypography(window.localStorage);
     setTypographyState(next);
     applyTerminalTypographyToDocument(next);
-    window.dispatchEvent(
-      new CustomEvent('devhub:terminal-typography-changed', { detail: next })
-    );
+    window.dispatchEvent(new CustomEvent('devhub:terminal-typography-changed', { detail: next }));
   };
 
   return (
-    <div
-      className="border-t px-6 py-5 space-y-6"
-      style={{ borderColor: 'var(--border-subtle)' }}
-    >
+    <div className="border-t px-6 py-5 space-y-6" style={{ borderColor: 'var(--border-subtle)' }}>
       <div>
-        <h4
-          className="font-mono text-sm font-semibold"
-          style={{ color: 'var(--text-primary)' }}
-        >
+        <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
           Terminal renderer
         </h4>
         <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -366,10 +357,7 @@ function TerminalSubSection() {
       </div>
 
       <div>
-        <h4
-          className="font-mono text-sm font-semibold"
-          style={{ color: 'var(--text-primary)' }}
-        >
+        <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
           Header style
         </h4>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
@@ -388,10 +376,7 @@ function TerminalSubSection() {
                   tone: isActive ? 'accent' : 'neutral',
                 })}
               >
-                <p
-                  className="text-xs font-semibold"
-                  style={{ color: 'var(--text-primary)' }}
-                >
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
                   {option.label}
                 </p>
                 <p
@@ -434,10 +419,7 @@ function TerminalSubSection() {
       </div>
 
       <div>
-        <h4
-          className="font-mono text-sm font-semibold"
-          style={{ color: 'var(--text-primary)' }}
-        >
+        <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
           Terminal restore
         </h4>
         <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -473,10 +455,7 @@ function TerminalSubSection() {
       </div>
 
       <div data-testid="settings-zoom">
-        <h4
-          className="font-mono text-sm font-semibold"
-          style={{ color: 'var(--text-primary)' }}
-        >
+        <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
           Zoom Level
         </h4>
         <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -708,12 +687,12 @@ function ThemeOptionCard({ option, active, onClick }) {
       type="button"
       onClick={() => onClick(option.id)}
       className={`w-full border p-2.5 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : 'hover:border-borders-strong'}`}
-        style={{
-          ...chromeSurfaceStyle({ surface: 'panel', emphasized: active }),
-          borderColor: active
-            ? 'color-mix(in srgb, var(--accent-primary) 45%, transparent)'
-            : 'var(--chrome-border-color)',
-        }}
+      style={{
+        ...chromeSurfaceStyle({ surface: 'panel', emphasized: active }),
+        borderColor: active
+          ? 'color-mix(in srgb, var(--accent-primary) 45%, transparent)'
+          : 'var(--chrome-border-color)',
+      }}
     >
       <div
         className="relative overflow-hidden border h-28"
@@ -798,25 +777,25 @@ function MorphologyOptionCard({ option, active, onClick }) {
       type="button"
       onClick={() => onClick(option.id)}
       className={`w-full border p-3 text-left transition-all duration-200 ${active ? 'scale-[1.01]' : ''}`}
-        style={{
-          ...chromeSurfaceStyle({ surface: 'panel', emphasized: active }),
-          borderColor: active
-            ? 'color-mix(in srgb, var(--accent-primary) 24%, var(--chrome-border-color))'
-            : 'var(--chrome-border-color)',
-        }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {option.label}
-          </p>
-          {active ? (
-            <span
-              className="inline-flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-medium"
-              style={{
-                ...chromeSurfaceStyle({ surface: 'pill' }),
-                color: 'var(--text-primary)',
-              }}
-            >
+      style={{
+        ...chromeSurfaceStyle({ surface: 'panel', emphasized: active }),
+        borderColor: active
+          ? 'color-mix(in srgb, var(--accent-primary) 24%, var(--chrome-border-color))'
+          : 'var(--chrome-border-color)',
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {option.label}
+        </p>
+        {active ? (
+          <span
+            className="inline-flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-medium"
+            style={{
+              ...chromeSurfaceStyle({ surface: 'pill' }),
+              color: 'var(--text-primary)',
+            }}
+          >
             Activa
           </span>
         ) : null}
@@ -1628,7 +1607,10 @@ export default function Ajustes() {
 
           <div className="border-t px-6 py-5" style={{ borderColor: 'var(--border-subtle)' }}>
             <div className="mb-4">
-              <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              <h4
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 Morphology
               </h4>
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -2005,6 +1987,7 @@ export default function Ajustes() {
 
   const renderPrefsTab = () => (
     <div className="space-y-6">
+      <ZedVoiceSettings />
       <div className="overflow-hidden" style={panelStyle()}>
         <div
           className="flex items-center gap-3 px-6 py-4"
@@ -2078,10 +2061,7 @@ export default function Ajustes() {
 
   const renderDangerTab = () => (
     <div className="space-y-6">
-      <div
-        className="overflow-hidden"
-        style={panelStyle({ tone: 'danger' })}
-      >
+      <div className="overflow-hidden" style={panelStyle({ tone: 'danger' })}>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{ borderBottom: '1px solid color-mix(in srgb, var(--danger) 15%, transparent)' }}
