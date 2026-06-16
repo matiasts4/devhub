@@ -28,10 +28,16 @@ function sanitizeRestorePolicy(policy) {
 }
 
 /**
- * Returns the session file path, always evaluating os.homedir() at call time.
- * Exported as a function so tests can mock os.homedir() before calling.
+ * Returns the session file path, honoring DEVHUB_HOME when present.
+ * In dev mode DEVHUB_HOME points to ~/.devhub-dev; in packaged runs it is
+ * unset and we fall back to ~/.devhub. This keeps dev and release instances
+ * from clobbering each other's persisted terminal sessions.
  */
 export function getSessionFilePath() {
+  const devhubHome = process.env.DEVHUB_HOME;
+  if (devhubHome) {
+    return path.join(devhubHome, 'terminal-sessions.json');
+  }
   return path.join(os.homedir(), '.devhub', 'terminal-sessions.json');
 }
 

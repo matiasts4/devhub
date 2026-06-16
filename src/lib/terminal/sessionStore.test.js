@@ -31,6 +31,13 @@ describe('SESSION_FILE_PATH constant', () => {
     const { getSessionFilePath } = await import('./sessionStore.js');
     expect(getSessionFilePath()).toBe(MOCK_SESSIONS_FILE);
   });
+
+  it('honors DEVHUB_HOME when set', async () => {
+    process.env.DEVHUB_HOME = '/mock-devhub-home';
+    const { getSessionFilePath } = await import('./sessionStore.js');
+    expect(getSessionFilePath()).toBe('/mock-devhub-home/terminal-sessions.json');
+    delete process.env.DEVHUB_HOME;
+  });
 });
 
 describe('STALE_TTL_MS constant', () => {

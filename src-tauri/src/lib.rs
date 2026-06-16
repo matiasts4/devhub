@@ -29,8 +29,11 @@ use native_vte::{
 use system_clipboard::read_system_clipboard_text;
 
 const NEXTJS_READY_POLL_MS: u64 = 500;
-const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 240;
-const NEXTJS_READY_RECOVERY_ATTEMPTS: usize = 240;
+// 30 s en release (antes 240 → 2 min), 15 s en dev. La ventana se muestra
+// igual mientras tanto; este timeout solo limita cuánto esperamos antes de
+// delegar al recovery en background.
+const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 60;
+const NEXTJS_READY_RECOVERY_ATTEMPTS: usize = 60;
 
 /// Canonical absolute path to the server entry point inside the packaged standalone.
 /// Works from both dev (`.next/standalone/server.js`) and installed
@@ -162,23 +165,29 @@ fn nextjs_route_is_ready(port: u16) -> bool {
     is_http_route_ready(port, "/")
 }
 
+/// Decide whether a process is safe to kill as a DevHub runtime zombie.
+/// We require both a runtime executable (node/next-server/devhub-server) AND
+/// a command line that clearly belongs to this app, so we never kill generic
+/// node dev servers from other projects.
 fn is_devhub_runtime_process(name: &str, cmdline: &str) -> bool {
     let normalized_name = name.to_lowercase();
     let normalized_cmdline = cmdline.to_lowercase();
-    let runtime_marker = normalized_cmdline.contains("devhub")
-        || normalized_cmdline.contains("next")
-        || normalized_cmdline.contains("sidecar")
-        || normalized_cmdline.contains("server.js");
 
-    if !runtime_marker {
+    let is_runtime_executable = normalized_name.contains("node")
+        || normalized_name.contains("devhub-server")
+        || normalized_name.contains("mainthread")
+        || normalized_name.contains("next-server");
+
+    if !is_runtime_executable {
         return false;
     }
 
-    normalized_name.contains("node")
-        || normalized_name.contains("bun")
-        || normalized_name.contains("mainthread")
-        || normalized_name.contains("next-server")
-        || normalized_name.contains("next")
+    let is_devhub_cmdline = normalized_cmdline.contains("devhub")
+        || normalized_cmdline.contains("sidecar-backend/server.js")
+        || normalized_cmdline.contains(".devhub/standalone/server.js")
+        || normalized_cmdline.contains(".devhub-dev/standalone/server.js");
+
+    is_devhub_cmdline
 }
 
 /// Espera hasta que el puerto de Next.js esté disponible.
@@ -376,39 +385,44 @@ fn ensure_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Restaura la ventana principal cuando una segunda instancia es detectada.
+/// Es CRÍTICO no reiniciar el runtime aquí: el sidecar de la instancia activa
+/// ya está corriendo y matarlo desconectaría todas las terminales PTY.
 fn restore_main_window(app: &tauri::AppHandle) {
-    let next_ready = match ensure_runtime_ready(app) {
-        Ok(next_ready) => next_ready,
-        Err(_) => return,
-    };
-
     if ensure_main_window(app).is_err() {
         return;
     }
 
     if let Some(window) = app.get_webview_window("main") {
-        if next_ready {
-            let _ = window.reload();
-            let _ = window.show();
-            let _ = window.unminimize();
-            let _ = window.set_focus();
-        } else {
-            let _ = window.hide();
-            schedule_main_window_recovery(app.clone(), "restore_main_window");
-        }
+        let _ = window.reload();
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
     }
 }
 
-/// Verifica si el proceso con el PID dado sigue vivo y es el sidecar de DevHub.
+/// Verifica si el proceso con el PID dado sigue vivo y es realmente el sidecar de DevHub.
 fn is_sidecar_running(pid: u32) -> bool {
     let mut sys = System::new_all();
     sys.refresh_all();
     if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
         let name = process.name().to_string_lossy().to_lowercase();
-        // El sidecar puede llamarse "devhub-server", "node" o contener "devhub"
-        if name.contains("devhub") || name.contains("node") {
-            return true;
-        }
+        let cmdline: String = process
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // El sidecar corre como node <...>/sidecar-backend/server.js
+        let is_runtime_executable =
+            name.contains("node") || name.contains("devhub-server") || name.contains("mainthread");
+        let is_devhub_cmdline = cmdline.contains("devhub")
+            || cmdline.contains("sidecar-backend/server.js")
+            || cmdline.contains(".devhub/standalone/server.js")
+            || cmdline.contains(".devhub-dev/standalone/server.js");
+
+        return is_runtime_executable && is_devhub_cmdline;
     }
     false
 }

@@ -13,6 +13,12 @@ set -e
 
 DEVHUB_APP_ELF="/usr/bin/devhub"
 
+# ── Home de estado para la instancia empaquetada ─────────────────────────────
+# Forzar ~/.devhub para el .deb/.rpm, salvo que se pase explícitamente DEVHUB_HOME
+# (principalmente para tests). Esto evita que el release comparta estado con una
+# sesión de desarrollo que pudiera estar activa.
+export DEVHUB_HOME="${DEVHUB_HOME:-$HOME/.devhub}"
+
 # ── NVM bootstrap ────────────────────────────────────────────────────────────
 # Only source NVM if it looks like a real installation (not empty/missing).
 # On non-interactive desktop sessions (gtk-launch, .desktop Exec), PATH is minimal.

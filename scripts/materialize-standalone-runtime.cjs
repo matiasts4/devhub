@@ -50,14 +50,30 @@ function collectSymlinks(rootDir) {
   );
 }
 
+function findPnpmPackageFallback(linkPath, linkTarget) {
+  const match = linkTarget.match(/^\.\.\/((?:@[^/]+\/)?[^/]+)@([^/]+)\/node_modules\/([^/]+)$/);
+  if (!match) return null;
+  const [, pkgName, pkgVersion, leafName] = match;
+  if (leafName !== pkgName) return null;
+  const candidate = path.join(PROJECT_NODE_MODULES, '.pnpm', `${pkgName}@${pkgVersion}`, 'node_modules', pkgName);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
 function materializeSymlink(linkPath) {
   const linkTarget = fs.readlinkSync(linkPath);
-  const resolvedTarget = path.resolve(path.dirname(linkPath), linkTarget);
+  let resolvedTarget = path.resolve(path.dirname(linkPath), linkTarget);
 
   if (!fs.existsSync(resolvedTarget)) {
-    throw new Error(
-      `Broken symlink in standalone runtime: ${linkPath} -> ${linkTarget} (resolved: ${resolvedTarget})`
-    );
+    const fallback = findPnpmPackageFallback(linkPath, linkTarget);
+    if (!fallback) {
+      throw new Error(
+        `Broken symlink in standalone runtime: ${linkPath} -> ${linkTarget} (resolved: ${resolvedTarget})`
+      );
+    }
+    const fallbackParent = path.dirname(fallback);
+    fs.mkdirSync(fallbackParent, { recursive: true });
+    fs.cpSync(fallback, fallbackParent, { recursive: true, dereference: true });
+    resolvedTarget = fallback;
   }
 
   const tempPath = `${linkPath}.materialize.tmp`;
