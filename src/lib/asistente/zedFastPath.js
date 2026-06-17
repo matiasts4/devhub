@@ -121,14 +121,20 @@ export function extractMultipleCloseNames(message, terminals = []) {
 }
 
 function extractUrl(message) {
-  const m = message.match(/https?:\/\/[^\s]+/i);
-  if (m) return m[0];
-  const domain = message.match(
-    /\b(abre|abr[eí]|abrir|open|muestra|mostr[aá])\s+(https?:\/\/)?([a-z0-9][-a-z0-9.]*\.[a-z]{2,}(?:\/[^\s]*)?)/i
-  );
-  if (domain) {
-    const host = domain[3];
-    return host.startsWith('http') ? host : `https://${host}`;
+  const raw = typeof message === 'string' ? message : '';
+  const explicit = raw.match(/https?:\/\/[^\s]+/i);
+  if (explicit) return explicit[0];
+
+  const domainLike = /\b([a-z0-9][-a-z0-9.]*\.[a-z]{2,})(?:\/[^\s]*)?/i.exec(raw);
+  if (domainLike) {
+    const host = domainLike[1];
+    if (
+      /\.(com|net|org|io|dev|app|co|ai|cloud|xyz|me|es|ar|br|mx|uk|de|fr|it|nl|ru|cn|jp|kr|in|au|ca|gov|edu|mil|int|info|biz|name|pro|aero|museum|coop|jobs|mobi|travel|tel|asia|cat|post|geo|mail|xxx|onion)\b/i.test(
+        host
+      )
+    ) {
+      return `https://${domainLike[0]}`;
+    }
   }
   return null;
 }
@@ -262,7 +268,12 @@ export function resolveZedFastPathIntent(message, context = {}) {
 
   // --- open URL ---
   const url = extractUrl(text);
-  if (url && /\b(abre|abr|open|muestra|mostr|ir a|navega|pizarra)\b/.test(lower)) {
+  if (
+    url &&
+    /\b(abre|abr|open|muestra|mostr|ir a|navega|navegador|pizarra|pagina|página|url|sitio|web)\b/.test(
+      lower
+    )
+  ) {
     return hit([{ tool: 'open_url', input: { url, focus: true } }], 'open_url', 0.94, 'open_url');
   }
 

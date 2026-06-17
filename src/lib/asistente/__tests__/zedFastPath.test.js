@@ -223,6 +223,22 @@ describe('zedFastPath intent cache', () => {
     expect(hit?.steps[0]?.input?.url).toMatch(/github\.com/);
   });
 
+  test('open_url on "abre un navegador nuevo con github.com"', () => {
+    const hit = resolveZedFastPathIntent('abre un navegador nuevo con github.com', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.steps[0]?.tool).toBe('open_url');
+    expect(hit?.steps[0]?.input?.url).toBe('https://github.com');
+  });
+
+  test('open_url on "mostrame la pagina de google.com"', () => {
+    const hit = resolveZedFastPathIntent('mostrame la pagina de google.com', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.steps[0]?.tool).toBe('open_url');
+    expect(hit?.steps[0]?.input?.url).toMatch(/google\.com/);
+  });
+
   test('ambiguous close returns null fast path', () => {
     const hit = resolveZedFastPathIntent('cierra terminal Cha', {
       workspace_terminals: [
