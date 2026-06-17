@@ -7,7 +7,7 @@ import { resolveTerminalByName } from './zedTerminalResolver';
 import { resolveNamedTerminalFromMessage } from './zedTerminalNamePhrase';
 import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
 
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes']);
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi']);
 const OPEN_VERBS = /\b(abre|abr[eía]s?|abrir|abramos|open|crea|crear|nueva|lanza|lanzar)\b/;
 const CLOSE_VERBS =
   /\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|cerramen|close|cierres|cierren|mata)\b/;
@@ -30,7 +30,10 @@ function normalizeText(text) {
 export function normalizeAgentAliases(text) {
   return normalizeText(text)
     .replace(/\bopen\s+code\b/g, 'opencode')
-    .replace(/\bopen\s+codex\b/g, 'codex');
+    .replace(/\bopen\s+codex\b/g, 'codex')
+    .replace(/\bopen\s+kimi\b/g, 'kimi')
+    .replace(/\bquimy\b/g, 'kimi')
+    .replace(/\bkimy\b/g, 'kimi');
 }
 
 function mergedTerminals(context) {

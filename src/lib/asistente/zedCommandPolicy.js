@@ -6,7 +6,11 @@ export const MAX_SCRIPT_LINES = 64;
 export const MAX_SCRIPT_BYTES = 16384;
 
 const BLOCKED_PATTERNS = [
-  { id: 'rm-recursive', pattern: /\brm\s+.*(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b/i, reason: 'recursive file deletion (rm -rf)' },
+  {
+    id: 'rm-recursive',
+    pattern: /\brm\s+.*(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b/i,
+    reason: 'recursive file deletion (rm -rf)',
+  },
   { id: 'rm-force', pattern: /\brm\s+-[a-z]*f/i, reason: 'forced file deletion (rm -f)' },
   { id: 'rm-basic', pattern: /^\s*rm\s+/i, reason: 'file deletion (rm)' },
   { id: 'rmdir', pattern: /\brmdir\b/i, reason: 'directory removal (rmdir)' },
@@ -29,9 +33,17 @@ const BLOCKED_PATTERNS = [
   { id: 'pkill', pattern: /\bpkill\b/i, reason: 'pkill' },
   { id: 'kill-9', pattern: /\bkill\s+.*-9\b/i, reason: 'SIGKILL' },
   { id: 'docker-prune', pattern: /\bdocker\s+system\s+prune\b/i, reason: 'docker system prune' },
-  { id: 'docker-rm-all', pattern: /\bdocker\s+rm\s+.*(-f|--force).*\$\(/i, reason: 'mass docker removal' },
+  {
+    id: 'docker-rm-all',
+    pattern: /\bdocker\s+rm\s+.*(-f|--force).*\$\(/i,
+    reason: 'mass docker removal',
+  },
   { id: 'npm-publish', pattern: /\bnpm\s+publish\b/i, reason: 'npm publish' },
-  { id: 'file-overwrite-redirect', pattern: />\s*[^\s&|]+/, reason: 'shell output redirect (may overwrite files)' },
+  {
+    id: 'file-overwrite-redirect',
+    pattern: />\s*[^\s&|]+/,
+    reason: 'shell output redirect (may overwrite files)',
+  },
   { id: 'sed-inplace', pattern: /\bsed\s+.*-i\b/i, reason: 'in-place file edit (sed -i)' },
   { id: 'tee-overwrite', pattern: /\btee\s+[^\s|&;]+/i, reason: 'tee to file (may overwrite)' },
   { id: 'mv-overwrite', pattern: /\bmv\s+-f\b/i, reason: 'forced move/overwrite (mv -f)' },
@@ -117,9 +129,7 @@ const TIER_RANK = { allowed: 0, approval_required: 1, blocked: 2 };
 
 export function splitCommandLines(raw) {
   if (raw === undefined || raw === null) return [];
-  return String(raw)
-    .replace(/\r\n/g, '\n')
-    .split('\n');
+  return String(raw).replace(/\r\n/g, '\n').split('\n');
 }
 
 export function validateCommandPayload(raw) {
@@ -172,10 +182,7 @@ function classifySingleLine(rawLine) {
   }
 
   // Agent TUI launches (opencode/codex/hermes) — explicit user intent via Zed tools.
-  if (
-    /\bopencode\b.*--agent\b/i.test(command) ||
-    /\/opencode\/bin\/opencode\b/i.test(command)
-  ) {
+  if (/\bopencode\b.*--agent\b/i.test(command) || /\/opencode\/bin\/opencode\b/i.test(command)) {
     return { tier: 'allowed', command, reason: 'agent-launch-opencode' };
   }
   if (/\bcodex\b\s+exec\b/i.test(command) || /\/codex\b/i.test(command)) {
@@ -183,6 +190,9 @@ function classifySingleLine(rawLine) {
   }
   if (/\bhermes\b\s+chat\b/i.test(command) || /\/hermes\b/i.test(command)) {
     return { tier: 'allowed', command, reason: 'agent-launch-hermes' };
+  }
+  if (/\/kimi-code\/bin\/kimi\b/i.test(command) || /\bkimi\b/i.test(command)) {
+    return { tier: 'allowed', command, reason: 'agent-launch-kimi' };
   }
 
   return { tier: 'approval_required', command, reason: 'not-in-allowlist' };
@@ -201,12 +211,18 @@ export function classifyZedTerminalCommand(rawCommand) {
     };
   }
 
-  const lines = splitCommandLines(rawCommand).map((l) => l.trim()).filter(Boolean);
+  const lines = splitCommandLines(rawCommand)
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (lines.length === 0) {
     return { tier: 'allowed', command: '', reason: 'empty-command' };
   }
 
-  let worst = { tier: 'allowed', command: normalizeZedTerminalCommand(rawCommand), reason: 'multiline' };
+  let worst = {
+    tier: 'allowed',
+    command: normalizeZedTerminalCommand(rawCommand),
+    reason: 'multiline',
+  };
   for (const line of lines) {
     const part = classifySingleLine(line);
     if (TIER_RANK[part.tier] > TIER_RANK[worst.tier]) {

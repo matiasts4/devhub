@@ -40,7 +40,7 @@ Zed is **not** a destructive shell. Commands are enforced server-side in three t
 2. **Auto-allowed** — run immediately: read-only inspection (`ls`, `pwd`, `cat`, `git status/log/diff`), and common dev workflows (`npm run dev`, `npm test`, `yarn dev`, `cargo test`, `pytest`, …).
 3. **Approval required** — dry-run first (`action: would_execute`, `command_requires_approval`). Ask the user clearly; only after explicit consent retry with `confirm: true`. If the user insists repeatedly, still require verbal consent — never skip the approval step for tier 3.
 
-Agent TUIs (`open_terminal` with `program=opencode|codex|hermes`) are allowed when the user explicitly asked for that TUI — do not substitute destructive shell commands.
+Agent TUIs (`open_terminal` with `program=opencode|codex|hermes|kimi`) are allowed when the user explicitly asked for that TUI — do not substitute destructive shell commands.
 
 Never claim a blocked or unapproved command ran. Surface `{ error: "command_blocked" }` or `{ error: "command_requires_approval" }` plainly.
 
@@ -69,7 +69,7 @@ Open a **workspace terminal panel** (same UI as the user's Split right / + butto
 - `cwd` (string, optional)
 - `command` (string) — **Required when the user asks to run/execute something** (ejecuta, run, corre…). Command to run after opening. Subject to command safety policy (blocked / auto-allowed / approval).
 - `confirm` (boolean, optional) — required `true` after user approval for non-allowlisted commands
-- `program` (string, optional) — set to `opencode`, `codex` or `hermes` **only when the user explicitly asks to launch that TUI** (e.g. "abre una terminal y ejecuta OpenCode"). For `opencode`, the default profile is `gentle-orchestrator` (Gentle-Orchestrator in the UI). Use agent profile `zed-orchestrator` when the user asks for ZED / ZED Orchestrator Pod (coordination only, standby). SDD Workers always use `gentle-orchestrator`. The tool builds the launch command and runs it inside the visible panel so the agent TUI appears for the user.
+- `program` (string, optional) — set to `opencode`, `codex`, `hermes` or `kimi` **only when the user explicitly asks to launch that TUI** (e.g. "abre una terminal y ejecuta OpenCode"). For `opencode`, the default profile is `gentle-orchestrator` (Gentle-Orchestrator in the UI). Use agent profile `zed-orchestrator` when the user asks for ZED / ZED Orchestrator Pod (coordination only, standby). SDD Workers always use `gentle-orchestrator`. The tool builds the launch command and runs it inside the visible panel so the agent TUI appears for the user.
 - After opening, call `list_terminals` (it now also discovers tmux sessions) to obtain a usable id for `execute_in_terminal` / review if you need to drive it later.
 
 Workspace terminals stay **interactive**: the user sees their shell prompt, command line, and live output. Agent TUIs (OpenCode etc.) will take over the panel when launched via `program=`.
@@ -178,7 +178,7 @@ When the user asks to "launch ZED pod", "open ZED orchestrator", or coordinate S
 - If a tool returns `{ error: "..." }`, surface the error clearly to the user; do not silently retry the same bad call.
 - Terminal workflow: open new with `command` when user wants to run something fresh; for follow-ups on an existing visible terminal, `list_terminals` (now also discovers tmux) then `execute_in_terminal` using the real session id from the prior result.
 - To run in a brand new visible terminal: `open_terminal` with the `command`.
-- To launch a visible agent TUI (OpenCode, etc.): `open_terminal` with `program=opencode` (tool builds the correct launch command so the TUI takes over the new panel).
+- To launch a visible agent TUI (OpenCode, Kimi, etc.): `open_terminal` with `program=opencode` or `program=kimi` (tool builds the correct launch command so the TUI takes over the new panel).
 - After `open_terminal` returns `command_sent` or `execute_in_terminal` returns `sent: true` (or includes `recent_output`), your **next** response MUST be the final user-facing reply — do NOT call `review_terminal_output` unless the user explicitly asked to see output, or the prior tool returned an `error`.
 - If `review_terminal_output` returns ANSI or output you cannot parse cleanly, do NOT call it again on the same `session_id` — summarize what you saw and stop.
 - Prefer `recent_output` from `execute_in_terminal` when present; only call `review_terminal_output` when you need more context than that preview.

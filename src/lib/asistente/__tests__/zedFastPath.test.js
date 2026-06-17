@@ -171,6 +171,33 @@ describe('zedFastPath intent cache', () => {
     });
   });
 
+  test('open terminal with kimi', () => {
+    const hit = resolveZedFastPathIntent('abre una terminal con Kimi', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_terminal_agent');
+    expect(hit?.steps[0]).toMatchObject({
+      tool: 'open_terminal',
+      input: { program: 'kimi' },
+    });
+  });
+
+  test('execute kimi in existing terminal', () => {
+    const hit = resolveZedFastPathIntent('abrí Kimi en Chase', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'execute_agent_in_terminal',
+      steps: [{ tool: 'execute_in_terminal', input: { name: 'Chase', program: 'kimi' } }],
+    });
+  });
+
+  test('normalizeAgentAliases maps open kimi and dictation variants', () => {
+    expect(normalizeAgentAliases('Open Kimi en terminal')).toContain('kimi');
+    expect(normalizeAgentAliases('abre quimy')).toContain('kimi');
+    expect(normalizeAgentAliases('lanza kimy')).toContain('kimi');
+  });
+
   test('open_url on "abrí github.com en pizarra"', () => {
     const hit = resolveZedFastPathIntent('abrí github.com en pizarra', {
       workspace_terminals: TERMINALS,

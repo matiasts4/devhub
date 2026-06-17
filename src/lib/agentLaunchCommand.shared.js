@@ -40,6 +40,7 @@ export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   opencode: '/home/matias/.opencode/bin/opencode',
   codex: '/home/matias/.nvm/versions/node/v24.14.0/bin/codex',
   hermes: '/home/matias/.local/bin/hermes',
+  kimi: '/home/matias/.kimi-code/bin/kimi',
 });
 
 export function resolveAgentProgramExecutable(programId = 'hermes') {
@@ -164,6 +165,9 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       }
       break;
     }
+    case 'kimi':
+      innerCommand = interactiveBootstrapPrompt ? `${executable}` : `${executable} ${quotedPrompt}`;
+      break;
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;
