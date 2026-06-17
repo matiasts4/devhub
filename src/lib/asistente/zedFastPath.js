@@ -141,6 +141,28 @@ function detectAgentProgram(message) {
   return null;
 }
 
+const NUMBER_WORDS = {
+  una: 1,
+  un: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+};
+
+function extractTerminalCount(message) {
+  const lower = normalizeText(message);
+  const digit = lower.match(/\b(\d+)\s+(?:terminal(?:es)?|panel(?:es)?|nuevas?|nuevos?)\b/);
+  if (digit) return Math.min(parseInt(digit[1], 10), 6);
+  for (const [word, value] of Object.entries(NUMBER_WORDS)) {
+    if (new RegExp(`\\b${word}\\s+(?:terminal(?:es)?|panel(?:es)?|nuevas?|nuevos?)`).test(lower)) {
+      return value;
+    }
+  }
+  return 1;
+}
+
 /** User explicitly wants a new panel, not reuse an existing one. */
 export function wantsNewTerminal(lower) {
   return (
@@ -246,15 +268,16 @@ export function resolveZedFastPathIntent(message, context = {}) {
 
   // --- open NEW terminal (before execute-in-existing; never reuse when user asks for new panel) ---
   if (isOpenTerminalIntent(lower) && (wantsNewTerminal(lower) || !explicitTarget?.ok)) {
+    const count = extractTerminalCount(text);
     if (program) {
-      return hit(
-        [{ tool: 'open_terminal', input: { program } }],
-        'open_terminal_agent',
-        0.92,
-        `open_terminal:${program}`
-      );
+      const steps = Array.from({ length: count }, () => ({
+        tool: 'open_terminal',
+        input: { program },
+      }));
+      return hit(steps, 'open_terminal_agent', 0.92, `open_terminal:${program}x${count}`);
     }
-    return hit([{ tool: 'open_terminal', input: {} }], 'open_terminal', 0.9, 'open_terminal_new');
+    const steps = Array.from({ length: count }, () => ({ tool: 'open_terminal', input: {} }));
+    return hit(steps, 'open_terminal', 0.9, 'open_terminal_new');
   }
 
   // --- agent in EXISTING named terminal: "opencode en Chase" (requires explicit name) ---

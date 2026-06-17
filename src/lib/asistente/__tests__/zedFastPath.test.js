@@ -182,6 +182,23 @@ describe('zedFastPath intent cache', () => {
     });
   });
 
+  test('open two terminals with kimi', () => {
+    const hit = resolveZedFastPathIntent('abre dos terminales nuevas con Kimi', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_terminal_agent');
+    expect(hit?.steps).toHaveLength(2);
+    expect(hit?.steps.every((s) => s.input.program === 'kimi')).toBe(true);
+  });
+
+  test('open three terminals with opencode via digits', () => {
+    const hit = resolveZedFastPathIntent('abre 3 terminales con opencode', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_terminal_agent');
+    expect(hit?.steps).toHaveLength(3);
+  });
+
   test('execute kimi in existing terminal', () => {
     const hit = resolveZedFastPathIntent('abrí Kimi en Chase', {
       workspace_terminals: TERMINALS,
