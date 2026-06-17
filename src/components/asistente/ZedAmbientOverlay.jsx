@@ -19,7 +19,6 @@ import { useVoiceCapture } from '@/lib/voice/useVoiceCapture';
 import { useVoiceTts } from '@/lib/voice/useVoiceTts';
 import { isVoiceFeatureEnabled } from '@/lib/voice/voiceFeatureFlag';
 import { useZedVoiceShortcut } from '@/lib/voice/useZedVoiceShortcut';
-import { ZED_VOICE_TOGGLE_SHORTCUT_LABEL } from '@/lib/voice/zedVoiceShortcuts';
 
 const STATUS_VISIBLE_MS = 4000;
 const STATUS_EXIT_MS = 320;
@@ -159,7 +158,6 @@ export default function ZedAmbientOverlay({
     pendingApproval,
     handleApproveCommand,
     handleRejectApproval,
-    applySuggestion,
     quickSuggestions,
     messages,
     auditTrail,
@@ -244,12 +242,12 @@ export default function ZedAmbientOverlay({
   }, [lastToolType]);
 
   useEffect(() => {
-    if (isOpen || quickSuggestions.length === 0) return undefined;
+    if (quickSuggestions.length === 0) return undefined;
     const id = setInterval(() => {
       setSuggestionIndex((i) => (i + 1) % quickSuggestions.length);
     }, 4500);
     return () => clearInterval(id);
-  }, [isOpen, quickSuggestions.length]);
+  }, [quickSuggestions.length]);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handler = (e) => {
@@ -483,12 +481,12 @@ export default function ZedAmbientOverlay({
               <div
                 data-zed-state={pillState}
                 className={[
-                  'zed-pill-surface relative overflow-hidden rounded-xl border backdrop-blur-md',
+                  'zed-pill-surface relative overflow-hidden rounded-[22px] border backdrop-blur-md',
                   'border-[color-mix(in_srgb,var(--accent-primary)_22%,var(--border-subtle))]',
                   'bg-[color-mix(in_srgb,#0a1018_92%,transparent)]',
                   'shadow-[0_12px_40px_rgba(0,0,0,0.38)]',
-                  'min-h-[36px]',
-                  collapsed && !isLoading ? 'px-3 py-2' : 'px-3 py-2.5',
+                  'min-h-[32px]',
+                  collapsed && !isLoading ? 'px-3 py-1.5' : 'px-3 py-2',
                 ].join(' ')}
               >
                 <div
@@ -500,31 +498,42 @@ export default function ZedAmbientOverlay({
                 />
 
                 {isOpen ? (
-                  <div className="flex items-end gap-2" data-zed-voice-composer="1">
+                  <div className="flex items-center gap-2" data-zed-voice-composer="1">
                     <div
-                      className="zed-pill-avatar flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white bg-[linear-gradient(135deg,var(--accent-primary),color-mix(in_srgb,var(--accent-primary)_45%,#0f2744))]"
+                      className="zed-pill-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white bg-[linear-gradient(135deg,var(--accent-primary),color-mix(in_srgb,var(--accent-primary)_45%,#0f2744))]"
                       data-zed-state={pillState}
                     >
                       {speaking ? (
                         <ZedEqualizer className="text-white" />
                       ) : (
-                        <Sparkles className="h-3.5 w-3.5 text-white" />
+                        <Sparkles className="h-3 w-3 text-white" />
                       )}
                     </div>
-                    <textarea
-                      ref={inputRef}
-                      value={composerValue}
-                      onChange={(e) => {
-                        if (!recording) setInput(e.target.value);
-                      }}
-                      onKeyDown={onInputKeyDown}
-                      onPaste={handlePaste}
-                      placeholder={voiceActive ? 'Escuchando…' : 'Pedile a Zed…'}
-                      rows={1}
-                      className="max-h-[80px] min-h-[32px] flex-1 resize-none bg-transparent text-[12px] leading-snug outline-none"
-                      style={{ color: 'var(--text-primary)' }}
-                      disabled={isLoading || recording}
-                    />
+                    <div className="relative flex flex-1 items-center">
+                      <textarea
+                        ref={inputRef}
+                        value={composerValue}
+                        onChange={(e) => {
+                          if (!recording) setInput(e.target.value);
+                        }}
+                        onKeyDown={onInputKeyDown}
+                        onPaste={handlePaste}
+                        placeholder={voiceActive ? 'Escuchando…' : ''}
+                        rows={1}
+                        className="max-h-[80px] min-h-[26px] w-full resize-none bg-transparent py-1 text-[11px] leading-snug outline-none"
+                        style={{ color: 'var(--text-primary)' }}
+                        disabled={isLoading || recording}
+                      />
+                      {!input.trim() && !recording && !isLoading && !voiceActive ? (
+                        <span
+                          key={suggestionIndex}
+                          className="pointer-events-none absolute left-0 top-0 flex h-full items-center text-[11px] text-[var(--text-muted)] transition-opacity duration-500"
+                          aria-hidden="true"
+                        >
+                          Probá “{quickSuggestions[suggestionIndex]}”
+                        </span>
+                      ) : null}
+                    </div>
                     {voiceEnabled ? (
                       <ZedVoiceButton
                         recording={recording}
@@ -532,32 +541,33 @@ export default function ZedAmbientOverlay({
                         available={available}
                         disabled={isLoading}
                         onToggle={handleVoiceToggle}
+                        className="!h-7 !w-7"
                       />
                     ) : null}
                     {isLoading ? (
                       <button
                         type="button"
                         onClick={handleStop}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--danger,#ef4444)] text-white"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--danger,#ef4444)] text-white"
                         aria-label="Detener Zed"
                       >
-                        <Square className="h-3.5 w-3.5 fill-current" />
+                        <Square className="h-3 w-3 fill-current" />
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={submitAndCollapse}
                         disabled={!input.trim()}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--accent-primary)] text-white disabled:opacity-40"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white disabled:opacity-40"
                         aria-label="Enviar a Zed"
                       >
-                        <Send className="h-3.5 w-3.5" />
+                        <Send className="h-3 w-3" />
                       </button>
                     )}
                   </div>
                 ) : (
                   <div
-                    className="flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-xl px-3"
+                    className="flex h-[30px] w-full cursor-pointer items-center gap-2.5 px-3"
                     role="button"
                     tabIndex={0}
                     aria-label="Abrir Zed"
@@ -615,57 +625,6 @@ export default function ZedAmbientOverlay({
                     ) : null}
                   </div>
                 )}
-
-                <div className="mt-2 min-h-[26px] pl-9">
-                  {isOpen && voiceActive ? (
-                    <span className="text-[9px] text-red-400/90">
-                      Dictando — el texto se va pegando arriba
-                    </span>
-                  ) : isOpen && !input.trim() && !isLoading ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {quickSuggestions.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => applySuggestion(s)}
-                          className="rounded-full border border-[color-mix(in_srgb,var(--accent-primary)_25%,transparent)] px-2 py-0.5 text-[9px] text-[var(--text-muted)] hover:text-[var(--accent-primary)]"
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-
-                {isOpen ? (
-                  <p className="mt-1.5 pl-9 text-[9px] text-[var(--text-muted)]">
-                    Enter · Esc {recording ? '(detiene mic)' : ''} · Ctrl+Shift+Z ·{' '}
-                    {ZED_VOICE_TOGGLE_SHORTCUT_LABEL} mic
-                    {recording || enginePhase === 'listening' ? (
-                      <span className="ml-2 font-medium text-red-400">● Escuchando…</span>
-                    ) : null}
-                    {!engineReady &&
-                    (enginePhase === 'preparing' || enginePhase === 'loading_model') ? (
-                      <span className="ml-2 text-amber-400">
-                        Preparando voz{statusText ? ` (${statusText})` : '…'}
-                      </span>
-                    ) : null}
-                    {errorText ? <span className="ml-2 text-red-400">{errorText}</span> : null}
-                    {ttsError && voiceSettings?.ttsEnabled ? (
-                      <span className="ml-2 text-red-400" title={ttsError}>
-                        TTS: {ttsError.length > 48 ? `${ttsError.slice(0, 45)}…` : ttsError}
-                      </span>
-                    ) : null}
-                    {recording && vuLevel > 0 ? (
-                      <span className="ml-2 inline-block h-1 w-8 align-middle rounded-full bg-[var(--accent-primary)]/30">
-                        <span
-                          className="block h-full rounded-full bg-[var(--accent-primary)]"
-                          style={{ width: `${Math.round(vuLevel * 100)}%` }}
-                        />
-                      </span>
-                    ) : null}
-                  </p>
-                ) : null}
               </div>
             </div>
           </motion.div>

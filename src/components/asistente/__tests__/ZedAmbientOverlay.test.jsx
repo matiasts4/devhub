@@ -84,8 +84,7 @@ function defaultZedChatMock(overrides = {}) {
     auditTrail: [],
     handleApproveCommand: jest.fn(),
     handleRejectApproval: jest.fn(),
-    applySuggestion: jest.fn(),
-    quickSuggestions: [],
+    quickSuggestions: ['abrir una terminal', 'cerrar todas las terminales'],
     ...overrides,
   };
 }
@@ -190,7 +189,9 @@ describe('ZedAmbientOverlay', () => {
     const { container, root } = renderOverlay();
 
     expect(container.querySelector('textarea')).not.toBeNull();
-    expect(container.textContent).toContain('Ctrl+Shift+Z');
+    expect(container.textContent).toContain('Probá');
+    expect(container.textContent).not.toContain('Ctrl+Shift+Z');
+    expect(container.querySelectorAll('button').length).toBeLessThan(5);
     root.unmount();
   });
 });
