@@ -167,8 +167,8 @@ export default function ZedAmbientOverlay({
     voiceSettings,
   } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals });
 
-  const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings.voiceEnabled;
-  const { speak, speaking, ttsError } = useVoiceTts({ enabled: voiceSettings.ttsEnabled });
+  const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings?.voiceEnabled;
+  const { speak, speaking, ttsError } = useVoiceTts({ enabled: voiceSettings?.ttsEnabled });
 
   const onFinalTranscript = useCallback(
     (text) => {
@@ -211,7 +211,7 @@ export default function ZedAmbientOverlay({
         if (cancelled) return;
         await invoke('voice_set_enabled', { enabled: true });
         await invoke('voice_set_settings', {
-          settings: { model: voiceSettings.sttModel, backend: 'auto', language: 'es' },
+          settings: { model: voiceSettings?.sttModel, backend: 'auto', language: 'es' },
         });
         await startEngine();
       } catch {
@@ -222,7 +222,7 @@ export default function ZedAmbientOverlay({
     return () => {
       cancelled = true;
     };
-  }, [voiceEnabled, voiceSettings.sttModel, startEngine]);
+  }, [voiceEnabled, voiceSettings?.sttModel, startEngine]);
 
   const handleVoiceToggle = useCallback(async () => {
     return toggleRecording();
@@ -238,9 +238,18 @@ export default function ZedAmbientOverlay({
 
   const [overlayToolType, setOverlayToolType] = useState(lastToolType);
   const [outcomeFlash, setOutcomeFlash] = useState(null);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
   useEffect(() => {
     setOverlayToolType(lastToolType);
   }, [lastToolType]);
+
+  useEffect(() => {
+    if (isOpen || quickSuggestions.length === 0) return undefined;
+    const id = setInterval(() => {
+      setSuggestionIndex((i) => (i + 1) % quickSuggestions.length);
+    }, 4500);
+    return () => clearInterval(id);
+  }, [isOpen, quickSuggestions.length]);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handler = (e) => {
@@ -357,22 +366,22 @@ export default function ZedAmbientOverlay({
   }, [hideStatus, isLoading, lastAssistantMessage, lastTurnTimestamp, showStatus]);
 
   useEffect(() => {
-    if (isLoading || !voiceSettings.ttsEnabled) return;
+    if (isLoading || !voiceSettings?.ttsEnabled) return;
     if (!lastAssistantMessage?.content || lastAssistantMessage.timestamp === 'initial') return;
     if (lastSpokenRef.current === lastAssistantMessage.timestamp) return;
     lastSpokenRef.current = lastAssistantMessage.timestamp;
     speak(lastAssistantMessage.content);
-  }, [isLoading, lastAssistantMessage, speak, voiceSettings.ttsEnabled]);
+  }, [isLoading, lastAssistantMessage, speak, voiceSettings?.ttsEnabled]);
 
   useEffect(() => {
-    if (!voiceSettings.ttsEnabled || !pendingApproval?.preview) return;
+    if (!voiceSettings?.ttsEnabled || !pendingApproval?.preview) return;
     if (pendingApproval.kind !== 'local_intent') return;
     if (lastUserMessage?.source !== 'voice') return;
     const key = `${pendingApproval.message}::${pendingApproval.preview}`;
     if (lastSpokenApprovalRef.current === key) return;
     lastSpokenApprovalRef.current = key;
     speak(pendingApproval.preview);
-  }, [lastUserMessage, pendingApproval, speak, voiceSettings.ttsEnabled]);
+  }, [lastUserMessage, pendingApproval, speak, voiceSettings?.ttsEnabled]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -456,7 +465,7 @@ export default function ZedAmbientOverlay({
           >
             <div
               className={[
-                'pointer-events-auto w-[min(400px,calc(100vw-1.5rem))]',
+                'pointer-events-auto w-auto min-w-[260px] max-w-[min(420px,calc(100vw-1.5rem))]',
                 statusExiting ? 'zed-pill-exit' : '',
               ].join(' ')}
             >
@@ -547,51 +556,61 @@ export default function ZedAmbientOverlay({
                     )}
                   </div>
                 ) : (
-                  <div className="flex h-[20px] items-center gap-2.5">
-                    <div
+                  <div
+                    className="flex h-[34px] w-full cursor-pointer items-center gap-2.5 rounded-xl px-3"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Abrir Zed"
+                    onClick={() => open()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        open();
+                      }
+                    }}
+                  >
+                    <span
                       className={[
-                        'zed-pill-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+                        'h-1.5 w-1.5 shrink-0 rounded-full',
                         isLoading || speaking
-                          ? 'text-[var(--accent-primary)]'
-                          : 'bg-[var(--accent-primary)]/12 text-[var(--accent-primary)]',
+                          ? 'bg-[var(--accent-primary)]'
+                          : 'bg-[var(--accent-primary)] shadow-[0_0_6px_color-mix(in_srgb,var(--accent-primary)_80%,transparent)]',
                       ].join(' ')}
-                      data-zed-state={pillState}
-                    >
-                      {speaking ? (
-                        <ZedEqualizer />
-                      ) : isLoading ? (
-                        <ZedLoadingDots />
-                      ) : (
-                        <Sparkles className="h-3 w-3" />
-                      )}
-                    </div>
-                    <div
-                      className="min-w-0 flex-1 truncate text-[11px] leading-none tracking-wide"
-                      style={{
-                        color:
-                          isLoading || speaking ? 'var(--text-muted)' : 'var(--text-secondary)',
-                      }}
+                      aria-hidden="true"
+                    />
+                    <span
+                      className="min-w-0 flex-1 truncate text-[11px] leading-none"
+                      style={{ color: 'var(--text-secondary)' }}
                       role="status"
                       aria-live="polite"
                     >
                       {speaking ? (
-                        <span className="uppercase">Hablando…</span>
+                        <span className="uppercase tracking-wide">Hablando…</span>
                       ) : isLoading ? (
-                        <span className="uppercase">{currentStep?.label || 'Zed…'}</span>
-                      ) : (
+                        <span className="uppercase tracking-wide">
+                          {currentStep?.label || 'Zed…'}
+                        </span>
+                      ) : statusLine ? (
                         <span key={statusLine} className="zed-status-line block truncate">
                           {statusLine}
                         </span>
+                      ) : (
+                        <span key={suggestionIndex} className="zed-status-line block truncate">
+                          Probá “{quickSuggestions[suggestionIndex]}”
+                        </span>
                       )}
-                    </div>
-                    {!isLoading && statusLine ? (
+                    </span>
+                    {voiceEnabled && !isLoading && !speaking ? (
                       <button
                         type="button"
-                        onClick={() => setActivityExpanded(true)}
-                        className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--accent-primary)] opacity-80 transition-opacity hover:opacity-100"
-                        aria-label="Ver actividad"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleVoiceToggle();
+                        }}
+                        aria-label="Hablar con Zed"
+                        className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
                       >
-                        +
+                        Mic
                       </button>
                     ) : null}
                   </div>
@@ -632,7 +651,7 @@ export default function ZedAmbientOverlay({
                       </span>
                     ) : null}
                     {errorText ? <span className="ml-2 text-red-400">{errorText}</span> : null}
-                    {ttsError && voiceSettings.ttsEnabled ? (
+                    {ttsError && voiceSettings?.ttsEnabled ? (
                       <span className="ml-2 text-red-400" title={ttsError}>
                         TTS: {ttsError.length > 48 ? `${ttsError.slice(0, 45)}…` : ttsError}
                       </span>
