@@ -3194,9 +3194,29 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const handleRightDockTabSelect = useCallback(
     (tab) => {
-      updateRightDockState((currentState) => applyRightDockTabSelect(currentState, tab));
+      updateRightDockState((currentState) => {
+        if (tab === 'pizarra') {
+          const isCurrentlyPizarra =
+            currentState.maximized === true && currentState.maximizedView === 'pizarra';
+          if (isCurrentlyPizarra) {
+            const wsId = activeWsIdRef.current || activeWsId;
+            const browserOpen = browserWindowStates?.[wsId]?.open === true;
+            if (browserOpen) {
+              return {
+                ...currentState,
+                visible: true,
+                activeTab: 'browser',
+                maximized: false,
+                maximizedView: 'browser',
+                browserLayoutEpoch: (Number(currentState.browserLayoutEpoch) || 0) + 1,
+              };
+            }
+          }
+        }
+        return applyRightDockTabSelect(currentState, tab);
+      });
     },
-    [updateRightDockState]
+    [updateRightDockState, activeWsId, browserWindowStates]
   );
 
   const getWorkspaceDisplayLabel = (wsId) => {
@@ -6255,13 +6275,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       });
 
       if (focus === true && typeof window !== 'undefined') {
-        // After mode transition (~330ms) + registry reconcile; refit twice for late surfaces.
+        // After mode transition (~330ms) + registry reconcile; refit multiple times for late surfaces.
         const dispatchArrangeFit = () => {
           logPizarraBrowser('zed-open-url:arrange-fit-dispatch');
           window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
         };
         window.setTimeout(dispatchArrangeFit, 400);
         window.setTimeout(dispatchArrangeFit, 720);
+        window.setTimeout(dispatchArrangeFit, 1200);
       }
     };
 
