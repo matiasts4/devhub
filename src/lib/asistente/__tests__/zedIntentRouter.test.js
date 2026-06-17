@@ -44,8 +44,9 @@ describe('zedIntentRouter', () => {
     const hit = resolveZedIntent('cierra las terminales abiertas', multi);
     expect(hit.tier).toBe('local-high');
     expect(hit.intent).toBe('close_multiple');
-    expect(hit.steps).toHaveLength(2);
-    expect(hit.steps[0].tool).toBe('close_terminal');
+    expect(hit.steps).toHaveLength(1);
+    expect(hit.steps[0].tool).toBe('close_all_terminals');
+    expect(hit.steps[0].input.names).toEqual(['Avery', 'Alex']);
   });
 
   test('two-step open terminal and run command', () => {

@@ -124,21 +124,40 @@ export function createSyncActiveWindowSnapshot({ setWorkspaceWindows, getActiveW
 
       return {
         ...prev,
-        [wsId]: windows.map((win) => {
-          if (win.id !== activeWindowId) return win;
-          return {
-            ...win,
-            columns,
-            activePanelId:
-              nextActivePanelId ||
-              win.activePanelId ||
-              columns.flatMap((col) => col.panels || [])[0]?.id ||
-              null,
-          };
-        }),
+        [wsId]: applyActiveWindowColumnSnapshot(
+          windows,
+          activeWindowId,
+          columns,
+          nextActivePanelId
+        ),
       };
     });
   };
+}
+
+/** Persist live workspace.columns into the active window tab before switching away. */
+export function applyActiveWindowColumnSnapshot(
+  windows = [],
+  activeWindowId,
+  columns,
+  activePanelId = null
+) {
+  if (!activeWindowId || !Array.isArray(columns) || columns.length === 0) {
+    return windows;
+  }
+
+  return windows.map((win) => {
+    if (win.id !== activeWindowId) return win;
+    return {
+      ...win,
+      columns,
+      activePanelId:
+        activePanelId ||
+        win.activePanelId ||
+        columns.flatMap((col) => col.panels || [])[0]?.id ||
+        null,
+    };
+  });
 }
 
 export function resolveWorkspaceWindowAfterPanelClose({

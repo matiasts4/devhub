@@ -14,6 +14,11 @@ export function isSurfacePositioned(pizarra = {}) {
   return typeof pizarra.x === 'number' && typeof pizarra.y === 'number';
 }
 
+/** Merged live element (registry + render bounds) may expose x/y at root or in pizarra. */
+export function isLiveElementPositioned(el = {}) {
+  return isSurfacePositioned(el.pizarra || {}) || isSurfacePositioned(el);
+}
+
 export function computeDevSplitSlots(vis) {
   const edgePad = 8;
   const gap = 12;

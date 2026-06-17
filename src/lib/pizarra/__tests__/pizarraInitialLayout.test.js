@@ -1,6 +1,7 @@
 import {
   computeAutoFitSlotMap,
   isSurfacePositioned,
+  isLiveElementPositioned,
   resolveSurfaceRenderBounds,
 } from '../pizarraInitialLayout';
 
@@ -11,6 +12,12 @@ describe('pizarraInitialLayout', () => {
     expect(isSurfacePositioned({ x: 10, y: 20 })).toBe(true);
     expect(isSurfacePositioned({ x: null, y: 20 })).toBe(false);
     expect(isSurfacePositioned({})).toBe(false);
+  });
+
+  test('isLiveElementPositioned accepts pizarra or root coords', () => {
+    expect(isLiveElementPositioned({ pizarra: { x: 1, y: 2 } })).toBe(true);
+    expect(isLiveElementPositioned({ x: 3, y: 4 })).toBe(true);
+    expect(isLiveElementPositioned({ pizarra: { x: null, y: null } })).toBe(false);
   });
 
   test('computeAutoFitSlotMap distributes 3 terminals side by side', () => {

@@ -277,7 +277,7 @@ export function resolveZedFastPathIntent(message, context = {}) {
     if (multiNames === 'AMBIGUOUS') return null;
     if (multiNames.length >= 2) {
       return hit(
-        multiNames.map((name) => ({ tool: 'close_terminal', input: { name } })),
+        [{ tool: 'close_all_terminals', input: { names: multiNames } }],
         'close_multiple',
         0.93,
         'close_multiple'
@@ -286,10 +286,12 @@ export function resolveZedFastPathIntent(message, context = {}) {
 
     if (wantsCloseAllTerminals(lower, text, terminals) && terminalCount > 0) {
       return hit(
-        terminals.map((t) => ({
-          tool: 'close_terminal',
-          input: { name: t.displayName || t.terminalId },
-        })),
+        [
+          {
+            tool: 'close_all_terminals',
+            input: { names: terminals.map((t) => t.displayName || t.terminalId) },
+          },
+        ],
         'close_multiple',
         0.93,
         'close_all_terminals'

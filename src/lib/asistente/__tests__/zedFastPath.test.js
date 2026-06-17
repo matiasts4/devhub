@@ -95,8 +95,12 @@ describe('zedFastPath intent cache', () => {
       workspace_terminals: TERMINALS,
     });
     expect(hit?.intent).toBe('close_multiple');
-    expect(hit?.steps).toHaveLength(2);
-    expect(hit?.steps.map((s) => s.input.name).sort()).toEqual(['Cesar', 'Chase']);
+    expect(hit?.steps).toHaveLength(1);
+    expect(hit?.steps[0]).toMatchObject({
+      tool: 'close_all_terminals',
+      input: { names: expect.arrayContaining(['Cesar', 'Chase']) },
+    });
+    expect(hit?.steps[0].input.names).toHaveLength(2);
   });
 
   test('close_all on plural "cierra las terminales abiertas"', () => {
@@ -105,8 +109,12 @@ describe('zedFastPath intent cache', () => {
     });
     expect(hit?.intent).toBe('close_multiple');
     expect(hit?.matched).toBe('close_all_terminals');
-    expect(hit?.steps).toHaveLength(2);
-    expect(hit?.steps.every((s) => s.tool === 'close_terminal')).toBe(true);
+    expect(hit?.steps).toHaveLength(1);
+    expect(hit?.steps[0]).toMatchObject({
+      tool: 'close_all_terminals',
+      input: { names: expect.arrayContaining(['Cesar', 'Chase']) },
+    });
+    expect(hit?.steps[0].input.names).toHaveLength(2);
   });
 
   test('close_all on "cerrar las terminales que están abiertas"', () => {
@@ -114,7 +122,11 @@ describe('zedFastPath intent cache', () => {
       workspace_terminals: TERMINALS,
     });
     expect(hit?.intent).toBe('close_multiple');
-    expect(hit?.steps.map((s) => s.input.name).sort()).toEqual(['Cesar', 'Chase']);
+    expect(hit?.steps[0]).toMatchObject({
+      tool: 'close_all_terminals',
+      input: { names: expect.arrayContaining(['Cesar', 'Chase']) },
+    });
+    expect(hit?.steps[0].input.names).toHaveLength(2);
   });
 
   test('does NOT list when user asks to close plural terminales', () => {
@@ -122,7 +134,7 @@ describe('zedFastPath intent cache', () => {
       workspace_terminals: TERMINALS,
     });
     expect(hit?.intent).toBe('close_multiple');
-    expect(hit?.steps[0]?.tool).toBe('close_terminal');
+    expect(hit?.steps[0]?.tool).toBe('close_all_terminals');
   });
 
   test('wantsCloseAllTerminals false for singular "cierra la terminal"', () => {
@@ -184,12 +196,13 @@ describe('zedFastPath intent cache', () => {
     expect(hit).toBeNull();
   });
 
-  test('formatZedFastPathReply for would close', () => {
+  test('formatZedFastPathReply for successful close', () => {
     const text = formatZedFastPathReply('close_terminal', {
-      action: 'would close',
-      message: '¿Cerrar la terminal Cesar (p3)?',
+      success: true,
+      displayName: 'Cesar',
+      message: 'Terminal Cesar cerrada.',
     });
-    expect(text).toMatch(/cerrar/i);
+    expect(text).toMatch(/cerr/i);
   });
 
   test('formatZedFastPathReply for command_requires_approval', () => {
@@ -201,15 +214,15 @@ describe('zedFastPath intent cache', () => {
     expect(text).toMatch(/opencode/i);
   });
 
-  test('formatZedToolResultsReply combines multi-close previews', () => {
+  test('formatZedToolResultsReply combines multi-close success', () => {
     const text = formatZedToolResultsReply([
       {
         tool: 'close_terminal',
-        result: { action: 'would close', message: '¿Cerrar Chase?' },
+        result: { success: true, displayName: 'Chase' },
       },
       {
         tool: 'close_terminal',
-        result: { action: 'would close', message: '¿Cerrar Cesar?' },
+        result: { success: true, displayName: 'Cesar' },
       },
     ]);
     expect(text).toMatch(/Chase/);

@@ -109,17 +109,6 @@ export function useZedChat({
           });
           setActivityExpanded(true);
         }
-        if (parsed?.action === 'would close' && parsed?.pending_confirmation !== false) {
-          setPendingApproval({
-            kind: 'close_terminal',
-            tool: entry.tool || 'close_terminal',
-            input: entry.input,
-            displayName: parsed.displayName || null,
-            terminalId: parsed.session_id || parsed.sessionId || null,
-            command: parsed.message || null,
-          });
-          setActivityExpanded(true);
-        }
       }
     },
     [dispatchOpts]
@@ -372,21 +361,11 @@ export function useZedChat({
       return;
     }
 
-    const isClose = kind === 'close_terminal';
     setIsLoading(true);
     try {
       const history = buildZedHistory(messages);
-      const confirmInput = isClose
-        ? {
-            ...toolInput,
-            session_id: pendingApproval.terminalId || toolInput?.session_id,
-            name: toolInput?.name,
-            confirm: true,
-          }
-        : { ...toolInput, confirm: true };
-      const confirmMessage = isClose
-        ? `Confirmo cerrar: ${pendingApproval.displayName || pendingApproval.terminalId || 'terminal'}`
-        : `Confirmo ejecutar: ${toolInput?.input || toolInput?.command || pendingApproval.command}`;
+      const confirmInput = { ...toolInput, confirm: true };
+      const confirmMessage = `Confirmo ejecutar: ${toolInput?.input || toolInput?.command || pendingApproval.command}`;
       const response = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -410,17 +389,13 @@ export function useZedChat({
       });
       const data = await response.json();
       processToolResults(data.tool_results);
-      recordZedInteraction(
-        confirmMessage,
-        data.tool_results,
-        data.text || (isClose ? 'Terminal cerrada.' : 'Comando aprobado.')
-      );
+      recordZedInteraction(confirmMessage, data.tool_results, data.text || 'Comando aprobado.');
       setAuditTrail(readZedAuditTrail());
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: data.text || (isClose ? 'Terminal cerrada.' : 'Comando aprobado.'),
+          content: data.text || 'Comando aprobado.',
           timestamp: new Date().toISOString(),
           tool_results: data.tool_results,
         },

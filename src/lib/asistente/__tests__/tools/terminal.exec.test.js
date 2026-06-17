@@ -69,7 +69,10 @@ describe('execute_in_terminal (executeInTerminalTool)', () => {
       calls.push(args);
       return { ok: true, status: 200, json: async () => ({}) };
     });
-    const result = await executeInTerminalTool.execute({ session_id: 'sess-1', input: 'rm -rf .\n' }, {});
+    const result = await executeInTerminalTool.execute(
+      { session_id: 'sess-1', input: 'rm -rf .\n' },
+      {}
+    );
     expect(calls).toHaveLength(0);
     expect(result.error).toBe('command_blocked');
   });
@@ -110,22 +113,17 @@ describe('execute_in_terminal (executeInTerminalTool)', () => {
         json: async () => ({ session_id: 'p7', sent: true }),
       };
     });
-    const result = await executeInTerminalTool.execute(
-      { name: 'Chase', input: 'ls\n' },
-      {}
-    );
+    const result = await executeInTerminalTool.execute({ name: 'Chase', input: 'ls\n' }, {});
     // /processes call first (resolver), then the PUT to p7.
     const putCall = calls.find(
-      (c) =>
-        typeof c.url === 'string' && c.url.includes('/api/terminal/session/p7/input')
+      (c) => typeof c.url === 'string' && c.url.includes('/api/terminal/session/p7/input')
     );
     expect(putCall).toBeDefined();
     expect(putCall.init.method).toBe('PUT');
     expect(JSON.parse(putCall.init.body)).toEqual({ data: 'ls\n' });
     // p2 must NOT have been touched.
     const p2Call = calls.find(
-      (c) =>
-        typeof c.url === 'string' && c.url.includes('/api/terminal/session/p2/input')
+      (c) => typeof c.url === 'string' && c.url.includes('/api/terminal/session/p2/input')
     );
     expect(p2Call).toBeUndefined();
     expect(result.session_id).toBe('p7');
@@ -149,7 +147,7 @@ describe('execute_in_terminal (executeInTerminalTool)', () => {
 });
 
 describe('close_terminal (closeTerminalTool)', () => {
-  test('dry-run: no confirm returns preview and makes NO HTTP call', async () => {
+  test('closes immediately without confirmation', async () => {
     const calls = [];
     mockFetch(async (...args) => {
       calls.push(args);
@@ -157,47 +155,29 @@ describe('close_terminal (closeTerminalTool)', () => {
     });
     const result = await closeTerminalTool.execute({ session_id: 'sess-1' }, {});
     expect(calls).toHaveLength(0);
-    expect(result.action).toBe('would close');
+    expect(closeTerminalSessionById).toHaveBeenCalledWith('sess-1');
+    expect(result.success).toBe(true);
     expect(result.session_id).toBe('sess-1');
-    expect(result.pending_confirmation).toBe(true);
-    expect(result.message).toMatch(/cerrar/i);
-    expect(result.hint).toMatch(/confirm: true/i);
-    expect(closeTerminalSessionById).not.toHaveBeenCalled();
   });
 
-  test('confirm: false is a dry-run (not a real close)', async () => {
-    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({}) }));
-    const result = await closeTerminalTool.execute({ session_id: 'sess-1', confirm: false }, {});
-    expect(result.action).toBe('would close');
-    expect(closeTerminalSessionById).not.toHaveBeenCalled();
-  });
-
-  test('confirm: true without user approval is downgraded to dry-run', async () => {
-    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+  test('closes by name immediately', async () => {
+    mockFetch(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ processes: [{ terminalId: 'p1', displayName: 'Chase' }] }),
+    }));
     const result = await closeTerminalTool.execute(
-      { session_id: 'p1', confirm: true },
+      { name: 'Chase' },
       { workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }] }
-    );
-    expect(result.action).toBe('would close');
-    expect(closeTerminalSessionById).not.toHaveBeenCalled();
-  });
-
-  test('confirm: true with user approval flag closes', async () => {
-    mockFetch(async () => ({ ok: true, status: 200, json: async () => ({}) }));
-    const result = await closeTerminalTool.execute(
-      { session_id: 'p1', confirm: true },
-      {
-        workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }],
-        _zed_user_confirmed_close: true,
-      }
     );
     expect(closeTerminalSessionById).toHaveBeenCalledWith('p1');
     expect(result.success).toBe(true);
+    expect(result.displayName).toBe('Chase');
   });
 
   test('missing session_id returns error and does NOT call closeTerminalSessionById', async () => {
     mockFetch(async () => ({ ok: true, status: 200, json: async () => ({ processes: [] }) }));
-    const result = await closeTerminalTool.execute({ confirm: true }, {});
+    const result = await closeTerminalTool.execute({}, {});
     expect(result.error).toBe('not_found');
     expect(closeTerminalSessionById).not.toHaveBeenCalled();
   });
@@ -208,7 +188,8 @@ describe('close_terminal (closeTerminalTool)', () => {
       {},
       { workspace_terminals: [{ terminalId: 'p1', displayName: 'Chase' }] }
     );
-    expect(result.action).toBe('would close');
+    expect(closeTerminalSessionById).toHaveBeenCalledWith('p1');
+    expect(result.success).toBe(true);
     expect(result.session_id).toBe('p1');
     expect(result.displayName).toBe('Chase');
   });

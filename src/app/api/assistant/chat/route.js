@@ -16,6 +16,7 @@ import {
   reviewTerminalTool,
   executeInTerminalTool,
   closeTerminalTool,
+  closeAllTerminalsTool,
 } from '@/lib/asistente/tools/terminal';
 import { summarizeTerminalTool } from '@/lib/asistente/tools/summarizeTerminal';
 import { browserTool, closeUrlTool } from '@/lib/asistente/tools/browser';
@@ -117,6 +118,7 @@ function buildRegistry() {
   registry.register(reviewTerminalTool);
   registry.register(executeInTerminalTool);
   registry.register(closeTerminalTool);
+  registry.register(closeAllTerminalsTool);
   registry.register(summarizeTerminalTool);
   registry.register(browserTool);
   registry.register(closeUrlTool);

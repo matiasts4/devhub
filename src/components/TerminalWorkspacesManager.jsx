@@ -204,6 +204,7 @@ import {
 } from '@/lib/terminal/swarmLaunchBatch';
 import {
   appendSwarmWorkerToWorkspace,
+  applyActiveWindowColumnSnapshot,
   createSwarmLaunchQueueHandlers,
   createSyncActiveWindowSnapshot,
   createWorkspaceForSwarmLaunchRequestsFn,
@@ -3753,53 +3754,82 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [activeWindowIds]
   );
 
-  const addWindowToWorkspace = useCallback(
-    (wsId) => {
-      const existing = workspaceWindowsRef.current?.[wsId] || [];
-      if (existing.length >= MAX_WORKSPACE_WINDOWS) return;
+  const addWindowToWorkspace = useCallback((wsId) => {
+    const existing = workspaceWindowsRef.current?.[wsId] || [];
+    if (existing.length >= MAX_WORKSPACE_WINDOWS) return;
 
-      panelCounterRef.current += 1;
-      colCounterRef.current += 1;
-      windowCounterRef.current += 1;
+    const ws = workspacesRef.current.find((entry) => entry.id === wsId);
+    const liveColumns = ws?.columns || [];
+    const activeWindowId = activeWindowIdsRef.current?.[wsId];
 
-      const newPanelId = `p${panelCounterRef.current}`;
-      const newColId = `c${colCounterRef.current}`;
-      const newWindowId = `v${windowCounterRef.current}`;
-      const newColumns = [createColumn(newColId, newPanelId)];
+    panelCounterRef.current += 1;
+    colCounterRef.current += 1;
+    windowCounterRef.current += 1;
 
-      setWorkspaceWindows((prev) => {
-        const existing = prev[wsId] || [];
-        return {
-          ...prev,
-          [wsId]: [
-            ...existing,
-            createWindow(newWindowId, `V${existing.length + 1}`, newColumns, newPanelId),
-          ],
-        };
-      });
+    const newPanelId = `p${panelCounterRef.current}`;
+    const newColId = `c${colCounterRef.current}`;
+    const newWindowId = `v${windowCounterRef.current}`;
+    const newColumns = [createColumn(newColId, newPanelId)];
 
-      setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
-      setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
-      setTerminalRendererPreferences((prev) =>
-        setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
-      );
+    setWorkspaceWindows((prev) => {
+      const prevExisting = prev[wsId] || [];
+      const snapshotted =
+        activeWindowId && liveColumns.length > 0
+          ? applyActiveWindowColumnSnapshot(
+              prevExisting,
+              activeWindowId,
+              liveColumns,
+              activePanelIdsRef.current?.[wsId]
+            )
+          : prevExisting;
 
-      setWorkspaces((prev) =>
-        prev.map((ws) => (ws.id === wsId ? { ...ws, columns: newColumns } : ws))
-      );
-    },
-    [workspaceWindows]
-  );
+      return {
+        ...prev,
+        [wsId]: [
+          ...snapshotted,
+          createWindow(newWindowId, `V${prevExisting.length + 1}`, newColumns, newPanelId),
+        ],
+      };
+    });
+
+    setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
+    setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
+    setTerminalRendererPreferences((prev) =>
+      setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+    );
+
+    setWorkspaces((prev) =>
+      prev.map((entry) => (entry.id === wsId ? { ...entry, columns: newColumns } : entry))
+    );
+  }, []);
 
   const switchWindowInWorkspace = useCallback(
     (wsId, windowId) => {
-      const windows = workspaceWindows[wsId] || [];
+      const windows = workspaceWindowsRef.current?.[wsId] || [];
       const nextWindow = windows.find((win) => win.id === windowId);
       if (!nextWindow) return;
 
+      const activeWindowId = activeWindowIdsRef.current?.[wsId];
+      if (activeWindowId === windowId) return;
+
+      const ws = workspacesRef.current.find((entry) => entry.id === wsId);
+      const liveColumns = ws?.columns || [];
+
+      let resolvedWindows = windows;
+      if (activeWindowId && liveColumns.length > 0) {
+        resolvedWindows = applyActiveWindowColumnSnapshot(
+          windows,
+          activeWindowId,
+          liveColumns,
+          activePanelIdsRef.current?.[wsId]
+        );
+        setWorkspaceWindows((prev) => ({ ...prev, [wsId]: resolvedWindows }));
+      }
+
+      const destination = resolvedWindows.find((win) => win.id === windowId) || nextWindow;
       const nextPanelId =
-        nextWindow.activePanelId ||
-        nextWindow.columns?.flatMap((col) => col.panels || [])[0]?.id ||
+        destination.activePanelId ||
+        destination.columns?.flatMap((col) => col.panels || [])[0]?.id ||
         null;
 
       setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
@@ -3808,12 +3838,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
 
       setWorkspaces((prev) =>
-        prev.map((ws) =>
-          ws.id === wsId ? { ...ws, columns: nextWindow.columns || ws.columns } : ws
+        prev.map((entry) =>
+          entry.id === wsId ? { ...entry, columns: destination.columns || entry.columns } : entry
         )
       );
+
+      notifyNativeLayoutSettled('workspace-window-switch');
     },
-    [workspaceWindows]
+    [notifyNativeLayoutSettled]
   );
 
   // pizarra-view-switch-complete: consolidate the active window so the workspace

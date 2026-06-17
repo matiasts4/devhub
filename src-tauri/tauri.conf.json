@@ -41,11 +41,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../sidecar-backend",
-      "resources/standalone.zip",
-      "../packages/veloce-audio/python"
-    ],
+    "resources": {
+      "../sidecar-backend": "sidecar-backend",
+      "resources/standalone.zip": "standalone.zip",
+      "../packages/veloce-audio/python/requirements.txt": "veloce-audio/requirements.txt",
+      "../packages/veloce-audio/python/voices/**/*": "veloce-audio/voices/"
+    },
     "externalBin": ["binaries/devhub-server"],
     "linux": {
       "deb": {

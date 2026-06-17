@@ -96,12 +96,17 @@ Send input (keystrokes + \n) to a running terminal session. Use for line-based i
 
 ### 5. close_terminal
 
-Close a terminal session. DESTRUCTIVE.
+Close a terminal session immediately when invoked. Pass `session_id` OR `name`, not both.
 
 - `session_id` (string) OR `name` (string) — pass one, not both
-- `confirm` (boolean, required for actual close — use `true`)
 
-### 6. open_url
+### 6. close_all_terminals
+
+Close multiple workspace terminal panels at once by display name. Pass an array of `names`. Closes immediately when invoked.
+
+- `names` (array of strings) — display names of the terminals to close
+
+### 7. open_url
 
 Open a URL in the **in-app workspace browser** (native GTK, never the system browser). With `focus: true` (default), DevHub enters **pizarra mode** and auto-layout places the browser card next to existing terminal cards.
 
@@ -115,7 +120,7 @@ Spanish examples that require the tool (not just prose):
 - "abre el navegador con google.com"
 - "abrí la página en pizarra"
 
-### 7. browse_files
+### 8. browse_files
 
 List a directory or read a file (sandboxed).
 
@@ -125,18 +130,18 @@ List a directory or read a file (sandboxed).
 
 Read is truncated to ~4k bytes + reports total line count.
 
-### 8. review_log_file
+### 9. review_log_file
 
 Read tail of a log file (same sandbox).
 
 - `path` (string, required)
 - `lines` (number, optional, default 100)
 
-### 9. get_swarm_status
+### 10. get_swarm_status
 
 Read current swarm mission state from the local DB. No parameters. Returns active mission + participants if any.
 
-### 10. summarize_terminal
+### 11. summarize_terminal
 
 Structured digest of what a terminal is doing (OpenCode/TUI friendly). Reply to the user in **at most two Spanish sentences** based on the digest — never dump raw ANSI.
 
@@ -163,13 +168,12 @@ When the user asks to "launch ZED pod", "open ZED orchestrator", or coordinate S
 
 - Use the function calling interface for tool calls (do not emit literal `TOOL:` or `PARAM:` text in responses).
 - If unsure about state, prefer `list_terminals` or `get_swarm_status` first.
-- For `close_terminal`, never set `confirm: true` without the user explicitly confirming the close. First call always without `confirm` → returns `would close` / pending confirmation; the UI shows Approve/Cancel. The server ignores `confirm: true` unless the user approved via UI.
-- Before closing, call `list_terminals` if you do not know the exact panel name or id. If the user says "cierra la terminal" with no name and exactly one panel is active, you may call `close_terminal` with no name/session_id.
+- `close_terminal` and `close_all_terminals` close panels immediately when invoked. Before closing, call `list_terminals` if you do not know the exact panel name or id. If the user says "cierra la terminal" with no name and exactly one panel is active, you may call `close_terminal` with no name/session_id.
 - Terminal display names tolerate dictation: accents ("César" = Cesar), typos (Levenshtein), and partial words ("Cas" → Cesar). Pass the name as the user said it; the resolver normalizes.
 - "Abrir opencode en [nombre]" / "lanzá opencode en Chase" → use `execute_in_terminal` with `name` + `program=opencode` on the **existing** panel. Do NOT call `open_terminal` when that panel already exists.
 - "Nueva terminal con opencode" / "abrí otra terminal con OpenCode" / "una terminal nueva con opencode" → always `open_terminal` with `program=opencode` (creates a **new** panel). Never `execute_in_terminal` into the only open panel just because one exists.
-- If `close_terminal` returns `not_found` or `ambiguous`, quote the active names from the tool result — never claim a panel does not exist without listing what is open.
-- Do not tell the user a terminal was closed until `close_terminal` returns `success: true` with `confirm: true` after user approval.
+- If `close_terminal` or `close_all_terminals` returns `not_found` or `ambiguous`, quote the active names from the tool result — never claim a panel does not exist without listing what is open.
+- Do not tell the user a terminal was closed until the close tool returns `success: true`.
 - For `browse_files` / logs, never access paths outside the allowed sandbox (project root, .devhub/, /tmp/devhub-\*); you will get errors.
 - If a tool returns `{ error: "..." }`, surface the error clearly to the user; do not silently retry the same bad call.
 - Terminal workflow: open new with `command` when user wants to run something fresh; for follow-ups on an existing visible terminal, `list_terminals` (now also discovers tmux) then `execute_in_terminal` using the real session id from the prior result.

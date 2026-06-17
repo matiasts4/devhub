@@ -35,7 +35,7 @@ import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 
 const RAIL_WIDTH = 50;
 const EDGE_WIDTH = 14;
-const HIDE_DELAY_MS = 220;
+const HIDE_DELAY_MS = 900;
 
 const SHAPE_TOOLS = [
   { value: 'select', label: 'Seleccionar', Icon: MousePointer },
@@ -193,12 +193,17 @@ export default function PizarraToolPalette({
   onApplyLayout,
   isViewLocked,
   onToggleViewLocked,
+  onRevealChange,
+  revealed: revealedProp,
+  onRevealRequest,
 }) {
   const { viewportToCanvas, canvasRect } = useCanvasViewport();
   const [layoutsCollapsed, setLayoutsCollapsed] = useState(true);
   const [shapeCollapsed, setShapeCollapsed] = useState(true);
   const [tooltip, setTooltip] = useState(null);
-  const [revealed, setRevealed] = useState(false);
+  const [internalRevealed, setInternalRevealed] = useState(false);
+  const isControlled = revealedProp !== undefined;
+  const revealed = isControlled ? revealedProp : internalRevealed;
   const hideTimerRef = useRef(null);
 
   const cancelHide = useCallback(() => {
@@ -209,17 +214,24 @@ export default function PizarraToolPalette({
   }, []);
 
   const reveal = useCallback(() => {
+    if (isControlled) {
+      onRevealRequest?.();
+      return;
+    }
     cancelHide();
-    setRevealed(true);
-  }, [cancelHide]);
+    setInternalRevealed(true);
+    onRevealChange?.(true);
+  }, [cancelHide, isControlled, onRevealChange, onRevealRequest]);
 
   const scheduleHide = useCallback(() => {
+    if (isControlled) return;
     cancelHide();
     hideTimerRef.current = setTimeout(() => {
-      setRevealed(false);
+      setInternalRevealed(false);
       setTooltip(null);
+      onRevealChange?.(false);
     }, HIDE_DELAY_MS);
-  }, [cancelHide]);
+  }, [cancelHide, isControlled, onRevealChange]);
 
   useEffect(() => () => cancelHide(), [cancelHide]);
 
@@ -248,15 +260,15 @@ export default function PizarraToolPalette({
   return (
     <div
       data-testid="pizarra-tool-palette-shell"
-      onMouseEnter={reveal}
-      onMouseLeave={scheduleHide}
+      onMouseEnter={isControlled ? undefined : reveal}
+      onMouseLeave={isControlled ? undefined : scheduleHide}
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
         bottom: 0,
         width: revealed ? RAIL_WIDTH + 18 : EDGE_WIDTH,
-        pointerEvents: 'auto',
+        pointerEvents: isControlled ? 'none' : 'auto',
         zIndex: 10003,
       }}
     >

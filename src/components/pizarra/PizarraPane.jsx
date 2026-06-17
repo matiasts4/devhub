@@ -72,8 +72,13 @@ import {
   computeDualBrowserSlots,
   computeAutoFitSlotMap,
   isSurfacePositioned,
+  isLiveElementPositioned,
   resolveSurfaceRenderBounds,
 } from '@/lib/pizarra/pizarraInitialLayout';
+import {
+  readPizarraViewport,
+  writePizarraViewport,
+} from '@/lib/pizarra/pizarraViewportPersistence';
 
 // SSR-safe canvas import
 const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
@@ -415,6 +420,11 @@ export default function PizarraPane({
   // The pizarra chrome tree. The mode transition is owned one level up
   // by WorkspaceRightDock so the animation can cover the normal→pizarra
   // handoff before this pane has fully settled.
+  const savedViewport = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return readPizarraViewport(window.localStorage, projectId, workspaceId);
+  }, [projectId, workspaceId]);
+
   const paneBody = (
     <div
       ref={containerRef}
@@ -430,7 +440,12 @@ export default function PizarraPane({
       }}
     >
       {/* Canvas viewport context — provides zoom/pan/coordinate translation */}
-      <CanvasViewportProvider key={workspaceId} canvasContainerRef={canvasContainerRef}>
+      <CanvasViewportProvider
+        key={workspaceId}
+        canvasContainerRef={canvasContainerRef}
+        initialZoom={savedViewport?.zoom ?? 1}
+        initialPan={savedViewport?.pan}
+      >
         {/* PizarraInner is a child of the provider so it can useCanvasViewport() */}
         <PizarraInner
           key={workspaceId}
@@ -558,9 +573,54 @@ function PizarraInner({
     });
   }, []);
 
+  const HUD_HIDE_DELAY_MS = 900;
+  const HUD_EDGE_WIDTH = 28;
+  const HUD_DOCK_WIDTH = 280;
+  const HUD_CORNER_WIDTH = 150;
+  const HUD_CORNER_HEIGHT = 120;
+
+  const [hudRevealed, setHudRevealed] = useState(false);
+  const hudHideTimerRef = useRef(null);
+
+  const revealHud = useCallback(() => {
+    if (hudHideTimerRef.current) {
+      clearTimeout(hudHideTimerRef.current);
+      hudHideTimerRef.current = null;
+    }
+    setHudRevealed(true);
+  }, []);
+
+  const scheduleHideHud = useCallback(() => {
+    if (hudHideTimerRef.current) clearTimeout(hudHideTimerRef.current);
+    hudHideTimerRef.current = setTimeout(() => {
+      hudHideTimerRef.current = null;
+      setHudRevealed(false);
+    }, HUD_HIDE_DELAY_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (hudHideTimerRef.current) clearTimeout(hudHideTimerRef.current);
+    },
+    []
+  );
+
   useEffect(() => {
     panRef.current = pan;
   }, [pan]);
+
+  const viewportPersistTimerRef = useRef(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (viewportPersistTimerRef.current) clearTimeout(viewportPersistTimerRef.current);
+    viewportPersistTimerRef.current = setTimeout(() => {
+      viewportPersistTimerRef.current = null;
+      writePizarraViewport(window.localStorage, projectId, workspaceId, { pan, zoom });
+    }, 400);
+    return () => {
+      if (viewportPersistTimerRef.current) clearTimeout(viewportPersistTimerRef.current);
+    };
+  }, [pan, zoom, projectId, workspaceId]);
 
   const cancelPanAnimation = useCallback(() => {
     if (typeof panAnimCancelRef.current === 'function') {
@@ -1102,7 +1162,8 @@ function PizarraInner({
     const settleMs = prefersReducedMotion() ? 24 : 60;
     const timer = setTimeout(() => {
       if (liveSurfacesForZones.length === 0 || isViewTransitioning) return;
-      if (!isViewLocked) {
+      const allPositioned = liveSurfacesForZones.every(isLiveElementPositioned);
+      if (!isViewLocked && !allPositioned) {
         handleFitAllView();
       }
       const panelIds = collectTerminalPanelIds(liveSurfacesForZones);
@@ -1172,12 +1233,11 @@ function PizarraInner({
 
     // When locked or mid-transition we preserve the user's layout; the
     // unpositioned effect already placed carried surfaces once. Only auto-fit on
-    // first appearance if unlocked and settled.
+    // first appearance if unlocked, settled, and something still lacks coords.
     if (isViewLocked || isViewTransitioning) return;
+    const allPositioned = liveSurfacesForZones.every(isLiveElementPositioned);
+    if (allPositioned) return;
 
-    // Always run full adaptive layout when live surfaces first appear — even if
-    // they already have saved x/y from a prior visit. Camera-only fit left cards
-    // at stale sizes after workspace/mode switches.
     scheduleAutoFitView(100);
   }, [
     liveSurfacesForZones,
@@ -1212,6 +1272,15 @@ function PizarraInner({
   const lastDividerHRef = useRef(null);
 
   const laidOutRegistryRef = useRef(new Set());
+
+  useEffect(() => {
+    if (!registry?.isLoaded) return;
+    for (const s of registry.surfaces || []) {
+      if (isSurfacePositioned(s.pizarra || {})) {
+        laidOutRegistryRef.current.add(s.id);
+      }
+    }
+  }, [registry?.isLoaded, registry?.surfaces]);
 
   // pizarra-renderer-switcher: per-shape terminal renderer update.
   // Routes the user's selection from the CanvasTerminal header's
@@ -2165,16 +2234,22 @@ function PizarraInner({
     const fitKey = `${Math.round(canvasSize.width)}x${Math.round(canvasSize.height)}|${idsKey}`;
     if (fitKey === prevAutoFitKeyRef.current) return;
 
+    if (isViewLocked) {
+      prevAutoFitKeyRef.current = fitKey;
+      prevAutoFitCountRef.current = count;
+      return;
+    }
+
     const prevCount = prevAutoFitCountRef.current;
     const countIncreased = count > prevCount && prevCount > 0;
     prevAutoFitKeyRef.current = fitKey;
     prevAutoFitCountRef.current = count;
 
-    const hasUnpositioned = liveSurfaces.some((s) => !isSurfacePositioned(s.pizarra || {}));
+    const hasUnpositioned = liveSurfaces.some((s) => !isLiveElementPositioned(s));
     if (count > 0 && (hasUnpositioned || countIncreased)) {
       scheduleAutoFitView(countIncreased ? 350 : 260);
     }
-  }, [canvasSize, mergedElements, scheduleAutoFitView]);
+  }, [canvasSize, mergedElements, scheduleAutoFitView, isViewLocked]);
 
   // Listen for deferred auto-refit events dispatched by handleAddElement
   // when a new card is added while others already exist.
@@ -2267,6 +2342,52 @@ function PizarraInner({
           zIndex: 10000,
         }}
       >
+        {hudRevealed ? (
+          <div
+            data-testid="pizarra-hud-dock-capture"
+            onMouseEnter={revealHud}
+            onMouseLeave={scheduleHideHud}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: HUD_DOCK_WIDTH,
+              pointerEvents: 'auto',
+              zIndex: 10001,
+            }}
+          />
+        ) : (
+          <>
+            <div
+              data-testid="pizarra-hud-edge-trigger"
+              onMouseEnter={revealHud}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: HUD_EDGE_WIDTH,
+                pointerEvents: 'auto',
+                zIndex: 10005,
+              }}
+            />
+            <div
+              data-testid="pizarra-hud-corner-zone"
+              onMouseEnter={revealHud}
+              style={{
+                position: 'absolute',
+                left: 0,
+                bottom: 0,
+                width: HUD_CORNER_WIDTH,
+                height: HUD_CORNER_HEIGHT,
+                pointerEvents: 'auto',
+                zIndex: 10005,
+              }}
+            />
+          </>
+        )}
+
         <PizarraToolPalette
           value={state.activeTool}
           onChange={setTool}
@@ -2274,14 +2395,31 @@ function PizarraInner({
           onApplyLayout={handleApplyLayout}
           isViewLocked={isViewLocked}
           onToggleViewLocked={toggleViewLocked}
+          revealed={hudRevealed}
+          onRevealRequest={revealHud}
         />
 
-        <PizarraZoomControls
-          canvasWidth={canvasSize.width}
-          canvasHeight={canvasSize.height}
-          onFitAll={handleFitAllView}
-          onResetView={() => centerActiveView(1)}
-        />
+        <div
+          onMouseEnter={revealHud}
+          onMouseLeave={scheduleHideHud}
+          style={{
+            position: 'absolute',
+            left: 0,
+            bottom: 0,
+            width: HUD_DOCK_WIDTH,
+            height: 96,
+            pointerEvents: hudRevealed ? 'auto' : 'none',
+            zIndex: 10002,
+          }}
+        >
+          <PizarraZoomControls
+            visible={hudRevealed}
+            canvasWidth={canvasSize.width}
+            canvasHeight={canvasSize.height}
+            onFitAll={handleFitAllView}
+            onResetView={() => centerActiveView(1)}
+          />
+        </div>
 
         <PizarraEdgeSwipeZones
           enabled={views.length >= 2 && !isSurfaceDragging}
@@ -2307,28 +2445,31 @@ function PizarraInner({
             }}
           />
         ) : null}
-      </div>
 
-      {/* Element count badge */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 12,
-          right: 12,
-          background: 'var(--surface-card)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--chrome-radius-control)',
-          padding: '2px 10px',
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 10,
-          color: 'var(--text-muted)',
-          fontWeight: 600,
-          letterSpacing: '0.08em',
-          boxShadow: 'var(--shadow-soft)',
-          pointerEvents: 'none',
-        }}
-      >
-        {mergedElements.length} element{mergedElements.length !== 1 ? 's' : ''}
+        <div
+          data-testid="pizarra-element-count"
+          style={{
+            position: 'absolute',
+            bottom: 12,
+            right: 12,
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--chrome-radius-control)',
+            padding: '2px 10px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            boxShadow: 'var(--shadow-soft)',
+            pointerEvents: 'none',
+            opacity: hudRevealed ? 1 : 0,
+            visibility: hudRevealed ? 'visible' : 'hidden',
+            transition: 'opacity 0.18s ease, visibility 0.18s ease',
+          }}
+        >
+          {mergedElements.length} element{mergedElements.length !== 1 ? 's' : ''}
+        </div>
       </div>
 
       {/* Minimap — bottom-right HUD, hidden until pan/zoom */}

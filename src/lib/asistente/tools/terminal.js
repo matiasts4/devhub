@@ -592,27 +592,8 @@ export const closeTerminalTool = {
     }
     const session_id = lookup.sessionId;
     const displayName = lookup.displayName || null;
-    let { confirm } = params;
 
-    // Block model from bypassing UI confirmation — only confirm_tool path sets this flag.
-    if (confirm === true && context?._zed_user_confirmed_close !== true) {
-      zedLog.warn('TOOL', 'close_terminal confirm ignored (no user approval)', { session_id });
-      confirm = false;
-    }
-
-    zedLog.info('TOOL', 'close_terminal', { session_id, confirm, displayName });
-
-    if (confirm !== true) {
-      const label = displayName ? `${displayName} (${session_id})` : session_id;
-      return {
-        action: 'would close',
-        session_id,
-        displayName,
-        pending_confirmation: true,
-        message: `¿Cerrar la terminal ${label}?`,
-        hint: 'User must confirm via UI before confirm: true',
-      };
-    }
+    zedLog.info('TOOL', 'close_terminal', { session_id, displayName });
 
     const { closeTerminalSessionById } = await import('@/lib/terminal/closeTerminalSession');
     try {
@@ -629,5 +610,84 @@ export const closeTerminalTool = {
     } catch (err) {
       return { error: err.message, status: err.status || 500 };
     }
+  },
+};
+
+export const closeAllTerminalsTool = {
+  name: 'close_all_terminals',
+  description:
+    'Close multiple workspace terminal panels at once by display name. Pass an array of `names`. Closes immediately when invoked. Use list_terminals first when unsure which panels to close.',
+  parameters: {
+    names: {
+      type: 'array',
+      description: 'Array of display names of terminals to close (e.g. ["Chase", "Cesar"]).',
+    },
+  },
+  async execute(params, context = {}) {
+    const names = Array.isArray(params?.names)
+      ? params.names.filter((n) => typeof n === 'string' && n.trim())
+      : [];
+    if (names.length === 0) {
+      return {
+        error: 'missing required parameter: names',
+        message: 'No se indicaron terminales para cerrar.',
+      };
+    }
+
+    const list = await fetchTerminalProcessList(context);
+    const targets = [];
+    const notFound = [];
+    for (const rawName of names) {
+      const name = rawName.trim();
+      const lookup = resolveTerminalByName(name, list);
+      if (lookup.ok) {
+        targets.push({ sessionId: lookup.terminalId, displayName: lookup.displayName });
+      } else {
+        notFound.push(name);
+      }
+    }
+
+    if (targets.length === 0) {
+      return {
+        error: 'not_found',
+        message: `No encontré terminales para cerrar: ${notFound.join(', ')}`,
+      };
+    }
+
+    zedLog.info('TOOL', 'close_all_terminals', { count: targets.length, notFound });
+
+    const { closeTerminalSessionById } = await import('@/lib/terminal/closeTerminalSession');
+    const results = [];
+    for (const t of targets) {
+      try {
+        const r = await closeTerminalSessionById(t.sessionId);
+        results.push({
+          ...r,
+          success: true,
+          session_id: t.sessionId,
+          sessionId: t.sessionId,
+          displayName: t.displayName,
+          panel_closed: true,
+        });
+      } catch (err) {
+        results.push({
+          success: false,
+          session_id: t.sessionId,
+          sessionId: t.sessionId,
+          displayName: t.displayName,
+          error: err.message,
+          status: err.status || 500,
+        });
+      }
+    }
+
+    const closedCount = results.filter((r) => r.success).length;
+    return {
+      success: closedCount === targets.length,
+      closed: closedCount,
+      total: targets.length,
+      results,
+      message: `Cerré ${closedCount} de ${targets.length} terminales.`,
+    };
   },
 };

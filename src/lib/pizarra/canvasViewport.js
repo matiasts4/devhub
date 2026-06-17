@@ -144,9 +144,10 @@ export function CanvasViewportProvider({
   children,
   canvasContainerRef,
   initialZoom = DEFAULT_ZOOM,
+  initialPan = DEFAULT_PAN,
 }) {
   const [zoom, setZoom] = useState(initialZoom);
-  const [pan, setPan] = useState(DEFAULT_PAN);
+  const [pan, setPan] = useState(initialPan);
   const [canvasRect, setCanvasRect] = useState(null);
   const wheelViewNavigateRef = useRef(null);
 

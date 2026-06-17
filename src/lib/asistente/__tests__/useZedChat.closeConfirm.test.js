@@ -63,7 +63,7 @@ async function mountChat(onReady) {
   };
 }
 
-describe('useZedChat close_terminal confirmation', () => {
+describe('useZedChat close_terminal (no confirmation)', () => {
   let dom;
 
   beforeEach(() => {
@@ -79,23 +79,22 @@ describe('useZedChat close_terminal confirmation', () => {
     delete global.sessionStorage;
   });
 
-  test('sets pendingApproval with kind close_terminal on would close preview', async () => {
+  test('does NOT set pendingApproval when close_terminal succeeds immediately', async () => {
     let chatRef = null;
     global.fetch = jest.fn(async () => ({
       ok: true,
       headers: { get: () => 'application/json' },
       json: async () => ({
-        text: '¿Cerrar la terminal Chase (p1)?',
+        text: 'Cerré la terminal Chase.',
         tool_results: [
           {
             tool: 'close_terminal',
             input: { name: 'Chase' },
             result: {
-              action: 'would close',
+              success: true,
               session_id: 'p1',
               displayName: 'Chase',
-              pending_confirmation: true,
-              message: '¿Cerrar la terminal Chase (p1)?',
+              panel_closed: true,
             },
           },
         ],
@@ -113,15 +112,7 @@ describe('useZedChat close_terminal confirmation', () => {
       await chatRef.handleSend();
     });
 
-    expect(chatRef.pendingApproval).toEqual(
-      expect.objectContaining({
-        kind: 'close_terminal',
-        tool: 'close_terminal',
-        displayName: 'Chase',
-        terminalId: 'p1',
-      })
-    );
-    expect(chatRef.activityExpanded).toBe(true);
+    expect(chatRef.pendingApproval).toBeNull();
 
     unmount();
   });

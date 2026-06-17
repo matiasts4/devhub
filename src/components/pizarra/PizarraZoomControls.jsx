@@ -24,6 +24,7 @@ export default function PizarraZoomControls({
   onResetView,
   canvasWidth = 800,
   canvasHeight = 600,
+  visible = true,
 }) {
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
 
@@ -71,7 +72,10 @@ export default function PizarraZoomControls({
         background: 'rgba(10, 15, 28, 0.92)',
         border: '1px solid rgba(88, 166, 255, 0.18)',
         boxShadow: '0 4px 20px rgba(0,0,0,0.45)',
-        pointerEvents: 'auto',
+        pointerEvents: visible ? 'auto' : 'none',
+        opacity: visible ? 1 : 0,
+        visibility: visible ? 'visible' : 'hidden',
+        transition: 'opacity 0.18s ease, visibility 0.18s ease',
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10,
         color: 'var(--text-muted, #94a3b8)',

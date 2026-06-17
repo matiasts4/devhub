@@ -124,7 +124,7 @@ describe('zed-system-prompt.md (T-027 regression)', () => {
   // ----- T-401 / ZCX-002 (Terminales nombradas) -----
   test('T-401: Terminales nombradas section sits between get_swarm_status and ZED Orchestrator Pod', () => {
     const prompt = readPrompt();
-    const swarmIdx = prompt.indexOf('### 9. get_swarm_status');
+    const swarmIdx = prompt.indexOf('### 10. get_swarm_status');
     const namedIdx = prompt.indexOf('### Terminales nombradas');
     const podIdx = prompt.indexOf('## ZED Orchestrator Pod');
     expect(swarmIdx).toBeGreaterThan(-1);
