@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Send, Square, Sparkles } from 'lucide-react';
+import { Send, Square } from 'lucide-react';
 import { useZedChat } from '@/lib/asistente/useZedChat';
 import { useZedOverlay } from '@/lib/asistente/useZedOverlay';
 import { buildZedAmbientStatus } from '@/lib/asistente/buildZedAmbientStatus';
@@ -271,6 +271,13 @@ export default function ZedAmbientOverlay({
   }, []);
 
   const inputRef = useRef(null);
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const nextHeight = Math.min(el.scrollHeight, 140);
+    el.style.height = `${nextHeight}px`;
+  }, [input]);
   const lastSpokenRef = useRef(null);
   const lastSpokenApprovalRef = useRef(null);
 
@@ -463,7 +470,7 @@ export default function ZedAmbientOverlay({
           >
             <div
               className={[
-                'pointer-events-auto w-auto min-w-[260px] max-w-[min(420px,calc(100vw-1.5rem))]',
+                'pointer-events-auto w-auto min-w-[360px] max-w-[min(640px,calc(100vw-2rem))]',
                 statusExiting ? 'zed-pill-exit' : '',
               ].join(' ')}
             >
@@ -506,7 +513,7 @@ export default function ZedAmbientOverlay({
                       {speaking ? (
                         <ZedEqualizer className="text-white" />
                       ) : (
-                        <Sparkles className="h-3 w-3 text-white" />
+                        <span className="text-[10px] font-bold leading-none">Z</span>
                       )}
                     </div>
                     <div className="relative flex flex-1 items-center">
@@ -520,18 +527,24 @@ export default function ZedAmbientOverlay({
                         onPaste={handlePaste}
                         placeholder={voiceActive ? 'Escuchando…' : ''}
                         rows={1}
-                        className="max-h-[80px] min-h-[26px] w-full resize-none bg-transparent py-1 text-[11px] leading-snug outline-none"
+                        className="max-h-[140px] min-h-[28px] w-full resize-none bg-transparent py-1 text-[11px] leading-snug outline-none overflow-y-auto"
                         style={{ color: 'var(--text-primary)' }}
                         disabled={isLoading || recording}
                       />
                       {!input.trim() && !recording && !isLoading && !voiceActive ? (
-                        <span
-                          key={suggestionIndex}
-                          className="pointer-events-none absolute left-0 top-0 flex h-full items-center text-[11px] text-[var(--text-muted)] transition-opacity duration-500"
-                          aria-hidden="true"
-                        >
-                          Probá “{quickSuggestions[suggestionIndex]}”
-                        </span>
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={suggestionIndex}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.35, ease: 'easeInOut' }}
+                            className="pointer-events-none absolute left-0 top-0 flex h-full items-center text-[11px] text-[var(--text-muted)]"
+                            aria-hidden="true"
+                          >
+                            Probá “{quickSuggestions[suggestionIndex]}”
+                          </motion.span>
+                        </AnimatePresence>
                       ) : null}
                     </div>
                     {voiceEnabled ? (
@@ -567,7 +580,7 @@ export default function ZedAmbientOverlay({
                   </div>
                 ) : (
                   <div
-                    className="flex h-[30px] w-full cursor-pointer items-center gap-2.5 px-3"
+                    className="flex h-[32px] w-full cursor-pointer items-center gap-2.5 px-3"
                     role="button"
                     tabIndex={0}
                     aria-label="Abrir Zed"
@@ -605,9 +618,18 @@ export default function ZedAmbientOverlay({
                           {statusLine}
                         </span>
                       ) : (
-                        <span key={suggestionIndex} className="zed-status-line block truncate">
-                          Probá “{quickSuggestions[suggestionIndex]}”
-                        </span>
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={suggestionIndex}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.35, ease: 'easeInOut' }}
+                            className="zed-status-line block truncate"
+                          >
+                            Probá “{quickSuggestions[suggestionIndex]}”
+                          </motion.span>
+                        </AnimatePresence>
                       )}
                     </span>
                     {voiceEnabled && !isLoading && !speaking ? (
