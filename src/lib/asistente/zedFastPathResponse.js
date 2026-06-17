@@ -29,7 +29,17 @@ export function formatZedFastPathReply(tool, result) {
 
   if (r.error) {
     if (r.message && typeof r.message === 'string') return r.message;
-    return 'No pude completar la acción.';
+    if (r.error === 'terminal_panel_limit_reached') {
+      return `Límite de paneles alcanzado (${r.current ?? '?'}/${r.max ?? '?'}). Cerrá alguna terminal antes de abrir más.`;
+    }
+    if (r.error === 'command_blocked') {
+      return 'Ese comando está bloqueado por seguridad. Podés ejecutarlo manualmente en tu terminal.';
+    }
+    if (r.error === 'command_requires_approval') {
+      const cmd = r.full_command || r.command || 'comando';
+      return `Necesito tu confirmación para ejecutar: ${cmd}`;
+    }
+    return `No pude completar la acción (${r.error}).`;
   }
 
   switch (tool) {
@@ -46,7 +56,9 @@ export function formatZedFastPathReply(tool, result) {
     }
     case 'open_terminal':
       if (r.opened || r.workspace) {
-        const label = r.displayName ? `${r.displayName} (${r.terminalId || r.session_id || ''})` : 'nueva';
+        const label = r.displayName
+          ? `${r.displayName} (${r.terminalId || r.session_id || ''})`
+          : 'nueva';
         const programNote = r.program ? ` con ${r.program}` : '';
         return `Listo. Abrí la terminal ${label}${programNote}.`.replace(' ()', '');
       }

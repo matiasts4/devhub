@@ -258,6 +258,20 @@ describe('zedFastPath intent cache', () => {
     expect(text).toMatch(/opencode/i);
   });
 
+  test('formatZedFastPathReply for terminal_panel_limit_reached', () => {
+    const text = formatZedFastPathReply('open_terminal', {
+      error: 'terminal_panel_limit_reached',
+      current: 6,
+      max: 6,
+    });
+    expect(text).toMatch(/límite de paneles/i);
+  });
+
+  test('formatZedFastPathReply includes error code for unknown errors', () => {
+    const text = formatZedFastPathReply('open_terminal', { error: 'something_failed' });
+    expect(text).toMatch(/something_failed/);
+  });
+
   test('formatZedToolResultsReply combines multi-close success', () => {
     const text = formatZedToolResultsReply([
       {
