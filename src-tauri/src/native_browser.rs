@@ -80,12 +80,23 @@ pub struct NativeBrowserBounds {
     pub height: f64,
 }
 
+#[derive(serde::Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeBrowserAvoidRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeBrowserOpenRequest {
     pub panel_id: String,
     pub url: String,
     pub bounds: Option<NativeBrowserBounds>,
+    #[serde(default)]
+    pub avoid_rects: Vec<NativeBrowserAvoidRect>,
 }
 
 #[derive(serde::Deserialize)]
@@ -108,6 +119,8 @@ pub struct NativeBrowserVisibilityRequest {
     pub panel_id: String,
     pub visible: bool,
     pub bounds: Option<NativeBrowserBounds>,
+    #[serde(default)]
+    pub avoid_rects: Vec<NativeBrowserAvoidRect>,
 }
 
 #[derive(Serialize)]
@@ -214,6 +227,7 @@ struct NativeBrowserPanelHost {
     selector_context: NativeBrowserSelectorContext,
     visible: bool,
     last_bounds: Option<NativeBrowserBounds>,
+    avoid_rects: Vec<NativeBrowserAvoidRect>,
 }
 
 #[cfg(target_os = "linux")]
@@ -602,6 +616,50 @@ fn apply_browser_bounds(layout: &gtk::Fixed, wrapper: &gtk::Frame, bounds: &Nati
 }
 
 #[cfg(target_os = "linux")]
+fn apply_browser_shape(
+    panel: &mut NativeBrowserPanelHost,
+    bounds: &NativeBrowserBounds,
+    avoid_rects: &[NativeBrowserAvoidRect],
+) {
+    if avoid_rects.is_empty() {
+        panel.wrapper.shape_combine_region(None::<&cairo::Region>);
+        panel
+            .wrapper
+            .input_shape_combine_region(None::<&cairo::Region>);
+        panel.webview.shape_combine_region(None::<&cairo::Region>);
+        panel
+            .webview
+            .input_shape_combine_region(None::<&cairo::Region>);
+        return;
+    }
+
+    let total = cairo::RectangleInt {
+        x: 0,
+        y: 0,
+        width: bounds.width.round().max(1.0) as i32,
+        height: bounds.height.round().max(1.0) as i32,
+    };
+    let region = cairo::Region::create_rectangle(&total);
+
+    for rect in avoid_rects {
+        let hole = cairo::RectangleInt {
+            x: (rect.x - bounds.x).round() as i32,
+            y: (rect.y - bounds.y).round() as i32,
+            width: rect.width.round().max(0.0) as i32,
+            height: rect.height.round().max(0.0) as i32,
+        };
+        if hole.width > 0 && hole.height > 0 {
+            let _ = region.subtract_rectangle(&hole);
+        }
+    }
+
+    panel.wrapper.shape_combine_region(Some(&region));
+    panel.wrapper.input_shape_combine_region(Some(&region));
+    panel.webview.shape_combine_region(Some(&region));
+    panel.webview.input_shape_combine_region(Some(&region));
+}
+
+#[cfg(target_os = "linux")]
 fn native_browser_selector_script() -> &'static str {
     r#"
 (() => {
@@ -871,9 +929,11 @@ fn registry_open_panel(_app: &AppHandle, request: &NativeBrowserOpenRequest) -> 
 
         if let Some(panel) = registry.panels.get_mut(request.panel_id.as_str()) {
             panel.webview.load_uri(request.url.as_str());
+            panel.avoid_rects = request.avoid_rects.clone();
             if let Some(bounds) = request.bounds.as_ref() {
                 apply_browser_bounds(&layout, &panel.wrapper, bounds);
                 panel.last_bounds = Some(bounds.clone());
+                apply_browser_shape(panel, bounds, &request.avoid_rects);
             }
             registry_show_panel(registry, request.panel_id.as_str())?;
             return Ok(());
@@ -902,16 +962,19 @@ fn registry_open_panel(_app: &AppHandle, request: &NativeBrowserOpenRequest) -> 
             apply_browser_bounds(&layout, &wrapper, bounds);
         }
 
-        registry.panels.insert(
-            request.panel_id.clone(),
-            NativeBrowserPanelHost {
-                wrapper,
-                webview,
-                selector_context,
-                visible: true,
-                last_bounds: request.bounds.clone(),
-            },
-        );
+        let avoid_rects = request.avoid_rects.clone();
+        let mut panel = NativeBrowserPanelHost {
+            wrapper,
+            webview,
+            selector_context,
+            visible: true,
+            last_bounds: request.bounds.clone(),
+            avoid_rects,
+        };
+        if let Some(bounds) = request.bounds.as_ref() {
+            apply_browser_shape(&mut panel, bounds, &request.avoid_rects);
+        }
+        registry.panels.insert(request.panel_id.clone(), panel);
         registry_show_panel(registry, request.panel_id.as_str())
     })
 }
@@ -967,7 +1030,11 @@ fn registry_raise_panel(panel_id: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn registry_resize_panel(panel_id: &str, bounds: &NativeBrowserBounds) -> Result<(), String> {
+fn registry_resize_panel(
+    panel_id: &str,
+    bounds: &NativeBrowserBounds,
+    avoid_rects: &[NativeBrowserAvoidRect],
+) -> Result<(), String> {
     with_native_browser_registry(|registry| {
         let layout = registry
             .layout
@@ -979,6 +1046,8 @@ fn registry_resize_panel(panel_id: &str, bounds: &NativeBrowserBounds) -> Result
             .ok_or_else(|| PANEL_NOT_FOUND_REASON.to_string())?;
         apply_browser_bounds(layout, &panel.wrapper, bounds);
         panel.last_bounds = Some(bounds.clone());
+        panel.avoid_rects = avoid_rects.to_vec();
+        apply_browser_shape(panel, bounds, avoid_rects);
         Ok(())
     })
 }
@@ -988,6 +1057,7 @@ fn registry_set_panel_visibility(
     panel_id: &str,
     visible: bool,
     bounds: Option<NativeBrowserBounds>,
+    avoid_rects: &[NativeBrowserAvoidRect],
 ) -> Result<(), String> {
     with_native_browser_registry(|registry| {
         let layout = registry.layout.clone();
@@ -1000,6 +1070,8 @@ fn registry_set_panel_visibility(
                     .ok_or_else(|| PANEL_NOT_FOUND_REASON.to_string())?;
                 apply_browser_bounds(layout, &panel.wrapper, bounds);
                 panel.last_bounds = Some(bounds.clone());
+                panel.avoid_rects = avoid_rects.to_vec();
+                apply_browser_shape(panel, bounds, avoid_rects);
             }
             registry_show_panel(registry, panel_id)?;
         } else {
@@ -1014,6 +1086,14 @@ fn registry_set_panel_visibility(
             panel.wrapper.set_visible(false);
             panel.webview.set_visible(false);
             panel.visible = false;
+            panel.wrapper.shape_combine_region(None::<&cairo::Region>);
+            panel
+                .wrapper
+                .input_shape_combine_region(None::<&cairo::Region>);
+            panel.webview.shape_combine_region(None::<&cairo::Region>);
+            panel
+                .webview
+                .input_shape_combine_region(None::<&cairo::Region>);
             sync_registry_layout_visibility(registry);
         }
 
@@ -1178,7 +1258,11 @@ pub fn native_browser_open(
                 }
             }
             Err(reason) => {
-                log::error!("[DevHub] native_browser_open failed panel={} reason={}", panel_id, reason);
+                log::error!(
+                    "[DevHub] native_browser_open failed panel={} reason={}",
+                    panel_id,
+                    reason
+                );
                 NativeBrowserOpenResponse {
                     opened: false,
                     reason: Some(reason),
@@ -1306,13 +1390,14 @@ pub fn native_browser_resize(
             .get_webview_window("main")
             .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
 
+        let avoid_rects = request.avoid_rects;
         execute_main_thread_job(
             |job| {
                 window
                     .run_on_main_thread(job)
                     .map_err(|error| error.to_string())
             },
-            move || registry_resize_panel(&panel_id, &bounds),
+            move || registry_resize_panel(&panel_id, &bounds, &avoid_rects),
         )
     }
 
@@ -1409,6 +1494,7 @@ pub fn native_browser_set_visibility(
         let panel_id = request.panel_id;
         let visible = request.visible;
         let bounds = request.bounds;
+        let avoid_rects = request.avoid_rects;
         let window = app
             .get_webview_window("main")
             .ok_or_else(|| OPEN_FAILED_REASON.to_string())?;
@@ -1419,7 +1505,7 @@ pub fn native_browser_set_visibility(
                     .run_on_main_thread(job)
                     .map_err(|error| error.to_string())
             },
-            move || registry_set_panel_visibility(&panel_id, visible, bounds),
+            move || registry_set_panel_visibility(&panel_id, visible, bounds, &avoid_rects),
         )
     }
 

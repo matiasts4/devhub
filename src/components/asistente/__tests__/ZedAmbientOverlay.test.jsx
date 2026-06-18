@@ -49,6 +49,12 @@ function installDom() {
   global.window = dom.window;
   global.document = dom.window.document;
   global.navigator = dom.window.navigator;
+  global.CustomEvent = dom.window.CustomEvent;
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
   return dom;
 }
 
@@ -192,6 +198,41 @@ describe('ZedAmbientOverlay', () => {
     expect(container.textContent).toContain('Probá');
     expect(container.textContent).not.toContain('Ctrl+Shift+Z');
     expect(container.querySelectorAll('button').length).toBeLessThan(5);
+    root.unmount();
+  });
+
+  test('registers avoid rect for the pill when visible', () => {
+    mockUseZedOverlay.mockReturnValue({
+      isOpen: true,
+      close: jest.fn(),
+      toggle: jest.fn(),
+    });
+
+    const events = [];
+    const handler = (e) => events.push(e.detail);
+    window.addEventListener('devhub:register-avoid-rect', handler);
+
+    const originalGetBoundingClientRect = window.Element.prototype.getBoundingClientRect;
+    window.Element.prototype.getBoundingClientRect = jest.fn(() => ({
+      x: 100,
+      y: 600,
+      width: 360,
+      height: 40,
+      top: 600,
+      left: 100,
+      bottom: 640,
+      right: 460,
+    }));
+
+    const { root } = renderOverlay();
+
+    expect(events.some((d) => d.action === 'add' && d.source === 'zed-pill')).toBe(true);
+    const added = events.find((d) => d.action === 'add' && d.source === 'zed-pill');
+    expect(added.rect.width).toBe(360);
+    expect(added.rect.height).toBe(40);
+
+    window.Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    window.removeEventListener('devhub:register-avoid-rect', handler);
     root.unmount();
   });
 });

@@ -19,6 +19,7 @@ import { useVoiceCapture } from '@/lib/voice/useVoiceCapture';
 import { useVoiceTts } from '@/lib/voice/useVoiceTts';
 import { isVoiceFeatureEnabled } from '@/lib/voice/voiceFeatureFlag';
 import { useZedVoiceShortcut } from '@/lib/voice/useZedVoiceShortcut';
+import { registerTerminalAvoidRect } from '@/components/terminal/nativeLayoutSync';
 
 const STATUS_VISIBLE_MS = 4000;
 const STATUS_EXIT_MS = 320;
@@ -281,6 +282,8 @@ export default function ZedAmbientOverlay({
   const lastSpokenRef = useRef(null);
   const lastSpokenApprovalRef = useRef(null);
 
+  const pillInnerRef = useRef(null);
+
   const lastUserMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]?.role === 'user') return messages[i];
@@ -340,6 +343,44 @@ export default function ZedAmbientOverlay({
     activityExpanded ||
     Boolean(currentStep);
   const collapsed = !isOpen;
+
+  useEffect(() => {
+    if (!showPill || typeof window === 'undefined') return undefined;
+    const el = pillInnerRef.current;
+    if (!el) return undefined;
+
+    let unregister = () => {};
+    let rafId = null;
+
+    const register = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        unregister();
+        unregister = registerTerminalAvoidRect(rect, 'zed-pill');
+      }
+    };
+
+    register();
+
+    if (typeof window.ResizeObserver !== 'function') {
+      return () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        unregister();
+      };
+    }
+
+    const observer = new window.ResizeObserver(() => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(register);
+    });
+    observer.observe(el);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      observer.disconnect();
+      unregister();
+    };
+  }, [showPill]);
 
   // Visual state drives pill glow + avatar treatment (CSS via data-zed-state).
   const pillState = isLoading
@@ -469,6 +510,7 @@ export default function ZedAmbientOverlay({
             }
           >
             <div
+              ref={pillInnerRef}
               className={[
                 'pointer-events-auto w-auto min-w-[360px] max-w-[min(640px,calc(100vw-2rem))]',
                 statusExiting ? 'zed-pill-exit' : '',

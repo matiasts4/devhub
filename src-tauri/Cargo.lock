@@ -827,6 +827,7 @@ name = "devhub"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "cairo-rs",
  "dirs",
  "glib",
  "gtk",

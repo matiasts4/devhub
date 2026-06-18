@@ -23,6 +23,30 @@ function normalizeNativeCapability(result) {
 const MIN_NATIVE_BROWSER_BOUNDS_HEIGHT = 24;
 const MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS = 12;
 
+function rectsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every(
+    (r, i) =>
+      r.x === b[i].x &&
+      r.y === b[i].y &&
+      r.width === b[i].width &&
+      r.height === b[i].height &&
+      r.source === b[i].source
+  );
+}
+
+function registerNativeAvoidRectListener(onChange) {
+  if (typeof window === 'undefined') return () => {};
+  const handler = (event) => {
+    const { rect, source, action } = event?.detail || {};
+    if (!rect || !source) return;
+    onChange({ ...rect, source }, action);
+  };
+  window.addEventListener('devhub:register-avoid-rect', handler);
+  return () => window.removeEventListener('devhub:register-avoid-rect', handler);
+}
+
 function isPanelNotFoundReason(reason) {
   return String(reason || '') === 'panel-not-found';
 }
@@ -82,9 +106,25 @@ export function useNativeBrowserSurface({
   const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
   const [nativeError, setNativeError] = useState(null);
   const [openRecoveryAttempt, setOpenRecoveryAttempt] = useState(0);
+  const [activeAvoidRects, setActiveAvoidRects] = useState([]);
   const openRecoveryTimerRef = useRef(null);
   const rafRef = useRef(null);
   const openInFlightRef = useRef(false);
+
+  useEffect(() => {
+    return registerNativeAvoidRectListener((rect, action) => {
+      setActiveAvoidRects((prev) => {
+        if (action === 'clear') return [];
+        if (action === 'remove') {
+          const next = prev.filter((r) => r.source !== rect.source);
+          return rectsEqual(next, prev) ? prev : next;
+        }
+        const without = prev.filter((r) => r.source !== rect.source);
+        const next = [...without, rect];
+        return rectsEqual(next, prev) ? prev : next;
+      });
+    });
+  }, []);
 
   const closeActiveNativeLease = useCallback(
     async (reason) => {
@@ -99,9 +139,14 @@ export function useNativeBrowserSurface({
   const hideActiveNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current.opened) return;
     const bounds = measureBounds?.();
-    await setNativeBrowserVisibility({ panelId, visible: false, bounds }).catch(() => {});
+    await setNativeBrowserVisibility({
+      panelId,
+      visible: false,
+      bounds,
+      avoidRects: activeAvoidRects,
+    }).catch(() => {});
     openInFlightRef.current = false;
-  }, [measureBounds, panelId]);
+  }, [activeAvoidRects, measureBounds, panelId]);
 
   const clearOpenRecoveryTimer = useCallback(() => {
     if (openRecoveryTimerRef.current) {
@@ -110,13 +155,16 @@ export function useNativeBrowserSurface({
     }
   }, []);
 
-  const scheduleOpenRecovery = useCallback((delayMs = 120) => {
-    clearOpenRecoveryTimer();
-    openRecoveryTimerRef.current = setTimeout(() => {
-      openRecoveryTimerRef.current = null;
-      setOpenRecoveryAttempt((a) => a + 1);
-    }, delayMs);
-  }, [clearOpenRecoveryTimer]);
+  const scheduleOpenRecovery = useCallback(
+    (delayMs = 120) => {
+      clearOpenRecoveryTimer();
+      openRecoveryTimerRef.current = setTimeout(() => {
+        openRecoveryTimerRef.current = null;
+        setOpenRecoveryAttempt((a) => a + 1);
+      }, delayMs);
+    },
+    [clearOpenRecoveryTimer]
+  );
 
   useEffect(() => {
     return () => clearOpenRecoveryTimer();
@@ -164,7 +212,12 @@ export function useNativeBrowserSurface({
           openInFlightRef.current = true;
           let result;
           try {
-            result = await openNativeBrowser({ panelId, url, bounds });
+            result = await openNativeBrowser({
+              panelId,
+              url,
+              bounds,
+              avoidRects: activeAvoidRects,
+            });
           } finally {
             openInFlightRef.current = false;
           }
@@ -232,9 +285,11 @@ export function useNativeBrowserSurface({
             ? postOpenBounds
             : bounds;
 
-        const resizeResult = await resizeNativeBrowser({ panelId, bounds: finalBounds }).catch(
-          (error) => ({ reason: error?.message || 'resize-failed' })
-        );
+        const resizeResult = await resizeNativeBrowser({
+          panelId,
+          bounds: finalBounds,
+          avoidRects: activeAvoidRects,
+        }).catch((error) => ({ reason: error?.message || 'resize-failed' }));
         if (
           hasRecoverableNativeBridgeReason(resizeResult) &&
           openRecoveryAttempt < MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS
@@ -260,6 +315,7 @@ export function useNativeBrowserSurface({
           panelId,
           visible: true,
           bounds: finalBounds,
+          avoidRects: activeAvoidRects,
         }).catch((error) => ({ reason: error?.message || 'visibility-failed' }));
         if (
           hasRecoverableNativeBridgeReason(visibilityResult) &&
@@ -296,8 +352,17 @@ export function useNativeBrowserSurface({
             if (cancelled) return;
             const settleBounds = measureBounds?.();
             if (settleBounds && settleBounds.height >= MIN_NATIVE_BROWSER_BOUNDS_HEIGHT) {
-              resizeNativeBrowser({ panelId, bounds: settleBounds }).catch(() => {});
-              setNativeBrowserVisibility({ panelId, visible: true, bounds: settleBounds }).catch(() => {});
+              resizeNativeBrowser({
+                panelId,
+                bounds: settleBounds,
+                avoidRects: activeAvoidRects,
+              }).catch(() => {});
+              setNativeBrowserVisibility({
+                panelId,
+                visible: true,
+                bounds: settleBounds,
+                avoidRects: activeAvoidRects,
+              }).catch(() => {});
               if (focusOnShow) {
                 focusNativeBrowser({ panelId }).catch(() => {});
               }
@@ -330,6 +395,7 @@ export function useNativeBrowserSurface({
     };
   }, [
     active,
+    activeAvoidRects,
     closeActiveNativeLease,
     focusOnShow,
     hideActiveNativeLease,
@@ -381,15 +447,23 @@ export function useNativeBrowserSurface({
         const fresh = measureBounds?.() || bounds;
         if (!fresh || fresh.height < MIN_NATIVE_BROWSER_BOUNDS_HEIGHT) {
           if (nativeLeaseRef.current.opened) {
-            setNativeBrowserVisibility({ panelId, visible: false, bounds: fresh }).catch(() => {});
+            setNativeBrowserVisibility({
+              panelId,
+              visible: false,
+              bounds: fresh,
+              avoidRects: activeAvoidRects,
+            }).catch(() => {});
           }
           return;
         }
-        resizeNativeBrowser({ panelId, bounds: fresh }).catch(() => {});
+        resizeNativeBrowser({ panelId, bounds: fresh, avoidRects: activeAvoidRects }).catch(
+          () => {}
+        );
         setNativeBrowserVisibility({
           panelId,
           visible: visibleInLayout,
           bounds: fresh,
+          avoidRects: activeAvoidRects,
         }).catch(() => {});
       });
     });
@@ -402,7 +476,15 @@ export function useNativeBrowserSurface({
       }
       observer.disconnect();
     };
-  }, [active, measureBounds, nativeRuntimeReady, observeNode, panelId, visibleInLayout]);
+  }, [
+    active,
+    activeAvoidRects,
+    measureBounds,
+    nativeRuntimeReady,
+    observeNode,
+    panelId,
+    visibleInLayout,
+  ]);
 
   const retryNative = useCallback(() => {
     setNativeError(null);
