@@ -5,6 +5,7 @@
 import { resolveZedFastPathIntent } from './zedFastPath';
 import { createRuleIntentRouter } from '@/lib/commandBar/intent/ruleIntentRouter';
 import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
+import { recordIntentResolution } from './zedMetrics';
 
 const commandRouter = createRuleIntentRouter();
 const TWO_STEP_SPLIT = /\s+(?:y(?:\s+luego)?|and\s+then|;\s*then|y\s+después|y\s+despues)\s+/i;
@@ -136,8 +137,11 @@ function resolveTwoStepIntent(message, context = {}) {
  */
 export function resolveZedIntentSingle(message, context = {}) {
   const text = typeof message === 'string' ? message.trim() : '';
+  const source = context?.source || 'text';
+  let result = null;
+
   if (!text) {
-    return {
+    result = {
       tier: 'llm',
       steps: [],
       intent: 'unknown',
@@ -145,68 +149,84 @@ export function resolveZedIntentSingle(message, context = {}) {
       matched: '',
       needsConfirmation: false,
     };
-  }
-
-  const spanishRun = text.match(/^(ejecuta|ejecutar|corre|correr)\s+(.+)/i);
-  if (spanishRun?.[2]) {
-    const mapped = mapCommandBarIntent(
-      { intent: 'terminal-run', slots: { command: spanishRun[2].trim() } },
-      context
-    );
-    if (mapped) {
-      const tier = confidenceToTier(mapped.confidence);
-      if (tier !== 'llm') {
-        return {
-          tier,
-          steps: mapped.steps,
-          intent: mapped.intent,
-          confidence: mapped.confidence,
-          matched: 'spanish:terminal-run',
-          needsConfirmation: tier === 'local-medium',
-        };
+  } else {
+    const spanishRun = text.match(/^(ejecuta|ejecutar|corre|correr)\s+(.+)/i);
+    if (spanishRun?.[2]) {
+      const mapped = mapCommandBarIntent(
+        { intent: 'terminal-run', slots: { command: spanishRun[2].trim() } },
+        context
+      );
+      if (mapped) {
+        const tier = confidenceToTier(mapped.confidence);
+        if (tier !== 'llm') {
+          result = {
+            tier,
+            steps: mapped.steps,
+            intent: mapped.intent,
+            confidence: mapped.confidence,
+            matched: 'spanish:terminal-run',
+            needsConfirmation: tier === 'local-medium',
+          };
+        }
       }
     }
-  }
 
-  const fast = resolveZedFastPathIntent(message, context);
-  if (fast) {
-    const tier = confidenceToTier(fast.confidence);
-    if (tier !== 'llm') {
-      return {
-        tier,
-        steps: fast.steps,
-        intent: fast.intent,
-        confidence: fast.confidence,
-        matched: fast.matched,
-        needsConfirmation: tier === 'local-medium',
+    if (!result) {
+      const fast = resolveZedFastPathIntent(message, context);
+      if (fast) {
+        const tier = confidenceToTier(fast.confidence);
+        if (tier !== 'llm') {
+          result = {
+            tier,
+            steps: fast.steps,
+            intent: fast.intent,
+            confidence: fast.confidence,
+            matched: fast.matched,
+            needsConfirmation: tier === 'local-medium',
+          };
+        }
+      }
+    }
+
+    if (!result) {
+      const cmd = commandRouter.resolveIntent(message);
+      const mapped = mapCommandBarIntent(cmd, context);
+      if (mapped) {
+        const tier = confidenceToTier(mapped.confidence);
+        if (tier !== 'llm') {
+          result = {
+            tier,
+            steps: mapped.steps,
+            intent: mapped.intent,
+            confidence: mapped.confidence,
+            matched: mapped.matched,
+            needsConfirmation: tier === 'local-medium',
+          };
+        }
+      }
+    }
+
+    if (!result) {
+      result = {
+        tier: 'llm',
+        steps: [],
+        intent: 'unknown',
+        confidence: 0,
+        matched: '',
+        needsConfirmation: false,
       };
     }
   }
 
-  const cmd = commandRouter.resolveIntent(message);
-  const mapped = mapCommandBarIntent(cmd, context);
-  if (mapped) {
-    const tier = confidenceToTier(mapped.confidence);
-    if (tier !== 'llm') {
-      return {
-        tier,
-        steps: mapped.steps,
-        intent: mapped.intent,
-        confidence: mapped.confidence,
-        matched: mapped.matched,
-        needsConfirmation: tier === 'local-medium',
-      };
-    }
-  }
+  recordIntentResolution({
+    message: text,
+    tier: result.tier,
+    confidence: result.confidence,
+    matched: result.matched,
+    source,
+  });
 
-  return {
-    tier: 'llm',
-    steps: [],
-    intent: 'unknown',
-    confidence: 0,
-    matched: '',
-    needsConfirmation: false,
-  };
+  return result;
 }
 
 /**
@@ -214,11 +234,12 @@ export function resolveZedIntentSingle(message, context = {}) {
  * @param {object} [context]
  */
 export function resolveZedIntent(message, context = {}) {
+  const source = context?.source || 'text';
   const twoStep = resolveTwoStepIntent(message, context);
   if (twoStep) {
     const tier = confidenceToTier(twoStep.confidence);
     if (tier !== 'llm') {
-      return {
+      const result = {
         tier,
         steps: twoStep.steps,
         intent: twoStep.intent,
@@ -226,6 +247,14 @@ export function resolveZedIntent(message, context = {}) {
         matched: twoStep.matched,
         needsConfirmation: tier === 'local-medium',
       };
+      recordIntentResolution({
+        message,
+        tier: result.tier,
+        confidence: result.confidence,
+        matched: result.matched,
+        source,
+      });
+      return result;
     }
   }
 

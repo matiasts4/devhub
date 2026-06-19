@@ -70,6 +70,14 @@ import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
 } from '@/lib/terminal/terminalPanelBridge';
+import {
+  cancelNativeVteLayoutHide,
+  clearNativeVteLease,
+  consumeHiddenNativeVteLease,
+  deferNativeVteLayoutHide,
+  hasHiddenNativeVteLease,
+  markNativeVteLeaseHidden,
+} from '@/lib/terminal/nativeVteLayoutLifecycle';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 
 /**
@@ -2048,9 +2056,13 @@ export default function TerminalTTY({
 
   const closeNativeLease = useCallback(
     async (reason = 'deactivate') => {
-      if (!nativeLeaseRef.current) return;
+      if (!nativeLeaseRef.current) {
+        clearNativeVteLease(id);
+        return;
+      }
       nativeLeaseRef.current = false;
       setNativeVteOpened(false);
+      clearNativeVteLease(id);
       await Promise.resolve(closeNativeVtePanel({ panelId: id, reason })).catch(() => {});
     },
     [id]
@@ -2088,9 +2100,21 @@ export default function TerminalTTY({
           reason,
         })
       ).catch(() => {});
+      if (reason === 'layout-unmount') {
+        markNativeVteLeaseHidden(id);
+      }
     },
     [id]
   );
+
+  useLayoutEffect(() => {
+    cancelNativeVteLayoutHide(id);
+    if (!consumeHiddenNativeVteLease(id)) return;
+    nativeLeaseRef.current = true;
+    setNativeVteOpened(true);
+    setConnectionState('connected');
+    setNativeVteProbeResult((prev) => prev ?? { ready: true, reason: null });
+  }, [id]);
 
   useEffect(() => {
     return () => {
@@ -2098,9 +2122,17 @@ export default function TerminalTTY({
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
-      closeNativeLease('unmount');
+      // Window/view switches unmount React but must keep the GTK lease + PTY alive.
+      // Permanent teardown runs via tearDownClientSession / handleClosePanel first.
+      if (sessionClosingRef.current) {
+        closeNativeLease('unmount');
+        return;
+      }
+      deferNativeVteLayoutHide(id, () => {
+        hideNativeLease('layout-unmount');
+      });
     };
-  }, [closeNativeLease]);
+  }, [closeNativeLease, hideNativeLease, id]);
 
   const handleNativeLeaseCommandError = useCallback(
     (error) => {
@@ -3652,105 +3684,39 @@ export default function TerminalTTY({
     return undefined;
   }, [handleNativeLeaseCommandError, id, isVisibleInLayout, requestedRendererMode]);
 
+  // Re-show native VTE after layout becomes visible again (window switch, focus exit, etc.).
   useEffect(() => {
-    if (requestedRendererMode !== 'vte-experimental') return undefined;
+    if (requestedRendererMode !== 'vte-experimental' || !isVisibleInLayout) return undefined;
+    if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
-    const settleTimers = [];
-    let rafId = null;
+    const shouldRestore = nativeLeaseRef.current || nativeVteOpened || hasHiddenNativeVteLease(id);
+    if (!shouldRestore) return undefined;
 
-    const clearScheduledSync = () => {
-      settleTimers.forEach((timerId) => clearTimeout(timerId));
-      settleTimers.length = 0;
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-    };
+    if (hasHiddenNativeVteLease(id)) {
+      nativeLeaseRef.current = true;
+      consumeHiddenNativeVteLease(id);
+      setNativeVteOpened(true);
+    }
 
-    const scheduleShowAndResize = () => {
-      clearScheduledSync();
-      const sync = () => {
-        if (!isVisibleInLayout) return;
-        if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
+    const timers = [0, 80, 180, 400, 800].map((delayMs) =>
+      setTimeout(() => {
+        if (!isVisibleInLayoutRef.current) return;
         showAndResizeNativeLease();
-      };
-
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        sync();
-      });
-
-      [80, 180, 400].forEach((delayMs) => {
-        settleTimers.push(
-          setTimeout(() => {
-            sync();
-          }, delayMs)
-        );
-      });
-    };
-
-    const handleWorkspaceNativeSurfaceSync = (event) => {
-      const detail = event.detail || {};
-      const activePanelIds = new Set(
-        Array.isArray(detail.activePanelIds) ? detail.activePanelIds.filter(Boolean) : []
-      );
-      const hiddenPanelIds = new Set(
-        Array.isArray(detail.hiddenPanelIds) ? detail.hiddenPanelIds.filter(Boolean) : []
-      );
-
-      if (hiddenPanelIds.has(id)) {
-        clearScheduledSync();
-        if (hideTimerRef.current) {
-          clearTimeout(hideTimerRef.current);
-        }
-        hideTimerRef.current = setTimeout(() => {
-          hideTimerRef.current = null;
-          hideNativeLease(detail.reason || 'workspace-hidden');
-        }, 100);
-        return;
-      }
-
-      if (activePanelIds.has(id)) {
-        if (hideTimerRef.current) {
-          clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = null;
-        }
-        scheduleShowAndResize();
-      }
-    };
-
-    window.addEventListener('devhub:native-vte-workspace-sync', handleWorkspaceNativeSurfaceSync);
+      }, delayMs)
+    );
 
     return () => {
-      clearScheduledSync();
-      window.removeEventListener(
-        'devhub:native-vte-workspace-sync',
-        handleWorkspaceNativeSurfaceSync
-      );
+      timers.forEach((timerId) => clearTimeout(timerId));
     };
   }, [
-    hideNativeLease,
     id,
     isVisibleInLayout,
     nativeSurfacePolicy,
+    nativeVteOpened,
     requestedRendererMode,
     showAndResizeNativeLease,
     suspendNativeSurface,
   ]);
-
-  useEffect(() => {
-    if (requestedRendererMode !== 'vte-experimental' || isVisibleInLayout) return undefined;
-
-    Promise.resolve(
-      setNativeVtePanelVisibility({
-        panelId: id,
-        visible: false,
-        reason: 'layout-hidden',
-      })
-    ).catch(handleNativeLeaseCommandError);
-
-    return undefined;
-  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, requestedRendererMode]);
 
   useEffect(() => {
     if (!nativeVteOpened || suspendNativeSurface || !autoFocus || !isActivePanel) return undefined;
@@ -5065,9 +5031,21 @@ export default function TerminalTTY({
   }, [autoFocus, connectionState, initError, reconnect]);
 
   useEffect(() => {
+    const restoreNativeSurfaceAfterAppResume = () => {
+      if (requestedRendererModeRef.current !== 'vte-experimental') return;
+      if (!isVisibleInLayoutRef.current) return;
+      if (nativeLeaseRef.current) {
+        showAndResizeNativeLease();
+      }
+      queueNativeVteProbeRetry(0);
+    };
+
     const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+
+      restoreNativeSurfaceAfterAppResume();
+
       if (
-        document.visibilityState === 'visible' &&
         shouldRunTerminalViewportReactivation({
           isActivePanel,
           isVisibleInLayout,
@@ -5076,7 +5054,6 @@ export default function TerminalTTY({
       ) {
         logViewportDiagnostic('visibility-visible');
         scheduleReactivateTerminalViewport();
-        queueNativeVteProbeRetry(0);
       }
     };
 
@@ -5094,20 +5071,22 @@ export default function TerminalTTY({
       queueNativeVteProbeRetry();
     };
     const handleWindowFocus = () => {
+      restoreNativeSurfaceAfterAppResume();
+
       if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
         return;
       }
       logViewportDiagnostic('window-focus');
       scheduleReactivateTerminalViewport();
-      queueNativeVteProbeRetry(0);
     };
     const handlePageShow = () => {
+      restoreNativeSurfaceAfterAppResume();
+
       if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
         return;
       }
       logViewportDiagnostic('pageshow');
       scheduleReactivateTerminalViewport();
-      queueNativeVteProbeRetry(0);
     };
 
     window.addEventListener('resize', handleWindowResize);
@@ -5133,6 +5112,7 @@ export default function TerminalTTY({
     fitAndResize,
     scheduleReactivateTerminalViewport,
     sendResize,
+    showAndResizeNativeLease,
   ]);
 
   const layoutSettleBurstCleanupRef = useRef(null);

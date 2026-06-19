@@ -23,6 +23,10 @@ const mockNativeVteBridge = {
   warmNativeVteProbe: jest.fn(async () => ({ ready: false, reason: 'tauri-unavailable' })),
 };
 
+const {
+  _resetNativeVteLayoutLifecycleForTests,
+} = require('@/lib/terminal/nativeVteLayoutLifecycle');
+
 jest.mock('framer-motion', () => ({
   motion: {
     div: (() => {
@@ -1688,12 +1692,15 @@ describe('TerminalTTY renderer fallback UI', () => {
   beforeEach(() => {
     installTerminalDom();
     installTerminalRuntimeMocks();
+    _resetNativeVteLayoutLifecycleForTests();
     mockTerminalInstances.length = 0;
     mockWebSocketInstances.length = 0;
     mockResizeObserverInstances.length = 0;
   });
 
   afterEach(async () => {
+    jest.useRealTimers();
+    _resetNativeVteLayoutLifecycleForTests();
     cleanupMountedRoots();
     await flushTerminalEffects();
     if (global.document?.body) {
@@ -1720,6 +1727,7 @@ describe('TerminalTTY renderer fallback UI', () => {
       reason: 'tauri-unavailable',
     });
     mockNativeVteBridge.subscribeNativeVteEvents.mockReturnValue(jest.fn());
+    _resetNativeVteLayoutLifecycleForTests();
     jest.clearAllMocks();
   });
 
@@ -3759,7 +3767,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(view.container.textContent).not.toContain('GTK VTE · misma ventana');
   });
 
-  test('closes the native lease on React unmount when the panel owns the live native session', async () => {
+  test('hides the native lease on React unmount for layout switches (preserves PTY/TUI session)', async () => {
     mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(true);
     mockNativeVteBridge.probeNativeVte.mockResolvedValue({ ready: true, reason: null });
     mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({ opened: true, reason: null });
@@ -3781,12 +3789,15 @@ describe('TerminalTTY renderer fallback UI', () => {
 
     await rerenderIntoRoot(view.root, null);
     await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await flushTerminalEffects();
 
-    expect(mockNativeVteBridge.setNativeVtePanelVisibility).not.toHaveBeenCalled();
-    expect(mockNativeVteBridge.closeNativeVtePanel).toHaveBeenCalledWith({
+    expect(mockNativeVteBridge.setNativeVtePanelVisibility).toHaveBeenCalledWith({
       panelId: 'term-native-unmount-hide',
-      reason: 'unmount',
+      visible: false,
+      reason: 'layout-unmount',
     });
+    expect(mockNativeVteBridge.closeNativeVtePanel).not.toHaveBeenCalled();
   });
 
   test('hides a native panel that finishes opening after the terminal route is hidden', async () => {

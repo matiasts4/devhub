@@ -7,6 +7,7 @@ import { formatZedToolResultsReply } from './zedFastPathResponse';
 import { encodeZedSseEvent } from './zedStreamProtocol';
 import { labelForZedToolStart, labelForZedToolDone } from './zedToolLabels';
 import { zedLog } from './utils/zed-logger';
+import { recordFastPath } from './zedMetrics';
 
 function toolResultOk(result) {
   const r = result && typeof result === 'object' ? result : null;
@@ -53,6 +54,13 @@ export async function tryZedFastPath({
       intent: resolved.intent,
       tier: resolved.tier,
       confidence: resolved.confidence,
+    });
+    recordFastPath({
+      intent: resolved.intent,
+      durationMs: 0,
+      steps: resolved.steps.length,
+      hit: true,
+      needsConfirmation: true,
     });
     return {
       hit: true,
@@ -102,6 +110,14 @@ export async function tryZedFastPath({
 
   const text = formatZedToolResultsReply(toolResults);
   const duration = Date.now() - started;
+
+  recordFastPath({
+    intent: resolved.intent,
+    durationMs: duration,
+    steps: resolved.steps.length,
+    hit: true,
+    needsConfirmation: false,
+  });
 
   return {
     hit: true,

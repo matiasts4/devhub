@@ -6,19 +6,37 @@ export const VOICE_SETTINGS_KEY = 'devhub-zed-voice-settings';
 
 export function readVoiceSettings() {
   if (typeof window === 'undefined') {
-    return { ttsEnabled: true, voiceEnabled: true, sttModel: 'large-v3-turbo' };
+    return {
+      ttsEnabled: true,
+      voiceEnabled: true,
+      sttModel: 'large-v3-turbo',
+      selectedMicId: '',
+    };
   }
   try {
     const raw = window.localStorage.getItem(VOICE_SETTINGS_KEY);
-    if (!raw) return { ttsEnabled: true, voiceEnabled: true, sttModel: 'large-v3-turbo' };
+    if (!raw) {
+      return {
+        ttsEnabled: true,
+        voiceEnabled: true,
+        sttModel: 'large-v3-turbo',
+        selectedMicId: '',
+      };
+    }
     const parsed = JSON.parse(raw);
     return {
       ttsEnabled: parsed.ttsEnabled !== false,
       voiceEnabled: parsed.voiceEnabled !== false,
       sttModel: parsed.sttModel || 'large-v3-turbo',
+      selectedMicId: parsed.selectedMicId || '',
     };
   } catch {
-    return { ttsEnabled: true, voiceEnabled: true, sttModel: 'large-v3-turbo' };
+    return {
+      ttsEnabled: true,
+      voiceEnabled: true,
+      sttModel: 'large-v3-turbo',
+      selectedMicId: '',
+    };
   }
 }
 

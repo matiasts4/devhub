@@ -12,6 +12,7 @@ import { zedClientDebug } from './zedClientDebug';
 import { labelForZedToolStart } from './zedToolLabels';
 import { recordZedInteraction, readZedAuditTrail } from './zedAuditTrail';
 import { readVoiceSettings } from '@/lib/voice/voiceFeatureFlag';
+import { recordChatRoundTrip } from './zedMetrics';
 
 export const DEFAULT_ZED_GREETING = {
   role: 'assistant',
@@ -270,8 +271,22 @@ export function useZedChat({
       { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
     ]);
 
+    const roundTripStart = Date.now();
+    let roundTripRecorded = false;
+
     try {
       const data = await sendToApi(userMessage);
+      const durationMs = Date.now() - roundTripStart;
+      const fastPath = Boolean(data.meta?.fast_path || data.model === 'zed-fast-path');
+      recordChatRoundTrip({
+        durationMs,
+        model: data.model || null,
+        fastPath,
+        error: false,
+        source: 'text',
+      });
+      roundTripRecorded = true;
+
       if (data.meta?.needs_confirmation) {
         setMessages((prev) => [
           ...prev,
@@ -287,11 +302,11 @@ export function useZedChat({
       const flaggedTools = Array.isArray(data.tool_results)
         ? data.tool_results.map((t) => ({
             ...t,
-            fast_path: Boolean(data.meta?.fast_path || data.model === 'zed-fast-path'),
+            fast_path: fastPath,
           }))
         : data.tool_results;
       recordZedInteraction(userMessage, flaggedTools, data.text || '');
-      if (data.meta?.fast_path || data.model === 'zed-fast-path') {
+      if (fastPath) {
         zedClientDebug('fast_path', { intent: data.meta?.intent });
       }
       setAuditTrail(readZedAuditTrail());
@@ -305,6 +320,10 @@ export function useZedChat({
         },
       ]);
     } catch (error) {
+      if (!roundTripRecorded) {
+        const durationMs = Date.now() - roundTripStart;
+        recordChatRoundTrip({ durationMs, error: true, source: 'text' });
+      }
       const aborted = error?.name === 'AbortError';
       const content = aborted
         ? '(Solicitud cancelada)'
@@ -331,8 +350,22 @@ export function useZedChat({
 
     if (kind === 'local_intent') {
       setIsLoading(true);
+      const roundTripStart = Date.now();
+      let roundTripRecorded = false;
+
       try {
         const data = await sendToApi(pendingApproval.message, { confirmed: true });
+        const durationMs = Date.now() - roundTripStart;
+        const fastPath = Boolean(data.meta?.fast_path || data.model === 'zed-fast-path');
+        recordChatRoundTrip({
+          durationMs,
+          model: data.model || null,
+          fastPath,
+          error: false,
+          source: 'text',
+        });
+        roundTripRecorded = true;
+
         setPendingApproval(null);
         setMessages((prev) => [
           ...prev,
@@ -346,6 +379,10 @@ export function useZedChat({
         processToolResults(data.tool_results);
         dispatchZedAuraOutcome('success');
       } catch (error) {
+        if (!roundTripRecorded) {
+          const durationMs = Date.now() - roundTripStart;
+          recordChatRoundTrip({ durationMs, error: true, source: 'text' });
+        }
         setMessages((prev) => [
           ...prev,
           {
@@ -437,8 +474,22 @@ export function useZedChat({
         { role: 'user', content: text, timestamp: new Date().toISOString(), source: 'voice' },
       ]);
 
+      const roundTripStart = Date.now();
+      let roundTripRecorded = false;
+
       try {
         const data = await sendToApi(text, { source: 'voice' });
+        const durationMs = Date.now() - roundTripStart;
+        const fastPath = Boolean(data.meta?.fast_path || data.model === 'zed-fast-path');
+        recordChatRoundTrip({
+          durationMs,
+          model: data.model || null,
+          fastPath,
+          error: false,
+          source: 'voice',
+        });
+        roundTripRecorded = true;
+
         if (data.meta?.needs_confirmation) {
           setPendingApproval({
             kind: 'local_intent',
@@ -462,6 +513,10 @@ export function useZedChat({
         processToolResults(data.tool_results);
         setAuditTrail(readZedAuditTrail());
       } catch (error) {
+        if (!roundTripRecorded) {
+          const durationMs = Date.now() - roundTripStart;
+          recordChatRoundTrip({ durationMs, error: true, source: 'voice' });
+        }
         const content = formatToolErrorForUser('chat', error).message;
         dispatchZedAuraOutcome('error');
         setMessages((prev) => [

@@ -633,22 +633,22 @@ fn apply_browser_shape(
         return;
     }
 
-    let total = cairo::RectangleInt {
-        x: 0,
-        y: 0,
-        width: bounds.width.round().max(1.0) as i32,
-        height: bounds.height.round().max(1.0) as i32,
-    };
+    let total = cairo::RectangleInt::new(
+        0,
+        0,
+        bounds.width.round().max(1.0) as i32,
+        bounds.height.round().max(1.0) as i32,
+    );
     let region = cairo::Region::create_rectangle(&total);
 
     for rect in avoid_rects {
-        let hole = cairo::RectangleInt {
-            x: (rect.x - bounds.x).round() as i32,
-            y: (rect.y - bounds.y).round() as i32,
-            width: rect.width.round().max(0.0) as i32,
-            height: rect.height.round().max(0.0) as i32,
-        };
-        if hole.width > 0 && hole.height > 0 {
+        let hole = cairo::RectangleInt::new(
+            (rect.x - bounds.x).round() as i32,
+            (rect.y - bounds.y).round() as i32,
+            rect.width.round().max(0.0) as i32,
+            rect.height.round().max(0.0) as i32,
+        );
+        if hole.width() > 0 && hole.height() > 0 {
             let _ = region.subtract_rectangle(&hole);
         }
     }

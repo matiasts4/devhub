@@ -10,9 +10,8 @@
  *
  * pizarra-ux-overhaul (task 3.1):
  * - The Konva line/dot grid (formerly lines 294-319) is REMOVED. The
- *   canvas wrapper renders a solid #1a1f2e background instead.
- * - An opt-in radial-gradient texture is gated by
- *   NEXT_PUBLIC_PIZARRA_GRID_TEXTURE, read once at module scope.
+ *   canvas wrapper background is now driven by user preferences.
+ * - The default matches the previous radial dot pattern.
  * - The wrapper carries data-testid="pizarra-canvas-wrapper" so
  *   integration tests can observe the bg and the (optional) texture.
  */
@@ -24,15 +23,11 @@ import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { shouldCanvasConsumeWheel } from '@/lib/pizarra/pizarraWheel';
 import { normalizeWheelDelta } from '@/lib/pizarra/pizarraViewLayout';
+import {
+  readPizarraBackground,
+  resolvePizarraBackgroundStyle,
+} from '@/lib/pizarra/pizarraPreferences';
 import ShapePreviewOverlay from './ShapePreviewOverlay';
-
-// pizarra-ux-overhaul: module-scope env read for the texture.
-// Default ON (subtle dots) so the pizarra never looks like a pure "submarino"
-// flat dark void when empty. Set NEXT_PUBLIC_PIZARRA_GRID_TEXTURE=0 to disable.
-const PIZARRA_GRID_TEXTURE_ENABLED =
-  typeof process !== 'undefined' &&
-  process.env &&
-  process.env.NEXT_PUBLIC_PIZARRA_GRID_TEXTURE !== '0';
 
 // pizarra-multi-select: AABB overlap test used by the marquee to decide
 // which shapes fall inside the selection rectangle.
@@ -80,7 +75,21 @@ export default function PizarraCanvas({
   const [marquee, setMarquee] = useState(null);
   const [isPanDragging, setIsPanDragging] = useState(false);
   const panDragRef = useRef(null);
+  const [pizarraBackground, setPizarraBackground] = useState(() => readPizarraBackground());
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
+
+  // Sync pizarra background preferences and listen for live changes.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    setPizarraBackground(readPizarraBackground());
+    const handleBackgroundChanged = (event) => {
+      setPizarraBackground(event.detail || readPizarraBackground());
+    };
+    window.addEventListener('devhub:pizarra-background-changed', handleBackgroundChanged);
+    return () => {
+      window.removeEventListener('devhub:pizarra-background-changed', handleBackgroundChanged);
+    };
+  }, []);
 
   // ── Effects ─────────────────────────────────────────────────────────────
   // Lazily load react-konva on the client only
@@ -522,14 +531,9 @@ export default function PizarraCanvas({
 
   // ── Render ─────────────────────────────────────────────────────────────
 
-  // pizarra-ux-overhaul: solid background + texture (default on).
-  // The old Konva grid lines are gone. A very subtle CSS radial dot pattern
-  // is applied (unless explicitly disabled via env=0) so even an empty pizarra
-  // doesn't look like pure flat "submarino" darkness. Low opacity so it doesn't
-  // fight content.
-  const wrapperBackgroundImage = PIZARRA_GRID_TEXTURE_ENABLED
-    ? 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)'
-    : 'none';
+  // pizarra-ux-overhaul: background is now driven by user preferences.
+  // The default matches the previous radial dot pattern.
+  const pizarraBgStyle = resolvePizarraBackgroundStyle(pizarraBackground);
 
   // ── Early return: loading state ─────────────────────────────────────────
   // All hooks MUST be declared before this point to maintain consistent
@@ -553,9 +557,7 @@ export default function PizarraCanvas({
           color: '#94a3b8',
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 12,
-          backgroundColor: '#1a1f2e',
-          backgroundImage: wrapperBackgroundImage,
-          backgroundSize: PIZARRA_GRID_TEXTURE_ENABLED ? '32px 32px' : undefined,
+          ...pizarraBgStyle,
           flexDirection: 'column',
           gap: 8,
         }}
@@ -588,9 +590,7 @@ export default function PizarraCanvas({
           width,
           height,
           overflow: 'hidden',
-          backgroundColor: '#1a1f2e',
-          backgroundImage: wrapperBackgroundImage,
-          backgroundSize: PIZARRA_GRID_TEXTURE_ENABLED ? '32px 32px' : undefined,
+          ...pizarraBgStyle,
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: '0 0',
           touchAction: 'none',
@@ -612,9 +612,7 @@ export default function PizarraCanvas({
         width,
         height,
         overflow: 'hidden',
-        backgroundColor: '#1a1f2e',
-        backgroundImage: wrapperBackgroundImage,
-        backgroundSize: PIZARRA_GRID_TEXTURE_ENABLED ? '32px 32px' : undefined,
+        ...pizarraBgStyle,
         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         transformOrigin: '0 0',
         touchAction: 'none',

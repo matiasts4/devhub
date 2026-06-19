@@ -3302,12 +3302,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [inferProgramFromPanelCommand]);
 
   const buildNativeWorkspaceSyncDetail = useCallback(
-    (reason = 'workspace-switch') => {
+    (reason = 'workspace-switch', { columnsOverride = null } = {}) => {
       const activePanelIdsForNativeSurface = [];
       const hiddenPanelIdsForNativeSurface = [];
 
       workspaces.forEach((workspace) => {
-        const panelIds = getAllPanelIds(workspace.columns || []);
+        const columns =
+          columnsOverride && Object.prototype.hasOwnProperty.call(columnsOverride, workspace.id)
+            ? columnsOverride[workspace.id]
+            : workspace.columns || [];
+        const panelIds = getAllPanelIds(columns);
         const focusedPanelId = focusedPanelByWorkspace[workspace.id];
 
         if (workspace.id === activeWsId) {
@@ -3353,11 +3357,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const nativeSyncIdleTimerRef = useRef(null);
 
   const notifyNativeLayoutSettled = useCallback(
-    (reason) => {
+    (reason, options = {}) => {
       if (typeof window === 'undefined') return;
 
       nativeSyncQueueRef.current?.enqueue(reason, {
-        workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
+        workspaceDetail: buildNativeWorkspaceSyncDetail(reason, options),
         includeFollowUpPasses: true,
       });
     },
@@ -3409,6 +3413,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     notifyNativeLayoutSettled('workspace-switch');
     return undefined;
   }, [activeWsId, isClientLoaded, notifyNativeLayoutSettled, pizarraOwnsLiveSurfaces]);
+
+  const prevActiveWindowIdsJsonRef = useRef('');
+  useEffect(() => {
+    if (!isClientLoaded) return undefined;
+    const json = JSON.stringify(activeWindowIds);
+    if (prevActiveWindowIdsJsonRef.current === json) return undefined;
+    prevActiveWindowIdsJsonRef.current = json;
+    // Post-commit sync: newly mounted panels missed the in-handler event from switchWindowInWorkspace.
+    notifyNativeLayoutSettled('workspace-window-settled');
+    return undefined;
+  }, [activeWindowIds, isClientLoaded, notifyNativeLayoutSettled]);
 
   const prevPizarraOwnsLiveSurfacesRef = useRef(pizarraOwnsLiveSurfaces);
   useEffect(() => {
@@ -3863,7 +3878,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         )
       );
 
-      notifyNativeLayoutSettled('workspace-window-switch');
+      // Pass destination columns explicitly — React state is still stale in this tick.
+      notifyNativeLayoutSettled('workspace-window-switch', {
+        columnsOverride: { [wsId]: destination.columns || [] },
+      });
     },
     [notifyNativeLayoutSettled]
   );
