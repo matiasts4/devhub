@@ -79,6 +79,11 @@ import {
   markNativeVteLeaseHidden,
 } from '@/lib/terminal/nativeVteLayoutLifecycle';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
+import {
+  buildTerminalExitOverlayCopy,
+  isAgentTuiCommand,
+  parseTerminalExitReason,
+} from '@/lib/terminal/agentSessionExit';
 
 /**
  * Fire-and-forget logger → POST to /api/terminal/log (writes to data/logs/terminal-debug.log).
@@ -131,6 +136,7 @@ export function shouldShowTerminalLoadingOverlay(
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
   if (connectionState === 'suspended') return true;
+  if (connectionState === 'agent-exited') return true;
   if (isInitializing) return false;
 
   return Boolean(
@@ -189,7 +195,9 @@ export function normalizeTuiInitialCommand(initialCommand) {
 }
 
 export function isLikelyTuiInitialCommand(initialCommand) {
-  return /^(opencode|hermes|grok|groc)\b/i.test(normalizeTuiInitialCommand(initialCommand));
+  return /^(opencode|hermes|grok|groc|kimi|codex)\b/i.test(
+    normalizeTuiInitialCommand(initialCommand)
+  );
 }
 
 export function isGrokTuiInitialCommand(initialCommand) {
@@ -1503,6 +1511,7 @@ export default function TerminalTTY({
   const [nativeVteProbeResult, setNativeVteProbeResult] = useState(null);
   const [nativeVteOpenFailure, setNativeVteOpenFailure] = useState(null);
   const [nativeVteOpened, setNativeVteOpened] = useState(false);
+  const [sessionExitReason, setSessionExitReason] = useState(null);
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
   const [webglProbeResult, setWebglProbeResult] = useState(() => probeWebglSupport());
@@ -2105,6 +2114,53 @@ export default function TerminalTTY({
       }
     },
     [id]
+  );
+
+  const applyTerminalSessionExit = useCallback(
+    (detail = {}, { emitBrowserEvent = false } = {}) => {
+      const panelId = detail?.id || detail?.panelId;
+      if (panelId && panelId !== id) return;
+
+      const reason = detail?.reason || null;
+      const command = detail?.initialCommand || initialCommand;
+      const parsed = parseTerminalExitReason(reason);
+      const agentSession = parsed.kind === 'agent' || isAgentTuiCommand(command);
+
+      processExitedRef.current = true;
+      tuiSessionActiveRef.current = false;
+      isGrokSessionRef.current = false;
+      grokTuiReadyRef.current = false;
+      tuiSessionFooterConfirmedRef.current = false;
+      setNativeWheelPassthrough(false);
+      setSessionExitReason(reason);
+      disableTerminalFocusReporting(termRef.current, { disableMouse: true });
+
+      if (agentSession && parsed.kind === 'agent') {
+        setConnectionState('agent-exited');
+      } else if (agentSession && parsed.abnormal) {
+        setConnectionState('terminated');
+      } else {
+        setConnectionState('terminated');
+      }
+
+      if (requestedRendererModeRef.current !== 'vte-experimental' && termRef.current) {
+        const overlayCopy = buildTerminalExitOverlayCopy({
+          initialCommand: command,
+          reason,
+          connectionState: agentSession && parsed.kind === 'agent' ? 'agent-exited' : 'terminated',
+        });
+        termRef.current?.writeln(`\r\n\x1b[33m[${overlayCopy.title}]\x1b[0m`);
+      }
+
+      if (emitBrowserEvent) {
+        window.dispatchEvent(
+          new CustomEvent('devhub:terminal-exit', {
+            detail: { id, initialCommand: command, reason },
+          })
+        );
+      }
+    },
+    [id, initialCommand, setConnectionState]
   );
 
   useLayoutEffect(() => {
@@ -3232,6 +3288,8 @@ export default function TerminalTTY({
         setNativeVteOpenFailure(null);
         setNativeVteOpened(true);
         setConnectionState('connected');
+        setSessionExitReason(null);
+        processExitedRef.current = false;
         setIsInitializing(false);
         clearNativeVteProbeRetryTimer();
         return true;
@@ -3843,6 +3901,19 @@ export default function TerminalTTY({
   useEffect(() => {
     if (!shouldUseNativeRenderer) return undefined;
 
+    const handleNativeTerminalExit = (event) => {
+      applyTerminalSessionExit(event.detail || {}, { emitBrowserEvent: false });
+    };
+
+    window.addEventListener('devhub:terminal-exit', handleNativeTerminalExit);
+    return () => {
+      window.removeEventListener('devhub:terminal-exit', handleNativeTerminalExit);
+    };
+  }, [applyTerminalSessionExit, shouldUseNativeRenderer]);
+
+  useEffect(() => {
+    if (!shouldUseNativeRenderer) return undefined;
+
     const handleNativeRuntimeEvent = (event) => {
       const detail = event.detail || {};
       if (detail.panelId !== id) return;
@@ -4122,22 +4193,13 @@ export default function TerminalTTY({
           }
 
           if (payload.type === 'exit') {
-            processExitedRef.current = true;
-            cliLog(`CLIENT:${id}`, 'received exit from server');
-            setConnectionState('terminated');
-            tuiSessionActiveRef.current = false;
-            isGrokSessionRef.current = false;
-            grokTuiReadyRef.current = false;
-            tuiSessionFooterConfirmedRef.current = false;
-            setNativeWheelPassthrough(false);
-            disableTerminalFocusReporting(termRef.current, { disableMouse: true });
-            termRef.current?.writeln(
-              '\r\n\x1b[33m[Sesión finalizada. Reconectá para iniciar una nueva shell.]\x1b[0m'
-            );
-            window.dispatchEvent(
-              new CustomEvent('devhub:terminal-exit', {
-                detail: { id, initialCommand },
-              })
+            applyTerminalSessionExit(
+              {
+                id,
+                initialCommand,
+                reason: `child-exited:${payload.exitCode ?? 0}`,
+              },
+              { emitBrowserEvent: true }
             );
           }
 
@@ -4284,7 +4346,8 @@ export default function TerminalTTY({
     if (
       connectionState !== 'error' &&
       connectionState !== 'disconnected' &&
-      connectionState !== 'terminated'
+      connectionState !== 'terminated' &&
+      connectionState !== 'agent-exited'
     ) {
       return;
     }
@@ -4408,6 +4471,7 @@ export default function TerminalTTY({
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
+    setSessionExitReason(null);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       cliLog(`CLIENT:${id}`, 'reconnect() skipped — socket already open');
       setConnectionState('connected');
@@ -5685,15 +5749,38 @@ export default function TerminalTTY({
     initError,
     connectionState
   );
+  const exitOverlayCopy = buildTerminalExitOverlayCopy({
+    initialCommand,
+    reason: sessionExitReason,
+    initError,
+    connectionState,
+  });
+
+  const handleSessionRecoveryClick = useCallback(() => {
+    if (connectionState === 'agent-exited' || isAgentTuiCommand(initialCommand)) {
+      setSessionExitReason(null);
+      processExitedRef.current = false;
+      window.dispatchEvent(
+        new CustomEvent('devhub:manual-revive-requested', {
+          detail: { panelId: id, sessionId: extractOpenCodeSessionId(initialCommand) || id },
+        })
+      );
+      return;
+    }
+    reconnect();
+  }, [connectionState, id, initialCommand, reconnect]);
+
   const statusLabel = isConnected
     ? 'Conectado'
     : connectionState === 'suspended'
       ? 'Suspendida'
-      : connectionState === 'connecting'
-        ? 'Conectando...'
-        : connectionState === 'terminated'
-          ? 'Finalizada'
-          : 'Desconectado';
+      : connectionState === 'agent-exited'
+        ? 'Agente finalizado'
+        : connectionState === 'connecting'
+          ? 'Conectando...'
+          : connectionState === 'terminated'
+            ? 'Finalizada'
+            : 'Desconectado';
 
   return (
     <div
@@ -5881,31 +5968,27 @@ export default function TerminalTTY({
 
           {/* Error/Disconnected overlay */}
           {showTerminalStatusOverlay && connectionState !== 'suspended' && (
-            <div className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
+            <div
+              className="absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto"
+              data-testid={
+                connectionState === 'agent-exited'
+                  ? 'terminal-agent-exited-overlay'
+                  : 'terminal-status-overlay'
+              }
+            >
               <WifiOff className="w-8 h-8 text-red-400" />
-              <span className="text-red-400 font-semibold">
-                {initError
-                  ? 'Terminal no visible todavía'
-                  : connectionState === 'error'
-                    ? 'Error de conexión'
-                    : connectionState === 'terminated'
-                      ? 'Sesión finalizada'
-                      : 'Desconectado'}
+              <span className="text-red-400 font-semibold text-center px-4">
+                {exitOverlayCopy.title}
               </span>
-              <span className="text-gray-500 text-center max-w-xs">
-                {initError ||
-                  (connectionState === 'error'
-                    ? 'No se pudo conectar al servidor de terminal. Verificá que el servidor esté corriendo.'
-                    : connectionState === 'terminated'
-                      ? 'La sesión terminó. Reconectá para iniciar una shell nueva sin relanzar el comando inicial.'
-                      : 'La conexión con la terminal se perdió.')}
+              <span className="text-gray-500 text-center max-w-sm px-4">
+                {exitOverlayCopy.body}
               </span>
               <button
-                onClick={reconnect}
+                onClick={handleSessionRecoveryClick}
                 className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Reconectar
+                {exitOverlayCopy.actionLabel}
               </button>
             </div>
           )}

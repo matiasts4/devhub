@@ -314,6 +314,9 @@ struct NativeVtePanelHost {
     /// <canvas> consumer inside the pizarra card. Allows arbitrary web z-ordering with
     /// native browser surfaces without superposition.
     is_offscreen_texture: bool,
+    initial_command: Option<String>,
+    agent_tui_active: bool,
+    agent_end_notified: bool,
 }
 
 fn unsupported_platform_reason() -> Option<String> {
@@ -493,6 +496,118 @@ fn build_terminal_exit_event_payload(
         session_id: session_id.map(str::to_string),
         initial_command: initial_command.map(str::to_string),
     }
+}
+
+fn build_agent_session_exit_payload(
+    panel_id: &str,
+    session_id: Option<&str>,
+    initial_command: Option<&str>,
+    cause: &str,
+) -> NativeVteEventPayload {
+    NativeVteEventPayload {
+        panel_id: panel_id.to_string(),
+        r#type: "terminal-exit".to_string(),
+        action: None,
+        reason: Some(format!("agent-exited:{}", cause)),
+        session_id: session_id.map(str::to_string),
+        initial_command: initial_command.map(str::to_string),
+    }
+}
+
+fn is_agent_tui_launch_command(initial_command: Option<&str>) -> bool {
+    let Some(command) = initial_command.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let head = command.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+    matches!(
+        head.as_str(),
+        "opencode" | "hermes" | "grok" | "groc" | "kimi" | "codex"
+    )
+}
+
+fn detect_agent_session_end_cause(text: &str) -> Option<&'static str> {
+    let lower = text.to_ascii_lowercase();
+    if lower.contains("bye!") {
+        return Some("bye");
+    }
+    if lower.contains("fetch failed") {
+        return Some("fetch-failed");
+    }
+    if lower.contains("session ended") {
+        return Some("session-ended");
+    }
+    None
+}
+
+fn sample_terminal_tail_text(terminal: &Terminal, tail_rows: i64) -> String {
+    let row_count = terminal.row_count().max(0);
+    if row_count == 0 {
+        return String::new();
+    }
+    let start_row = (row_count - tail_rows).max(0);
+    let (text, _) = terminal.text_range_format(
+        zoha_vte::Format::Text,
+        start_row,
+        0,
+        row_count - 1,
+        i64::MAX,
+    );
+    text.unwrap_or_default().to_string()
+}
+
+fn mark_agent_tui_active_from_text(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("welcome to kimi code")
+        || lower.contains("mcp /status")
+        || lower.contains("opencode")
+        || lower.contains("hermes")
+        || lower.contains("k2.")
+}
+
+#[cfg(target_os = "linux")]
+fn schedule_agent_exit_check(
+    app: &AppHandle,
+    panel_id: &str,
+    terminal: &Terminal,
+) {
+    use std::time::Duration;
+
+    let panel_id_owned = panel_id.to_string();
+    let app_handle = app.clone();
+
+    // ponytail: one debounced scan per burst of contents-changed; upgrade path = per-panel token map
+    glib::timeout_add_local_once(Duration::from_millis(450), move || {
+        let _ = with_native_vte_registry(|registry| {
+            let Some(panel) = registry.panels.get_mut(&panel_id_owned) else {
+                return Ok(());
+            };
+            if panel.agent_end_notified || !is_agent_tui_launch_command(panel.initial_command.as_deref()) {
+                return Ok(());
+            }
+
+            let tail = sample_terminal_tail_text(&panel.terminal, 8);
+            if !panel.agent_tui_active && mark_agent_tui_active_from_text(&tail) {
+                panel.agent_tui_active = true;
+            }
+            if !panel.agent_tui_active {
+                return Ok(());
+            }
+
+            let Some(cause) = detect_agent_session_end_cause(&tail) else {
+                return Ok(());
+            };
+
+            panel.agent_end_notified = true;
+            let payload = build_agent_session_exit_payload(
+                panel_id_owned.as_str(),
+                registry.session_ids.get(&panel_id_owned).map(String::as_str),
+                panel.initial_command.as_deref(),
+                cause,
+            );
+            emit_runtime_event(&app_handle, payload);
+            Ok(())
+        });
+    });
 }
 
 fn build_panel_activated_event_payload(
@@ -1408,6 +1523,14 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
             );
         });
 
+        if is_agent_tui_launch_command(request.initial_command.as_deref()) && !is_offscreen_texture {
+            let panel_id_for_agent = request.panel_id.clone();
+            let app_for_agent = app.clone();
+            terminal.connect_contents_changed(move |terminal| {
+                schedule_agent_exit_check(&app_for_agent, panel_id_for_agent.as_str(), terminal);
+            });
+        }
+
         if is_offscreen_texture {
             let app_for_frame = app.clone();
             let panel_id_for_frame = request.panel_id.clone();
@@ -1462,6 +1585,9 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
                 last_bounds: request.bounds.clone(),
                 last_scroll_value: None,
                 is_offscreen_texture,
+                initial_command: request.initial_command.clone(),
+                agent_tui_active: false,
+                agent_end_notified: false,
             },
         );
         if !is_offscreen_texture {
