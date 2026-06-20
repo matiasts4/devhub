@@ -36,6 +36,8 @@ import {
 } from '@/lib/asistente/tools/devhubMcp';
 import { registerZedAgentTool, heartbeatZedAgentTool } from '@/lib/asistente/tools/zedAgent';
 import { launchAgentSessionTool, launchSwarmTool } from '@/lib/asistente/tools/agentLauncher';
+import { listAgentRunsTool, getAgentRunTool } from '@/lib/asistente/tools/agentRuns';
+import { createPlanTool, executePlanTool } from '@/lib/asistente/tools/planner';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
@@ -153,6 +155,10 @@ function buildRegistry() {
   registry.register(heartbeatZedAgentTool);
   registry.register(launchAgentSessionTool);
   registry.register(launchSwarmTool);
+  registry.register(listAgentRunsTool);
+  registry.register(getAgentRunTool);
+  registry.register(createPlanTool);
+  registry.register(executePlanTool);
   return registry;
 }
 

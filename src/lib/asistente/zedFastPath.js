@@ -223,6 +223,7 @@ const TASK_NOUN_RE = /\b(tarea|tareas|task|tasks|issue|issues)\b/;
 const MILESTONE_NOUN_RE = /\b(hito|hitos|milestone|milestones|milla)\b/;
 const PROJECT_NOUN_RE = /\b(proyecto|proyectos|project|projects)\b/;
 const QUEUE_NOUN_RE = /\b(cola|queue|ejecucion|ejecución|fila)\b/;
+const PLAN_NOUN_RE = /\b(plan|planificación|estrategia|roadmap|ruta)\b/;
 
 function isOpenSettingsIntent(lower) {
   return OPEN_VERBS.test(lower) && SETTINGS_NOUN_RE.test(lower);
@@ -330,6 +331,32 @@ function isLaunchAgentSessionIntent(lower, text) {
   if (!/\b(abre|abr|lanza|lanzar|inicia|iniciar|deploy|despliega|launch)\b/.test(lower))
     return false;
   return extractLaunchAgentProgram(text) !== null;
+}
+
+function isCreatePlanIntent(lower) {
+  return (
+    /\b(crea|crear|arma|armar|hace|hacer|genera|generar|diseña|diseñar)\b/.test(lower) &&
+    PLAN_NOUN_RE.test(lower)
+  );
+}
+
+function extractPlanObjective(message) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return '';
+
+  const match = raw.match(
+    /\b(?:crea|crear|arma|armar|hace|hacer|genera|generar|diseña|diseñar)\s+(?:un|una)?\s*(?:plan|planificación|estrategia|roadmap)\s+(?:para|de|que|sobre)?\s*["']?(.+?)["']?$/i
+  );
+  if (match?.[1]) return match[1].trim();
+
+  // Fallback: remove plan keywords and keep the rest.
+  return raw
+    .replace(
+      /\b(crea|crear|arma|armar|hace|hacer|genera|generar|diseña|diseñar|un|una|plan|planificación|estrategia|roadmap|para|de)\b/gi,
+      ''
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function extractAgentPrompt(message) {
@@ -598,6 +625,19 @@ export function resolveZedFastPathIntent(message, context = {}) {
         'launch_agent_session',
         0.91,
         `launch_agent_session:${program}`
+      );
+    }
+  }
+
+  // --- multi-step planner ---
+  if (isCreatePlanIntent(lower)) {
+    const objective = extractPlanObjective(text);
+    if (objective) {
+      return hit(
+        [{ tool: 'create_plan', input: { objective } }],
+        'create_plan',
+        0.93,
+        'create_plan'
       );
     }
   }

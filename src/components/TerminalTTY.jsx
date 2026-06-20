@@ -104,23 +104,6 @@ function cliLog(tag, msg, extra = {}) {
   }
 }
 
-// #region agent log
-function debugSessionLog(hypothesisId, location, message, data = {}) {
-  fetch('http://127.0.0.1:7419/ingest/f6f9e746-fa86-428f-89e2-0e31e78e4c35', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '18e4d5' },
-    body: JSON.stringify({
-      sessionId: '18e4d5',
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
-
 /**
  * Pure function: returns Framer Motion animation props for the xterm container.
  * Fades in (opacity 0→1, 150ms ease-out) when the terminal viewport should be visible.
@@ -2087,17 +2070,6 @@ export default function TerminalTTY({
 
   const closeNativeLease = useCallback(
     async (reason = 'deactivate') => {
-      // #region agent log
-      debugSessionLog('H2-H5', 'TerminalTTY.jsx:closeNativeLease', 'close native lease', {
-        panelId: id,
-        reason,
-        hadLease: nativeLeaseRef.current,
-        sessionClosing: sessionClosingRef.current,
-        requestedRendererMode: requestedRendererModeRef.current,
-        restoredHiddenLease: restoredHiddenLeaseThisMountRef.current,
-        runId: 'post-fix-v2',
-      });
-      // #endregion
       if (reason === 'renderer-disabled' && restoredHiddenLeaseThisMountRef.current) {
         restoredHiddenLeaseThisMountRef.current = false;
         if (requestedRendererModeRef.current === 'vte-experimental') {
@@ -2118,15 +2090,6 @@ export default function TerminalTTY({
 
   const tearDownClientSession = useCallback(
     (reason = 'session-close') => {
-      // #region agent log
-      debugSessionLog('H2', 'TerminalTTY.jsx:tearDownClientSession', 'session teardown start', {
-        panelId: id,
-        reason,
-        connectionState: connectionStateRef.current,
-        nativeLease: nativeLeaseRef.current,
-        runId: 'post-fix-v2',
-      });
-      // #endregion
       sessionClosingRef.current = true;
       cancelNativeVteLayoutHide(id);
       clearNativeVteLease(id);
@@ -2254,14 +2217,6 @@ export default function TerminalTTY({
 
   useEffect(() => {
     return () => {
-      // #region agent log
-      debugSessionLog('H2-H5', 'TerminalTTY.jsx:unmount', 'terminal unmount cleanup', {
-        panelId: id,
-        sessionClosing: sessionClosingRef.current,
-        nativeLease: nativeLeaseRef.current,
-        runId: 'post-fix',
-      });
-      // #endregion
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
@@ -2328,20 +2283,9 @@ export default function TerminalTTY({
   }, [handleNativeLeaseCommandError, id]);
 
   const showAndResizeNativeLease = useCallback(async () => {
-    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    // #region agent log
-    debugSessionLog('H1-H4', 'TerminalTTY.jsx:showAndResizeNativeLease', 'show+resize native', {
-      panelId: id,
-      bounds,
-      initialCommand,
-      isTui: isLikelyTuiInitialCommand(initialCommand),
-      connectionState: connectionStateRef.current,
-      runId: 'post-fix-v2',
-    });
-    // #endregion
     await showNativeLease();
     await resizeNativeLease();
-  }, [initialCommand, id, resizeNativeLease, showNativeLease]);
+  }, [resizeNativeLease, showNativeLease]);
 
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -3397,14 +3341,6 @@ export default function TerminalTTY({
         processExitedRef.current = false;
         setIsInitializing(false);
         clearNativeVteProbeRetryTimer();
-        // #region agent log
-        debugSessionLog('H7', 'TerminalTTY.jsx:applyNativeOpenResult', 'native panel opened', {
-          panelId: id,
-          bounds,
-          initialCommand,
-          runId: 'post-fix-v2',
-        });
-        // #endregion
         void showAndResizeNativeLease();
         return true;
       }
@@ -4546,6 +4482,9 @@ export default function TerminalTTY({
     }
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
+      if (shouldUseNativeRenderer && nativeVteOpened) {
+        void showAndResizeNativeLease();
+      }
       const gpuShowRecover =
         pendingWebglRecoveryRef.current || webglReleasedOnLayoutHideRef.current;
       syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
@@ -4582,10 +4521,12 @@ export default function TerminalTTY({
     };
   }, [
     isVisibleInLayout,
+    nativeVteOpened,
     operationalRendererMode,
     releaseCanvasAddon,
     releaseWebglAddonForInactivePanel,
     shouldUseNativeRenderer,
+    showAndResizeNativeLease,
     syncTerminalViewportOnWorkspaceShow,
   ]);
 

@@ -426,4 +426,19 @@ describe('zedFastPath intent cache', () => {
       ],
     });
   });
+
+  test('planner: create plan for delegation', () => {
+    const hit = resolveZedFastPathIntent('crea un plan para delegar la tarea 14 a OpenCode', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'create_plan',
+      steps: [
+        {
+          tool: 'create_plan',
+          input: { objective: 'delegar la tarea 14 a OpenCode' },
+        },
+      ],
+    });
+  });
 });
