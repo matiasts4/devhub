@@ -1,12 +1,35 @@
 /** @typedef {'agent' | 'shell'} TerminalExitKind */
 
+const AGENT_TUI_COMMAND_PATTERN = /\b(opencode|hermes|grok|groc|kimi|codex)\b/i;
+
+/** @type {Map<string, { reason: string | null, connectionState: string }>} */
+const persistedPanelSessionExits = new Map();
+
 /**
  * Agent TUIs launched as the panel's initial command (native VTE or xterm).
+ * Matches anywhere in the command (e.g. `bash -lc opencode --session …`).
  */
 export function isAgentTuiCommand(initialCommand) {
   const cmd = String(initialCommand || '').trim();
   if (!cmd) return false;
-  return /^(opencode|hermes|grok|groc|kimi|codex)\b/i.test(cmd);
+  return AGENT_TUI_COMMAND_PATTERN.test(cmd);
+}
+
+/** Survives React unmount/remount on workspace window switches. */
+export function persistPanelSessionExit(
+  panelId,
+  { reason = null, connectionState = 'agent-exited' } = {}
+) {
+  if (!panelId) return;
+  persistedPanelSessionExits.set(panelId, { reason, connectionState });
+}
+
+export function readPanelSessionExit(panelId) {
+  return persistedPanelSessionExits.get(panelId) || null;
+}
+
+export function clearPanelSessionExit(panelId) {
+  persistedPanelSessionExits.delete(panelId);
 }
 
 export function resolveAgentTuiLabel(initialCommand) {
@@ -84,12 +107,14 @@ export function buildTerminalExitOverlayCopy({
         ? ' Falló una actualización interna (fetch failed).'
         : parsed.agentCause === 'bye'
           ? ' El proceso del agente terminó (Bye!).'
-          : parsed.agentCause
-            ? ` Motivo: ${parsed.agentCause}.`
-            : '';
+          : parsed.agentCause === 'session-ended'
+            ? ' La sesión del agente terminó.'
+            : parsed.agentCause
+              ? ` Motivo: ${parsed.agentCause}.`
+              : '';
     return {
       title: `${agentLabel} finalizó`,
-      body: `La sesión del agente ya no está activa en este panel.${causeHint} Podés relanzarla o seguir usando la shell debajo.`,
+      body: `La sesión del agente ya no está activa en este panel.${causeHint} Podés relanzar OpenCode o seguir usando la shell debajo.`,
       actionLabel: `Relanzar ${agentLabel}`,
     };
   }

@@ -217,6 +217,25 @@ function isOpenTerminalIntent(lower) {
   return OPEN_VERBS.test(lower) && TERMINAL_NOUN_RE.test(lower);
 }
 
+const SETTINGS_NOUN_RE = /\b(configuracion|configuración|ajustes|preferencias|settings|opciones)\b/;
+const PIZARRA_NOUN_RE = /\b(pizarra|pizarras|lienzo|tablero|draw|canvas)\b/;
+
+function isOpenSettingsIntent(lower) {
+  return OPEN_VERBS.test(lower) && SETTINGS_NOUN_RE.test(lower);
+}
+
+function isCloseSettingsIntent(lower) {
+  return CLOSE_VERBS.test(lower) && SETTINGS_NOUN_RE.test(lower);
+}
+
+function isTogglePizarraIntent(lower) {
+  if (!PIZARRA_NOUN_RE.test(lower)) return false;
+  if (OPEN_VERBS.test(lower) || CLOSE_VERBS.test(lower)) return true;
+  return /\b(muestra|mostrar|oculta|ocultar|ver|esconde|esconder|toggle|alterna|alternar)\b/.test(
+    lower
+  );
+}
+
 /**
  * User wants every open panel closed (no specific name): "cierra las terminales abiertas".
  *
@@ -275,6 +294,32 @@ export function resolveZedFastPathIntent(message, context = {}) {
     )
   ) {
     return hit([{ tool: 'open_url', input: { url, focus: true } }], 'open_url', 0.94, 'open_url');
+  }
+
+  // --- workspace UI actions (before terminal open to avoid "abre configuración de terminal" → open_terminal) ---
+  if (isOpenSettingsIntent(lower)) {
+    return hit(
+      [{ tool: 'workspace_action', input: { action: 'open_restore_settings' } }],
+      'open_settings',
+      0.94,
+      'open_restore_settings'
+    );
+  }
+  if (isCloseSettingsIntent(lower)) {
+    return hit(
+      [{ tool: 'workspace_action', input: { action: 'close_restore_settings' } }],
+      'close_settings',
+      0.94,
+      'close_restore_settings'
+    );
+  }
+  if (isTogglePizarraIntent(lower)) {
+    return hit(
+      [{ tool: 'workspace_action', input: { action: 'toggle_pizarra' } }],
+      'toggle_pizarra',
+      0.92,
+      'toggle_pizarra'
+    );
   }
 
   // --- open NEW terminal (before execute-in-existing; never reuse when user asks for new panel) ---

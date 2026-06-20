@@ -415,6 +415,7 @@ describe('shouldShowTerminalStatusOverlay()', () => {
 
   test('shows suspended overlay even while initializing (native VTE probe)', () => {
     expect(shouldShowTerminalStatusOverlay(true, null, 'suspended')).toBe(true);
+    expect(shouldShowTerminalStatusOverlay(false, null, 'agent-exited')).toBe(true);
   });
 });
 

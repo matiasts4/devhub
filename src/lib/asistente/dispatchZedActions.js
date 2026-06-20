@@ -11,6 +11,7 @@ import {
   isWorkspaceTerminalPanelLimitReached,
 } from '@/lib/terminal/workspaceTerminalLimits';
 import { zedClientDebug } from './zedClientDebug';
+import { dispatchZedWorkspaceActionFromToolResults } from './zedWorkspaceActionEvent';
 
 function safeParse(s) {
   try {
@@ -42,7 +43,10 @@ export function dispatchZedOpenTerminalFromToolResults(
     const raw = entry.result;
     const parsed = typeof raw === 'string' ? safeParse(raw) : raw;
     if (!parsed || parsed.error) {
-      zedClientDebug('dispatch_skipped', { tool: 'open_terminal', reason: parsed?.error || 'invalid' });
+      zedClientDebug('dispatch_skipped', {
+        tool: 'open_terminal',
+        reason: parsed?.error || 'invalid',
+      });
       continue;
     }
 
@@ -107,6 +111,7 @@ export function dispatchAllZedToolResults(toolResults, opts = {}) {
   dispatchZedOpenTerminalFromToolResults(toolResults, opts);
   dispatchZedCloseFromToolResults(toolResults);
   dispatchZedTerminalInputFromToolResults(toolResults);
+  dispatchZedWorkspaceActionFromToolResults(toolResults);
 }
 
 export default dispatchAllZedToolResults;

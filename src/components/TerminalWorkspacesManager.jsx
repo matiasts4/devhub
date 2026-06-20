@@ -86,6 +86,7 @@ import {
   isWorkspaceTerminalPanelLimitReached,
 } from '@/lib/terminal/workspaceTerminalLimits';
 import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
+import { subscribeZedWorkspaceAction } from '@/lib/asistente/zedWorkspaceActionEvent';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -253,6 +254,24 @@ import RightDockSharedMirror from './workspace/RightDockSharedMirror';
 import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
 
 // --- Helper Functions ---
+
+// #region agent log
+function debugSessionLog(hypothesisId, location, message, data = {}) {
+  fetch('http://127.0.0.1:7419/ingest/f6f9e746-fa86-428f-89e2-0e31e78e4c35', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '18e4d5' },
+    body: JSON.stringify({
+      sessionId: '18e4d5',
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
   id,
   initialCommand,
@@ -4944,19 +4963,25 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       await closeTerminalSessions([targetId]);
 
-      // Force-close the native VTE (the actual terminal "window") for this panel.
-      // The React unmount of TerminalTTY will also try via its cleanup, but
-      // explicit here guarantees we don't leave "terminal fantasma" that can
-      // paint on top of the browser dock, other terminals, or make the visual
-      // divider (resize handle) between terminals disappear because a stale
-      // native rect is still covering the handle's screen area.
+      // #region agent log
+      debugSessionLog(
+        'H2',
+        'TerminalWorkspacesManager.jsx:handleClosePanel',
+        'panel close after sessions',
+        {
+          panelId: targetId,
+          runId: 'post-fix-v2',
+        }
+      );
+      // #endregion
+
       try {
         const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
         await closeNativeVtePanel({ panelId: targetId, reason: 'workspace-panel-closed' }).catch(
           () => {}
         );
       } catch {
-        // Non-fatal; the per-TTY unmount cleanup will still attempt it.
+        // Non-fatal
       }
 
       const nextColumnsSnapshot = activeWorkspace.columns
@@ -6306,7 +6331,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     window.addEventListener('devhub:zed-open-url', handleZedOpenUrl);
 
+    const handleZedWorkspaceAction = ({ action, section }) => {
+      if (action === 'open_restore_settings') {
+        setRestoreSettingsModal({ open: true, section });
+      } else if (action === 'close_restore_settings') {
+        setRestoreSettingsModal({ open: false });
+      } else if (action === 'toggle_pizarra') {
+        dispatchZedOverlayToggle?.('pizarra');
+      }
+    };
+    const unsubscribeWorkspaceAction = subscribeZedWorkspaceAction(handleZedWorkspaceAction);
+
     return () => {
+      unsubscribeWorkspaceAction();
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
       window.removeEventListener('devhub:swarm-launch-wrapper-sent', handleSwarmLaunchWrapperSent);

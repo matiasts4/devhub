@@ -339,4 +339,34 @@ describe('zedFastPath intent cache', () => {
       ])
     ).toBe(false);
   });
+
+  test('workspace_action: open restore settings', () => {
+    const hit = resolveZedFastPathIntent('abre la configuración de terminal', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'open_settings',
+      steps: [{ tool: 'workspace_action', input: { action: 'open_restore_settings' } }],
+    });
+  });
+
+  test('workspace_action: close restore settings', () => {
+    const hit = resolveZedFastPathIntent('cierra los ajustes', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'close_settings',
+      steps: [{ tool: 'workspace_action', input: { action: 'close_restore_settings' } }],
+    });
+  });
+
+  test('workspace_action: toggle pizarra', () => {
+    const hit = resolveZedFastPathIntent('muestra la pizarra', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'toggle_pizarra',
+      steps: [{ tool: 'workspace_action', input: { action: 'toggle_pizarra' } }],
+    });
+  });
 });

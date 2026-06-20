@@ -81,8 +81,11 @@ import {
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 import {
   buildTerminalExitOverlayCopy,
+  clearPanelSessionExit,
   isAgentTuiCommand,
   parseTerminalExitReason,
+  persistPanelSessionExit,
+  readPanelSessionExit,
 } from '@/lib/terminal/agentSessionExit';
 
 /**
@@ -100,6 +103,23 @@ function cliLog(tag, msg, extra = {}) {
     // never crash
   }
 }
+
+// #region agent log
+function debugSessionLog(hypothesisId, location, message, data = {}) {
+  fetch('http://127.0.0.1:7419/ingest/f6f9e746-fa86-428f-89e2-0e31e78e4c35', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '18e4d5' },
+    body: JSON.stringify({
+      sessionId: '18e4d5',
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 
 /**
  * Pure function: returns Framer Motion animation props for the xterm container.
@@ -195,7 +215,7 @@ export function normalizeTuiInitialCommand(initialCommand) {
 }
 
 export function isLikelyTuiInitialCommand(initialCommand) {
-  return /^(opencode|hermes|grok|groc|kimi|codex)\b/i.test(
+  return /\b(opencode|hermes|grok|groc|kimi|codex)\b/i.test(
     normalizeTuiInitialCommand(initialCommand)
   );
 }
@@ -1475,6 +1495,8 @@ export default function TerminalTTY({
   const nativeVteProbeRetryDelayRef = useRef(null);
   const shouldRetryNativeVteProbeRef = useRef(false);
   const hideTimerRef = useRef(null);
+  const prevRequestedRendererModeRef = useRef(requestedRendererMode);
+  const restoredHiddenLeaseThisMountRef = useRef(false);
   const lastViewportYRef = useRef(null);
   const lastPointerZoneRef = useRef('transcript');
   const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
@@ -2065,6 +2087,23 @@ export default function TerminalTTY({
 
   const closeNativeLease = useCallback(
     async (reason = 'deactivate') => {
+      // #region agent log
+      debugSessionLog('H2-H5', 'TerminalTTY.jsx:closeNativeLease', 'close native lease', {
+        panelId: id,
+        reason,
+        hadLease: nativeLeaseRef.current,
+        sessionClosing: sessionClosingRef.current,
+        requestedRendererMode: requestedRendererModeRef.current,
+        restoredHiddenLease: restoredHiddenLeaseThisMountRef.current,
+        runId: 'post-fix-v2',
+      });
+      // #endregion
+      if (reason === 'renderer-disabled' && restoredHiddenLeaseThisMountRef.current) {
+        restoredHiddenLeaseThisMountRef.current = false;
+        if (requestedRendererModeRef.current === 'vte-experimental') {
+          return;
+        }
+      }
       if (!nativeLeaseRef.current) {
         clearNativeVteLease(id);
         return;
@@ -2079,7 +2118,18 @@ export default function TerminalTTY({
 
   const tearDownClientSession = useCallback(
     (reason = 'session-close') => {
+      // #region agent log
+      debugSessionLog('H2', 'TerminalTTY.jsx:tearDownClientSession', 'session teardown start', {
+        panelId: id,
+        reason,
+        connectionState: connectionStateRef.current,
+        nativeLease: nativeLeaseRef.current,
+        runId: 'post-fix-v2',
+      });
+      // #endregion
       sessionClosingRef.current = true;
+      cancelNativeVteLayoutHide(id);
+      clearNativeVteLease(id);
       clearPanelInitialCommandLifecycle(id);
       clearTimers();
       if (wsRef.current) {
@@ -2092,10 +2142,10 @@ export default function TerminalTTY({
         wsRef.current = null;
       }
       disposeXtermRuntime();
-      closeNativeLease(reason);
+      // Native GTK teardown is owned by handleClosePanel → closeNativeVtePanel (single close).
       setConnectionState('terminated');
     },
-    [clearTimers, closeNativeLease, disposeXtermRuntime]
+    [clearTimers, disposeXtermRuntime, id]
   );
 
   const hideNativeLease = useCallback(
@@ -2137,10 +2187,28 @@ export default function TerminalTTY({
 
       if (agentSession && parsed.kind === 'agent') {
         setConnectionState('agent-exited');
+        persistPanelSessionExit(id, { reason, connectionState: 'agent-exited' });
       } else if (agentSession && parsed.abnormal) {
         setConnectionState('terminated');
+        clearPanelSessionExit(id);
       } else {
         setConnectionState('terminated');
+        clearPanelSessionExit(id);
+      }
+
+      if (requestedRendererModeRef.current === 'vte-experimental' && nativeLeaseRef.current) {
+        const bounds = getNativeTerminalBounds(
+          containerRef.current || nativePlaceholderRef.current
+        );
+        if (bounds) {
+          void Promise.resolve(
+            setNativeVtePanelVisibility({
+              panelId: id,
+              visible: true,
+              bounds,
+            })
+          ).catch(() => {});
+        }
       }
 
       if (requestedRendererModeRef.current !== 'vte-experimental' && termRef.current) {
@@ -2165,15 +2233,35 @@ export default function TerminalTTY({
 
   useLayoutEffect(() => {
     cancelNativeVteLayoutHide(id);
-    if (!consumeHiddenNativeVteLease(id)) return;
+    const persistedExit = readPanelSessionExit(id);
+    const restoredLease = consumeHiddenNativeVteLease(id);
+    if (!restoredLease && !persistedExit) return;
+
     nativeLeaseRef.current = true;
+    restoredHiddenLeaseThisMountRef.current = Boolean(restoredLease);
     setNativeVteOpened(true);
-    setConnectionState('connected');
     setNativeVteProbeResult((prev) => prev ?? { ready: true, reason: null });
+
+    if (persistedExit) {
+      processExitedRef.current = true;
+      setSessionExitReason(persistedExit.reason);
+      setConnectionState(persistedExit.connectionState);
+      return;
+    }
+
+    setConnectionState('connected');
   }, [id]);
 
   useEffect(() => {
     return () => {
+      // #region agent log
+      debugSessionLog('H2-H5', 'TerminalTTY.jsx:unmount', 'terminal unmount cleanup', {
+        panelId: id,
+        sessionClosing: sessionClosingRef.current,
+        nativeLease: nativeLeaseRef.current,
+        runId: 'post-fix',
+      });
+      // #endregion
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
@@ -2181,7 +2269,8 @@ export default function TerminalTTY({
       // Window/view switches unmount React but must keep the GTK lease + PTY alive.
       // Permanent teardown runs via tearDownClientSession / handleClosePanel first.
       if (sessionClosingRef.current) {
-        closeNativeLease('unmount');
+        cancelNativeVteLayoutHide(id);
+        clearNativeVteLease(id);
         return;
       }
       deferNativeVteLayoutHide(id, () => {
@@ -2239,9 +2328,20 @@ export default function TerminalTTY({
   }, [handleNativeLeaseCommandError, id]);
 
   const showAndResizeNativeLease = useCallback(async () => {
+    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
+    // #region agent log
+    debugSessionLog('H1-H4', 'TerminalTTY.jsx:showAndResizeNativeLease', 'show+resize native', {
+      panelId: id,
+      bounds,
+      initialCommand,
+      isTui: isLikelyTuiInitialCommand(initialCommand),
+      connectionState: connectionStateRef.current,
+      runId: 'post-fix-v2',
+    });
+    // #endregion
     await showNativeLease();
     await resizeNativeLease();
-  }, [resizeNativeLease, showNativeLease]);
+  }, [initialCommand, id, resizeNativeLease, showNativeLease]);
 
   const waitForVisibleDimensions = useCallback(async () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -3177,6 +3277,8 @@ export default function TerminalTTY({
 
   useEffect(() => {
     let cancelled = false;
+    const prevMode = prevRequestedRendererModeRef.current;
+    prevRequestedRendererModeRef.current = requestedRendererMode;
 
     if (!ENABLE_NATIVE_VTE || requestedRendererMode !== 'vte-experimental') {
       setNativeVteProbeResult(null);
@@ -3184,7 +3286,10 @@ export default function TerminalTTY({
       setNativeVteOpened(false);
       nativeVteProbeRetryCountRef.current = 0;
       clearNativeVteProbeRetryTimer();
-      closeNativeLease('renderer-disabled');
+      // Only close when actually leaving native mode, not on every remount/probe cycle.
+      if (prevMode === 'vte-experimental' || nativeLeaseRef.current) {
+        closeNativeLease('renderer-disabled');
+      }
       return undefined;
     }
 
@@ -3292,6 +3397,15 @@ export default function TerminalTTY({
         processExitedRef.current = false;
         setIsInitializing(false);
         clearNativeVteProbeRetryTimer();
+        // #region agent log
+        debugSessionLog('H7', 'TerminalTTY.jsx:applyNativeOpenResult', 'native panel opened', {
+          panelId: id,
+          bounds,
+          initialCommand,
+          runId: 'post-fix-v2',
+        });
+        // #endregion
+        void showAndResizeNativeLease();
         return true;
       }
 
@@ -3306,8 +3420,7 @@ export default function TerminalTTY({
     if (nativeLeaseRef.current && nativeVteOpened) {
       (async () => {
         try {
-          await showNativeLease();
-          await resizeNativeVtePanel({ panelId: id, bounds });
+          await showAndResizeNativeLease();
         } catch (error) {
           if (cancelled) return;
           const reason = String(error?.message || error || '');
@@ -3374,6 +3487,7 @@ export default function TerminalTTY({
     requestedRendererMode,
     resolvedRuntimePlatform,
     showNativeLease,
+    showAndResizeNativeLease,
     suspendNativeSurface,
     tauriAvailable,
   ]);
@@ -3747,7 +3861,11 @@ export default function TerminalTTY({
     if (requestedRendererMode !== 'vte-experimental' || !isVisibleInLayout) return undefined;
     if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
 
-    const shouldRestore = nativeLeaseRef.current || nativeVteOpened || hasHiddenNativeVteLease(id);
+    const shouldRestore =
+      nativeLeaseRef.current ||
+      nativeVteOpened ||
+      hasHiddenNativeVteLease(id) ||
+      readPanelSessionExit(id);
     if (!shouldRestore) return undefined;
 
     if (hasHiddenNativeVteLease(id)) {
@@ -4263,6 +4381,8 @@ export default function TerminalTTY({
       connectInFlightRef.current = false;
     }
   }, [
+    applyTerminalSessionExit,
+    initialCommand,
     scheduleInactiveViewportRepaint,
     scrollIfActivePanel,
     scrollTerminalToBottom,
@@ -4472,6 +4592,7 @@ export default function TerminalTTY({
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
     setSessionExitReason(null);
+    clearPanelSessionExit(id);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       cliLog(`CLIENT:${id}`, 'reconnect() skipped — socket already open');
       setConnectionState('connected');
@@ -5758,6 +5879,7 @@ export default function TerminalTTY({
 
   const handleSessionRecoveryClick = useCallback(() => {
     if (connectionState === 'agent-exited' || isAgentTuiCommand(initialCommand)) {
+      clearPanelSessionExit(id);
       setSessionExitReason(null);
       processExitedRef.current = false;
       window.dispatchEvent(

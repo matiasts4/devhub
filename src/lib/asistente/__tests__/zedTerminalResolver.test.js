@@ -164,6 +164,54 @@ describe('zedTerminalResolver.resolve — ZTT-001', () => {
     ]);
     expect(result).toEqual({ ok: true, terminalId: 'p2', displayName: 'Chase', match: 'exact' });
   });
+
+  test('resolves "primera terminal" to first entry', () => {
+    const result = resolve('primera terminal', [
+      { terminalId: 'p1', displayName: 'Chase' },
+      { terminalId: 'p2', displayName: 'Cesar' },
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      terminalId: 'p1',
+      displayName: 'Chase',
+      match: 'position_index',
+    });
+  });
+
+  test('resolves "terminal 2" to second entry', () => {
+    const result = resolve('terminal 2', [
+      { terminalId: 'p1', displayName: 'Chase' },
+      { terminalId: 'p2', displayName: 'Cesar' },
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      terminalId: 'p2',
+      displayName: 'Cesar',
+      match: 'position_index',
+    });
+  });
+
+  test('resolves "última" to last entry', () => {
+    const result = resolve('última', [
+      { terminalId: 'p1', displayName: 'Chase' },
+      { terminalId: 'p2', displayName: 'Cesar' },
+      { terminalId: 'p3', displayName: 'Nova' },
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      terminalId: 'p3',
+      displayName: 'Nova',
+      match: 'position_last',
+    });
+  });
+
+  test('position out of range returns not_found', () => {
+    const result = resolve('terminal 5', [
+      { terminalId: 'p1', displayName: 'Chase' },
+      { terminalId: 'p2', displayName: 'Cesar' },
+    ]);
+    expect(result).toEqual({ ok: false, code: 'not_found' });
+  });
 });
 
 describe('zedTerminalResolver — alias + helpers', () => {

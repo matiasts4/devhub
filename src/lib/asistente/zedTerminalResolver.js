@@ -13,6 +13,33 @@ import { DISPLAY_NAME_POOL } from '../terminal/displayNamePool';
 const MAX_QUERY_LEN = 48;
 const MIN_PREFIX_LEN = 2;
 
+const ORDINAL_WORDS = {
+  primera: 1,
+  primer: 1,
+  primero: 1,
+  segunda: 2,
+  segundo: 2,
+  tercera: 3,
+  tercero: 3,
+  cuarta: 4,
+  cuarto: 4,
+  quinta: 5,
+  quinto: 5,
+  sexta: 6,
+  sexto: 6,
+};
+
+const CARDINAL_WORDS = {
+  uno: 1,
+  una: 1,
+  un: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+};
+
 /**
  * Strip accents and normalize for fuzzy compare.
  * @param {string} name
@@ -85,6 +112,46 @@ function _levenshtein(a, b) {
  *          | {ok: false, code: 'not_found'}
  *          | {ok: false, code: 'ambiguous', candidates: Array<{terminalId: string, displayName: string}>}}
  */
+function parsePositionQuery(query) {
+  const norm = normalizeForLookup(query);
+  if (!norm) return null;
+
+  if (norm === 'ultima' || norm === 'ultimo' || norm === 'last') {
+    return { type: 'last' };
+  }
+
+  const digit = parseInt(norm, 10);
+  if (!Number.isNaN(digit) && digit > 0) {
+    return { type: 'index', index: digit - 1 };
+  }
+
+  const ordinal = ORDINAL_WORDS[norm];
+  if (ordinal) {
+    return { type: 'index', index: ordinal - 1 };
+  }
+
+  const match = norm.match(
+    /(?:terminal|panel)?\s*(\d+|uno|una|dos|tres|cuatro|cinco|seis|primera|primer|primero|segunda|segundo|tercera|tercero|cuarta|cuarto|quinta|quinto|sexta|sexto)/
+  );
+  if (match) {
+    const token = match[1];
+    const tokenDigit = parseInt(token, 10);
+    if (!Number.isNaN(tokenDigit) && tokenDigit > 0) {
+      return { type: 'index', index: tokenDigit - 1 };
+    }
+    const tokenOrdinal = ORDINAL_WORDS[token];
+    if (tokenOrdinal) {
+      return { type: 'index', index: tokenOrdinal - 1 };
+    }
+    const tokenCardinal = CARDINAL_WORDS[token];
+    if (tokenCardinal) {
+      return { type: 'index', index: tokenCardinal - 1 };
+    }
+  }
+
+  return null;
+}
+
 function resolve(name, terminals) {
   if (typeof name !== 'string') return { ok: false, code: 'not_found' };
   const trimmed = name.trim();
@@ -104,6 +171,30 @@ function resolve(name, terminals) {
     .filter((t) => t.norm.length > 0);
 
   if (entries.length === 0) return { ok: false, code: 'not_found' };
+
+  // 0) Position-based queries: "primera terminal", "terminal 1", "última".
+  const position = parsePositionQuery(trimmed);
+  if (position) {
+    if (position.type === 'last') {
+      const t = entries[entries.length - 1];
+      return {
+        ok: true,
+        terminalId: t.terminalId,
+        displayName: t.displayName,
+        match: 'position_last',
+      };
+    }
+    if (position.index >= 0 && position.index < entries.length) {
+      const t = entries[position.index];
+      return {
+        ok: true,
+        terminalId: t.terminalId,
+        displayName: t.displayName,
+        match: 'position_index',
+      };
+    }
+    return { ok: false, code: 'not_found' };
+  }
 
   // 1) Normalized exact
   const exact = entries.find((t) => t.norm === queryNorm);
