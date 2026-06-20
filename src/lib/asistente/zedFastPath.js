@@ -309,6 +309,52 @@ function extractMilestoneTitleFromMessage(message) {
   return null;
 }
 
+const AGENT_PROGRAM_ALIASES = {
+  opencode: ['opencode', 'open code', 'open-code'],
+  codex: ['codex', 'code x'],
+  hermes: ['hermes'],
+  kimi: ['kimi', 'kimy', 'quimy'],
+};
+
+function extractLaunchAgentProgram(message) {
+  const lower = normalizeAgentAliases(message);
+  for (const [program, aliases] of Object.entries(AGENT_PROGRAM_ALIASES)) {
+    for (const alias of aliases) {
+      if (lower.includes(alias)) return program;
+    }
+  }
+  return null;
+}
+
+function isLaunchAgentSessionIntent(lower, text) {
+  if (!/\b(abre|abr|lanza|lanzar|inicia|iniciar|deploy|despliega|launch)\b/.test(lower))
+    return false;
+  return extractLaunchAgentProgram(text) !== null;
+}
+
+function extractAgentPrompt(message) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return '';
+
+  const match = raw.match(
+    /(?:prompt|con\s+(?:el\s+)?prompt|diciendo|que\s+diga|para\s+que)\s*[:-]?\s*["']?(.+?)["']?$/i
+  );
+  if (match?.[1]) return match[1].trim();
+
+  const program = extractLaunchAgentProgram(raw);
+  if (!program) return '';
+
+  // Remove launcher verbs and program name; keep the rest as prompt.
+  const remainder = raw
+    .replace(/\b(?:abre|abr|lanza|lanzar|inicia|iniciar|deploy|despliega|launch|una|un)\b/gi, '')
+    .replace(new RegExp(`\\b(?:${AGENT_PROGRAM_ALIASES[program].join('|')})\\b`, 'gi'), '')
+    .replace(/\b(?:terminal|panel|sesion|sesión|agente)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return remainder;
+}
+
 /**
  * User wants every open panel closed (no specific name): "cierra las terminales abiertas".
  *
@@ -538,6 +584,20 @@ export function resolveZedFastPathIntent(message, context = {}) {
         'create_milestone',
         0.92,
         'create_milestone'
+      );
+    }
+  }
+
+  // --- agent launcher ---
+  if (isLaunchAgentSessionIntent(lower, text)) {
+    const program = extractLaunchAgentProgram(text);
+    const prompt = extractAgentPrompt(text);
+    if (program && prompt) {
+      return hit(
+        [{ tool: 'launch_agent_session', input: { program, prompt } }],
+        'launch_agent_session',
+        0.91,
+        `launch_agent_session:${program}`
       );
     }
   }

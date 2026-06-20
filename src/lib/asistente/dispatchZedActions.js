@@ -39,12 +39,13 @@ export function dispatchZedOpenTerminalFromToolResults(
   const keys = dispatchedKeys || new Set();
 
   for (const entry of toolResults) {
-    if (!entry || entry.tool !== 'open_terminal') continue;
+    if (!entry || (entry.tool !== 'open_terminal' && entry.tool !== 'launch_agent_session'))
+      continue;
     const raw = entry.result;
     const parsed = typeof raw === 'string' ? safeParse(raw) : raw;
     if (!parsed || parsed.error) {
       zedClientDebug('dispatch_skipped', {
-        tool: 'open_terminal',
+        tool: entry.tool,
         reason: parsed?.error || 'invalid',
       });
       continue;

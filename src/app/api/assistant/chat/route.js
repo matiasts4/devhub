@@ -34,6 +34,8 @@ import {
   createMilestoneTool,
   bulkCreateMilestonesTool,
 } from '@/lib/asistente/tools/devhubMcp';
+import { registerZedAgentTool, heartbeatZedAgentTool } from '@/lib/asistente/tools/zedAgent';
+import { launchAgentSessionTool, launchSwarmTool } from '@/lib/asistente/tools/agentLauncher';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
@@ -147,6 +149,10 @@ function buildRegistry() {
   registry.register(bulkCreateTasksTool);
   registry.register(createMilestoneTool);
   registry.register(bulkCreateMilestonesTool);
+  registry.register(registerZedAgentTool);
+  registry.register(heartbeatZedAgentTool);
+  registry.register(launchAgentSessionTool);
+  registry.register(launchSwarmTool);
   return registry;
 }
 

@@ -411,4 +411,19 @@ describe('zedFastPath intent cache', () => {
       steps: [{ tool: 'create_milestone', input: { title: 'Zed v2' } }],
     });
   });
+
+  test('agent_launcher: launch opencode with prompt', () => {
+    const hit = resolveZedFastPathIntent('abre opencode con el prompt: refactorizar el router', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'launch_agent_session',
+      steps: [
+        {
+          tool: 'launch_agent_session',
+          input: { program: 'opencode', prompt: 'refactorizar el router' },
+        },
+      ],
+    });
+  });
 });

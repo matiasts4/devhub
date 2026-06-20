@@ -417,6 +417,18 @@ function resolvePanelVisibleInLayout({ isWorkspaceVisibleInLayout, focusedPanelI
   return focusedPanelId === panelId;
 }
 
+function resolveActiveWorkspaceWindowId(wsId, workspaceWindows, activeWindowIds) {
+  const windows = workspaceWindows?.[wsId] || [];
+  return activeWindowIds?.[wsId] || windows[0]?.id || null;
+}
+
+/** Fallback to live columns when window snapshots are not initialized yet. */
+function resolveWorkspaceWindowsForRender(ws, workspaceWindows) {
+  const windows = workspaceWindows?.[ws.id];
+  if (Array.isArray(windows) && windows.length > 0) return windows;
+  return [{ id: `${ws.id}-default`, columns: ws.columns || [] }];
+}
+
 function columnContainsFocusedPanel(column, focusedPanelId) {
   if (!focusedPanelId) return true;
   return (column?.panels || []).some((panel) => panel.id === focusedPanelId);
@@ -3326,26 +3338,57 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       const hiddenPanelIdsForNativeSurface = [];
 
       workspaces.forEach((workspace) => {
-        const columns =
-          columnsOverride && Object.prototype.hasOwnProperty.call(columnsOverride, workspace.id)
-            ? columnsOverride[workspace.id]
-            : workspace.columns || [];
-        const panelIds = getAllPanelIds(columns);
         const focusedPanelId = focusedPanelByWorkspace[workspace.id];
+        const windows = workspaceWindows[workspace.id] || [];
 
         if (workspace.id === activeWsId) {
-          if (focusedPanelId) {
-            activePanelIdsForNativeSurface.push(focusedPanelId);
-            panelIds.forEach((id) => {
-              if (id !== focusedPanelId) {
-                hiddenPanelIdsForNativeSurface.push(id);
-              }
+          const activeWindowId = resolveActiveWorkspaceWindowId(
+            workspace.id,
+            workspaceWindows,
+            activeWindowIds
+          );
+          const windowsToSync =
+            windows.length > 0
+              ? windows
+              : [
+                  {
+                    id: activeWindowId || `${workspace.id}-default`,
+                    columns:
+                      (columnsOverride && columnsOverride[workspace.id]) || workspace.columns || [],
+                  },
+                ];
+
+          windowsToSync.forEach((window) => {
+            const isActiveWindow = window.id === activeWindowId;
+            const columns =
+              isActiveWindow && columnsOverride?.[workspace.id]
+                ? columnsOverride[workspace.id]
+                : window.columns || [];
+            const panelIds = getAllPanelIds(columns);
+
+            if (!isActiveWindow) {
+              hiddenPanelIdsForNativeSurface.push(...panelIds);
+              return;
+            }
+
+            if (focusedPanelId) {
+              activePanelIdsForNativeSurface.push(focusedPanelId);
+              panelIds.forEach((id) => {
+                if (id !== focusedPanelId) hiddenPanelIdsForNativeSurface.push(id);
+              });
+              return;
+            }
+
+            activePanelIdsForNativeSurface.push(...panelIds);
+          });
+        } else {
+          if (windows.length > 0) {
+            windows.forEach((window) => {
+              hiddenPanelIdsForNativeSurface.push(...getAllPanelIds(window.columns || []));
             });
           } else {
-            activePanelIdsForNativeSurface.push(...panelIds);
+            hiddenPanelIdsForNativeSurface.push(...getAllPanelIds(workspace.columns || []));
           }
-        } else {
-          hiddenPanelIdsForNativeSurface.push(...panelIds);
         }
       });
 
@@ -3357,12 +3400,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           ? hiddenPanelIdsForNativeSurface
           : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
         reason: isVisible ? reason : 'terminal-manager-hidden',
-        // Sent to TTYs so they can carve bounds for panels under popups (see
-        // computeCarvedBounds). Enables showing web UI over live terminals.
         avoidRects: overlayAvoidRects,
       };
     },
-    [activeWsId, focusedPanelByWorkspace, getAllPanelIds, isVisible, workspaces, overlayAvoidRects]
+    [
+      activeWindowIds,
+      activeWsId,
+      focusedPanelByWorkspace,
+      getAllPanelIds,
+      isVisible,
+      workspaceWindows,
+      workspaces,
+      overlayAvoidRects,
+    ]
   );
 
   // A.3 — serialized native-IPC sync queue. While a workspace↔pizarra
