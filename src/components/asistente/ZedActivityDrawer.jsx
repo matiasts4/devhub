@@ -8,6 +8,28 @@ import { dispatchZedOpenUrl } from '@/components/zedOpenUrlEvent';
 /**
  * Expandable activity timeline for Zed (Phase 5.1).
  */
+function formatMs(value) {
+  const n = Number(value) || 0;
+  return `${n}ms`;
+}
+
+function StatusPill({ status }) {
+  const colors = {
+    idle: 'bg-[color-mix(in_srgb,var(--text-muted)_18%,transparent)] text-[var(--text-muted)]',
+    working:
+      'bg-[color-mix(in_srgb,var(--accent-primary)_18%,transparent)] text-[var(--accent-primary)]',
+    delegating:
+      'bg-[color-mix(in_srgb,var(--warning,#f0b54a)_18%,transparent)] text-[var(--warning,#f0b54a)]',
+  };
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${colors[status] || colors.idle}`}
+    >
+      {status}
+    </span>
+  );
+}
+
 export default function ZedActivityDrawer({
   expanded,
   onToggle,
@@ -18,6 +40,8 @@ export default function ZedActivityDrawer({
   onApprove,
   onReject,
   isLoading = false,
+  metrics = null,
+  agentStatus = null,
 }) {
   const assistantTurns = messages.filter((m) => m.role === 'assistant' && m !== messages[0]);
 
@@ -48,10 +72,49 @@ export default function ZedActivityDrawer({
           </div>
 
           <div
-            className="max-h-[min(280px,40vh)] space-y-2 overflow-y-auto px-3 py-2"
+            className="max-h-[min(320px,50vh)] space-y-2 overflow-y-auto px-3 py-2"
             role="log"
             aria-live="polite"
           >
+            {(metrics || agentStatus) && (
+              <div className="space-y-1.5 rounded-lg border border-[color-mix(in_srgb,var(--border-subtle)_60%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary)_3%,transparent)] p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                    Zed
+                  </span>
+                  {agentStatus ? <StatusPill status={agentStatus.status} /> : null}
+                </div>
+                {metrics ? (
+                  <div className="grid grid-cols-3 gap-1 text-center">
+                    <div className="rounded bg-[color-mix(in_srgb,var(--accent-primary)_6%,transparent)] px-1 py-1">
+                      <div className="text-[10px] text-[var(--text-muted)]">Fast-path</div>
+                      <div className="text-[11px] font-medium text-[var(--text-primary)]">
+                        {metrics.fastPath.hitRate}%
+                      </div>
+                    </div>
+                    <div className="rounded bg-[color-mix(in_srgb,var(--accent-primary)_6%,transparent)] px-1 py-1">
+                      <div className="text-[10px] text-[var(--text-muted)]">Media</div>
+                      <div className="text-[11px] font-medium text-[var(--text-primary)]">
+                        {formatMs(metrics.roundTrip.avgMs)}
+                      </div>
+                    </div>
+                    <div className="rounded bg-[color-mix(in_srgb,var(--accent-primary)_6%,transparent)] px-1 py-1">
+                      <div className="text-[10px] text-[var(--text-muted)]">P95</div>
+                      <div className="text-[11px] font-medium text-[var(--text-primary)]">
+                        {formatMs(metrics.roundTrip.p95Ms)}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                {agentStatus?.currentTaskId ? (
+                  <p className="text-[10px] text-[var(--text-muted)]">
+                    Tarea activa:{' '}
+                    <code className="text-[var(--text-primary)]">{agentStatus.currentTaskId}</code>
+                  </p>
+                ) : null}
+              </div>
+            )}
+
             <ZedAuditTrace entries={auditTrail} />
 
             {currentStep ? (

@@ -164,6 +164,8 @@ export default function ZedAmbientOverlay({
     auditTrail,
     sendFromVoice,
     voiceSettings,
+    metrics,
+    agentStatus,
   } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals });
 
   const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings?.voiceEnabled;
@@ -526,6 +528,8 @@ export default function ZedAmbientOverlay({
                 onApprove={handleApproveCommand}
                 onReject={handleRejectApproval}
                 isLoading={isLoading}
+                metrics={metrics}
+                agentStatus={agentStatus}
               />
               <div
                 data-zed-state={pillState}

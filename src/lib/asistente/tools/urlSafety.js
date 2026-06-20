@@ -7,7 +7,13 @@
 export function isSafeHttpUrl(p) {
   let candidate = String(p ?? '').trim();
   if (!candidate) return { error: 'invalid url' };
-  if (!/^https?:\/\//i.test(candidate)) {
+
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(candidate);
+  if (hasScheme) {
+    if (!/^https?:\/\//i.test(candidate)) {
+      return { error: `unsupported scheme: ${candidate.split(':')[0]}:` };
+    }
+  } else {
     candidate = `https://${candidate}`;
   }
 

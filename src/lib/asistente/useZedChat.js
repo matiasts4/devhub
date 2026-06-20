@@ -12,7 +12,15 @@ import { zedClientDebug } from './zedClientDebug';
 import { labelForZedToolStart } from './zedToolLabels';
 import { recordZedInteraction, readZedAuditTrail } from './zedAuditTrail';
 import { readVoiceSettings } from '@/lib/voice/voiceFeatureFlag';
-import { recordChatRoundTrip } from './zedMetrics';
+import { recordChatRoundTrip, getMetricsSummary } from './zedMetrics';
+import {
+  getZedMemory,
+  setZedPreference,
+  getZedPreference,
+  recordZedMemoryAction,
+  setZedAgentStatus,
+  getZedAgentStatus,
+} from './zedMemory';
 
 export const DEFAULT_ZED_GREETING = {
   role: 'assistant',
@@ -64,9 +72,13 @@ export function useZedChat({
   const [isLoading, setIsLoading] = useState(false);
   const [abortController, setAbortController] = useState(null);
   const [currentStep, setCurrentStep] = useState(null);
-  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(() =>
+    Boolean(getZedPreference('activityExpanded', false))
+  );
   const [pendingApproval, setPendingApproval] = useState(null);
   const [auditTrail, setAuditTrail] = useState(() => readZedAuditTrail());
+  const [metrics, setMetrics] = useState(() => getMetricsSummary());
+  const [agentStatus, setAgentStatusState] = useState(() => getZedAgentStatus());
   const textareaRef = useRef(null);
   const dispatchedSessionIdsRef = useRef(new Set());
   const lastDispatchedTypeRef = useRef(null);
@@ -258,6 +270,11 @@ export function useZedChat({
     ]
   );
 
+  const setAgentStatus = useCallback((status, currentTaskId = null) => {
+    setZedAgentStatus(status, currentTaskId);
+    setAgentStatusState({ status, currentTaskId });
+  }, []);
+
   const handleSend = useCallback(async () => {
     if (!input.trim() || isLoading) return;
 
@@ -265,6 +282,7 @@ export function useZedChat({
     setInput('');
     setIsLoading(true);
     setPendingApproval(null);
+    setAgentStatus('working');
 
     setMessages((prev) => [
       ...prev,
@@ -306,6 +324,23 @@ export function useZedChat({
           }))
         : data.tool_results;
       recordZedInteraction(userMessage, flaggedTools, data.text || '');
+      for (const tool of flaggedTools || []) {
+        const memoryTools = [
+          'create_plan',
+          'execute_plan',
+          'launch_agent_session',
+          'create_task',
+          'create_milestone',
+        ];
+        if (memoryTools.includes(tool.tool)) {
+          recordZedMemoryAction({
+            type: 'agent_action',
+            tool: tool.tool,
+            input: tool.input,
+            result: tool.result,
+          });
+        }
+      }
       if (fastPath) {
         zedClientDebug('fast_path', { intent: data.meta?.intent });
       }
@@ -341,8 +376,9 @@ export function useZedChat({
       setIsLoading(false);
       setAbortController(null);
       setCurrentStep(null);
+      setAgentStatus('idle');
     }
-  }, [input, isLoading, sendToApi]);
+  }, [input, isLoading, sendToApi, setAgentStatus]);
 
   const handleApproveCommand = useCallback(async () => {
     if (!pendingApproval || isLoading) return;
@@ -469,6 +505,7 @@ export function useZedChat({
 
       setIsLoading(true);
       setPendingApproval(null);
+      setAgentStatus('working');
       setMessages((prev) => [
         ...prev,
         { role: 'user', content: text, timestamp: new Date().toISOString(), source: 'voice' },
@@ -527,9 +564,10 @@ export function useZedChat({
         setIsLoading(false);
         setAbortController(null);
         setCurrentStep(null);
+        setAgentStatus('idle');
       }
     },
-    [isLoading, processToolResults, sendToApi]
+    [isLoading, processToolResults, sendToApi, setAgentStatus]
   );
 
   const voiceSettings = readVoiceSettings();
@@ -595,6 +633,18 @@ export function useZedChat({
   }, [messages, sessionKey]);
 
   useEffect(() => {
+    setZedPreference('activityExpanded', activityExpanded);
+  }, [activityExpanded]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateMetrics = () => setMetrics(getMetricsSummary());
+    updateMetrics();
+    const id = setInterval(updateMetrics, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     if (lastDispatchedTypeRef.current === lastToolType) return;
     lastDispatchedTypeRef.current = lastToolType;
     dispatchZedAuraToolType(lastToolType);
@@ -636,5 +686,7 @@ export function useZedChat({
     auditTrail,
     sendFromVoice,
     voiceSettings,
+    metrics,
+    agentStatus,
   };
 }
