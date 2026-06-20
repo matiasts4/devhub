@@ -50,6 +50,7 @@ function installDom() {
   global.document = dom.window.document;
   global.navigator = dom.window.navigator;
   global.CustomEvent = dom.window.CustomEvent;
+  global.IS_REACT_ACT_ENVIRONMENT = true;
   global.ResizeObserver = class ResizeObserver {
     observe() {}
     unobserve() {}
@@ -121,7 +122,7 @@ describe('ZedAmbientOverlay', () => {
 
     expect(container.textContent).toMatch(/Zed/i);
     expect(container.querySelector('[data-testid="zed-ambient-aura"]')).not.toBeNull();
-    root.unmount();
+    act(() => root.unmount());
   });
 
   test('status line auto-dismisses after a few seconds', () => {
@@ -157,6 +158,8 @@ describe('ZedAmbientOverlay', () => {
 
     act(() => {
       root.unmount();
+    });
+    act(() => {
       jest.runOnlyPendingTimers();
     });
   });
@@ -180,9 +183,7 @@ describe('ZedAmbientOverlay', () => {
     expect(container.textContent).toContain('Listo. Abrí GitHub en pizarra.');
     expect(container.querySelector('textarea')).toBeNull();
 
-    act(() => {
-      root.unmount();
-    });
+    act(() => root.unmount());
   });
 
   test('renders input when overlay is open', () => {
@@ -198,7 +199,7 @@ describe('ZedAmbientOverlay', () => {
     expect(container.textContent).toContain('Probá');
     expect(container.textContent).not.toContain('Ctrl+Shift+Z');
     expect(container.querySelectorAll('button').length).toBeLessThan(5);
-    root.unmount();
+    act(() => root.unmount());
   });
 
   test('registers avoid rect for the pill when visible', () => {
@@ -233,6 +234,6 @@ describe('ZedAmbientOverlay', () => {
 
     window.Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     window.removeEventListener('devhub:register-avoid-rect', handler);
-    root.unmount();
+    act(() => root.unmount());
   });
 });

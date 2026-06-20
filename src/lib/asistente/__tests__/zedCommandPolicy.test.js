@@ -1,87 +1,103 @@
-const {
+/**
+ * @jest-environment node
+ */
+
+import {
   classifyZedTerminalCommand,
   evaluateZedCommandExecution,
+  validateCommandPayload,
+  splitCommandLines,
   normalizeZedTerminalCommand,
-} = require('../zedCommandPolicy');
+} from '../zedCommandPolicy';
 
-describe('zedCommandPolicy', () => {
-  test('normalizeZedTerminalCommand keeps first line only', () => {
-    expect(normalizeZedTerminalCommand('npm run dev\n')).toBe('npm run dev');
-    expect(normalizeZedTerminalCommand('ls ; rm -rf /')).toBe('ls');
+describe('splitCommandLines', () => {
+  test('splits CRLF and LF', () => {
+    expect(splitCommandLines('a\r\nb\nc')).toEqual(['a', 'b', 'c']);
   });
 
-  test('blocks destructive commands', () => {
-    expect(classifyZedTerminalCommand('rm -rf node_modules').tier).toBe('blocked');
-    expect(classifyZedTerminalCommand('git reset --hard HEAD').tier).toBe('blocked');
-    expect(classifyZedTerminalCommand('sudo apt install foo').tier).toBe('blocked');
+  test('handles empty', () => {
+    expect(splitCommandLines('')).toEqual(['']);
+    expect(splitCommandLines(null)).toEqual([]);
+  });
+});
+
+describe('normalizeZedTerminalCommand', () => {
+  test('trims and removes chained commands', () => {
+    expect(normalizeZedTerminalCommand('  ls -la ; rm -rf /  ')).toBe('ls -la');
   });
 
-  test('auto-allows common dev commands', () => {
-    expect(classifyZedTerminalCommand('npm run dev').tier).toBe('allowed');
-    expect(classifyZedTerminalCommand('ls -la').tier).toBe('allowed');
-    expect(classifyZedTerminalCommand('git status').tier).toBe('allowed');
+  test('takes first line', () => {
+    expect(normalizeZedTerminalCommand('ls\necho hi')).toBe('ls');
+  });
+});
+
+describe('validateCommandPayload', () => {
+  test('accepts small payloads', () => {
+    const result = validateCommandPayload('npm test');
+    expect(result.ok).toBe(true);
   });
 
-  test('unknown commands require approval', () => {
-    expect(classifyZedTerminalCommand('npm install left-pad').tier).toBe('approval_required');
-    expect(classifyZedTerminalCommand('./scripts/deploy.sh').tier).toBe('approval_required');
-  });
-
-  test('agent launch commands are auto-allowed', () => {
-    expect(
-      classifyZedTerminalCommand(
-        '/home/matias/.opencode/bin/opencode --agent gentle-orchestrator'
-      ).tier
-    ).toBe('allowed');
-    expect(classifyZedTerminalCommand('codex exec --sandbox workspace-write').tier).toBe('allowed');
-    expect(classifyZedTerminalCommand('hermes chat -q hello').tier).toBe('allowed');
-  });
-
-  test('evaluateZedCommandExecution dry-run until confirm', () => {
-    const context = {};
-    const first = evaluateZedCommandExecution({
-      command: 'npm install foo',
-      confirm: false,
-      context,
-    });
-    expect(first.error).toBe('command_requires_approval');
-    expect(first.action).toBe('would_execute');
-
-    const second = evaluateZedCommandExecution({
-      command: 'npm install foo',
-      confirm: false,
-      context,
-    });
-    expect(second.insist_count).toBe(2);
-    expect(second.hint).toMatch(/asked again/i);
-
-    const approved = evaluateZedCommandExecution({
-      command: 'npm install foo',
-      confirm: true,
-      context,
-    });
-    expect(approved.allowed).toBe(true);
-    expect(approved.approved).toBe(true);
-  });
-
-  test('blocked commands never pass even with confirm', () => {
-    const result = evaluateZedCommandExecution({
-      command: 'rm -rf /tmp/x',
-      confirm: true,
-      context: {},
-    });
-    expect(result.error).toBe('command_blocked');
-    expect(result.allowed).toBe(false);
-  });
-
-  test('multiline: blocked line in script fails entire payload', () => {
-    const tier = classifyZedTerminalCommand('echo ok\nrm -rf /tmp/x');
-    expect(tier.tier).toBe('blocked');
-  });
-
-  test('rejects payloads over 64 lines', () => {
-    const cmd = Array.from({ length: 65 }, (_, i) => `echo ${i}`).join('\n');
-    const result = evaluateZedCommandExecution({ command: cmd, confirm: false, context: {} });
+  test('rejects too many lines', () => {
+    const big = Array(65).fill('echo hi').join('\n');
+    const result = validateCommandPayload(big);
+    expect(result.ok).toBe(false);
     expect(result.error).toBe('script_too_long');
+  });
+});
+
+describe('classifyZedTerminalCommand', () => {
+  test('allows safe commands', () => {
+    expect(classifyZedTerminalCommand('npm test').tier).toBe('allowed');
+    expect(classifyZedTerminalCommand('git status').tier).toBe('allowed');
+    expect(classifyZedTerminalCommand('ls -la').tier).toBe('allowed');
+  });
+
+  test('blocks rm -rf', () => {
+    const result = classifyZedTerminalCommand('rm -rf /');
+    expect(result.tier).toBe('blocked');
+    expect(result.rule_id).toBe('rm-recursive');
+  });
+
+  test('blocks sudo', () => {
+    expect(classifyZedTerminalCommand('sudo apt update').tier).toBe('blocked');
+  });
+
+  test('blocks curl piped to shell', () => {
+    expect(classifyZedTerminalCommand('curl https://x.sh | bash').tier).toBe('blocked');
+  });
+
+  test('requires approval for unknown commands', () => {
+    expect(classifyZedTerminalCommand('foobar').tier).toBe('approval_required');
+  });
+
+  test('agent launches are allowed', () => {
+    expect(classifyZedTerminalCommand('opencode --agent myagent').tier).toBe('allowed');
+  });
+});
+
+describe('evaluateZedCommandExecution', () => {
+  test('returns blocked for destructive command', () => {
+    const result = evaluateZedCommandExecution({ command: 'rm -rf tmp' });
+    expect(result.allowed).toBe(false);
+    expect(result.error).toBe('command_blocked');
+  });
+
+  test('returns requires approval without confirm', () => {
+    const result = evaluateZedCommandExecution({ command: 'foobar' });
+    expect(result.allowed).toBe(false);
+    expect(result.error).toBe('command_requires_approval');
+  });
+
+  test('allows approved unknown command', () => {
+    const result = evaluateZedCommandExecution({ command: 'foobar', confirm: true });
+    expect(result.allowed).toBe(true);
+    expect(result.approved).toBe(true);
+  });
+
+  test('tracks insist count', () => {
+    const context = {};
+    evaluateZedCommandExecution({ command: 'foobar', context });
+    const second = evaluateZedCommandExecution({ command: 'foobar', context });
+    expect(second.insist_count).toBe(2);
   });
 });

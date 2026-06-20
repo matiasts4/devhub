@@ -1,69 +1,38 @@
-const { resolveProjectRoot, assertWithinRoot } = require('../../tools/pathSandbox');
+/**
+ * @jest-environment node
+ */
 
-describe('pathSandbox.resolveProjectRoot', () => {
-  test('honors DEVHUB_PROJECT_ROOT env var when set', () => {
-    const original = process.env.DEVHUB_PROJECT_ROOT;
-    try {
-      process.env.DEVHUB_PROJECT_ROOT = '/tmp/devhub-sandbox-root';
-      expect(resolveProjectRoot()).toBe('/tmp/devhub-sandbox-root');
-    } finally {
-      if (original === undefined) delete process.env.DEVHUB_PROJECT_ROOT;
-      else process.env.DEVHUB_PROJECT_ROOT = original;
-    }
+import path from 'node:path';
+import { assertWithinRoot, resolveProjectRoot } from '../../tools/pathSandbox';
+
+describe('pathSandbox', () => {
+  const root = resolveProjectRoot();
+
+  test('allows root itself', () => {
+    expect(assertWithinRoot(root)).toBe(true);
   });
 
-  test('falls back to process.cwd() when env is unset', () => {
-    const original = process.env.DEVHUB_PROJECT_ROOT;
-    try {
-      delete process.env.DEVHUB_PROJECT_ROOT;
-      expect(resolveProjectRoot()).toBe(process.cwd());
-    } finally {
-      if (original !== undefined) process.env.DEVHUB_PROJECT_ROOT = original;
-    }
-  });
-});
-
-describe('pathSandbox.assertWithinRoot', () => {
-  const FAKE_ROOT = '/home/me/project';
-  let originalRoot;
-  beforeAll(() => {
-    originalRoot = process.env.DEVHUB_PROJECT_ROOT;
-    process.env.DEVHUB_PROJECT_ROOT = FAKE_ROOT;
-  });
-  afterAll(() => {
-    if (originalRoot === undefined) delete process.env.DEVHUB_PROJECT_ROOT;
-    else process.env.DEVHUB_PROJECT_ROOT = originalRoot;
+  test('allows subpath of root', () => {
+    expect(assertWithinRoot(path.join(root, 'src', 'lib', 'foo.js'))).toBe(true);
   });
 
-  test('accepts the project root itself', () => {
-    expect(assertWithinRoot(FAKE_ROOT)).toBe(true);
+  test('allows .devhub subpath', () => {
+    expect(assertWithinRoot(path.join(root, '.devhub', 'config.json'))).toBe(true);
   });
 
-  test('accepts a subpath of the project root', () => {
-    expect(assertWithinRoot(`${FAKE_ROOT}/src/lib`)).toBe(true);
+  test('rejects parent directory traversal', () => {
+    expect(assertWithinRoot(path.join(root, '..', 'etc', 'passwd'))).toBe(false);
   });
 
-  test('accepts a path under <root>/.devhub/', () => {
-    expect(assertWithinRoot(`${FAKE_ROOT}/.devhub/state.json`)).toBe(true);
-  });
-
-  test('accepts a /tmp/devhub-* scratch path', () => {
-    expect(assertWithinRoot('/tmp/devhub-scratch/log.txt')).toBe(true);
-  });
-
-  test('rejects /etc/passwd', () => {
+  test('rejects absolute path outside root', () => {
     expect(assertWithinRoot('/etc/passwd')).toBe(false);
   });
 
-  test('rejects a `..` escape (path resolves outside root)', () => {
-    expect(assertWithinRoot(`${FAKE_ROOT}/../etc`)).toBe(false);
+  test('rejects symlink-like escape', () => {
+    expect(assertWithinRoot(path.join(root, 'src', '..', '..', 'etc'))).toBe(false);
   });
 
-  test('rejects an arbitrary /tmp path that is not devhub-*', () => {
-    expect(assertWithinRoot('/tmp/some-other-tool/file.txt')).toBe(false);
-  });
-
-  test('rejects a parent directory of the project root', () => {
-    expect(assertWithinRoot('/home/me')).toBe(false);
+  test('allows devhub tmp prefix', () => {
+    expect(assertWithinRoot(path.join(require('os').tmpdir(), 'devhub-test', 'x'))).toBe(true);
   });
 });

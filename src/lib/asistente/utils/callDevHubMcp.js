@@ -98,7 +98,14 @@ export async function callDevHubMcp(toolName, args = {}) {
         return reject(new Error(`DevHub MCP error: ${JSON.stringify(res.error)}`));
       }
 
-      const text = res.result?.content?.[0]?.text;
+      const result = res.result || {};
+      const content = result.content?.[0];
+      const text = content?.text;
+
+      if (result.isError || content?.isError) {
+        return reject(new Error(text || 'DevHub MCP error'));
+      }
+
       if (!text) {
         return resolve(res.result);
       }

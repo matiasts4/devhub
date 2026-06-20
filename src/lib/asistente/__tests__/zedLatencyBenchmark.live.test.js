@@ -2,8 +2,9 @@
 
 /**
  * Local router latency benchmark (no live LLM).
- * Run: ZED_BENCHMARK=1 pnpm benchmark:zed-models
+ * Run: ZED_BENCHMARK=1 node ./node_modules/jest/bin/jest.js src/lib/asistente/__tests__/zedLatencyBenchmark.live.test.js --runInBand
  */
+const { performance } = require('perf_hooks');
 const { resolveZedIntent } = require('../zedIntentRouter');
 
 const CTX = {
@@ -21,15 +22,31 @@ const PHRASES = [
   'ejecuta npm test',
   'cierra la terminal',
   'explicame useEffect',
+  'crea una tarea para refactorizar el router',
+  'delegá las tareas 14 y 15 a OpenCode',
 ];
 
-function median(nums) {
-  const sorted = [...nums].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+function percentile(sorted, p) {
+  const index = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, index)];
 }
 
-const runs = Number(process.env.ZED_BENCHMARK_RUNS || 1);
+function stats(nums) {
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return {
+    n: nums.length,
+    median,
+    p50: percentile(sorted, 50),
+    p95: percentile(sorted, 95),
+    p99: percentile(sorted, 99),
+    max: sorted[sorted.length - 1],
+  };
+}
+
+const runs = Number(process.env.ZED_BENCHMARK_RUNS || 1000);
+const medianThresholdMs = Number(process.env.ZED_BENCHMARK_THRESHOLD_MS || 5);
 
 describe('zedLatencyBenchmark (local router)', () => {
   if (!process.env.ZED_BENCHMARK) {
@@ -37,7 +54,7 @@ describe('zedLatencyBenchmark (local router)', () => {
     return;
   }
 
-  test('resolveZedIntent median < 5ms per phrase', () => {
+  test(`resolveZedIntent median < ${medianThresholdMs}ms per phrase`, () => {
     const samples = [];
 
     for (let r = 0; r < runs; r += 1) {
@@ -48,13 +65,12 @@ describe('zedLatencyBenchmark (local router)', () => {
       }
     }
 
-    const med = median(samples);
-    const max = Math.max(...samples);
+    const s = stats(samples);
 
     console.log(
-      `zed router latency: median=${med.toFixed(3)}ms max=${max.toFixed(3)}ms n=${samples.length}`
+      `zed router latency: median=${s.median.toFixed(3)}ms p95=${s.p95.toFixed(3)}ms p99=${s.p99.toFixed(3)}ms max=${s.max.toFixed(3)}ms n=${s.n}`
     );
 
-    expect(med).toBeLessThan(5);
+    expect(s.median).toBeLessThan(medianThresholdMs);
   });
 });
