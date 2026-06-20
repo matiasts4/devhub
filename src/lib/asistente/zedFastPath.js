@@ -219,6 +219,10 @@ function isOpenTerminalIntent(lower) {
 
 const SETTINGS_NOUN_RE = /\b(configuracion|configuración|ajustes|preferencias|settings|opciones)\b/;
 const PIZARRA_NOUN_RE = /\b(pizarra|pizarras|lienzo|tablero|draw|canvas)\b/;
+const TASK_NOUN_RE = /\b(tarea|tareas|task|tasks|issue|issues)\b/;
+const MILESTONE_NOUN_RE = /\b(hito|hitos|milestone|milestones|milla)\b/;
+const PROJECT_NOUN_RE = /\b(proyecto|proyectos|project|projects)\b/;
+const QUEUE_NOUN_RE = /\b(cola|queue|ejecucion|ejecución|fila)\b/;
 
 function isOpenSettingsIntent(lower) {
   return OPEN_VERBS.test(lower) && SETTINGS_NOUN_RE.test(lower);
@@ -234,6 +238,75 @@ function isTogglePizarraIntent(lower) {
   return /\b(muestra|mostrar|oculta|ocultar|ver|esconde|esconder|toggle|alterna|alternar)\b/.test(
     lower
   );
+}
+
+function isListProjectsIntent(lower) {
+  return (
+    /\b(cuales|cuáles|cuant|cuánt|que|qué|list|mostr|decime|dime|ver)\b/.test(lower) &&
+    PROJECT_NOUN_RE.test(lower)
+  );
+}
+
+function isListTasksIntent(lower) {
+  if (OPEN_VERBS.test(lower) || CLOSE_VERBS.test(lower)) return false;
+  return (
+    /\b(cuales|cuáles|cuant|cuánt|que|qué|list|mostr|decime|dime|ver|tengo|tenes|tienes)\b/.test(
+      lower
+    ) && TASK_NOUN_RE.test(lower)
+  );
+}
+
+function isGetExecutionQueueIntent(lower) {
+  return (
+    /\b(cuál|cual|que|qué|ver|muestra|mostr|decime|dime|list|tengo|tenes|tienes)/.test(lower) &&
+    QUEUE_NOUN_RE.test(lower)
+  );
+}
+
+function isCreateTaskIntent(lower) {
+  return (
+    /\b(crea|crear|nueva|nuevo|agrega|agregar|añade|añadir|make|create|add)\b/.test(lower) &&
+    TASK_NOUN_RE.test(lower)
+  );
+}
+
+function isCreateMilestoneIntent(lower) {
+  return (
+    /\b(crea|crear|nueva|nuevo|agrega|agregar|añade|añadir|make|create|add)\b/.test(lower) &&
+    MILESTONE_NOUN_RE.test(lower)
+  );
+}
+
+function extractTaskTitleFromMessage(message) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return null;
+
+  const patterns = [
+    /\b(?:crea|crear|nueva|nuevo|agrega|agregar|añade|añadir)\s+(?:una|un)?\s*(?:tarea|task)\s+(?:para|que|de|llamad[ao]|denominad[ao])\s*["']?(.+?)["']?(?:\s+(?:en|con|para|de|prioridad|priority|y))?$/i,
+    /\b(?:crea|crear|nueva|nuevo|agrega|agregar|añade|añadir)\s+(?:una|un)?\s*(?:tarea|task)\s+["']?(.+?)["']?(?:\s+(?:en|con|para|de|prioridad|priority|y))?$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return null;
+}
+
+function extractMilestoneTitleFromMessage(message) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return null;
+
+  const patterns = [
+    /\b(?:crea|crear|nueva|nuevo|agrega|agregar|añade|añadir)\s+(?:un|una)?\s*(?:hito|milestone)\s+(?:para|que|de|llamad[ao]|denominad[ao])\s*["']?(.+?)["']?(?:\s+(?:en|con|para|de|y))?$/i,
+    /\b(?:crea|crear|nueva|nuevo|agrega|agregar|añade|añadir)\s+(?:un|una)?\s*(?:hito|milestone)\s+["']?(.+?)["']?(?:\s+(?:en|con|para|de|y))?$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return null;
 }
 
 /**
@@ -422,6 +495,51 @@ export function resolveZedFastPathIntent(message, context = {}) {
       0.96,
       'list_terminals_pattern'
     );
+  }
+
+  // --- DevHub MCP read actions ---
+  if (isListProjectsIntent(lower)) {
+    return hit([{ tool: 'list_projects', input: {} }], 'list_projects', 0.94, 'list_projects');
+  }
+  if (isListTasksIntent(lower)) {
+    return hit(
+      [{ tool: 'list_tasks', input: { status: 'all' } }],
+      'list_tasks',
+      0.94,
+      'list_tasks'
+    );
+  }
+  if (isGetExecutionQueueIntent(lower)) {
+    return hit(
+      [{ tool: 'get_execution_queue', input: {} }],
+      'get_execution_queue',
+      0.94,
+      'get_execution_queue'
+    );
+  }
+
+  // --- DevHub MCP write actions (simple templates) ---
+  if (isCreateTaskIntent(lower)) {
+    const title = extractTaskTitleFromMessage(text);
+    if (title) {
+      return hit(
+        [{ tool: 'create_task', input: { title, priority: 'medium' } }],
+        'create_task',
+        0.92,
+        'create_task'
+      );
+    }
+  }
+  if (isCreateMilestoneIntent(lower)) {
+    const title = extractMilestoneTitleFromMessage(text);
+    if (title) {
+      return hit(
+        [{ tool: 'create_milestone', input: { title } }],
+        'create_milestone',
+        0.92,
+        'create_milestone'
+      );
+    }
   }
 
   return null;

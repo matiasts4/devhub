@@ -23,6 +23,17 @@ import { browserTool, closeUrlTool } from '@/lib/asistente/tools/browser';
 import { fileTool, reviewLogFileTool } from '@/lib/asistente/tools/files';
 import { swarmTool } from '@/lib/asistente/tools/swarm';
 import { workspaceActionTool } from '@/lib/asistente/tools/workspace';
+import {
+  listProjectsTool,
+  getProjectTool,
+  getProjectContextTool,
+  listTasksTool,
+  getExecutionQueueTool,
+  createTaskTool,
+  bulkCreateTasksTool,
+  createMilestoneTool,
+  bulkCreateMilestonesTool,
+} from '@/lib/asistente/tools/devhubMcp';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
@@ -127,6 +138,15 @@ function buildRegistry() {
   registry.register(reviewLogFileTool);
   registry.register(swarmTool);
   registry.register(workspaceActionTool);
+  registry.register(listProjectsTool);
+  registry.register(getProjectTool);
+  registry.register(getProjectContextTool);
+  registry.register(listTasksTool);
+  registry.register(getExecutionQueueTool);
+  registry.register(createTaskTool);
+  registry.register(bulkCreateTasksTool);
+  registry.register(createMilestoneTool);
+  registry.register(bulkCreateMilestonesTool);
   return registry;
 }
 

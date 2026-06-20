@@ -369,4 +369,46 @@ describe('zedFastPath intent cache', () => {
       steps: [{ tool: 'workspace_action', input: { action: 'toggle_pizarra' } }],
     });
   });
+
+  test('devhub_mcp: list tasks', () => {
+    const hit = resolveZedFastPathIntent('¿Qué tareas tengo?', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'list_tasks',
+      steps: [{ tool: 'list_tasks', input: { status: 'all' } }],
+    });
+  });
+
+  test('devhub_mcp: get execution queue', () => {
+    const hit = resolveZedFastPathIntent('muéstrame la cola de ejecución', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'get_execution_queue',
+      steps: [{ tool: 'get_execution_queue', input: {} }],
+    });
+  });
+
+  test('devhub_mcp: create task', () => {
+    const hit = resolveZedFastPathIntent('crea una tarea para refactorizar el router', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'create_task',
+      steps: [
+        { tool: 'create_task', input: { title: 'refactorizar el router', priority: 'medium' } },
+      ],
+    });
+  });
+
+  test('devhub_mcp: create milestone', () => {
+    const hit = resolveZedFastPathIntent('crea un hito llamado Zed v2', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'create_milestone',
+      steps: [{ tool: 'create_milestone', input: { title: 'Zed v2' } }],
+    });
+  });
 });
