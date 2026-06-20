@@ -47,10 +47,15 @@ jest.mock('@/components/ui/date-picker', () => ({
   },
 }));
 
-jest.mock('sonner', () => ({
-  toast: {
+jest.mock('sileo', () => ({
+  sileo: {
     success: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
+    warning: jest.fn(),
+    promise: jest.fn((promise) => promise),
+    dismiss: jest.fn(),
+    clear: jest.fn(),
   },
 }));
 

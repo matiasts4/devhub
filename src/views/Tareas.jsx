@@ -24,7 +24,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import Select from 'react-select';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
@@ -406,7 +406,7 @@ function TaskModal({
         .update({ ...form, milestone_id: form.milestone_id || null })
         .eq('id', existingTask.id);
       if (error) {
-        toast.error('Error al actualizar');
+        sileo.error({ title: 'Error al actualizar' });
         setSaving(false);
         return;
       }
@@ -423,7 +423,7 @@ function TaskModal({
         .select()
         .single();
       if (error) {
-        toast.error('Error al crear tarea');
+        sileo.error({ title: 'Error al crear tarea' });
         setSaving(false);
         return;
       }
@@ -444,7 +444,7 @@ function TaskModal({
     }
 
     setSaving(false);
-    toast.success(existingTask ? 'Tarea actualizada' : 'Tarea creada');
+    sileo.success({ title: existingTask ? 'Tarea actualizada' : 'Tarea creada' });
     onSaved();
     onClose();
   }
@@ -732,7 +732,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
   const handleCopy = (task) => {
     const text = `[AGENT] TAREA: ${task.title}\nMILESTONE: ${task.m_title || 'N/A'}\nSCORE: ${task.score.toFixed(1)}\n\nDESCRIPCIÓN:\n${task.description || ''}\n\nEjecuta esta tarea siguiendo el System Prompt del Worker. Asegúrate de nunca hacer push a main.`;
     navigator.clipboard.writeText(text);
-    toast.success('Prompt de Agente Copiado');
+    sileo.success({ title: 'Prompt de Agente Copiado' });
     setCopiedTask(task.id);
     setTimeout(() => setCopiedTask(null), 2000);
   };
@@ -776,7 +776,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
           },
         })
       );
-      toast.success(`Enviando a terminal para: ${task.title}`);
+      sileo.success({ title: `Enviando a terminal para: ${task.title}` });
     }, 150);
   };
 
@@ -995,13 +995,13 @@ export default function Tareas() {
       prev.map((t) => (t.id === taskId ? { ...t, status: newStatus, completed_at } : t))
     );
     const col = COLUMNS.find((c) => c.id === newStatus);
-    toast.success('Tarea movida', { description: `→ ${col?.label}` });
+    sileo.success({ title: 'Tarea movida', description: `→ ${col?.label}` });
   }
 
   async function deleteTask(taskId) {
     await db.from('tasks').delete().eq('id', taskId);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    toast.success('Tarea eliminada');
+    sileo.success({ title: 'Tarea eliminada' });
   }
 
   const statusMap = Object.fromEntries(tasks.map((t) => [t.id, t.status]));

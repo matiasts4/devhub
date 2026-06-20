@@ -22,7 +22,7 @@ import {
   Info,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   getWorkspacePageContentStyle,
@@ -70,10 +70,10 @@ function AddConnectionModal({ onClose, onCreated }) {
     });
     setSaving(false);
     if (error) {
-      toast.error(error.message || 'Error al crear conexión');
+      sileo.error({ title: error.message || 'Error al crear conexión' });
       return;
     }
-    toast.success('Conexión creada');
+    sileo.success({ title: 'Conexión creada' });
     onCreated();
     onClose();
   }
@@ -237,7 +237,7 @@ export default function Conexiones() {
       .select('id, name, type, endpoint_url, is_active, last_sync, created_at')
       .order('created_at', { ascending: false });
     if (error) {
-      toast.error('No se pudieron cargar las conexiones MCP');
+      sileo.error({ title: 'No se pudieron cargar las conexiones MCP' });
       setConnections([]);
     } else {
       setConnections(data || []);
@@ -255,14 +255,14 @@ export default function Conexiones() {
     setConnections((prev) =>
       prev.map((c) => (c.id === conn.id ? { ...c, is_active: !c.is_active } : c))
     );
-    toast.success(conn.is_active ? 'Conexión desactivada' : 'Conexión activada');
+    sileo.success({ title: conn.is_active ? 'Conexión desactivada' : 'Conexión activada' });
     setToggling(null);
   }
 
   async function deleteConnection(id, name) {
     await db.from('mcp_connections').delete().eq('id', id);
     setConnections((prev) => prev.filter((c) => c.id !== id));
-    toast.success(`"${name}" eliminada`);
+    sileo.success({ title: `"${name}" eliminada` });
   }
 
   const active = connections.filter((c) => c.is_active).length;

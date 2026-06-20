@@ -10,7 +10,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { Toaster } from 'sileo';
 import { AnimatePresence, motion } from 'framer-motion';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
@@ -380,14 +380,16 @@ function App() {
       <MotionProvider>
         <HashRouter>
           <Toaster
-            theme="dark"
             position="bottom-right"
-            richColors
-            toastOptions={{
-              style: {
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text-primary)',
+            offset={20}
+            options={{
+              fill: '#0d1117',
+              duration: 6000,
+              styles: {
+                title: 'text-white!',
+                description: 'text-white/70!',
+                badge: 'bg-white/10!',
+                button: 'bg-white/10! text-white!',
               },
             }}
           />

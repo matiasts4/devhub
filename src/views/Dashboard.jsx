@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { Plus } from 'lucide-react';
+import { sileo } from 'sileo';
 import { createClient } from '@/lib/db/localClient';
 import { UiHeader } from '@/components/ui/system';
 import MetricCard from '../components/MetricCard';
@@ -91,54 +91,47 @@ export default function Dashboard() {
           .update({ status: 'pending', stale_alert: false, priority: 'medium' })
           .eq('id', t.id);
       }
-      toast.success('Tareas estancadas reseteadas a Pendiente');
+      sileo.success({ title: 'Tareas estancadas reseteadas a Pendiente' });
     };
 
     const escalateTasks = async () => {
       for (const t of tasks) {
         await db.from('tasks').update({ priority: 'critical', stale_alert: false }).eq('id', t.id);
       }
-      toast.success('Prioridad escalada a crítica');
+      sileo.success({ title: 'Prioridad escalada a crítica' });
     };
 
-    toast(
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-warning">
-          <AlertCircle className="w-5 h-5" />{' '}
-          <h4 className="font-semibold text-sm">Tareas Estancadas Detectadas</h4>
+    const toastId = sileo.warning({
+      title: 'Tareas Estancadas Detectadas',
+      duration: 15000,
+      description: (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-text-muted">
+            Hay {tasks.length} tareas en progreso por más de 48h en el proyecto.
+          </p>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => {
+                sileo.dismiss(toastId);
+                resetTasks();
+              }}
+              className="px-2 py-1 text-xs bg-surface-elevated hover:bg-surface-active rounded border border-borders-subtle"
+            >
+              Resetear a Pendiente
+            </button>
+            <button
+              onClick={() => {
+                sileo.dismiss(toastId);
+                escalateTasks();
+              }}
+              className="px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded border border-red-500/30"
+            >
+              Escalar Prioridad
+            </button>
+          </div>
         </div>
-        <p className="text-xs text-text-muted">
-          Hay {tasks.length} tareas en progreso por más de 48h en el proyecto.
-        </p>
-        <div className="flex gap-2 mt-2">
-          <button
-            onClick={() => {
-              toast.dismiss();
-              resetTasks();
-            }}
-            className="px-2 py-1 text-xs bg-surface-elevated hover:bg-surface-active rounded border border-borders-subtle"
-          >
-            Resetear a Pendiente
-          </button>
-          <button
-            onClick={() => {
-              toast.dismiss();
-              escalateTasks();
-            }}
-            className="px-2 py-1 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded border border-red-500/30"
-          >
-            Escalar Prioridad
-          </button>
-        </div>
-      </div>,
-      {
-        duration: 15000,
-        unstyled: true,
-        classNames: {
-          toast: 'bg-surface-card border border-borders-strong p-4 rounded-xl shadow-xl w-full',
-        },
-      }
-    );
+      ),
+    });
   };
 
   useEffect(() => {
@@ -185,7 +178,7 @@ export default function Dashboard() {
         <UiHeader.Title>{project?.name || 'E-commerce V2'}</UiHeader.Title>
         <UiHeader.Actions>
           <button
-            onClick={() => toast.success('Nueva tarea creada por IA')}
+            onClick={() => sileo.success({ title: 'Nueva tarea creada por IA' })}
             className="flex items-center gap-2 bg-accent-primary hover:bg-app-accent text-[#0d1117] font-semibold px-4 py-2 rounded-lg text-xs transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" strokeWidth={2.5} /> Nueva Tarea IA

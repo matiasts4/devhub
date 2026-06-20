@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import { createPortal } from 'react-dom';
 
 const getRedirectOrigin = () => {
@@ -94,7 +94,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
         }
-        toast.error('El tiempo de espera para el inicio de sesión ha expirado.');
+        sileo.error({ title: 'El tiempo de espera para el inicio de sesión ha expirado.' });
         return;
       }
 
@@ -111,9 +111,9 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
             const db = createClient();
             const { error } = await db.auth.setSession(data.session);
             if (error) {
-              toast.error('Error al iniciar sesión: ' + error.message);
+              sileo.error({ title: 'Error al iniciar sesión: ' + error.message });
             } else {
-              toast.success('¡Sesión iniciada correctamente desde el navegador!');
+              sileo.success({ title: '¡Sesión iniciada correctamente desde el navegador!' });
               setShowAuthModal(false);
               setIsOtpSent(false);
               setEmail('');
@@ -131,7 +131,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (!email) {
-      toast.error('Por favor ingresa tu correo electrónico');
+      sileo.error({ title: 'Por favor ingresa tu correo electrónico' });
       return;
     }
     setLoading(true);
@@ -151,15 +151,15 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
         },
       });
       if (error) {
-        toast.error('Error: ' + error.message);
+        sileo.error({ title: 'Error: ' + error.message });
       } else {
-        toast.success('¡Instrucciones enviadas! Revisa tu correo electrónico.');
+        sileo.success({ title: '¡Instrucciones enviadas! Revisa tu correo electrónico.' });
         setIsOtpSent(true);
         startPollingHandshake(requestId);
       }
     } catch (err) {
       console.error(err);
-      toast.error('Ocurrió un error inesperado');
+      sileo.error({ title: 'Ocurrió un error inesperado' });
     } finally {
       setLoading(false);
     }
@@ -168,7 +168,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
   const handleOtpVerify = async (e) => {
     e.preventDefault();
     if (!otpToken) {
-      toast.error('Por favor ingresa el código de verificación');
+      sileo.error({ title: 'Por favor ingresa el código de verificación' });
       return;
     }
     if (pollingIntervalRef.current) {
@@ -184,13 +184,13 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
         type: authMode === 'signup' ? 'signup' : 'magiclink',
       });
       if (error) {
-        toast.error('Código incorrecto o expirado: ' + error.message);
+        sileo.error({ title: 'Código incorrecto o expirado: ' + error.message });
         // Resume polling if we have an active requestId
         if (authRequestId) {
           startPollingHandshake(authRequestId);
         }
       } else {
-        toast.success('¡Sesión iniciada correctamente!');
+        sileo.success({ title: '¡Sesión iniciada correctamente!' });
         setShowAuthModal(false);
         setIsOtpSent(false);
         setOtpToken('');
@@ -199,7 +199,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
       }
     } catch (err) {
       console.error(err);
-      toast.error('Error al verificar el código');
+      sileo.error({ title: 'Error al verificar el código' });
       if (authRequestId) {
         startPollingHandshake(authRequestId);
       }

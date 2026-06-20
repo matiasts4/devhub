@@ -23,10 +23,15 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
-jest.mock('sonner', () => ({
-  toast: {
+jest.mock('sileo', () => ({
+  sileo: {
     success: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
+    warning: jest.fn(),
+    promise: jest.fn((promise) => promise),
+    dismiss: jest.fn(),
+    clear: jest.fn(),
   },
 }));
 

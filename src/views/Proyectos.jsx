@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FolderKanban, Plus, Star, GitBranch, Clock, ExternalLink } from 'lucide-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import { UiHeader } from '@/components/ui/system';
 
 const proyectos = [
@@ -96,7 +96,8 @@ export default function Proyectos() {
           <button
             data-testid="nuevo-proyecto-btn"
             onClick={() =>
-              toast.success('Nuevo proyecto iniciado', {
+              sileo.success({
+                title: 'Nuevo proyecto iniciado',
                 description: 'NEXUS-7 generará el scaffolding automáticamente.',
               })
             }

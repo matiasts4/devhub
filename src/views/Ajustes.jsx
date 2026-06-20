@@ -29,7 +29,7 @@ import {
   Power,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import {
   ACCENT_OPTIONS,
   getStoredAccent,
@@ -487,7 +487,7 @@ export default function Ajustes() {
       });
       if (selected) setLocalPath(String(selected));
     } catch {
-      toast.error('No se pudo abrir el selector de carpetas en este entorno');
+      sileo.error({ title: 'No se pudo abrir el selector de carpetas en este entorno' });
     }
   };
 
@@ -523,30 +523,26 @@ export default function Ajustes() {
   const handleThemeChange = useCallback((themeId) => {
     const next = setTheme(themeId);
     setActiveTheme(next);
-    toast.success(`Tema aplicado: ${THEME_OPTIONS.find((t) => t.id === next)?.label || next}`);
+    sileo.success({ title: `Tema aplicado: ${THEME_OPTIONS.find((t) => t.id === next)?.label || next}` });
   }, []);
 
   const handleMorphologyChange = useCallback((morphologyId) => {
     const next = setMorphology(morphologyId);
     setActiveMorphology(next);
-    toast.success(
-      `Morfologia aplicada: ${MORPHOLOGY_OPTIONS.find((m) => m.id === next)?.label || next}`
-    );
+    sileo.success({ title: `Morfologia aplicada: ${MORPHOLOGY_OPTIONS.find((m) => m.id === next)?.label || next}` });
   }, []);
 
   const handleAccentChange = useCallback((accentId) => {
     const next = setAccent(accentId);
     setActiveAccent(next);
-    toast.success(
-      `Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}`
-    );
+    sileo.success({ title: `Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}` });
   }, []);
 
   const finishOnboarding = useCallback(() => {
     window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
     setWizardOpen(false);
     setWizardStep(0);
-    toast.success('Onboarding completado');
+    sileo.success({ title: 'Onboarding completado' });
   }, []);
 
   const skipOnboarding = useCallback(() => {
@@ -574,10 +570,10 @@ export default function Ajustes() {
       .eq('id', project?.id);
     setSaving(false);
     if (error) {
-      toast.error('Error al guardar');
+      sileo.error({ title: 'Error al guardar' });
       return;
     }
-    toast.success('Proyecto actualizado');
+    sileo.success({ title: 'Proyecto actualizado' });
   }
 
   async function saveProfile() {
@@ -585,10 +581,10 @@ export default function Ajustes() {
     const { error } = await db.from('profiles').upsert({ id: 'local-user', full_name: fullName });
     setSavingProfile(false);
     if (error) {
-      toast.error('Error al guardar perfil');
+      sileo.error({ title: 'Error al guardar perfil' });
       return;
     }
-    toast.success('Perfil actualizado');
+    sileo.success({ title: 'Perfil actualizado' });
   }
 
   async function deleteProject() {
@@ -596,10 +592,10 @@ export default function Ajustes() {
     const { error } = await db.from('projects').delete().eq('id', project?.id);
     setDeleting(false);
     if (error) {
-      toast.error(error.message || 'Error al eliminar');
+      sileo.error({ title: error.message || 'Error al eliminar' });
       return;
     }
-    toast.success('Proyecto eliminado');
+    sileo.success({ title: 'Proyecto eliminado' });
     navigate('/hub');
   }
 
@@ -635,19 +631,19 @@ export default function Ajustes() {
       });
       if (!res.ok) {
         const err = await res.json();
-        toast.error(err.error || 'Error al guardar configuración del swarm');
+        sileo.error({ title: err.error || 'Error al guardar configuración del swarm' });
         return;
       }
       const data = await res.json();
       setSwarmConfigState(data);
-      toast.success('Configuración del swarm actualizada');
+      sileo.success({ title: 'Configuración del swarm actualizada' });
       // Refresh status
       const statusRes = await fetch('/api/agenthub/opencode/status');
       if (statusRes.ok) {
         setSwarmStatus(await statusRes.json());
       }
     } catch (err) {
-      toast.error('Error al guardar: ' + err.message);
+      sileo.error({ title: 'Error al guardar: ' + err.message });
     } finally {
       setSavingSwarm(false);
     }

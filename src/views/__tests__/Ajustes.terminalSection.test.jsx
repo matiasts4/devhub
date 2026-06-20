@@ -27,8 +27,16 @@ jest.mock('@tauri-apps/plugin-dialog', () => ({
   open: jest.fn(),
 }));
 
-jest.mock('sonner', () => ({
-  toast: { success: jest.fn(), error: jest.fn() },
+jest.mock('sileo', () => ({
+  sileo: {
+    success: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+    warning: jest.fn(),
+    promise: jest.fn((promise) => promise),
+    dismiss: jest.fn(),
+    clear: jest.fn(),
+  },
 }));
 
 jest.mock('@/lib/db/localClient', () => ({

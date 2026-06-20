@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import { panelStyle, pillStyle, btnPrimaryStyle } from '@/chrome/morphology';
 import ProviderCard from './ProviderCard';
 
@@ -402,7 +402,7 @@ export default function LLMProviderSettings({ embedded = false }) {
       setModelOptions(nextModelOptions);
       await persistConfig({ modelOptions: nextModelOptions });
 
-      toast.success(`Lista actualizada: ${models.length} modelos encontrados.`);
+      sileo.success({ title: `Lista actualizada: ${models.length} modelos encontrados.` });
 
       const modelFieldKey = getModelFieldKey(providerName);
       if (modelFieldKey) {

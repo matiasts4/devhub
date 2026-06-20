@@ -12,7 +12,7 @@ import {
   Wrench,
   Hash,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   getWorkspaceBreadcrumbStyle,
@@ -418,7 +418,7 @@ export default function Scaffolding() {
   const generarPlantilla = useCallback(
     async (template) => {
       if (!rootPath) {
-        toast.error('No hay raiz de proyecto disponible para generar archivos.');
+        sileo.error({ title: 'No hay raiz de proyecto disponible para generar archivos.' });
         return;
       }
 
@@ -437,12 +437,12 @@ export default function Scaffolding() {
         const skippedCount = report.skipped.length;
 
         if (createdCount > 0) {
-          toast.success(`Plantilla aplicada: ${createdCount} archivo(s) creado(s).`);
+          sileo.success({ title: `Plantilla aplicada: ${createdCount} archivo(s) creado(s).` });
         } else {
-          toast.info(`Sin cambios nuevos. ${skippedCount} archivo(s) ya existian.`);
+          sileo.info({ title: `Sin cambios nuevos. ${skippedCount} archivo(s) ya existian.` });
         }
       } catch (error) {
-        toast.error(error.message || 'No se pudo generar la plantilla.');
+        sileo.error({ title: error.message || 'No se pudo generar la plantilla.' });
       } finally {
         setGeneratingTemplateId('');
       }

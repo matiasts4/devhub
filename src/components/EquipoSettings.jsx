@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Mail, Loader2, Trash2, userPlus } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 
 export default function EquipoSettings({ projectId }) {
   const [members, setMembers] = useState([]);
@@ -23,7 +23,7 @@ export default function EquipoSettings({ projectId }) {
       .eq('project_id', projectId);
     
     if (error) {
-      toast.error("Error al cargar miembros: " + error.message);
+      sileo.error({ title: "Error al cargar miembros: " + error.message });
     } else {
       setMembers(data || []);
     }
@@ -45,11 +45,11 @@ export default function EquipoSettings({ projectId }) {
       
       if (!res.ok) throw new Error(data.error);
       
-      toast.success("Invitación creada. Link: " + data.inviteUrl);
+      sileo.success({ title: "Invitación creada. Link: " + data.inviteUrl });
       setEmail('');
       fetchMembers();
     } catch (err) {
-      toast.error(err.message);
+      sileo.error({ title: err.message });
     } finally {
       setInviting(false);
     }
@@ -60,9 +60,9 @@ export default function EquipoSettings({ projectId }) {
     
     const { error } = await db.from('project_members').delete().eq('id', id);
     if (error) {
-      toast.error("Error: " + error.message);
+      sileo.error({ title: "Error: " + error.message });
     } else {
-      toast.success("Miembro eliminado");
+      sileo.success({ title: "Miembro eliminado" });
       fetchMembers();
     }
   }

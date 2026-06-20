@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { User, Save, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 
 export function ProfileSection({ db }) {
   const [profile, setProfile] = useState(null);
@@ -26,10 +26,10 @@ export function ProfileSection({ db }) {
     const { error } = await db.from('profiles').upsert({ id: 'local-user', full_name: fullName });
     setSavingProfile(false);
     if (error) {
-      toast.error('Error al guardar perfil');
+      sileo.error({ title: 'Error al guardar perfil' });
       return;
     }
-    toast.success('Perfil actualizado');
+    sileo.success({ title: 'Perfil actualizado' });
   }
 
   return (

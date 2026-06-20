@@ -17,7 +17,7 @@ import {
   Save,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { Button } from '@/components/ui/button';
 import {
@@ -198,11 +198,11 @@ export default function Planificacion() {
     setSaving(false);
 
     if (error) {
-      toast.error('Error al guardar contexto');
+      sileo.error({ title: 'Error al guardar contexto' });
       return false;
     }
 
-    toast.success(markPending ? 'Contexto guardado — planning en curso' : 'Contexto guardado');
+    sileo.success({ title: markPending ? 'Contexto guardado — planning en curso' : 'Contexto guardado' });
     return true;
   }
 
@@ -213,11 +213,11 @@ export default function Planificacion() {
     for (const file of Array.from(fileList)) {
       const ext = '.' + file.name.split('.').pop().toLowerCase();
       if (!ACCEPTED_TYPES.includes(ext)) {
-        toast.error(`Tipo no soportado: ${file.name}`);
+        sileo.error({ title: `Tipo no soportado: ${file.name}` });
         continue;
       }
       if (file.size > 2 * 1024 * 1024) {
-        toast.error(`Demasiado grande: ${file.name}`);
+        sileo.error({ title: `Demasiado grande: ${file.name}` });
         continue;
       }
       const content = await file.text();
@@ -233,11 +233,11 @@ export default function Planificacion() {
     });
 
     if (!res.ok) {
-      toast.error('Error al subir archivos');
+      sileo.error({ title: 'Error al subir archivos' });
       return;
     }
 
-    toast.success(`${pending.length} archivo(s) subido(s)`);
+    sileo.success({ title: `${pending.length} archivo(s) subido(s)` });
     fetchFiles();
   }
 
@@ -247,10 +247,10 @@ export default function Planificacion() {
       method: 'DELETE',
     });
     if (!res.ok) {
-      toast.error('No se pudo eliminar el archivo');
+      sileo.error({ title: 'No se pudo eliminar el archivo' });
       return;
     }
-    toast.success('Archivo eliminado');
+    sileo.success({ title: 'Archivo eliminado' });
     fetchFiles();
   }
 
@@ -283,7 +283,7 @@ export default function Planificacion() {
 
     // Existing synchronous guard — kept per Fase 3 spec.
     if (!planningPrompt.trim() && files.length === 0) {
-      toast.error('Agregá contexto en el prompt o subí al menos un archivo');
+      sileo.error({ title: 'Agregá contexto en el prompt o subí al menos un archivo' });
       return;
     }
 
@@ -299,7 +299,7 @@ export default function Planificacion() {
       documentationPolicy,
       hasExistingWork: tasks.length > 0 || milestones.length > 0,
     });
-    toast.success('Agente de planificación lanzado en terminales');
+    sileo.success({ title: 'Agente de planificación lanzado en terminales' });
   }
 
   function handleCopyPrompt() {
@@ -310,7 +310,7 @@ export default function Planificacion() {
     });
     navigator.clipboard.writeText(text);
     setCopied(true);
-    toast.success('Prompt copiado al portapapeles');
+    sileo.success({ title: 'Prompt copiado al portapapeles' });
     setTimeout(() => setCopied(false), 2000);
   }
 

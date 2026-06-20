@@ -20,7 +20,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import { useAuth } from '@/lib/auth/AuthContext';
 import WorkspaceSwitcher from '@/components/workspace-switcher/WorkspaceSwitcher';
 import UserProfile from '@/components/UserProfile';
@@ -122,7 +122,7 @@ export default function ProjectHub() {
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) {
       console.error('fetchProjects ERROR:', error);
-      toast.error('Error al cargar proyectos: ' + error.message);
+      sileo.error({ title: 'Error al cargar proyectos: ' + error.message });
     }
     if (!error && data) setProjects(data);
     setLoading(false);
@@ -150,7 +150,7 @@ export default function ProjectHub() {
       }
     } catch (err) {
       console.warn('No se pudo abrir el selector de carpetas:', err);
-      toast.error('No se pudo abrir el selector de carpetas');
+      sileo.error({ title: 'No se pudo abrir el selector de carpetas' });
     }
   }
 
@@ -166,7 +166,7 @@ export default function ProjectHub() {
 
     if (error) {
       console.error('Error creating project:', error);
-      toast.error('Error al crear proyecto: ' + error.message);
+      sileo.error({ title: 'Error al crear proyecto: ' + error.message });
       setCreating(false);
       return;
     }
@@ -181,7 +181,7 @@ export default function ProjectHub() {
         local_path: '',
       });
       navigate(getProjectEntryPath(data.id));
-      toast.success('Proyecto creado — podés planificar desde Planificación en el sidebar');
+      sileo.success({ title: 'Proyecto creado — podés planificar desde Planificación en el sidebar' });
     }
   }
 

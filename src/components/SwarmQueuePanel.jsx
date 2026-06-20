@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Activity, AlertTriangle, Clock, X, Cpu, Layers } from 'lucide-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 
 // ─── Pure helper functions (exported for unit testing) ─────────────────────
 
@@ -205,11 +205,11 @@ export default function SwarmQueuePanel() {
       try {
         const res = await fetch(`/api/agenthub/queue/${itemId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        toast.success('Tarea cancelada de la cola');
+        sileo.success({ title: 'Tarea cancelada de la cola' });
       } catch (err) {
         // Revert optimistic update
         setItems(prevItems);
-        toast.error(`Error al cancelar: ${err.message}`);
+        sileo.error({ title: `Error al cancelar: ${err.message}` });
       } finally {
         setCancelling((prev) => {
           const next = new Set(prev);

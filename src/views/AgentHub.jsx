@@ -37,7 +37,7 @@ import {
   LayoutPanelLeft,
   ExternalLink,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createClient } from '@/lib/db/localClient';
@@ -656,9 +656,9 @@ Dale, empezá leyendo el contexto del proyecto.`;
   const handleCopyMessage = useCallback(async (m) => {
     try {
       await navigator.clipboard.writeText(m.content || '');
-      toast.success('Mensaje copiado');
+      sileo.success({ title: 'Mensaje copiado' });
     } catch {
-      toast.error('No se pudo copiar el mensaje');
+      sileo.error({ title: 'No se pudo copiar el mensaje' });
     }
   }, []);
 
@@ -720,7 +720,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
     }
 
     if (!lastUserMsg) {
-      toast.error('No se encontró un mensaje de usuario para regenerar');
+      sileo.error({ title: 'No se encontró un mensaje de usuario para regenerar' });
       return;
     }
 
@@ -766,7 +766,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
     streamingContentRef.current = '';
     setIsStreaming(false);
     setIsTyping(false);
-    toast.info('Generación detenida');
+    sileo.info({ title: 'Generación detenida' });
   };
 
   const handleCompressContext = async () => {
@@ -774,36 +774,40 @@ Dale, empezá leyendo el contexto del proyecto.`;
       return;
 
     setIsCompressing(true);
-    const toastId = toast.loading('Comprimiendo espacio de contexto...');
 
     try {
-      const res = await fetch('/api/agenthub/compress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: currentSessionId,
-          project_id: project?.id,
-          model: activeModelOverride || 'gpt-4o-mini',
-          keep_last_n: DEFAULT_COMPRESSION_KEEP_LAST_N,
-        }),
-      });
+      await sileo.promise(
+        (async () => {
+          const res = await fetch('/api/agenthub/compress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              session_id: currentSessionId,
+              project_id: project?.id,
+              model: activeModelOverride || 'gpt-4o-mini',
+              keep_last_n: DEFAULT_COMPRESSION_KEEP_LAST_N,
+            }),
+          });
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Error comprimiendo');
-      }
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || 'Error comprimiendo');
+          }
 
-      const result = await res.json();
-      await loadMessages(currentSessionId);
-
-      if (!result.compressed) {
-        toast.info(formatCompressionResultMessage(result), { id: toastId });
-        return;
-      }
-
-      toast.success(formatCompressionResultMessage(result), { id: toastId });
-    } catch (e) {
-      toast.error(`Error de compresión: ${e.message}`, { id: toastId });
+          const result = await res.json();
+          await loadMessages(currentSessionId);
+          return result;
+        })(),
+        {
+          loading: { title: 'Comprimiendo espacio de contexto...' },
+          success: (result) => ({
+            title: formatCompressionResultMessage(result),
+          }),
+          error: (e) => ({
+            title: `Error de compresión: ${e.message}`,
+          }),
+        }
+      );
     } finally {
       setIsCompressing(false);
     }
@@ -893,7 +897,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
       setIsStreaming(false);
       // Don't show error toast if it was an abort (user stopped)
       if (err.name !== 'AbortError') {
-        toast.error(err.message);
+        sileo.error({ title: err.message });
       }
     } finally {
       abortControllerRef.current = null;
@@ -909,7 +913,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
     if (matchOpenCode) {
       const agentProfile = normalizeSubagentName(matchOpenCode[1]);
       const agentGoal = matchOpenCode[2].trim();
-      toast.info(`Delegando tarea a: ${agentProfile}`);
+      sileo.info({ title: `Delegando tarea a: ${agentProfile}` });
       dispatchOpenCode(agentProfile, agentGoal);
       return;
     }
@@ -924,11 +928,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
       try {
         args = JSON.parse(matchEngram[2]);
       } catch (e) {
-        toast.error('Error al parsear argumentos de Engram (JSON inválido)');
+        sileo.error({ title: 'Error al parsear argumentos de Engram (JSON inválido)' });
         return;
       }
 
-      toast.info(`MCP: Ejecutando Engram -> ${toolName}`);
+      sileo.info({ title: `MCP: Ejecutando Engram -> ${toolName}` });
       setIsWaitingForSubagent(true); // Reusamos el estado de bloqueo de UI
 
       try {
@@ -954,7 +958,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
         // skipParse=true para evitar loop: respuesta MCP → LLM → otro execute_engram → loop
         handleSendInjection(inyectedOutput, true);
       } catch (e) {
-        toast.error(`Fallo de red llamando a MCP: ${e.message}`);
+        sileo.error({ title: `Fallo de red llamando a MCP: ${e.message}` });
         handleSendInjection(
           `[Error del Sistema Engram]:\nEl servidor local falló al conectar o ejecutar la herramienta: ${e.message}`,
           true
@@ -975,11 +979,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
       try {
         args = JSON.parse(matchDevHub[2]);
       } catch (e) {
-        toast.error('Error al parsear argumentos de DevHub MCP (JSON inválido)');
+        sileo.error({ title: 'Error al parsear argumentos de DevHub MCP (JSON inválido)' });
         return;
       }
 
-      toast.info(`MCP: Ejecutando DevHub -> ${toolName}`);
+      sileo.info({ title: `MCP: Ejecutando DevHub -> ${toolName}` });
       setIsWaitingForSubagent(true);
 
       try {
@@ -1004,7 +1008,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
         // skipParse=true para evitar loop
         handleSendInjection(inyectedOutput, true);
       } catch (e) {
-        toast.error(`Fallo de red llamando a DevHub MCP: ${e.message}`);
+        sileo.error({ title: `Fallo de red llamando a DevHub MCP: ${e.message}` });
         handleSendInjection(
           `[Error del Sistema DevHub MCP - ${toolName}]:\nEl servidor local falló al conectar o ejecutar la herramienta: ${e.message}`,
           true
@@ -1326,7 +1330,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
           // Child error sync best effort only.
         }
       }
-      toast.error(`Headless Error: ${e.message}`);
+      sileo.error({ title: `Headless Error: ${e.message}` });
       handleSendInjection(`[Error]: Fallo al conectar con el sub-agente: ${e.message}`);
       resetSubagentUiState();
       subagentRunRef.current = null;
@@ -1346,11 +1350,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
           console.warn('Abort failed:', errJson.error || res.statusText);
-          toast.warning('No se pudo detener el sub-agente remotamente');
+          sileo.warning({ title: 'No se pudo detener el sub-agente remotamente' });
         }
       } catch (e) {
         console.warn('Abort request failed:', e.message);
-        toast.warning('Error al conectar con el servidor para detener el sub-agente');
+        sileo.warning({ title: 'Error al conectar con el servidor para detener el sub-agente' });
       }
     }
 
@@ -1390,11 +1394,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
           if (!res.ok) {
             const errJson = await res.json().catch(() => ({}));
             console.warn('Permission approve failed:', errJson.error || res.statusText);
-            toast.warning('No se pudo aprobar el permiso');
+            sileo.warning({ title: 'No se pudo aprobar el permiso' });
           }
         } catch (e) {
           console.warn('Permission approve request failed:', e.message);
-          toast.warning('Error al aprobar el permiso');
+          sileo.warning({ title: 'Error al aprobar el permiso' });
         }
       }
       setPermissionRequest(null);
@@ -1417,11 +1421,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
           if (!res.ok) {
             const errJson = await res.json().catch(() => ({}));
             console.warn('Permission reject failed:', errJson.error || res.statusText);
-            toast.warning('No se pudo rechazar el permiso');
+            sileo.warning({ title: 'No se pudo rechazar el permiso' });
           }
         } catch (e) {
           console.warn('Permission reject request failed:', e.message);
-          toast.warning('Error al rechazar el permiso');
+          sileo.warning({ title: 'Error al rechazar el permiso' });
         }
       }
       setPermissionRequest(null);
@@ -1731,13 +1735,11 @@ Dale, empezá leyendo el contexto del proyecto.`;
                 // 404'd in production, which the SPA error boundary surfaced as
                 // "This page couldn't load". Use the correct nested route.
                 if (!project?.id) {
-                  toast.error('No hay proyecto activo para abrir Swarm Control.');
+                  sileo.error({ title: 'No hay proyecto activo para abrir Swarm Control.' });
                   return;
                 }
                 navigate(`/project/${project.id}/swarm`);
-                toast.info(
-                  `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control`
-                );
+                sileo.info({ title: `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control` });
               }}
             />
 

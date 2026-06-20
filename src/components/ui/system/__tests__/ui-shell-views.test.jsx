@@ -64,9 +64,17 @@ jest.mock(
 );
 
 jest.mock(
-  'sonner',
+  'sileo',
   () => ({
-    toast: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn(), dismiss: jest.fn() }),
+    sileo: Object.assign(jest.fn(), {
+      success: jest.fn(),
+      error: jest.fn(),
+      info: jest.fn(),
+      warning: jest.fn(),
+      promise: jest.fn((promise) => promise),
+      dismiss: jest.fn(),
+      clear: jest.fn(),
+    }),
   }),
   { virtual: true }
 );

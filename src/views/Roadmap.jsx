@@ -15,7 +15,7 @@ import {
   Flag,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import { DatePicker } from '@/components/ui/date-picker';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import StatusSignal from '@/components/ui/StatusSignal';
@@ -66,10 +66,10 @@ function MilestoneModal({ projectId, userId, onClose, onCreated }) {
     });
     setSaving(false);
     if (error) {
-      toast.error('Error al crear hito');
+      sileo.error({ title: 'Error al crear hito' });
       return;
     }
-    toast.success('Hito creado');
+    sileo.success({ title: 'Hito creado' });
     onCreated();
     onClose();
   }
@@ -244,13 +244,13 @@ export default function Roadmap() {
     setMilestones((prev) =>
       prev.map((m) => (m.id === milestone.id ? { ...m, status: newStatus } : m))
     );
-    toast.success(newStatus === 'completed' ? 'Hito completado' : 'Hito reabierto');
+    sileo.success({ title: newStatus === 'completed' ? 'Hito completado' : 'Hito reabierto' });
   }
 
   async function deleteMilestone(id) {
     await db.from('milestones').delete().eq('id', id);
     setMilestones((prev) => prev.filter((m) => m.id !== id));
-    toast.success('Hito eliminado');
+    sileo.success({ title: 'Hito eliminado' });
   }
 
   const total = milestones.length;
