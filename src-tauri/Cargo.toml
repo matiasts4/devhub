@@ -22,7 +22,7 @@ tauri-build = { version = "2.5.6", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10.3", features = ["tray-icon"] }
+tauri = { version = "2.10.3", features = ["tray-icon", "webview-data-url"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2.3.5"
@@ -40,7 +40,7 @@ gtk = "0.18.2"
 cairo-rs = "0.18"
 webkit2gtk = "2.0.2"
 javascriptcore = { package = "javascriptcore-rs", version = "1.1.2" }
-zoha-vte = { version = "0.6.0", features = ["v0_68"] }
+zoha-vte = { version = "0.6.0", features = ["v0_72"] }
 
 [profile.release]
 codegen-units = 16
