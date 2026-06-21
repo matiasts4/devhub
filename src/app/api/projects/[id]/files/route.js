@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 import localDb from '@/lib/db/localDb';
 
 // POST /api/projects/[id]/files
@@ -18,7 +19,7 @@ export async function POST(req, context) {
       const row = localDb.tables.project_files?.insert({
         id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         project_id,
-        user_id: user_id || 'local-user',
+        user_id: user_id || LOCAL_USER_ID,
         file_name: f.file_name,
         content: f.content,
         file_type: f.file_type || 'text',

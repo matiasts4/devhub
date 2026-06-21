@@ -3,6 +3,7 @@ const {
   AGENT_WORKSPACE_BASE_COMMIT,
   AGENT_WORKSPACE_ACTIVE_LOCK_STATUSES,
 } = require('./constants');
+const { LOCAL_USER_ID, LOCAL_WORKSPACE_ID } = require('../constants/local');
 
 const AGENT_EVENT_TYPES = [
   'agent_booted',
@@ -31,14 +32,14 @@ function seedLocalTenancy(db) {
     return;
   }
   db.prepare(`INSERT OR IGNORE INTO workspaces (id, name, slug, owner_id) VALUES (?, ?, ?, ?)`).run(
-    'local-ws',
+    LOCAL_WORKSPACE_ID,
     'local',
     'local',
-    'local-user'
+    LOCAL_USER_ID
   );
   db.prepare(
     `INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)`
-  ).run('local-ws', 'local-user', 'owner');
+  ).run(LOCAL_WORKSPACE_ID, LOCAL_USER_ID, 'owner');
 }
 
 function rebuildAgentEventsTableIfNeeded(db) {
@@ -83,8 +84,6 @@ function ensureRuntimeSchema(db) {
     db.pragma('foreign_keys = ON');
   }
 
-  seedLocalTenancy(db);
-
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -126,7 +125,6 @@ function ensureRuntimeSchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
-    CREATE INDEX IF NOT EXISTS idx_task_comments_user ON task_comments(user_id);
 
     CREATE TABLE IF NOT EXISTS telegram_activity (
       id TEXT PRIMARY KEY,
@@ -955,7 +953,6 @@ function ensureRuntimeSchema(db) {
       PRIMARY KEY (workspace_id, user_id),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
 
     CREATE TABLE IF NOT EXISTS project_members (
       project_id TEXT NOT NULL,
@@ -1018,6 +1015,10 @@ function ensureRuntimeSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_audit_log_workspace ON devhub_audit_log(workspace_id, created_at DESC);
   `);
 
+  // Additive ALTER statements for legacy tables that may be missing columns
+  // added after initial creation. These run after CREATE TABLE so fresh DBs
+  // get the columns from the definition, and before indexes that depend on
+  // those columns.
   const alterStatements = [
     "ALTER TABLE projects ADD COLUMN documentation_policy TEXT DEFAULT 'personal'",
     // devhub-cloud-foundation (PR 2): additive — projects needs workspace_id
@@ -1025,6 +1026,7 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE projects ADD COLUMN workspace_id TEXT',
     'ALTER TABLE tasks ADD COLUMN workspace_id TEXT',
     'ALTER TABLE milestones ADD COLUMN workspace_id TEXT',
+    'ALTER TABLE workspace_members ADD COLUMN user_id TEXT',
     'ALTER TABLE tasks ADD COLUMN claimed_at TEXT',
     'ALTER TABLE tasks ADD COLUMN lease_expires_at TEXT',
     'ALTER TABLE tasks ADD COLUMN claim_token TEXT',
@@ -1081,6 +1083,11 @@ function ensureRuntimeSchema(db) {
       }
     }
   }
+
+  // task_comments.user_id and workspace_members.user_id are added via ALTER
+  // above for legacy DBs, so their indexes must be created after the ALTER loop.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_comments_user ON task_comments(user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)`);
 
   // audit_events table (idempotent)
   db.exec(`
@@ -1173,6 +1180,8 @@ function ensureRuntimeSchema(db) {
   `);
 
   rebuildAgentEventsTableIfNeeded(db);
+
+  seedLocalTenancy(db);
 }
 
 const MCP_SCHEMA_SQL = `

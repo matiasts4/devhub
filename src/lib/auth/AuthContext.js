@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createClient } from '@/lib/db/localClient';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 
 const AuthContext = createContext({
   user: null,
@@ -59,7 +60,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (user && user.id !== 'local-user') {
+      if (user && user.id !== LOCAL_USER_ID) {
         window.__devhub_authenticated = true;
       } else {
         window.__devhub_authenticated = false;
@@ -111,7 +112,7 @@ export function AuthProvider({ children }) {
     if (!db) return;
 
     const fetchProjectMemberships = async () => {
-      if (!user || user.id === 'local-user') {
+      if (!user || user.id === LOCAL_USER_ID) {
         setProjectMemberships([]);
         setActiveProjectIdState(null);
         return;

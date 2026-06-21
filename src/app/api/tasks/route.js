@@ -3,6 +3,7 @@ export const dynamic = 'force-static';
 import { getDb } from '@/lib/db/localDb';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { TASK_STATUS_ZOD_ENUM } from '@/lib/taskStatuses';
 
 const taskStatusEnum = z.enum(TASK_STATUS_ZOD_ENUM);
@@ -65,7 +66,7 @@ export async function POST(request) {
     status: status || 'pending',
     priority: priority || 'medium',
     due_date: due_date || null,
-    user_id: 'local-user',
+    user_id: LOCAL_USER_ID,
   });
 
   return NextResponse.json({ task }, { status: 201 });

@@ -16,6 +16,8 @@ import {
   Flag,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 import { DatePicker } from '@/components/ui/date-picker';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
@@ -190,7 +192,8 @@ export default function Roadmap() {
 
   const [milestones, setMilestones] = useState([]);
   const [loading, setLoading] = useState(true);
-  const userId = 'local-user';
+  const { user } = useAuth();
+  const userId = user?.id || LOCAL_USER_ID;
   const [showModal, setShowModal] = useState(false);
 
   const fetchMilestones = useCallback(

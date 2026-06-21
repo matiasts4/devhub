@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@/lib/db/localClient';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { Bot, User as UserIcon, Loader2, Send } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -9,7 +10,7 @@ export default function TaskComments({ taskId }) {
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [sending, setSending] = useState(false);
-  const user = { id: 'local-user', email: 'local@devhub.local' };
+  const { user } = useAuth();
   const db = createClient();
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export default function TaskComments({ taskId }) {
     setLoading(true);
     const { data } = await db
       .from('task_comments')
-      .select('*, auth_users:user_id(email)')
+      .select('*, profiles:user_id(email, full_name)')
       .eq('task_id', taskId)
       .order('created_at', { ascending: true });
     setComments(data || []);
@@ -79,7 +80,7 @@ export default function TaskComments({ taskId }) {
                 <Bot className="w-5 h-5 text-[#F778BA]" />
               ) : (
                 <div className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
-                  {c.auth_users?.email?.substring(0, 1).toUpperCase() || 'U'}
+                  {c.profiles?.email?.substring(0, 1).toUpperCase() || 'U'}
                 </div>
               )}
             </div>
@@ -88,7 +89,7 @@ export default function TaskComments({ taskId }) {
                 <span className="font-semibold text-xs text-text-primary">
                   {c.author_type === 'agent'
                     ? 'Agente (Swarm)'
-                    : c.auth_users?.email?.split('@')[0] || 'Miembro'}
+                    : c.profiles?.email?.split('@')[0] || 'Miembro'}
                 </span>
                 <span className="text-xs text-text-muted">
                   {new Date(c.created_at).toLocaleDateString()}{' '}

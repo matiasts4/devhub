@@ -30,6 +30,7 @@ import {
   Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 import {
   ACCENT_OPTIONS,
@@ -587,7 +588,7 @@ export default function Ajustes() {
 
   async function saveProfile() {
     setSavingProfile(true);
-    const { error } = await db.from('profiles').upsert({ id: 'local-user', full_name: fullName });
+    const { error } = await db.from('profiles').upsert({ id: LOCAL_USER_ID, full_name: fullName });
     setSavingProfile(false);
     if (error) {
       sileo.error({ title: 'Error al guardar perfil' });

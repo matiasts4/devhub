@@ -25,7 +25,10 @@ const PLANNING_CLOSE_INSTRUCTION =
  * @param {PlanningMode} mode
  * @param {{ projectId: string, projectName?: string, hasExistingWork?: boolean }} opts
  */
-export function buildPlanningKickoffPrompt(mode, { projectId, projectName = '', hasExistingWork = false }) {
+export function buildPlanningKickoffPrompt(
+  mode,
+  { projectId, projectName = '', hasExistingWork = false }
+) {
   const header = projectName
     ? `Proyecto DevHub: **${projectName}** (project_id: \`${projectId}\`)`
     : `Proyecto DevHub (project_id: \`${projectId}\`)`;
@@ -82,7 +85,12 @@ export function buildPlanningKickoffPrompt(mode, { projectId, projectName = '', 
  * @param {PlanningMode} mode
  * @param {{ projectId: string, userId?: string, projectName?: string, fileNames?: string[] }} opts
  */
-export function buildPlanningCopyPrompt(mode, { projectId, userId = 'local-user', projectName = '', fileNames = [] }) {
+import { LOCAL_USER_ID } from '@/lib/constants/local';
+
+export function buildPlanningCopyPrompt(
+  mode,
+  { projectId, userId = LOCAL_USER_ID, projectName = '', fileNames = [] }
+) {
   const filesLine =
     fileNames.length > 0
       ? `Archivos de contexto cargados: ${fileNames.join(', ')}`
@@ -97,7 +105,11 @@ export function buildPlanningCopyPrompt(mode, { projectId, userId = 'local-user'
   ].join('\n');
 }
 
-export function resolveDefaultPlanningMode({ taskCount = 0, milestoneCount = 0, planningStatus = 'none' } = {}) {
+export function resolveDefaultPlanningMode({
+  taskCount = 0,
+  milestoneCount = 0,
+  planningStatus = 'none',
+} = {}) {
   if (planningStatus === 'pending') return 'initial';
   if (taskCount > 0 || milestoneCount > 0) return 'continue';
   return 'initial';

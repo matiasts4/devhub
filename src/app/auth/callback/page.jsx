@@ -49,7 +49,16 @@ export default function AuthCallbackPage() {
           }
         } else {
           setStatus('redirecting');
-          router.push('/');
+          const pendingInviteToken =
+            typeof window !== 'undefined'
+              ? window.sessionStorage.getItem('devhub:pending-invite-token')
+              : null;
+          if (pendingInviteToken) {
+            window.sessionStorage.removeItem('devhub:pending-invite-token');
+            router.push(`/invitations/${pendingInviteToken}`);
+          } else {
+            router.push('/');
+          }
         }
       }
     });

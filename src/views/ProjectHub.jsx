@@ -21,6 +21,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import { LOCAL_USER } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 import { useAuth } from '@/lib/auth/AuthContext';
 import WorkspaceSwitcher from '@/components/workspace-switcher/WorkspaceSwitcher';
@@ -110,8 +111,8 @@ export default function ProjectHub() {
   });
   const [creating, setCreating] = useState(false);
 
-  // Local-first: no auth needed
-  const localUser = { id: 'local-user', email: 'local@devhub.local' };
+  // Local-first fallback when no auth context is available.
+  const localUser = LOCAL_USER;
   const { activeWorkspaceId, user } = useAuth();
 
   const fetchProjects = useCallback(async () => {

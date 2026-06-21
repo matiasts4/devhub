@@ -2,6 +2,7 @@ export const dynamic = 'force-static';
 
 import { getDb } from '@/lib/db/localDb';
 import { NextResponse } from 'next/server';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 
 /**
  * GET /api/mcp/connections
@@ -46,7 +47,7 @@ export async function POST(request) {
   const db = getDb();
   const data = db.tables.mcp_connections.insert({
     id: `conn-${Date.now()}`,
-    user_id: 'local-user',
+    user_id: LOCAL_USER_ID,
     name,
     type: type || 'generic',
     endpoint_url: endpoint_url || null,
