@@ -959,12 +959,19 @@ function ensureRuntimeSchema(db) {
 
     CREATE TABLE IF NOT EXISTS project_members (
       project_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
+      user_id TEXT,
       role TEXT NOT NULL CHECK(role IN ('owner','admin','member','viewer')),
       joined_at TEXT NOT NULL DEFAULT(datetime('now')),
+      invited_email TEXT,
+      invite_token TEXT,
+      invited_at TEXT,
+      accepted_at TEXT,
+      invited_by TEXT,
       PRIMARY KEY (project_id, user_id)
     );
     CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_project_members_invited_email ON project_members(invited_email);
+    CREATE INDEX IF NOT EXISTS idx_project_members_invite_token ON project_members(invite_token);
 
     CREATE TABLE IF NOT EXISTS workspace_invitations (
       workspace_id TEXT NOT NULL,
@@ -1389,7 +1396,9 @@ const MCP_ALTER_STATEMENTS = [
 
 function ensureAllSchema(db) {
   ensureRuntimeSchema(db);
-  db.exec(MCP_SCHEMA_SQL);
+  // Apply additive ALTER statements first. Legacy tables may be missing
+  // columns (e.g. task_comments.user_id) and MCP_SCHEMA_SQL creates indexes
+  // on those columns; running ALTERs first avoids "no such column" errors.
   for (const stmt of MCP_ALTER_STATEMENTS) {
     try {
       db.exec(stmt);
@@ -1399,6 +1408,7 @@ function ensureAllSchema(db) {
       }
     }
   }
+  db.exec(MCP_SCHEMA_SQL);
   // T-001 — agent comms bus migration (idempotent; safe to call on every boot).
   // Lazy require to avoid circular dep with localDb.js.
   const { ensureAgentCommsBusSchema, applyPragmasForBus } = require('./busMigrations.js');
