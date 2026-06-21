@@ -39,6 +39,7 @@ import {
   TERMINAL_WEBGL_FALLBACK_REASONS,
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
+import { shouldAvoidWebglOnThisRuntime } from '@/components/terminal/terminalRendererPreferences';
 import {
   extractOpenCodeSessionId,
   isSwarmLaunchWrapperCommand,
@@ -464,8 +465,9 @@ export function clampTerminalViewportDimensions(dims) {
   };
 }
 
-// Horizontal: add one more column when slack remains. Vertical: same — clip the
-// partial last row under overflow:hidden instead of leaving a dead band.
+// Horizontal: add one more column when slack remains. Vertical: keep floored rows
+// unless clip cost beats slack — fillSlack:true on rows clips a partial last line
+// under overflow:hidden and shows horizontal "rayitas" on canvas TUIs (38453a6).
 function proposeTerminalAxisDimension({ available, cellSize, minValue, fillSlack = false }) {
   const avail = Number(available);
   const cell = Number(cellSize);
@@ -534,7 +536,7 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
     available: availH,
     cellSize: cellH,
     minValue: 1,
-    fillSlack: true,
+    fillSlack: false,
   });
 
   return clampTerminalViewportDimensions({ cols, rows });
@@ -1043,7 +1045,22 @@ export function shouldSkipReactivateViewportOnPanelActivation({
   term = null,
   container = null,
   fitAddon = null,
+  operationalRendererMode = 'xterm',
+  visibleTerminalPanelCount = 1,
+  tuiSessionActive = false,
 } = {}) {
+  if (
+    shouldAttachCanvasRenderer({ operationalRendererMode }) &&
+    visibleTerminalPanelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
+  ) {
+    return false;
+  }
+  if (operationalRendererMode === 'xterm' && tuiSessionActive && term && container && fitAddon) {
+    const dims = proposeTerminalViewportDimensions({ container, fitAddon, term });
+    if (dims && term.cols === dims.cols && term.rows === dims.rows) {
+      return true;
+    }
+  }
   if (!hadGpuRenderer || clearAtlas || !term || !container || !fitAddon) return false;
   const dims = proposeTerminalViewportDimensions({ container, fitAddon, term });
   if (!dims) return false;
@@ -1077,6 +1094,53 @@ export function shouldFreezeSingleWebglViewportOnWorkspaceShow({
   }
   if (isWorkspaceLayoutSwitchReason(normalizedReason)) return true;
   if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
+  return false;
+}
+
+/**
+ * DOM renderer on WebKitGTK: skip fit/resize on app resume when a live TUI already
+ * has the correct grid. Refitting corrupts alternate-screen Ink layouts (OpenCode
+ * dot-matrix art shifts horizontally row-by-row). PTY nudge + refresh beats resize.
+ */
+export function shouldFreezeDomViewportOnAppResume({
+  operationalRendererMode = 'xterm',
+  tuiSessionActive = false,
+  term = null,
+  container = null,
+  fitAddon = null,
+} = {}) {
+  if (operationalRendererMode !== 'xterm') return false;
+  if (!tuiSessionActive) return false;
+  if (!term || !container || !fitAddon) return false;
+  const dims = proposeTerminalViewportDimensions({ container, fitAddon, term });
+  if (!dims) return false;
+  return term.cols === dims.cols && term.rows === dims.rows;
+}
+
+/** Same freeze policy as single-panel WebGL, but for DOM + live TUI on workspace show. */
+export function shouldFreezeDomViewportOnWorkspaceShow({
+  reason = '',
+  sizeUnchanged = false,
+  operationalRendererMode = 'xterm',
+  tuiSessionActive = false,
+} = {}) {
+  if (!sizeUnchanged || !tuiSessionActive) return false;
+  if (operationalRendererMode !== 'xterm') return false;
+
+  const normalizedReason = String(reason);
+  if (normalizedReason.includes('workspace-switch')) return true;
+  if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
+    return true;
+  }
+  if (isWorkspaceLayoutSwitchReason(normalizedReason)) return true;
+  if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
+  if (/^reactivate-/.test(normalizedReason)) return true;
+  if (
+    normalizedReason.includes('window-focus') ||
+    normalizedReason.includes('visibility-visible')
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -1585,6 +1649,7 @@ export default function TerminalTTY({
     requestedMode: effectiveRequestedMode,
     effectiveMode: rendererViewModel.effectiveMode,
     visibleTerminalPanelCount,
+    avoidGpuFallback: shouldAvoidWebglOnThisRuntime(),
   });
   const hasSentInitialCommand = useRef(false);
   const sessionReattachedRef = useRef(false);
@@ -2775,7 +2840,7 @@ export default function TerminalTTY({
           fitAddon,
           term,
           socket: wsRef.current,
-          clearAtlas: false,
+          clearAtlas: splitCanvasClear,
           lastPtySizeRef: lastPtySizeRef.current,
         });
         geometryChanged = fitWorked && (term.cols !== colsBefore || term.rows !== rowsBefore);
@@ -2804,11 +2869,9 @@ export default function TerminalTTY({
         return;
       }
       if (termRef.current && isTerminalRendererReady(termRef.current)) {
-        if (geometryChanged) {
-          stabilizeTerminalRenderer(termRef.current, {
-            clearAtlas: splitCanvasClear,
-          });
-        }
+        stabilizeTerminalRenderer(termRef.current, {
+          clearAtlas: splitCanvasClear,
+        });
         refreshTerminalViewport(termRef.current);
       }
     });
@@ -3097,6 +3160,26 @@ export default function TerminalTTY({
       }
 
       if (
+        shouldFreezeDomViewportOnWorkspaceShow({
+          reason,
+          sizeUnchanged,
+          operationalRendererMode: operationalRendererModeRef.current,
+          tuiSessionActive: tuiSessionActiveRef.current,
+        })
+      ) {
+        needsViewportSyncOnShowRef.current = false;
+        logViewportDiagnostic(`${reason}-frozen-dom-tui`);
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        refreshTerminalViewport(termRef.current);
+        return;
+      }
+
+      if (
         shouldSkipRedundantLayoutSettleViewportSync({
           reason,
           sizeUnchanged,
@@ -3234,7 +3317,14 @@ export default function TerminalTTY({
         });
       }
     },
-    [confirmViewportFit, clearZeroSizeViewportRetryTimers, id, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
+    [
+      confirmViewportFit,
+      clearZeroSizeViewportRetryTimers,
+      id,
+      logViewportDiagnostic,
+      scheduleWebglRecovery,
+      scrollTerminalToBottom,
+    ]
   );
 
   const nudgeActiveTuiViewport = useCallback(() => {
@@ -3367,22 +3457,47 @@ export default function TerminalTTY({
           operationalRendererMode: operationalRendererModeRef.current,
         });
 
+      const skipDomFit = shouldFreezeDomViewportOnAppResume({
+        operationalRendererMode: operationalRendererModeRef.current,
+        tuiSessionActive: tuiSessionActiveRef.current,
+        term: termRef.current,
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+      });
+      const tuiActive = tuiSessionActiveRef.current;
+
       logViewportDiagnostic('reactivate-start');
       prepareActiveTuiTerminalFocus(termRef.current, {
-        tuiSessionActive: tuiSessionActiveRef.current,
+        tuiSessionActive: tuiActive,
       });
-      fitAndResize({ clearAtlas });
-      stabilizeTerminalRenderer(termRef.current, { clearAtlas });
-      if (isActivePanelRef.current) scrollTerminalToBottom();
+
+      if (skipDomFit) {
+        logViewportDiagnostic('reactivate-frozen-dom-tui');
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+      } else {
+        fitAndResize({ clearAtlas });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+        if (isActivePanelRef.current && !tuiActive) scrollTerminalToBottom();
+      }
 
       if (autoFocus) {
         termRef.current?.focus?.();
       }
 
       rafRef.current = requestAnimationFrame(() => {
-        fitAndResize({ clearAtlas: false });
-        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
-        if (isActivePanelRef.current) scrollTerminalToBottom();
+        if (skipDomFit) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          refreshTerminalViewport(termRef.current);
+        } else {
+          fitAndResize({ clearAtlas: false });
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          if (isActivePanelRef.current && !tuiActive) scrollTerminalToBottom();
+        }
         logViewportDiagnostic('reactivate-settled');
       });
     },
@@ -4341,7 +4456,8 @@ export default function TerminalTTY({
           detectAgentTuiReady(chunk, initialCommand) || detectAgentTuiReady(tail, initialCommand);
         if (!footerReady && !grokReady && !agentReady) return;
         // ponytail: scrollback tail still matches stale agent banners after exit; require fresh alt-screen
-        if (agentTuiDetachedRef.current && !/\x1b\[\?1049h/.test(chunk)) return;
+        const altScreenEnter = '\u001b[?1049h';
+        if (agentTuiDetachedRef.current && !chunk.includes(altScreenEnter)) return;
         agentTuiDetachedRef.current = false;
         tuiSessionActiveRef.current = true;
         if (!hasSentInitialCommand.current && initialCommand) {
@@ -5051,11 +5167,7 @@ export default function TerminalTTY({
           const sessionContext = {
             mode: agentTuiLive ? 'tui' : 'shell',
             tuiReady: agentTuiLive,
-            tuiAdapter: isGrokSessionRef.current
-              ? 'grok'
-              : agentTuiLive
-                ? 'opencode'
-                : 'shell',
+            tuiAdapter: isGrokSessionRef.current ? 'grok' : agentTuiLive ? 'opencode' : 'shell',
             panelHidden: isVisibleInLayoutRef.current !== true,
             panelInactive: isActivePanelRef.current !== true,
           };
@@ -5288,8 +5400,11 @@ export default function TerminalTTY({
     const hadGpuRenderer = Boolean(webglAddonRef.current || canvasAddonRef.current);
     const canUseWebgl = shouldAttachWebglRenderer({ operationalRendererMode });
     const canUseCanvas = shouldAttachCanvasRenderer({ operationalRendererMode });
-    const clearAtlas =
-      (canUseWebgl || canUseCanvas) && shouldClearWebglAtlasOnPanelActivation(hadGpuRenderer);
+    const canvasSplit =
+      canUseCanvas && visibleTerminalPanelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT;
+    const clearAtlas = canvasSplit
+      ? true
+      : (canUseWebgl || canUseCanvas) && shouldClearWebglAtlasOnPanelActivation(hadGpuRenderer);
 
     if (
       shouldSkipReactivateViewportOnPanelActivation({
@@ -5298,6 +5413,9 @@ export default function TerminalTTY({
         term,
         container: containerRef.current,
         fitAddon: fitRef.current,
+        operationalRendererMode,
+        visibleTerminalPanelCount,
+        tuiSessionActive: tuiSessionActiveRef.current,
       })
     ) {
       prepareActiveTuiTerminalFocus(term, {
@@ -5324,7 +5442,14 @@ export default function TerminalTTY({
       tuiSessionActive: tuiSessionActiveRef.current,
     });
     term.focus?.();
-  }, [autoFocus, isActivePanel, logRenderHealth, operationalRendererMode, shouldUseNativeRenderer]);
+  }, [
+    autoFocus,
+    isActivePanel,
+    logRenderHealth,
+    operationalRendererMode,
+    shouldUseNativeRenderer,
+    visibleTerminalPanelCount,
+  ]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.
@@ -5748,7 +5873,10 @@ export default function TerminalTTY({
           : null;
       const grokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
       const isAgentTui = isLikelyTuiInitialCommand(initialCommand) && !grokSession;
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: grokSession, isAgentTui });
+      const inputZoneRows = resolveTerminalWheelInputZoneRows({
+        isGrokSession: grokSession,
+        isAgentTui,
+      });
       const inTranscript = cell
         ? isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
         : lastPointerZoneRef.current !== 'input';

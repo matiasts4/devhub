@@ -37,7 +37,7 @@ describe('swarm launch inner command', () => {
     expect(inner).toContain('tmux attach-session');
   });
 
-  test('uses bare kimi in yolo/auto mode with skills-dir for swarm bootstrap', () => {
+  test('uses bare kimi in yolo mode with skills-dir for swarm bootstrap', () => {
     const inner = buildAgentLaunchCommand('kimi', 'mission prompt', {
       opencodeAgent: 'swarm-director',
       role: 'director',
@@ -47,7 +47,8 @@ describe('swarm launch inner command', () => {
       interactiveBootstrapPrompt: true,
     });
 
-    expect(inner).toContain('/home/matias/.kimi-code/bin/kimi --yolo --auto');
+    expect(inner).toContain('/home/matias/.kimi-code/bin/kimi --yolo');
+    expect(inner).not.toContain('--auto');
     expect(inner).toContain('--skills-dir');
     expect(inner).toContain('/home/matias/.kimi-code/skills/devhub-zed-orchestrator');
     expect(inner).toContain('--model');

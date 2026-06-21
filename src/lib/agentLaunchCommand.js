@@ -135,11 +135,12 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       break;
     }
     case 'kimi': {
+      // Note: --yolo and --auto cannot be combined in current Kimi versions.
       const kimiSkillDir = resolveKimiSkillDir(options.role || opencodeAgent);
       const skillDirFlag = kimiSkillDir ? ` --skills-dir ${shellQuote(kimiSkillDir)}` : '';
       const modelFlag = modelId ? ` --model ${shellQuote(modelId)}` : '';
       if (interactiveBootstrapPrompt) {
-        innerCommand = `${executable} --yolo --auto${skillDirFlag}${modelFlag}`;
+        innerCommand = `${executable} --yolo${skillDirFlag}${modelFlag}`;
       } else {
         innerCommand = modelId
           ? `${executable} -p ${quotedPrompt}${modelFlag}`

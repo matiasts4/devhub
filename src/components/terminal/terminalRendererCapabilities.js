@@ -349,10 +349,18 @@ export function resolveOperationalRendererMode({
   requestedMode,
   effectiveMode,
   visibleTerminalPanelCount = 1,
+  avoidGpuFallback = false,
 } = {}) {
   const requested = normalizeRendererMode(requestedMode || 'xterm');
   const effective = normalizeRendererMode(effectiveMode || requested);
   const panelCount = Math.max(1, Number(visibleTerminalPanelCount) || 1);
+
+  // WebKitGTK (packaged Tauri/Linux) corrupts the xterm canvas glyph atlas on
+  // workspace/window/panel switches — the horizontal "rayitas" across canvas
+  // TUIs. Single-panel WebGL is already demoted to DOM upstream; the split path
+  // is the last place canvas could still attach. Keep DOM here so the renderer
+  // is uniform on this runtime instead of leaking a canvas surface into splits.
+  if (avoidGpuFallback) return 'xterm';
 
   // Multi-panel splits (swarm grid, focus collapse, etc.) stay on canvas whenever
   // the user asked for the GPU path — even if the WebGL probe demoted effectiveMode.

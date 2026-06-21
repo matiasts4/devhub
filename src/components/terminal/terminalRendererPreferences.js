@@ -15,7 +15,12 @@ export function getRuntimeDefaultTerminalRendererMode() {
 }
 
 function demoteWebglForTauriLinux(mode) {
-  if (mode === 'xterm-webgl' && shouldAvoidWebglOnThisRuntime()) return 'xterm';
+  // WebKitGTK corrupts both the WebGL and the 2D-canvas glyph atlas, so demote
+  // every GPU/canvas mode to the DOM renderer on this runtime (the canvas split
+  // path is closed separately in resolveOperationalRendererMode).
+  if ((mode === 'xterm-webgl' || mode === 'canvas') && shouldAvoidWebglOnThisRuntime()) {
+    return 'xterm';
+  }
   return mode;
 }
 
@@ -78,7 +83,10 @@ export function readTerminalRendererDefaultModeSetting(storage) {
 
   try {
     return demoteWebglForTauriLinux(
-      normalizeRendererMode(storage.getItem(TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY), runtimeDefault)
+      normalizeRendererMode(
+        storage.getItem(TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY),
+        runtimeDefault
+      )
     );
   } catch {
     return runtimeDefault;

@@ -192,11 +192,12 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       // Kimi does not allow --prompt with --yolo, so swarm launches start the
       // interactive TUI and the wrapper injects the bootstrap prompt later via
       // tmux send-keys. One-off launches without tmux still use -p.
+      // Note: --yolo and --auto cannot be combined in current Kimi versions.
       const kimiSkillDir = resolveKimiSkillDir(options.role || opencodeAgent);
       const skillDirFlag = kimiSkillDir ? ` --skills-dir ${shellQuote(kimiSkillDir)}` : '';
       const modelFlag = modelId ? ` --model ${shellQuote(modelId)}` : '';
       if (interactiveBootstrapPrompt) {
-        innerCommand = `${executable} --yolo --auto${skillDirFlag}${modelFlag}`;
+        innerCommand = `${executable} --yolo${skillDirFlag}${modelFlag}`;
       } else {
         innerCommand = modelId
           ? `${executable} -p ${quotedPrompt}${modelFlag}`

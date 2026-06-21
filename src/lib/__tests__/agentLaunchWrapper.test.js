@@ -594,7 +594,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand:
-          '/home/matias/.kimi-code/bin/kimi --yolo --auto --skills-dir /home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
+          '/home/matias/.kimi-code/bin/kimi --yolo --skills-dir /home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
       });
       expect(result).toContain('_devhub_wait_opencode_ready');
       expect(result).toContain('/tmp/devhub-agent-ready-kimi-${_tmux_session}');

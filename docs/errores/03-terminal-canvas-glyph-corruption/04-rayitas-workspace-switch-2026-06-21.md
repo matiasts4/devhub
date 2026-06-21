@@ -19,12 +19,12 @@
 
 ## Por qué volvió a aparecer (historia de cambios)
 
-| Etapa | Qué se hizo | Efecto en las rayitas |
-|-------|-------------|------------------------|
-| **Antes (solo DOM)** | Renderer `xterm` puro | Lento en splits pero **sin** artefactos GPU |
-| **Introducción xterm-webgl** | Default `xterm-webgl` para paneles nuevos | Mejor perf; en WebKitGTK inestable → se forzó canvas en splits |
-| **Mitigación canvas (76097c7)** | `xterm-addon-canvas` para splits; `releaseCanvasAddon` on layout hide; hide instantáneo del workspace shell | **Redujo** bloques grises; rayitas menores si el atlas se limpiaba bien |
-| **Causa 3/4 packaging (05)** | TWM dormant / unmount fuera de `/terminales`; Tauri Linux → DOM default | Menos crash WebView; splits siguen en **canvas** |
+| Etapa                            | Qué se hizo                                                                                                                                | Efecto en las rayitas                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **Antes (solo DOM)**             | Renderer `xterm` puro                                                                                                                      | Lento en splits pero **sin** artefactos GPU                                          |
+| **Introducción xterm-webgl**     | Default `xterm-webgl` para paneles nuevos                                                                                                  | Mejor perf; en WebKitGTK inestable → se forzó canvas en splits                       |
+| **Mitigación canvas (76097c7)**  | `xterm-addon-canvas` para splits; `releaseCanvasAddon` on layout hide; hide instantáneo del workspace shell                                | **Redujo** bloques grises; rayitas menores si el atlas se limpiaba bien              |
+| **Causa 3/4 packaging (05)**     | TWM dormant / unmount fuera de `/terminales`; Tauri Linux → DOM default                                                                    | Menos crash WebView; splits siguen en **canvas**                                     |
 | **Regresión detectada Jun-2026** | `shouldClearGpuAtlasOnWorkspaceShow` **no** limpiaba atlas canvas tras `release-on-hide` (solo WebGL tenía `webglReleasedOnLayoutHideRef`) | Al volver al workspace: canvas reattach **sin** clear → **rayitas** y footer corrido |
 
 En resumen: las mitigaciones de **packaging/WebKit** no reintrodujeron el bug directamente; lo que lo reactivó fue un **hueco en el lifecycle canvas** — paridad incompleta con el path WebGL al ocultar/mostrar workspaces.
@@ -65,15 +65,19 @@ El PTY **sigue escribiendo** mientras el panel está `visibility:hidden`. Al rea
 
 ## Corrección aplicada (2026-06-21)
 
+**Primera ola (insuficiente):** `canvasReleasedOnLayoutHideRef` — paridad con WebGL; no alcanzó porque la regresión real venía de **`38453a6`**.
+
+**Segunda ola (dirigida, tras git forensics):** ver [05-regression-git-forensics-38453a6.md](./05-regression-git-forensics-38453a6.md)
+
 **Archivo:** `src/components/TerminalTTY.jsx`
 
-| Cambio | Detalle |
-|--------|---------|
-| `canvasReleasedOnLayoutHideRef` | Espejo de `webglReleasedOnLayoutHideRef`; `true` en `releaseCanvasAddon`, `false` tras reattach/sync con clear |
-| `shouldClearGpuAtlasOnWorkspaceShow` | Nuevo param `canvasReleasedOnLayoutHide`; `true` → clear; también `layout-recover-*` y `workspace-window` en regex canvas |
-| `runLayoutRecoverPass` | `clearAtlas` incluye `canvasReleasedOnLayoutHideRef` |
-| `shouldSkipRedundantLayoutSettleViewportSync` | Considera `canvasReleasedOnLayoutHideRef` como renderer liberado |
-| `reactivateTerminalViewport` | Default `clearAtlas: true` cuando operational mode es `xterm-canvas` |
+| Cambio                                          | Detalle                                                                      |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| `fillSlack: false` en **filas**                 | Revert parcial de `38453a6` — evita fila parcial recortada (rayita inferior) |
+| `scheduleInactiveViewportRepaint`               | Restaura `clearAtlas: splitCanvasClear` (38453a6 lo había puesto en `false`) |
+| `shouldSkipReactivateViewportOnPanelActivation` | No skip en canvas split 2+ paneles                                           |
+| Activación panel canvas split                   | `clearAtlas: true` forzado                                                   |
+| `canvasReleasedOnLayoutHideRef`                 | (primera ola) sigue activo para release-on-hide                              |
 
 **Tests:** `TerminalTTY.test.js` — `shouldClearGpuAtlasOnWorkspaceShow` actualizado.
 

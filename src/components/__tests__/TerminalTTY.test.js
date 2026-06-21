@@ -138,6 +138,8 @@ const {
   shouldSkipReactivateViewportOnPanelActivation,
   shouldAttachWebglRenderer,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
+  shouldFreezeDomViewportOnAppResume,
+  shouldFreezeDomViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
   shouldRefitVisibleInactiveSplitPanel,
   sendTerminalPasteInput,
@@ -502,7 +504,7 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 26 });
+    ).toEqual({ cols: 80, rows: 25 });
   });
 
   test('keeps floored rows when slack is smaller than half a cell', () => {
@@ -516,7 +518,7 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 26 });
+    ).toEqual({ cols: 80, rows: 25 });
   });
 
   test('adds one extra row when slack is larger than the clip cost of an extra cell', () => {
@@ -703,6 +705,135 @@ describe('shouldSkipReactivateViewportOnPanelActivation()', () => {
         term,
         container,
         fitAddon,
+      })
+    ).toBe(false);
+  });
+
+  test('skips fit churn for DOM renderer when live TUI grid already matches container', () => {
+    const term = {
+      cols: 80,
+      rows: 24,
+      _core: {
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+        },
+      },
+    };
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 480 }),
+    };
+    const fitAddon = { proposeDimensions: () => ({ cols: 80, rows: 24 }) };
+
+    expect(
+      shouldSkipReactivateViewportOnPanelActivation({
+        hadGpuRenderer: false,
+        clearAtlas: false,
+        term,
+        container,
+        fitAddon,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+      })
+    ).toBe(true);
+  });
+});
+
+describe('shouldFreezeDomViewportOnAppResume()', () => {
+  test('freezes DOM viewport when live TUI grid already matches container', () => {
+    const term = {
+      cols: 80,
+      rows: 24,
+      _core: {
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+        },
+      },
+    };
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 480 }),
+    };
+    const fitAddon = { proposeDimensions: () => ({ cols: 80, rows: 24 }) };
+
+    expect(
+      shouldFreezeDomViewportOnAppResume({
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+        term,
+        container,
+        fitAddon,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeDomViewportOnAppResume({
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: false,
+        term,
+        container,
+        fitAddon,
+      })
+    ).toBe(false);
+    expect(
+      shouldFreezeDomViewportOnAppResume({
+        operationalRendererMode: 'xterm-canvas',
+        tuiSessionActive: true,
+        term,
+        container,
+        fitAddon,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldFreezeDomViewportOnWorkspaceShow()', () => {
+  test('freezes DOM TUI viewport on workspace switch and window focus when size unchanged', () => {
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: 'window-focus',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: false,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldSkipReactivateViewportOnPanelActivation canvas split', () => {
+  test('never skips canvas split siblings — atlas must refresh even when cols/rows match', () => {
+    const term = {
+      cols: 80,
+      rows: 24,
+      _core: { _renderService: { dimensions: { css: { cell: { width: 10, height: 20 } } } } },
+    };
+    const container = { getBoundingClientRect: () => ({ width: 800, height: 480 }) };
+    const fitAddon = { proposeDimensions: () => ({ cols: 80, rows: 24 }) };
+
+    expect(
+      shouldSkipReactivateViewportOnPanelActivation({
+        hadGpuRenderer: true,
+        clearAtlas: false,
+        term,
+        container,
+        fitAddon,
+        operationalRendererMode: 'xterm-canvas',
+        visibleTerminalPanelCount: 2,
       })
     ).toBe(false);
   });
@@ -2292,9 +2423,7 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('both');
-      expect(
-        resolveTerminalWheelScrollPrefer('kimi', { agentTuiReady: true })
-      ).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('kimi', { agentTuiReady: true })).toBe('sgr');
       expect(
         shouldPassthroughNativeTuiWheel({
           initialCommand: 'kimi',

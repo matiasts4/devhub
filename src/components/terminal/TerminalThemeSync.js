@@ -12,6 +12,8 @@
  * for terminal header styling driven by data-terminal-header-style attribute.
  */
 
+import { shouldAvoidWebglOnThisRuntime } from '@/components/terminal/terminalRendererPreferences';
+
 let cachedTheme = null;
 
 /**
@@ -164,11 +166,16 @@ export function getTerminalFontOptions() {
   const rawLine = getRawVar('--terminal-line-height');
   const rawLetter = getRawVar('--terminal-letter-spacing');
 
+  // WebKitGTK DOM renderer: fractional lineHeight (default 1.1) yields non-integer
+  // cell heights → horizontal seams in dense TUIs (OpenCode dot-matrix). Integer 1.0
+  // keeps rows pixel-snapped; letterSpacing 0 avoids sub-pixel column drift.
+  const domSafeMetrics = shouldAvoidWebglOnThisRuntime();
+
   return {
     fontFamily: fontFamily.replace(/\s+/g, ' ').trim(),
     fontWeight: rawWeight || 'bold',
     fontWeightBold: rawWeightBold || 'bold',
-    lineHeight: parseFloat(rawLine) || 1.1,
-    letterSpacing: parseFloat(rawLetter) || -0.5,
+    lineHeight: domSafeMetrics ? 1 : parseFloat(rawLine) || 1.1,
+    letterSpacing: domSafeMetrics ? 0 : parseFloat(rawLetter) || -0.5,
   };
 }

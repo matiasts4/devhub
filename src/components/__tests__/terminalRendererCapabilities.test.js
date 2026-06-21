@@ -320,4 +320,26 @@ describe('terminalRendererCapabilities', () => {
       })
     ).toBe('xterm-canvas');
   });
+
+  test('resolveOperationalRendererMode never returns canvas when GPU fallback is avoided (WebKitGTK)', () => {
+    // The canvas glyph-atlas seams ("rayitas") only appear on the 2D-canvas
+    // split path; on a GPU-avoid runtime every panel must stay on the DOM
+    // renderer regardless of the requested/effective mode or panel count.
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 5,
+        avoidGpuFallback: true,
+      })
+    ).toBe('xterm');
+    expect(
+      resolveOperationalRendererMode({
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+        avoidGpuFallback: true,
+      })
+    ).toBe('xterm');
+  });
 });

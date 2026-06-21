@@ -91,11 +91,14 @@ tail -f data/logs/terminal-debug.log
 - [Causas raíz ampliadas](./02-causas-raiz.md)
 - [Cambios intentados (diff y archivos)](./03-cambios-intentados.md)
 - [**Rayitas / footer corrido al cambiar workspace (2026-06-21)**](./04-rayitas-workspace-switch-2026-06-21.md)
+- [**Git forensics — commit `38453a6` (causa raíz)**](./05-regression-git-forensics-38453a6.md)
 - [Comandos y señales de log](./commands-used.md)
 
 ---
 
 ## Siguiente paso recomendado (para quien retome)
+
+**Bitácora viva de intentos (2026-06-21):** [06-bitacora-intentos-rayitas.md](./06-bitacora-intentos-rayitas.md) — tabla de hipótesis, qué se probó, qué falló, iteración 4 en curso.
 
 1. Confirmar en logs si los paneles corruptos usaban `xterm-webgl`, `xterm-canvas` u `xterm` DOM al momento del fallo (`RENDER:*` en `terminal-debug.log`).
 2. Verificar si falta **release de WebGL on layout hide** en paneles de workspace único (canvas ya se libera; webgl solo en split-inactive hoy).

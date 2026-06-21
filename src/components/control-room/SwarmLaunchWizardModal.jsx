@@ -4,9 +4,12 @@ import { ZED_ORCHESTRATOR_TEMPLATE_ID } from '@/lib/operations/swarmControl';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import {
   btnDangerStyle,
+  btnPrimaryStyle,
+  btnSecondaryStyle,
   codeBlockStyle,
+  dangerBannerStyle,
   inputStyle,
-  panelHeaderStripStyle,
+  pillStyle,
   panelStyle,
   selectStyle,
   sectionSurfaceStyle,
@@ -32,32 +35,31 @@ export function getWizardModalChromeStyle() {
   };
 }
 
-export function getWizardStepButtonStyle({ active = false } = {}) {
+function withWizardControlLayout(style, { align = 'flex-start' } = {}) {
   return {
+    ...style,
     display: 'inline-flex',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: align,
     gap: '0.75rem',
     width: '100%',
     height: 'auto',
     padding: '0.75rem 1rem',
-    textAlign: 'left',
-    fontSize: '12px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-    background: active ? 'var(--chrome-control-fill-hover)' : 'var(--chrome-control-fill)',
-    borderColor: 'var(--chrome-border-color)',
-    borderWidth: 'var(--chrome-border-width)',
-    borderStyle: 'solid',
-    borderRadius: 'var(--chrome-radius-control)',
-    boxShadow: 'var(--chrome-shadow-control)',
-    color: 'var(--text-primary)',
+    textAlign: align === 'center' ? 'center' : 'left',
+    textTransform: 'none',
+    letterSpacing: 'normal',
   };
+}
+
+export function getWizardStepButtonStyle({ active = false } = {}) {
+  return withWizardControlLayout(
+    active ? btnPrimaryStyle({ size: 'md' }) : btnSecondaryStyle({ size: 'md' })
+  );
 }
 
 export function getWizardStepIndexStyle({ active = false } = {}) {
   return {
+    ...pillStyle({ tone: active ? 'accent' : 'neutral' }),
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -65,29 +67,23 @@ export function getWizardStepIndexStyle({ active = false } = {}) {
     height: '1.75rem',
     padding: 0,
     flexShrink: 0,
-    fontSize: '10px',
-    fontWeight: 700,
-    background: active ? 'var(--chrome-control-fill)' : 'var(--chrome-panel-fill)',
-    borderColor: 'var(--chrome-border-color)',
-    borderWidth: 'var(--chrome-border-width)',
-    borderStyle: 'solid',
-    borderRadius: 'var(--chrome-radius-control)',
-    boxShadow: 'var(--chrome-shadow-control)',
-    color: active ? 'var(--accent-primary)' : 'var(--text-muted)',
   };
 }
 
 export function getWizardPrimaryActionStyle() {
-  return {
-    ...getWizardStepButtonStyle({ active: true }),
-    justifyContent: 'center',
-  };
+  return withWizardControlLayout(btnPrimaryStyle({ size: 'md' }), { align: 'center' });
 }
 
 export function getWizardSecondaryActionStyle() {
+  return withWizardControlLayout(btnSecondaryStyle({ size: 'md' }), { align: 'center' });
+}
+
+export function getWizardCloseButtonStyle() {
   return {
-    ...getWizardStepButtonStyle({ active: false }),
-    justifyContent: 'center',
+    ...btnSecondaryStyle({ size: 'sm' }),
+    textTransform: 'none',
+    letterSpacing: 'normal',
+    flexShrink: 0,
   };
 }
 
@@ -96,34 +92,25 @@ export function getWizardInsetPanelStyle({ emphasized = false } = {}) {
 }
 
 export function getWizardFieldStyle() {
-  return {
-    ...inputStyle(),
-    borderColor: 'var(--chrome-border-color)',
-    boxShadow: 'var(--chrome-shadow-control)',
-  };
+  return inputStyle();
 }
 
 export function getWizardDangerBannerStyle() {
-  return {
-    background: 'color-mix(in srgb, var(--danger) 12%, var(--chrome-panel-fill))',
-    borderColor: 'color-mix(in srgb, var(--danger) 42%, var(--chrome-border-color))',
-    borderWidth: 'var(--chrome-border-width)',
-    borderStyle: 'solid',
-    borderRadius: 'var(--chrome-radius-panel)',
-    boxShadow: 'var(--chrome-shadow-control)',
-    color: 'var(--danger)',
-  };
+  return dangerBannerStyle();
 }
 
 const wizardFieldStyle = getWizardFieldStyle();
 const wizardSelectFieldStyle = selectStyle();
-const wizardHeaderRailStyle = panelHeaderStripStyle();
+const wizardHeaderRailStyle = {
+  borderBottomColor: 'var(--border-subtle)',
+  borderBottomWidth: 'var(--chrome-border-width)',
+};
 const wizardLeftRailStyle = {
-  borderRightColor: 'var(--chrome-border-color)',
+  borderRightColor: 'var(--border-subtle)',
   borderRightWidth: 'var(--chrome-border-width)',
 };
 const wizardRightRailStyle = {
-  borderLeftColor: 'var(--chrome-border-color)',
+  borderLeftColor: 'var(--border-subtle)',
   borderLeftWidth: 'var(--chrome-border-width)',
 };
 
@@ -169,10 +156,15 @@ function StepButton({ step, currentStep, label, index, onClick }) {
       type="button"
       disabled={!unlocked}
       onClick={() => onClick(step)}
-      className="text-left disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
       style={getWizardStepButtonStyle({ active })}
     >
-      <span style={getWizardStepIndexStyle({ active })}>{index + 1}</span>
+      <span
+        className="flex h-7 w-7 items-center justify-center text-xs font-semibold"
+        style={getWizardStepIndexStyle({ active })}
+      >
+        {index + 1}
+      </span>
       <span className="text-sm font-medium">{label}</span>
     </button>
   );
@@ -247,7 +239,7 @@ export default function SwarmLaunchWizardModal({
           className="flex items-start justify-between gap-4 border-b px-6 py-5"
           style={wizardHeaderRailStyle}
         >
-          <div className="space-y-2">
+          <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap gap-2">
               <SurfacePill tone="accent">Asistente de lanzamiento</SurfacePill>
               <SurfacePill>{preview?.modeLabel || 'Template team'}</SurfacePill>
@@ -266,8 +258,8 @@ export default function SwarmLaunchWizardModal({
           <button
             type="button"
             onClick={() => onClose?.()}
-            className="text-sm"
-            style={getWizardSecondaryActionStyle()}
+            className="shrink-0 text-sm"
+            style={getWizardCloseButtonStyle()}
           >
             Cerrar
           </button>
@@ -583,22 +575,32 @@ export default function SwarmLaunchWizardModal({
                       {(preview?.rolePrograms || []).map((entry) => {
                         const roleModels = Array.isArray(catalog?.models) ? catalog.models : [];
                         const currentModel = draft.roleModels?.[entry.role_key] || '';
+                        const isKimi = entry.program_id === 'kimi';
 
                         return (
                           <div key={entry.role_key} className="space-y-2">
                             <span className="text-sm font-medium">{entry.role}</span>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className={`grid gap-2 ${isKimi ? 'grid-cols-1' : 'grid-cols-2'}`}>
                               <select
                                 aria-label={`Programa para ${entry.role}`}
                                 value={entry.program_id || ''}
-                                onChange={(event) =>
-                                  onDraftChange({
+                                onChange={(event) => {
+                                  const nextProgramId = event.target.value;
+                                  const updates = {
                                     rolePrograms: {
                                       ...(draft.rolePrograms || {}),
-                                      [entry.role_key]: event.target.value,
+                                      [entry.role_key]: nextProgramId,
                                     },
-                                  })
-                                }
+                                  };
+                                  // Kimi does not support model selection; clear any previous model.
+                                  if (nextProgramId === 'kimi') {
+                                    updates.roleModels = {
+                                      ...(draft.roleModels || {}),
+                                      [entry.role_key]: '',
+                                    };
+                                  }
+                                  onDraftChange(updates);
+                                }}
                                 className="w-full text-xs"
                                 style={wizardSelectFieldStyle}
                               >
@@ -608,27 +610,29 @@ export default function SwarmLaunchWizardModal({
                                   </option>
                                 ))}
                               </select>
-                              <select
-                                aria-label={`Modelo para ${entry.role}`}
-                                value={currentModel}
-                                onChange={(event) =>
-                                  onDraftChange({
-                                    roleModels: {
-                                      ...(draft.roleModels || {}),
-                                      [entry.role_key]: event.target.value,
-                                    },
-                                  })
-                                }
-                                className="w-full text-xs"
-                                style={wizardSelectFieldStyle}
-                              >
-                                <option value="">Default del perfil</option>
-                                {roleModels.map((model) => (
-                                  <option key={model.id} value={model.id}>
-                                    {model.label}
-                                  </option>
-                                ))}
-                              </select>
+                              {!isKimi && (
+                                <select
+                                  aria-label={`Modelo para ${entry.role}`}
+                                  value={currentModel}
+                                  onChange={(event) =>
+                                    onDraftChange({
+                                      roleModels: {
+                                        ...(draft.roleModels || {}),
+                                        [entry.role_key]: event.target.value,
+                                      },
+                                    })
+                                  }
+                                  className="w-full text-xs"
+                                  style={wizardSelectFieldStyle}
+                                >
+                                  <option value="">Default del perfil</option>
+                                  {roleModels.map((model) => (
+                                    <option key={model.id} value={model.id}>
+                                      {model.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
                           </div>
                         );
@@ -807,8 +811,12 @@ export default function SwarmLaunchWizardModal({
             ) : null}
           </main>
 
-          <aside className="border-l p-5" style={wizardRightRailStyle}>
-            <div className="space-y-4">
+          <aside
+            className="flex min-h-0 flex-col border-l p-5"
+            style={wizardRightRailStyle}
+            data-testid="swarm-launch-wizard-sidebar"
+          >
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
               <div>
                 <p className="text-sm font-semibold">Vista previa de topología</p>
                 <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -830,107 +838,114 @@ export default function SwarmLaunchWizardModal({
                   <div>Ruta · {draft.workspacePath || 'Sin ruta'}</div>
                 </div>
               </SurfaceCard>
+            </div>
 
-              <div className="flex flex-col gap-3">
-                {currentStep !== 'team' ? (
+            <div
+              className="mt-4 flex shrink-0 flex-col gap-3 border-t pt-4"
+              style={{
+                borderTopColor: 'var(--border-subtle)',
+                borderTopWidth: 'var(--chrome-border-width)',
+              }}
+              data-testid="swarm-launch-wizard-actions"
+            >
+              {currentStep !== 'team' ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onStepChange(STEP_ORDER[Math.max(0, STEP_ORDER.indexOf(currentStep) - 1)])
+                  }
+                  className="text-sm font-medium"
+                  style={{
+                    ...getWizardSecondaryActionStyle(),
+                    width: '100%',
+                  }}
+                >
+                  Volver
+                </button>
+              ) : null}
+
+              {currentStep !== 'launch' ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onStepChange(
+                      STEP_ORDER[
+                        Math.min(STEP_ORDER.length - 1, STEP_ORDER.indexOf(currentStep) + 1)
+                      ]
+                    )
+                  }
+                  className="text-sm font-medium"
+                  style={{
+                    ...getWizardPrimaryActionStyle(),
+                    width: '100%',
+                  }}
+                >
+                  Siguiente
+                </button>
+              ) : (
+                <>
                   <button
                     type="button"
-                    onClick={() =>
-                      onStepChange(STEP_ORDER[Math.max(0, STEP_ORDER.indexOf(currentStep) - 1)])
-                    }
-                    className="text-sm font-medium"
-                    style={{
-                      ...getWizardSecondaryActionStyle(),
-                      width: '100%',
+                    onClick={() => {
+                      onSubmitStateChange?.({ submitting: false, error: null });
+                      onLaunch?.();
                     }}
-                  >
-                    Volver
-                  </button>
-                ) : null}
-
-                {currentStep !== 'launch' ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onStepChange(
-                        STEP_ORDER[
-                          Math.min(STEP_ORDER.length - 1, STEP_ORDER.indexOf(currentStep) + 1)
-                        ]
-                      )
-                    }
-                    className="text-sm font-medium"
+                    disabled={!preview?.isReady || submitState?.submitting}
+                    className="text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                     style={{
                       ...getWizardPrimaryActionStyle(),
                       width: '100%',
                     }}
                   >
-                    Siguiente
+                    {submitState?.submitting
+                      ? 'Lanzando…'
+                      : preview?.isReady
+                        ? 'Lanzar swarm local'
+                        : 'Completá configuración'}
                   </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSubmitStateChange?.({ submitting: false, error: null });
-                        onLaunch?.();
-                      }}
-                      disabled={!preview?.isReady || submitState?.submitting}
-                      className="text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                      style={{
-                        ...getWizardPrimaryActionStyle(),
-                        width: '100%',
-                      }}
-                    >
-                      {submitState?.submitting
-                        ? 'Lanzando…'
-                        : preview?.isReady
-                          ? 'Lanzar swarm local'
-                          : 'Completá configuración'}
-                    </button>
 
-                    {submitState?.error ? (
-                      <div
-                        className="border px-3 py-2 text-sm font-medium"
-                        style={getWizardDangerBannerStyle()}
-                      >
-                        <div>{submitState.error}</div>
-                        {submitState.error.includes('swarm activo') && (
-                          <button
-                            type="button"
-                            className="mt-2 text-xs font-semibold"
-                            style={{
-                              ...btnDangerStyle({ size: 'xs' }),
-                              textTransform: 'none',
-                              letterSpacing: 'normal',
-                              color: 'var(--danger)',
-                              background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
-                              borderColor:
-                                'color-mix(in srgb, var(--danger) 42%, var(--chrome-border-color))',
-                              boxShadow: 'var(--chrome-shadow-control)',
-                            }}
-                            onClick={async () => {
-                              try {
-                                const res = await fetch('/api/swarm/processes', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ action: 'abort_all_active' }),
-                                });
-                                if (res.ok) {
-                                  onSubmitStateChange?.({ submitting: false, error: null });
-                                }
-                              } catch {
-                                // ignore
+                  {submitState?.error ? (
+                    <div
+                      className="border px-3 py-2 text-sm font-medium"
+                      style={getWizardDangerBannerStyle()}
+                    >
+                      <div>{submitState.error}</div>
+                      {submitState.error.includes('swarm activo') && (
+                        <button
+                          type="button"
+                          className="mt-2 text-xs font-semibold"
+                          style={{
+                            ...btnDangerStyle({ size: 'xs' }),
+                            textTransform: 'none',
+                            letterSpacing: 'normal',
+                            color: 'var(--danger)',
+                            background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
+                            borderColor:
+                              'color-mix(in srgb, var(--danger) 42%, var(--chrome-border-color))',
+                            boxShadow: 'var(--chrome-shadow-control)',
+                          }}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch('/api/swarm/processes', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'abort_all_active' }),
+                              });
+                              if (res.ok) {
+                                onSubmitStateChange?.({ submitting: false, error: null });
                               }
-                            }}
-                          >
-                            Forzar cancelación de misión activa
-                          </button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                        >
+                          Forzar cancelación de misión activa
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           </aside>
         </div>

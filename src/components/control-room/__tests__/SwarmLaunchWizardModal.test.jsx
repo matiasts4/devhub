@@ -7,6 +7,7 @@ const {
   getWizardInsetPanelStyle,
   getWizardFieldStyle,
   getWizardDangerBannerStyle,
+  getWizardCloseButtonStyle,
 } = require('../SwarmLaunchWizardModal');
 
 describe('SwarmLaunchWizardModal morphology chrome', () => {
@@ -25,22 +26,21 @@ describe('SwarmLaunchWizardModal morphology chrome', () => {
     expect(style.background).toContain('var(--chrome-panel-fill-emphasis)');
   });
 
-  test('step controls and primary action use token-driven control chrome without amber rgba literals', () => {
+  test('step controls and primary action keep accent-driven palette via morphology factories', () => {
     const activeStep = getWizardStepButtonStyle({ active: true });
     const activeIndex = getWizardStepIndexStyle({ active: true });
     const primaryAction = getWizardPrimaryActionStyle();
 
-    expect(activeStep.background).toContain('var(--chrome-control-fill-hover)');
-    expect(activeStep.borderColor).toBe('var(--chrome-border-color)');
-    expect(activeStep.borderWidth).toBe('var(--chrome-border-width)');
-    expect(activeStep.boxShadow).toBe('var(--chrome-shadow-control)');
+    expect(activeStep.background).toContain('var(--accent-primary)');
+    expect(activeStep.border).toContain('var(--accent-primary)');
+    expect(activeStep.borderRadius).toBe('var(--chrome-radius-control)');
 
-    expect(activeIndex.background).toBe('var(--chrome-control-fill)');
-    expect(activeIndex.borderColor).toBe('var(--chrome-border-color)');
+    expect(activeIndex.background).toContain('var(--accent-primary)');
+    expect(activeIndex.borderColor).toContain('var(--accent-primary)');
     expect(activeIndex.borderWidth).toBe('var(--chrome-border-width)');
 
-    expect(primaryAction.background).toContain('var(--chrome-control-fill-hover)');
-    expect(primaryAction.borderColor).toBe('var(--chrome-border-color)');
+    expect(primaryAction.background).toContain('var(--accent-primary)');
+    expect(primaryAction.border).toContain('var(--accent-primary)');
     expect(JSON.stringify({ activeStep, activeIndex, primaryAction })).not.toContain('255,176,64');
   });
 
@@ -53,13 +53,21 @@ describe('SwarmLaunchWizardModal morphology chrome', () => {
 
     expect(modal.background).toContain('var(--chrome-panel-fill-emphasis)');
     expect(inactiveStep.background).toContain('var(--chrome-control-fill)');
-    expect(inactiveStep.boxShadow).toBe('var(--chrome-shadow-control)');
-    expect(inactiveIndex.background).toBe('var(--chrome-panel-fill)');
+    expect(inactiveStep.border).toContain('var(--chrome-border-color)');
+    expect(inactiveIndex.background).toContain('var(--chrome-control-fill)');
     expect(insetPanel.background).toContain('var(--chrome-panel-fill)');
     expect(emphasizedInsetPanel.background).toContain('var(--chrome-panel-fill-emphasis)');
     expect(JSON.stringify({ inactiveStep, inactiveIndex, insetPanel })).not.toContain(
       'transparent'
     );
+  });
+
+  test('close button stays compact and does not inherit full-width wizard action layout', () => {
+    const closeButton = getWizardCloseButtonStyle();
+
+    expect(closeButton.width).toBeUndefined();
+    expect(closeButton.flexShrink).toBe(0);
+    expect(closeButton.border).toContain('var(--chrome-border-color)');
   });
 
   test('wizard fields and secondary feedback chrome align with shared control tokens and danger accents', () => {
@@ -68,16 +76,14 @@ describe('SwarmLaunchWizardModal morphology chrome', () => {
     const dangerBanner = getWizardDangerBannerStyle();
 
     expect(fieldStyle.background).toContain('var(--chrome-control-fill)');
-    expect(fieldStyle.borderColor).toBe('var(--chrome-border-color)');
-    expect(fieldStyle.boxShadow).toBe('var(--chrome-shadow-control)');
+    expect(fieldStyle.border).toContain('var(--chrome-border-color)');
 
     expect(secondaryAction.background).toContain('var(--chrome-control-fill)');
-    expect(secondaryAction.borderColor).toBe('var(--chrome-border-color)');
-    expect(secondaryAction.boxShadow).toBe('var(--chrome-shadow-control)');
+    expect(secondaryAction.border).toContain('var(--chrome-border-color)');
 
-    expect(dangerBanner.borderColor).toContain('var(--danger)');
-    expect(dangerBanner.background).toContain('var(--chrome-panel-fill)');
-    expect(dangerBanner.boxShadow).toContain('var(--chrome-shadow-control)');
+    expect(dangerBanner.border).toContain('var(--danger)');
+    expect(dangerBanner.color).toBe('var(--danger)');
+    expect(dangerBanner.borderRadius).toBe('var(--chrome-radius-panel)');
     expect(JSON.stringify({ fieldStyle, secondaryAction })).not.toContain('var(--surface-app)');
   });
 });
