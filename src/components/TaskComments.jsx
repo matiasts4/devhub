@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@/lib/db/localClient';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import { Bot, User as UserIcon, Loader2, Send } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -14,22 +15,17 @@ export default function TaskComments({ taskId }) {
   useEffect(() => {
     if (!taskId) return;
     fetchComments();
-
-    const channel = db
-      .channel(`public:task_comments:${taskId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'task_comments', filter: `task_id=eq.${taskId}` },
-        () => {
-          fetchComments();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      db.removeChannel(channel);
-    };
   }, [taskId]);
+
+  useSupabaseRealtime({
+    table: 'task_comments',
+    filter: taskId ? `task_id=eq.${taskId}` : undefined,
+    onInsert: fetchComments,
+    onUpdate: fetchComments,
+    onDelete: fetchComments,
+    enabled: Boolean(taskId),
+    channelName: `public:task_comments:${taskId || 'none'}`,
+  });
 
   async function fetchComments() {
     setLoading(true);

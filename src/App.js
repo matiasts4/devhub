@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import {
   HashRouter,
   Routes,
@@ -89,7 +90,6 @@ function WorkspaceLayout() {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const db = useMemo(() => createClient(), []);
-  const pollRef = useRef(null);
 
   const { activeWorkspaceId } = useAuth();
   const navigate = useNavigate();
@@ -164,51 +164,47 @@ function WorkspaceLayout() {
     saveUIPref(projectId, 'sidebarCollapsed', collapsed);
   }, [projectId, collapsed, uiPrefsReady]);
 
-  // Polling for project updates (local mode)
-  useEffect(() => {
+  // Realtime project updates
+  useSupabaseRealtime({
+    table: 'projects',
+    filter: projectId ? `id=eq.${projectId}` : undefined,
+    onUpdate: loadProject,
+    onDelete: () => navigate('/hub'),
+    enabled: Boolean(projectId),
+    channelName: `public:projects:${projectId || 'none'}`,
+  });
+
+  // Auto-calcula progress cuando cambian las tareas (agente IA o colaboradores)
+  const recalcProgress = useCallback(async () => {
     if (!projectId) return;
+    const { data: tasks } = await db.from('tasks').select('status').eq('project_id', projectId);
+    if (!tasks || tasks.length === 0) return;
+    const total = tasks.length;
+    const done = tasks.filter((t) =>
+      ['completed', 'done'].includes((t.status || '').toLowerCase())
+    ).length;
+    const newProgress = Math.round((done / total) * 100);
 
-    const refreshProject = async () => {
-      const { data } = await db.from('projects').select('*').eq('id', projectId).single();
-      if (data) setProject(data);
-    };
+    // Update sidebar/UI immediately, even if persistence fails.
+    setProject((prev) => (prev ? { ...prev, progress: newProgress } : prev));
 
-    // Poll every 10 seconds
-    pollRef.current = setInterval(refreshProject, 10000);
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    await db.from('projects').update({ progress: newProgress }).eq('id', projectId);
   }, [projectId, db]);
 
-  // Auto-calcula progress cuando el agente IA crea/completa tareas
   useEffect(() => {
     if (!projectId) return;
-
-    const recalcProgress = async () => {
-      const { data: tasks } = await db.from('tasks').select('status').eq('project_id', projectId);
-      if (!tasks || tasks.length === 0) return;
-      const total = tasks.length;
-      const done = tasks.filter((t) =>
-        ['completed', 'done'].includes((t.status || '').toLowerCase())
-      ).length;
-      const newProgress = Math.round((done / total) * 100);
-
-      // Update sidebar/UI immediately, even if persistence fails.
-      setProject((prev) => (prev ? { ...prev, progress: newProgress } : prev));
-
-      await db.from('projects').update({ progress: newProgress }).eq('id', projectId);
-    };
-
     recalcProgress();
+  }, [projectId, recalcProgress]);
 
-    // Poll task changes every 15 seconds
-    const taskPoll = setInterval(recalcProgress, 15000);
-
-    return () => {
-      clearInterval(taskPoll);
-    };
-  }, [projectId, db]);
+  useSupabaseRealtime({
+    table: 'tasks',
+    filter: projectId ? `project_id=eq.${projectId}` : undefined,
+    onInsert: recalcProgress,
+    onUpdate: recalcProgress,
+    onDelete: recalcProgress,
+    enabled: Boolean(projectId),
+    channelName: `public:tasks-progress:${projectId || 'none'}`,
+  });
 
   if (loading) {
     return (

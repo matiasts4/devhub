@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import TitleBar from '@/components/TitleBar';
 import { Button } from '@/components/ui/button';
@@ -132,6 +133,16 @@ export default function ProjectHub() {
     fetchProjects();
   }, [fetchProjects]);
 
+  useSupabaseRealtime({
+    table: 'projects',
+    filter: activeWorkspaceId ? `workspace_id=eq.${activeWorkspaceId}` : undefined,
+    onInsert: fetchProjects,
+    onUpdate: fetchProjects,
+    onDelete: fetchProjects,
+    enabled: Boolean(activeWorkspaceId),
+    channelName: `public:projects:${activeWorkspaceId || 'all'}`,
+  });
+
   async function handleSelectFolder() {
     // Detectar si estamos en contexto Tauri
     const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
@@ -181,7 +192,9 @@ export default function ProjectHub() {
         local_path: '',
       });
       navigate(getProjectEntryPath(data.id));
-      sileo.success({ title: 'Proyecto creado — podés planificar desde Planificación en el sidebar' });
+      sileo.success({
+        title: 'Proyecto creado — podés planificar desde Planificación en el sidebar',
+      });
     }
   }
 

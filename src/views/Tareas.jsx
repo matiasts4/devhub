@@ -3,6 +3,7 @@ import TaskComments from '../components/TaskComments';
 import PresenceAvatars from '../components/PresenceAvatars';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import {
   ListTodo,
   Plus,
@@ -973,20 +974,26 @@ export default function Tareas() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-  useEffect(() => {
-    if (!project?.id) return;
-    const channel = db
-      .channel(`public:tasks:${project.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${project.id}` },
-        () => fetchData()
-      )
-      .subscribe();
-    return () => {
-      db.removeChannel(channel);
-    };
-  }, [project?.id, fetchData]);
+
+  useSupabaseRealtime({
+    table: 'tasks',
+    filter: project?.id ? `project_id=eq.${project.id}` : undefined,
+    onInsert: fetchData,
+    onUpdate: fetchData,
+    onDelete: fetchData,
+    enabled: Boolean(project?.id),
+    channelName: `public:tasks:${project?.id || 'none'}`,
+  });
+
+  useSupabaseRealtime({
+    table: 'milestones',
+    filter: project?.id ? `project_id=eq.${project.id}` : undefined,
+    onInsert: fetchData,
+    onUpdate: fetchData,
+    onDelete: fetchData,
+    enabled: Boolean(project?.id),
+    channelName: `public:milestones:${project?.id || 'none'}`,
+  });
 
   async function moveTask(taskId, newStatus) {
     const completed_at = newStatus === 'completed' ? new Date().toISOString() : null;
