@@ -39,7 +39,6 @@ const NEXTJS_READY_POLL_MS: u64 = 500;
 // igual mientras tanto; este timeout solo limita cuánto esperamos antes de
 // delegar al recovery en background.
 const NEXTJS_READY_STARTUP_ATTEMPTS: usize = 60;
-const NEXTJS_READY_RECOVERY_ATTEMPTS: usize = 60;
 
 /// Canonical absolute path to the server entry point inside the packaged standalone.
 /// Works from both dev (`.next/standalone/server.js`) and installed
@@ -227,32 +226,6 @@ fn wait_for_nextjs_ready(max_attempts: usize, context: &str) -> bool {
     false
 }
 
-fn schedule_main_window_recovery(app: tauri::AppHandle, reason: &str) {
-    let reason = reason.to_string();
-    thread::spawn(move || {
-        if !wait_for_nextjs_ready(
-            NEXTJS_READY_RECOVERY_ATTEMPTS,
-            &format!("recovery: {}", reason),
-        ) {
-            log::error!(
-                "[DevHub] ❌ Next.js siguió sin responder; la ventana principal queda oculta para evitar una pantalla en blanco."
-            );
-            return;
-        }
-
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.reload();
-            let _ = window.show();
-            let _ = window.unminimize();
-            let _ = window.set_focus();
-            log::info!(
-                "[DevHub] Ventana principal recargada cuando Next.js quedó listo ({}).",
-                reason
-            );
-        }
-    });
-}
-
 /// Matar procesos zombie que ocupan los puertos del sidecar/PTY y (solo en prod) Next.js.
 /// En dev NO tocamos el puerto de Next porque lo maneja el beforeDevCommand de `tauri dev`.
 /// Esto pasa cuando `tauri dev` se cierra con Ctrl+C y los procesos hijos no mueren.
@@ -391,6 +364,81 @@ fn ensure_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// HTML base64 de la pantalla de carga mostrada mientras el servidor Next.js
+/// local arranca. Evita que WebKitGTK muestre "This page couldn't load" si la
+/// WebView carga la URL principal antes de que el backend responda.
+const SPLASH_HTML_B64: &str = "PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT5ib2R5e2JhY2tncm91bmQ6IzBhMGEwYTtjb2xvcjojZTVlNWU1O2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmO2Rpc3BsYXk6ZmxleDthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNlbnRlcjtoZWlnaHQ6MTAwdmg7bWFyZ2luOjA7fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXYgc3R5bGU9InRleHQtYWxpZ246Y2VudGVyOyI+PGRpdiBzdHlsZT0iZm9udC1zaXplOjI0cHg7Zm9udC13ZWlnaHQ6NjAwO21hcmdpbi1ib3R0b206OHB4OyI+RGV2SHViPC9kaXY+PGRpdiBzdHlsZT0iZm9udC1zaXplOjE0cHg7b3BhY2l0eTowLjc7Ij5DYXJnYW5kbyBlbnRvcm5vIGRlIHRyYWJham8uLi48L2Rpdj48L2Rpdj48L2JvZHk+PC9odG1sPg==";
+
+fn splash_url() -> tauri::WebviewUrl {
+    let url = format!("data:text/html;base64,{}", SPLASH_HTML_B64);
+    tauri::WebviewUrl::External(url.parse().expect("URL del splash inválida"))
+}
+
+fn build_splash_window(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    tauri::WebviewWindowBuilder::new(app, "splash", splash_url())
+        .title("DevHub — Cargando")
+        .inner_size(480.0, 260.0)
+        .center()
+        .decorations(false)
+        .always_on_top(true)
+        .resizable(false)
+        .build()
+}
+
+fn close_splash_window(app_handle: &tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("splash") {
+        let _ = window.close();
+    }
+}
+
+/// Arranca el runtime (sidecar + Next.js standalone) y, mientras tanto, muestra
+/// una ventana splash. Solo crea y muestra la ventana principal cuando el
+/// servidor local responde HTTP OK en la ruta raíz. Esto corrige la pantalla
+/// "This page couldn't load" que aparecía al abrir el proyecto.
+fn startup_with_splash(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let splash = build_splash_window(app)?;
+    splash.show()?;
+
+    let app_handle = app.clone();
+    let next_ready = ensure_runtime_ready(app)?;
+
+    std::thread::spawn(move || {
+        let ready = if next_ready {
+            true
+        } else {
+            wait_for_nextjs_ready(NEXTJS_READY_STARTUP_ATTEMPTS, "startup-splash")
+        };
+
+        close_splash_window(&app_handle);
+
+        if ready {
+            log::info!("[DevHub] Servidor local listo. Mostrando ventana principal.");
+            if let Err(err) = ensure_main_window(&app_handle) {
+                log::error!("[DevHub] No se pudo crear la ventana principal: {}", err);
+                return;
+            }
+            if let Some(window) = app_handle.get_webview_window("main") {
+                if let Some(icon) = app_handle.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        } else {
+            log::error!(
+                "[DevHub] El servidor local no respondió a tiempo. La ventana principal no se mostrará."
+            );
+        }
+
+        if let Err(err) = build_main_tray(&app_handle) {
+            log::warn!("[DevHub] No se pudo crear el tray icon: {}", err);
+        }
+    });
+
+    Ok(())
+}
+
 /// Restaura la ventana principal cuando una segunda instancia es detectada.
 /// Es CRÍTICO no reiniciar el runtime aquí: el sidecar de la instancia activa
 /// ya está corriendo y matarlo desconectaría todas las terminales PTY.
@@ -444,12 +492,22 @@ fn get_running_build_id() -> Option<u64> {
 /// Obtiene el mtime actual del standalone.zip instalado como build-id de referencia.
 /// Solo aplica a instalaciones .deb/.rpm; en dev mode el path no existe → None.
 fn get_installed_build_id() -> Option<u64> {
-    let path = std::path::Path::new("/usr/lib/DevHub/resources/standalone.zip");
-    fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
+    const CANDIDATES: &[&str] = &[
+        "/usr/lib/DevHub/standalone.zip",
+        "/usr/lib/DevHub/resources/standalone.zip",
+        "/usr/local/lib/DevHub/standalone.zip",
+        "/usr/local/lib/DevHub/resources/standalone.zip",
+    ];
+    for path in CANDIDATES {
+        if let Ok(m) = fs::metadata(path) {
+            if let Ok(t) = m.modified() {
+                if let Ok(d) = t.duration_since(UNIX_EPOCH) {
+                    return Some(d.as_secs());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Lee el PID guardado y comprueba si el sidecar ya está corriendo.
@@ -629,14 +687,27 @@ fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<bool> {
     let next_ready = nextjs_route_is_ready(nextjs_port());
     let sidecar_ready = is_port_ready(sidecar_port());
 
-    if has_valid_sidecar && next_ready && sidecar_ready {
+    if next_ready && sidecar_ready {
+        return Ok(true);
+    }
+
+    // La WebView solo necesita Next en :3400. Si responde HTTP, no reiniciar todo
+    // porque falte el PTY sidecar (p. ej. rutas incorrectas en devhub-server).
+    if next_ready {
+        log::warn!(
+            "[DevHub] Next listo pero PTY sidecar ausente en :{} (sidecar válido: {}). UI puede cargar; terminal quedará caído.",
+            sidecar_port(),
+            has_valid_sidecar
+        );
+        if !has_valid_sidecar && !sidecar_ready {
+            spawn_sidecar(app);
+        }
         return Ok(true);
     }
 
     log::info!(
-        "[DevHub] Runtime local ausente o caído (sidecar válido: {}, next: {}, pty: {}). Relanzando...",
+        "[DevHub] Next no responde (sidecar válido: {}, sidecar puerto: {}). Relanzando runtime...",
         has_valid_sidecar,
-        next_ready,
         sidecar_ready
     );
 
@@ -922,35 +993,11 @@ pub fn run() {
             // Limpiar procesos zombie de sesiones anteriores (tauri dev, crashes, etc.)
             cleanup_zombie_ports();
 
-            let next_ready = ensure_runtime_ready(app.handle())?;
-            ensure_main_window(app.handle())?;
-
-            // Setear el ícono de la ventana explícitamente (necesario en dev mode en Linux)
-            if let Some(window) = app.get_webview_window("main") {
-                if let Some(icon) = app.default_window_icon() {
-                    let _ = window.set_icon(icon.clone());
-                }
-
-                // Always show the window early (with a loading state served by the
-                // Next standalone or the page.js skeleton). This avoids the "minutes
-                // of nothing / gray" perception when the backend takes time on first
-                // extract or cold start. The old hide was to "avoid blank screen" but
-                // users saw gray/empty anyway; frontend now owns a branded loading UI.
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-
-                if !next_ready {
-                    schedule_main_window_recovery(app.handle().clone(), "setup");
-                }
-            }
-
-            // Tray icon con menú contextual: punto de recuperación cuando el
-            // usuario oculta la ventana con la X. Si falla, la app sigue
-            // funcionando, solo no hay tray.
-            if let Err(err) = build_main_tray(app.handle()) {
-                log::warn!("[DevHub] No se pudo crear el tray icon: {}", err);
-            }
+            // Mostrar splash inmediatamente y no crear la ventana principal hasta
+            // que el servidor Next.js local responda HTTP OK. Esto evita el error
+            // "This page couldn't load" de WebKitGTK cuando la WebView carga antes
+            // de que el backend esté listo.
+            startup_with_splash(app.handle())?;
 
             Ok(())
         });
