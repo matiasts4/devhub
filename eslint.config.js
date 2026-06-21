@@ -41,6 +41,7 @@ const commonJsAndJestFiles = [
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
   'src/lib/devhub/**/*.js',
+  'src/lib/auth/providers/*.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
