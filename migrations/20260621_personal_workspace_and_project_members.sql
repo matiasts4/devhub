@@ -10,6 +10,26 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 1a. Align project_members columns with local SQLite schema ────────────────
+ALTER TABLE public.project_members
+  ADD COLUMN IF NOT EXISTS joined_at TIMESTAMPTZ DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS invited_email TEXT,
+  ADD COLUMN IF NOT EXISTS invite_token TEXT,
+  ADD COLUMN IF NOT EXISTS invited_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS invited_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+-- Ensure project_members role check includes owner (matches SQLite schema)
+ALTER TABLE public.project_members
+  DROP CONSTRAINT IF EXISTS project_members_role_check;
+ALTER TABLE public.project_members
+  ADD CONSTRAINT project_members_role_check
+  CHECK (role IN ('owner','admin','member','viewer'));
+
+-- Ensure generated id for existing project_members table
+ALTER TABLE public.project_members
+  ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
 -- ── 1b. Project invitations table (mirrors local SQLite schema) ───────────────
 CREATE TABLE IF NOT EXISTS public.project_invitations (
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -28,6 +48,9 @@ CREATE TABLE IF NOT EXISTS public.project_invitations (
 ALTER TABLE public.project_invitations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS project_invitations_deny_all ON public.project_invitations;
 CREATE POLICY project_invitations_deny_all ON public.project_invitations FOR ALL USING (false);
+
+-- invited_by may be unknown for legacy/backfilled invitations
+ALTER TABLE public.project_invitations ALTER COLUMN invited_by DROP NOT NULL;
 
 -- ── 2. Helper: create a personal workspace for a user idempotently ────────────
 CREATE OR REPLACE FUNCTION devhub_ensure_personal_workspace(p_user_id uuid, p_email text)
