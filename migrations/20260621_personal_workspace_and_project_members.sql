@@ -10,6 +10,25 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 1b. Project invitations table (mirrors local SQLite schema) ───────────────
+CREATE TABLE IF NOT EXISTS public.project_invitations (
+  project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('admin','member','viewer')),
+  token TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending','accepted','expired','revoked')) DEFAULT 'pending',
+  invited_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (project_id, email)
+);
+
+-- Block direct client access; invitations are managed by secure API routes.
+ALTER TABLE public.project_invitations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS project_invitations_deny_all ON public.project_invitations;
+CREATE POLICY project_invitations_deny_all ON public.project_invitations FOR ALL USING (false);
+
 -- ── 2. Helper: create a personal workspace for a user idempotently ────────────
 CREATE OR REPLACE FUNCTION devhub_ensure_personal_workspace(p_user_id uuid, p_email text)
 RETURNS uuid
@@ -226,6 +245,32 @@ FROM public.projects p
 WHERE m.project_id = p.id
   AND m.workspace_id IS NULL
   AND p.workspace_id IS NOT NULL;
+
+-- ── 6b. RLS for project_members (sharing source of truth) ─────────────────────
+ALTER TABLE public.project_members ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS project_members_select ON public.project_members;
+DROP POLICY IF EXISTS project_members_insert ON public.project_members;
+DROP POLICY IF EXISTS project_members_update ON public.project_members;
+DROP POLICY IF EXISTS project_members_delete ON public.project_members;
+
+CREATE POLICY project_members_select ON public.project_members FOR SELECT
+  USING (
+    user_id = devhub_current_user_id()
+    OR devhub_project_role(project_id) IN ('owner', 'admin', 'member', 'viewer')
+  );
+
+CREATE POLICY project_members_insert ON public.project_members FOR INSERT
+  WITH CHECK (devhub_project_role(project_id) IN ('owner', 'admin'));
+
+CREATE POLICY project_members_update ON public.project_members FOR UPDATE
+  USING (devhub_project_role(project_id) IN ('owner', 'admin'))
+  WITH CHECK (devhub_project_role(project_id) IN ('owner', 'admin'));
+
+CREATE POLICY project_members_delete ON public.project_members FOR DELETE
+  USING (
+    devhub_project_role(project_id) IN ('owner', 'admin')
+    OR user_id = devhub_current_user_id()
+  );
 
 -- ── 7. Harden RLS: project-based sharing with workspace fallback ──────────────
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
