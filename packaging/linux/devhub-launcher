@@ -60,5 +60,12 @@ fi
 export DEVHUB_NODE_BIN
 export DEVHUB_NPM_BIN
 
+# ── Force X11 backend for WebKitGTK/Tauri on Wayland sessions ──────────────────
+# WebKitGTK on Wayland frequently fails to load local URLs such as
+# http://127.0.0.1:3400, showing "This page couldn't load". Falling back to
+# the X11 backend avoids this class of rendering/network errors.
+export WAYLAND_DISPLAY=""
+export GDK_BACKEND="x11"
+
 # ── Launch desktop app ELF with absolute path (detached-friendly) ──────────────
 exec "$DEVHUB_APP_ELF" "$@"
