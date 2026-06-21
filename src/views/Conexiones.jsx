@@ -22,6 +22,7 @@ import {
   Info,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
@@ -60,7 +61,7 @@ function AddConnectionModal({ onClose, onCreated }) {
     setSaving(true);
     const { error } = await db.from('mcp_connections').insert({
       id: `conn-${Date.now()}`,
-      user_id: 'local-user',
+      user_id: LOCAL_USER_ID,
       name: form.name,
       type: form.type || 'generic',
       endpoint_url: form.endpoint_url || null,
@@ -316,10 +317,7 @@ export default function Conexiones() {
               />
             </div>
             <div>
-              <h3
-                className="typography-card-title"
-                style={{ color: 'var(--accent-primary)' }}
-              >
+              <h3 className="typography-card-title" style={{ color: 'var(--accent-primary)' }}>
                 Model Context Protocol (MCP)
               </h3>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -354,10 +352,7 @@ export default function Conexiones() {
               <Wifi className="w-4 h-4" style={{ color: 'var(--success)' }} strokeWidth={1.5} />
             </div>
             <div>
-              <h3
-                className="typography-card-title"
-                style={{ color: 'var(--text-primary)' }}
-              >
+              <h3 className="typography-card-title" style={{ color: 'var(--text-primary)' }}>
                 Estado de Conexiones
               </h3>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -394,10 +389,7 @@ export default function Conexiones() {
         </div>
 
         {/* Connections list — as a card with header */}
-        <div
-          className="overflow-hidden fade-in-up core-panel"
-          style={panelStyle()}
-        >
+        <div className="overflow-hidden fade-in-up core-panel" style={panelStyle()}>
           <div
             className="flex items-center gap-3 px-6 py-4"
             style={getWorkspaceSectionHeaderStripStyle({ tone: 'neutral' })}
@@ -413,10 +405,7 @@ export default function Conexiones() {
               />
             </div>
             <div>
-              <h3
-                className="typography-card-title"
-                style={{ color: 'var(--text-primary)' }}
-              >
+              <h3 className="typography-card-title" style={{ color: 'var(--text-primary)' }}>
                 Conexiones Configuradas
               </h3>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>

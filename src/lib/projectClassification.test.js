@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { LOCAL_USER_ID } from './constants/local.js';
 import {
   DEFAULT_DOCUMENTATION_POLICY,
   DEFAULT_PROJECT_TYPE,
@@ -56,7 +57,7 @@ test('builds a project creation payload with classification fields', () => {
       project_type: 'security',
       documentation_policy: 'shared_legacy',
     },
-    'local-user'
+    LOCAL_USER_ID
   );
 
   assert.equal(typeof payload.id, 'string');
@@ -64,7 +65,7 @@ test('builds a project creation payload with classification fields', () => {
 
   assert.deepEqual(payload, {
     id: payload.id,
-    user_id: 'local-user',
+    user_id: LOCAL_USER_ID,
     name: 'Project One',
     description: 'Desc',
     color: '#58A6FF',

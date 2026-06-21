@@ -15,6 +15,8 @@
 process.env.DEVHUB_AUTH_PROVIDER = 'fake';
 process.env.NODE_ENV = 'test';
 
+const { LOCAL_USER_ID, LOCAL_USER_EMAIL, LOCAL_WORKSPACE_ID } = require('@/lib/constants/local');
+
 // Stub the supabase SDK so the supabase adapter can be instantiated in
 // this test without making network calls. We mock the SDK at the module
 // level and then call the adapter factory directly via the port with a
@@ -114,10 +116,10 @@ describe('AuthProvider port contract', () => {
       await withAuthProvider('local', async (provider) => {
         const session = await provider.getSession();
         expect(session).not.toBeNull();
-        expect(session.user.id).toBe('local-user');
-        expect(session.user.email).toBe('local@devhub.local');
+        expect(session.user.id).toBe(LOCAL_USER_ID);
+        expect(session.user.email).toBe(LOCAL_USER_EMAIL);
         expect(session.workspaceMemberships).toEqual([
-          expect.objectContaining({ workspaceId: 'local-ws', role: 'owner' }),
+          expect.objectContaining({ workspaceId: LOCAL_WORKSPACE_ID, role: 'owner' }),
         ]);
       });
     });

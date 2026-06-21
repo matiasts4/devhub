@@ -1,5 +1,12 @@
 'use strict';
 
+const {
+  LOCAL_USER,
+  LOCAL_USER_ID,
+  LOCAL_USER_EMAIL,
+  LOCAL_WORKSPACE_ID,
+} = require('../../constants/local');
+
 /**
  * Local AuthProvider adapter.
  *
@@ -9,8 +16,10 @@
  */
 
 const SYNTHETIC_SESSION = Object.freeze({
-  user: Object.freeze({ id: 'local-user', email: 'local@devhub.local' }),
-  workspaceMemberships: Object.freeze([Object.freeze({ workspaceId: 'local-ws', role: 'owner' })]),
+  user: Object.freeze({ id: LOCAL_USER_ID, email: LOCAL_USER_EMAIL }),
+  workspaceMemberships: Object.freeze([
+    Object.freeze({ workspaceId: LOCAL_WORKSPACE_ID, role: 'owner' }),
+  ]),
 });
 
 const SYNTHETIC_TOKEN = 'local-synthetic-token';

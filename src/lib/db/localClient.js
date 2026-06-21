@@ -1,5 +1,6 @@
 /* eslint-disable */
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { LOCAL_USER_ID, LOCAL_USER_EMAIL } from '../constants/local.js';
 
 const isCloud =
   process.env.NEXT_PUBLIC_DEVHUB_AUTH_PROVIDER === 'supabase' ||
@@ -260,16 +261,16 @@ class LocalQueryClient {
 
     if (this._action === 'insert') {
       query = query.insert(this._actionData);
-      if (this._select) query = query.select(this._select);
+      query = query.select(this._select || '*');
     } else if (this._action === 'update') {
       query = query.update(this._actionData);
-      if (this._select) query = query.select(this._select);
+      query = query.select(this._select || '*');
     } else if (this._action === 'upsert') {
       query = query.upsert(this._actionData);
-      if (this._select) query = query.select(this._select);
+      query = query.select(this._select || '*');
     } else if (this._action === 'delete') {
       query = query.delete();
-      if (this._select) query = query.select(this._select);
+      query = query.select(this._select || '*');
     } else {
       query = query.select(this._select);
     }
@@ -354,23 +355,29 @@ class LocalQueryClient {
   }
 
   async _executeMutation() {
-    const localResult = await this._executeLocalMutation();
-
-    if (_shouldQuerySupabase(this.table) && localResult.error === null) {
+    const shouldSync = _shouldQuerySupabase(this.table);
+    if (shouldSync) {
       const supabase = getSupabaseInstance();
       if (supabase) {
         try {
-          const { error } = await this._buildSupabaseQuery(supabase);
+          const { data: remoteData, error } = await this._buildSupabaseQuery(supabase);
           if (error) {
-            console.error('Supabase sync mutation error:', error);
+            // Cloud is the source of truth: surface the error instead of silently
+            // falling back to local-only state.
+            console.error('Supabase mutation failed:', error);
+            return { data: null, error };
           }
+          // Best-effort local mirror after cloud success.
+          const localResult = await this._executeLocalMutation();
+          return { data: remoteData ?? localResult.data ?? null, error: null };
         } catch (err) {
-          console.warn('Supabase sync mutation exception (offline):', err);
+          console.warn('Supabase mutation exception:', err);
+          return { data: null, error: normalizeClientError(err, `${this._action} failed`) };
         }
       }
     }
 
-    return localResult;
+    return this._executeLocalMutation();
   }
 
   async _executeLocalMutation() {
@@ -443,8 +450,8 @@ const localAuth = {
       data: {
         session: {
           user: {
-            id: 'local-user',
-            email: 'local@devhub.local',
+            id: LOCAL_USER_ID,
+            email: LOCAL_USER_EMAIL,
           },
         },
       },
@@ -456,8 +463,8 @@ const localAuth = {
     return {
       data: {
         user: {
-          id: 'local-user',
-          email: 'local@devhub.local',
+          id: LOCAL_USER_ID,
+          email: LOCAL_USER_EMAIL,
         },
       },
       error: null,
@@ -468,8 +475,8 @@ const localAuth = {
     return {
       data: {
         user: {
-          id: 'local-user',
-          email: 'local@devhub.local',
+          id: LOCAL_USER_ID,
+          email: LOCAL_USER_EMAIL,
         },
         session: { access_token: 'local' },
       },
@@ -490,13 +497,13 @@ const localAuth = {
         session: {
           access_token: 'local',
           user: {
-            id: 'local-user',
-            email: email || 'local@devhub.local',
+            id: LOCAL_USER_ID,
+            email: email || LOCAL_USER_EMAIL,
           },
         },
         user: {
-          id: 'local-user',
-          email: email || 'local@devhub.local',
+          id: LOCAL_USER_ID,
+          email: email || LOCAL_USER_EMAIL,
         },
       },
       error: null,
@@ -540,7 +547,7 @@ const localRealtime = {
         return this;
       },
       async track(payload) {
-        state[payload.user_id || 'local-user'] = [payload];
+        state[payload.user_id || LOCAL_USER_ID] = [payload];
         handlers.forEach((h) => {
           if (h.event === 'presence' && h.filter?.event === 'sync') {
             h.callback();

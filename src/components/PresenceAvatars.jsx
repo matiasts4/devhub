@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@/lib/db/localClient';
-
-const LOCAL_USER = { id: 'local-user', email: 'local@devhub.local' };
+import { useAuth } from '@/lib/auth/AuthContext';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 
 export default function PresenceAvatars({ projectId }) {
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!projectId) return;
+    // Do not track presence for the synthetic local user or when unauthenticated.
+    const canTrack = user && user.id !== LOCAL_USER_ID;
 
     const db = createClient();
     const room = db.channel(`presence:project:${projectId}`);
@@ -27,10 +30,10 @@ export default function PresenceAvatars({ projectId }) {
         setOnlineUsers(Array.from(usersMap.values()));
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
+        if (status === 'SUBSCRIBED' && canTrack) {
           await room.track({
-            user_id: LOCAL_USER.id,
-            email: LOCAL_USER.email,
+            user_id: user.id,
+            email: user.email,
             online_at: new Date().toISOString(),
           });
         }
@@ -39,7 +42,7 @@ export default function PresenceAvatars({ projectId }) {
     return () => {
       db.removeChannel(room);
     };
-  }, [projectId]);
+  }, [projectId, user]);
 
   if (onlineUsers.length === 0) return null;
 

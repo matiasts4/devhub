@@ -18,6 +18,8 @@ import {
   Save,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { Button } from '@/components/ui/button';
@@ -66,6 +68,7 @@ export default function Planificacion() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const db = createClient();
+  const { user } = useAuth();
   const dropRef = useRef(null);
   const modeTouchedRef = useRef(false);
 
@@ -233,7 +236,7 @@ export default function Planificacion() {
     const res = await fetch(`/api/projects/${project.id}/files`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: pending, user_id: 'local-user' }),
+      body: JSON.stringify({ files: pending, user_id: user?.id || LOCAL_USER_ID }),
     });
 
     if (!res.ok) {
