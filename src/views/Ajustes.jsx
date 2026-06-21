@@ -27,6 +27,7 @@ import {
   Server,
   SlidersHorizontal,
   Power,
+  Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { sileo } from 'sileo';
@@ -47,6 +48,7 @@ import {
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
 import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
 import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
+import EquipoSettings from '@/components/EquipoSettings';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
@@ -411,6 +413,7 @@ function OnboardingWizard({ open, step, onPrev, onNext, onClose, onSkip }) {
 
 const TABS = [
   { key: 'project', label: 'Proyecto', icon: LayoutGrid },
+  { key: 'team', label: 'Equipo', icon: Users },
   { key: 'theme', label: 'Apariencia', icon: Palette },
   { key: 'llm', label: 'LLM', icon: Cpu },
   { key: 'swarm', label: 'Swarm', icon: Server },
@@ -523,19 +526,25 @@ export default function Ajustes() {
   const handleThemeChange = useCallback((themeId) => {
     const next = setTheme(themeId);
     setActiveTheme(next);
-    sileo.success({ title: `Tema aplicado: ${THEME_OPTIONS.find((t) => t.id === next)?.label || next}` });
+    sileo.success({
+      title: `Tema aplicado: ${THEME_OPTIONS.find((t) => t.id === next)?.label || next}`,
+    });
   }, []);
 
   const handleMorphologyChange = useCallback((morphologyId) => {
     const next = setMorphology(morphologyId);
     setActiveMorphology(next);
-    sileo.success({ title: `Morfologia aplicada: ${MORPHOLOGY_OPTIONS.find((m) => m.id === next)?.label || next}` });
+    sileo.success({
+      title: `Morfologia aplicada: ${MORPHOLOGY_OPTIONS.find((m) => m.id === next)?.label || next}`,
+    });
   }, []);
 
   const handleAccentChange = useCallback((accentId) => {
     const next = setAccent(accentId);
     setActiveAccent(next);
-    sileo.success({ title: `Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}` });
+    sileo.success({
+      title: `Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}`,
+    });
   }, []);
 
   const finishOnboarding = useCallback(() => {
@@ -925,6 +934,41 @@ export default function Ajustes() {
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  const renderTeamTab = () => (
+    <div className="space-y-6">
+      <ChromeSurface asChild surface="panel" emphasized>
+        <div
+          className="overflow-hidden"
+          style={chromeSurfaceStyle({ surface: 'panel', emphasized: true })}
+        >
+          <div
+            className="flex items-center gap-3 px-6 py-4"
+            style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          >
+            <div
+              className="w-9 h-9 rounded-none flex items-center justify-center"
+              style={pillStyle({ tone: 'accent' })}
+            >
+              <Users className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+            </div>
+            <div>
+              <h3
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Equipo del proyecto
+              </h3>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                Invita, revoca y gestiona roles de los colaboradores
+              </p>
+            </div>
+          </div>
+          <EquipoSettings projectId={project?.id} />
+        </div>
+      </ChromeSurface>
     </div>
   );
 
@@ -1677,6 +1721,7 @@ export default function Ajustes() {
 
   const TAB_RENDERERS = {
     project: renderProjectTab,
+    team: renderTeamTab,
     theme: renderThemeTab,
     llm: renderLlmTab,
     swarm: renderSwarmTab,
