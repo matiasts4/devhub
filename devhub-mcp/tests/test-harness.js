@@ -125,12 +125,13 @@ export async function createTestHarness(options = {}) {
     if (!existing) {
       db.prepare(
         `INSERT INTO projects (
-          id, user_id, name, description, color, status, progress,
+          id, user_id, workspace_id, name, description, color, status, progress,
           planning_prompt, planning_status, project_type, documentation_policy, local_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         projectId,
-        userId,
+        'local-user',
+        'local-ws',
         'MCP Integration Project',
         'Proyecto semilla para pruebas MCP',
         '#58A6FF',

@@ -7,16 +7,16 @@ import {
 } from './schemas/common.js';
 
 export function registerProjectTools(server, deps) {
-  const { supabase, ok, err, randomUUID, getActor, writeAuditLog } = deps;
+  const { supabase, ok, err, randomUUID, getActor, writeAuditLog, localUserId } = deps;
 
   // devhub-cloud-foundation (PR 3): the hardcoded user identifier
   // is removed. The actor is resolved per-request via the AuthProvider
   // port (default: synthetic local-user in local mode; the actual
   // authenticated user in cloud mode).
-  const getActorUserId = () => {
+  const getActorUserId = async () => {
     try {
       if (typeof getActor === 'function') {
-        const session = getActor();
+        const session = await getActor();
         if (session && session.user && session.user.id) {
           return session.user.id;
         }
@@ -31,6 +31,58 @@ export function registerProjectTools(server, deps) {
     return 'local-user';
   };
 
+  async function getProjectRole(projectId) {
+    const session = await getActor();
+    const userId = session?.user?.id;
+    if (!userId) return null;
+
+    // Project owner always has owner role
+    const { data: project } = await supabase
+      .from('projects')
+      .select('user_id')
+      .eq('id', projectId)
+      .maybeSingle();
+    if (project?.user_id === userId) return 'owner';
+
+    // Explicit project membership
+    const { data: membership } = await supabase
+      .from('project_members')
+      .select('role')
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    return membership?.role || null;
+  }
+
+  function requireProjectRole(role, allowed) {
+    if (!allowed.includes(role)) {
+      return err(
+        `Permiso denegado: se requiere uno de los roles [${allowed.join(', ')}] para este proyecto.`
+      );
+    }
+    return null;
+  }
+
+  async function getPersonalWorkspaceId(userId) {
+    if (userId === localUserId) return 'local-ws';
+
+    const slug = `personal-${userId}`;
+    const { data: bySlug } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (bySlug?.id) return bySlug.id;
+
+    const { data: fallback } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', userId)
+      .eq('role', 'owner')
+      .maybeSingle();
+    return fallback?.workspace_id || null;
+  }
+
   server.tool(
     'list_projects',
     'Lista todos los proyectos del usuario en DevHub con su progreso y estado.',
@@ -44,18 +96,30 @@ export function registerProjectTools(server, deps) {
       ),
     },
     async ({ status, workspace_id }) => {
+      const userId = await getActorUserId();
+
+      // Collect projects the actor owns or is a member of
+      const [{ data: owned }, { data: memberships }] = await Promise.all([
+        supabase.from('projects').select('id').eq('user_id', userId),
+        supabase.from('project_members').select('project_id').eq('user_id', userId),
+      ]);
+
+      const allowedIds = new Set([
+        ...(owned || []).map((p) => p.id),
+        ...(memberships || []).map((m) => m.project_id),
+      ]);
+
       let query = supabase
         .from('projects')
-        .select('id, name, status, progress')
+        .select('id, name, status, progress, workspace_id')
         .order('created_at', { ascending: false });
       if (status && status !== 'all') query = query.eq('status', status);
-      // Legacy local rows often have NULL workspace_id but belong to local-ws.
-      if (workspace_id && workspace_id !== 'local-ws') {
-        query = query.eq('workspace_id', workspace_id);
-      }
+      if (workspace_id) query = query.eq('workspace_id', workspace_id);
       const { data, error } = await query;
       if (error) return err(error.message);
-      return ok({ total: data.length, projects: data });
+
+      const projects = (data || []).filter((p) => allowedIds.size === 0 || allowedIds.has(p.id));
+      return ok({ total: projects.length, projects });
     }
   );
 
@@ -64,6 +128,10 @@ export function registerProjectTools(server, deps) {
     'Obtiene todos los detalles de un proyecto específico incluyendo sus tareas e hitos.',
     { project_id: PROJECT_ID_SCHEMA, workspace_id: WORKSPACE_ID_SCHEMA.optional() },
     async ({ project_id, workspace_id }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member', 'viewer']);
+      if (permError) return permError;
+
       const [projRes, tasksRes, msRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', project_id).single(),
         supabase
@@ -120,6 +188,10 @@ export function registerProjectTools(server, deps) {
         .describe('Estado del planning IA del proyecto'),
     },
     async ({ project_id, ...updates }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin']);
+      if (permError) return permError;
+
       const fields = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
       if (Object.keys(fields).length === 0)
         return err('No se proporcionaron campos para actualizar');
@@ -162,10 +234,13 @@ export function registerProjectTools(server, deps) {
       local_path,
       planning_prompt,
     }) => {
+      const userId = await getActorUserId();
+      const workspaceId = await getPersonalWorkspaceId(userId);
       const id = randomUUID();
       const payload = {
         id,
-        user_id: getActorUserId(),
+        user_id: userId,
+        workspace_id: workspaceId,
         name,
         description: description || '',
         color: color || '#58A6FF',
@@ -178,6 +253,19 @@ export function registerProjectTools(server, deps) {
       };
       const { data, error } = await supabase.from('projects').insert(payload).select().single();
       if (error) return err(error.message);
+
+      // Ensure owner membership record for the new project
+      await supabase
+        .from('project_members')
+        .insert({
+          project_id: id,
+          user_id: userId,
+          role: 'owner',
+          joined_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
       return ok({ created: true, project: data });
     }
   );
@@ -195,6 +283,10 @@ export function registerProjectTools(server, deps) {
       if (!confirm)
         return err('Debes pasar confirm: true para confirmar la eliminación del proyecto.');
 
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin']);
+      if (permError) return permError;
+
       const { data: proj } = await supabase
         .from('projects')
         .select('id, name')
@@ -205,6 +297,7 @@ export function registerProjectTools(server, deps) {
       await supabase.from('tasks').delete().eq('project_id', project_id);
       await supabase.from('milestones').delete().eq('project_id', project_id);
       await supabase.from('project_files').delete().eq('project_id', project_id);
+      await supabase.from('project_members').delete().eq('project_id', project_id);
 
       const { error } = await supabase.from('projects').delete().eq('id', project_id);
       if (error) return err(error.message);
@@ -220,6 +313,10 @@ export function registerProjectTools(server, deps) {
       status: z.enum(['planned', 'in_progress', 'completed', 'at_risk', 'all']).optional(),
     },
     async ({ project_id, status }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member', 'viewer']);
+      if (permError) return permError;
+
       let query = supabase
         .from('milestones')
         .select('*')
@@ -247,11 +344,16 @@ export function registerProjectTools(server, deps) {
       due_date: z.string().optional().describe('Fecha ISO YYYY-MM-DD'),
     },
     async ({ project_id, user_id, title, description, status, due_date }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member']);
+      if (permError) return permError;
+
+      const actorUserId = await getActorUserId();
       const { data, error } = await supabase
         .from('milestones')
         .insert({
           project_id,
-          user_id,
+          user_id: user_id || actorUserId,
           title,
           description: description || null,
           status,
@@ -283,6 +385,11 @@ export function registerProjectTools(server, deps) {
         .max(50),
     },
     async ({ project_id, user_id, milestones }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member']);
+      if (permError) return permError;
+
+      const actorUserId = await getActorUserId();
       const { data: existing, error: existingErr } = await supabase
         .from('milestones')
         .select('id, title')
@@ -303,7 +410,7 @@ export function registerProjectTools(server, deps) {
         seenTitles.add(key);
         payload.push({
           project_id,
-          user_id,
+          user_id: user_id || actorUserId,
           title: milestone.title,
           description: milestone.description || null,
           status: milestone.status || 'planned',
@@ -343,6 +450,17 @@ export function registerProjectTools(server, deps) {
       due_date: z.string().nullable().optional(),
     },
     async ({ milestone_id, ...updates }) => {
+      const { data: milestone } = await supabase
+        .from('milestones')
+        .select('project_id')
+        .eq('id', milestone_id)
+        .maybeSingle();
+      if (!milestone) return err(`Hito ${milestone_id} no encontrado.`);
+
+      const role = await getProjectRole(milestone.project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member']);
+      if (permError) return permError;
+
       const fields = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
       const { data, error } = await supabase
         .from('milestones')
@@ -361,6 +479,10 @@ export function registerProjectTools(server, deps) {
     'Lee el contexto completo de planificación de un proyecto: planning_prompt, archivos, hitos y tareas existentes. Usar ANTES de generar o continuar un plan.',
     { project_id: PROJECT_ID_SCHEMA.describe('UUID del proyecto a planificar') },
     async ({ project_id }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member', 'viewer']);
+      if (permError) return permError;
+
       const [projRes, filesRes, milestonesRes, tasksRes] = await Promise.all([
         supabase
           .from('projects')

@@ -354,7 +354,7 @@ const deps = {
   ok,
   err,
   randomUUID,
-  localUserId: localAuth.LOCAL_USER_ID,
+  localUserId: localAuth.SYNTHETIC_SESSION.user.id,
   // Cloud foundation: prefer real actor from AuthProvider when in cloud mode.
   // Falls back to synthetic local-user for local-dev / no-auth regression budget.
   getActor: async () => {
@@ -364,12 +364,13 @@ const deps = {
         return {
           user: session.user,
           workspaceMemberships: session.workspaceMemberships || [],
+          projectMemberships: session.projectMemberships || [],
         };
       }
     } catch {
       // ignore and fall through to local synthetic
     }
-    return { user: { id: localAuth.LOCAL_USER_ID } };
+    return { user: { id: localAuth.SYNTHETIC_SESSION.user.id }, projectMemberships: [] };
   },
   authProvider, // the port instance (local | supabase). Tools can use for verifyToken etc.
   readExecutionQueueSummary,

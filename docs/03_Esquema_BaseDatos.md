@@ -36,7 +36,8 @@ Proyectos del usuario.
 | Columna                | Tipo                 | Default            | Descripción                                                                       |
 | ---------------------- | -------------------- | ------------------ | --------------------------------------------------------------------------------- |
 | `id`                   | UUID (PK)            | uuid_generate_v4() | ID único                                                                          |
-| `user_id`              | UUID (FK→auth.users) | —                  | Dueño                                                                             |
+| `workspace_id`         | UUID (FK→workspaces) | NULL               | Workspace de RLS/contenedor (en cloud: personal del owner; en local: `local-ws`)  |
+| `user_id`              | UUID (FK→auth.users) | —                  | Dueño/creador                                                                     |
 | `name`                 | TEXT                 | —                  | Nombre del proyecto                                                               |
 | `description`          | TEXT                 | —                  | Descripción breve                                                                 |
 | `color`                | TEXT                 | `#6366f1`          | Color de acento UI                                                                |
@@ -62,7 +63,8 @@ Tareas vinculadas a un proyecto (Kanban + Historial).
 | -------------- | ---------------------------------------- | ------------------ | ------------------------------------------------ |
 | `id`           | UUID (PK)                                | uuid_generate_v4() | ID único                                         |
 | `project_id`   | UUID (FK→projects)                       | —                  | Proyecto padre                                   |
-| `user_id`      | UUID (FK→auth.users)                     | —                  | Dueño                                            |
+| `workspace_id` | UUID (FK→workspaces)                     | NULL               | Workspace de RLS (heredado del proyecto)         |
+| `user_id`      | UUID (FK→auth.users)                     | —                  | Dueño/creador                                    |
 | `milestone_id` | UUID (FK→milestones, ON DELETE SET NULL) | NULL               | ⭐ Hito al que pertenece                         |
 | `title`        | TEXT                                     | —                  | Título de la tarea                               |
 | `description`  | TEXT                                     | —                  | Descripción opcional                             |
@@ -81,17 +83,18 @@ Tareas vinculadas a un proyecto (Kanban + Historial).
 
 Hitos del roadmap de un proyecto.
 
-| Columna       | Tipo                 | Default            | Descripción                                      |
-| ------------- | -------------------- | ------------------ | ------------------------------------------------ |
-| `id`          | UUID (PK)            | uuid_generate_v4() | ID único                                         |
-| `project_id`  | UUID (FK→projects)   | —                  | Proyecto padre                                   |
-| `user_id`     | UUID (FK→auth.users) | —                  | Dueño                                            |
-| `title`       | TEXT                 | —                  | Título del hito                                  |
-| `description` | TEXT                 | —                  | Descripción                                      |
-| `status`      | TEXT                 | `planned`          | `planned`, `in_progress`, `completed`, `at_risk` |
-| `due_date`    | DATE                 | —                  | Fecha objetivo                                   |
-| `created_at`  | TIMESTAMPTZ          | NOW()              | Creación                                         |
-| `updated_at`  | TIMESTAMPTZ          | NOW()              | Modificación                                     |
+| Columna        | Tipo                 | Default            | Descripción                                      |
+| -------------- | -------------------- | ------------------ | ------------------------------------------------ |
+| `id`           | UUID (PK)            | uuid_generate_v4() | ID único                                         |
+| `project_id`   | UUID (FK→projects)   | —                  | Proyecto padre                                   |
+| `workspace_id` | UUID (FK→workspaces) | NULL               | Workspace de RLS (heredado del proyecto)         |
+| `user_id`      | UUID (FK→auth.users) | —                  | Dueño/creador                                    |
+| `title`        | TEXT                 | —                  | Título del hito                                  |
+| `description`  | TEXT                 | —                  | Descripción                                      |
+| `status`       | TEXT                 | `planned`          | `planned`, `in_progress`, `completed`, `at_risk` |
+| `due_date`     | DATE                 | —                  | Fecha objetivo                                   |
+| `created_at`   | TIMESTAMPTZ          | NOW()              | Creación                                         |
+| `updated_at`   | TIMESTAMPTZ          | NOW()              | Modificación                                     |
 
 ---
 

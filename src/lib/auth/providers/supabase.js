@@ -1,3 +1,4 @@
+/* eslint-env node */
 'use strict';
 
 /**
@@ -98,9 +99,11 @@ function createSupabaseAuthProvider(options = {}) {
         }
         const session = data?.session;
         if (!session) return null;
+        const projectMemberships = await fetchProjectMemberships(session.user.id);
         return {
           user: { id: session.user.id, email: session.user.email },
           workspaceMemberships: [],
+          projectMemberships,
         };
       } catch {
         return null;
@@ -113,9 +116,11 @@ function createSupabaseAuthProvider(options = {}) {
         if (error || !data?.user) {
           throw new SessionExpiredError(error?.message || 'token rejected');
         }
+        const projectMemberships = await fetchProjectMemberships(data.user.id);
         return {
           user: { id: data.user.id, email: data.user.email },
           workspaceMemberships: [],
+          projectMemberships,
         };
       } catch (err) {
         if (err instanceof SessionExpiredError) throw err;
@@ -133,14 +138,16 @@ function createSupabaseAuthProvider(options = {}) {
     },
 
     onAuthStateChange(cb) {
-      const { data } = client.auth.onAuthStateChange((_event, session) => {
+      const { data } = client.auth.onAuthStateChange(async (_event, session) => {
         if (!session) {
           cb(null);
           return;
         }
+        const projectMemberships = await fetchProjectMemberships(session.user.id);
         cb({
           user: { id: session.user.id, email: session.user.email },
           workspaceMemberships: [],
+          projectMemberships,
         });
       });
       return () => {
@@ -152,6 +159,23 @@ function createSupabaseAuthProvider(options = {}) {
       };
     },
   };
+
+  async function fetchProjectMemberships(userId) {
+    try {
+      const { data, error } = await client
+        .from('project_members')
+        .select('role, project_id, projects(id, name, color, status, description)')
+        .eq('user_id', userId);
+      if (error || !data) return [];
+      return data.map((row) => ({
+        projectId: row.project_id,
+        role: row.role,
+        project: row.projects,
+      }));
+    } catch {
+      return [];
+    }
+  }
 }
 
 module.exports = {

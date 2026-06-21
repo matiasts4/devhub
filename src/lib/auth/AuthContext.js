@@ -9,6 +9,9 @@ const AuthContext = createContext({
   workspaces: [],
   activeWorkspaceId: null,
   setActiveWorkspaceId: () => {},
+  projectMemberships: [],
+  activeProjectId: null,
+  setActiveProjectId: () => {},
   signOut: async () => {},
 });
 
@@ -17,6 +20,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(null);
+  const [projectMemberships, setProjectMemberships] = useState([]);
+  const [activeProjectId, setActiveProjectIdState] = useState(null);
 
   // We initialize the client inside useEffect or lazily to avoid server-side execution issues in Next.js
   const [db, setDb] = useState(null);
@@ -101,6 +106,51 @@ export function AuthProvider({ children }) {
     fetchWorkspaces();
   }, [user, db]);
 
+  // Fetch cloud project memberships when user changes
+  useEffect(() => {
+    if (!db) return;
+
+    const fetchProjectMemberships = async () => {
+      if (!user || user.id === 'local-user') {
+        setProjectMemberships([]);
+        setActiveProjectIdState(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await db
+          .from('project_members')
+          .select('role, project_id, projects(id, name, color, status, description)')
+          .eq('user_id', user.id);
+        if (!error && data) {
+          const memberships = data.map((row) => ({
+            projectId: row.project_id,
+            role: row.role,
+            project: row.projects,
+          }));
+          setProjectMemberships(memberships);
+
+          const stored =
+            typeof window !== 'undefined' ? localStorage.getItem('devhub:active-project-id') : null;
+          const exists = memberships.some((m) => m.projectId === stored);
+          if (stored && exists) {
+            setActiveProjectIdState(stored);
+          } else if (memberships.length > 0) {
+            const defaultProjectId = memberships[0].projectId;
+            setActiveProjectIdState(defaultProjectId);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('devhub:active-project-id', defaultProjectId);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching project memberships:', err);
+      }
+    };
+
+    fetchProjectMemberships();
+  }, [user, db]);
+
   const setActiveWorkspaceId = (id) => {
     setActiveWorkspaceIdState(id);
     if (typeof window !== 'undefined') {
@@ -111,6 +161,14 @@ export function AuthProvider({ children }) {
     );
   };
 
+  const setActiveProjectId = (id) => {
+    setActiveProjectIdState(id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('devhub:active-project-id', id);
+    }
+    window.dispatchEvent(new CustomEvent('devhub:project-changed', { detail: { projectId: id } }));
+  };
+
   const signOut = async () => {
     if (db) {
       await db.auth.signOut();
@@ -118,8 +176,11 @@ export function AuthProvider({ children }) {
     setUser(null);
     setWorkspaces([]);
     setActiveWorkspaceIdState(null);
+    setProjectMemberships([]);
+    setActiveProjectIdState(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('devhub:active-workspace-id');
+      localStorage.removeItem('devhub:active-project-id');
     }
   };
 
@@ -131,6 +192,9 @@ export function AuthProvider({ children }) {
         workspaces,
         activeWorkspaceId,
         setActiveWorkspaceId,
+        projectMemberships,
+        activeProjectId,
+        setActiveProjectId,
         signOut,
       }}
     >

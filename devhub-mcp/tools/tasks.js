@@ -948,7 +948,42 @@ function getLocalClaimTransaction(deps) {
 }
 
 export function registerTaskTools(server, deps) {
-  const { localDb, supabase, DB_DRIVER, ok, err } = deps;
+  const { localDb, supabase, DB_DRIVER, ok, err, getActor } = deps;
+
+  const getActorUserId = async () => {
+    const session = await getActor();
+    return session?.user?.id;
+  };
+
+  async function getProjectRole(projectId) {
+    const session = await getActor();
+    const userId = session?.user?.id;
+    if (!userId) return null;
+
+    const { data: project } = await supabase
+      .from('projects')
+      .select('user_id')
+      .eq('id', projectId)
+      .maybeSingle();
+    if (project?.user_id === userId) return 'owner';
+
+    const { data: membership } = await supabase
+      .from('project_members')
+      .select('role')
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    return membership?.role || null;
+  }
+
+  function requireProjectRole(role, allowed) {
+    if (!allowed.includes(role)) {
+      return err(
+        `Permiso denegado: se requiere uno de los roles [${allowed.join(', ')}] para este proyecto.`
+      );
+    }
+    return null;
+  }
 
   server.tool(
     'list_tasks',
@@ -961,6 +996,10 @@ export function registerTaskTools(server, deps) {
       priority: z.enum(['low', 'medium', 'high', 'critical', 'all']).optional(),
     },
     async ({ project_id, status, priority }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member', 'viewer']);
+      if (permError) return permError;
+
       let query = supabase
         .from('tasks')
         .select('id, title, status, priority, description')
@@ -1004,11 +1043,16 @@ export function registerTaskTools(server, deps) {
       milestone_id,
       assigned_to,
     }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member']);
+      if (permError) return permError;
+
+      const actorUserId = await getActorUserId();
       const { data, error } = await supabase
         .from('tasks')
         .insert({
           project_id,
-          user_id,
+          user_id: user_id || actorUserId,
           title,
           description: description || null,
           milestone_id: milestone_id || null,
@@ -1048,6 +1092,11 @@ export function registerTaskTools(server, deps) {
         .max(200),
     },
     async ({ project_id, user_id, tasks }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member']);
+      if (permError) return permError;
+
+      const actorUserId = await getActorUserId();
       const { data: existing, error: existingErr } = await supabase
         .from('tasks')
         .select('id, title')
@@ -1070,7 +1119,7 @@ export function registerTaskTools(server, deps) {
         seenTitles.add(key);
         payload.push({
           project_id,
-          user_id,
+          user_id: user_id || actorUserId,
           title: task.title,
           description: task.description || null,
           status: task.status || 'pending',
@@ -1108,10 +1157,9 @@ export function registerTaskTools(server, deps) {
       due_date: z.string().nullable().optional(),
       milestone_id: z
         .string()
-        .refine(
-          (value) => UUID_REGEX.test(String(value)) || LEGACY_ID_REGEX.test(String(value)),
-          { message: 'Debe ser UUID o ID legacy (<tipo>-<timestamp>-<suffix>)' }
-        )
+        .refine((value) => UUID_REGEX.test(String(value)) || LEGACY_ID_REGEX.test(String(value)), {
+          message: 'Debe ser UUID o ID legacy (<tipo>-<timestamp>-<suffix>)',
+        })
         .nullable()
         .optional()
         .describe('ID del hito (UUID o legacy). null para desvincular'),
@@ -1126,14 +1174,19 @@ export function registerTaskTools(server, deps) {
       let existingTask = null;
       let checkpointGate = null;
 
+      const { data: currentTask, error: currentTaskError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', task_id)
+        .maybeSingle();
+      if (currentTaskError) return err(currentTaskError.message);
+      if (!currentTask) return err(`Tarea ${task_id} no encontrada.`);
+
+      const role = await getProjectRole(currentTask.project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member']);
+      if (permError) return permError;
+
       if (status === 'completed' || status === 'qa_ready') {
-        const { data: currentTask, error: currentTaskError } = await supabase
-          .from('tasks')
-          .select('*')
-          .eq('id', task_id)
-          .single();
-        if (currentTaskError) return err(currentTaskError.message);
-        if (!currentTask) return err(`Tarea ${task_id} no encontrada.`);
         existingTask = currentTask;
 
         if (status === 'qa_ready') {
@@ -1195,9 +1248,21 @@ export function registerTaskTools(server, deps) {
       author_type: z.enum(['human', 'agent']).default('agent'),
     },
     async ({ task_id, content, author_type }) => {
+      const { data: task } = await supabase
+        .from('tasks')
+        .select('project_id')
+        .eq('id', task_id)
+        .maybeSingle();
+      if (!task) return err(`Tarea ${task_id} no encontrada.`);
+
+      const role = await getProjectRole(task.project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member', 'viewer']);
+      if (permError) return permError;
+
+      const actorUserId = await getActorUserId();
       const { data, error } = await supabase
         .from('task_comments')
-        .insert({ task_id, content, author_type })
+        .insert({ task_id, content, author_type, user_id: actorUserId })
         .select()
         .single();
       if (error) return err(error.message);
@@ -1214,6 +1279,10 @@ export function registerTaskTools(server, deps) {
       include_blocked: z.boolean().optional().default(false),
     },
     async ({ project_id, limit, include_blocked }) => {
+      const role = await getProjectRole(project_id);
+      const permError = requireProjectRole(role, ['owner', 'admin', 'member', 'viewer']);
+      if (permError) return permError;
+
       try {
         const queue = await getExecutionQueueData(project_id, deps, {
           limit,

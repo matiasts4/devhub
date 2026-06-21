@@ -89,6 +89,7 @@ function ensureRuntimeSchema(db) {
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       user_id TEXT,
+      workspace_id TEXT,
       name TEXT NOT NULL,
       description TEXT,
       color TEXT DEFAULT '#58A6FF',
@@ -119,11 +120,13 @@ function ensureRuntimeSchema(db) {
     CREATE TABLE IF NOT EXISTS task_comments (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
+      user_id TEXT,
       content TEXT NOT NULL,
       author_type TEXT DEFAULT 'agent',
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_comments_user ON task_comments(user_id);
 
     CREATE TABLE IF NOT EXISTS telegram_activity (
       id TEXT PRIMARY KEY,
@@ -1060,6 +1063,7 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE agent_workspaces ADD COLUMN last_heartbeat TEXT',
     "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT '[]'",
     'ALTER TABLE agent_auth_tokens ADD COLUMN secret TEXT',
+    'ALTER TABLE task_comments ADD COLUMN user_id TEXT',
   ];
   for (const stmt of alterStatements) {
     try {
@@ -1168,6 +1172,7 @@ const MCP_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
+    workspace_id TEXT,
     user_id TEXT,
     title TEXT NOT NULL,
     description TEXT,
@@ -1191,6 +1196,7 @@ const MCP_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS milestones (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
+    workspace_id TEXT,
     user_id TEXT,
     title TEXT NOT NULL,
     description TEXT,
@@ -1204,10 +1210,12 @@ const MCP_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS task_comments (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
+    user_id TEXT,
     content TEXT NOT NULL,
     author_type TEXT DEFAULT 'agent',
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE INDEX IF NOT EXISTS idx_task_comments_user ON task_comments(user_id);
 
   CREATE TABLE IF NOT EXISTS task_dependencies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1376,6 +1384,7 @@ const MCP_ALTER_STATEMENTS = [
   'ALTER TABLE agent_registry ADD COLUMN updated_at TEXT',
   'ALTER TABLE agent_registry ADD COLUMN error_message TEXT',
   "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT '[]'",
+  'ALTER TABLE task_comments ADD COLUMN user_id TEXT',
 ];
 
 function ensureAllSchema(db) {
@@ -1395,6 +1404,15 @@ function ensureAllSchema(db) {
   const { ensureAgentCommsBusSchema, applyPragmasForBus } = require('./busMigrations.js');
   ensureAgentCommsBusSchema(db);
   applyPragmasForBus(db);
+
+  // Backfill workspace_id for legacy rows in local SQLite (cloud uses Supabase migrations).
+  try {
+    db.exec("UPDATE projects SET workspace_id = 'local-ws' WHERE workspace_id IS NULL");
+    db.exec("UPDATE tasks SET workspace_id = 'local-ws' WHERE workspace_id IS NULL");
+    db.exec("UPDATE milestones SET workspace_id = 'local-ws' WHERE workspace_id IS NULL");
+  } catch {
+    /* ignore on fresh DB until tables exist */
+  }
 }
 
 module.exports = {
