@@ -329,3 +329,50 @@ EXCEPTION WHEN duplicate_column THEN
   -- already migrated
 END;
 $$;
+
+-- ── 9. Enable Realtime for collaborative tables ───────────────────────────────
+ALTER TABLE public.projects REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.milestones REPLICA IDENTITY FULL;
+ALTER TABLE public.task_comments REPLICA IDENTITY FULL;
+ALTER TABLE public.project_members REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.projects;
+EXCEPTION WHEN duplicate_table THEN
+  -- already published
+END;
+$$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
+EXCEPTION WHEN duplicate_table THEN
+  -- already published
+END;
+$$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.milestones;
+EXCEPTION WHEN duplicate_table THEN
+  -- already published
+END;
+$$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.task_comments;
+EXCEPTION WHEN duplicate_table THEN
+  -- already published
+END;
+$$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.project_members;
+EXCEPTION WHEN duplicate_table THEN
+  -- already published
+END;
+$$;

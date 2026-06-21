@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Mail, Loader2, Trash2, userPlus } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { sileo } from 'sileo';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 
 export default function EquipoSettings({ projectId }) {
   const [members, setMembers] = useState([]);
@@ -15,15 +16,25 @@ export default function EquipoSettings({ projectId }) {
     if (projectId) fetchMembers();
   }, [projectId]);
 
+  useSupabaseRealtime({
+    table: 'project_members',
+    filter: projectId ? `project_id=eq.${projectId}` : undefined,
+    onInsert: fetchMembers,
+    onUpdate: fetchMembers,
+    onDelete: fetchMembers,
+    enabled: Boolean(projectId),
+    channelName: `public:project_members:${projectId || 'none'}`,
+  });
+
   async function fetchMembers() {
     setLoading(true);
     const { data, error } = await db
       .from('project_members')
       .select(`id, role, invited_email, accepted_at, user_id, auth_users:user_id (email)`)
       .eq('project_id', projectId);
-    
+
     if (error) {
-      sileo.error({ title: "Error al cargar miembros: " + error.message });
+      sileo.error({ title: 'Error al cargar miembros: ' + error.message });
     } else {
       setMembers(data || []);
     }
@@ -33,19 +44,19 @@ export default function EquipoSettings({ projectId }) {
   async function handleInvite(e) {
     e.preventDefault();
     if (!email) return;
-    
+
     setInviting(true);
     try {
       const res = await fetch(`/api/projects/${projectId}/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role })
+        body: JSON.stringify({ email, role }),
       });
       const data = await res.json();
-      
+
       if (!res.ok) throw new Error(data.error);
-      
-      sileo.success({ title: "Invitación creada. Link: " + data.inviteUrl });
+
+      sileo.success({ title: 'Invitación creada. Link: ' + data.inviteUrl });
       setEmail('');
       fetchMembers();
     } catch (err) {
@@ -54,15 +65,15 @@ export default function EquipoSettings({ projectId }) {
       setInviting(false);
     }
   }
-  
+
   async function removeMember(id) {
     if (!confirm('¿Quitar miembro?')) return;
-    
+
     const { error } = await db.from('project_members').delete().eq('id', id);
     if (error) {
-      sileo.error({ title: "Error: " + error.message });
+      sileo.error({ title: 'Error: ' + error.message });
     } else {
-      sileo.success({ title: "Miembro eliminado" });
+      sileo.success({ title: 'Miembro eliminado' });
       fetchMembers();
     }
   }
@@ -70,51 +81,74 @@ export default function EquipoSettings({ projectId }) {
   return (
     <div className="px-5 py-4 space-y-4">
       <form onSubmit={handleInvite} className="flex gap-2 items-center">
-        <input 
-          type="email" 
-          value={email} 
-          onChange={e => setEmail(e.target.value)} 
-          placeholder="email@ejemplo.com" 
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@ejemplo.com"
           className="flex-1 bg-transparent text-sm px-3 py-1.5 focus:outline-none focus:ring-1 transition-all rounded"
-          style={{ border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
+          style={{ border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }}
         />
-        <select 
-          value={role} 
-          onChange={e => setRole(e.target.value)}
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
           className="bg-transparent text-sm px-2 py-1.5 focus:outline-none focus:ring-1 rounded"
-          style={{ border: "1px solid var(--border-strong)", color: "var(--text-primary)" }}
+          style={{ border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }}
         >
-          <option value="worker" style={{background: 'var(--surface-sunken)'}}>Worker</option>
-          <option value="viewer" style={{background: 'var(--surface-sunken)'}}>Viewer</option>
-          <option value="admin" style={{background: 'var(--surface-sunken)'}}>Admin</option>
+          <option value="worker" style={{ background: 'var(--surface-sunken)' }}>
+            Worker
+          </option>
+          <option value="viewer" style={{ background: 'var(--surface-sunken)' }}>
+            Viewer
+          </option>
+          <option value="admin" style={{ background: 'var(--surface-sunken)' }}>
+            Admin
+          </option>
         </select>
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           disabled={inviting || !email}
           className="px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1 transition-all"
-          style={{ background: "var(--accent-primary)", color: "var(--primary-foreground, #000)", opacity: (inviting || !email) ? 0.5 : 1 }}
+          style={{
+            background: 'var(--accent-primary)',
+            color: 'var(--primary-foreground, #000)',
+            opacity: inviting || !email ? 0.5 : 1,
+          }}
         >
-          {inviting ? <Loader2 className="w-3 h-3 animate-spin"/> : "Invitar"}
+          {inviting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Invitar'}
         </button>
       </form>
 
       <div className="space-y-2 mt-4">
-        {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto opacity-50" /> : 
-          members.map(m => (
-            <div key={m.id} className="flex items-center justify-between p-2 rounded" style={{ background: "var(--surface-sunken)" }}>
+        {loading ? (
+          <Loader2 className="w-5 h-5 animate-spin mx-auto opacity-50" />
+        ) : (
+          members.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center justify-between p-2 rounded"
+              style={{ background: 'var(--surface-sunken)' }}
+            >
               <div className="flex flex-col">
-                <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                  {m.auth_users?.email || m.invited_email} {m.accepted_at ? "" : "(Pendiente)"}
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {m.auth_users?.email || m.invited_email} {m.accepted_at ? '' : '(Pendiente)'}
                 </span>
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>Rol: {m.role}</span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Rol: {m.role}
+                </span>
               </div>
-              <button onClick={() => removeMember(m.id)} className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-neutral-800 text-red-400">
-                <Trash2 className="w-4 h-4"/>
+              <button
+                onClick={() => removeMember(m.id)}
+                className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-neutral-800 text-red-400"
+              >
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           ))
-        }
-        {!loading && members.length === 0 && <p className="text-xs opacity-50">No hay miembros aún.</p>}
+        )}
+        {!loading && members.length === 0 && (
+          <p className="text-xs opacity-50">No hay miembros aún.</p>
+        )}
       </div>
     </div>
   );

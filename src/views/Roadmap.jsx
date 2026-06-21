@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import {
   MapPin,
   Plus,
@@ -211,32 +212,15 @@ export default function Roadmap() {
     fetchMilestones();
   }, [fetchMilestones]);
 
-  useEffect(() => {
-    if (!project?.id) return;
-
-    const intervalId = setInterval(() => {
-      fetchMilestones({ silent: true });
-    }, 8000);
-
-    const handleFocus = () => {
-      fetchMilestones({ silent: true });
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchMilestones({ silent: true });
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [project?.id, fetchMilestones]);
+  useSupabaseRealtime({
+    table: 'milestones',
+    filter: project?.id ? `project_id=eq.${project.id}` : undefined,
+    onInsert: () => fetchMilestones({ silent: true }),
+    onUpdate: () => fetchMilestones({ silent: true }),
+    onDelete: () => fetchMilestones({ silent: true }),
+    enabled: Boolean(project?.id),
+    channelName: `public:milestones:${project?.id || 'none'}`,
+  });
 
   async function toggleComplete(milestone) {
     const newStatus = milestone.status === 'completed' ? 'in_progress' : 'completed';

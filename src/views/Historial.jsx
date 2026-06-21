@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import { History, Loader2, Calendar, ChevronDown, Download, BarChart3, Flag } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
@@ -147,21 +148,17 @@ export default function Historial() {
 
   useEffect(() => {
     fetchHistory();
-    if (!project?.id) return;
-    const channel = db
-      .channel(`historial-${project.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${project.id}` },
-        () => {
-          fetchHistory();
-        }
-      )
-      .subscribe();
-    return () => {
-      db.removeChannel(channel);
-    };
   }, [project?.id, fetchHistory]);
+
+  useSupabaseRealtime({
+    table: 'tasks',
+    filter: project?.id ? `project_id=eq.${project.id}` : undefined,
+    onInsert: fetchHistory,
+    onUpdate: fetchHistory,
+    onDelete: fetchHistory,
+    enabled: Boolean(project?.id),
+    channelName: `public:tasks-historial:${project?.id || 'none'}`,
+  });
 
   const filtered = filterStatus === 'all' ? tasks : tasks.filter((t) => t.status === filterStatus);
   const grouped = groupByMonth(filtered);

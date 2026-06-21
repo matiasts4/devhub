@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import {
   Brain,
   Upload,
@@ -156,25 +157,26 @@ export default function Planificacion() {
     };
   }, [project?.id, searchParams, project?.planning_status, fetchRoadmapStats, fetchFiles]);
 
-  // Poll roadmap stats only while an agent is actively planning.
-  useEffect(() => {
-    if (!project?.id || project.planning_status !== 'pending') return;
+  // Realtime roadmap stats while an agent is actively planning.
+  useSupabaseRealtime({
+    table: 'tasks',
+    filter: project?.id ? `project_id=eq.${project.id}` : undefined,
+    onInsert: () => fetchRoadmapStats({ silent: true }),
+    onUpdate: () => fetchRoadmapStats({ silent: true }),
+    onDelete: () => fetchRoadmapStats({ silent: true }),
+    enabled: Boolean(project?.id) && project?.planning_status === 'pending',
+    channelName: `public:tasks-planning:${project?.id || 'none'}`,
+  });
 
-    const poll = () => {
-      if (document.visibilityState !== 'visible') return;
-      fetchRoadmapStats({ silent: true });
-    };
-
-    const intervalId = setInterval(poll, 15000);
-    window.addEventListener('focus', poll);
-    document.addEventListener('visibilitychange', poll);
-
-    return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', poll);
-      document.removeEventListener('visibilitychange', poll);
-    };
-  }, [project?.id, project?.planning_status, fetchRoadmapStats]);
+  useSupabaseRealtime({
+    table: 'milestones',
+    filter: project?.id ? `project_id=eq.${project.id}` : undefined,
+    onInsert: () => fetchRoadmapStats({ silent: true }),
+    onUpdate: () => fetchRoadmapStats({ silent: true }),
+    onDelete: () => fetchRoadmapStats({ silent: true }),
+    enabled: Boolean(project?.id) && project?.planning_status === 'pending',
+    channelName: `public:milestones-planning:${project?.id || 'none'}`,
+  });
 
   async function saveContext({ markPending = false } = {}) {
     if (!project?.id) return false;
@@ -202,7 +204,9 @@ export default function Planificacion() {
       return false;
     }
 
-    sileo.success({ title: markPending ? 'Contexto guardado — planning en curso' : 'Contexto guardado' });
+    sileo.success({
+      title: markPending ? 'Contexto guardado — planning en curso' : 'Contexto guardado',
+    });
     return true;
   }
 
@@ -323,7 +327,11 @@ export default function Planificacion() {
         : 'Sin planificar';
 
   const statusTone =
-    planningStatus === 'pending' ? 'warning' : planningStatus === 'completed' ? 'success' : 'neutral';
+    planningStatus === 'pending'
+      ? 'warning'
+      : planningStatus === 'completed'
+        ? 'success'
+        : 'neutral';
 
   return (
     <div className="h-full flex flex-col" style={getWorkspacePageShellStyle()}>
@@ -347,7 +355,11 @@ export default function Planificacion() {
             onClick={() => saveContext()}
             disabled={saving}
           >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {saving ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
             Guardar
           </Button>
         </div>
@@ -409,8 +421,14 @@ export default function Planificacion() {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           {/* Context column */}
           <div className="space-y-4">
-            <div className="border overflow-hidden" style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}>
-              <div className="px-4 py-3" style={getWorkspaceSectionHeaderStripStyle({ tone: 'accent' })}>
+            <div
+              className="border overflow-hidden"
+              style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}
+            >
+              <div
+                className="px-4 py-3"
+                style={getWorkspaceSectionHeaderStripStyle({ tone: 'accent' })}
+              >
                 <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
                   Contexto e investigación
                 </h3>
@@ -454,7 +472,9 @@ export default function Planificacion() {
                   />
                   <Upload className="w-4 h-4 text-text-muted shrink-0" strokeWidth={1.5} />
                   <div>
-                    <p className="text-xs text-text-muted">Arrastrá specs, READMEs, notas de investigación</p>
+                    <p className="text-xs text-text-muted">
+                      Arrastrá specs, READMEs, notas de investigación
+                    </p>
                     <p className="text-[10px] text-text-muted">.txt .md .json .py .js — máx 2MB</p>
                   </div>
                 </div>
@@ -522,7 +542,9 @@ export default function Planificacion() {
                 </div>
 
                 <div>
-                  <p className="text-[11px] font-medium text-text-muted mb-2">Política de documentación</p>
+                  <p className="text-[11px] font-medium text-text-muted mb-2">
+                    Política de documentación
+                  </p>
                   <div className="space-y-2">
                     {DOCUMENTATION_POLICY_OPTIONS.map(({ value, label, description }) => {
                       const selected = documentationPolicy === value;
@@ -544,7 +566,10 @@ export default function Planificacion() {
               </div>
             </div>
 
-            <div className="border p-4 space-y-3" style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}>
+            <div
+              className="border p-4 space-y-3"
+              style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}
+            >
               <div className="flex items-start gap-3">
                 <Sparkles className="w-4 h-4 text-[var(--project-type-university,#D2A8FF)] shrink-0 mt-0.5" />
                 <p className="text-[11px] text-text-muted leading-relaxed">
