@@ -47,6 +47,8 @@ function resolveProductionSidecarScript() {
         )
       : null,
     process.env.APPDIR ? path.join(process.env.APPDIR, 'sidecar-backend', 'server.js') : null,
+    '/usr/lib/DevHub/sidecar-backend/server.js',
+    '/usr/local/lib/DevHub/sidecar-backend/server.js',
     '/usr/lib/DevHub/_up_/sidecar-backend/server.js',
     '/usr/local/lib/DevHub/_up_/sidecar-backend/server.js',
     findPathUpwards(process.cwd(), 'sidecar-backend', 'server.js'),

@@ -44,6 +44,25 @@ export function resolveAgentTuiLabel(initialCommand) {
   return 'Agente TUI';
 }
 
+/** xterm-webgl path: detect agent process end from PTY output (native VTE has Rust equivalent). */
+export function detectAgentSessionEndFromOutput(text) {
+  if (!text || typeof text !== 'string') return null;
+  const lower = text.toLowerCase();
+  if (lower.includes('bye!')) return 'bye';
+  if (lower.includes('fetch failed')) return 'fetch-failed';
+  if (lower.includes('session ended')) return 'session-ended';
+  return null;
+}
+
+/** Graceful agent quit — Kimi/OpenCode `Bye!` leaves the shell running; no blocking overlay. */
+export function shouldReturnToShellAfterAgentExit(reason) {
+  const parsed = parseTerminalExitReason(reason);
+  return (
+    parsed.kind === 'agent' &&
+    (parsed.agentCause === 'bye' || parsed.agentCause === 'session-ended')
+  );
+}
+
 /**
  * Parse native/xterm exit reason strings.
  * @returns {{ kind: TerminalExitKind, exitCode: number | null, agentCause: string | null, abnormal: boolean }}
@@ -114,7 +133,7 @@ export function buildTerminalExitOverlayCopy({
               : '';
     return {
       title: `${agentLabel} finalizó`,
-      body: `La sesión del agente ya no está activa en este panel.${causeHint} Podés relanzar OpenCode o seguir usando la shell debajo.`,
+      body: `La sesión del agente ya no está activa en este panel.${causeHint} Podés relanzar ${agentLabel} o seguir usando la shell debajo.`,
       actionLabel: `Relanzar ${agentLabel}`,
     };
   }

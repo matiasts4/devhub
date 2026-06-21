@@ -11,6 +11,7 @@ En dev, `isPizarraSharedViewEnabled()` está **ON por defecto**, así que _todos
 **Relacionado:**
 
 - [03-terminal-canvas-glyph-corruption](../03-terminal-canvas-glyph-corruption/README.md) — síntomas visuales TUI
+- [05-deb-webkit-page-couldnt-load](../05-deb-webkit-page-couldnt-load/README.md) — crashes WebView en `.deb` (montaje terminales, webgl)
 - [terminal-pizarra-stability apply-progress](../../../openspec/changes/terminal-pizarra-stability/apply-progress.md) — trabajo ya hecho (A.0–A.5, B, C)
 - [baseline-metrics](../03-terminal-canvas-glyph-corruption/baseline-metrics.md) — matriz de repro (filas 8–15 añadidas para gaps)
 

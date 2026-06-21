@@ -50,7 +50,18 @@ import {
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
 } from '@/lib/terminal/terminalNoiseFilter';
-import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
+import { getTuiAdapter, shouldPassthroughNativeTuiWheel } from '@/lib/terminal/tuiAdapter';
+import {
+  detectAgentTuiReady,
+  detectAgentTuiDetachedFromOutput,
+  detectGrokSessionFromOutput,
+  detectGrokTuiReady,
+  isAgentTuiInteractionLive,
+  isGrokTuiInitialCommand,
+  isLikelyTuiInitialCommand,
+  normalizeTuiInitialCommand,
+  resolveAgentProgramFromCommand,
+} from '@/lib/terminal/agentTui';
 import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
 import {
   detectOpenCodeTuiReady,
@@ -82,10 +93,12 @@ import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEve
 import {
   buildTerminalExitOverlayCopy,
   clearPanelSessionExit,
+  detectAgentSessionEndFromOutput,
   isAgentTuiCommand,
   parseTerminalExitReason,
   persistPanelSessionExit,
   readPanelSessionExit,
+  shouldReturnToShellAfterAgentExit,
 } from '@/lib/terminal/agentSessionExit';
 
 /**
@@ -192,22 +205,16 @@ export function prepareActiveTuiTerminalFocus(term, { tuiSessionActive = false }
   }
 }
 
-export function normalizeTuiInitialCommand(initialCommand) {
-  if (!initialCommand || typeof initialCommand !== 'string') return '';
-  return initialCommand.replace(/\s*#recovery-\d+\s*$/, '').trim();
-}
+export {
+  detectGrokSessionFromOutput,
+  detectGrokTuiReady,
+  isGrokTuiInitialCommand,
+  isLikelyTuiInitialCommand,
+  normalizeTuiInitialCommand,
+} from '@/lib/terminal/agentTui';
+export { shouldPassthroughNativeTuiWheel } from '@/lib/terminal/tuiAdapter';
 
-export function isLikelyTuiInitialCommand(initialCommand) {
-  return /\b(opencode|hermes|grok|groc|kimi|codex)\b/i.test(
-    normalizeTuiInitialCommand(initialCommand)
-  );
-}
-
-export function isGrokTuiInitialCommand(initialCommand) {
-  return /^(grok|groc)\b/i.test(normalizeTuiInitialCommand(initialCommand));
-}
-
-/** Block injecting initialCommand that appeared after the PTY was already live. */
+/** Match grok/OpenCode DECSET burst so xterm re-binds SGR wheel after panel hide. */
 export function shouldBlockLateInitialCommandSend({
   hasConnectedOnce = false,
   isRecoveryRelaunch = false,
@@ -218,38 +225,6 @@ export function shouldBlockLateInitialCommandSend({
   const snapshot = normalizeTuiInitialCommand(snapshotCommand);
   const current = normalizeTuiInitialCommand(currentCommand);
   return snapshot !== current;
-}
-
-/** Grok TUI shortcut bar — input/transcript chrome is ready (no opencode-style footer). */
-export function detectGrokTuiReady(text) {
-  if (!text || typeof text !== 'string') return false;
-  return (
-    /Shift\+Tab\s+mode/i.test(text) ||
-    /ctrl\+c:cancel/i.test(text) ||
-    /user_prompt_submit/i.test(text) ||
-    /ctrl\+c\s+cancel/i.test(text) ||
-    /esc\s+cancel/i.test(text)
-  );
-}
-
-/** Grok sets DECSET 1000/1006 on startup and titles the PTY `grok`. */
-export function detectGrokSessionFromOutput(text) {
-  if (!text || typeof text !== 'string') return false;
-  return /\]0;grok\b/i.test(text) || detectGrokTuiReady(text);
-}
-
-/** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
-export function shouldPassthroughNativeTuiWheel({
-  isGrokSession = false,
-  grokTuiReady = false,
-  opencodeFooterConfirmed = false,
-} = {}) {
-  if (isGrokSession) {
-    const adapter = getTuiAdapter('grok');
-    return adapter.wheelStrategy.passThrough && grokTuiReady;
-  }
-  const adapter = getTuiAdapter('opencode');
-  return adapter.wheelStrategy.passThrough && opencodeFooterConfirmed;
 }
 
 export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand = '') {
@@ -284,24 +259,31 @@ export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
 }
 
 /**
- * Pre-ready fallback when neither grok injection nor OpenCode passthrough is active.
+ * Pre-ready fallback when agent TUI passthrough is not active yet.
  */
-export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
+export function resolveTerminalWheelScrollPrefer(
+  initialCommand,
+  { isGrokSession = false, agentTuiReady = false } = {}
+) {
   if (isGrokSession || isGrokTuiInitialCommand(initialCommand)) {
-    // Pre-ready grok: Page Up/Down avoids hitting the Ink input; live grok uses native passthrough.
     return 'page';
   }
   if (isLikelyTuiInitialCommand(initialCommand)) {
-    return 'sgr';
+    return agentTuiReady ? 'sgr' : 'both';
   }
   return 'page';
 }
 
 export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;
+export const TERMINAL_AGENT_INPUT_ZONE_ROWS = TERMINAL_GROK_INPUT_ZONE_ROWS;
 
-/** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
-export function resolveTerminalWheelInputZoneRows({ isGrokSession = false } = {}) {
-  return isGrokSession ? TERMINAL_GROK_INPUT_ZONE_ROWS : TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
+/** Agent shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
+export function resolveTerminalWheelInputZoneRows({
+  isGrokSession = false,
+  isAgentTui = false,
+} = {}) {
+  if (isGrokSession || isAgentTui) return TERMINAL_AGENT_INPUT_ZONE_ROWS;
+  return TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
 }
 
 export const TERMINAL_WHEEL_ARROW_UP_SEQ = '\x1b[A';
@@ -781,6 +763,19 @@ export function scheduleTerminalViewportSyncBurst(runSync, { extraDelaysMs = [18
   };
 }
 
+/** Tauri release WebView often reports 0×0 briefly after visibility:hidden → visible. */
+export const TERMINAL_ZERO_SIZE_VIEWPORT_RETRY_MS = Object.freeze([16, 48, 120, 280]);
+
+/** Extra passes after window/workspace show — canvas reattach is async and often misses the first frame. */
+export const TERMINAL_LAYOUT_RECOVER_BURST_MS = Object.freeze([50, 120, 280, 500]);
+
+export function scheduleTerminalLayoutRecoverBurst(
+  runRecover,
+  { extraDelaysMs = TERMINAL_LAYOUT_RECOVER_BURST_MS } = {}
+) {
+  return scheduleTerminalViewportSyncBurst(runRecover, { extraDelaysMs });
+}
+
 export function getTerminalRuntimePlatform(explicitPlatform) {
   if (explicitPlatform) return String(explicitPlatform).toLowerCase();
   if (typeof navigator !== 'undefined') {
@@ -919,6 +914,25 @@ export function buildTerminalMousePressSequence(col, row) {
   const x = Math.max(1, Math.floor(col) + 1);
   const y = Math.max(1, Math.floor(row) + 1);
   return `\x1b[?1006h\x1b[?1000h\x1b[<0;${x};${y}M\x1b[?1000l\x1b[?1006l`;
+}
+
+/** Never inject synthetic mouse clicks after agent exit or when the shell owns the PTY again. */
+export function shouldInjectAgentTuiMouseClick({
+  agentTuiLive = false,
+  processExited = false,
+  connectionState = 'connected',
+  inTranscript = false,
+  hasCell = false,
+  isVisibleInLayout = true,
+} = {}) {
+  return (
+    agentTuiLive &&
+    !processExited &&
+    connectionState === 'connected' &&
+    inTranscript &&
+    hasCell &&
+    isVisibleInLayout
+  );
 }
 
 export function shouldRouteWheelToTranscript({
@@ -1061,6 +1075,7 @@ export function shouldFreezeSingleWebglViewportOnWorkspaceShow({
   if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
     return true;
   }
+  if (isWorkspaceLayoutSwitchReason(normalizedReason)) return true;
   if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
   return false;
 }
@@ -1090,13 +1105,24 @@ export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)
   return !prevVisible && nextVisible;
 }
 
+/** Workspace tab switch and in-workspace V1/V2/V3 window switch share the same GPU recovery path. */
+export function isWorkspaceLayoutSwitchReason(reason = '') {
+  const normalized = String(reason);
+  if (normalized.includes('workspace-window')) return true;
+  return normalized.includes('workspace-switch');
+}
+
 /** Skip redundant fit/PTY resize when layout-settled fires but cols/rows are already correct. */
 export function shouldSkipRedundantLayoutSettleViewportSync({
   reason = '',
   sizeUnchanged,
   pendingWebglRecovery = false,
   hasGpuRenderer = false,
+  rendererWasReleased = false,
 } = {}) {
+  if (rendererWasReleased) return false;
+  if (isWorkspaceLayoutSwitchReason(reason)) return false;
+  if (/^workspace-show|^layout-recover-/.test(String(reason))) return false;
   if (!sizeUnchanged || pendingWebglRecovery || !hasGpuRenderer) return false;
   const normalized = String(reason);
   if (
@@ -1154,11 +1180,12 @@ export function shouldDiscardHiddenOutputCatchup({
   tuiSessionActive = false,
   bufferText = '',
   termHasContent = false,
+  rendererWasReleased = false,
   maxBytes = HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES,
 } = {}) {
   if (sessionReattached) return true;
-  if (tuiSessionActive) return true;
-  if (termHasContent) return true;
+  if (tuiSessionActive && !rendererWasReleased) return true;
+  if (termHasContent && !rendererWasReleased) return true;
   if (shouldDiscardOpenCodeCatchupReplay(bufferText)) return true;
   return bufferedBytes > maxBytes;
 }
@@ -1229,18 +1256,21 @@ export function shouldClearAtlasForSplitCanvas({
 }
 
 const CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON =
-  /layout-settled-(panel-group-layout|panel-focus-toggle|internal-split-drag-end|right-dock-drag-end|swarm-launch|shared-surface|panel-split|panel-relaunch)/;
+  /layout-settled-(panel-group-layout|panel-focus-toggle|internal-split-drag-end|right-dock-drag-end|swarm-launch|shared-surface|panel-split|panel-relaunch|workspace-window)/;
 
 /** Canvas uses release-on-hide + reattach-on-show; avoid repeated atlas clears on delayed bursts. */
 export function shouldClearGpuAtlasOnWorkspaceShow({
   operationalRendererMode,
   reason = '',
   explicitClearAtlas,
+  canvasReleasedOnLayoutHide = false,
 } = {}) {
   if (typeof explicitClearAtlas === 'boolean') return explicitClearAtlas;
   if (operationalRendererMode === 'xterm-canvas') {
+    if (canvasReleasedOnLayoutHide) return true;
     if (reason === 'workspace-show-pending') return true;
     if (CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON.test(reason)) return true;
+    if (/^layout-recover-/.test(reason)) return true;
     return false;
   }
   if (reason.startsWith('layout-settled-')) {
@@ -1482,10 +1512,12 @@ export default function TerminalTTY({
   const restoredHiddenLeaseThisMountRef = useRef(false);
   const lastViewportYRef = useRef(null);
   const lastPointerZoneRef = useRef('transcript');
-  const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
+  const tuiSessionActiveRef = useRef(false);
   const tuiSessionFooterConfirmedRef = useRef(false);
-  const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));
-  const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
+  const agentTuiReadyRef = useRef(false);
+  const agentTuiDetachedRef = useRef(false);
+  const grokTuiReadyRef = useRef(false);
+  const isGrokSessionRef = useRef(false);
   const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(false);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
@@ -1575,9 +1607,12 @@ export default function TerminalTTY({
   const needsViewportSyncOnShowRef = useRef(false);
   const workspaceShowSyncTimerRef = useRef(null);
   const workspaceShowRecoverTimerRef = useRef(null);
+  const zeroSizeViewportRetryTimersRef = useRef([]);
+  const layoutRecoverBurstCleanupRef = useRef(null);
   const inactiveRepaintRafRef = useRef(null);
   const pendingWebglRecoveryRef = useRef(false);
   const webglReleasedOnLayoutHideRef = useRef(false);
+  const canvasReleasedOnLayoutHideRef = useRef(false);
   const webglRecoveryTimerRef = useRef(null);
   const handleWebglContextLossRef = useRef(null);
   const prevIsActivePanelRef = useRef(false);
@@ -2129,6 +2164,31 @@ export default function TerminalTTY({
     [id]
   );
 
+  const releaseAgentTuiInteractionLocks = useCallback((term) => {
+    agentTuiDetachedRef.current = true;
+    tuiSessionActiveRef.current = false;
+    isGrokSessionRef.current = false;
+    grokTuiReadyRef.current = false;
+    agentTuiReadyRef.current = false;
+    tuiSessionFooterConfirmedRef.current = false;
+    setNativeWheelPassthrough(false);
+    disableTerminalFocusReporting(term, { disableMouse: true });
+  }, []);
+
+  const resolveAgentTuiInteractionLive = useCallback(
+    () =>
+      isAgentTuiInteractionLive({
+        initialCommand,
+        tuiSessionActive: tuiSessionActiveRef.current,
+        agentTuiDetached: agentTuiDetachedRef.current,
+        grokTuiReady: grokTuiReadyRef.current,
+        opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
+        agentTuiReady: agentTuiReadyRef.current,
+        isGrokSession: isGrokSessionRef.current,
+      }),
+    [initialCommand]
+  );
+
   const applyTerminalSessionExit = useCallback(
     (detail = {}, { emitBrowserEvent = false } = {}) => {
       const panelId = detail?.id || detail?.panelId;
@@ -2138,15 +2198,33 @@ export default function TerminalTTY({
       const command = detail?.initialCommand || initialCommand;
       const parsed = parseTerminalExitReason(reason);
       const agentSession = parsed.kind === 'agent' || isAgentTuiCommand(command);
+      const returnToShell = shouldReturnToShellAfterAgentExit(reason);
 
-      processExitedRef.current = true;
       tuiSessionActiveRef.current = false;
       isGrokSessionRef.current = false;
       grokTuiReadyRef.current = false;
+      agentTuiReadyRef.current = false;
+      agentTuiDetachedRef.current = true;
       tuiSessionFooterConfirmedRef.current = false;
       setNativeWheelPassthrough(false);
-      setSessionExitReason(reason);
       disableTerminalFocusReporting(termRef.current, { disableMouse: true });
+
+      if (returnToShell) {
+        agentTuiDetachedRef.current = true;
+        clearPanelSessionExit(id);
+        setSessionExitReason(null);
+        if (emitBrowserEvent) {
+          window.dispatchEvent(
+            new CustomEvent('devhub:terminal-exit', {
+              detail: { id, initialCommand: command, reason, returnedToShell: true },
+            })
+          );
+        }
+        return;
+      }
+
+      processExitedRef.current = true;
+      setSessionExitReason(reason);
 
       if (agentSession && parsed.kind === 'agent') {
         setConnectionState('agent-exited');
@@ -2329,6 +2407,7 @@ export default function TerminalTTY({
         /* ignore */
       }
 
+      const program = resolveAgentProgramFromCommand(initialCommand) || 'opencode';
       opencodeReadyNotifiedRef.current = true;
       try {
         await fetch('/api/terminal/opencode-ready', {
@@ -2339,12 +2418,14 @@ export default function TerminalTTY({
             tmuxSession,
             opencodeSessionId: opencodeSessionId || null,
             reason,
+            program,
           }),
         });
         cliLog(`CLIENT:${id}`, 'opencode-ready-notified', {
           tmuxSession,
           opencodeSessionId,
           reason,
+          program,
         });
         try {
           sessionStorage?.setItem(storageKey, String(Date.now()));
@@ -2353,10 +2434,10 @@ export default function TerminalTTY({
         }
       } catch (error) {
         opencodeReadyNotifiedRef.current = false;
-        cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message });
+        cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message, program });
       }
     },
-    [id, resolveSwarmTmuxSessionName]
+    [id, initialCommand, resolveSwarmTmuxSessionName]
   );
 
   const notifyViewportReady = useCallback(
@@ -2746,6 +2827,7 @@ export default function TerminalTTY({
         // ignore double dispose
       }
       canvasAddonRef.current = null;
+      canvasReleasedOnLayoutHideRef.current = true;
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
       return true;
     },
@@ -2808,6 +2890,7 @@ export default function TerminalTTY({
         lastPtySizeRef: lastPtySizeRef.current,
       });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+      canvasReleasedOnLayoutHideRef.current = false;
       cliLog(`RENDER:${id}`, 'canvas-attached', buildViewportSnapshot('canvas-reattach'));
       return true;
     } catch (error) {
@@ -2933,6 +3016,11 @@ export default function TerminalTTY({
     handleWebglContextLossRef.current = handleWebglContextLoss;
   }, [handleWebglContextLoss]);
 
+  const clearZeroSizeViewportRetryTimers = useCallback(() => {
+    zeroSizeViewportRetryTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+    zeroSizeViewportRetryTimersRef.current = [];
+  }, []);
+
   const syncTerminalViewportOnWorkspaceShow = useCallback(
     (reason = 'workspace-show', { clearAtlas } = {}) => {
       if (isDisposingRef.current) return;
@@ -2942,6 +3030,26 @@ export default function TerminalTTY({
       if (!rect || rect.width <= 0 || rect.height <= 0) {
         logViewportDiagnostic(`${reason}-skipped-zero-size`);
         needsViewportSyncOnShowRef.current = true;
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => {
+            if (!isVisibleInLayoutRef.current || isDisposingRef.current) return;
+            syncTerminalViewportOnWorkspaceShow(`${reason}-zero-size-retry`, {
+              clearAtlas: webglReleasedOnLayoutHideRef.current,
+            });
+          });
+        }
+        clearZeroSizeViewportRetryTimers();
+        if (typeof window !== 'undefined') {
+          for (const delayMs of TERMINAL_ZERO_SIZE_VIEWPORT_RETRY_MS) {
+            const timerId = window.setTimeout(() => {
+              if (isDisposingRef.current || !isVisibleInLayoutRef.current) return;
+              syncTerminalViewportOnWorkspaceShow(`${reason}-zero-size-retry-${delayMs}`, {
+                clearAtlas: webglReleasedOnLayoutHideRef.current,
+              });
+            }, delayMs);
+            zeroSizeViewportRetryTimersRef.current.push(timerId);
+          }
+        }
         return;
       }
 
@@ -2994,6 +3102,13 @@ export default function TerminalTTY({
           sizeUnchanged,
           pendingWebglRecovery: pendingWebglRecoveryRef.current,
           hasGpuRenderer: Boolean(webglAddonRef.current || canvasAddonRef.current),
+          rendererWasReleased:
+            webglReleasedOnLayoutHideRef.current ||
+            canvasReleasedOnLayoutHideRef.current ||
+            (shouldAttachCanvasRenderer({
+              operationalRendererMode: operationalRendererModeRef.current,
+            }) &&
+              !canvasAddonRef.current),
         }) &&
         !hiddenOutputCatchupPendingRef.current
       ) {
@@ -3011,6 +3126,7 @@ export default function TerminalTTY({
         shouldClearGpuAtlasOnWorkspaceShow({
           operationalRendererMode: operationalRendererModeRef.current,
           reason,
+          canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
         });
 
       const fitWorked = fitTerminalViewport({
@@ -3023,6 +3139,10 @@ export default function TerminalTTY({
       });
 
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: shouldClearAtlas });
+
+      if (shouldClearAtlas && canvasReleasedOnLayoutHideRef.current) {
+        canvasReleasedOnLayoutHideRef.current = false;
+      }
 
       if (fitWorked && termRef.current) {
         confirmViewportFit(termRef.current.cols, termRef.current.rows);
@@ -3055,12 +3175,20 @@ export default function TerminalTTY({
         const buffered = takeHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current);
         hiddenOutputCatchupPendingRef.current = false;
         if (buffered) {
+          const rendererWasReleased =
+            webglReleasedOnLayoutHideRef.current ||
+            canvasReleasedOnLayoutHideRef.current ||
+            (shouldAttachCanvasRenderer({
+              operationalRendererMode: operationalRendererModeRef.current,
+            }) &&
+              !canvasAddonRef.current);
           const discardCatchup = shouldDiscardHiddenOutputCatchup({
             bufferedBytes: buffered.length,
             sessionReattached: sessionReattachedRef.current,
             tuiSessionActive: tuiSessionActiveRef.current,
             bufferText: buffered,
             termHasContent: terminalBufferHasRenderableContent(termRef.current),
+            rendererWasReleased,
           });
           if (discardCatchup) {
             const discardBecauseTermHasContent =
@@ -3106,7 +3234,63 @@ export default function TerminalTTY({
         });
       }
     },
-    [confirmViewportFit, id, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
+    [confirmViewportFit, clearZeroSizeViewportRetryTimers, id, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
+  );
+
+  const nudgeActiveTuiViewport = useCallback(() => {
+    if (
+      isDisposingRef.current ||
+      !termRef.current ||
+      !isTerminalRendererReady(termRef.current) ||
+      !tuiSessionActiveRef.current
+    ) {
+      return;
+    }
+    refreshTerminalViewport(termRef.current);
+    nudgeTerminalPtyResize({
+      term: termRef.current,
+      socket: wsRef.current,
+      lastPtySizeRef: lastPtySizeRef.current,
+    });
+  }, []);
+
+  const runLayoutRecoverPass = useCallback(
+    async (phase = 'immediate') => {
+      if (isDisposingRef.current || !isVisibleInLayoutRef.current) return;
+      const mode = operationalRendererModeRef.current;
+
+      if (
+        shouldAttachCanvasRenderer({ operationalRendererMode: mode }) &&
+        !canvasAddonRef.current
+      ) {
+        await tryReattachCanvasAddonRef.current?.();
+      }
+      if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
+        await tryReattachWebglAddonRef.current?.({
+          clearAtlas: phase === 'immediate',
+          skipFitWhenUnchanged: phase !== 'immediate',
+        });
+      }
+
+      syncTerminalViewportOnWorkspaceShow(`layout-recover-${phase}`, {
+        clearAtlas:
+          webglReleasedOnLayoutHideRef.current ||
+          canvasReleasedOnLayoutHideRef.current ||
+          phase === 'immediate',
+      });
+      nudgeActiveTuiViewport();
+    },
+    [nudgeActiveTuiViewport, syncTerminalViewportOnWorkspaceShow]
+  );
+
+  const scheduleLayoutRecoverBurst = useCallback(
+    (reason = 'workspace-show') => {
+      layoutRecoverBurstCleanupRef.current?.();
+      layoutRecoverBurstCleanupRef.current = scheduleTerminalLayoutRecoverBurst((phase) => {
+        void runLayoutRecoverPass(`${reason}-${phase}`);
+      });
+    },
+    [runLayoutRecoverPass]
   );
 
   const sendResize = useCallback(() => {
@@ -3177,7 +3361,11 @@ export default function TerminalTTY({
         return;
       }
 
-      const clearAtlas = options.clearAtlas ?? false;
+      const clearAtlas =
+        options.clearAtlas ??
+        shouldAttachCanvasRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        });
 
       logViewportDiagnostic('reactivate-start');
       prepareActiveTuiTerminalFocus(termRef.current, {
@@ -4149,7 +4337,12 @@ export default function TerminalTTY({
         tuiOutputTailRef.current = tail;
         const footerReady = detectOpenCodeTuiReady(chunk) || detectOpenCodeTuiReady(tail);
         const grokReady = detectGrokSessionFromOutput(chunk) || detectGrokSessionFromOutput(tail);
-        if (!footerReady && !grokReady) return;
+        const agentReady =
+          detectAgentTuiReady(chunk, initialCommand) || detectAgentTuiReady(tail, initialCommand);
+        if (!footerReady && !grokReady && !agentReady) return;
+        // ponytail: scrollback tail still matches stale agent banners after exit; require fresh alt-screen
+        if (agentTuiDetachedRef.current && !/\x1b\[\?1049h/.test(chunk)) return;
+        agentTuiDetachedRef.current = false;
         tuiSessionActiveRef.current = true;
         if (!hasSentInitialCommand.current && initialCommand) {
           hasSentInitialCommand.current = true;
@@ -4165,7 +4358,37 @@ export default function TerminalTTY({
           setNativeWheelPassthrough(true);
           void notifyOpencodeReady(null, 'client-tui-footer');
         }
+        if (agentReady && !footerReady && !grokReady) {
+          agentTuiReadyRef.current = true;
+          setNativeWheelPassthrough(true);
+        }
         prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
+      };
+
+      const handleAgentShellReturnFromOutput = (chunk) => {
+        if (!isAgentTuiCommand(initialCommand) || agentTuiDetachedRef.current) return;
+        const wasReady =
+          agentTuiReadyRef.current ||
+          tuiSessionFooterConfirmedRef.current ||
+          grokTuiReadyRef.current ||
+          tuiSessionActiveRef.current;
+        const tail = tuiOutputTailRef.current || '';
+        const combined = `${tail}${chunk}`.slice(-8192);
+        const cause =
+          detectAgentSessionEndFromOutput(chunk) || detectAgentSessionEndFromOutput(combined);
+        const detached =
+          Boolean(cause) ||
+          detectAgentTuiDetachedFromOutput(chunk, { wasAgentReady: wasReady }) ||
+          detectAgentTuiDetachedFromOutput(combined, { wasAgentReady: wasReady });
+        if (!detached) return;
+        if (cause && shouldReturnToShellAfterAgentExit(`agent-exited:${cause}`)) {
+          applyTerminalSessionExit(
+            { panelId: id, reason: `agent-exited:${cause}`, initialCommand },
+            { emitBrowserEvent: true }
+          );
+          return;
+        }
+        releaseAgentTuiInteractionLocks(termRef.current);
       };
 
       const writeTerminalOutput = (chunk) => {
@@ -4201,6 +4424,7 @@ export default function TerminalTTY({
         }
 
         termRef.current?.write(filtered);
+        handleAgentShellReturnFromOutput(filtered);
         handleTuiReadyFromOutput(filtered);
         scrollIfActivePanel();
       };
@@ -4229,10 +4453,13 @@ export default function TerminalTTY({
               }
               if (payload.mode === 'tui') {
                 tuiSessionActiveRef.current = true;
+                agentTuiDetachedRef.current = false;
               } else {
                 tuiSessionActiveRef.current = false;
                 isGrokSessionRef.current = false;
                 grokTuiReadyRef.current = false;
+                agentTuiReadyRef.current = false;
+                agentTuiDetachedRef.current = true;
                 tuiSessionFooterConfirmedRef.current = false;
                 setNativeWheelPassthrough(false);
                 disableTerminalFocusReporting(termRef.current, { disableMouse: true });
@@ -4394,9 +4621,9 @@ export default function TerminalTTY({
     }
 
     prepareActiveTuiTerminalFocus(term, {
-      tuiSessionActive: tuiSessionActiveRef.current,
+      tuiSessionActive: resolveAgentTuiInteractionLive(),
     });
-  }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
+  }, [clearTimers, isActivePanel, resolveAgentTuiInteractionLive, scheduleInactiveViewportRepaint]);
 
   useLayoutEffect(() => {
     if (
@@ -4410,6 +4637,7 @@ export default function TerminalTTY({
     tuiSessionActiveRef.current = false;
     isGrokSessionRef.current = false;
     grokTuiReadyRef.current = false;
+    agentTuiReadyRef.current = false;
     tuiSessionFooterConfirmedRef.current = false;
     setNativeWheelPassthrough(false);
     disableTerminalFocusReporting(termRef.current, { disableMouse: true });
@@ -4485,26 +4713,14 @@ export default function TerminalTTY({
       if (shouldUseNativeRenderer && nativeVteOpened) {
         void showAndResizeNativeLease();
       }
-      const gpuShowRecover =
-        pendingWebglRecoveryRef.current || webglReleasedOnLayoutHideRef.current;
-      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
-        clearAtlas: gpuShowRecover,
-      });
-      if (
-        shouldAttachWebglRenderer({ operationalRendererMode }) ||
-        visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
-      ) {
-        requestAnimationFrame(() => {
-          if (!isVisibleInLayoutRef.current) return;
-          syncTerminalViewportOnWorkspaceShow('workspace-show-raf', {
-            clearAtlas: gpuShowRecover,
-          });
-        });
-      }
+      scheduleLayoutRecoverBurst('workspace-show');
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
+      layoutRecoverBurstCleanupRef.current?.();
+      layoutRecoverBurstCleanupRef.current = null;
+      clearZeroSizeViewportRetryTimers();
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
-      syncTerminalViewportOnWorkspaceShow('workspace-show-pending', { clearAtlas: true });
+      scheduleLayoutRecoverBurst('workspace-show-pending');
     }
 
     prevVisibleInLayoutRef.current = isVisibleInLayout;
@@ -4518,16 +4734,18 @@ export default function TerminalTTY({
         clearTimeout(workspaceShowRecoverTimerRef.current);
         workspaceShowRecoverTimerRef.current = null;
       }
+      clearZeroSizeViewportRetryTimers();
     };
   }, [
+    clearZeroSizeViewportRetryTimers,
     isVisibleInLayout,
     nativeVteOpened,
     operationalRendererMode,
     releaseCanvasAddon,
     releaseWebglAddonForInactivePanel,
+    scheduleLayoutRecoverBurst,
     shouldUseNativeRenderer,
     showAndResizeNativeLease,
-    syncTerminalViewportOnWorkspaceShow,
   ]);
 
   const reconnect = useCallback(() => {
@@ -4829,14 +5047,13 @@ export default function TerminalTTY({
         }
 
         terminal.onData((data) => {
+          const agentTuiLive = resolveAgentTuiInteractionLive();
           const sessionContext = {
-            mode: tuiSessionActiveRef.current ? 'tui' : 'shell',
-            tuiReady: isGrokSessionRef.current
-              ? grokTuiReadyRef.current === true
-              : tuiSessionFooterConfirmedRef.current === true,
+            mode: agentTuiLive ? 'tui' : 'shell',
+            tuiReady: agentTuiLive,
             tuiAdapter: isGrokSessionRef.current
               ? 'grok'
-              : tuiSessionActiveRef.current
+              : agentTuiLive
                 ? 'opencode'
                 : 'shell',
             panelHidden: isVisibleInLayoutRef.current !== true,
@@ -5254,34 +5471,8 @@ export default function TerminalTTY({
 
       layoutSettleBurstCleanupRef.current?.();
 
-      if (String(reason).includes('workspace-switch')) {
-        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
-          if (isVisibleInLayoutRef.current) {
-            void tryReattachWebglAddonRef.current?.({
-              clearAtlas: false,
-              skipFitWhenUnchanged: true,
-            });
-          } else {
-            needsViewportSyncOnShowRef.current = true;
-          }
-        } else if (
-          shouldAttachCanvasRenderer({
-            operationalRendererMode: operationalRendererModeRef.current,
-          }) &&
-          !canvasAddonRef.current
-        ) {
-          if (isVisibleInLayoutRef.current) {
-            void tryReattachCanvasAddonRef.current?.();
-          } else {
-            needsViewportSyncOnShowRef.current = true;
-          }
-        } else if (isVisibleInLayoutRef.current) {
-          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-            clearAtlas: webglReleasedOnLayoutHideRef.current,
-          });
-        } else {
-          needsViewportSyncOnShowRef.current = true;
-        }
+      if (isWorkspaceLayoutSwitchReason(reason)) {
+        scheduleLayoutRecoverBurst(`layout-settled-${reason}`);
         return;
       }
 
@@ -5494,6 +5685,7 @@ export default function TerminalTTY({
   }, [
     id,
     maybeConnectAfterViewportFit,
+    scheduleLayoutRecoverBurst,
     scrollTerminalToBottom,
     syncTerminalViewportOnWorkspaceShow,
   ]);
@@ -5523,6 +5715,19 @@ export default function TerminalTTY({
     setContextMenu({ x: e.clientX, y: e.clientY, text, canCopy: Boolean(text) });
   }, []);
 
+  const handleViewportMouseDownCapture = useCallback(
+    (event) => {
+      if (shouldUseNativeRenderer) return;
+      const term = termRef.current;
+      if (!term) return;
+      if (!resolveAgentTuiInteractionLive()) {
+        disableTerminalFocusReporting(term, { disableMouse: true });
+        prepareActiveTuiTerminalFocus(term, { tuiSessionActive: false });
+      }
+    },
+    [resolveAgentTuiInteractionLive, shouldUseNativeRenderer]
+  );
+
   const handleViewportMouseDown = useCallback(
     (event) => {
       if (shouldUseNativeRenderer) {
@@ -5542,7 +5747,8 @@ export default function TerminalTTY({
           ? resolveTerminalCellFromPointer(term, shell, event.clientX, event.clientY)
           : null;
       const grokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: grokSession });
+      const isAgentTui = isLikelyTuiInitialCommand(initialCommand) && !grokSession;
+      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: grokSession, isAgentTui });
       const inTranscript = cell
         ? isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
         : lastPointerZoneRef.current !== 'input';
@@ -5554,16 +5760,22 @@ export default function TerminalTTY({
       }
 
       // Activation is handled by the parent panel shell (onMouseDown bubbles up).
+      const agentTuiLive = resolveAgentTuiInteractionLive();
       prepareActiveTuiTerminalFocus(term, {
-        tuiSessionActive: tuiSessionActiveRef.current,
+        tuiSessionActive: agentTuiLive,
       });
       term?.focus?.();
 
-      const tuiReady = grokSession
-        ? grokTuiReadyRef.current === true
-        : tuiSessionFooterConfirmedRef.current === true;
-      const tuiActive = tuiSessionActiveRef.current || grokSession;
-      if (inTranscript && cell && tuiActive && tuiReady && isVisibleInLayoutRef.current === true) {
+      if (
+        shouldInjectAgentTuiMouseClick({
+          agentTuiLive,
+          processExited: processExitedRef.current,
+          connectionState: connectionStateRef.current,
+          inTranscript,
+          hasCell: Boolean(cell),
+          isVisibleInLayout: isVisibleInLayoutRef.current === true,
+        })
+      ) {
         const payload = buildTerminalMousePressSequence(cell.col, cell.row);
         sendTerminalPasteInput({
           socket: wsRef.current,
@@ -5578,6 +5790,7 @@ export default function TerminalTTY({
       initialCommand,
       nativeVteOpened,
       onActivatePanel,
+      resolveAgentTuiInteractionLive,
       shouldUseNativeRenderer,
     ]
   );
@@ -5632,9 +5845,9 @@ export default function TerminalTTY({
     return () => document.removeEventListener('click', handler);
   }, [contextMenu]);
 
-  // Wheel: synthetic routing for shell/TUI bootstrap; live OpenCode uses xterm native SGR directly.
+  // Wheel: synthetic routing for shell/TUI bootstrap; live agent TUIs forward to xterm SGR wheel.
   useEffect(() => {
-    if (shouldUseNativeRenderer || nativeWheelPassthrough) return undefined;
+    if (shouldUseNativeRenderer) return undefined;
 
     const shell = viewportShellRef.current;
     if (!shell) return undefined;
@@ -5656,7 +5869,11 @@ export default function TerminalTTY({
       }
 
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-      const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
+      const isAgentTui = isLikelyTuiInitialCommand(initialCommand) && !isGrokSession;
+      const isTuiSession =
+        resolveAgentTuiInteractionLive() ||
+        isGrokSession ||
+        (isAgentTui && tuiSessionActiveRef.current);
 
       // Plain shells: scroll xterm scrollback locally — Page/arrow/SGR leaks as visible garbage.
       if (!shouldInjectTerminalWheelIntoPty(isTuiSession)) {
@@ -5669,21 +5886,30 @@ export default function TerminalTTY({
         return;
       }
 
-      // Live grok/OpenCode: xterm forwards wheel as native SGR at the pointer row.
-      // In split grids the inactive panel is blurred — inject scroll instead so small
-      // worker panes can scroll without requiring maximize/focus (G-01 scroll fix).
+      // Live OpenCode/Grok: forward wheel to xterm SGR path. Kimi/Codex inject below.
       if (
         shouldPassthroughNativeTuiWheel({
+          initialCommand,
           isGrokSession,
           grokTuiReady: grokTuiReadyRef.current,
           opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
+          agentTuiReady: agentTuiReadyRef.current,
         }) &&
         isActivePanelRef.current
       ) {
+        if (forwardTerminalWheelToXterm(term, event)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
 
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession });
+      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession, isAgentTui });
+      const agentWheelLive =
+        isAgentTui &&
+        (agentTuiReadyRef.current ||
+          tuiSessionFooterConfirmedRef.current ||
+          resolveAgentTuiInteractionLive());
 
       const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
       const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
@@ -5699,7 +5925,7 @@ export default function TerminalTTY({
         lastPointerZone: lastPointerZoneRef.current,
         inputZoneRows,
       });
-      if (!inTranscript) {
+      if (!agentWheelLive && !inTranscript) {
         if (isTuiSession) {
           event.preventDefault();
           event.stopPropagation();
@@ -5713,14 +5939,26 @@ export default function TerminalTTY({
       const TERMINAL_WHEEL_MAX_PAGE_STEPS = 2;
       const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
       const steps = Math.max(1, Math.min(TERMINAL_WHEEL_MAX_PAGE_STEPS, rawSteps));
-      const wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
-      const wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
 
-      const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
-      const payload =
-        scrollPrefer === 'sgr'
-          ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
-          : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
+      let payload;
+      if (agentWheelLive) {
+        const coords = resolveGrokWheelSgrCoords(cell, term, inputZoneRows);
+        payload = buildGrokWheelScrollPayload(direction, coords.col, coords.row, steps);
+      } else {
+        const wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
+        const wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
+        const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, {
+          isGrokSession,
+          agentTuiReady:
+            agentTuiReadyRef.current ||
+            tuiSessionFooterConfirmedRef.current ||
+            grokTuiReadyRef.current,
+        });
+        payload =
+          scrollPrefer === 'sgr'
+            ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
+            : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
+      }
 
       const sent = sendTerminalPasteInput({
         socket: wsRef.current,
@@ -5735,7 +5973,7 @@ export default function TerminalTTY({
 
     shell.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     return () => shell.removeEventListener('wheel', handleWheel, { capture: true });
-  }, [initialCommand, nativeWheelPassthrough, shouldUseNativeRenderer]);
+  }, [initialCommand, resolveAgentTuiInteractionLive, shouldUseNativeRenderer]);
 
   // ── Keyboard shortcuts: copy/paste ───────────────────────────────────────────
   useEffect(() => {
@@ -5959,6 +6197,7 @@ export default function TerminalTTY({
           ref={viewportShellRef}
           className="relative flex-1 bg-[var(--surface-app)]"
           onContextMenu={handleContextMenu}
+          onMouseDownCapture={handleViewportMouseDownCapture}
           onMouseDown={handleViewportMouseDown}
           onPaste={handleViewportPaste}
           data-testid="terminal-viewport-shell"

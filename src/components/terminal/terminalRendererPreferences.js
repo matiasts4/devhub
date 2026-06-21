@@ -3,6 +3,22 @@ export const TERMINAL_RENDERER_INHERIT_MODE = 'inherit';
 export const TERMINAL_RENDERER_DEFAULT_MODE = 'xterm-webgl';
 export const TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY = 'devhub_terminal_renderer_default_mode';
 
+/** WebKitGTK in the packaged Tauri app often crashes on xterm-addon-webgl. */
+export function shouldAvoidWebglOnThisRuntime() {
+  if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return false;
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  return /linux/i.test(ua);
+}
+
+export function getRuntimeDefaultTerminalRendererMode() {
+  return shouldAvoidWebglOnThisRuntime() ? 'xterm' : TERMINAL_RENDERER_DEFAULT_MODE;
+}
+
+function demoteWebglForTauriLinux(mode) {
+  if (mode === 'xterm-webgl' && shouldAvoidWebglOnThisRuntime()) return 'xterm';
+  return mode;
+}
+
 // VTE (vte-experimental / GTK) is disabled as a selectable/usable renderer.
 // Code and packages remain in place for reference / future re-enable, but
 // no UI surfaces offer it and resolution never activates the VTE paths.
@@ -57,12 +73,15 @@ function isPlainObject(value) {
 }
 
 export function readTerminalRendererDefaultModeSetting(storage) {
-  if (!storage || typeof storage.getItem !== 'function') return TERMINAL_RENDERER_DEFAULT_MODE;
+  const runtimeDefault = getRuntimeDefaultTerminalRendererMode();
+  if (!storage || typeof storage.getItem !== 'function') return runtimeDefault;
 
   try {
-    return normalizeRendererMode(storage.getItem(TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY));
+    return demoteWebglForTauriLinux(
+      normalizeRendererMode(storage.getItem(TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY), runtimeDefault)
+    );
   } catch {
-    return TERMINAL_RENDERER_DEFAULT_MODE;
+    return runtimeDefault;
   }
 }
 
@@ -147,20 +166,21 @@ export function writeTerminalRendererPreferences(storage, projectId, prefs, work
 }
 
 export function resolveRequestedRenderer({ workspaceId, panelId, prefs }) {
+  const demote = (mode) => demoteWebglForTauriLinux(normalizeRendererMode(mode));
   const workspacePreference = prefs?.workspaces?.[workspaceId];
   if (!workspacePreference) {
-    return normalizeRendererMode(prefs?.defaultMode);
+    return demote(prefs?.defaultMode);
   }
 
   const panelMode = workspacePreference.panels?.[panelId];
 
   // Panel override wins unless it explicitly inherits the workspace baseline.
   if (panelMode && panelMode !== TERMINAL_RENDERER_INHERIT_MODE) {
-    return normalizeRendererMode(panelMode);
+    return demote(panelMode);
   }
 
   const defaultMode = workspacePreference.defaultMode;
-  return normalizeRendererMode(defaultMode, normalizeRendererMode(prefs?.defaultMode));
+  return demote(normalizeRendererMode(defaultMode, normalizeRendererMode(prefs?.defaultMode)));
 }
 
 export function getPanelRendererPreferenceMode({ workspaceId, panelId, prefs }) {

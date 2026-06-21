@@ -53,6 +53,19 @@ export function appendZedAuditEntry(entry) {
  * @param {Array<{ tool: string, input?: object, result?: unknown }>|null|undefined} toolResults
  * @param {string} [assistantText]
  */
+/**
+ * Export the audit trail as a JSON blob (append-only, immutable from UI).
+ *
+ * @returns {{ json: string, count: number }}
+ */
+export function exportZedAuditTrail() {
+  const entries = readZedAuditTrail();
+  return {
+    json: JSON.stringify(entries, null, 2),
+    count: entries.length,
+  };
+}
+
 export function recordZedInteraction(userMessage, toolResults, assistantText = '') {
   const tools = Array.isArray(toolResults)
     ? toolResults.map((t) => {

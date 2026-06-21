@@ -124,6 +124,7 @@ export default function PizarraBrowserSurface({
   onWorkspaceWindowRemove,
   tabsMode = 'multi',
   suspendDuringViewTransition = false,
+  suspendDuringCanvasPan = false,
   skipEnterAnimation = false,
 }) {
   // Compute early (before any hooks/state) so initial dockState can use it.
@@ -726,7 +727,7 @@ export default function PizarraBrowserSurface({
             // useNativeBrowserSurface will pick up the live size changes from our
             // direct style mutations on the ancestors. This makes the "cuerpo"
             // (web content / terminal lines) follow the header without pop-in on release.
-            suspendNativeSurface={isDragging || suspendDuringViewTransition}
+            suspendNativeSurface={isDragging || suspendDuringViewTransition || suspendDuringCanvasPan}
             isPizarraContext={true}
             // pizarra-shared-view-state Phase 3: pass tabsMode through
             // so the inner WorkspaceBrowserPane does not render a

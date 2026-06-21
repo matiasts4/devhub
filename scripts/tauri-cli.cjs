@@ -162,6 +162,18 @@ function resolveTauriCliArgs({ args = [], buildConfig = null, devUrlReady = fals
   return injectArgsBeforeAppArgs(args, ['-c', JSON.stringify({ build: { beforeDevCommand: '' } })]);
 }
 
+function syncDevhubServerSidecar() {
+  if (process.platform !== 'linux') return;
+  const source = path.join(__dirname, '..', 'packaging', 'linux', 'devhub-server');
+  const binariesDir = path.join(__dirname, '..', 'src-tauri', 'binaries');
+  const target = path.join(binariesDir, 'devhub-server-x86_64-unknown-linux-gnu');
+  if (!fs.existsSync(source)) return;
+  fs.mkdirSync(binariesDir, { recursive: true });
+  fs.copyFileSync(source, target);
+  fs.chmodSync(target, 0o755);
+  console.log('[tauri-cli] Synced devhub-server sidecar wrapper from packaging/linux/devhub-server');
+}
+
 function patchPackagedDesktop() {
   // After tauri build on Linux, the generator produces a minimal desktop.
   // Overwrite it with our rich packaging/linux/DevHub.desktop (includes launcher Exec, WMClass, StartupNotify, keywords etc).
@@ -211,6 +223,11 @@ function runTauriCli({
     devUrlReady: args[0] === 'dev' ? isDevUrlReady(buildConfig?.devUrl, { spawnSync: spawn }) : false,
   });
 
+  const isBuild = args.includes('build');
+  if (isBuild) {
+    syncDevhubServerSidecar();
+  }
+
   const result = spawn(process.execPath, [TAURI_CLI_ENTRY, ...cliArgs], {
     stdio: 'inherit',
     env,
@@ -220,7 +237,6 @@ function runTauriCli({
     throw result.error;
   }
 
-  const isBuild = args.includes('build');
   if (typeof result.status === 'number') {
     if (result.status === 0 && isBuild) {
       patchPackagedDesktop();

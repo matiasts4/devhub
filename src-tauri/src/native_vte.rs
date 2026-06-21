@@ -514,15 +514,19 @@ fn build_agent_session_exit_payload(
     }
 }
 
-fn is_agent_tui_launch_command(initial_command: Option<&str>) -> bool {
-    let Some(command) = initial_command.map(str::trim).filter(|value| !value.is_empty()) else {
-        return false;
-    };
-    let head = command.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+fn is_agent_token(token: &str) -> bool {
     matches!(
-        head.as_str(),
+        token.to_ascii_lowercase().as_str(),
         "opencode" | "hermes" | "grok" | "groc" | "kimi" | "codex"
     )
+}
+
+fn is_agent_tui_launch_command(initial_command: Option<&str>) -> bool {
+    initial_command
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|command| command.split_whitespace().any(is_agent_token))
+        .unwrap_or(false)
 }
 
 fn detect_agent_session_end_cause(text: &str) -> Option<&'static str> {
@@ -559,6 +563,9 @@ fn mark_agent_tui_active_from_text(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.contains("welcome to kimi code")
         || lower.contains("mcp /status")
+        || lower.contains("mcp/status")
+        || lower.contains("ctrl+p")
+        || lower.contains("esc interrupt")
         || lower.contains("opencode")
         || lower.contains("hermes")
         || lower.contains("k2.")
@@ -600,7 +607,7 @@ fn schedule_agent_exit_check(
             panel.agent_end_notified = true;
             let payload = build_agent_session_exit_payload(
                 panel_id_owned.as_str(),
-                registry.session_ids.get(&panel_id_owned).map(String::as_str),
+                registry.session_ids.get(&panel_id_owned).and_then(|inner| inner.as_deref()),
                 panel.initial_command.as_deref(),
                 cause,
             );
@@ -1155,10 +1162,19 @@ fn derive_offscreen_texture_park_bounds(last: &NativeVteBounds) -> NativeVteBoun
     }
 }
 
-/// Capture current VTE scroll offset (vadjustment) into the panel before parking it.
-/// This is the "where the user was looking" in the buffer (chat history etc).
+/// Agent TUIs (OpenCode, Kimi, …) draw on the alternate screen. Saving/restoring
+/// vadjustment scrollback after hide/show leaves only the status footer visible.
+#[cfg(target_os = "linux")]
+fn should_preserve_panel_scroll(panel: &NativeVtePanelHost) -> bool {
+    !(is_agent_tui_launch_command(panel.initial_command.as_deref()) || panel.agent_tui_active)
+}
+
 #[cfg(target_os = "linux")]
 fn capture_panel_scroll(panel: &mut NativeVtePanelHost) {
+    if !should_preserve_panel_scroll(panel) {
+        panel.last_scroll_value = None;
+        return;
+    }
     if let Some(adj) = panel.terminal.vadjustment() {
         panel.last_scroll_value = Some(adj.value());
     }
@@ -1178,6 +1194,19 @@ fn restore_panel_scroll(panel: &NativeVtePanelHost) {
             adj.set_value(clamped);
             panel.terminal.queue_draw();
         }
+    }
+}
+
+/// After show for agent TUIs: skip scrollback restore; no viewport nudges (OpenCode alt-screen).
+#[cfg(target_os = "linux")]
+fn refresh_agent_tui_viewport(_panel: &NativeVtePanelHost) {}
+
+#[cfg(target_os = "linux")]
+fn sync_panel_viewport_after_show(panel: &NativeVtePanelHost) {
+    if should_preserve_panel_scroll(panel) {
+        restore_panel_scroll(panel);
+    } else {
+        refresh_agent_tui_viewport(panel);
     }
 }
 
@@ -1333,10 +1362,8 @@ fn registry_show_panel(registry: &mut NativeVteRegistry, panel_id: &str) -> Resu
     panel.wrapper.show_all();
     sync_registry_layout_visibility(registry);
 
-    // Restore using a fresh lookup so the &mut panel borrow from get_mut is released
-    // before the immutable borrow that sync takes on registry.
     if let Some(p) = registry.panels.get(panel_id) {
-        restore_panel_scroll(p);
+        sync_panel_viewport_after_show(p);
     }
 
     Ok(())
@@ -1395,6 +1422,9 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
                     apply_terminal_bounds(&layout, &panel.wrapper, &panel.terminal, bounds);
                     panel.last_bounds = Some(bounds.clone());
                 }
+                panel.agent_tui_active =
+                    is_agent_tui_launch_command(panel.initial_command.as_deref());
+                panel.agent_end_notified = false;
                 // upgrade to offscreen texture if requested this time
                 if is_offscreen_texture {
                     panel.is_offscreen_texture = true;
@@ -1586,7 +1616,9 @@ fn registry_open_panel(app: &AppHandle, request: &NativeVteOpenRequest) -> Resul
                 last_scroll_value: None,
                 is_offscreen_texture,
                 initial_command: request.initial_command.clone(),
-                agent_tui_active: false,
+                agent_tui_active: is_agent_tui_launch_command(
+                    request.initial_command.as_deref(),
+                ),
                 agent_end_notified: false,
             },
         );
@@ -1755,11 +1787,6 @@ fn registry_set_panel_visibility(
                 panel.last_bounds = Some(bounds.clone());
             }
             registry_show_panel(registry, panel_id)?;
-            // After show + size, restore the scroll the user had before the workspace switch.
-            // Do it on the fresh panel ref (show may have updated internal adj).
-            if let Some(panel) = registry.panels.get(panel_id) {
-                restore_panel_scroll(panel);
-            }
         } else {
             let panel = registry
                 .panels
@@ -2310,6 +2337,45 @@ mod tests {
                 "hermes-session-detected".to_string(),
                 Some("hermes-panel-9".to_string())
             ))
+        );
+    }
+
+    #[test]
+    fn native_vte_agent_panels_skip_scroll_persist() {
+        fn preserves(initial_command: Option<&str>, agent_active: bool) -> bool {
+            !(is_agent_tui_launch_command(initial_command) || agent_active)
+        }
+        assert!(!preserves(Some("opencode --session ses_1"), false));
+        assert!(!preserves(Some("kimi"), false));
+        assert!(!preserves(None, true));
+        assert!(preserves(Some("bash"), false));
+    }
+
+    #[test]
+    fn native_vte_agent_exit_heuristics_detect_kimi_bye_and_fetch_failed() {
+        assert_eq!(detect_agent_session_end_cause("Bye!\r\n"), Some("bye"));
+        assert_eq!(
+            detect_agent_session_end_cause("Skipped refreshing managed:kimi-code: fetch failed"),
+            Some("fetch-failed")
+        );
+        assert!(is_agent_tui_launch_command(Some("kimi")));
+        assert!(is_agent_tui_launch_command(Some("opencode --session ses_1")));
+        assert!(is_agent_tui_launch_command(Some("bash -lc opencode --session ses_1")));
+        assert!(!is_agent_tui_launch_command(Some("bash")));
+    }
+
+    #[test]
+    fn native_vte_agent_exit_payload_uses_agent_exited_reason() {
+        assert_eq!(
+            build_agent_session_exit_payload(
+                "panel-kimi",
+                Some("panel-kimi"),
+                Some("kimi"),
+                "fetch-failed",
+            )
+            .reason
+            .as_deref(),
+            Some("agent-exited:fetch-failed")
         );
     }
 

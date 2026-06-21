@@ -1,0 +1,19 @@
+{
+  "name": "demo",
+  "version": "1.0.0",
+  "description": "Example skill that exposes a friendly greeting tool.",
+  "permissions": [],
+  "tools": [
+    {
+      "name": "hello",
+      "description": "Return a greeting for the given name.",
+      "parameters": {
+        "name": {
+          "type": "string",
+          "description": "Name to greet",
+          "required": true
+        }
+      }
+    }
+  ]
+}

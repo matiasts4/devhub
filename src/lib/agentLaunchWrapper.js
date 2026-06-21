@@ -620,13 +620,21 @@ export function buildViewportReadyWaitBlock({
 }
 
 /**
- * Poll /tmp/devhub-opencode-ready-<tmux> instead of a fixed sleep before bootstrap.
- * The sidecar/client writes this marker when OpenCode session/TUI footer is detected.
+ * Poll /tmp/devhub-agent-ready-<program>-<tmux> instead of a fixed sleep before bootstrap.
+ * The sidecar/client writes this marker when the agent TUI is ready for input.
+ * Keeps a legacy fallback to /tmp/devhub-opencode-ready-<tmux> for older clients.
  */
 export const BOOTSTRAP_OPENCODE_READY_REASONS = ['client-tui-footer', 'sidecar-tui-footer'];
+export const BOOTSTRAP_AGENT_READY_REASONS = [
+  'client-tui-footer',
+  'sidecar-tui-footer',
+  'client-detected',
+  'viewport-ready-fallback',
+];
 export const BOOTSTRAP_POST_READY_SETTLE_SECONDS = 2;
 
 export function buildOpencodeReadyWaitBlock({
+  programId = 'opencode',
   pollIntervalSeconds = 0.25,
   maxWaitSeconds = 12,
   postReadySettleSeconds = BOOTSTRAP_POST_READY_SETTLE_SECONDS,
@@ -640,20 +648,22 @@ export function buildOpencodeReadyWaitBlock({
     Number(postReadySettleSeconds)
       .toFixed(2)
       .replace(/\.?0+$/, '') || '2';
+  const programLabel = String(programId || 'opencode');
   return [
-    '# Wait until OpenCode TUI footer is detected before bootstrap injection.',
+    '# Wait until the agent TUI is ready before bootstrap injection.',
     '# Viewport-ready alone is NOT sufficient — it fires when the DevHub client',
-    '# attaches, often before OpenCode accepts keyboard input.',
+    '# attaches, often before the agent accepts keyboard input.',
     '_devhub_wait_opencode_ready() {',
     '  local _tmux_session="${DEVHUB_TMUX_SESSION:-}"',
     '  if [ -z "${_tmux_session:-}" ]; then',
     '    _tmux_session=$(tmux display-message -p "#S" 2>/dev/null) || true',
     '  fi',
     '  if [ -z "${_tmux_session:-}" ]; then',
-    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: no tmux session for opencode-ready wait; skipping"`,
+    `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] WARN: no tmux session for agent-ready wait; skipping"`,
     '    return 0',
     '  fi',
-    '  local _ready_file="/tmp/devhub-opencode-ready-${_tmux_session}"',
+    `  local _ready_file="/tmp/devhub-agent-ready-${programLabel}-\${_tmux_session}"`,
+    '  local _legacy_ready_file="/tmp/devhub-opencode-ready-${_tmux_session}"',
     `  local _attempt=0`,
     `  local _max_attempts=${maxAttempts}`,
     '  while [ $_attempt -lt $_max_attempts ]; do',
@@ -661,21 +671,27 @@ export function buildOpencodeReadyWaitBlock({
     '      local _reason',
     '      _reason=$(sed -n \'s/.*"reason":"\\([^"]*\\)".*/\\1/p\' "$_ready_file" 2>/dev/null | head -1)',
     '      case "${_reason:-}" in',
-    '        client-tui-footer|sidecar-tui-footer)',
-    `          echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] OpenCode TUI footer ready ($_reason): $_ready_file"`,
+    '        client-tui-footer|sidecar-tui-footer|client-detected|viewport-ready-fallback)',
+    `          echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ${programLabel} TUI ready ($_reason): $_ready_file"`,
     '          cat "$_ready_file" 2>/dev/null || true',
     `          sleep ${settleArg}`,
     '          return 0',
     '          ;;',
-    '        viewport-ready-fallback|client-detected|*)',
-    `          echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Weak ready signal (\${_reason:-unknown}); waiting for TUI footer"`,
+    '        *)',
+    `          echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] Weak ready signal (\${_reason:-unknown}); waiting for ${programLabel} TUI"`,
     '          ;;',
     '      esac',
+    '    fi',
+    '    if [ -f "$_legacy_ready_file" ]; then',
+    `      echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ${programLabel} ready (legacy opencode-ready marker): $_legacy_ready_file"`,
+    '      cat "$_legacy_ready_file" 2>/dev/null || true',
+    `      sleep ${settleArg}`,
+    '      return 0',
     '    fi',
     `    sleep ${sleepArg}`,
     '    _attempt=$((_attempt + 1))',
     '  done',
-    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: opencode ready timeout (${maxWaitSeconds}s); skipping bootstrap injection"`,
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] ERROR: ${programLabel} ready timeout (${maxWaitSeconds}s); skipping bootstrap injection"`,
     '  return 1',
     '}',
   ].join('\n');
@@ -1141,7 +1157,9 @@ export function buildAutoRestartLoopCommand({
   innerCommand,
   deferBootstrap = false,
   tuiGraceSeconds = 12,
+  programId = 'opencode',
 } = {}) {
+  const programLabel = String(programId || 'opencode');
   const runInnerBody = deferBootstrap
     ? [
         '(',
@@ -1150,7 +1168,7 @@ export function buildAutoRestartLoopCommand({
         '      _devhub_bootstrap_prompt',
         '    fi',
         '  else',
-        `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] SKIP: OpenCode TUI not ready; bootstrap not injected" >> "$AGENT_LOG"`,
+        `    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEVHUB_BOOTSTRAP] SKIP: ${programLabel} TUI not ready; bootstrap not injected" >> "$AGENT_LOG"`,
         '  fi',
         ') >> "$AGENT_LOG" 2>&1 &',
         innerCommand,
@@ -1329,19 +1347,23 @@ export function buildAgentLaunchWrapper({
   bootstrapPrompt,
   innerCommand,
   modelProvider,
+  programId,
   dbPath,
   busBinaryPath,
   disableMinimaxMcp,
   inboxPollIntervalSeconds,
   // T-022: TUI wait timings (milliseconds).
   //   - tuiWaitTimeoutMs: UNUSED (default 10000), kept for backward compat
-  //   - tuiReadyGraceMs:  max wait for opencode-ready marker (default 12000)
-  // Swarm panels poll /tmp/devhub-opencode-ready-<tmux> (written by sidecar
-  // when OpenCode session/footer is detected) instead of a fixed sleep.
+  //   - tuiReadyGraceMs:  max wait for agent-ready marker (default 12000)
+  // Swarm panels poll /tmp/devhub-agent-ready-<program>-<tmux> (written by
+  // the client when the agent TUI is ready) instead of a fixed sleep.
   tuiWaitTimeoutMs = 10000,
   tuiReadyGraceMs = 30000,
   preLaunchDelayMs = 0,
 }) {
+  const effectiveProgramId =
+    programId ||
+    (String(innerCommand || '').includes('kimi') ? 'kimi' : 'opencode');
   const pathValidationBlock = [
     '# Validate worktree path exists',
     `if [ ! -d "${workspacePath}" ]; then`,
@@ -1475,6 +1497,7 @@ export function buildAgentLaunchWrapper({
     ...(deferBootstrapUntilAgentStart
       ? [
           buildOpencodeReadyWaitBlock({
+            programId: effectiveProgramId,
             maxWaitSeconds: Math.max(3, Math.ceil(tuiReadyGraceMs / 1000)),
           }),
         ]
@@ -1552,6 +1575,7 @@ export function buildAgentLaunchWrapper({
       innerCommand,
       deferBootstrap: deferBootstrapUntilAgentStart,
       tuiGraceSeconds,
+      programId: effectiveProgramId,
     }),
   ];
 

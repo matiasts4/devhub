@@ -81,6 +81,7 @@ describe('WorkspaceTerminalSetupModal keyboard flow', () => {
     const opencodePreset = document.querySelector(
       '[data-testid="workspace-terminal-command-preset-opencode"]'
     );
+    const kimiPreset = document.querySelector('[data-testid="workspace-terminal-command-preset-kimi"]');
     const customInput = document.querySelector(
       '[data-testid="workspace-terminal-initial-command-input"]'
     );
@@ -138,5 +139,24 @@ describe('WorkspaceTerminalSetupModal keyboard flow', () => {
 
     expect(onConfirm).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  test('exposes Kimi as a command preset instead of Grok', async () => {
+    await renderIntoDom(
+      React.createElement(WorkspaceTerminalSetupModal, {
+        open: true,
+        onClose: jest.fn(),
+        onConfirm: jest.fn(),
+      }),
+      mountedRoots
+    );
+    await flushEffects();
+
+    expect(
+      document.querySelector('[data-testid="workspace-terminal-command-preset-kimi"]')
+    ).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="workspace-terminal-command-preset-grok"]')
+    ).toBeNull();
   });
 });
