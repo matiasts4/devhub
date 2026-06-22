@@ -2,7 +2,7 @@
 
 **Estado:** activo  
 **Última actualización:** 2026-06-22  
-**Rama de trabajo:** `task/kimi-minimal` (fork de `task/rebuild-from-stable`)  
+**Rama de trabajo:** `task/rebuild-from-stable` (MVP kimi mergeado desde `task/kimi-minimal`)  
 **Baseline estable:** `stable/terminal-jun20` (`ebc5030`) + collab en `task/rebuild-from-stable` (`cca90af`)
 
 ---
@@ -311,6 +311,7 @@ Solo paneles `native_vte`; tests aparte.
 | 2026-06-22 | 3    | `0dfd006` | **parcial**  | Capa C aislada; terminales OK, scroll kimi no    |
 | 2026-06-22 | 3b   | `bc86c68` | **FALLÓ**    | Gates relajados; scroll kimi sigue sin funcionar |
 | 2026-06-22 | —    | —         | **DEFERIDO** | Capa C/D scroll+focus; otras TUIs OK (usuario)   |
+| 2026-06-22 | MVP  | `8086148` | **MERGED**   | `task/kimi-minimal` → `task/rebuild-from-stable` |
 
 _(Actualizar esta tabla en cada intento.)_
 
@@ -329,7 +330,9 @@ _(Actualizar esta tabla en cada intento.)_
 - Scroll dentro del TUI kimi (Capa C) — no funciona con inyección SGR aislada; código wheel retirado para no interceptar eventos
 - Focus/mouse kimi (Capa D) — pospuesto
 
-**Próximo paso sugerido:** merge `task/kimi-minimal` → `task/rebuild-from-stable` (solo capas A+B), o Capa F (Zed/packaging) en rama aparte.
+**Merge:** `task/kimi-minimal` → `task/rebuild-from-stable` @ `8086148` (fast-forward, capas A+B).
+
+**Próximo paso sugerido:** Capa F (Zed/packaging) en rama aparte, o investigar scroll kimi en issue/rama dedicada.
 
 ---
 
