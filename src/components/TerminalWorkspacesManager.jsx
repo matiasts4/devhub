@@ -1401,7 +1401,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? `devhub_restore_manifest:${projectId}`
     : 'devhub_restore_manifest';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
-  const [heavySurfacesReady, setHeavySurfacesReady] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
   const [workspaces, setWorkspaces] = useState(() => createDefaultWorkspaceState().workspaces);
   const pendingReopenPanelsRef = useRef(new Map());
@@ -1663,24 +1662,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount
-
-  useEffect(() => {
-    if (!isVisible || heavySurfacesReady) return undefined;
-
-    let cancelled = false;
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        if (!cancelled) setHeavySurfacesReady(true);
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf1);
-      if (raf2) cancelAnimationFrame(raf2);
-    };
-  }, [heavySurfacesReady, isVisible]);
 
   useEffect(() => {
     if (!isVisible || typeof document === 'undefined') return undefined;
@@ -2017,7 +1998,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   // --- Startup restore: global prefs + queued OpenCode resume (reboot-safe via --session) ---
   useEffect(() => {
-    if (!isVisible || !isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
+    if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
 
     const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
 
@@ -2283,7 +2264,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     activeWsId,
     applyPanelRelaunchCommand,
     isClientLoaded,
-    isVisible,
     projectId,
     storage,
     terminalStateStorageKey,
@@ -7028,376 +7008,344 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             >
               {/* Terminal Grid */}
               <div ref={workspaceGridAreaRef} className="flex-1 relative min-w-0">
-                {!heavySurfacesReady ? (
-                  <div
-                    data-testid="terminal-manager-booting"
-                    className="flex h-full w-full items-center justify-center"
-                    aria-busy="true"
-                    aria-label="Preparando terminales"
-                  >
-                    <RefreshCw className="h-6 w-6 animate-spin text-[var(--text-muted)]" />
-                  </div>
-                ) : null}
-                {heavySurfacesReady
-                  ? workspaces.map((ws, wsIndex) => {
-                      const workspaceGridKey = buildStableWorkspaceShellKey(
-                        'workspace-grid',
-                        ws.id
-                      );
-                      const wsDockState =
-                        activeWsId === ws.id
-                          ? effectiveRightDockState
-                          : { ...DEFAULT_RIGHT_DOCK_STATE };
-                      const updateWsDockState = updateRightDockState;
-                      const focusedPanelId = focusedPanelByWorkspace[ws.id];
-                      const isWorkspaceVisibleInLayout =
-                        !isFullscreenBrowser && activeWsId === ws.id && isVisible;
-                      const shouldSuspendWorkspaceNativeSurfaces =
-                        isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
-                      const totalTerminalPanelCount = resolveWorkspaceVisibleTerminalPanelCount(
-                        ws.columns
-                      );
-                      const visibleTerminalPanelCount = focusedPanelId
-                        ? 1
-                        : totalTerminalPanelCount;
-                      const renderWorkspacePanelSlot = (panel, panelRenderOptions = {}) =>
-                        renderWorkspacePanel(panel, {
-                          activePanelId,
-                          activeWsId,
-                          isActivePanel: activePanelId === panel.id && activeWsId === ws.id,
-                          isVisibleInLayout:
-                            panelRenderOptions.isVisibleInLayout ??
-                            resolvePanelVisibleInLayout({
-                              isWorkspaceVisibleInLayout,
-                              focusedPanelId,
-                              panelId: panel.id,
-                            }),
-                          visibleTerminalPanelCount:
-                            panelRenderOptions.visibleTerminalPanelCount ??
-                            visibleTerminalPanelCount,
-                          panelLabel: getPanelDisplayLabel(ws, panel.id),
-                          renameEditing: editingPanelId === panel.id,
-                          renameValue: editingPanelId === panel.id ? editingValue : '',
-                          renameError: editingPanelId === panel.id ? renameError : null,
-                          onStartRename: (pnl, label) => startPanelRename(pnl, label),
-                          onRenameValueChange: (val) => updateEditingValue(val),
-                          onCommitRename: (pnl, overrideValue) =>
-                            commitPanelRename(pnl, ws.id, overrideValue),
-                          onCancelRename: () => cancelPanelRename(),
-                          cwd,
-                          wsId: ws.id,
-                          setActivePanelIds,
-                          onClosePanel: () => handleClosePanel(panel.id),
-                          onSplitRight: () => handleSplit('horizontal', panel.id),
-                          onSplitDown: () => handleSplit('vertical', panel.id),
-                          onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
-                          isFocusedPanel: focusedPanelId === panel.id,
-                          navigationPulseActive: panelNavPulseId === panel.id,
-                          onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
-                          panelSemanticMetadata: derivePanelSemanticMetadata(
-                            panel,
-                            agentRunsByPanel[panel.id]
-                          ),
-                          inboxPendingCount:
-                            swarmInboxPendingByRole?.[
-                              panel?.swarmRole?.roleKey ||
-                                inferSwarmRoleKey({
-                                  ...(agentRunsByPanel[panel.id] || {}),
-                                  ...(panel?.swarmContext || {}),
-                                  roleKey: panel?.swarmRole?.roleKey,
-                                })
-                            ] || 0,
-                          suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
-                          nativeSurfacePolicy,
-                          requestedRendererMode: resolveRequestedRenderer({
-                            workspaceId: ws.id,
-                            panelId: panel.id,
-                            prefs: terminalRendererPreferences,
-                          }),
-                          onResetRendererToXterm: () =>
-                            handleResetPanelRendererToXterm(ws.id, panel.id),
-                          onSetPanelRenderer: (mode) =>
-                            handleSetPanelRenderer(ws.id, panel.id, mode),
-                          connectionState: getPanelConnectionState(panel),
-                          deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
-                          pizarraOwnsLiveSurfaces,
-                          swarmDelegatedRoleKeys,
-                        });
-                      return (
-                        <div
-                          key={workspaceGridKey}
-                          data-testid={`workspace-shell-${ws.id}`}
-                          data-ws-active={
-                            !isFullscreenBrowser && activeWsId === ws.id && isVisible
-                              ? 'true'
-                              : 'false'
-                          }
-                          aria-hidden={activeWsId !== ws.id || !isVisible}
-                          className="absolute inset-0 p-0"
-                          style={{
-                            zIndex: activeWsId === ws.id ? 10 : 0,
-                            ...resolveWorkspaceShellVisibilityStyle({
-                              isActiveWorkspace: activeWsId === ws.id,
-                              isManagerVisible: isVisible,
-                              isFullscreenTakeover: isFullscreenBrowser,
-                            }),
-                          }}
+                {workspaces.map((ws, wsIndex) => {
+                  const workspaceGridKey = buildStableWorkspaceShellKey('workspace-grid', ws.id);
+                  const wsDockState =
+                    activeWsId === ws.id
+                      ? effectiveRightDockState
+                      : { ...DEFAULT_RIGHT_DOCK_STATE };
+                  const updateWsDockState = updateRightDockState;
+                  const focusedPanelId = focusedPanelByWorkspace[ws.id];
+                  const isWorkspaceVisibleInLayout =
+                    !isFullscreenBrowser && activeWsId === ws.id && isVisible;
+                  const shouldSuspendWorkspaceNativeSurfaces =
+                    isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
+                  const totalTerminalPanelCount = resolveWorkspaceVisibleTerminalPanelCount(
+                    ws.columns
+                  );
+                  const visibleTerminalPanelCount = focusedPanelId ? 1 : totalTerminalPanelCount;
+                  const renderWorkspacePanelSlot = (panel, panelRenderOptions = {}) =>
+                    renderWorkspacePanel(panel, {
+                      activePanelId,
+                      activeWsId,
+                      isActivePanel: activePanelId === panel.id && activeWsId === ws.id,
+                      isVisibleInLayout:
+                        panelRenderOptions.isVisibleInLayout ??
+                        resolvePanelVisibleInLayout({
+                          isWorkspaceVisibleInLayout,
+                          focusedPanelId,
+                          panelId: panel.id,
+                        }),
+                      visibleTerminalPanelCount:
+                        panelRenderOptions.visibleTerminalPanelCount ?? visibleTerminalPanelCount,
+                      panelLabel: getPanelDisplayLabel(ws, panel.id),
+                      renameEditing: editingPanelId === panel.id,
+                      renameValue: editingPanelId === panel.id ? editingValue : '',
+                      renameError: editingPanelId === panel.id ? renameError : null,
+                      onStartRename: (pnl, label) => startPanelRename(pnl, label),
+                      onRenameValueChange: (val) => updateEditingValue(val),
+                      onCommitRename: (pnl, overrideValue) =>
+                        commitPanelRename(pnl, ws.id, overrideValue),
+                      onCancelRename: () => cancelPanelRename(),
+                      cwd,
+                      wsId: ws.id,
+                      setActivePanelIds,
+                      onClosePanel: () => handleClosePanel(panel.id),
+                      onSplitRight: () => handleSplit('horizontal', panel.id),
+                      onSplitDown: () => handleSplit('vertical', panel.id),
+                      onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
+                      isFocusedPanel: focusedPanelId === panel.id,
+                      navigationPulseActive: panelNavPulseId === panel.id,
+                      onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
+                      panelSemanticMetadata: derivePanelSemanticMetadata(
+                        panel,
+                        agentRunsByPanel[panel.id]
+                      ),
+                      inboxPendingCount:
+                        swarmInboxPendingByRole?.[
+                          panel?.swarmRole?.roleKey ||
+                            inferSwarmRoleKey({
+                              ...(agentRunsByPanel[panel.id] || {}),
+                              ...(panel?.swarmContext || {}),
+                              roleKey: panel?.swarmRole?.roleKey,
+                            })
+                        ] || 0,
+                      suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
+                      nativeSurfacePolicy,
+                      requestedRendererMode: resolveRequestedRenderer({
+                        workspaceId: ws.id,
+                        panelId: panel.id,
+                        prefs: terminalRendererPreferences,
+                      }),
+                      onResetRendererToXterm: () =>
+                        handleResetPanelRendererToXterm(ws.id, panel.id),
+                      onSetPanelRenderer: (mode) => handleSetPanelRenderer(ws.id, panel.id, mode),
+                      connectionState: getPanelConnectionState(panel),
+                      deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
+                      pizarraOwnsLiveSurfaces,
+                      swarmDelegatedRoleKeys,
+                    });
+                  return (
+                    <div
+                      key={workspaceGridKey}
+                      data-testid={`workspace-shell-${ws.id}`}
+                      data-ws-active={
+                        !isFullscreenBrowser && activeWsId === ws.id && isVisible ? 'true' : 'false'
+                      }
+                      aria-hidden={activeWsId !== ws.id || !isVisible}
+                      className="absolute inset-0 p-0"
+                      style={{
+                        zIndex: activeWsId === ws.id ? 10 : 0,
+                        ...resolveWorkspaceShellVisibilityStyle({
+                          isActiveWorkspace: activeWsId === ws.id,
+                          isManagerVisible: isVisible,
+                          isFullscreenTakeover: isFullscreenBrowser,
+                        }),
+                      }}
+                    >
+                      <PanelGroup
+                        direction="horizontal"
+                        className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
+                        aria-hidden={isFullscreenBrowser}
+                      >
+                        <Panel
+                          key={`${ws.id}-terminal-grid`}
+                          minSize={18}
+                          className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden"
+                          style={getTerminalGridShellStyle()}
                         >
-                          <PanelGroup
-                            direction="horizontal"
-                            className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
-                            aria-hidden={isFullscreenBrowser}
+                          {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
+
+                          {/* Terminal bodies — PanelGroup stays mounted in focus mode (CSS only). */}
+                          <div
+                            className="relative min-h-0 flex-1 overflow-hidden"
+                            data-focus-mode={focusedPanelId ? 'true' : undefined}
                           >
-                            <Panel
-                              key={`${ws.id}-terminal-grid`}
-                              minSize={18}
-                              className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden"
-                              style={getTerminalGridShellStyle()}
-                            >
-                              {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
-
-                              {/* Terminal bodies — PanelGroup stays mounted in focus mode (CSS only). */}
+                            {totalTerminalPanelCount === 0 ? (
                               <div
-                                className="relative min-h-0 flex-1 overflow-hidden"
-                                data-focus-mode={focusedPanelId ? 'true' : undefined}
+                                data-testid="workspace-empty-terminal-state"
+                                className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center"
                               >
-                                {totalTerminalPanelCount === 0 ? (
-                                  <div
-                                    data-testid="workspace-empty-terminal-state"
-                                    className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center"
-                                  >
-                                    <div className="flex flex-col items-center gap-2 max-w-sm">
-                                      <Terminal className="w-8 h-8 text-[var(--text-muted)]" />
-                                      <p className="text-sm text-[var(--text-secondary)]">
-                                        Este workspace no tiene terminales activas.
-                                      </p>
-                                      <p className="text-xs text-[var(--text-muted)]">
-                                        Creá una nueva shell para seguir trabajando sin cerrar el
-                                        workspace.
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      data-testid="workspace-add-terminal"
-                                      onClick={() => handleSplit('horizontal')}
-                                      className="inline-flex items-center gap-2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-4 py-2 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
-                                    >
-                                      <Plus className="w-4 h-4" />
-                                      Nueva terminal
-                                    </button>
-                                  </div>
-                                ) : (
-                                  resolveWorkspaceWindowsForRender(ws, workspaceWindows).map(
-                                    (window) => {
-                                      const activeWindowIdForWs = resolveActiveWorkspaceWindowId(
-                                        ws.id,
-                                        workspaceWindows,
-                                        activeWindowIds
-                                      );
-                                      const isActiveWindow = window.id === activeWindowIdForWs;
-                                      const windowColumns =
-                                        window.columns?.length > 0 ? window.columns : ws.columns;
+                                <div className="flex flex-col items-center gap-2 max-w-sm">
+                                  <Terminal className="w-8 h-8 text-[var(--text-muted)]" />
+                                  <p className="text-sm text-[var(--text-secondary)]">
+                                    Este workspace no tiene terminales activas.
+                                  </p>
+                                  <p className="text-xs text-[var(--text-muted)]">
+                                    Creá una nueva shell para seguir trabajando sin cerrar el
+                                    workspace.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  data-testid="workspace-add-terminal"
+                                  onClick={() => handleSplit('horizontal')}
+                                  className="inline-flex items-center gap-2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-4 py-2 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  Nueva terminal
+                                </button>
+                              </div>
+                            ) : (
+                              resolveWorkspaceWindowsForRender(ws, workspaceWindows).map(
+                                (window) => {
+                                  const activeWindowIdForWs = resolveActiveWorkspaceWindowId(
+                                    ws.id,
+                                    workspaceWindows,
+                                    activeWindowIds
+                                  );
+                                  const isActiveWindow = window.id === activeWindowIdForWs;
+                                  const windowColumns =
+                                    window.columns?.length > 0 ? window.columns : ws.columns;
 
-                                      return (
-                                        <div
-                                          key={`${ws.id}-view-${window.id}`}
-                                          className="absolute inset-0 min-h-0 min-w-0"
-                                          aria-hidden={!isActiveWindow}
-                                          data-testid={
-                                            isActiveWindow
-                                              ? `workspace-window-active-${window.id}`
-                                              : `workspace-window-parked-${window.id}`
-                                          }
-                                          style={{
-                                            zIndex: isActiveWindow ? 2 : 1,
-                                            ...resolveWorkspaceShellVisibilityStyle({
-                                              isActiveWorkspace: isActiveWindow,
-                                              isManagerVisible: true,
-                                              isFullscreenTakeover: isFullscreenBrowser,
-                                            }),
-                                          }}
-                                        >
-                                          <PanelGroup
-                                            direction="horizontal"
-                                            className="h-full w-full"
-                                            data-testid={`workspace-columns-${ws.id}-${window.id}`}
-                                            data-layout-direction="horizontal"
-                                            onLayout={
-                                              isActiveWindow ? handlePanelGroupLayout : undefined
-                                            }
-                                          >
-                                            {windowColumns.map((column, columnIndex) => {
-                                              const columnHiddenInFocus =
-                                                Boolean(focusedPanelId) &&
-                                                !columnContainsFocusedPanel(column, focusedPanelId);
-                                              return (
-                                                <React.Fragment key={`${window.id}-${column.id}`}>
-                                                  <Panel
-                                                    minSize={focusedPanelId ? 0 : 18}
-                                                    className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
+                                  return (
+                                    <div
+                                      key={`${ws.id}-view-${window.id}`}
+                                      className="absolute inset-0 min-h-0 min-w-0"
+                                      aria-hidden={!isActiveWindow}
+                                      data-testid={
+                                        isActiveWindow
+                                          ? `workspace-window-active-${window.id}`
+                                          : `workspace-window-parked-${window.id}`
+                                      }
+                                      style={{
+                                        zIndex: isActiveWindow ? 2 : 1,
+                                        ...resolveWorkspaceShellVisibilityStyle({
+                                          isActiveWorkspace: isActiveWindow,
+                                          isManagerVisible: true,
+                                          isFullscreenTakeover: isFullscreenBrowser,
+                                        }),
+                                      }}
+                                    >
+                                      <PanelGroup
+                                        direction="horizontal"
+                                        className="h-full w-full"
+                                        data-testid={`workspace-columns-${ws.id}-${window.id}`}
+                                        data-layout-direction="horizontal"
+                                        onLayout={
+                                          isActiveWindow ? handlePanelGroupLayout : undefined
+                                        }
+                                      >
+                                        {windowColumns.map((column, columnIndex) => {
+                                          const columnHiddenInFocus =
+                                            Boolean(focusedPanelId) &&
+                                            !columnContainsFocusedPanel(column, focusedPanelId);
+                                          return (
+                                            <React.Fragment key={`${window.id}-${column.id}`}>
+                                              <Panel
+                                                minSize={focusedPanelId ? 0 : 18}
+                                                className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
+                                              >
+                                                {column.panels.length > 1 ? (
+                                                  <PanelGroup
+                                                    direction="vertical"
+                                                    className="h-full w-full"
+                                                    data-testid={`workspace-column-panels-${column.id}`}
+                                                    data-layout-direction="vertical"
+                                                    onLayout={
+                                                      isActiveWindow
+                                                        ? handlePanelGroupLayout
+                                                        : undefined
+                                                    }
                                                   >
-                                                    {column.panels.length > 1 ? (
-                                                      <PanelGroup
-                                                        direction="vertical"
-                                                        className="h-full w-full"
-                                                        data-testid={`workspace-column-panels-${column.id}`}
-                                                        data-layout-direction="vertical"
-                                                        onLayout={
-                                                          isActiveWindow
-                                                            ? handlePanelGroupLayout
-                                                            : undefined
-                                                        }
-                                                      >
-                                                        {column.panels.map((panel, panelIndex) => (
-                                                          <React.Fragment key={panel.id}>
-                                                            <Panel
-                                                              minSize={focusedPanelId ? 0 : 20}
-                                                              className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
-                                                              data-testid={`workspace-column-${column.id}`}
-                                                            >
-                                                              <div
-                                                                className={resolveFocusPanelSlotClassName(
-                                                                  {
-                                                                    focusedPanelId,
-                                                                    panelId: panel.id,
-                                                                  }
-                                                                )}
-                                                                data-testid={
-                                                                  focusedPanelId === panel.id
-                                                                    ? `workspace-focused-panel-${panel.id}`
-                                                                    : `panel-slot-${panel.id}`
-                                                                }
-                                                              >
-                                                                {renderWorkspacePanelSlot(panel, {
-                                                                  isVisibleInLayout:
-                                                                    isActiveWindow &&
-                                                                    resolvePanelVisibleInLayout({
-                                                                      isWorkspaceVisibleInLayout,
-                                                                      focusedPanelId,
-                                                                      panelId: panel.id,
-                                                                    }),
-                                                                  visibleTerminalPanelCount:
-                                                                    focusedPanelId
-                                                                      ? 1
-                                                                      : totalTerminalPanelCount,
-                                                                })}
-                                                              </div>
-                                                            </Panel>
-                                                            {!focusedPanelId &&
-                                                            panelIndex <
-                                                              column.panels.length - 1 ? (
-                                                              <PanelResizeHandle
-                                                                className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                                                data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
-                                                                onDragging={
-                                                                  handleInternalSplitDragging
-                                                                }
-                                                              >
-                                                                <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                                              </PanelResizeHandle>
-                                                            ) : null}
-                                                          </React.Fragment>
-                                                        ))}
-                                                      </PanelGroup>
-                                                    ) : (
-                                                      <div
-                                                        className="h-full w-full overflow-visible"
-                                                        data-testid={`workspace-column-${column.id}`}
-                                                      >
-                                                        <div
-                                                          className={resolveFocusPanelSlotClassName(
-                                                            {
-                                                              focusedPanelId,
-                                                              panelId: column.panels[0].id,
-                                                            }
-                                                          )}
-                                                          data-testid={
-                                                            focusedPanelId === column.panels[0].id
-                                                              ? `workspace-focused-panel-${column.panels[0].id}`
-                                                              : `panel-slot-${column.panels[0].id}`
-                                                          }
+                                                    {column.panels.map((panel, panelIndex) => (
+                                                      <React.Fragment key={panel.id}>
+                                                        <Panel
+                                                          minSize={focusedPanelId ? 0 : 20}
+                                                          className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
+                                                          data-testid={`workspace-column-${column.id}`}
                                                         >
-                                                          {renderWorkspacePanelSlot(
-                                                            column.panels[0],
-                                                            {
+                                                          <div
+                                                            className={resolveFocusPanelSlotClassName(
+                                                              {
+                                                                focusedPanelId,
+                                                                panelId: panel.id,
+                                                              }
+                                                            )}
+                                                            data-testid={
+                                                              focusedPanelId === panel.id
+                                                                ? `workspace-focused-panel-${panel.id}`
+                                                                : `panel-slot-${panel.id}`
+                                                            }
+                                                          >
+                                                            {renderWorkspacePanelSlot(panel, {
                                                               isVisibleInLayout:
                                                                 isActiveWindow &&
                                                                 resolvePanelVisibleInLayout({
                                                                   isWorkspaceVisibleInLayout,
                                                                   focusedPanelId,
-                                                                  panelId: column.panels[0].id,
+                                                                  panelId: panel.id,
                                                                 }),
                                                               visibleTerminalPanelCount:
                                                                 focusedPanelId
                                                                   ? 1
                                                                   : totalTerminalPanelCount,
-                                                            }
-                                                          )}
-                                                        </div>
-                                                      </div>
-                                                    )}
-                                                  </Panel>
-                                                  {!focusedPanelId &&
-                                                  columnIndex < windowColumns.length - 1 ? (
-                                                    <PanelResizeHandle
-                                                      className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                                      data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
-                                                      onDragging={handleInternalSplitDragging}
+                                                            })}
+                                                          </div>
+                                                        </Panel>
+                                                        {!focusedPanelId &&
+                                                        panelIndex < column.panels.length - 1 ? (
+                                                          <PanelResizeHandle
+                                                            className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                                            data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
+                                                            onDragging={handleInternalSplitDragging}
+                                                          >
+                                                            <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                                          </PanelResizeHandle>
+                                                        ) : null}
+                                                      </React.Fragment>
+                                                    ))}
+                                                  </PanelGroup>
+                                                ) : (
+                                                  <div
+                                                    className="h-full w-full overflow-visible"
+                                                    data-testid={`workspace-column-${column.id}`}
+                                                  >
+                                                    <div
+                                                      className={resolveFocusPanelSlotClassName({
+                                                        focusedPanelId,
+                                                        panelId: column.panels[0].id,
+                                                      })}
+                                                      data-testid={
+                                                        focusedPanelId === column.panels[0].id
+                                                          ? `workspace-focused-panel-${column.panels[0].id}`
+                                                          : `panel-slot-${column.panels[0].id}`
+                                                      }
                                                     >
-                                                      <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                                    </PanelResizeHandle>
-                                                  ) : null}
-                                                </React.Fragment>
-                                              );
-                                            })}
-                                          </PanelGroup>
-                                        </div>
-                                      );
-                                    }
-                                  )
-                                )}
-                              </div>
-                            </Panel>
+                                                      {renderWorkspacePanelSlot(column.panels[0], {
+                                                        isVisibleInLayout:
+                                                          isActiveWindow &&
+                                                          resolvePanelVisibleInLayout({
+                                                            isWorkspaceVisibleInLayout,
+                                                            focusedPanelId,
+                                                            panelId: column.panels[0].id,
+                                                          }),
+                                                        visibleTerminalPanelCount: focusedPanelId
+                                                          ? 1
+                                                          : totalTerminalPanelCount,
+                                                      })}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </Panel>
+                                              {!focusedPanelId &&
+                                              columnIndex < windowColumns.length - 1 ? (
+                                                <PanelResizeHandle
+                                                  className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                                  data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
+                                                  onDragging={handleInternalSplitDragging}
+                                                >
+                                                  <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
+                                                </PanelResizeHandle>
+                                              ) : null}
+                                            </React.Fragment>
+                                          );
+                                        })}
+                                      </PanelGroup>
+                                    </div>
+                                  );
+                                }
+                              )
+                            )}
+                          </div>
+                        </Panel>
 
-                            {wsDockState.visible && !wsDockState.maximized ? (
-                              <PanelResizeHandle
-                                key={`${ws.id}-right-dock-resize`}
-                                className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
-                                data-testid="workspace-right-dock-resize-handle"
-                                onDragging={handleDockDragging}
-                              >
-                                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
-                                <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
-                              </PanelResizeHandle>
-                            ) : null}
-                            {wsDockState.visible &&
-                            !wsDockState.maximized &&
-                            !hideRightDockPanel ? (
-                              <Panel
-                                key={`${ws.id}-right-dock-panel`}
-                                minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
-                                maxSize={100}
-                                defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
-                                onResize={(size) => {
-                                  handleRightDockPanelResize(size, {
-                                    maximized: wsDockState.maximized,
-                                  });
-                                }}
-                                className="pointer-events-none flex flex-col"
-                                data-testid="workspace-right-dock-panel"
-                              >
-                                <div
-                                  ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
-                                  data-testid="workspace-right-dock-placeholder"
-                                  className="h-full w-full pointer-events-none"
-                                />
-                              </Panel>
-                            ) : null}
-                          </PanelGroup>
-                        </div>
-                      );
-                    })
-                  : null}
+                        {wsDockState.visible && !wsDockState.maximized ? (
+                          <PanelResizeHandle
+                            key={`${ws.id}-right-dock-resize`}
+                            className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
+                            data-testid="workspace-right-dock-resize-handle"
+                            onDragging={handleDockDragging}
+                          >
+                            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
+                            <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
+                          </PanelResizeHandle>
+                        ) : null}
+                        {wsDockState.visible && !wsDockState.maximized && !hideRightDockPanel ? (
+                          <Panel
+                            key={`${ws.id}-right-dock-panel`}
+                            minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
+                            maxSize={100}
+                            defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
+                            onResize={(size) => {
+                              handleRightDockPanelResize(size, {
+                                maximized: wsDockState.maximized,
+                              });
+                            }}
+                            className="pointer-events-none flex flex-col"
+                            data-testid="workspace-right-dock-panel"
+                          >
+                            <div
+                              ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
+                              data-testid="workspace-right-dock-placeholder"
+                              className="h-full w-full pointer-events-none"
+                            />
+                          </Panel>
+                        ) : null}
+                      </PanelGroup>
+                    </div>
+                  );
+                })}
                 {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
                   <motion.div
                     ref={rightDockLayerRef}

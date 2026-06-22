@@ -3,29 +3,6 @@ export const TERMINAL_RENDERER_INHERIT_MODE = 'inherit';
 export const TERMINAL_RENDERER_DEFAULT_MODE = 'xterm-webgl';
 export const TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY = 'devhub_terminal_renderer_default_mode';
 
-/** WebKitGTK in packaged Tauri/Linux often crashes on cold xterm-webgl init. */
-export function shouldAvoidWebglOnThisRuntime() {
-  const runtimeWindow = typeof globalThis !== 'undefined' ? globalThis.window : undefined;
-  if (!runtimeWindow) return false;
-  const isTauri = Boolean(runtimeWindow.__TAURI_INTERNALS__ || runtimeWindow.__TAURI__);
-  if (!isTauri) return false;
-  const platform = String(runtimeWindow.navigator?.platform || '');
-  const userAgent = String(runtimeWindow.navigator?.userAgent || '');
-  return /linux/i.test(platform) || /linux/i.test(userAgent);
-}
-
-export function getRuntimeDefaultTerminalRendererMode() {
-  return shouldAvoidWebglOnThisRuntime() ? 'xterm' : TERMINAL_RENDERER_DEFAULT_MODE;
-}
-
-function demoteWebglForRuntime(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) {
-  const normalized = normalizeRendererMode(mode, fallback);
-  if (shouldAvoidWebglOnThisRuntime() && normalized === 'xterm-webgl') {
-    return 'xterm';
-  }
-  return normalized;
-}
-
 // VTE (vte-experimental / GTK) is disabled as a selectable/usable renderer.
 // Code and packages remain in place for reference / future re-enable, but
 // no UI surfaces offer it and resolution never activates the VTE paths.
@@ -60,11 +37,11 @@ function normalizePanelRendererMode(mode) {
 }
 
 export function createDefaultTerminalRendererPreferences(
-  defaultMode = getRuntimeDefaultTerminalRendererMode()
+  defaultMode = TERMINAL_RENDERER_DEFAULT_MODE
 ) {
   return {
     version: TERMINAL_RENDERER_PREFERENCE_VERSION,
-    defaultMode: demoteWebglForRuntime(defaultMode),
+    defaultMode: normalizeRendererMode(defaultMode),
     workspaces: {},
   };
 }
@@ -80,16 +57,12 @@ function isPlainObject(value) {
 }
 
 export function readTerminalRendererDefaultModeSetting(storage) {
-  const runtimeDefault = getRuntimeDefaultTerminalRendererMode();
-  if (!storage || typeof storage.getItem !== 'function') return runtimeDefault;
+  if (!storage || typeof storage.getItem !== 'function') return TERMINAL_RENDERER_DEFAULT_MODE;
 
   try {
-    return demoteWebglForRuntime(
-      storage.getItem(TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY),
-      runtimeDefault
-    );
+    return normalizeRendererMode(storage.getItem(TERMINAL_RENDERER_DEFAULT_MODE_STORAGE_KEY));
   } catch {
-    return runtimeDefault;
+    return TERMINAL_RENDERER_DEFAULT_MODE;
   }
 }
 
@@ -176,18 +149,18 @@ export function writeTerminalRendererPreferences(storage, projectId, prefs, work
 export function resolveRequestedRenderer({ workspaceId, panelId, prefs }) {
   const workspacePreference = prefs?.workspaces?.[workspaceId];
   if (!workspacePreference) {
-    return demoteWebglForRuntime(prefs?.defaultMode);
+    return normalizeRendererMode(prefs?.defaultMode);
   }
 
   const panelMode = workspacePreference.panels?.[panelId];
 
   // Panel override wins unless it explicitly inherits the workspace baseline.
   if (panelMode && panelMode !== TERMINAL_RENDERER_INHERIT_MODE) {
-    return demoteWebglForRuntime(panelMode);
+    return normalizeRendererMode(panelMode);
   }
 
   const defaultMode = workspacePreference.defaultMode;
-  return demoteWebglForRuntime(defaultMode, demoteWebglForRuntime(prefs?.defaultMode));
+  return normalizeRendererMode(defaultMode, normalizeRendererMode(prefs?.defaultMode));
 }
 
 export function getPanelRendererPreferenceMode({ workspaceId, panelId, prefs }) {

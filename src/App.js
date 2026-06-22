@@ -87,9 +87,6 @@ function WorkspaceLayout() {
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
   const [isPizarraActive, setIsPizarraActive] = useState(false);
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
-  // Keep TerminalWorkspacesManager warm after first /terminales visit so dashboard↔terminales
-  // toggles visibility instead of full unmount/remount (window-switch path, not cold boot).
-  const [terminalManagerEverMounted, setTerminalManagerEverMounted] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const db = useMemo(() => createClient(), []);
@@ -147,12 +144,6 @@ function WorkspaceLayout() {
       document.documentElement.setAttribute('data-terminal-view', 'true');
     } else {
       document.documentElement.removeAttribute('data-terminal-view');
-    }
-  }, [isTerminalRoute]);
-
-  useEffect(() => {
-    if (isTerminalRoute) {
-      setTerminalManagerEverMounted(true);
     }
   }, [isTerminalRoute]);
 
@@ -286,11 +277,11 @@ function WorkspaceLayout() {
             {/* Drag region for the Tauri window is provided by the
                 WorkspaceWindowTabBar wrapper (data-tauri-drag-region on the tab bar
                 inside the terminal container). No extra header is needed here. */}
-            {project && (isTerminalRoute || terminalManagerEverMounted) ? (
+            {project && isTerminalRoute ? (
               <OperatorActionsDispatchProvider>
                 <TerminalWorkspacesManager
                   cwd={project.local_path}
-                  isVisible={isTerminalRoute}
+                  isVisible
                   projectId={project.id}
                 />
               </OperatorActionsDispatchProvider>
