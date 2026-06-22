@@ -12,7 +12,8 @@ import {
 import { buildTmuxPanelAttachCommand } from './tmuxStatusBar.js';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
-import { writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
+import { detectKimiTuiReady } from './kimiReadyMarker.js';
+import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
@@ -423,6 +424,20 @@ function maybeWriteOpencodeReadyMarker(session, payload = {}) {
   if (!tmuxSession) return;
   try {
     writeOpencodeReadyMarker(tmuxSession, {
+      sessionId: session.id,
+      opencodeSessionId: session.opencodeSessionId || null,
+      ...payload,
+    });
+  } catch {
+    // Best-effort marker for bootstrap polling in swarm wrappers.
+  }
+}
+
+function maybeWriteAgentReadyMarker(session, program = 'opencode', payload = {}) {
+  const tmuxSession = resolveSessionTmuxName(session);
+  if (!tmuxSession) return;
+  try {
+    writeAgentReadyMarker(tmuxSession, program, {
       sessionId: session.id,
       opencodeSessionId: session.opencodeSessionId || null,
       ...payload,
@@ -949,7 +964,9 @@ function handleSessionOutput(sessions, session, chunk) {
 
     // Swarm agents start OpenCode inside tmux before the DevHub client attaches,
     // so session.mode may still be 'shell' when the TUI footer first appears.
-    if (detectOpenCodeTuiReady(filtered)) {
+    if (detectKimiTuiReady(filtered)) {
+      maybeWriteAgentReadyMarker(session, 'kimi', { reason: 'tty-tui-footer' });
+    } else if (detectOpenCodeTuiReady(filtered)) {
       if (session.mode !== 'tui') {
         session.mode = 'tui';
         session.historyEnabled = false;

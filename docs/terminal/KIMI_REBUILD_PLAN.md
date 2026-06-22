@@ -210,19 +210,22 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 
 ---
 
-### Fase 2 — Capa B (readiness mínima)
+### Fase 2 — Capa B (readiness mínima) — implementada, pendiente QA manual
 
 **Objetivo:** saber cuándo kimi está listo para bootstrap; sin tocar wheel/focus.
 
-**Implementar:**
-1. Detector mínimo (1–2 regex, sin `agentTui.js` completo)
-2. Escribir marker `/tmp/devhub-agent-ready-kimi-*` desde sidecar o ruta existente opencode-ready
-3. Opcional: log UI “kimi ready” — sin refs en wheel handler
+**Implementado (commit `[kimi-rebuild] fase-2`):**
+1. `kimiReadyMarker.js` — `detectKimiTuiReady` + `isKimiLaunchCommand` (3 señales, sin `agentTui.js`)
+2. API `POST /api/terminal/opencode-ready` acepta `program` → `writeAgentReadyMarker`
+3. `TerminalTTY`: rama kimi en `handleTuiReadyFromOutput` — **solo** postea marker y `return` (sin wheel/focus)
+4. `ttyServer.js`: escribe marker kimi en path sidecar cuando detecta banner
 
-**Checklist:**
+**Checklist manual:**
 - [ ] Fase 1 checks siguen verdes
-- [ ] Bootstrap swarm inyecta prompt tras marker (no timeout 12s)
+- [ ] Swarm kimi: bootstrap inyecta prompt tras marker (no timeout 12s)
 - [ ] Sin delay nuevo al cambiar paneles
+
+**Rollback si falla:** `git reset --hard f96c649` (pre fase-2).
 
 ---
 
@@ -263,8 +266,8 @@ Solo paneles `native_vte`; tests aparte.
 |-------|------|--------|-----------|-------|
 | 2026-06-22 | — | `7b769c4` | **FALLÓ** | Cherry-pick completo `12435b1`; terminales rotas |
 | 2026-06-22 | 0 | `cca90af` | **OK** | Revert kimi; baseline estable |
-| 2026-06-22 | 1 | `f1fc4e8` | **tests OK** | Capa A solo launch+marker; QA manual pendiente |
-| | 2 | | pendiente | |
+| 2026-06-22 | 1 | `f96c649` | **OK** | Capa A launch+marker; terminales OK (usuario) |
+| 2026-06-22 | 2 | `896600d` | **tests OK** | Capa B readiness mínima; QA swarm kimi pendiente |
 | | 3 | | pendiente | |
 
 *(Actualizar esta tabla en cada intento.)*

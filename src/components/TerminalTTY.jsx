@@ -56,6 +56,7 @@ import {
   detectOpenCodeTuiReady,
   shouldDiscardOpenCodeCatchupReplay,
 } from '@/lib/terminal/opencodeReadyMarker';
+import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
   isSwarmLaunchWrapperDispatched,
   markSwarmLaunchWrapperDispatched,
@@ -1559,6 +1560,7 @@ export default function TerminalTTY({
   const initialCommandConnectSnapshotRef = useRef(null);
   const viewportFitConfirmedRef = useRef(false);
   const opencodeReadyNotifiedRef = useRef(false);
+  const kimiReadyNotifiedRef = useRef(false);
   const tuiOutputTailRef = useRef('');
   const lastViewportReadyPostedRef = useRef({ cols: 0, rows: 0 });
   const viewportReadyNotifyTimerRef = useRef(null);
@@ -2313,23 +2315,26 @@ export default function TerminalTTY({
     return buildSwarmTmuxSessionName(swarmContext.launchId, swarmContext.roleKey);
   }, [swarmContext]);
 
-  const notifyOpencodeReady = useCallback(
-    async (opencodeSessionId, reason = 'client-tui-footer') => {
-      if (opencodeReadyNotifiedRef.current) return;
+  const notifyAgentReady = useCallback(
+    async (program = 'opencode', opencodeSessionId, reason = 'client-tui-footer') => {
+      const normalizedProgram = String(program || 'opencode').trim() || 'opencode';
+      const notifiedRef =
+        normalizedProgram === 'kimi' ? kimiReadyNotifiedRef : opencodeReadyNotifiedRef;
+      if (notifiedRef.current) return;
       const tmuxSession = resolveSwarmTmuxSessionName();
       if (!tmuxSession) return;
 
-      const storageKey = `devhub:opencode-ready-posted:${tmuxSession}`;
+      const storageKey = `devhub:agent-ready-posted:${normalizedProgram}:${tmuxSession}`;
       try {
         if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(storageKey)) {
-          opencodeReadyNotifiedRef.current = true;
+          notifiedRef.current = true;
           return;
         }
       } catch {
         /* ignore */
       }
 
-      opencodeReadyNotifiedRef.current = true;
+      notifiedRef.current = true;
       try {
         await fetch('/api/terminal/opencode-ready', {
           method: 'POST',
@@ -2337,12 +2342,14 @@ export default function TerminalTTY({
           body: JSON.stringify({
             sessionId: id,
             tmuxSession,
+            program: normalizedProgram,
             opencodeSessionId: opencodeSessionId || null,
             reason,
           }),
         });
-        cliLog(`CLIENT:${id}`, 'opencode-ready-notified', {
+        cliLog(`CLIENT:${id}`, 'agent-ready-notified', {
           tmuxSession,
+          program: normalizedProgram,
           opencodeSessionId,
           reason,
         });
@@ -2352,11 +2359,20 @@ export default function TerminalTTY({
           /* ignore */
         }
       } catch (error) {
-        opencodeReadyNotifiedRef.current = false;
-        cliLog(`CLIENT:${id}`, 'opencode-ready-failed', { error: error?.message });
+        notifiedRef.current = false;
+        cliLog(`CLIENT:${id}`, 'agent-ready-failed', {
+          program: normalizedProgram,
+          error: error?.message,
+        });
       }
     },
     [id, resolveSwarmTmuxSessionName]
+  );
+
+  const notifyOpencodeReady = useCallback(
+    (opencodeSessionId, reason = 'client-tui-footer') =>
+      notifyAgentReady('opencode', opencodeSessionId, reason),
+    [notifyAgentReady]
   );
 
   const notifyViewportReady = useCallback(
@@ -4147,6 +4163,16 @@ export default function TerminalTTY({
         if (!chunk || typeof chunk !== 'string') return;
         const tail = `${tuiOutputTailRef.current}${chunk}`.slice(-8192);
         tuiOutputTailRef.current = tail;
+
+        // Capa B: kimi readiness posts marker only — no wheel/focus side effects.
+        if (isKimiLaunchCommand(initialCommand) && !kimiReadyNotifiedRef.current) {
+          if (detectKimiTuiReady(chunk) || detectKimiTuiReady(tail)) {
+            kimiReadyNotifiedRef.current = true;
+            void notifyAgentReady('kimi', null, 'client-tui-footer');
+          }
+          return;
+        }
+
         const footerReady = detectOpenCodeTuiReady(chunk) || detectOpenCodeTuiReady(tail);
         const grokReady = detectGrokSessionFromOutput(chunk) || detectGrokSessionFromOutput(tail);
         if (!footerReady && !grokReady) return;
