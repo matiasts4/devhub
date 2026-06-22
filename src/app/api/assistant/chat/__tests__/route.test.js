@@ -38,7 +38,7 @@ function restoreCwd() {
 describe('chat route — module contract', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'test-key';
+    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
     delete process.env.ANTHROPIC_API_KEY;
     route = require('../route');
     POST = route.POST;
@@ -177,11 +177,11 @@ describe('chat route — module contract', () => {
     });
 
     try {
-      const request = { json: async () => ({ message: 'check terminals' }) };
+      const request = { json: async () => ({ message: 'go' }) };
       const res = await POST(request);
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.text).toBe('No terminals running.');
+      expect(body.text).toBe('No hay terminales abiertas.');
       expect(body.tool_results).toHaveLength(1);
       expect(body.tool_results[0].tool).toBe('list_terminals');
       // list_terminals now enriches with tmux discovery (best effort). The mock only controlled the /processes part.
@@ -197,7 +197,7 @@ describe('chat route — module contract', () => {
     global.fetch = jest.fn(async (url, init) => {
       callIndex++;
       if (typeof url === 'string' && url.includes('/api/terminal/processes')) {
-        return { ok: true, status: 200, json: async () => ({ processes: [{id: 'p1'}] }) };
+        return { ok: true, status: 200, json: async () => ({ processes: [{ id: 'p1' }] }) };
       }
       // First model call returns native tool_use (as MiniMax does when tools= provided)
       const isFirst = callIndex === 1;
@@ -216,11 +216,11 @@ describe('chat route — module contract', () => {
     });
 
     try {
-      const request = { json: async () => ({ message: 'list terminals' }) };
+      const request = { json: async () => ({ message: 'go' }) };
       const res = await POST(request);
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.text).toBe('There is one terminal: p1.');
+      expect(body.text).toBe('Hay 1 terminal abierta: Alex.');
       expect(body.tool_results).toHaveLength(1);
       expect(body.tool_results[0].tool).toBe('list_terminals');
       // Native path should have used the id

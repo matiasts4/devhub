@@ -53,7 +53,7 @@ async function runOnce(modelText) {
 describe('schema-aware no-params check (T-015)', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'k';
+    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
     delete process.env.ANTHROPIC_API_KEY;
     POST = require('../route').POST;
   });
@@ -68,7 +68,9 @@ describe('schema-aware no-params check (T-015)', () => {
     const body = await res.json();
     expect(body.tool_results[0].tool).toBe('list_terminals');
     expect(body.tool_results[0].result.error).toBeUndefined();
-    expect(body.tool_results[0].result.processes).toEqual([{ id: 'p1' }]);
+    expect(body.tool_results[0].result.processes).toEqual([
+      { id: 'p1', terminalId: 'p1', displayName: 'Alex' },
+    ]);
   });
 
   test('get_swarm_status {} → dispatched (no canonical error)', async () => {

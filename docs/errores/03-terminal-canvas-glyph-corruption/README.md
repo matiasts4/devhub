@@ -90,6 +90,7 @@ tail -f data/logs/terminal-debug.log
 - [Síntoma y evidencia detallada](./01-sintoma-y-evidencia.md)
 - [Causas raíz ampliadas](./02-causas-raiz.md)
 - [Cambios intentados (diff y archivos)](./03-cambios-intentados.md)
+- [**Rayitas / footer corrido al cambiar workspace (2026-06-21)**](./04-rayitas-workspace-switch-2026-06-21.md)
 - [Comandos y señales de log](./commands-used.md)
 
 ---

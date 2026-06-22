@@ -38,6 +38,15 @@ const nextConfig = {
   // Tauri serves from Next standalone; keep slash behavior neutral
   // to avoid double-slash redirects that break the proxy rewrite chain.
   trailingSlash: false,
+  async rewrites() {
+    // HashRouter SPA paths accidentally requested without # must still serve the shell.
+    return {
+      beforeFiles: [
+        { source: '/hub', destination: '/' },
+        { source: '/project/:path*', destination: '/' },
+      ],
+    };
+  },
   allowedDevOrigins: ['127.0.0.1', 'localhost'],
   serverExternalPackages: ['node-pty', 'ws', 'better-sqlite3'],
   transpilePackages: ['react-konva', 'konva'],

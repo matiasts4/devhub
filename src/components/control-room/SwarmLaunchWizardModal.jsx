@@ -3,14 +3,11 @@ import { createPortal } from 'react-dom';
 import { ZED_ORCHESTRATOR_TEMPLATE_ID } from '@/lib/operations/swarmControl';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import {
-  brutalPanelStyle,
   btnDangerStyle,
-  btnPrimaryStyle,
-  btnSecondaryStyle,
   codeBlockStyle,
-  dangerBannerStyle,
   inputStyle,
-  pillStyle,
+  panelHeaderStripStyle,
+  panelStyle,
   selectStyle,
   sectionSurfaceStyle,
 } from '../../chrome/morphology.js';
@@ -28,42 +25,119 @@ const SDD_PHASES = [
   { id: 'sdd-archive', label: 'Archive' },
 ];
 
-const modalChromeStyle = {
-  ...brutalPanelStyle({ emphasized: true }),
-  color: 'var(--text-primary)',
-  borderRadius: 0,
-};
+export function getWizardModalChromeStyle() {
+  return {
+    ...panelStyle({ emphasized: true }),
+    color: 'var(--text-primary)',
+  };
+}
 
-function wizardInsetPanelStyle({ emphasized = false } = {}) {
+export function getWizardStepButtonStyle({ active = false } = {}) {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: '0.75rem',
+    width: '100%',
+    height: 'auto',
+    padding: '0.75rem 1rem',
+    textAlign: 'left',
+    fontSize: '12px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    background: active ? 'var(--chrome-control-fill-hover)' : 'var(--chrome-control-fill)',
+    borderColor: 'var(--chrome-border-color)',
+    borderWidth: 'var(--chrome-border-width)',
+    borderStyle: 'solid',
+    borderRadius: 'var(--chrome-radius-control)',
+    boxShadow: 'var(--chrome-shadow-control)',
+    color: 'var(--text-primary)',
+  };
+}
+
+export function getWizardStepIndexStyle({ active = false } = {}) {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '1.75rem',
+    height: '1.75rem',
+    padding: 0,
+    flexShrink: 0,
+    fontSize: '10px',
+    fontWeight: 700,
+    background: active ? 'var(--chrome-control-fill)' : 'var(--chrome-panel-fill)',
+    borderColor: 'var(--chrome-border-color)',
+    borderWidth: 'var(--chrome-border-width)',
+    borderStyle: 'solid',
+    borderRadius: 'var(--chrome-radius-control)',
+    boxShadow: 'var(--chrome-shadow-control)',
+    color: active ? 'var(--accent-primary)' : 'var(--text-muted)',
+  };
+}
+
+export function getWizardPrimaryActionStyle() {
+  return {
+    ...getWizardStepButtonStyle({ active: true }),
+    justifyContent: 'center',
+  };
+}
+
+export function getWizardSecondaryActionStyle() {
+  return {
+    ...getWizardStepButtonStyle({ active: false }),
+    justifyContent: 'center',
+  };
+}
+
+export function getWizardInsetPanelStyle({ emphasized = false } = {}) {
   return sectionSurfaceStyle({ emphasized });
 }
 
-const wizardFieldStyle = inputStyle();
+export function getWizardFieldStyle() {
+  return {
+    ...inputStyle(),
+    borderColor: 'var(--chrome-border-color)',
+    boxShadow: 'var(--chrome-shadow-control)',
+  };
+}
+
+export function getWizardDangerBannerStyle() {
+  return {
+    background: 'color-mix(in srgb, var(--danger) 12%, var(--chrome-panel-fill))',
+    borderColor: 'color-mix(in srgb, var(--danger) 42%, var(--chrome-border-color))',
+    borderWidth: 'var(--chrome-border-width)',
+    borderStyle: 'solid',
+    borderRadius: 'var(--chrome-radius-panel)',
+    boxShadow: 'var(--chrome-shadow-control)',
+    color: 'var(--danger)',
+  };
+}
+
+const wizardFieldStyle = getWizardFieldStyle();
 const wizardSelectFieldStyle = selectStyle();
-const wizardHeaderRailStyle = {
-  borderBottomColor: 'var(--border-subtle)',
-  borderBottomWidth: 'var(--chrome-border-width)',
-};
+const wizardHeaderRailStyle = panelHeaderStripStyle();
 const wizardLeftRailStyle = {
-  borderRightColor: 'var(--border-subtle)',
+  borderRightColor: 'var(--chrome-border-color)',
   borderRightWidth: 'var(--chrome-border-width)',
 };
 const wizardRightRailStyle = {
-  borderLeftColor: 'var(--border-subtle)',
+  borderLeftColor: 'var(--chrome-border-color)',
   borderLeftWidth: 'var(--chrome-border-width)',
 };
 
 function TopologyPreview({ topology }) {
   if (!topology) {
     return (
-      <div className="border p-4 text-sm" style={wizardInsetPanelStyle()}>
+      <div className="border p-4 text-sm" style={getWizardInsetPanelStyle()}>
         Sin topología reusable definida todavía.
       </div>
     );
   }
 
   return (
-    <div className="border p-4" style={wizardInsetPanelStyle({ emphasized: true })}>
+    <div className="border p-4" style={getWizardInsetPanelStyle({ emphasized: true })}>
       <div className="flex flex-wrap items-center gap-2">
         {(topology.roles || []).map((role, index) => (
           <React.Fragment key={role}>
@@ -95,31 +169,10 @@ function StepButton({ step, currentStep, label, index, onClick }) {
       type="button"
       disabled={!unlocked}
       onClick={() => onClick(step)}
-      className="flex items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
-      style={{
-        ...(active ? btnPrimaryStyle({ size: 'md' }) : btnSecondaryStyle({ size: 'md' })),
-        width: '100%',
-        height: 'auto',
-        justifyContent: 'flex-start',
-        padding: '0.75rem 1rem',
-        textAlign: 'left',
-        textTransform: 'none',
-        letterSpacing: 'normal',
-      }}
+      className="text-left disabled:cursor-not-allowed disabled:opacity-50"
+      style={getWizardStepButtonStyle({ active })}
     >
-      <span
-        className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold"
-        style={{
-          ...pillStyle({ tone: active ? 'accent' : 'neutral' }),
-          width: '1.75rem',
-          height: '1.75rem',
-          padding: 0,
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {index + 1}
-      </span>
+      <span style={getWizardStepIndexStyle({ active })}>{index + 1}</span>
       <span className="text-sm font-medium">{label}</span>
     </button>
   );
@@ -186,8 +239,9 @@ export default function SwarmLaunchWizardModal({
       }}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-none border"
-        style={modalChromeStyle}
+        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden border"
+        style={getWizardModalChromeStyle()}
+        data-testid="swarm-launch-wizard-modal-panel"
       >
         <div
           className="flex items-start justify-between gap-4 border-b px-6 py-5"
@@ -213,12 +267,7 @@ export default function SwarmLaunchWizardModal({
             type="button"
             onClick={() => onClose?.()}
             className="text-sm"
-            style={{
-              ...btnSecondaryStyle(),
-              borderRadius: '0',
-              textTransform: 'none',
-              letterSpacing: 'normal',
-            }}
+            style={getWizardSecondaryActionStyle()}
           >
             Cerrar
           </button>
@@ -250,7 +299,7 @@ export default function SwarmLaunchWizardModal({
               />
             </div>
 
-            <div className="mt-6 border p-4 text-sm" style={wizardInsetPanelStyle()}>
+            <div className="mt-6 border p-4 text-sm" style={getWizardInsetPanelStyle()}>
               <p className="font-medium">Topología reusable</p>
               <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                 Mostramos roster y conexiones como parte del launch, no como dato decorativo.
@@ -368,7 +417,7 @@ export default function SwarmLaunchWizardModal({
                 {isZedPodTemplate ? (
                   <div
                     className="border p-4 text-sm"
-                    style={wizardInsetPanelStyle({ emphasized: true })}
+                    style={getWizardInsetPanelStyle({ emphasized: true })}
                   >
                     <p className="font-medium">ZED Orchestrator Pod — modo standby</p>
                     <p className="mt-2" style={{ color: 'var(--text-secondary)' }}>
@@ -706,7 +755,7 @@ export default function SwarmLaunchWizardModal({
                       <div
                         key={line}
                         className="border px-3 py-3 text-sm"
-                        style={wizardInsetPanelStyle()}
+                        style={getWizardInsetPanelStyle()}
                       >
                         {line}
                       </div>
@@ -714,10 +763,10 @@ export default function SwarmLaunchWizardModal({
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="border px-3 py-3 text-sm" style={wizardInsetPanelStyle()}>
+                    <div className="border px-3 py-3 text-sm" style={getWizardInsetPanelStyle()}>
                       Estrategia · {preview?.launchStrategyLabel || 'Bootstrap director primero'}
                     </div>
-                    <div className="border px-3 py-3 text-sm" style={wizardInsetPanelStyle()}>
+                    <div className="border px-3 py-3 text-sm" style={getWizardInsetPanelStyle()}>
                       Inicialización · {preview?.bootstrapModeLabel || 'Engram primero'}
                     </div>
                   </div>
@@ -791,10 +840,8 @@ export default function SwarmLaunchWizardModal({
                     }
                     className="text-sm font-medium"
                     style={{
-                      ...btnSecondaryStyle({ size: 'md' }),
+                      ...getWizardSecondaryActionStyle(),
                       width: '100%',
-                      textTransform: 'none',
-                      letterSpacing: 'normal',
                     }}
                   >
                     Volver
@@ -813,10 +860,8 @@ export default function SwarmLaunchWizardModal({
                     }
                     className="text-sm font-medium"
                     style={{
-                      ...btnPrimaryStyle({ size: 'md' }),
+                      ...getWizardPrimaryActionStyle(),
                       width: '100%',
-                      textTransform: 'none',
-                      letterSpacing: 'normal',
                     }}
                   >
                     Siguiente
@@ -832,10 +877,8 @@ export default function SwarmLaunchWizardModal({
                       disabled={!preview?.isReady || submitState?.submitting}
                       className="text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                       style={{
-                        ...btnPrimaryStyle({ size: 'md' }),
+                        ...getWizardPrimaryActionStyle(),
                         width: '100%',
-                        textTransform: 'none',
-                        letterSpacing: 'normal',
                       }}
                     >
                       {submitState?.submitting
@@ -848,7 +891,7 @@ export default function SwarmLaunchWizardModal({
                     {submitState?.error ? (
                       <div
                         className="border px-3 py-2 text-sm font-medium"
-                        style={dangerBannerStyle()}
+                        style={getWizardDangerBannerStyle()}
                       >
                         <div>{submitState.error}</div>
                         {submitState.error.includes('swarm activo') && (

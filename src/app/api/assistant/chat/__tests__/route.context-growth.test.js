@@ -5,9 +5,9 @@
 // the length at the START of turn N is `1 + 2*(N-1)` (linear).
 //
 // We mock global.fetch to capture every `messages[]` payload sent to the
-// MiniMax API and answer 3 turns of `TOOL: list_terminals` followed by a
-// final-text turn. The asserts cover both the growth shape and the final
-// `tool_results` payload contract (unchanged).
+// MiniMax API and answer 3 turns of `TOOL: get_swarm_status` followed by a
+// final-text turn. list_terminals short-circuits after one turn (no 2nd LLM
+// call), so this test uses a non-short-circuitable tool for linear growth.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -34,7 +34,7 @@ function stubPrompt() {
 describe('T-031: conversation grows linearly across tool-loop turns', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'k';
+    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
     delete process.env.ANTHROPIC_API_KEY;
     POST = require('../route').POST;
   });
@@ -68,7 +68,7 @@ describe('T-031: conversation grows linearly across tool-loop turns', () => {
           content: [
             {
               type: 'text',
-              text: isFinal ? 'all done' : 'TOOL: list_terminals\n',
+              text: isFinal ? 'all done' : 'TOOL: get_swarm_status\n',
             },
           ],
         }),

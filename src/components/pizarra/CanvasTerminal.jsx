@@ -85,6 +85,7 @@ export default function CanvasTerminal({
   visibleTerminalPanelCount = 1,
   pizarraOwnsLiveSurfaces = false,
   suspendDuringViewTransition = false,
+  suspendDuringCanvasPan = false,
   skipEnterAnimation = false,
   isShown = true,
 }) {
@@ -253,7 +254,7 @@ export default function CanvasTerminal({
   // transform). NEVER drives suspendNativeSurface — that is the whole
   // point of the flicker fix.
   const isDragging = pointerDown || isLiveDragging;
-  const suspendNative = isLiveDragging || suspendDuringViewTransition;
+  const suspendNative = isLiveDragging || suspendDuringViewTransition || suspendDuringCanvasPan;
 
   useLayoutEffect(() => {
     if (!sharedSurfacesEnabled || !terminalId || !pizarraOwnsLiveSurfaces) return;

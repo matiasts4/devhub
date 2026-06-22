@@ -332,7 +332,24 @@ _(Actualizar esta tabla en cada intento.)_
 
 **Merge:** `task/kimi-minimal` → `task/rebuild-from-stable` @ `8086148` (fast-forward, capas A+B).
 
-**Próximo paso sugerido:** Capa F (Zed/packaging) en rama aparte, o investigar scroll kimi en issue/rama dedicada.
+**Próximo paso sugerido:** investigar scroll kimi en issue/rama dedicada.
+
+---
+
+### Capa F — Zed plan executor + pizarra pan — implementada (`task/capa-f-zed-pizarra`)
+
+**Objetivo:** traer el stack Zed y pizarra del checkpoint `7b769c4` sin tocar `TerminalTTY` / `agentTui` / `native_vte`.
+
+**Incluido:**
+
+- Zed: `planExecutor`, `zedPlanRunner`, `skillRegistry`, `zedEngram*`, `zedSecurityPolicy`, API `execute-plan-step`, UI drawer/overlay, wizard swarm
+- Pizarra: `usePizarraCanvasPan` + wiring en `PizarraPane`
+- Packaging: `devhub-server`, `postinst`, `patch-installed-devhub.sh`
+- Docs post-mortem `docs/errores/*` (21-jun)
+
+**Excluido a propósito:** terminal wheel/focus, `agentTui.js`, `native_vte.rs`, kimi scroll.
+
+**Tests:** zed plan/registry/security/engram + pizarra pan + chat route (ajustados a fast-path/short-circuit).
 
 ---
 

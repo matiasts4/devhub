@@ -41,7 +41,9 @@ export function appendZedAuditEntry(entry) {
     const next = [...prev, { ts: new Date().toISOString(), ...entry }].slice(-MAX_ENTRIES);
     window.sessionStorage.setItem(ZED_AUDIT_STORAGE_KEY, JSON.stringify(next));
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('devhub:zed-audit-updated', { detail: { count: next.length } }));
+      window.dispatchEvent(
+        new CustomEvent('devhub:zed-audit-updated', { detail: { count: next.length } })
+      );
     }
   } catch {
     // ignore quota errors
@@ -53,6 +55,19 @@ export function appendZedAuditEntry(entry) {
  * @param {Array<{ tool: string, input?: object, result?: unknown }>|null|undefined} toolResults
  * @param {string} [assistantText]
  */
+/**
+ * Export the audit trail as a JSON blob (append-only, immutable from UI).
+ *
+ * @returns {{ json: string, count: number }}
+ */
+export function exportZedAuditTrail() {
+  const entries = readZedAuditTrail();
+  return {
+    json: JSON.stringify(entries, null, 2),
+    count: entries.length,
+  };
+}
+
 export function recordZedInteraction(userMessage, toolResults, assistantText = '') {
   const tools = Array.isArray(toolResults)
     ? toolResults.map((t) => {

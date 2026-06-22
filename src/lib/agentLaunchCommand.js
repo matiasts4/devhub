@@ -1,4 +1,5 @@
-import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
@@ -10,15 +11,11 @@ import {
   resolveKimiSkillDir,
 } from './agentLaunchCommand.shared';
 
-const require = createRequire(import.meta.url);
-
 // Server-only minimax config reader (fs is safe here — this module is never bundled for browser)
 let _serverMinimaxConfig = null;
 function getServerMinimaxConfig() {
   if (_serverMinimaxConfig) return _serverMinimaxConfig;
   try {
-    const fs = require('fs');
-    const path = require('path');
     const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
     const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw);
