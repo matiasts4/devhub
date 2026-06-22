@@ -1131,13 +1131,15 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
   return /layout-settled-|workspace-switch/.test(normalized);
 }
 
-/** Buffer PTY output while layout-hidden in GPU modes — writes corrupt atlas even before release completes. */
+/** Buffer PTY output while layout-hidden or inactive-split in GPU modes. */
 export function shouldSkipTerminalOutputWhileLayoutHidden({
   isVisibleInLayout = true,
+  isActivePanel = true,
   operationalRendererMode,
 } = {}) {
-  if (isVisibleInLayout) return false;
-  return shouldUseGpuTerminalRenderer({ operationalRendererMode });
+  if (!shouldUseGpuTerminalRenderer({ operationalRendererMode })) return false;
+  if (!isVisibleInLayout) return true;
+  return !isActivePanel && shouldAttachCanvasRenderer({ operationalRendererMode });
 }
 
 export const HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX = 256 * 1024;
@@ -1260,6 +1262,7 @@ export function shouldClearGpuAtlasOnWorkspaceShow({
   if (typeof explicitClearAtlas === 'boolean') return explicitClearAtlas;
   if (operationalRendererMode === 'xterm-canvas') {
     if (canvasReleasedOnLayoutHide) return true;
+    if (reason.startsWith('workspace-show-')) return true;
     if (reason === 'workspace-show-pending') return true;
     if (CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON.test(reason)) return true;
     if (CANVAS_WORKSPACE_SHOW_ATLAS_CLEAR_REASON.test(reason)) return true;
@@ -2997,7 +3000,7 @@ export default function TerminalTTY({
   }, [handleWebglContextLoss]);
 
   const syncTerminalViewportOnWorkspaceShow = useCallback(
-    (reason = 'workspace-show', { clearAtlas } = {}) => {
+    async (reason = 'workspace-show', { clearAtlas } = {}) => {
       if (isDisposingRef.current) return;
       if (!termRef.current || !fitRef.current || !containerRef.current) return;
 
@@ -3185,7 +3188,7 @@ export default function TerminalTTY({
         }) &&
         !canvasAddonRef.current
       ) {
-        void tryReattachCanvasAddonRef.current?.();
+        await tryReattachCanvasAddonRef.current?.();
       }
 
       if (hiddenOutputCatchupPendingRef.current && termRef.current) {
@@ -4371,6 +4374,7 @@ export default function TerminalTTY({
         if (
           shouldSkipTerminalOutputWhileLayoutHidden({
             isVisibleInLayout: isVisibleInLayoutRef.current,
+            isActivePanel: isActivePanelRef.current,
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
@@ -5307,12 +5311,23 @@ export default function TerminalTTY({
       clearAtlas,
     });
 
+    if (hiddenOutputCatchupPendingRef.current && termRef.current) {
+      void syncTerminalViewportOnWorkspaceShow('panel-activated-catchup', { clearAtlas: true });
+    }
+
     if (!autoFocus) return;
     prepareActiveTuiTerminalFocus(term, {
       tuiSessionActive: tuiSessionActiveRef.current,
     });
     term.focus?.();
-  }, [autoFocus, isActivePanel, logRenderHealth, operationalRendererMode, shouldUseNativeRenderer]);
+  }, [
+    autoFocus,
+    isActivePanel,
+    logRenderHealth,
+    operationalRendererMode,
+    shouldUseNativeRenderer,
+    syncTerminalViewportOnWorkspaceShow,
+  ]);
 
   // Auto-reconnect when disconnected or error, with exponential backoff.
   // No hard attempt limit — the EBADF server fix prevents infinite hammering.

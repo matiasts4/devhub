@@ -924,11 +924,26 @@ describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
     ).toBe(true);
   });
 
-  test('keeps output while visible or on plain DOM renderer', () => {
+  test('buffers inactive visible canvas splits and keeps active or DOM panels live', () => {
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: true,
+        isActivePanel: false,
         operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: true,
+        isActivePanel: false,
+        operationalRendererMode: 'xterm-webgl',
       })
     ).toBe(false);
     expect(
@@ -987,11 +1002,11 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
         operationalRendererMode: 'xterm-canvas',
         reason: 'workspace-show-settled',
       })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-canvas',
-        reason: 'workspace-show-settled',
+        reason: 'workspace-show-layout',
         canvasReleasedOnLayoutHide: true,
       })
     ).toBe(true);
