@@ -187,22 +187,26 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 - [x] Kimi revertido
 - [x] Collab presente
 
-### Fase 1 — Capa A (lanzamiento)
+### Fase 1 — Capa A (lanzamiento) — implementada, pendiente QA manual
 
 **Objetivo:** kimi aparece en menú/swarm y abre TUI; terminales idénticas a Fase 0.
 
-**Implementar:**
-1. `case 'kimi'` en launch commands + skill dirs
-2. `resolveAgentReadyMarkerPath(tmux, 'kimi')` en marker
-3. Bootstrap wrapper poll genérico (sin tocar terminal UI)
+**Implementado (commit `[kimi-rebuild] fase-1`):**
+1. `case 'kimi'` en `agentLaunchCommand` + `agentLaunchCommand.shared` (`--yolo --auto`, `--skills-dir`, `-p`)
+2. `KIMI_SKILL_DIRS` + `resolveKimiSkillDir()`
+3. `resolveAgentReadyMarkerPath` / `writeAgentReadyMarker` (genérico + legacy opencode)
+4. `buildOpencodeReadyWaitBlock({ programId })` — poll `/tmp/devhub-agent-ready-kimi-*`
+5. Tests: `swarm-launch-command`, `agentLaunchWrapper`, `opencodeReadyMarker` (66 passed)
 
-**Checklist de prueba:**
+**Archivos tocados (8 + tests):** launch commands, wrapper, markers — **cero** `TerminalTTY.jsx`.
+
+**Checklist de prueba manual (`pnpm tauri dev`):**
 - [ ] Cambio entre 3+ paneles shell: instantáneo, sin delay
 - [ ] OpenCode/Grok scroll OK
 - [ ] `kimi` lanza y muestra TUI (scroll kimi puede fallar — aceptable en F1)
 - [ ] Collab/invitaciones siguen OK
 
-**Rollback si:** cualquier regresión en ítems 1–2 o collab.
+**Rollback si:** cualquier regresión en ítems 1–2 o collab → `git reset --hard e8b6959` (pre fase-1).
 
 ---
 
@@ -259,7 +263,7 @@ Solo paneles `native_vte`; tests aparte.
 |-------|------|--------|-----------|-------|
 | 2026-06-22 | — | `7b769c4` | **FALLÓ** | Cherry-pick completo `12435b1`; terminales rotas |
 | 2026-06-22 | 0 | `cca90af` | **OK** | Revert kimi; baseline estable |
-| | 1 | | pendiente | |
+| 2026-06-22 | 1 | `f1fc4e8` | **tests OK** | Capa A solo launch+marker; QA manual pendiente |
 | | 2 | | pendiente | |
 | | 3 | | pendiente | |
 

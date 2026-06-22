@@ -4,7 +4,11 @@ import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
 import { persistSession } from './sdd/SessionPersistence';
-import { resolveAgentProgramExecutable, buildTmuxWrappedCommand } from './agentLaunchCommand.shared';
+import {
+  resolveAgentProgramExecutable,
+  buildTmuxWrappedCommand,
+  resolveKimiSkillDir,
+} from './agentLaunchCommand.shared';
 
 const require = createRequire(import.meta.url);
 
@@ -130,6 +134,19 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
         innerCommand = modelId
           ? `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt} --model ${modelId}${sessionFlag}`
           : `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt}${sessionFlag}`;
+      }
+      break;
+    }
+    case 'kimi': {
+      const kimiSkillDir = resolveKimiSkillDir(options.role || opencodeAgent);
+      const skillDirFlag = kimiSkillDir ? ` --skills-dir ${shellQuote(kimiSkillDir)}` : '';
+      const modelFlag = modelId ? ` --model ${shellQuote(modelId)}` : '';
+      if (interactiveBootstrapPrompt) {
+        innerCommand = `${executable} --yolo --auto${skillDirFlag}${modelFlag}`;
+      } else {
+        innerCommand = modelId
+          ? `${executable} -p ${quotedPrompt}${modelFlag}`
+          : `${executable} -p ${quotedPrompt}`;
       }
       break;
     }

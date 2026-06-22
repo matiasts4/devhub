@@ -555,9 +555,9 @@ describe('agentLaunchWrapper', () => {
   });
 
   // =========================================================================
-  // Swarm bootstrap readiness: opencode-ready marker poll + viewport marker.
-  // deferBootstrap panels poll /tmp/devhub-opencode-ready-<tmux> (written by
-  // sidecar/client when the OpenCode TUI footer appears) instead of sleep 10.
+  // Swarm bootstrap readiness: agent-ready marker poll + viewport marker.
+  // deferBootstrap panels poll /tmp/devhub-agent-ready-<program>-<tmux> (written by
+  // sidecar/client when the agent TUI is ready) with legacy opencode-ready fallback.
   // =========================================================================
   describe('swarm bootstrap readiness markers', () => {
     const tmuxParams = {
@@ -581,11 +581,24 @@ describe('agentLaunchWrapper', () => {
     test('wrapper polls opencode-ready marker before bootstrap (deferBootstrap path)', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain('_devhub_wait_opencode_ready');
+      expect(result).toContain('/tmp/devhub-agent-ready-opencode-${_tmux_session}');
       expect(result).toContain('/tmp/devhub-opencode-ready-${_tmux_session}');
       expect(result).toContain('client-tui-footer|sidecar-tui-footer');
       expect(result).toContain('Weak ready signal');
       expect(result).not.toContain('Viewport ready marker found (TUI fallback)');
       expect(result).not.toMatch(/^sleep 10$/m);
+    });
+
+    test('wrapper polls kimi-ready marker when inner command is kimi', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        innerCommand:
+          '/home/matias/.kimi-code/bin/kimi --yolo --auto --skills-dir /home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
+      });
+      expect(result).toContain('_devhub_wait_opencode_ready');
+      expect(result).toContain('/tmp/devhub-agent-ready-kimi-${_tmux_session}');
+      expect(result).toContain('/tmp/devhub-opencode-ready-${_tmux_session}');
+      expect(result).toContain('kimi TUI ready');
     });
 
     test('wrapper uses single-shot bootstrap paste (T2.2)', () => {
@@ -657,13 +670,13 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('return 1');
     });
 
-    test('deferBootstrap skips bootstrap when opencode-ready times out', () => {
+    test('deferBootstrap skips bootstrap when agent-ready times out', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand: '/home/matias/.opencode/bin/opencode --agent swarm-coder',
       });
       expect(result).toContain('if _devhub_wait_opencode_ready; then');
-      expect(result).toContain('SKIP: OpenCode TUI not ready; bootstrap not injected');
+      expect(result).toContain('SKIP: opencode TUI not ready; bootstrap not injected');
     });
 
     test('tuiWaitTimeoutMs is ignored (param kept for backward compat, not emitted)', () => {

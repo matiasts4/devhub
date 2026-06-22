@@ -1,7 +1,24 @@
 /**
- * Marker file written when OpenCode TUI is ready for bootstrap injection.
- * Path: /tmp/devhub-opencode-ready-<tmux-session>
+ * Marker files written when an agent TUI is ready for bootstrap injection.
+ *
+ * Legacy path (OpenCode): /tmp/devhub-opencode-ready-<tmux-session>
+ * Generic path:          /tmp/devhub-agent-ready-<program>-<tmux-session>
  */
+
+export function resolveAgentReadyMarkerPath(tmuxSession, program = 'opencode') {
+  const normalized = String(tmuxSession || '').trim();
+  if (!normalized) return null;
+  const safeProgram = String(program || 'opencode').replace(/[^a-zA-Z0-9._-]/g, '');
+  const safeSession = normalized.replace(/[^a-zA-Z0-9._-]/g, '');
+  if (!safeSession) return null;
+  return `/tmp/devhub-agent-ready-${safeProgram}-${safeSession}`;
+}
+
+export function resolveAgentReadyMarkerPaths(tmuxSession, program = 'opencode') {
+  const generic = resolveAgentReadyMarkerPath(tmuxSession, program);
+  const legacy = resolveOpencodeReadyMarkerPath(tmuxSession);
+  return { generic, legacy };
+}
 
 export function resolveOpencodeReadyMarkerPath(tmuxSession) {
   const normalized = String(tmuxSession || '').trim();
