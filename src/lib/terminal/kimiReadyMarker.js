@@ -19,14 +19,15 @@ export function detectKimiTuiReady(text) {
   if (/welcome to kimi/i.test(lower)) return true;
   if (/kimi code cli v\d/i.test(lower)) return true;
   if (/\]0;kimi\b/i.test(text)) return true;
+  if (/mcp\s*\/\s*status/i.test(text) || /[⊙⊛]\s*\d+\s+mcp/i.test(text)) return true;
+  if (/ctrl\+p\s+commands/i.test(text) || /esc\s+interrupt/i.test(text)) return true;
+  if (/session_[a-f0-9-]{8,}/i.test(text)) return true;
+  if (/k2(?:\.\d+)?\s+code/i.test(text)) return true;
+  if (/\bthinking\b/i.test(text) && /\/\s*[\d.]+%\s*\(/i.test(text)) return true;
   return false;
 }
 
 /** Capa C gate — inject wheel only for live kimi panels (see KIMI_REBUILD_PLAN.md). */
-export function shouldInjectKimiWheelScroll({
-  initialCommand = '',
-  kimiReady = false,
-  isActivePanel = false,
-} = {}) {
-  return isKimiLaunchCommand(initialCommand) && kimiReady && isActivePanel;
+export function shouldInjectKimiWheelScroll({ initialCommand = '', kimiReady = false } = {}) {
+  return isKimiLaunchCommand(initialCommand) && kimiReady;
 }

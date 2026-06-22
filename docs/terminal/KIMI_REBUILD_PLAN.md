@@ -23,44 +23,44 @@ Esto **no depende de memoria del agente** — este archivo es la fuente de verda
 
 ### Un commit kimi = un checkpoint apilado
 
-| Ref | Archivos | Notas |
-|-----|----------|-------|
-| `12435b1` | **112 archivos** | Commit original: *"kimi runtime integration + agent-ready marker generalization"* |
-| `7b769c4` | **106 archivos** | Cherry-pick en rebuild; excluimos 5 backups `devhub.db` + 1 log `.cursor/debug-*` |
-| Push completo 21-jun (`ebc5030..dca2dbb`) | **158 archivos** | 13 commits apilados (splash, collab, kimi, rayitas, etc.) |
+| Ref                                       | Archivos         | Notas                                                                             |
+| ----------------------------------------- | ---------------- | --------------------------------------------------------------------------------- |
+| `12435b1`                                 | **112 archivos** | Commit original: _"kimi runtime integration + agent-ready marker generalization"_ |
+| `7b769c4`                                 | **106 archivos** | Cherry-pick en rebuild; excluimos 5 backups `devhub.db` + 1 log `.cursor/debug-*` |
+| Push completo 21-jun (`ebc5030..dca2dbb`) | **158 archivos** | 13 commits apilados (splash, collab, kimi, rayitas, etc.)                         |
 
 El usuario apiló commits localmente y luego hizo **un push** con todo junto. Eso es correcto: el push remoto (`backup/jun21-origin-push` → `dca2dbb`) contiene **13 commits**, no uno solo. Pero el commit kimi (`12435b1`) por sí solo ya era un checkpoint enorme.
 
 ### Desglose de los 13 commits del 21-jun (archivos por commit)
 
-| Commit | Archivos | Tema |
-|--------|----------|------|
-| `f6f5868` | 2 | Splash screen |
-| `f0164d4` | 2 | Splash `webview-data-url` |
-| `9a09bfd` | 12 | Collab fase 0 |
-| `bd81b13` | 11 | Collab fase 1 realtime |
-| `fee3861` | 2 | DB schema fix |
-| `2734d4e` | 8 | Collab fase 2 invitaciones |
-| `43b47e7` | 2 | Launcher X11 (revertido después) |
-| `97fda72` | 3 | Supabase SSR |
-| `24ee4c5` | 5 | Collab fase 3 tests |
-| `4d15bf7` | 2 | Revert launcher X11 |
-| `4ff22ed` | 22 | Deuda técnica presencia/mocks |
-| **`12435b1`** | **112** | **Kimi + Zed plan + packaging + terminal** |
-| `dca2dbb` | 18 | Fix rayitas WebKit |
+| Commit        | Archivos | Tema                                       |
+| ------------- | -------- | ------------------------------------------ |
+| `f6f5868`     | 2        | Splash screen                              |
+| `f0164d4`     | 2        | Splash `webview-data-url`                  |
+| `9a09bfd`     | 12       | Collab fase 0                              |
+| `bd81b13`     | 11       | Collab fase 1 realtime                     |
+| `fee3861`     | 2        | DB schema fix                              |
+| `2734d4e`     | 8        | Collab fase 2 invitaciones                 |
+| `43b47e7`     | 2        | Launcher X11 (revertido después)           |
+| `97fda72`     | 3        | Supabase SSR                               |
+| `24ee4c5`     | 5        | Collab fase 3 tests                        |
+| `4d15bf7`     | 2        | Revert launcher X11                        |
+| `4ff22ed`     | 22       | Deuda técnica presencia/mocks              |
+| **`12435b1`** | **112**  | **Kimi + Zed plan + packaging + terminal** |
+| `dca2dbb`     | 18       | Fix rayitas WebKit                         |
 
 ### Qué había dentro de `12435b1` (no todo es kimi)
 
-| Área | ~Archivos | ¿Kimi? | ¿En rebuild actual? |
-|------|-----------|--------|---------------------|
-| `src/lib/asistente/*` (Zed plan, skills, engram) | ~25 | No | No (revertido) |
-| `src/components/TerminalTTY.jsx` + terminal libs | ~22 | **Sí — culpable** | No |
-| `src/lib/agentLaunch*` | 4 | Sí (lanzamiento) | No |
-| `packaging/linux/devhub-server` + scripts | ~4 | No | No |
-| `docs/errores/*` | ~13 | No (post-mortem) | No |
-| `src/components/pizarra/*` | ~8 | No (canvas pan) | No |
-| `devhub-mcp/data/*.backup` | 5 | Basura accidental | Nunca incluir |
-| Resto (API, views, tests, tauri) | ~30 | Mixto | Parcial |
+| Área                                             | ~Archivos | ¿Kimi?            | ¿En rebuild actual? |
+| ------------------------------------------------ | --------- | ----------------- | ------------------- |
+| `src/lib/asistente/*` (Zed plan, skills, engram) | ~25       | No                | No (revertido)      |
+| `src/components/TerminalTTY.jsx` + terminal libs | ~22       | **Sí — culpable** | No                  |
+| `src/lib/agentLaunch*`                           | 4         | Sí (lanzamiento)  | No                  |
+| `packaging/linux/devhub-server` + scripts        | ~4        | No                | No                  |
+| `docs/errores/*`                                 | ~13       | No (post-mortem)  | No                  |
+| `src/components/pizarra/*`                       | ~8        | No (canvas pan)   | No                  |
+| `devhub-mcp/data/*.backup`                       | 5         | Basura accidental | Nunca incluir       |
+| Resto (API, views, tests, tauri)                 | ~30       | Mixto             | Parcial             |
 
 **Conclusión:** los 106–112 archivos son reales en **un solo checkpoint**, pero ~70% no es “kimi terminal” — es Zed, packaging, docs y tests que se empaquetaron en el mismo commit. La depilación posterior (revert cherry-pick, collab separado) ya limpió el árbol de trabajo; el remoto `backup/jun21-origin-push` conserva el historial completo por si hace falta consultar.
 
@@ -80,22 +80,22 @@ Revert `7b769c4` → `cca90af` restauró comportamiento estable.
 
 ### Excluido permanentemente del plan (hasta nueva evidencia)
 
-| Item | Commits | Motivo |
-|------|---------|--------|
-| Splash screen | `f6f5868`, `f0164d4` | Sospechoso lifecycle ventanas; no necesario ahora |
-| Fix rayitas WebKit | `dca2dbb` | No resolvía el problema reportado |
+| Item               | Commits              | Motivo                                            |
+| ------------------ | -------------------- | ------------------------------------------------- |
+| Splash screen      | `f6f5868`, `f0164d4` | Sospechoso lifecycle ventanas; no necesario ahora |
+| Fix rayitas WebKit | `dca2dbb`            | No resolvía el problema reportado                 |
 
 ---
 
 ## Ramas y puntos de restauración
 
-| Rama / tag | Commit | Uso |
-|------------|--------|-----|
-| `stable/terminal-jun20` | `ebc5030` | Ancla congelada — solo terminales 20-jun |
-| `task/rebuild-from-stable` | `cca90af` | Producción candidata: terminales + collab |
-| `task/kimi-minimal` | fork de `cca90af` | Implementación capa por capa |
-| `backup/jun21-origin-push` | `dca2dbb` | Referencia histórica completa 21-jun |
-| `7b769c4` | cherry-pick kimi | **Referencia de qué NO repetir** |
+| Rama / tag                 | Commit            | Uso                                       |
+| -------------------------- | ----------------- | ----------------------------------------- |
+| `stable/terminal-jun20`    | `ebc5030`         | Ancla congelada — solo terminales 20-jun  |
+| `task/rebuild-from-stable` | `cca90af`         | Producción candidata: terminales + collab |
+| `task/kimi-minimal`        | fork de `cca90af` | Implementación capa por capa              |
+| `backup/jun21-origin-push` | `dca2dbb`         | Referencia histórica completa 21-jun      |
+| `7b769c4`                  | cherry-pick kimi  | **Referencia de qué NO repetir**          |
 
 ### Protocolo de rollback
 
@@ -117,6 +117,7 @@ Cada fase termina con **commit checkpoint** nombrado: `[kimi-rebuild] fase-N: <d
 **Archivos permitidos:** `agentLaunchCommand.js`, `agentLaunchCommand.shared.js`, `agentLaunchWrapper.js`, `opencodeReadyMarker.js` (+ tests de launch)
 
 **Qué hace:**
+
 - Comando `kimi --yolo --auto --skills-dir … --model …`
 - `KIMI_SKILL_DIRS` por rol swarm
 - Marker `/tmp/devhub-agent-ready-kimi-<tmux>`
@@ -131,6 +132,7 @@ Cada fase termina con **commit checkpoint** nombrado: `[kimi-rebuild] fase-N: <d
 **Archivos permitidos:** módulo nuevo pequeño o extensión de marker API; **no** `agentTui.js` monolítico del checkpoint.
 
 **Qué hace:**
+
 - Un detector: `welcome to kimi` / título PTY `]0;kimi`
 - Un flag `kimiReadyRef` que pasa a `true` **una vez** (no por cada chunk)
 
@@ -143,6 +145,7 @@ Cada fase termina con **commit checkpoint** nombrado: `[kimi-rebuild] fase-N: <d
 **Archivos permitidos:** rama mínima en wheel handler de `TerminalTTY.jsx` **solo** si `program === 'kimi'` y panel activo.
 
 **Qué hace:**
+
 - Inyección SGR wheel sintética solo para kimi
 - OpenCode/Grok siguen con passthrough nativo sin cambios
 
@@ -155,6 +158,7 @@ Cada fase termina con **commit checkpoint** nombrado: `[kimi-rebuild] fase-N: <d
 **Qué hace (solo si C estable):** rebind mouse modes al mostrar panel kimi.
 
 **Prohibido hasta Fase 4+:**
+
 - `prepareActiveTuiTerminalFocus` con `resolveAgentTuiInteractionLive()`
 - `releaseAgentTuiInteractionLocks()` en output handler
 - `tuiSessionActiveRef = false` al montar paneles agente
@@ -192,6 +196,7 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 **Objetivo:** kimi aparece en menú/swarm y abre TUI; terminales idénticas a Fase 0.
 
 **Implementado (commit `[kimi-rebuild] fase-1`):**
+
 1. `case 'kimi'` en `agentLaunchCommand` + `agentLaunchCommand.shared` (`--yolo --auto`, `--skills-dir`, `-p`)
 2. `KIMI_SKILL_DIRS` + `resolveKimiSkillDir()`
 3. `resolveAgentReadyMarkerPath` / `writeAgentReadyMarker` (genérico + legacy opencode)
@@ -201,6 +206,7 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 **Archivos tocados (8 + tests):** launch commands, wrapper, markers — **cero** `TerminalTTY.jsx`.
 
 **Checklist de prueba manual (`pnpm tauri dev`):**
+
 - [ ] Cambio entre 3+ paneles shell: instantáneo, sin delay
 - [ ] OpenCode/Grok scroll OK
 - [ ] `kimi` lanza y muestra TUI (scroll kimi puede fallar — aceptable en F1)
@@ -215,12 +221,14 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 **Objetivo:** saber cuándo kimi está listo para bootstrap; sin tocar wheel/focus.
 
 **Implementado (commit `[kimi-rebuild] fase-2`):**
+
 1. `kimiReadyMarker.js` — `detectKimiTuiReady` + `isKimiLaunchCommand` (3 señales, sin `agentTui.js`)
 2. API `POST /api/terminal/opencode-ready` acepta `program` → `writeAgentReadyMarker`
 3. `TerminalTTY`: rama kimi en `handleTuiReadyFromOutput` — **solo** postea marker y `return` (sin wheel/focus)
 4. `ttyServer.js`: escribe marker kimi en path sidecar cuando detecta banner
 
 **Checklist manual:**
+
 - [ ] Fase 1 checks siguen verdes
 - [ ] Swarm kimi: bootstrap inyecta prompt tras marker (no timeout 12s)
 - [ ] Sin delay nuevo al cambiar paneles
@@ -234,17 +242,49 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 **Objetivo:** scroll dentro de kimi TUI.
 
 **Implementado (commit `[kimi-rebuild] fase-3`):**
+
 1. `shouldInjectKimiWheelScroll()` en `kimiReadyMarker.js`
 2. Rama aislada en wheel handler **antes** de routing opencode/grok/shell
 3. Inyección SGR+arrow vía `buildGrokWheelScrollPayload` solo si kimi ready + panel activo + zona transcript
 4. Sin cambios a `nativeWheelPassthrough`, `prepareActiveTuiTerminalFocus`, ni `tuiAdapter`
 
 **Checklist manual:**
+
 - [ ] Scroll kimi en transcript (tras banner welcome)
 - [ ] Scroll opencode/grok sin regresión
 - [ ] Cambio panel sigue rápido
 
 **Rollback si falla:** `git reset --hard 896600d` (pre fase-3).
+
+---
+
+### Fase 3b — Capa C fix (scroll kimi) — implementada, pendiente QA manual
+
+**Problema:** Fase 3 dejó terminales OK pero scroll kimi no respondía.
+
+**Causas identificadas:**
+
+1. `isActivePanel` bloqueaba wheel aunque el listener ya está en el shell del panel
+2. Gate `inTranscript` demasiado estricto (viejo `agentWheelLive` no lo exigía)
+3. `inputZoneRows = 2` en vez de 5 para kimi
+4. `detectKimiTuiReady` demasiado estrecho → `kimiReadyNotifiedRef` nunca se seteaba
+5. `handleTuiReadyFromOutput` solo hacía `return` pre-ready; post-ready caía al path opencode/grok
+
+**Fixes aplicados:**
+
+1. Siempre `return` para comandos kimi en `handleTuiReadyFromOutput`
+2. Quitar `isActivePanel` del gate wheel kimi
+3. Quitar requisito `inTranscript` cuando kimi está ready
+4. `resolveTerminalWheelInputZoneRows({ isKimiSession: true })` → 5 filas
+5. Ampliar `detectKimiTuiReady` (mcp/status, ctrl+p, session_id, k2 code, thinking)
+
+**Checklist manual:**
+
+- [ ] Scroll kimi en transcript (y fuera de zona transcript una vez ready)
+- [ ] Scroll opencode/grok sin regresión
+- [ ] Cambio panel sigue rápido
+
+**Rollback si falla:** `git reset --hard 0dfd006` (pre fase-3b).
 
 ---
 
@@ -262,15 +302,16 @@ Solo paneles `native_vte`; tests aparte.
 
 ## Registro de intentos
 
-| Fecha | Fase | Commit | Resultado | Notas |
-|-------|------|--------|-----------|-------|
-| 2026-06-22 | — | `7b769c4` | **FALLÓ** | Cherry-pick completo `12435b1`; terminales rotas |
-| 2026-06-22 | 0 | `cca90af` | **OK** | Revert kimi; baseline estable |
-| 2026-06-22 | 1 | `f96c649` | **OK** | Capa A launch+marker; terminales OK (usuario) |
-| 2026-06-22 | 2 | `896600d` | **OK** | Capa B readiness; terminales OK (usuario) |
-| 2026-06-22 | 3 | `0dfd006` | **tests OK** | Capa C scroll kimi aislado; QA manual pendiente |
+| Fecha      | Fase | Commit    | Resultado        | Notas                                            |
+| ---------- | ---- | --------- | ---------------- | ------------------------------------------------ |
+| 2026-06-22 | —    | `7b769c4` | **FALLÓ**        | Cherry-pick completo `12435b1`; terminales rotas |
+| 2026-06-22 | 0    | `cca90af` | **OK**           | Revert kimi; baseline estable                    |
+| 2026-06-22 | 1    | `f96c649` | **OK**           | Capa A launch+marker; terminales OK (usuario)    |
+| 2026-06-22 | 2    | `896600d` | **OK**           | Capa B readiness; terminales OK (usuario)        |
+| 2026-06-22 | 3    | `0dfd006` | **parcial**      | Capa C aislada; terminales OK, scroll kimi no    |
+| 2026-06-22 | 3b   | `bc86c68` | **pendiente QA** | Fix gates wheel + detector readiness ampliado    |
 
-*(Actualizar esta tabla en cada intento.)*
+_(Actualizar esta tabla en cada intento.)_
 
 ---
 

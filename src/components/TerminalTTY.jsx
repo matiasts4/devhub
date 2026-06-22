@@ -304,9 +304,13 @@ export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession =
 
 export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;
 
-/** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
-export function resolveTerminalWheelInputZoneRows({ isGrokSession = false } = {}) {
-  return isGrokSession ? TERMINAL_GROK_INPUT_ZONE_ROWS : TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
+/** Grok/Kimi shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
+export function resolveTerminalWheelInputZoneRows({
+  isGrokSession = false,
+  isKimiSession = false,
+} = {}) {
+  if (isGrokSession || isKimiSession) return TERMINAL_GROK_INPUT_ZONE_ROWS;
+  return TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
 }
 
 export const TERMINAL_WHEEL_ARROW_UP_SEQ = '\x1b[A';
@@ -4168,11 +4172,13 @@ export default function TerminalTTY({
         const tail = `${tuiOutputTailRef.current}${chunk}`.slice(-8192);
         tuiOutputTailRef.current = tail;
 
-        // Capa B: kimi readiness posts marker only — no wheel/focus side effects.
-        if (isKimiLaunchCommand(initialCommand) && !kimiReadyNotifiedRef.current) {
-          if (detectKimiTuiReady(chunk) || detectKimiTuiReady(tail)) {
-            kimiReadyNotifiedRef.current = true;
-            void notifyAgentReady('kimi', null, 'client-tui-footer');
+        // Capa B: kimi readiness posts marker only — never fall through to opencode/grok.
+        if (isKimiLaunchCommand(initialCommand)) {
+          if (!kimiReadyNotifiedRef.current) {
+            if (detectKimiTuiReady(chunk) || detectKimiTuiReady(tail)) {
+              kimiReadyNotifiedRef.current = true;
+              void notifyAgentReady('kimi', null, 'client-tui-footer');
+            }
           }
           return;
         }
@@ -5690,31 +5696,18 @@ export default function TerminalTTY({
         shouldInjectKimiWheelScroll({
           initialCommand,
           kimiReady: kimiReadyNotifiedRef.current,
-          isActivePanel: isActivePanelRef.current,
         })
       ) {
         const direction = resolveTerminalWheelScrollDirection(event.deltaY);
         if (!direction) return;
 
-        const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: false });
+        const inputZoneRows = resolveTerminalWheelInputZoneRows({ isKimiSession: true });
         const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
         const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
         if (cell) {
           lastPointerZoneRef.current = isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
             ? 'transcript'
             : 'input';
-        }
-
-        const inTranscript = shouldRouteWheelToTranscript({
-          cell,
-          rows: term.rows,
-          lastPointerZone: lastPointerZoneRef.current,
-          inputZoneRows,
-        });
-        if (!inTranscript) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
         }
 
         const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);

@@ -8,9 +8,7 @@ const {
 describe('kimiReadyMarker', () => {
   test('isKimiLaunchCommand matches kimi swarm inner commands', () => {
     expect(
-      isKimiLaunchCommand(
-        '/home/matias/.kimi-code/bin/kimi --yolo --auto --skills-dir /skills'
-      )
+      isKimiLaunchCommand('/home/matias/.kimi-code/bin/kimi --yolo --auto --skills-dir /skills')
     ).toBe(true);
     expect(isKimiLaunchCommand('opencode --agent swarm-coder')).toBe(false);
   });
@@ -26,27 +24,32 @@ describe('kimiReadyMarker', () => {
     expect(detectKimiTuiReady('booting shell')).toBe(false);
   });
 
-  test('shouldInjectKimiWheelScroll requires kimi command, readiness, and active panel', () => {
+  test('detectKimiTuiReady matches kimi chrome beyond welcome banner', () => {
+    expect(detectKimiTuiReady('MCP / Status')).toBe(true);
+    expect(detectKimiTuiReady('ctrl+p commands')).toBe(true);
+    expect(detectKimiTuiReady('session_abc12345-dead-beef')).toBe(true);
+    expect(detectKimiTuiReady('k2.5 code')).toBe(true);
+    expect(detectKimiTuiReady('thinking / 12.3% (tokens)')).toBe(true);
+  });
+
+  test('shouldInjectKimiWheelScroll requires kimi command and readiness only', () => {
     const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
     expect(
       shouldInjectKimiWheelScroll({
         initialCommand: kimiCmd,
         kimiReady: true,
-        isActivePanel: true,
       })
     ).toBe(true);
     expect(
       shouldInjectKimiWheelScroll({
         initialCommand: kimiCmd,
         kimiReady: false,
-        isActivePanel: true,
       })
     ).toBe(false);
     expect(
       shouldInjectKimiWheelScroll({
         initialCommand: 'opencode',
         kimiReady: true,
-        isActivePanel: true,
       })
     ).toBe(false);
   });
