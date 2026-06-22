@@ -1,13 +1,11 @@
 import {
   buildTerminalExitOverlayCopy,
   clearPanelSessionExit,
-  detectAgentSessionEndFromOutput,
   isAgentTuiCommand,
   parseTerminalExitReason,
   persistPanelSessionExit,
   readPanelSessionExit,
   resolveAgentTuiLabel,
-  shouldReturnToShellAfterAgentExit,
 } from './agentSessionExit';
 
 describe('agentSessionExit', () => {
@@ -16,20 +14,6 @@ describe('agentSessionExit', () => {
     expect(isAgentTuiCommand('opencode --session ses_1')).toBe(true);
     expect(isAgentTuiCommand("bash -lc 'opencode --session ses_1'")).toBe(true);
     expect(isAgentTuiCommand('bash')).toBe(false);
-  });
-
-  test('detectAgentSessionEndFromOutput catches Kimi Bye and fetch failures', () => {
-    expect(detectAgentSessionEndFromOutput('Bye!\r\n')).toBe('bye');
-    expect(
-      detectAgentSessionEndFromOutput('Skipped refreshing managed:kimi-code: fetch failed')
-    ).toBe('fetch-failed');
-    expect(detectAgentSessionEndFromOutput('plain output')).toBeNull();
-  });
-
-  test('shouldReturnToShellAfterAgentExit is true for graceful Bye', () => {
-    expect(shouldReturnToShellAfterAgentExit('agent-exited:bye')).toBe(true);
-    expect(shouldReturnToShellAfterAgentExit('agent-exited:session-ended')).toBe(true);
-    expect(shouldReturnToShellAfterAgentExit('agent-exited:fetch-failed')).toBe(false);
   });
 
   test('persistPanelSessionExit survives remount reads', () => {

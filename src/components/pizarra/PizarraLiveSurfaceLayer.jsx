@@ -44,7 +44,6 @@ export default function PizarraLiveSurfaceLayer({
   visibleViewIds = [],
   isViewTransitioning = false,
   transitionFromViewId = null,
-  suspendDuringCanvasPan = false,
   // Draggable layout dividers (optional)
   // The parent (PizarraPane) computes them and provides the handler that performs
   // the paired resize when a divider is dragged.
@@ -157,7 +156,6 @@ export default function PizarraLiveSurfaceLayer({
             isShown={isShown}
             surfaceOpacity={surfaceOpacity}
             suspendDuringViewTransition={isViewTransitioning && isShown}
-            suspendDuringCanvasPan={suspendDuringCanvasPan}
           />
         );
       })}
@@ -212,7 +210,6 @@ function LiveSurfaceItem({
   isShown = true,
   surfaceOpacity = 1,
   suspendDuringViewTransition = false,
-  suspendDuringCanvasPan = false,
 }) {
   const shapeRef = useRef(shape);
   useEffect(() => {
@@ -496,7 +493,6 @@ function LiveSurfaceItem({
           visibleTerminalPanelCount={visibleTerminalPanelCount}
           pizarraOwnsLiveSurfaces={pizarraOwnsLiveSurfaces}
           suspendDuringViewTransition={suspendDuringViewTransition}
-          suspendDuringCanvasPan={suspendDuringCanvasPan}
           skipEnterAnimation={suspendDuringViewTransition}
           isShown={isShown}
         />
@@ -545,7 +541,6 @@ function LiveSurfaceItem({
         onWorkspaceWindowAdd={onWorkspaceWindowAdd}
         onWorkspaceWindowRemove={onWorkspaceWindowRemove}
         suspendDuringViewTransition={suspendDuringViewTransition}
-        suspendDuringCanvasPan={suspendDuringCanvasPan}
         skipEnterAnimation={suspendDuringViewTransition}
       />
     </div>

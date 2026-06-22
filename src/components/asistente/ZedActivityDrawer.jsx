@@ -42,9 +42,6 @@ export default function ZedActivityDrawer({
   isLoading = false,
   metrics = null,
   agentStatus = null,
-  planState = null,
-  planControls = null,
-  pendingStepApproval = null,
 }) {
   const assistantTurns = messages.filter((m) => m.role === 'assistant' && m !== messages[0]);
 
@@ -127,74 +124,6 @@ export default function ZedActivityDrawer({
               >
                 <span className="zed-loading-dot h-1.5 w-1.5 rounded-full bg-[var(--accent-primary)]" />
                 {currentStep.label || currentStep.tool}
-              </div>
-            ) : null}
-
-            {pendingStepApproval ? (
-              <div
-                data-testid="zed-plan-step-approval"
-                className="rounded-lg border border-[color-mix(in_srgb,var(--warning,#f0b54a)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning,#f0b54a)_8%,transparent)] p-2.5"
-              >
-                <p className="mb-2 text-[11px] text-[var(--text-secondary)]">
-                  Confirmar paso del plan:{' '}
-                  <code className="text-[10px] text-[var(--text-primary)]">
-                    {pendingStepApproval.tool}
-                  </code>
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={onApprove}
-                    disabled={isLoading}
-                    className="rounded-md bg-[var(--accent-primary)] px-2.5 py-1 text-[10px] font-medium text-white disabled:opacity-50"
-                  >
-                    Ejecutar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onReject}
-                    className="rounded-md border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-muted)]"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {planState && planControls ? (
-              <div
-                data-testid="zed-plan-controls"
-                className="flex items-center justify-between rounded-lg border border-[color-mix(in_srgb,var(--border-subtle)_60%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary)_3%,transparent)] p-2"
-              >
-                <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-                  Plan: {planState}
-                </span>
-                <div className="flex gap-1.5">
-                  {planState === 'running' ? (
-                    <button
-                      type="button"
-                      onClick={planControls.pause}
-                      className="rounded border border-[var(--border-subtle)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                    >
-                      Pausar
-                    </button>
-                  ) : planState === 'paused' ? (
-                    <button
-                      type="button"
-                      onClick={planControls.resume}
-                      className="rounded border border-[var(--border-subtle)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                    >
-                      Reanudar
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={planControls.abort}
-                    className="rounded border border-[color-mix(in_srgb,var(--danger,#ef4444)_40%,transparent)] px-2 py-0.5 text-[10px] text-[var(--danger,#ef4444)]"
-                  >
-                    Abortar
-                  </button>
-                </div>
               </div>
             ) : null}
 

@@ -13,14 +13,7 @@ const STORAGE_KEY = 'devhub-zed-metrics';
 const MAX_ENTRIES = 500;
 
 function isClient() {
-  if (typeof window === 'undefined' || typeof document === 'undefined' || document === null) {
-    return false;
-  }
-  try {
-    return Boolean(window.localStorage);
-  } catch {
-    return false;
-  }
+  return typeof window !== 'undefined' && window.localStorage;
 }
 
 function readStorage() {

@@ -4,10 +4,6 @@
       "type": "stdio",
       "command": "/home/matias/.nvm/versions/node/v24.14.0/bin/node",
       "args": ["/home/matias/ArxonLabs/devhub/devhub-mcp/server.js"]
-    },
-    "supabase": {
-      "type": "http",
-      "url": "https://mcp.supabase.com/mcp?project_ref=kpgeyukrsydjujqouape&features=storage%2Cbranching%2Cfunctions%2Cdevelopment%2Cdebugging%2Cdatabase%2Caccount%2Cdocs"
     }
   }
 }

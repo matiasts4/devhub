@@ -39,7 +39,7 @@ function restoreCwd() {
 describe('T-017: delegate_to_opencode removed', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
+    process.env.MINIMAX_API_KEY = 'k';
     delete process.env.ANTHROPIC_API_KEY;
     route = require('../route');
     POST = route.POST;

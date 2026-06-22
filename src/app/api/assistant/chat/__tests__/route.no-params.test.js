@@ -53,7 +53,7 @@ async function runOnce(modelText) {
 describe('schema-aware no-params check (T-015)', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
+    process.env.MINIMAX_API_KEY = 'k';
     delete process.env.ANTHROPIC_API_KEY;
     POST = require('../route').POST;
   });

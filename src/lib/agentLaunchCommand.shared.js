@@ -43,31 +43,8 @@ export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   kimi: '/home/matias/.kimi-code/bin/kimi',
 });
 
-export const KIMI_SKILL_DIRS = Object.freeze({
-  zed: '/home/matias/.kimi-code/skills/devhub-zed-orchestrator',
-  director: '/home/matias/.kimi-code/skills/devhub-zed-orchestrator',
-  sdd_worker_1: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  sdd_worker_2: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  sdd_worker_3: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  sdd_worker_4: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  default: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-});
-
 export function resolveAgentProgramExecutable(programId = 'hermes') {
   return AGENT_PROGRAM_EXECUTABLES[programId] || AGENT_PROGRAM_EXECUTABLES.hermes;
-}
-
-function slugifyRoleKey(role = '') {
-  return String(role || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-}
-
-export function resolveKimiSkillDir(roleKey = '') {
-  const key = slugifyRoleKey(roleKey);
-  return KIMI_SKILL_DIRS[key] || KIMI_SKILL_DIRS.default;
 }
 
 /**
@@ -188,22 +165,9 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       }
       break;
     }
-    case 'kimi': {
-      // Kimi does not allow --prompt with --yolo, so swarm launches start the
-      // interactive TUI and the wrapper injects the bootstrap prompt later via
-      // tmux send-keys. One-off launches without tmux still use -p.
-      const kimiSkillDir = resolveKimiSkillDir(options.role || opencodeAgent);
-      const skillDirFlag = kimiSkillDir ? ` --skills-dir ${shellQuote(kimiSkillDir)}` : '';
-      const modelFlag = modelId ? ` --model ${shellQuote(modelId)}` : '';
-      if (interactiveBootstrapPrompt) {
-        innerCommand = `${executable} --yolo --auto${skillDirFlag}${modelFlag}`;
-      } else {
-        innerCommand = modelId
-          ? `${executable} -p ${quotedPrompt}${modelFlag}`
-          : `${executable} -p ${quotedPrompt}`;
-      }
+    case 'kimi':
+      innerCommand = interactiveBootstrapPrompt ? `${executable}` : `${executable} ${quotedPrompt}`;
       break;
-    }
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;

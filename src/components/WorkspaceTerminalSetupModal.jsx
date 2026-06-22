@@ -44,10 +44,10 @@ const COMMAND_PRESETS = [
     Icon: Bot,
   },
   {
-    id: 'kimi',
-    label: 'Kimi',
-    command: 'kimi',
-    description: 'Inicia Kimi en cada terminal',
+    id: 'grok',
+    label: 'Grok',
+    command: 'grok',
+    description: 'Inicia Grok en cada terminal',
     Icon: Sparkles,
   },
 ];
@@ -539,7 +539,7 @@ export default function WorkspaceTerminalSetupModal({
                 onChange={handleCommandInputChange}
                 onFocus={() => setActiveSection('customCommand')}
                 disabled={!commandApplies}
-                placeholder="ej. opencode, kimi, npm run dev"
+                placeholder="ej. opencode, grok, npm run dev"
                 data-testid="workspace-terminal-initial-command-input"
                 className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                 style={{

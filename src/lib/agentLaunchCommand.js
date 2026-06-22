@@ -1,21 +1,20 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { createRequire } from 'node:module';
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
 import { generateSessionId, buildTmuxSessionName } from './sdd/sessionIdUtils';
 import { persistSession } from './sdd/SessionPersistence';
-import {
-  resolveAgentProgramExecutable,
-  buildTmuxWrappedCommand,
-  resolveKimiSkillDir,
-} from './agentLaunchCommand.shared';
+import { resolveAgentProgramExecutable, buildTmuxWrappedCommand } from './agentLaunchCommand.shared';
+
+const require = createRequire(import.meta.url);
 
 // Server-only minimax config reader (fs is safe here — this module is never bundled for browser)
 let _serverMinimaxConfig = null;
 function getServerMinimaxConfig() {
   if (_serverMinimaxConfig) return _serverMinimaxConfig;
   try {
+    const fs = require('fs');
+    const path = require('path');
     const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
     const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw);
@@ -131,19 +130,6 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
         innerCommand = modelId
           ? `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt} --model ${modelId}${sessionFlag}`
           : `${executable} --agent ${opencodeAgent} --prompt ${quotedPrompt}${sessionFlag}`;
-      }
-      break;
-    }
-    case 'kimi': {
-      const kimiSkillDir = resolveKimiSkillDir(options.role || opencodeAgent);
-      const skillDirFlag = kimiSkillDir ? ` --skills-dir ${shellQuote(kimiSkillDir)}` : '';
-      const modelFlag = modelId ? ` --model ${shellQuote(modelId)}` : '';
-      if (interactiveBootstrapPrompt) {
-        innerCommand = `${executable} --yolo --auto${skillDirFlag}${modelFlag}`;
-      } else {
-        innerCommand = modelId
-          ? `${executable} -p ${quotedPrompt}${modelFlag}`
-          : `${executable} -p ${quotedPrompt}`;
       }
       break;
     }

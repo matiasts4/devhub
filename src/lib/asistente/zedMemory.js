@@ -9,14 +9,7 @@ const ZED_MEMORY_KEY = 'devhub-zed-memory';
 const MAX_RECENT_ACTIONS = 20;
 
 function isClient() {
-  if (typeof window === 'undefined' || typeof document === 'undefined' || document === null) {
-    return false;
-  }
-  try {
-    return Boolean(window.localStorage);
-  } catch {
-    return false;
-  }
+  return typeof window !== 'undefined' && window.localStorage;
 }
 
 function readMemory() {
@@ -93,25 +86,19 @@ export function getZedAgentStatus() {
 
 export function addZedPendingPlan(plan) {
   const memory = readMemory();
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   memory.pendingPlans.push({
     ...plan,
-    id,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
   });
   memory.lastSeenAt = new Date().toISOString();
   writeMemory(memory);
-  return id;
 }
 
 export function removeZedPendingPlan(planId) {
   const memory = readMemory();
   memory.pendingPlans = memory.pendingPlans.filter((p) => p.id !== planId);
   writeMemory(memory);
-}
-
-export function listZedPendingPlans() {
-  return readMemory().pendingPlans || [];
 }
 
 export function clearZedMemory() {

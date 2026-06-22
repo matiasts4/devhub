@@ -400,11 +400,6 @@ function buildSwarmLaunchProviders() {
 function buildSwarmLaunchPrograms() {
   return [
     {
-      id: 'kimi',
-      label: 'Kimi',
-      summary: 'Cliente Kimi Code CLI — modo YOLO, TUI nativa, menos fricción que OpenCode para agentes autónomos.',
-    },
-    {
       id: 'opencode',
       label: 'OpenCode',
       summary: 'Cliente recomendado para ejecución snapshot-first dentro de DevHub.',
@@ -1872,9 +1867,8 @@ export function createSwarmLaunchDraft({
   if (isZedPodTemplate) {
     topology = buildZedSddPodTopology(workerCount);
   }
-  const defaultProgramForTemplate = isZedPodTemplate ? 'kimi' : 'opencode';
   const rolePrograms = mergeRolePrograms(
-    buildDefaultRolePrograms(topology, defaultProgramForTemplate),
+    buildDefaultRolePrograms(topology, 'opencode'),
     draft.rolePrograms
   );
   const projectPath =

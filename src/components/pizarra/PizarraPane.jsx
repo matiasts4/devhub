@@ -19,7 +19,6 @@ import PizarraMinimap from './PizarraMinimap';
 import PizarraZoneGuides from './PizarraZoneGuides';
 import PizarraEdgeSwipeZones from './PizarraEdgeSwipeZones';
 import PizarraZoomControls from './PizarraZoomControls';
-import usePizarraCanvasPan from './hooks/usePizarraCanvasPan';
 import CommandBar from '@/components/commandBar/CommandBar';
 import { PIZARRA_ACTIONS, usePizarraState } from '@/lib/pizarra/pizarraReducer';
 import { CanvasViewportProvider, useCanvasViewport } from '@/lib/pizarra/canvasViewport';
@@ -539,7 +538,6 @@ function PizarraInner({
 
   const [highlightZone, setHighlightZone] = useState(null);
   const [isSurfaceDragging, setIsSurfaceDragging] = useState(false);
-  const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const surfaceDragCountRef = useRef(0);
 
   const [viewTransitionPair, setViewTransitionPair] = useState(null);
@@ -566,10 +564,6 @@ function PizarraInner({
   const toggleViewLocked = useCallback(() => {
     setIsViewLocked((prev) => {
       const next = !prev;
-      if (!next) {
-        // Unlocking preserves the current viewport; auto-fit must not run on toggle.
-        skipViewAutoFitRef.current = true;
-      }
       try {
         window.localStorage?.setItem('devhub_pizarra_view_locked', next ? '1' : '0');
       } catch {
@@ -615,11 +609,6 @@ function PizarraInner({
     panRef.current = pan;
   }, [pan]);
 
-  const isViewLockedRef = useRef(isViewLocked);
-  useEffect(() => {
-    isViewLockedRef.current = isViewLocked;
-  }, [isViewLocked]);
-
   const viewportPersistTimerRef = useRef(null);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -639,16 +628,6 @@ function PizarraInner({
       panAnimCancelRef.current = null;
     }
   }, []);
-
-  usePizarraCanvasPan({
-    containerRef: canvasContainerRef,
-    panRef,
-    setPan,
-    cancelPanAnimation,
-    enabled: state.activeTool === 'select' && !isSurfaceDragging,
-    onPanStart: () => setIsCanvasPanning(true),
-    onPanEnd: () => setIsCanvasPanning(false),
-  });
 
   const animateToPan = useCallback(
     (
@@ -1184,7 +1163,7 @@ function PizarraInner({
     const timer = setTimeout(() => {
       if (liveSurfacesForZones.length === 0 || isViewTransitioning) return;
       const allPositioned = liveSurfacesForZones.every(isLiveElementPositioned);
-      if (!isViewLockedRef.current && !allPositioned) {
+      if (!isViewLocked && !allPositioned) {
         handleFitAllView();
       }
       const panelIds = collectTerminalPanelIds(liveSurfacesForZones);
@@ -1201,6 +1180,7 @@ function PizarraInner({
     liveSurfacesForZones,
     handleFitAllView,
     collectTerminalPanelIds,
+    isViewLocked,
     isViewTransitioning,
   ]);
 
@@ -1380,7 +1360,7 @@ function PizarraInner({
       assigned = true;
     }
 
-    if (needs.length > 0 && assigned && !isViewLockedRef.current) {
+    if (needs.length > 0 && assigned && !isViewLocked) {
       // First-time placement: fit immediately (no 120–200ms dead zone).
       // When locked we already assigned slots above and leave the user in control.
       handleFitAllView();
@@ -1394,6 +1374,7 @@ function PizarraInner({
     views,
     fallbackViewId,
     handleFitAllView,
+    isViewLocked,
   ]);
 
   // ── handleAddElement — spawns at current visible viewport center ─────────
@@ -2294,7 +2275,6 @@ function PizarraInner({
           width: '100%',
           height: '100%',
           overflow: 'hidden',
-          cursor: isCanvasPanning ? 'grabbing' : undefined,
         }}
       >
         <PizarraZoneGuides
@@ -2347,7 +2327,6 @@ function PizarraInner({
           visibleViewIds={visibleViewIds}
           isViewTransitioning={isViewTransitioning}
           transitionFromViewId={viewTransitionPair?.from ?? null}
-          suspendDuringCanvasPan={isCanvasPanning}
           // Draggable zonas / dividers
           layoutDividers={layoutDividers}
           onDividerMouseDown={handleDividerMouseDown}

@@ -17,6 +17,7 @@
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { useGesture } from '@use-gesture/react';
 import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
 import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
@@ -215,6 +216,17 @@ export default function PizarraCanvas({
       wrapper.removeEventListener('wheel', handleWheel);
     };
   }, [setZoom, setPan, zoom, pan, konva, onWheelViewNavigate]);
+
+  const bind = useGesture(
+    {
+      onDrag: ({ delta: [dx, dy], buttons }) => {
+        if (buttons === 1) {
+          setPan((currentPan) => ({ x: currentPan.x + dx, y: currentPan.y + dy }));
+        }
+      },
+    },
+    { drag: { eventOptions: { passive: false } } }
+  );
 
   // ── Handlers (useCallback — declared before early return) ───────────────
 
@@ -593,6 +605,7 @@ export default function PizarraCanvas({
 
   return (
     <div
+      {...bind()}
       ref={wrapperRef}
       data-testid="pizarra-canvas-wrapper"
       style={{

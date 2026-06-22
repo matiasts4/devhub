@@ -143,6 +143,7 @@ export function getTaskModalShellStyle() {
   return {
     ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
     background: 'var(--chrome-panel-fill-emphasis)',
+    borderRadius: '0',
     backdropFilter: 'none',
     boxShadow: 'var(--chrome-shadow-panel)',
   };

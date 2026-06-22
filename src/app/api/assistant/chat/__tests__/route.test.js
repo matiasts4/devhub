@@ -38,7 +38,7 @@ function restoreCwd() {
 describe('chat route — module contract', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
+    process.env.MINIMAX_API_KEY = 'test-key';
     delete process.env.ANTHROPIC_API_KEY;
     route = require('../route');
     POST = route.POST;

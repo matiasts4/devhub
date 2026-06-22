@@ -277,15 +277,15 @@ function WorkspaceLayout() {
             {/* Drag region for the Tauri window is provided by the
                 WorkspaceWindowTabBar wrapper (data-tauri-drag-region on the tab bar
                 inside the terminal container). No extra header is needed here. */}
-            {project && isTerminalRoute ? (
+            {project && (
               <OperatorActionsDispatchProvider>
                 <TerminalWorkspacesManager
                   cwd={project.local_path}
-                  isVisible
+                  isVisible={isTerminalRoute}
                   projectId={project.id}
                 />
               </OperatorActionsDispatchProvider>
-            ) : null}
+            )}
           </div>
         </div>
       </div>

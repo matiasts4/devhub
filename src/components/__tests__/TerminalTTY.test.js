@@ -143,7 +143,6 @@ const {
   sendTerminalPasteInput,
   scheduleTerminalViewportSyncBurst,
   shouldSyncTerminalViewportOnLayoutShow,
-  isWorkspaceLayoutSwitchReason,
   shouldSkipRedundantLayoutSettleViewportSync,
   shouldSkipTerminalOutputWhileLayoutHidden,
   appendHiddenTerminalOutputBuffer,
@@ -193,7 +192,6 @@ const {
   buildTerminalWheelArrowSequence,
   buildTerminalWheelScrollPayload,
   buildTerminalWheelSgrSequence,
-  shouldInjectAgentTuiMouseClick,
   disableTerminalFocusReporting,
   prepareActiveTuiTerminalFocus,
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
@@ -742,27 +740,10 @@ describe('shouldSkipRedundantLayoutSettleViewportSync()', () => {
     ).toBe(false);
   });
 
-  test('never skips workspace/window switch recover passes even when dimensions are unchanged', () => {
-    expect(
-      shouldSkipRedundantLayoutSettleViewportSync({
-        reason: 'layout-settled-workspace-switch-immediate',
-        sizeUnchanged: true,
-        hasGpuRenderer: true,
-      })
-    ).toBe(false);
-    expect(
-      shouldSkipRedundantLayoutSettleViewportSync({
-        reason: 'layout-settled-workspace-window-switch-immediate',
-        sizeUnchanged: true,
-        hasGpuRenderer: true,
-      })
-    ).toBe(false);
-  });
-
   test('still skips generic layout-settled when dimensions are unchanged', () => {
     expect(
       shouldSkipRedundantLayoutSettleViewportSync({
-        reason: 'layout-settled-unknown-immediate',
+        reason: 'layout-settled-workspace-switch-immediate',
         sizeUnchanged: true,
         hasGpuRenderer: true,
       })
@@ -878,27 +859,10 @@ describe('hidden output catchup policy', () => {
     );
     expect(
       shouldDiscardHiddenOutputCatchup({
-        bufferedBytes: 400,
-        tuiSessionActive: true,
-        rendererWasReleased: true,
-      })
-    ).toBe(false);
-    expect(
-      shouldDiscardHiddenOutputCatchup({
         bufferedBytes: 200,
         bufferText: '~/devhub § 6 MCP /status 1.16.2',
       })
     ).toBe(true);
-  });
-
-  test('isWorkspaceLayoutSwitchReason covers workspace tabs and in-workspace window tabs', () => {
-    expect(isWorkspaceLayoutSwitchReason('workspace-switch')).toBe(true);
-    expect(isWorkspaceLayoutSwitchReason('workspace-window-switch')).toBe(true);
-    expect(isWorkspaceLayoutSwitchReason('workspace-window-settled')).toBe(true);
-    expect(isWorkspaceLayoutSwitchReason('layout-settled-workspace-window-switch-immediate')).toBe(
-      true
-    );
-    expect(isWorkspaceLayoutSwitchReason('panel-group-layout')).toBe(false);
   });
 
   test('shouldSkipRedundantLayoutSettleViewportSync skips pizarra mode transitions when size unchanged', () => {
@@ -910,23 +874,6 @@ describe('hidden output catchup policy', () => {
         hasGpuRenderer: true,
       })
     ).toBe(true);
-    expect(
-      shouldSkipRedundantLayoutSettleViewportSync({
-        reason: 'layout-settled-workspace-window-switch-immediate',
-        sizeUnchanged: true,
-        pendingWebglRecovery: false,
-        hasGpuRenderer: true,
-      })
-    ).toBe(false);
-    expect(
-      shouldSkipRedundantLayoutSettleViewportSync({
-        reason: 'layout-settled-panel-group-layout-immediate',
-        sizeUnchanged: true,
-        pendingWebglRecovery: false,
-        hasGpuRenderer: true,
-        rendererWasReleased: true,
-      })
-    ).toBe(false);
   });
 
   test('chunkTerminalOutputForCatchup splits large replay safely', () => {
@@ -1031,20 +978,7 @@ describe('shouldFreezeSingleWebglViewportOnWorkspaceShow()', () => {
 });
 
 describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
-  test('clears canvas atlas after release-on-hide and on layout-recover passes', () => {
-    expect(
-      shouldClearGpuAtlasOnWorkspaceShow({
-        operationalRendererMode: 'xterm-canvas',
-        reason: 'workspace-show-settled',
-        canvasReleasedOnLayoutHide: true,
-      })
-    ).toBe(true);
-    expect(
-      shouldClearGpuAtlasOnWorkspaceShow({
-        operationalRendererMode: 'xterm-canvas',
-        reason: 'layout-recover-delay-120',
-      })
-    ).toBe(true);
+  test('limits canvas atlas clears to pending catch-up and split-layout churn', () => {
     expect(
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-canvas',
@@ -1061,12 +995,6 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-canvas',
         reason: 'layout-settled-panel-group-layout-immediate',
-      })
-    ).toBe(true);
-    expect(
-      shouldClearGpuAtlasOnWorkspaceShow({
-        operationalRendererMode: 'xterm-canvas',
-        reason: 'layout-settled-workspace-window-settled-immediate',
       })
     ).toBe(true);
     expect(
@@ -2291,26 +2219,21 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(shouldInjectGrokWheelSgr(false, 'opencode')).toBe(false);
       expect(resolveTerminalWheelScrollPrefer('grok')).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('groc')).toBe('page');
-      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('both');
-      expect(
-        resolveTerminalWheelScrollPrefer('kimi', { agentTuiReady: true })
-      ).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('opencode --session ses_abc')).toBe('sgr');
       expect(
         shouldPassthroughNativeTuiWheel({
-          initialCommand: 'kimi',
-          agentTuiReady: true,
+          isGrokSession: true,
         })
       ).toBe(false);
       expect(
         shouldPassthroughNativeTuiWheel({
-          initialCommand: 'grok',
           isGrokSession: true,
           grokTuiReady: true,
         })
       ).toBe(true);
       expect(
         shouldPassthroughNativeTuiWheel({
-          initialCommand: 'opencode',
+          isGrokSession: false,
           opencodeFooterConfirmed: true,
         })
       ).toBe(true);
@@ -2324,9 +2247,6 @@ describe('TerminalTTY renderer fallback UI', () => {
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(
         TERMINAL_GROK_INPUT_ZONE_ROWS
       );
-      expect(resolveTerminalWheelInputZoneRows({ isAgentTui: true })).toBe(
-        TERMINAL_GROK_INPUT_ZONE_ROWS
-      );
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
       expect(isTerminalTranscriptCell(18, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
       expect(isTerminalTranscriptCell(19, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
@@ -2337,36 +2257,6 @@ describe('TerminalTTY renderer fallback UI', () => {
       });
       expect(detectGrokTuiReady('user_prompt_submit [hooks: 1]')).toBe(true);
       expect(detectGrokSessionFromOutput('\x1b]0;grok\x07')).toBe(true);
-      expect(
-        shouldInjectAgentTuiMouseClick({
-          agentTuiLive: true,
-          processExited: false,
-          connectionState: 'connected',
-          inTranscript: true,
-          hasCell: true,
-          isVisibleInLayout: true,
-        })
-      ).toBe(true);
-      expect(
-        shouldInjectAgentTuiMouseClick({
-          agentTuiLive: true,
-          processExited: true,
-          connectionState: 'connected',
-          inTranscript: true,
-          hasCell: true,
-          isVisibleInLayout: true,
-        })
-      ).toBe(false);
-      expect(
-        shouldInjectAgentTuiMouseClick({
-          agentTuiLive: false,
-          processExited: false,
-          connectionState: 'connected',
-          inTranscript: true,
-          hasCell: true,
-          isVisibleInLayout: true,
-        })
-      ).toBe(false);
       expect(detectGrokSessionFromOutput('opencode ready')).toBe(false);
     });
 

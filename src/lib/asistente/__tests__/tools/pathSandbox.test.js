@@ -3,7 +3,7 @@
  */
 
 import path from 'node:path';
-import { assertWithinRoot, resolveProjectRoot, validateSandboxedPath } from '../../tools/pathSandbox';
+import { assertWithinRoot, resolveProjectRoot } from '../../tools/pathSandbox';
 
 describe('pathSandbox', () => {
   const root = resolveProjectRoot();
@@ -34,22 +34,5 @@ describe('pathSandbox', () => {
 
   test('allows devhub tmp prefix', () => {
     expect(assertWithinRoot(path.join(require('os').tmpdir(), 'devhub-test', 'x'))).toBe(true);
-  });
-
-  test('validateSandboxedPath rejects null bytes', () => {
-    const result = validateSandboxedPath(path.join(root, 'file\0.txt'));
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('null bytes');
-  });
-
-  test('validateSandboxedPath rejects traversal', () => {
-    const result = validateSandboxedPath(path.join(root, '..', 'etc', 'passwd'));
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('escapes');
-  });
-
-  test('validateSandboxedPath allows root subpath', () => {
-    const result = validateSandboxedPath(path.join(root, 'src', 'lib', 'foo.js'));
-    expect(result.ok).toBe(true);
   });
 });

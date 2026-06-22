@@ -315,7 +315,6 @@ export function buildLaunchCommand(
 
   const innerCommand = buildAgentLaunchCommand(effectiveProgramId, prompt, {
     opencodeAgent: agentProfile,
-    role: roleKey,
     modelId,
     tmuxSessionName,
     // Visible swarm panels are already tmux-backed (ttyServer spawn). A second
@@ -323,8 +322,7 @@ export function buildLaunchCommand(
     disableTmuxWrap: true,
     // `opencode --prompt` is non-interactive in current CLI builds. Start the
     // TUI first and inject the mission prompt into the already-running panel.
-    // Same pattern for Kimi because --prompt cannot be combined with --yolo.
-    interactiveBootstrapPrompt: effectiveProgramId === 'opencode' || effectiveProgramId === 'kimi',
+    interactiveBootstrapPrompt: effectiveProgramId === 'opencode',
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Inner command: ${innerCommand}`);
@@ -355,11 +353,10 @@ export function buildLaunchCommand(
     tmuxSessionName,
     directorTmuxSession: isWorker ? directorTmuxSession : null,
     bootstrapPrompt:
-      effectiveProgramId === 'opencode' || effectiveProgramId === 'kimi'
+      effectiveProgramId === 'opencode'
         ? resolveBootstrapPromptForLaunch({ roleKey, prompt, bootstrapMode })
         : '',
     innerCommand,
-    programId: effectiveProgramId,
     supervisorUrl,
     busBinaryPath: busPaths.busBinaryPath,
     dbPath: busPaths.dbPath,

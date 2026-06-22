@@ -967,6 +967,8 @@ function ensureRuntimeSchema(db) {
       PRIMARY KEY (project_id, user_id)
     );
     CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_project_members_invited_email ON project_members(invited_email);
+    CREATE INDEX IF NOT EXISTS idx_project_members_invite_token ON project_members(invite_token);
 
     CREATE TABLE IF NOT EXISTS workspace_invitations (
       workspace_id TEXT NOT NULL,
@@ -1071,11 +1073,6 @@ function ensureRuntimeSchema(db) {
     "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT '[]'",
     'ALTER TABLE agent_auth_tokens ADD COLUMN secret TEXT',
     'ALTER TABLE task_comments ADD COLUMN user_id TEXT',
-    'ALTER TABLE project_members ADD COLUMN invited_email TEXT',
-    'ALTER TABLE project_members ADD COLUMN invite_token TEXT',
-    'ALTER TABLE project_members ADD COLUMN invited_at TEXT',
-    'ALTER TABLE project_members ADD COLUMN accepted_at TEXT',
-    'ALTER TABLE project_members ADD COLUMN invited_by TEXT',
   ];
   for (const stmt of alterStatements) {
     try {
@@ -1091,19 +1088,6 @@ function ensureRuntimeSchema(db) {
   // above for legacy DBs, so their indexes must be created after the ALTER loop.
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_comments_user ON task_comments(user_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)`);
-
-  try {
-    db.exec(
-      `CREATE INDEX IF NOT EXISTS idx_project_members_invited_email ON project_members(invited_email)`
-    );
-    db.exec(
-      `CREATE INDEX IF NOT EXISTS idx_project_members_invite_token ON project_members(invite_token)`
-    );
-  } catch (e) {
-    if (!e.message.includes('no such column') && !e.message.includes('no such table')) {
-      throw e;
-    }
-  }
 
   // audit_events table (idempotent)
   db.exec(`

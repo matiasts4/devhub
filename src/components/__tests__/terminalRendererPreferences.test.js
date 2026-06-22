@@ -1,13 +1,11 @@
 const {
   createDefaultTerminalRendererPreferences,
   getPanelRendererPreferenceMode,
-  getRuntimeDefaultTerminalRendererMode,
   getTerminalRendererPreferencesStorageKey,
   readTerminalRendererDefaultModeSetting,
   readTerminalRendererPreferences,
   resolveRequestedRenderer,
   sanitizeTerminalRendererPreferences,
-  shouldAvoidWebglOnThisRuntime,
   writeTerminalRendererDefaultModeSetting,
 } = require('../terminal/terminalRendererPreferences');
 
@@ -196,34 +194,5 @@ describe('terminalRendererPreferences', () => {
     expect(
       readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])
     ).toEqual(fallback);
-  });
-
-  test('demotes xterm-webgl to xterm on packaged Tauri Linux', () => {
-    const previousWindow = global.window;
-    const previousNavigator = global.navigator;
-
-    global.window = { __TAURI_INTERNALS__: {} };
-    global.navigator = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' };
-
-    try {
-      expect(shouldAvoidWebglOnThisRuntime()).toBe(true);
-      expect(getRuntimeDefaultTerminalRendererMode()).toBe('xterm');
-
-      const storage = {
-        getItem: jest.fn(() => 'xterm-webgl'),
-      };
-
-      expect(readTerminalRendererDefaultModeSetting(storage)).toBe('xterm');
-      expect(
-        resolveRequestedRenderer({
-          workspaceId: 'ws-1',
-          panelId: 'p1',
-          prefs: { defaultMode: 'xterm-webgl', workspaces: {} },
-        })
-      ).toBe('xterm');
-    } finally {
-      global.window = previousWindow;
-      global.navigator = previousNavigator;
-    }
   });
 });

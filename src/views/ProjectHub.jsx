@@ -27,12 +27,9 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import WorkspaceSwitcher from '@/components/workspace-switcher/WorkspaceSwitcher';
 import UserProfile from '@/components/UserProfile';
 import {
-  btnPrimaryStyle,
-  btnSecondaryStyle,
   dataTileStyle,
   filterBarStyle,
   inputStyle,
-  panelHeaderStripStyle,
   panelStyle,
   pillStyle,
   sectionSurfaceStyle,
@@ -453,42 +450,27 @@ export default function ProjectHub() {
       </div>
 
       {showNewModal && (
-        <div
-          className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-          style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
-          onClick={() => setShowNewModal(false)}
-        >
-          <div
-            className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto"
-            style={{ ...panelStyle({ emphasized: true }), color: 'var(--text-primary)' }}
-            onClick={(event) => event.stopPropagation()}
-            data-testid="new-project-modal"
-          >
-            <div
-              className="flex items-center justify-between px-6 py-4 border-b"
-              style={panelHeaderStripStyle({ tone: 'accent' })}
-            >
+        <div className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center bg-black/72 p-4">
+          <div className="fade-in-up max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-none border-2 border-[var(--border-strong)] bg-[var(--surface-card)] p-6 shadow-[8px_8px_0_0_var(--border-strong)]">
+            <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
-                <div
-                  className="flex h-9 w-9 items-center justify-center"
-                  style={pillStyle({ tone: 'accent' })}
-                >
+                <div className="flex h-9 w-9 items-center justify-center rounded-none border-2 border-[var(--accent-primary)]/30 bg-[var(--surface-elevated)] shadow-[3px_3px_0_0_var(--border-strong)]">
                   <Plus className="w-4 h-4 text-[var(--accent-primary)]" strokeWidth={1.5} />
                 </div>
                 <h2 className="font-mono font-bold text-text-primary">Nuevo Proyecto</h2>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => setShowNewModal(false)}
-                aria-label="Cerrar modal"
-                className="flex h-8 w-8 items-center justify-center"
-                style={btnSecondaryStyle({ size: 'sm' })}
+                variant="devhubGhost"
+                size="icon"
+                className="h-8 w-8 rounded-none border-2 border-[var(--border-strong)]"
               >
-                <X className="w-4 h-4" />
-              </button>
+                <X className="w-5 h-5" />
+              </Button>
             </div>
 
-            <form onSubmit={createProject} className="space-y-4 px-6 py-5">
+            <form onSubmit={createProject} className="space-y-4">
               <p className="text-[11px] leading-relaxed text-text-muted">
                 Solo los datos básicos. La investigación y el roadmap van en{' '}
                 <span className="text-text-primary font-medium">Planificación</span> dentro del
@@ -521,17 +503,13 @@ export default function ProjectHub() {
                     className="flex-1 text-sm placeholder:text-text-muted"
                     style={modalFieldStyle}
                   />
-                  <button
+                  <Button
                     type="button"
                     onClick={handleSelectFolder}
                     disabled={!isTauri}
-                    className="flex h-[42px] w-[42px] items-center justify-center disabled:opacity-50"
-                    style={{
-                      ...btnSecondaryStyle({ size: 'md' }),
-                      width: '2.625rem',
-                      padding: 0,
-                      color: 'var(--text-muted)',
-                    }}
+                    variant="devhubGlass"
+                    size="icon"
+                    className="h-[42px] w-[42px] rounded-none border-2 border-[var(--border-strong)] p-0 text-[var(--text-muted)]"
                     title={
                       isTauri
                         ? 'Explorar carpetas'
@@ -539,7 +517,7 @@ export default function ProjectHub() {
                     }
                   >
                     <FolderOpen className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -577,29 +555,19 @@ export default function ProjectHub() {
               </div>
 
               <div className="flex gap-3 pt-1">
-                <button
+                <Button
                   type="button"
                   onClick={() => setShowNewModal(false)}
-                  className="h-10 flex-1 text-sm"
-                  style={{
-                    ...btnSecondaryStyle({ size: 'md' }),
-                    width: '100%',
-                    textTransform: 'none',
-                    letterSpacing: 'normal',
-                  }}
+                  variant="devhubGlass"
+                  className="h-10 flex-1 rounded-none border-2 border-[var(--border-strong)] text-sm"
                 >
                   Cancelar
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={creating}
-                  className="h-10 flex-1 text-sm font-semibold disabled:opacity-50"
-                  style={{
-                    ...btnPrimaryStyle({ size: 'md' }),
-                    width: '100%',
-                    textTransform: 'none',
-                    letterSpacing: 'normal',
-                  }}
+                  variant="devhubPrimary"
+                  className="h-10 flex-1 rounded-none text-sm font-semibold border-2 border-[var(--accent-primary)]"
                 >
                   {creating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -607,7 +575,7 @@ export default function ProjectHub() {
                     <Plus className="w-4 h-4" />
                   )}
                   {creating ? 'Creando...' : 'Crear Proyecto'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

@@ -8,7 +8,6 @@ const browserAppIgnores = [
   'src/app/api/**',
   'src/lib/db/**/*.js',
   'src/lib/terminal/**/*.js',
-  'src/lib/constants/local.js',
   'src/test-support/**/*.js',
   'src/**/*.test.js',
   'src/**/*.spec.js',
@@ -39,7 +38,6 @@ const commonJsAndJestFiles = [
   'scripts/**/*.cjs',
   'tests/**/*.js',
   'src/lib/db/**/*.js',
-  'src/lib/constants/local.js',
   ...swarmCommonJsFiles,
   'src/lib/gitCheckpointHandoff.js',
   'src/lib/devhub/**/*.js',
@@ -179,18 +177,6 @@ export default [
         ...globals.jest,
         ...globals.es2020,
         process: 'readonly',
-      },
-    },
-  },
-
-  // projectClassification uses ESM syntax in its unit test
-  {
-    files: ['src/lib/projectClassification.test.js'],
-    languageOptions: {
-      sourceType: 'module',
-      globals: {
-        ...globals.node,
-        ...globals.es2020,
       },
     },
   },

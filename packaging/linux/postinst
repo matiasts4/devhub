@@ -3,20 +3,9 @@ set -e
 
 # Best-effort warm-up for the user who ran `sudo dpkg -i` (SUDO_USER).
 # Extracting here avoids a multi-minute first launch while the shell waits for :3400.
-ZIP_PATH=""
-for candidate in \
-  /usr/lib/DevHub/standalone.zip \
-  /usr/lib/DevHub/resources/standalone.zip \
-  /usr/local/lib/DevHub/standalone.zip \
-  /usr/local/lib/DevHub/resources/standalone.zip
-do
-  if [ -f "$candidate" ]; then
-    ZIP_PATH="$candidate"
-    break
-  fi
-done
+ZIP_PATH="/usr/lib/DevHub/resources/standalone.zip"
 
-if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ] && [ -n "$ZIP_PATH" ]; then
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ] && [ -f "$ZIP_PATH" ]; then
   user_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
   if [ -n "$user_home" ]; then
     sudo -u "$SUDO_USER" sh -s "$ZIP_PATH" "$user_home" <<'EOF'

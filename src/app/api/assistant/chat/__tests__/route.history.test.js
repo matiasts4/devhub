@@ -39,7 +39,7 @@ function restoreCwd() {
 describe('POST /api/assistant/chat — history (T-033)', () => {
   beforeAll(() => {
     stubPrompt();
-    process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
+    process.env.MINIMAX_API_KEY = 'test-key';
     delete process.env.ANTHROPIC_API_KEY;
     POST = require('../route').POST;
   });

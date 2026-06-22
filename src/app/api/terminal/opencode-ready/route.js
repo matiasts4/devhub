@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { writeAgentReadyMarker } from '@/lib/terminal/opencodeReadyMarker.node';
+import { writeOpencodeReadyMarker } from '@/lib/terminal/opencodeReadyMarker.node';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,13 +10,12 @@ export async function POST(request) {
     const sessionId = String(body?.sessionId || '').trim();
     const opencodeSessionId = String(body?.opencodeSessionId || '').trim();
     const reason = String(body?.reason || '').trim() || 'client-detected';
-    const program = String(body?.program || 'opencode').trim();
 
     if (!tmuxSession) {
       return NextResponse.json({ ok: false, error: 'tmuxSession required' }, { status: 400 });
     }
 
-    const markerPath = writeAgentReadyMarker(tmuxSession, program, {
+    const markerPath = writeOpencodeReadyMarker(tmuxSession, {
       sessionId: sessionId || null,
       opencodeSessionId: opencodeSessionId || null,
       reason,
@@ -26,7 +25,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, error: 'invalid tmuxSession' }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, markerPath, tmuxSession, program });
+    return NextResponse.json({ ok: true, markerPath, tmuxSession });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error?.message || 'opencode-ready failed' },

@@ -54,18 +54,6 @@ export const TERMINAL_WHEEL_PAGE_LEAK_RE = /\x1b\[[56]~/g;
 /** Click/drag only (buttons 0–3) — wheel buttons 64/65 must reach TUIs (OpenCode/grok). */
 export const TERMINAL_MOUSE_CLICK_LEAK_RE = /\x1b\[<(0|[1-3]);[\d;]*[mM]/g;
 
-/** Partial DECSET/SGR mouse leaks when ESC bytes were eaten — shell echo garbage. */
-export const TERMINAL_MOUSE_DECSET_LEAK_RE = /\?(?:1000|1002|1003|1006|1007|1015)[hl]/g;
-
-export const TERMINAL_MOUSE_SGR_FRAGMENT_LEAK_RE = /(?:<|^)(?:0|[1-3]|64|65);\d+;\d+[mM]/g;
-
-export function stripTerminalMouseDecsetLeak(chunk) {
-  if (typeof chunk !== 'string' || !chunk) return chunk;
-  return chunk
-    .replace(TERMINAL_MOUSE_DECSET_LEAK_RE, '')
-    .replace(TERMINAL_MOUSE_SGR_FRAGMENT_LEAK_RE, '');
-}
-
 export function stripTerminalFocusReporting(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   return chunk.replace(TERMINAL_FOCUS_REPORTING_RE, '');
@@ -93,9 +81,7 @@ export function stripShellTerminalResponseNoise(chunk) {
     .replace(TERMINAL_WINDOW_REPORT_RE, '')
     .replace(TERMINAL_MOUSE_REPORT_RE, '')
     .replace(TERMINAL_WHEEL_PAGE_LEAK_RE, '')
-    .replace(SHELL_TERMINAL_RESPONSE_RE, '')
-    .replace(TERMINAL_MOUSE_DECSET_LEAK_RE, '')
-    .replace(TERMINAL_MOUSE_SGR_FRAGMENT_LEAK_RE, '');
+    .replace(SHELL_TERMINAL_RESPONSE_RE, '');
 }
 
 /**
@@ -118,7 +104,7 @@ export function stripTerminalInputNoise(chunk, ctx) {
   if (tuiLive) {
     return motionStripped;
   }
-  return stripTerminalMouseDecsetLeak(stripTerminalMouseReporting(motionStripped));
+  return stripTerminalMouseReporting(motionStripped);
 }
 
 /** Input noise check — treats any SGR mouse report as noise; tui-ready strip path still preserves it. */

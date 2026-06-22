@@ -444,8 +444,8 @@ export default function PizarraToolPalette({
                   e,
                   isViewLocked ? 'Liberar vista' : 'Fijar vista',
                   isViewLocked
-                    ? 'Bloquea auto-ajuste; Espacio + arrastrar (o botón central) mueve la vista sobre las tarjetas'
-                    : 'Permite que la pizarra auto-ajuste tarjetas al cambiar de ventana o agregar elementos'
+                    ? 'Permite que la pizarra auto-ajuste tarjetas al cambiar de ventana o agregar elementos'
+                    : 'Bloquea el layout actual: no se auto-ajustan las tarjetas; tú las ordenas'
                 )
               }
               onMouseLeave={() => setTooltip(null)}

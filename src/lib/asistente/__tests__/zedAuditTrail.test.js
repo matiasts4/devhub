@@ -6,7 +6,6 @@ import {
   readZedAuditTrail,
   appendZedAuditEntry,
   recordZedInteraction,
-  exportZedAuditTrail,
   ZED_AUDIT_STORAGE_KEY,
 } from '../zedAuditTrail';
 
@@ -62,12 +61,5 @@ describe('zedAuditTrail', () => {
   it('survives corrupt sessionStorage', () => {
     window.sessionStorage.setItem(ZED_AUDIT_STORAGE_KEY, 'not json');
     expect(readZedAuditTrail()).toEqual([]);
-  });
-
-  it('exports audit trail as JSON', () => {
-    appendZedAuditEntry({ userMessage: 'export me' });
-    const exported = exportZedAuditTrail();
-    expect(exported.count).toBe(1);
-    expect(exported.json).toContain('export me');
   });
 });
