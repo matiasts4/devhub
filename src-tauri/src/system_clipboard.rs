@@ -2,8 +2,6 @@
 pub fn read_system_clipboard_text() -> Result<Option<String>, String> {
     #[cfg(target_os = "linux")]
     {
-        use gtk::prelude::*;
-
         if !gtk::is_initialized() {
             gtk::init().map_err(|err| format!("gtk init failed: {err}"))?;
         }

@@ -600,7 +600,10 @@ fn schedule_agent_exit_check(
             panel.agent_end_notified = true;
             let payload = build_agent_session_exit_payload(
                 panel_id_owned.as_str(),
-                registry.session_ids.get(&panel_id_owned).map(String::as_str),
+                registry
+                    .session_ids
+                    .get(&panel_id_owned)
+                    .and_then(|session_id| session_id.as_deref()),
                 panel.initial_command.as_deref(),
                 cause,
             );
