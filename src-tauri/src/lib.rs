@@ -171,6 +171,87 @@ fn nextjs_route_is_ready(port: u16) -> bool {
     is_http_route_ready(port, "/")
 }
 
+/// DevHub-reserved listener ports in packaged builds. next-server often shows
+/// a truncated cmdline (`next-server (v16.x)`) so we cannot rely on argv alone.
+fn is_devhub_reserved_port(port: u16) -> bool {
+    if cfg!(debug_assertions) {
+        port == sidecar_port()
+    } else {
+        port == nextjs_port() || port == sidecar_port()
+    }
+}
+
+/// Kill listeners on `port`. Reserved DevHub ports kill any occupant; others
+/// require a DevHub-identified cmdline so we never hit foreign dev servers.
+fn kill_listeners_on_port(port: u16) {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let output = std::process::Command::new("ss")
+        .args(["-tlnp", &format!("sport = :{}", port)])
+        .output();
+
+    let Ok(out) = output else {
+        return;
+    };
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if stdout.is_empty() {
+        return;
+    }
+
+    let reserved = is_devhub_reserved_port(port);
+
+    for pid_str in stdout.split("pid=") {
+        let Some(pid_part) = pid_str.split(',').next() else {
+            continue;
+        };
+        let Ok(pid) = pid_part.parse::<u32>() else {
+            continue;
+        };
+        if pid == 0 {
+            continue;
+        }
+
+        if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
+            let name = process.name().to_string_lossy().to_lowercase();
+            let cmdline: String = process
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().to_lowercase())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let should_kill =
+                reserved || is_devhub_runtime_process(&name, &cmdline);
+
+            if should_kill {
+                log::info!(
+                    "[DevHub] Matando listener PID {} en puerto {} ({}, reserved={}).",
+                    pid,
+                    port,
+                    name,
+                    reserved
+                );
+                process.kill();
+            }
+        }
+    }
+}
+
+/// If TCP connects but HTTP never answers, the port is held by a hung zombie.
+fn reclaim_hung_nextjs_listener() {
+    let port = nextjs_port();
+    if is_port_ready(port) && !nextjs_route_is_ready(port) {
+        log::warn!(
+            "[DevHub] next-server en :{} acepta TCP pero no responde HTTP — liberando puerto.",
+            port
+        );
+        kill_listeners_on_port(port);
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
 /// Decide whether a process is safe to kill as a DevHub runtime zombie.
 /// We require both a runtime executable (node/next-server/devhub-server) AND
 /// a command line that clearly belongs to this app, so we never kill generic
@@ -266,54 +347,10 @@ fn cleanup_zombie_ports() {
         zombie_ports.push(nextjs_port());
     }
 
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
     for port in zombie_ports {
-        // Buscar procesos que escuchen en este puerto
-        let output = std::process::Command::new("ss")
-            .args(["-tlnp", &format!("sport = :{}", port)])
-            .output();
-
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if stdout.is_empty() {
-                continue; // Puerto libre
-            }
-
-            // Extraer PIDs del output de ss (formato: "pid=12345")
-            for pid_str in stdout.split("pid=") {
-                if let Some(pid_part) = pid_str.split(',').next() {
-                    if let Ok(pid) = pid_part.parse::<u32>() {
-                        if pid == 0 {
-                            continue;
-                        }
-                        // Verificar si es un proceso de DevHub (node con devhub o next)
-                        if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
-                            let name = process.name().to_string_lossy().to_lowercase();
-                            let cmdline: String = process
-                                .cmd()
-                                .iter()
-                                .map(|s| s.to_string_lossy().to_lowercase())
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            if is_devhub_runtime_process(&name, &cmdline) {
-                                log::info!(
-                                    "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
-                                    pid,
-                                    port,
-                                    name
-                                );
-                                process.kill();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        kill_listeners_on_port(port);
     }
 
-    // Breve pausa para que el SO libere los puertos
     thread::sleep(Duration::from_millis(300));
 }
 
@@ -351,9 +388,7 @@ fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            let is_devhub_process = is_devhub_runtime_process(&name, &cmdline);
-
-            if is_devhub_process {
+            if is_devhub_reserved_port(port) || is_devhub_runtime_process(&name, &cmdline) {
                 return Some(pid);
             }
         }
@@ -625,6 +660,8 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
 }
 
 fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<bool> {
+    reclaim_hung_nextjs_listener();
+
     let has_valid_sidecar = check_existing_sidecar().is_some();
     let next_ready = nextjs_route_is_ready(nextjs_port());
     let sidecar_ready = is_port_ready(sidecar_port());
@@ -662,8 +699,8 @@ fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_devhub_runtime_process, is_ready_http_status, nextjs_route_is_ready,
-        parse_http_status_code,
+        is_devhub_reserved_port, is_devhub_runtime_process, is_ready_http_status,
+        nextjs_route_is_ready, parse_http_status_code, sidecar_port,
     };
 
     #[test]
@@ -702,6 +739,25 @@ mod tests {
             "MainThread",
             "/usr/bin/python /tmp/other-app.py"
         ));
+    }
+
+    #[test]
+    fn devhub_runtime_process_rejects_bare_next_server_without_devhub_cmdline() {
+        assert!(!is_devhub_runtime_process(
+            "next-server (v16.2.6)",
+            "next-server (v16.2.6)"
+        ));
+    }
+
+    #[test]
+    fn devhub_reserved_port_covers_packaged_next_and_sidecar() {
+        // ponytail: test assumes release cfg; in debug only sidecar port is reserved.
+        if cfg!(debug_assertions) {
+            assert!(is_devhub_reserved_port(sidecar_port()));
+        } else {
+            assert!(is_devhub_reserved_port(3400));
+            assert!(is_devhub_reserved_port(4000));
+        }
     }
 }
 

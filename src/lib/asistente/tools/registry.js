@@ -1,3 +1,5 @@
+import { SkillRegistry } from '../skillRegistry';
+
 export class ToolRegistry {
   constructor() {
     this.tools = new Map();
@@ -31,6 +33,31 @@ export class ToolRegistry {
       );
     }
     return tool.execute(input, context);
+  }
+
+  /**
+   * Register all enabled tools exposed by a SkillRegistry instance.
+   * @param {import('../skillRegistry').SkillRegistry} skillRegistry
+   */
+  registerFromSkillRegistry(skillRegistry) {
+    if (!skillRegistry || typeof skillRegistry.registerTools !== 'function') {
+      throw new Error('Expected a SkillRegistry instance');
+    }
+    skillRegistry.registerTools(this);
+  }
+
+  /**
+   * Convenience one-off registration of a skill manifest + handlers.
+   * @param {object} manifest
+   * @param {Record<string, Function>} handlers
+   */
+  registerSkillManifest(manifest, handlers) {
+    const skillRegistry = new SkillRegistry();
+    const result = skillRegistry.registerSkill(manifest, handlers);
+    if (!result.success) {
+      throw new Error(`Skill registration failed: ${result.error}`);
+    }
+    this.registerFromSkillRegistry(skillRegistry);
   }
 
   // Convert registered tools to Anthropic/MiniMax compatible tool definitions

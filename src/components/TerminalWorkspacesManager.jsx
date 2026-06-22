@@ -1401,6 +1401,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? `devhub_restore_manifest:${projectId}`
     : 'devhub_restore_manifest';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
+  const [heavySurfacesReady, setHeavySurfacesReady] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
   const [workspaces, setWorkspaces] = useState(() => createDefaultWorkspaceState().workspaces);
   const pendingReopenPanelsRef = useRef(new Map());
@@ -1682,6 +1683,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     return () => {
       document.getElementById(NEXT_DEV_OVERLAY_HIDE_STYLE_ID)?.remove();
+    };
+  }, [isVisible]);
+
+  // ponytail: defer xterm/native mount one frame so WebKitGTK finishes route paint first.
+  useEffect(() => {
+    if (!isVisible) {
+      setHeavySurfacesReady(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    let frame2 = 0;
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        if (!cancelled) setHeavySurfacesReady(true);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
     };
   }, [isVisible]);
 
@@ -1998,7 +2021,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   // --- Startup restore: global prefs + queued OpenCode resume (reboot-safe via --session) ---
   useEffect(() => {
-    if (!isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
+    if (!isClientLoaded || !storage || !isVisible || hasRunStartupRestoreRef.current) return;
 
     const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
 
@@ -2264,6 +2287,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     activeWsId,
     applyPanelRelaunchCommand,
     isClientLoaded,
+    isVisible,
     projectId,
     storage,
     terminalStateStorageKey,
@@ -2690,7 +2714,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
     const measure = () => {
       // inner content card of the wizard
-      const el = document.querySelector('.max-w-6xl.flex-col.overflow-hidden.rounded-none.border');
+      const el = document.querySelector('[data-testid="swarm-launch-wizard-modal-panel"]');
       if (el) {
         const r = el.getBoundingClientRect();
         setOverlayAvoidRects((prev) => {
@@ -3441,7 +3465,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   );
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !isClientLoaded) return undefined;
+    if (typeof window === 'undefined' || !isClientLoaded || !isVisible) return undefined;
     if (pizarraOwnsLiveSurfaces) {
       const timer = setTimeout(() => {
         notifyNativeLayoutSettled('workspace-switch');
@@ -3450,18 +3474,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
     notifyNativeLayoutSettled('workspace-switch');
     return undefined;
-  }, [activeWsId, isClientLoaded, notifyNativeLayoutSettled, pizarraOwnsLiveSurfaces]);
+  }, [activeWsId, isClientLoaded, isVisible, notifyNativeLayoutSettled, pizarraOwnsLiveSurfaces]);
 
   const prevActiveWindowIdsJsonRef = useRef('');
   useEffect(() => {
-    if (!isClientLoaded) return undefined;
+    if (!isClientLoaded || !isVisible) return undefined;
     const json = JSON.stringify(activeWindowIds);
     if (prevActiveWindowIdsJsonRef.current === json) return undefined;
     prevActiveWindowIdsJsonRef.current = json;
     // Post-commit sync: newly mounted panels missed the in-handler event from switchWindowInWorkspace.
     notifyNativeLayoutSettled('workspace-window-settled');
     return undefined;
-  }, [activeWindowIds, isClientLoaded, notifyNativeLayoutSettled]);
+  }, [activeWindowIds, isClientLoaded, isVisible, notifyNativeLayoutSettled]);
 
   const prevPizarraOwnsLiveSurfacesRef = useRef(pizarraOwnsLiveSurfaces);
   useEffect(() => {
@@ -6431,6 +6455,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const activeWorkspacePanelCount = activeWorkspace
     ? getAllPanelIds(activeWorkspace.columns).length
     : 0;
+
+  // ponytail: keep hydration/restore state alive but avoid mounting xterm/native-VTE
+  // while the user is on dashboard/tareas/etc. WebKitGTK crashes if we spin up the
+  // full terminal grid off-screen during project entry.
+  if (!isVisible) {
+    return (
+      <div ref={managerRootRef} data-terminal-manager-dormant hidden aria-hidden="true" />
+    );
+  }
+
+  if (!heavySurfacesReady) {
+    return (
+      <div
+        ref={managerRootRef}
+        data-terminal-manager-booting
+        className="flex h-full w-full items-center justify-center bg-[var(--surface-app)]"
+        aria-busy="true"
+        aria-label="Cargando terminales"
+      />
+    );
+  }
+
   return (
     <WorkspaceSurfaceRegistryProvider
       projectId={projectId}

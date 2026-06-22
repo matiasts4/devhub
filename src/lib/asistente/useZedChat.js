@@ -13,6 +13,8 @@ import { labelForZedToolStart } from './zedToolLabels';
 import { recordZedInteraction, readZedAuditTrail } from './zedAuditTrail';
 import { readVoiceSettings } from '@/lib/voice/voiceFeatureFlag';
 import { recordChatRoundTrip, getMetricsSummary } from './zedMetrics';
+import { useZedPlanRunner, PLAN_STATES as PLAN_EXECUTOR_STATES } from './useZedPlanRunner';
+import { detectMaliciousPrompt } from './zedSecurityPolicy';
 import {
   getZedMemory,
   setZedPreference,
@@ -20,6 +22,8 @@ import {
   recordZedMemoryAction,
   setZedAgentStatus,
   getZedAgentStatus,
+  addZedPendingPlan,
+  removeZedPendingPlan,
 } from './zedMemory';
 
 export const DEFAULT_ZED_GREETING = {
@@ -79,10 +83,18 @@ export function useZedChat({
   const [auditTrail, setAuditTrail] = useState(() => readZedAuditTrail());
   const [metrics, setMetrics] = useState(() => getMetricsSummary());
   const [agentStatus, setAgentStatusState] = useState(() => getZedAgentStatus());
+  const [requestContext, setRequestContext] = useState({
+    terminal_panel_count: 0,
+    max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
+    workspace_terminals: [],
+  });
   const textareaRef = useRef(null);
   const dispatchedSessionIdsRef = useRef(new Set());
   const lastDispatchedTypeRef = useRef(null);
   const hydratedOpenTerminalRef = useRef(null);
+  const pendingPlanIdRef = useRef(null);
+
+  const planRunner = useZedPlanRunner({ context: requestContext });
 
   const lastAssistantMessage = [...messages]
     .reverse()
@@ -151,6 +163,8 @@ export function useZedChat({
       if (confirmPayload) {
         body.confirm_tool = confirmPayload;
       }
+
+      setRequestContext(body.context);
 
       const ctrl = new AbortController();
       setAbortController(ctrl);
@@ -279,6 +293,22 @@ export function useZedChat({
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
+    const securityCheck = detectMaliciousPrompt(userMessage);
+    if (securityCheck.blocked) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
+        {
+          role: 'assistant',
+          content: `No puedo procesar ese mensaje: ${securityCheck.reason}`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      setInput('');
+      dispatchZedAuraOutcome('error');
+      return;
+    }
+
     setInput('');
     setIsLoading(true);
     setPendingApproval(null);
@@ -306,6 +336,22 @@ export function useZedChat({
       roundTripRecorded = true;
 
       if (data.meta?.needs_confirmation) {
+        const pendingSteps = data.meta?.pending_steps;
+        if (Array.isArray(pendingSteps) && pendingSteps.length > 0) {
+          pendingPlanIdRef.current = addZedPendingPlan({
+            message: userMessage,
+            steps: pendingSteps,
+            meta: data.meta,
+          });
+          setPendingApproval({
+            kind: 'plan',
+            message: userMessage,
+            preview: data.text || '¿Confirmás este plan de acciones?',
+            steps: pendingSteps,
+            meta: data.meta,
+          });
+          setActivityExpanded(true);
+        }
         setMessages((prev) => [
           ...prev,
           {
@@ -378,11 +424,132 @@ export function useZedChat({
       setCurrentStep(null);
       setAgentStatus('idle');
     }
-  }, [input, isLoading, sendToApi, setAgentStatus]);
+  }, [input, isLoading, sendToApi, setAgentStatus, dispatchZedAuraOutcome]);
 
   const handleApproveCommand = useCallback(async () => {
     if (!pendingApproval || isLoading) return;
     const { tool, input: toolInput, kind = 'command' } = pendingApproval;
+
+    if (kind === 'plan' && Array.isArray(pendingApproval.steps)) {
+      setPendingApproval(null);
+      if (pendingPlanIdRef.current) {
+        removeZedPendingPlan(pendingPlanIdRef.current);
+        pendingPlanIdRef.current = null;
+      }
+      setIsLoading(true);
+      try {
+        const result = await planRunner.runPlan(pendingApproval.steps, {
+          onComplete: (plan) => {
+            const toolResults = plan.map((s) => ({
+              tool: s.tool,
+              input: s.input,
+              result: s.result,
+            }));
+            recordZedInteraction(pendingApproval.message, toolResults, 'Plan completado.');
+            setAuditTrail(readZedAuditTrail());
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                content: 'Plan completado.',
+                timestamp: new Date().toISOString(),
+                tool_results: toolResults,
+              },
+            ]);
+            dispatchZedAuraOutcome('success');
+          },
+        });
+        if (result.state === PLAN_EXECUTOR_STATES.AWAITING_HUMAN && result.step) {
+          setPendingApproval({
+            kind: 'plan_step',
+            step: result.step,
+            message: pendingApproval.message,
+          });
+          setActivityExpanded(true);
+        } else if (result.state !== PLAN_EXECUTOR_STATES.COMPLETED) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `El plan se detuvo: ${result.state}.`,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          dispatchZedAuraOutcome('error');
+        }
+      } catch (error) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: formatToolErrorForUser('plan', error).message,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        dispatchZedAuraOutcome('error');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (kind === 'plan_step') {
+      setIsLoading(true);
+      try {
+        const result = await planRunner.approveStep();
+        if (result.state === PLAN_EXECUTOR_STATES.AWAITING_HUMAN && result.step) {
+          setPendingApproval({
+            kind: 'plan_step',
+            step: result.step,
+            message: pendingApproval.message,
+          });
+        } else if (result.state === PLAN_EXECUTOR_STATES.COMPLETED) {
+          setPendingApproval(null);
+          const plan = planRunner.planResults || [];
+          const toolResults = plan.map((s) => ({
+            tool: s.tool,
+            input: s.input,
+            result: s.result,
+          }));
+          recordZedInteraction(pendingApproval.message, toolResults, 'Plan completado.');
+          setAuditTrail(readZedAuditTrail());
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: 'Plan completado.',
+              timestamp: new Date().toISOString(),
+              tool_results: toolResults,
+            },
+          ]);
+          dispatchZedAuraOutcome('success');
+        } else if (result.state !== PLAN_EXECUTOR_STATES.COMPLETED) {
+          setPendingApproval(null);
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `El plan se detuvo: ${result.state}.`,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          dispatchZedAuraOutcome('error');
+        }
+      } catch (error) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: formatToolErrorForUser('plan', error).message,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        dispatchZedAuraOutcome('error');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     if (kind === 'local_intent') {
       setIsLoading(true);
@@ -494,6 +661,8 @@ export function useZedChat({
     isLoading,
     messages,
     pendingApproval,
+    planRunner,
+    PLAN_EXECUTOR_STATES,
     processToolResults,
     sendToApi,
   ]);
@@ -574,6 +743,10 @@ export function useZedChat({
 
   const handleRejectApproval = useCallback(() => {
     setPendingApproval(null);
+    if (pendingPlanIdRef.current) {
+      removeZedPendingPlan(pendingPlanIdRef.current);
+      pendingPlanIdRef.current = null;
+    }
   }, []);
 
   const handleStop = useCallback(() => {
@@ -688,5 +861,13 @@ export function useZedChat({
     voiceSettings,
     metrics,
     agentStatus,
+    planState: planRunner.planState,
+    planControls: {
+      pause: planRunner.pause,
+      resume: planRunner.resume,
+      abort: planRunner.abort,
+    },
+    planResults: planRunner.planResults,
+    pendingStepApproval: planRunner.pendingStepApproval,
   };
 }

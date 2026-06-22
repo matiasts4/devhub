@@ -92,3 +92,24 @@ test('makeTableOps returns an object with select and insert', () => {
   assert.equal(typeof ops.select, 'function', 'ops.select must be a function');
   db.close();
 });
+
+test('ensureAllSchema upgrades legacy project_members invite columns', () => {
+  const { ensureAllSchema } = require('./schema');
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE project_members (
+      project_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (project_id, user_id)
+    );
+  `);
+  assert.doesNotThrow(() => ensureAllSchema(db));
+  const cols = db
+    .prepare('PRAGMA table_info(project_members)')
+    .all()
+    .map((row) => row.name);
+  assert.ok(cols.includes('invited_email'), 'legacy DB must gain invited_email');
+  db.close();
+});

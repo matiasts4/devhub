@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Bot } from 'lucide-react';
+import { Bot, Loader2 } from 'lucide-react';
 import {
   composeControlRoomSnapshot,
   createSwarmLaunchDraft,
@@ -170,6 +170,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const [activateZedState, setActivateZedState] = useState({ submitting: false, error: null });
   const [pruneState, setPruneState] = useState({ submitting: false, error: null, result: null });
   const eventSourceRef = useRef(null);
+  const [surfaceReady, setSurfaceReady] = useState(false);
 
   // DG bridge state — reads projectId from context
   const dg = useDirectorGeneralBridge({ projectId: project?.id });
@@ -182,6 +183,21 @@ export default function SwarmControl({ snapshotInput = null }) {
     },
     []
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    let frame2 = 0;
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        if (!cancelled) setSurfaceReady(true);
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+    };
+  }, []);
 
   const loadSnapshot = useCallback(async () => {
     if (snapshotInput) return;
@@ -232,14 +248,19 @@ export default function SwarmControl({ snapshotInput = null }) {
   );
 
   useEffect(() => {
-    if (snapshotInput) return undefined;
+    if (!surfaceReady || snapshotInput) return undefined;
 
     loadSnapshot();
     return undefined;
-  }, [loadSnapshot, snapshotInput]);
+  }, [loadSnapshot, snapshotInput, surfaceReady]);
 
   useEffect(() => {
-    if (snapshotInput || typeof window === 'undefined' || typeof EventSource === 'undefined') {
+    if (
+      !surfaceReady ||
+      snapshotInput ||
+      typeof window === 'undefined' ||
+      typeof EventSource === 'undefined'
+    ) {
       return undefined;
     }
 
@@ -291,6 +312,7 @@ export default function SwarmControl({ snapshotInput = null }) {
     loadSnapshot,
     project?.id,
     snapshotInput,
+    surfaceReady,
   ]);
 
   const snapshot = useMemo(
@@ -709,6 +731,19 @@ export default function SwarmControl({ snapshotInput = null }) {
     [approvals, matchesFilter]
   );
   const filteredErrors = useMemo(() => errors.filter(matchesFilter), [errors, matchesFilter]);
+
+  if (!surfaceReady) {
+    return (
+      <div
+        className="flex h-full items-center justify-center core-page-shell"
+        style={getWorkspacePageShellStyle()}
+        aria-busy="true"
+        aria-label="Cargando Swarm Control"
+      >
+        <Loader2 className="h-6 w-6 animate-spin text-accent-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col core-page-shell" style={getWorkspacePageShellStyle()}>

@@ -65,3 +65,9 @@ El instalador DEB de DevHub para Linux presentaba **5 fallos encadenados** que i
 - [Causa 5 — Schema de Tauri inválido](./05-tauri-conf-schema.md)
 - [Comandos usados durante debugging](./commands-used.md)
 - [Lista completa de archivos](./files-changed.md)
+
+---
+
+## Incidentes relacionados (post-instalador)
+
+- [05 — `.deb`: "This page couldn't load" (puerto 3400 zombie, SQLite invites, WebKit terminales/swarm)](../05-deb-webkit-page-couldnt-load/README.md) — Jun 2026

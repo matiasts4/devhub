@@ -9,36 +9,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
-import { ToolRegistry } from '@/lib/asistente/tools/registry';
-import {
-  terminalTool,
-  listTerminalsTool,
-  reviewTerminalTool,
-  executeInTerminalTool,
-  closeTerminalTool,
-  closeAllTerminalsTool,
-} from '@/lib/asistente/tools/terminal';
-import { summarizeTerminalTool } from '@/lib/asistente/tools/summarizeTerminal';
-import { browserTool, closeUrlTool } from '@/lib/asistente/tools/browser';
-import { fileTool, reviewLogFileTool } from '@/lib/asistente/tools/files';
-import { swarmTool } from '@/lib/asistente/tools/swarm';
-import { workspaceActionTool } from '@/lib/asistente/tools/workspace';
-import {
-  listProjectsTool,
-  getProjectTool,
-  getProjectContextTool,
-  listTasksTool,
-  getExecutionQueueTool,
-  createTaskTool,
-  bulkCreateTasksTool,
-  createMilestoneTool,
-  bulkCreateMilestonesTool,
-} from '@/lib/asistente/tools/devhubMcp';
-import { registerZedAgentTool, heartbeatZedAgentTool } from '@/lib/asistente/tools/zedAgent';
-import { launchAgentSessionTool, launchSwarmTool } from '@/lib/asistente/tools/agentLauncher';
-import { listAgentRunsTool, getAgentRunTool } from '@/lib/asistente/tools/agentRuns';
-import { createPlanTool, executePlanTool } from '@/lib/asistente/tools/planner';
+import { buildZedRegistry } from '@/lib/asistente/buildZedRegistry';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
+import {
+  searchZedMemoriesServer,
+  saveZedMemoryServer,
+} from '@/lib/asistente/zedEngramServer';
+import {
+  detectMaliciousPrompt,
+  createRateLimiter,
+} from '@/lib/asistente/zedSecurityPolicy';
 import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
 import { runZedChatLoop, createZedSseStream } from '@/lib/asistente/runZedChatLoop';
@@ -46,6 +26,8 @@ import { tryZedFastPath, createZedFastPathSseStream } from '@/lib/asistente/runZ
 
 export const MODEL = 'minimax-coding-plan/MiniMax-M3';
 export const BASE_URL = 'https://api.minimax.io/anthropic/v1/messages';
+
+const chatRateLimiter = createRateLimiter({ maxCalls: 120, windowMs: 60000 });
 
 const PROMPT_PATH = path.join(
   process.cwd(),
@@ -127,46 +109,12 @@ async function callMinimax({ model, maxTokens, system, messages, apiKey, tools }
   return data;
 }
 
-function buildRegistry() {
-  const registry = new ToolRegistry();
-  registry.register(terminalTool);
-  registry.register(listTerminalsTool);
-  registry.register(reviewTerminalTool);
-  registry.register(executeInTerminalTool);
-  registry.register(closeTerminalTool);
-  registry.register(closeAllTerminalsTool);
-  registry.register(summarizeTerminalTool);
-  registry.register(browserTool);
-  registry.register(closeUrlTool);
-  registry.register(fileTool);
-  registry.register(reviewLogFileTool);
-  registry.register(swarmTool);
-  registry.register(workspaceActionTool);
-  registry.register(listProjectsTool);
-  registry.register(getProjectTool);
-  registry.register(getProjectContextTool);
-  registry.register(listTasksTool);
-  registry.register(getExecutionQueueTool);
-  registry.register(createTaskTool);
-  registry.register(bulkCreateTasksTool);
-  registry.register(createMilestoneTool);
-  registry.register(bulkCreateMilestonesTool);
-  registry.register(registerZedAgentTool);
-  registry.register(heartbeatZedAgentTool);
-  registry.register(launchAgentSessionTool);
-  registry.register(launchSwarmTool);
-  registry.register(listAgentRunsTool);
-  registry.register(getAgentRunTool);
-  registry.register(createPlanTool);
-  registry.register(executePlanTool);
-  return registry;
-}
-
 // T-015: a tool's `parameters` schema may have zero required keys — see toolHasRequiredSchema in runZedChatLoop.
 
 function wantsZedStream(request, body) {
   if (body?.stream === true) return true;
-  const accept = request.headers.get('accept') || '';
+  const accept =
+    typeof request?.headers?.get === 'function' ? request.headers.get('accept') || '' : '';
   return accept.includes('text/event-stream');
 }
 
@@ -191,10 +139,27 @@ function appendExecutionIntentHint(systemPrompt, message) {
   return hint ? `${systemPrompt}${hint}` : systemPrompt;
 }
 
+function appendMemoriesHint(systemPrompt, memories) {
+  if (!Array.isArray(memories) || memories.length === 0) return systemPrompt;
+  const lines = memories
+    .map((m, i) => {
+      if (typeof m === 'string') return `${i + 1}. ${m}`;
+      const text = m.content || m.title || m.text || JSON.stringify(m);
+      return `${i + 1}. ${text}`;
+    })
+    .join('\n');
+  return `${systemPrompt}\n\n### Relevant memories\n${lines}\nUse these memories to personalize the response when relevant.`;
+}
+
 export async function POST(request) {
   const msgId = Date.now().toString(36);
 
   try {
+    if (!chatRateLimiter.canProceed()) {
+      return NextResponse.json({ error: 'rate limit exceeded' }, { status: 429 });
+    }
+    chatRateLimiter.record();
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'malformed body' }, { status: 400 });
@@ -232,7 +197,30 @@ export async function POST(request) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
 
-    const registry = buildRegistry();
+    const securityCheck = detectMaliciousPrompt(message);
+    if (securityCheck.blocked) {
+      zedLog.security?.('blocked_prompt', { message, reason: securityCheck.reason });
+      return NextResponse.json(
+        { error: 'Prompt rejected for security reasons', reason: securityCheck.reason },
+        { status: 400 }
+      );
+    }
+
+    const registry = buildZedRegistry();
+
+    const memorySearch = await searchZedMemoriesServer({ query: message });
+    requestContext.memories = memorySearch.memories || [];
+
+    const persistInteraction = (finalText, turnToolResults = []) => {
+      const hasValue =
+        turnToolResults.length > 0 || finalText?.length > 20;
+      if (!hasValue) return;
+      saveZedMemoryServer({
+        title: `Interacción Zed: ${message.slice(0, 60)}`,
+        type: 'interaction',
+        content: `Usuario: ${message}\nRespuesta: ${finalText || ''}\nHerramientas: ${JSON.stringify(turnToolResults)}`,
+      }).catch(() => {});
+    };
 
     if (body.confirm_tool && typeof body.confirm_tool === 'object') {
       const { tool, input: toolInput } = body.confirm_tool;
@@ -256,6 +244,7 @@ export async function POST(request) {
         } else {
           text = 'No pude completar la acción.';
         }
+        persistInteraction(text, [{ tool, input: toolInput, result }]);
         return NextResponse.json({
           text,
           tool_results: [{ tool, input: toolInput, result }],
@@ -293,6 +282,7 @@ export async function POST(request) {
           },
         });
       }
+      persistInteraction(fastPath.body?.text, fastPath.toolResults);
       return NextResponse.json(fastPath.body);
     }
 
@@ -314,6 +304,7 @@ export async function POST(request) {
     let systemPrompt;
     try {
       systemPrompt = appendExecutionIntentHint(loadSystemPrompt(), message);
+      systemPrompt = appendMemoriesHint(systemPrompt, requestContext.memories);
     } catch (err) {
       zedLog.error('CONFIG', 'Failed to load system prompt', { error: err.message });
       return NextResponse.json({ error: err.message }, { status: 500 });
@@ -360,6 +351,7 @@ export async function POST(request) {
       zedLog.error('API', 'MiniMax call failed', {
         error: err.message,
         upstream_status: upstreamStatus,
+        stack: err.stack,
       });
       return NextResponse.json(
         {
@@ -372,6 +364,7 @@ export async function POST(request) {
 
     zedLog.sessionEnd(msgId, finalText, allToolResults.length);
 
+    persistInteraction(finalText, allToolResults);
     return NextResponse.json({
       text: finalText,
       tool_results: allToolResults,
