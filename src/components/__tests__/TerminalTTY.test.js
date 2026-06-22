@@ -909,29 +909,32 @@ describe('hidden terminal output buffer helpers', () => {
 });
 
 describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
-  test('drops output for hidden canvas/webgl panels after renderer release', () => {
+  test('buffers output for hidden GPU panels even when addon is still attached', () => {
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: false,
-        canvasAttached: false,
         operationalRendererMode: 'xterm-canvas',
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: false,
+        operationalRendererMode: 'xterm-webgl',
       })
     ).toBe(true);
   });
 
-  test('keeps output while visible or renderer is still attached', () => {
+  test('keeps output while visible or on plain DOM renderer', () => {
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: true,
-        canvasAttached: false,
         operationalRendererMode: 'xterm-canvas',
       })
     ).toBe(false);
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: false,
-        canvasAttached: true,
-        operationalRendererMode: 'xterm-canvas',
+        operationalRendererMode: 'xterm',
       })
     ).toBe(false);
   });
@@ -988,7 +991,20 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
     expect(
       shouldClearGpuAtlasOnWorkspaceShow({
         operationalRendererMode: 'xterm-canvas',
+        reason: 'workspace-show-settled',
+        canvasReleasedOnLayoutHide: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
         reason: 'workspace-show-pending',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'layout-recover-immediate',
       })
     ).toBe(true);
     expect(

@@ -5,7 +5,7 @@
 // Note: the legacy 'vte-experimental' entry was removed from the active list
 // to enforce xterm-webgl as the sole renderer. Supporting code for VTE
 // (nativeVteBridge, resolveNativeVteCapability, etc.) is untouched.
-import { LEGACY_VTE_ENABLED } from './terminalRendererPreferences';
+import { LEGACY_VTE_ENABLED, shouldAvoidWebglOnThisRuntime } from './terminalRendererPreferences';
 
 export const TERMINAL_RENDERER_MODES = LEGACY_VTE_ENABLED
   ? ['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']
@@ -353,6 +353,17 @@ export function resolveOperationalRendererMode({
   const requested = normalizeRendererMode(requestedMode || 'xterm');
   const effective = normalizeRendererMode(effectiveMode || requested);
   const panelCount = Math.max(1, Number(visibleTerminalPanelCount) || 1);
+
+  // Packaged Tauri/Linux WebKitGTK: single panel uses safe DOM xterm; splits use canvas.
+  if (shouldAvoidWebglOnThisRuntime()) {
+    if (panelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) {
+      return TERMINAL_OPERATIONAL_CANVAS_MODE;
+    }
+    if (effective === 'xterm-webgl' || requested === 'xterm-webgl') {
+      return 'xterm';
+    }
+    return effective;
+  }
 
   // Multi-panel splits (swarm grid, focus collapse, etc.) stay on canvas whenever
   // the user asked for the GPU path — even if the WebGL probe demoted effectiveMode.

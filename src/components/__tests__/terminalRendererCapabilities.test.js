@@ -320,4 +320,30 @@ describe('terminalRendererCapabilities', () => {
       })
     ).toBe('xterm-canvas');
   });
+
+  test('resolveOperationalRendererMode routes Tauri Linux splits to canvas and single panel to DOM xterm', () => {
+    const previous = global.window;
+    global.window = {
+      __TAURI_INTERNALS__: {},
+      navigator: { platform: 'Linux x86_64', userAgent: 'Linux' },
+    };
+    try {
+      expect(
+        resolveOperationalRendererMode({
+          requestedMode: 'xterm-webgl',
+          effectiveMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 3,
+        })
+      ).toBe('xterm-canvas');
+      expect(
+        resolveOperationalRendererMode({
+          requestedMode: 'xterm-webgl',
+          effectiveMode: 'xterm',
+          visibleTerminalPanelCount: 1,
+        })
+      ).toBe('xterm');
+    } finally {
+      global.window = previous;
+    }
+  });
 });

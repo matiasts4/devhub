@@ -1,11 +1,13 @@
 const {
   createDefaultTerminalRendererPreferences,
   getPanelRendererPreferenceMode,
+  getRuntimeDefaultTerminalRendererMode,
   getTerminalRendererPreferencesStorageKey,
   readTerminalRendererDefaultModeSetting,
   readTerminalRendererPreferences,
   resolveRequestedRenderer,
   sanitizeTerminalRendererPreferences,
+  shouldAvoidWebglOnThisRuntime,
   writeTerminalRendererDefaultModeSetting,
 } = require('../terminal/terminalRendererPreferences');
 
@@ -194,5 +196,26 @@ describe('terminalRendererPreferences', () => {
     expect(
       readTerminalRendererPreferences(storage, 'proj-1', [createWorkspace('ws-1', ['p1'])])
     ).toEqual(fallback);
+  });
+
+  test('demotes xterm-webgl to xterm on packaged Tauri Linux runtimes', () => {
+    const previous = global.window;
+    global.window = {
+      __TAURI_INTERNALS__: {},
+      navigator: { platform: 'Linux x86_64', userAgent: 'Linux' },
+    };
+    try {
+      expect(shouldAvoidWebglOnThisRuntime()).toBe(true);
+      expect(getRuntimeDefaultTerminalRendererMode()).toBe('xterm');
+      expect(
+        resolveRequestedRenderer({
+          workspaceId: 'ws-unknown',
+          panelId: 'p1',
+          prefs: { defaultMode: 'xterm-webgl', workspaces: {} },
+        })
+      ).toBe('xterm');
+    } finally {
+      global.window = previous;
+    }
   });
 });

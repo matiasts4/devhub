@@ -52,6 +52,7 @@ import {
   getTerminalPanelBodyStyle,
   getWorkspaceShellChromeStyle,
 } from './components/terminal/terminalChromeStyles';
+import { resolveWorkspaceShellVisibilityStyle } from './components/terminal/workspaceAnimProps';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { MotionProvider } from '@/components/ui/motion/MotionProvider';
 
@@ -86,6 +87,7 @@ function WorkspaceLayout() {
   });
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
   const [isPizarraActive, setIsPizarraActive] = useState(false);
+  const [terminalManagerEverMounted, setTerminalManagerEverMounted] = useState(false);
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -146,6 +148,25 @@ function WorkspaceLayout() {
       document.documentElement.removeAttribute('data-terminal-view');
     }
   }, [isTerminalRoute]);
+
+  useEffect(() => {
+    if (isTerminalRoute) setTerminalManagerEverMounted(true);
+  }, [isTerminalRoute]);
+
+  const terminalContainerStyle = useMemo(() => {
+    const base = getTerminalPanelBodyStyle();
+    if (!terminalManagerEverMounted) {
+      return { ...base, display: isTerminalRoute ? 'block' : 'none' };
+    }
+    return {
+      ...base,
+      display: 'block',
+      ...resolveWorkspaceShellVisibilityStyle({
+        isActiveWorkspace: true,
+        isManagerVisible: isTerminalRoute,
+      }),
+    };
+  }, [isTerminalRoute, terminalManagerEverMounted]);
 
   // Apply terminal zone appearance (header style + accent bar) on mount.
   // Uses 'dragon' as default if no stored preference exists.
@@ -269,19 +290,17 @@ function WorkspaceLayout() {
             className="absolute inset-0 z-10 bg-[#0d0d0d]"
             data-terminal-container
             data-terminal-view={isTerminalRoute ? 'true' : undefined}
-            style={{
-              ...getTerminalPanelBodyStyle(),
-              display: isTerminalRoute ? 'block' : 'none',
-            }}
+            aria-hidden={terminalManagerEverMounted && !isTerminalRoute ? 'true' : undefined}
+            style={terminalContainerStyle}
           >
             {/* Drag region for the Tauri window is provided by the
                 WorkspaceWindowTabBar wrapper (data-tauri-drag-region on the tab bar
                 inside the terminal container). No extra header is needed here. */}
-            {project && isTerminalRoute ? (
+            {project && (isTerminalRoute || terminalManagerEverMounted) ? (
               <OperatorActionsDispatchProvider>
                 <TerminalWorkspacesManager
                   cwd={project.local_path}
-                  isVisible
+                  isVisible={isTerminalRoute}
                   projectId={project.id}
                 />
               </OperatorActionsDispatchProvider>

@@ -134,6 +134,7 @@ export function shouldShowTerminalViewport(isInitializing, initError) {
 
 /** Max wait before first connect when viewport fit keeps deferring (mode-switch undersize). */
 export const TERMINAL_CONNECT_DEFER_MAX_MS = 1800;
+export const TERMINAL_COLD_MOUNT_STAGGER_MS = 120;
 
 /** Full-screen blocking loader — only on first boot, never on panel-switch reconnects. */
 export function shouldShowTerminalLoadingOverlay(
@@ -1110,9 +1111,12 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
   reason = '',
   sizeUnchanged,
   pendingWebglRecovery = false,
+  canvasReleasedOnLayoutHide = false,
   hasGpuRenderer = false,
 } = {}) {
-  if (!sizeUnchanged || pendingWebglRecovery || !hasGpuRenderer) return false;
+  if (!sizeUnchanged || pendingWebglRecovery || canvasReleasedOnLayoutHide || !hasGpuRenderer) {
+    return false;
+  }
   const normalized = String(reason);
   if (
     normalized.includes('panel-group-layout') ||
@@ -1127,16 +1131,13 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
   return /layout-settled-|workspace-switch/.test(normalized);
 }
 
-/** Drop PTY output while layout-hidden without a GPU renderer to avoid corrupting parser/atlas. */
+/** Buffer PTY output while layout-hidden in GPU modes — writes corrupt atlas even before release completes. */
 export function shouldSkipTerminalOutputWhileLayoutHidden({
   isVisibleInLayout = true,
-  webglAttached = false,
-  canvasAttached = false,
   operationalRendererMode,
 } = {}) {
   if (isVisibleInLayout) return false;
-  if (!shouldUseGpuTerminalRenderer({ operationalRendererMode })) return false;
-  return !webglAttached && !canvasAttached;
+  return shouldUseGpuTerminalRenderer({ operationalRendererMode });
 }
 
 export const HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX = 256 * 1024;
@@ -1247,17 +1248,21 @@ export function shouldClearAtlasForSplitCanvas({
 
 const CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON =
   /layout-settled-(panel-group-layout|panel-focus-toggle|internal-split-drag-end|right-dock-drag-end|swarm-launch|shared-surface|panel-split|panel-relaunch)/;
+const CANVAS_WORKSPACE_SHOW_ATLAS_CLEAR_REASON = /layout-recover-|layout-settled-workspace-window/;
 
 /** Canvas uses release-on-hide + reattach-on-show; avoid repeated atlas clears on delayed bursts. */
 export function shouldClearGpuAtlasOnWorkspaceShow({
   operationalRendererMode,
   reason = '',
   explicitClearAtlas,
+  canvasReleasedOnLayoutHide = false,
 } = {}) {
   if (typeof explicitClearAtlas === 'boolean') return explicitClearAtlas;
   if (operationalRendererMode === 'xterm-canvas') {
+    if (canvasReleasedOnLayoutHide) return true;
     if (reason === 'workspace-show-pending') return true;
     if (CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON.test(reason)) return true;
+    if (CANVAS_WORKSPACE_SHOW_ATLAS_CLEAR_REASON.test(reason)) return true;
     return false;
   }
   if (reason.startsWith('layout-settled-')) {
@@ -1458,6 +1463,7 @@ export default function TerminalTTY({
   swarmContext = null,
   connectionState: externalConnectionState,
   surfaceHost = 'workspace',
+  coldMountOrdinal = 0,
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
@@ -1596,6 +1602,7 @@ export default function TerminalTTY({
   const inactiveRepaintRafRef = useRef(null);
   const pendingWebglRecoveryRef = useRef(false);
   const webglReleasedOnLayoutHideRef = useRef(false);
+  const canvasReleasedOnLayoutHideRef = useRef(false);
   const webglRecoveryTimerRef = useRef(null);
   const handleWebglContextLossRef = useRef(null);
   const prevIsActivePanelRef = useRef(false);
@@ -2632,11 +2639,22 @@ export default function TerminalTTY({
       clearConnectDeferTimer();
       connectPendingUntilFitRef.current = false;
       if (!hasConnectedOnceRef.current || wsRef.current?.readyState !== WebSocket.OPEN) {
-        connectRef.current?.();
+        const staggerMs =
+          Math.max(0, Number(coldMountOrdinal) || 0) * TERMINAL_COLD_MOUNT_STAGGER_MS;
+        if (staggerMs > 0 && !hasConnectedOnceRef.current) {
+          connectDeferTimerRef.current = setTimeout(() => {
+            connectDeferTimerRef.current = null;
+            if (!hasConnectedOnceRef.current && !sessionClosingRef.current) {
+              connectRef.current?.();
+            }
+          }, staggerMs);
+        } else {
+          connectRef.current?.();
+        }
       }
       return true;
     },
-    [clearConnectDeferTimer, scheduleConnectDeferForce]
+    [clearConnectDeferTimer, coldMountOrdinal, scheduleConnectDeferForce]
   );
 
   const fitAndResize = useCallback(
@@ -2789,6 +2807,7 @@ export default function TerminalTTY({
         // ignore double dispose
       }
       canvasAddonRef.current = null;
+      canvasReleasedOnLayoutHideRef.current = true;
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
       return true;
     },
@@ -2851,6 +2870,7 @@ export default function TerminalTTY({
         lastPtySizeRef: lastPtySizeRef.current,
       });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+      canvasReleasedOnLayoutHideRef.current = false;
       cliLog(`RENDER:${id}`, 'canvas-attached', buildViewportSnapshot('canvas-reattach'));
       return true;
     } catch (error) {
@@ -3000,6 +3020,7 @@ export default function TerminalTTY({
         isDeferredShowPass &&
         sizeUnchanged &&
         !pendingWebglRecoveryRef.current &&
+        !canvasReleasedOnLayoutHideRef.current &&
         !shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand })
       ) {
         logViewportDiagnostic(`${reason}-skipped-unchanged`);
@@ -3041,6 +3062,15 @@ export default function TerminalTTY({
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
           refreshTerminalViewport(termRef.current);
           webglReleasedOnLayoutHideRef.current = false;
+        } else if (
+          canvasReleasedOnLayoutHideRef.current &&
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          })
+        ) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+          refreshTerminalViewport(termRef.current);
+          canvasReleasedOnLayoutHideRef.current = false;
         }
         return;
       }
@@ -3069,6 +3099,15 @@ export default function TerminalTTY({
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
           refreshTerminalViewport(termRef.current);
           webglReleasedOnLayoutHideRef.current = false;
+        } else if (
+          canvasReleasedOnLayoutHideRef.current &&
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          })
+        ) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
+          refreshTerminalViewport(termRef.current);
+          canvasReleasedOnLayoutHideRef.current = false;
         } else {
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         }
@@ -3080,6 +3119,7 @@ export default function TerminalTTY({
           reason,
           sizeUnchanged,
           pendingWebglRecovery: pendingWebglRecoveryRef.current,
+          canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
           hasGpuRenderer: Boolean(webglAddonRef.current || canvasAddonRef.current),
         }) &&
         !hiddenOutputCatchupPendingRef.current
@@ -3098,7 +3138,12 @@ export default function TerminalTTY({
         shouldClearGpuAtlasOnWorkspaceShow({
           operationalRendererMode: operationalRendererModeRef.current,
           reason,
+          canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
         });
+
+      if (shouldClearAtlas && canvasReleasedOnLayoutHideRef.current) {
+        canvasReleasedOnLayoutHideRef.current = false;
+      }
 
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
@@ -3291,7 +3336,11 @@ export default function TerminalTTY({
         return;
       }
 
-      const clearAtlas = options.clearAtlas ?? false;
+      const clearAtlas =
+        options.clearAtlas ??
+        shouldAttachCanvasRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        });
 
       const kimiConnected = shouldSkipKimiTuiPtyResize({
         initialCommand,
@@ -4322,8 +4371,6 @@ export default function TerminalTTY({
         if (
           shouldSkipTerminalOutputWhileLayoutHidden({
             isVisibleInLayout: isVisibleInLayoutRef.current,
-            webglAttached: Boolean(webglAddonRef.current),
-            canvasAttached: Boolean(canvasAddonRef.current),
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
@@ -4579,7 +4626,7 @@ export default function TerminalTTY({
     const raf = requestAnimationFrame(() => {
       if (!isVisibleInLayoutRef.current || !termRef.current) return;
       syncTerminalViewportOnWorkspaceShow('projection-host-ready', {
-        clearAtlas: webglReleasedOnLayoutHideRef.current,
+        clearAtlas: webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
       });
     });
     return () => cancelAnimationFrame(raf);
@@ -4631,7 +4678,9 @@ export default function TerminalTTY({
         void showAndResizeNativeLease();
       }
       const gpuShowRecover =
-        pendingWebglRecoveryRef.current || webglReleasedOnLayoutHideRef.current;
+        pendingWebglRecoveryRef.current ||
+        webglReleasedOnLayoutHideRef.current ||
+        canvasReleasedOnLayoutHideRef.current;
       syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
         clearAtlas: gpuShowRecover,
       });
@@ -5112,11 +5161,21 @@ export default function TerminalTTY({
       }
     }
 
-    initializeTerminal();
+    const initStaggerMs =
+      Math.max(0, Number(coldMountOrdinal) || 0) * TERMINAL_COLD_MOUNT_STAGGER_MS;
+    let initStaggerTimer = null;
+    if (initStaggerMs > 0) {
+      initStaggerTimer = setTimeout(() => {
+        if (mounted) initializeTerminal();
+      }, initStaggerMs);
+    } else {
+      initializeTerminal();
+    }
 
     return () => {
       mounted = false;
       isInitializingRef.current = false;
+      if (initStaggerTimer) clearTimeout(initStaggerTimer);
       clearTimers();
       resizeObserverRef.current?.disconnect();
       nativeResizeObserverRef.current?.disconnect();
@@ -5149,6 +5208,7 @@ export default function TerminalTTY({
     shouldBootXterm,
     waitForVisibleDimensions,
     xtermBootNonce,
+    coldMountOrdinal,
     id,
     maybeConnectAfterViewportFit,
   ]);
@@ -5463,7 +5523,8 @@ export default function TerminalTTY({
           }
         } else if (isVisibleInLayoutRef.current) {
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-            clearAtlas: webglReleasedOnLayoutHideRef.current,
+            clearAtlas:
+              webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
           });
         } else {
           needsViewportSyncOnShowRef.current = true;
@@ -5599,7 +5660,7 @@ export default function TerminalTTY({
           void tryReattachCanvasAddonRef.current?.();
         }
         syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-          clearAtlas: webglReleasedOnLayoutHideRef.current,
+          clearAtlas: webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
         });
         return;
       }
@@ -5626,7 +5687,8 @@ export default function TerminalTTY({
         }
         if (isVisibleInLayoutRef.current) {
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-            clearAtlas: webglReleasedOnLayoutHideRef.current,
+            clearAtlas:
+              webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
           });
           if (
             !isDisposingRef.current &&
@@ -5669,6 +5731,7 @@ export default function TerminalTTY({
             clearAtlas: shouldClearGpuAtlasOnWorkspaceShow({
               operationalRendererMode: operationalRendererModeRef.current,
               reason: `layout-settled-${reason}-${phase}`,
+              canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
             }),
           });
         },
