@@ -2,6 +2,7 @@ const {
   detectKimiTuiReady,
   isKimiLaunchCommand,
   normalizeKimiLaunchCommand,
+  shouldInjectKimiWheelScroll,
 } = require('../kimiReadyMarker.js');
 
 describe('kimiReadyMarker', () => {
@@ -23,5 +24,30 @@ describe('kimiReadyMarker', () => {
     expect(detectKimiTuiReady('Kimi Code CLI v0.9.0')).toBe(true);
     expect(detectKimiTuiReady('\x1b]0;kimi\x07')).toBe(true);
     expect(detectKimiTuiReady('booting shell')).toBe(false);
+  });
+
+  test('shouldInjectKimiWheelScroll requires kimi command, readiness, and active panel', () => {
+    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
+    expect(
+      shouldInjectKimiWheelScroll({
+        initialCommand: kimiCmd,
+        kimiReady: true,
+        isActivePanel: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldInjectKimiWheelScroll({
+        initialCommand: kimiCmd,
+        kimiReady: false,
+        isActivePanel: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldInjectKimiWheelScroll({
+        initialCommand: 'opencode',
+        kimiReady: true,
+        isActivePanel: true,
+      })
+    ).toBe(false);
   });
 });

@@ -229,22 +229,22 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 
 ---
 
-### Fase 3 — Capa C (scroll kimi)
+### Fase 3 — Capa C (scroll kimi) — implementada, pendiente QA manual
 
 **Objetivo:** scroll dentro de kimi TUI.
 
-**Implementar:**
-1. Guard en wheel: `if (isKimiCommand && panelActive && kimiReady) { inject SGR }`
-2. Sin modificar ramas opencode/grok
-3. Sin `nativeWheelPassthrough` global
+**Implementado (commit `[kimi-rebuild] fase-3`):**
+1. `shouldInjectKimiWheelScroll()` en `kimiReadyMarker.js`
+2. Rama aislada en wheel handler **antes** de routing opencode/grok/shell
+3. Inyección SGR+arrow vía `buildGrokWheelScrollPayload` solo si kimi ready + panel activo + zona transcript
+4. Sin cambios a `nativeWheelPassthrough`, `prepareActiveTuiTerminalFocus`, ni `tuiAdapter`
 
-**Checklist:**
-- [ ] Scroll kimi en transcript
+**Checklist manual:**
+- [ ] Scroll kimi en transcript (tras banner welcome)
 - [ ] Scroll opencode/grok sin regresión
-- [ ] Hover-scroll (si aplica) no empeora
-- [ ] Cambio panel < 500ms percibido
+- [ ] Cambio panel sigue rápido
 
-**Rollback si:** scroll roto en cualquier TUI o delay al focus.
+**Rollback si falla:** `git reset --hard 896600d` (pre fase-3).
 
 ---
 
@@ -267,8 +267,8 @@ Solo paneles `native_vte`; tests aparte.
 | 2026-06-22 | — | `7b769c4` | **FALLÓ** | Cherry-pick completo `12435b1`; terminales rotas |
 | 2026-06-22 | 0 | `cca90af` | **OK** | Revert kimi; baseline estable |
 | 2026-06-22 | 1 | `f96c649` | **OK** | Capa A launch+marker; terminales OK (usuario) |
-| 2026-06-22 | 2 | `896600d` | **tests OK** | Capa B readiness mínima; QA swarm kimi pendiente |
-| | 3 | | pendiente | |
+| 2026-06-22 | 2 | `896600d` | **OK** | Capa B readiness; terminales OK (usuario) |
+| 2026-06-22 | 3 | `0dfd006` | **tests OK** | Capa C scroll kimi aislado; QA manual pendiente |
 
 *(Actualizar esta tabla en cada intento.)*
 

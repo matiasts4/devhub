@@ -56,7 +56,11 @@ import {
   detectOpenCodeTuiReady,
   shouldDiscardOpenCodeCatchupReplay,
 } from '@/lib/terminal/opencodeReadyMarker';
-import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
+import {
+  detectKimiTuiReady,
+  isKimiLaunchCommand,
+  shouldInjectKimiWheelScroll,
+} from '@/lib/terminal/kimiReadyMarker';
 import {
   isSwarmLaunchWrapperDispatched,
   markSwarmLaunchWrapperDispatched,
@@ -5678,6 +5682,54 @@ export default function TerminalTTY({
         term.scrollLines(direction === 'up' ? -lines : lines);
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+
+      // Capa C: Kimi scroll — isolated SGR injection; does not alter opencode/grok paths.
+      if (
+        shouldInjectKimiWheelScroll({
+          initialCommand,
+          kimiReady: kimiReadyNotifiedRef.current,
+          isActivePanel: isActivePanelRef.current,
+        })
+      ) {
+        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+        if (!direction) return;
+
+        const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: false });
+        const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
+        const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
+        if (cell) {
+          lastPointerZoneRef.current = isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
+            ? 'transcript'
+            : 'input';
+        }
+
+        const inTranscript = shouldRouteWheelToTranscript({
+          cell,
+          rows: term.rows,
+          lastPointerZone: lastPointerZoneRef.current,
+          inputZoneRows,
+        });
+        if (!inTranscript) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
+        const steps = Math.max(1, Math.min(2, rawSteps));
+        const coords = resolveGrokWheelSgrCoords(cell, term, inputZoneRows);
+        const payload = buildGrokWheelScrollPayload(direction, coords.col, coords.row, steps);
+        const sent = sendTerminalPasteInput({
+          socket: wsRef.current,
+          transport: transportRef.current,
+          text: payload,
+        });
+        if (sent) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
 
