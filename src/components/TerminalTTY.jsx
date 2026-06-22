@@ -61,6 +61,7 @@ import {
   isKimiLaunchCommand,
   isKimiTuiLive,
   shouldFreezeKimiTuiViewportOnWorkspaceShow,
+  shouldSkipKimiTuiPtyResize,
 } from '@/lib/terminal/kimiReadyMarker';
 import {
   isSwarmLaunchWrapperDispatched,
@@ -593,6 +594,7 @@ export function fitTerminalViewport({
   websocketOpenState = WebSocket.OPEN,
   clearAtlas = true,
   lastPtySizeRef = null,
+  skipPtyNotify = false,
 }) {
   if (!container || !fitAddon || !term) return false;
   if (!isTerminalRendererReady(term)) return false;
@@ -627,7 +629,13 @@ export function fitTerminalViewport({
     cols > 0 &&
     rows > 0;
 
-  if (!unchanged && socket?.readyState === websocketOpenState && cols > 0 && rows > 0) {
+  if (
+    !skipPtyNotify &&
+    !unchanged &&
+    socket?.readyState === websocketOpenState &&
+    cols > 0 &&
+    rows > 0
+  ) {
     socket.send(
       JSON.stringify({
         type: 'resize',
@@ -1206,7 +1214,9 @@ export function nudgeTerminalPtyResize({
   socket,
   lastPtySizeRef = null,
   websocketOpenState = WebSocket.OPEN,
+  skipPtyNotify = false,
 } = {}) {
+  if (skipPtyNotify) return false;
   if (!term || !socket || socket.readyState !== websocketOpenState) return false;
   const cols = Number(term.cols ?? 0);
   const rows = Number(term.rows ?? 0);
@@ -2643,6 +2653,10 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
             visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
           }));
+      const kimiLive = isKimiTuiLive({
+        initialCommand,
+        kimiReady: kimiReadyNotifiedRef.current,
+      });
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
         fitAddon: fitRef.current,
@@ -2650,6 +2664,7 @@ export default function TerminalTTY({
         socket: wsRef.current,
         clearAtlas,
         lastPtySizeRef: lastPtySizeRef.current,
+        skipPtyNotify: options.skipPtyNotify ?? (kimiLive && !options.forcePtyResize),
       });
 
       if (fitWorked && termRef.current) {
@@ -2663,7 +2678,7 @@ export default function TerminalTTY({
       logViewportDiagnostic(fitWorked ? 'fit-resize' : 'fit-skipped');
       return fitWorked;
     },
-    [confirmViewportFit, logViewportDiagnostic, maybeConnectAfterViewportFit]
+    [confirmViewportFit, initialCommand, logViewportDiagnostic, maybeConnectAfterViewportFit]
   );
 
   const scrollTerminalToBottom = useCallback((force = false) => {
@@ -2706,8 +2721,12 @@ export default function TerminalTTY({
       let colsBefore = term?.cols;
       let rowsBefore = term?.rows;
       let geometryChanged = false;
+      const kimiLive = isKimiTuiLive({
+        initialCommand,
+        kimiReady: kimiReadyNotifiedRef.current,
+      });
 
-      if (rect && rect.width > 0 && rect.height > 0 && fitAddon && term) {
+      if (!kimiLive && rect && rect.width > 0 && rect.height > 0 && fitAddon && term) {
         colsBefore = term.cols;
         rowsBefore = term.rows;
         const fitWorked = fitTerminalViewport({
@@ -2752,7 +2771,7 @@ export default function TerminalTTY({
         refreshTerminalViewport(termRef.current);
       }
     });
-  }, [confirmViewportFit]);
+  }, [confirmViewportFit, initialCommand]);
 
   const releaseCanvasAddon = useCallback(
     (reason = 'canvas-released') => {
@@ -2981,8 +3000,6 @@ export default function TerminalTTY({
 
       if (
         shouldFreezeKimiTuiViewportOnWorkspaceShow({
-          reason,
-          sizeUnchanged,
           initialCommand,
           kimiReady: kimiReadyNotifiedRef.current,
         })
@@ -2990,9 +3007,15 @@ export default function TerminalTTY({
         needsViewportSyncOnShowRef.current = false;
         logViewportDiagnostic(`${reason}-frozen-kimi-tui`);
         stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
-        const savedKimiViewport = lastViewportYRef.current;
-        if (savedKimiViewport != null) {
-          restoreTerminalViewportScroll(termRef.current, savedKimiViewport);
+        if (hiddenOutputCatchupPendingRef.current && termRef.current) {
+          const buffered = takeHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current);
+          hiddenOutputCatchupPendingRef.current = false;
+          if (buffered) {
+            for (const chunk of chunkTerminalOutputForCatchup(buffered)) {
+              termRef.current.write(chunk);
+            }
+            stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          }
         }
         if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
           void tryReattachWebglAddonRef.current?.({
@@ -3087,15 +3110,8 @@ export default function TerminalTTY({
         kimiReady: kimiReadyNotifiedRef.current,
       });
 
-      if (fitWorked && isActivePanelRef.current) {
-        if (kimiTuiLive) {
-          const saved = lastViewportYRef.current;
-          if (saved != null) {
-            restoreTerminalViewportScroll(termRef.current, saved);
-          }
-        } else {
-          scrollTerminalToBottom(true);
-        }
+      if (fitWorked && isActivePanelRef.current && !kimiTuiLive) {
+        scrollTerminalToBottom(true);
       }
 
       if (
@@ -3133,7 +3149,13 @@ export default function TerminalTTY({
               terminalBufferHasRenderableContent(termRef.current) &&
               !sessionReattachedRef.current &&
               !tuiSessionActiveRef.current;
-            if (!discardBecauseTermHasContent) {
+            if (
+              !discardBecauseTermHasContent &&
+              !shouldSkipKimiTuiPtyResize({
+                initialCommand,
+                kimiReady: kimiReadyNotifiedRef.current,
+              })
+            ) {
               nudgeTerminalPtyResize({
                 term: termRef.current,
                 socket: wsRef.current,
@@ -3148,7 +3170,7 @@ export default function TerminalTTY({
             }
             stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
             refreshTerminalViewport(termRef.current);
-            if (tuiSessionActiveRef.current) {
+            if (tuiSessionActiveRef.current && !kimiTuiLive) {
               nudgeTerminalPtyResize({
                 term: termRef.current,
                 socket: wsRef.current,
@@ -3163,7 +3185,11 @@ export default function TerminalTTY({
         fitWorked &&
         visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT &&
         canvasAddonRef.current &&
-        termRef.current
+        termRef.current &&
+        !shouldSkipKimiTuiPtyResize({
+          initialCommand,
+          kimiReady: kimiReadyNotifiedRef.current,
+        })
       ) {
         nudgeTerminalPtyResize({
           term: termRef.current,
@@ -3172,7 +3198,14 @@ export default function TerminalTTY({
         });
       }
     },
-    [confirmViewportFit, id, logViewportDiagnostic, scheduleWebglRecovery, scrollTerminalToBottom]
+    [
+      confirmViewportFit,
+      id,
+      initialCommand,
+      logViewportDiagnostic,
+      scheduleWebglRecovery,
+      scrollTerminalToBottom,
+    ]
   );
 
   const sendResize = useCallback(() => {
@@ -3202,16 +3235,21 @@ export default function TerminalTTY({
       return;
     }
 
-    fitAndResize({ clearAtlas: true });
-    scrollTerminalToBottom();
+    const kimiLive = isKimiTuiLive({
+      initialCommand,
+      kimiReady: kimiReadyNotifiedRef.current,
+    });
+    fitAndResize({ clearAtlas: true, forcePtyResize: !kimiLive });
+    if (!kimiLive) scrollTerminalToBottom();
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
-      fitAndResize({ clearAtlas: false });
-      scrollTerminalToBottom();
+      fitAndResize({ clearAtlas: false, forcePtyResize: !kimiLive });
+      if (!kimiLive) scrollTerminalToBottom();
     });
   }, [
     clearTimers,
     fitAndResize,
+    initialCommand,
     maybeConnectAfterViewportFit,
     scheduleInactiveViewportRepaint,
     scrollTerminalToBottom,
@@ -3245,26 +3283,39 @@ export default function TerminalTTY({
 
       const clearAtlas = options.clearAtlas ?? false;
 
+      const kimiLive = isKimiTuiLive({
+        initialCommand,
+        kimiReady: kimiReadyNotifiedRef.current,
+      });
+
       logViewportDiagnostic('reactivate-start');
       prepareActiveTuiTerminalFocus(termRef.current, {
         tuiSessionActive: tuiSessionActiveRef.current,
       });
-      fitAndResize({ clearAtlas });
-      stabilizeTerminalRenderer(termRef.current, { clearAtlas });
-      if (isActivePanelRef.current) scrollTerminalToBottom();
+      if (!kimiLive) {
+        fitAndResize({ clearAtlas });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas });
+        if (isActivePanelRef.current) scrollTerminalToBottom();
+      } else {
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+      }
 
       if (autoFocus) {
         termRef.current?.focus?.();
       }
 
       rafRef.current = requestAnimationFrame(() => {
-        fitAndResize({ clearAtlas: false });
-        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
-        if (isActivePanelRef.current) scrollTerminalToBottom();
+        if (!kimiLive) {
+          fitAndResize({ clearAtlas: false });
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          if (isActivePanelRef.current) scrollTerminalToBottom();
+        } else {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        }
         logViewportDiagnostic('reactivate-settled');
       });
     },
-    [autoFocus, fitAndResize, logViewportDiagnostic, scrollTerminalToBottom]
+    [autoFocus, fitAndResize, initialCommand, logViewportDiagnostic, scrollTerminalToBottom]
   );
 
   useEffect(() => {
@@ -5335,6 +5386,42 @@ export default function TerminalTTY({
 
       layoutSettleBurstCleanupRef.current?.();
 
+      const kimiTuiLive = isKimiLaunchCommand(initialCommand) && kimiReadyNotifiedRef.current;
+
+      if (
+        String(reason).includes('workspace-window-switch') ||
+        String(reason).includes('workspace-window-settled')
+      ) {
+        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
+          if (isVisibleInLayoutRef.current) {
+            void tryReattachWebglAddonRef.current?.({
+              clearAtlas: false,
+              skipFitWhenUnchanged: true,
+            });
+          } else {
+            needsViewportSyncOnShowRef.current = true;
+          }
+        } else if (isVisibleInLayoutRef.current) {
+          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+            clearAtlas: false,
+          });
+        } else {
+          needsViewportSyncOnShowRef.current = true;
+        }
+        return;
+      }
+
+      if (kimiTuiLive && !String(reason).includes('panel-closed')) {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+          clearAtlas: false,
+        });
+        return;
+      }
+
       if (String(reason).includes('workspace-switch')) {
         if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
           if (isVisibleInLayoutRef.current) {
@@ -5591,19 +5678,20 @@ export default function TerminalTTY({
       initialCommand,
       kimiReady: kimiReadyNotifiedRef.current,
     });
+    // Kimi scroll is inside the Ink TUI — xterm viewportY stays 0; save/restore jumps to top.
+    if (kimiTuiLive) return;
+
     if (isVisibleInLayout) {
-      // Panel just became visible - restore scroll position
       const saved = lastViewportYRef.current;
       if (saved != null) {
         restoreTerminalViewportScroll(termRef.current, saved);
-      } else if (isActivePanel && !kimiTuiLive) {
+      } else if (isActivePanel) {
         scrollTerminalToBottom(true);
       }
     } else {
-      // Panel becoming invisible - save current scroll position
       lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
     }
-  }, [initialCommand, isVisibleInLayout, isActivePanel]);
+  }, [initialCommand, isVisibleInLayout, isActivePanel, scrollTerminalToBottom]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {

@@ -4,6 +4,7 @@ const {
   isKimiTuiLive,
   normalizeKimiLaunchCommand,
   shouldFreezeKimiTuiViewportOnWorkspaceShow,
+  shouldSkipKimiTuiPtyResize,
 } = require('../kimiReadyMarker.js');
 
 describe('kimiReadyMarker', () => {
@@ -40,29 +41,39 @@ describe('kimiReadyMarker', () => {
     expect(isKimiTuiLive({ initialCommand: 'opencode', kimiReady: true })).toBe(false);
   });
 
-  test('shouldFreezeKimiTuiViewportOnWorkspaceShow skips PTY refit on workspace switch', () => {
+  test('shouldFreezeKimiTuiViewportOnWorkspaceShow freezes live kimi on any workspace show', () => {
     const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
     expect(
       shouldFreezeKimiTuiViewportOnWorkspaceShow({
-        reason: 'layout-settled-workspace-switch-immediate',
-        sizeUnchanged: true,
         initialCommand: kimiCmd,
         kimiReady: true,
       })
     ).toBe(true);
     expect(
       shouldFreezeKimiTuiViewportOnWorkspaceShow({
-        reason: 'layout-settled-workspace-switch-immediate',
-        sizeUnchanged: false,
         initialCommand: kimiCmd,
-        kimiReady: true,
+        kimiReady: false,
       })
     ).toBe(false);
     expect(
       shouldFreezeKimiTuiViewportOnWorkspaceShow({
-        reason: 'panel-focus-toggle',
-        sizeUnchanged: true,
+        initialCommand: 'opencode',
+        kimiReady: true,
+      })
+    ).toBe(false);
+  });
+
+  test('shouldSkipKimiTuiPtyResize mirrors live kimi detection', () => {
+    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
+    expect(
+      shouldSkipKimiTuiPtyResize({
         initialCommand: kimiCmd,
+        kimiReady: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipKimiTuiPtyResize({
+        initialCommand: 'opencode',
         kimiReady: true,
       })
     ).toBe(false);
