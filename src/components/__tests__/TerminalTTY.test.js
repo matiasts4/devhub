@@ -139,6 +139,7 @@ const {
   shouldAttachWebglRenderer,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
+  shouldMountCanvasAddon,
   shouldRefitVisibleInactiveSplitPanel,
   sendTerminalPasteInput,
   scheduleTerminalViewportSyncBurst,
@@ -719,6 +720,32 @@ describe('shouldAttachCanvasRenderer()', () => {
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-canvas' })).toBe(true);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm-webgl' })).toBe(false);
     expect(shouldAttachCanvasRenderer({ operationalRendererMode: 'xterm' })).toBe(false);
+  });
+});
+
+describe('shouldMountCanvasAddon()', () => {
+  test('mounts canvas only on the active visible split panel', () => {
+    expect(
+      shouldMountCanvasAddon({
+        operationalRendererMode: 'xterm-canvas',
+        isActivePanel: true,
+        visibleTerminalPanelCount: 4,
+      })
+    ).toBe(true);
+    expect(
+      shouldMountCanvasAddon({
+        operationalRendererMode: 'xterm-canvas',
+        isActivePanel: false,
+        visibleTerminalPanelCount: 4,
+      })
+    ).toBe(false);
+    expect(
+      shouldMountCanvasAddon({
+        operationalRendererMode: 'xterm',
+        isActivePanel: true,
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
   });
 });
 

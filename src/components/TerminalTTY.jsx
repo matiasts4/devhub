@@ -3997,6 +3997,23 @@ export default function TerminalTTY({
     shouldUseNativeRenderer,
   ]);
 
+  // initializeTerminal() can attach canvas before this layout effect runs — sweep stragglers.
+  useEffect(() => {
+    if (isInitializing || shouldUseNativeRenderer || !termRef.current) return undefined;
+    if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return undefined;
+    if (isActivePanel || !canvasAddonRef.current) return undefined;
+
+    releaseCanvasAddon('panel-inactive-post-init');
+    refreshTerminalViewport(termRef.current);
+    return undefined;
+  }, [
+    isActivePanel,
+    isInitializing,
+    operationalRendererMode,
+    releaseCanvasAddon,
+    shouldUseNativeRenderer,
+  ]);
+
   // Shared-surface / split layouts: re-attach canvas when a panel becomes visible again.
   useEffect(() => {
     if (!isVisibleInLayout || shouldUseNativeRenderer || !termRef.current) return undefined;
@@ -5058,6 +5075,12 @@ export default function TerminalTTY({
         const wantsCanvas = shouldAttachCanvasRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
         });
+        const mountCanvasOnInit = shouldMountCanvasAddon({
+          operationalRendererMode: operationalRendererModeRef.current,
+          isActivePanel: isActivePanelRef.current,
+          isVisibleInLayout: isVisibleInLayoutRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+        });
         if (wantsWebgl) {
           importList.push(
             import('xterm-addon-webgl').catch((err) => {
@@ -5065,7 +5088,7 @@ export default function TerminalTTY({
               return { failed: true };
             })
           );
-        } else if (wantsCanvas) {
+        } else if (wantsCanvas && mountCanvasOnInit) {
           importList.push(
             import('xterm-addon-canvas').catch((err) => {
               console.warn(`[TTY:${id}] Failed to import xterm-addon-canvas:`, err?.message || err);
@@ -5082,7 +5105,7 @@ export default function TerminalTTY({
             ? optionalAddonImport.WebglAddon
             : null;
         const CanvasAddonCtor =
-          wantsCanvas && optionalAddonImport && !optionalAddonImport.failed
+          mountCanvasOnInit && optionalAddonImport && !optionalAddonImport.failed
             ? optionalAddonImport.CanvasAddon
             : null;
 
@@ -5185,7 +5208,7 @@ export default function TerminalTTY({
               reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
             });
           }
-        } else if (wantsCanvas && CanvasAddonCtor) {
+        } else if (mountCanvasOnInit && CanvasAddonCtor) {
           try {
             const canvasAddon = new CanvasAddonCtor();
             canvasAddonRef.current = canvasAddon;
@@ -5197,6 +5220,11 @@ export default function TerminalTTY({
           } catch (err) {
             console.warn(`[TTY:${id}] xterm-addon-canvas failed to register`, err?.message || err);
           }
+        } else if (wantsCanvas && !mountCanvasOnInit) {
+          cliLog(`RENDER:${id}`, 'canvas-deferred-dom-on-init', {
+            isActivePanel: isActivePanelRef.current,
+            visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+          });
         }
 
         terminal.onData((data) => {
@@ -5299,10 +5327,13 @@ export default function TerminalTTY({
                 fitAddon,
                 term: termRef.current,
                 socket: wsRef.current,
-                clearAtlas: true,
+                clearAtlas: Boolean(canvasAddonRef.current),
                 lastPtySizeRef: lastPtySizeRef.current,
               });
-              stabilizeTerminalRenderer(termRef.current);
+              stabilizeTerminalRenderer(termRef.current, {
+                clearAtlas: Boolean(canvasAddonRef.current),
+              });
+              refreshTerminalViewport(termRef.current);
             } else {
               logViewportDiagnostic('terminal-open-timeout');
               connectPendingUntilFitRef.current = true;
