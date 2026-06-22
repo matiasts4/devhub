@@ -26,3 +26,25 @@ export function detectKimiTuiReady(text) {
   if (/\bthinking\b/i.test(text) && /\/\s*[\d.]+%\s*\(/i.test(text)) return true;
   return false;
 }
+
+/** Live kimi Ink TUI — scroll lives in the PTY app, not xterm scrollback. */
+export function isKimiTuiLive({ initialCommand = '', kimiReady = false } = {}) {
+  return isKimiLaunchCommand(initialCommand) && kimiReady;
+}
+
+const KIMI_WORKSPACE_FREEZE_REASON_RE =
+  /workspace-switch|workspace-show-layout|workspace-show-raf|layout-settled-workspace-switch-/;
+
+/**
+ * Skip fit/PTY resize on workspace tab switches when cols/rows are unchanged.
+ * SIGWINCH reflow resets Kimi transcript scroll even though xterm viewportY stays 0.
+ */
+export function shouldFreezeKimiTuiViewportOnWorkspaceShow({
+  reason = '',
+  sizeUnchanged = false,
+  initialCommand = '',
+  kimiReady = false,
+} = {}) {
+  if (!isKimiTuiLive({ initialCommand, kimiReady }) || !sizeUnchanged) return false;
+  return KIMI_WORKSPACE_FREEZE_REASON_RE.test(String(reason));
+}

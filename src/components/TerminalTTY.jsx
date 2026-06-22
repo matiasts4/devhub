@@ -56,7 +56,12 @@ import {
   detectOpenCodeTuiReady,
   shouldDiscardOpenCodeCatchupReplay,
 } from '@/lib/terminal/opencodeReadyMarker';
-import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
+import {
+  detectKimiTuiReady,
+  isKimiLaunchCommand,
+  isKimiTuiLive,
+  shouldFreezeKimiTuiViewportOnWorkspaceShow,
+} from '@/lib/terminal/kimiReadyMarker';
 import {
   isSwarmLaunchWrapperDispatched,
   markSwarmLaunchWrapperDispatched,
@@ -2975,6 +2980,39 @@ export default function TerminalTTY({
       }
 
       if (
+        shouldFreezeKimiTuiViewportOnWorkspaceShow({
+          reason,
+          sizeUnchanged,
+          initialCommand,
+          kimiReady: kimiReadyNotifiedRef.current,
+        })
+      ) {
+        needsViewportSyncOnShowRef.current = false;
+        logViewportDiagnostic(`${reason}-frozen-kimi-tui`);
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        const savedKimiViewport = lastViewportYRef.current;
+        if (savedKimiViewport != null) {
+          restoreTerminalViewportScroll(termRef.current, savedKimiViewport);
+        }
+        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
+          void tryReattachWebglAddonRef.current?.({
+            clearAtlas: false,
+            skipFitWhenUnchanged: true,
+          });
+        } else if (
+          webglReleasedOnLayoutHideRef.current &&
+          shouldAttachWebglRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          })
+        ) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          refreshTerminalViewport(termRef.current);
+          webglReleasedOnLayoutHideRef.current = false;
+        }
+        return;
+      }
+
+      if (
         shouldFreezeSingleWebglViewportOnWorkspaceShow({
           reason,
           sizeUnchanged,
@@ -3044,8 +3082,20 @@ export default function TerminalTTY({
         confirmViewportFit(termRef.current.cols, termRef.current.rows);
       }
 
+      const kimiTuiLive = isKimiTuiLive({
+        initialCommand,
+        kimiReady: kimiReadyNotifiedRef.current,
+      });
+
       if (fitWorked && isActivePanelRef.current) {
-        scrollTerminalToBottom(true);
+        if (kimiTuiLive) {
+          const saved = lastViewportYRef.current;
+          if (saved != null) {
+            restoreTerminalViewportScroll(termRef.current, saved);
+          }
+        } else {
+          scrollTerminalToBottom(true);
+        }
       }
 
       if (
@@ -4171,6 +4221,9 @@ export default function TerminalTTY({
               kimiReadyNotifiedRef.current = true;
               void notifyAgentReady('kimi', null, 'client-tui-footer');
             }
+          }
+          if (kimiReadyNotifiedRef.current) {
+            tuiSessionActiveRef.current = true;
           }
           return;
         }
@@ -5472,11 +5525,16 @@ export default function TerminalTTY({
           });
           if (
             !isDisposingRef.current &&
-            tuiSessionActiveRef.current &&
             termRef.current &&
             isTerminalRendererReady(termRef.current)
           ) {
-            scrollTerminalToBottom(true);
+            const kimiTuiLive = isKimiTuiLive({
+              initialCommand,
+              kimiReady: kimiReadyNotifiedRef.current,
+            });
+            if (tuiSessionActiveRef.current && !kimiTuiLive) {
+              scrollTerminalToBottom(true);
+            }
             refreshTerminalViewport(termRef.current);
           }
         } else {
@@ -5529,19 +5587,23 @@ export default function TerminalTTY({
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
     if (!termRef.current) return;
+    const kimiTuiLive = isKimiTuiLive({
+      initialCommand,
+      kimiReady: kimiReadyNotifiedRef.current,
+    });
     if (isVisibleInLayout) {
       // Panel just became visible - restore scroll position
       const saved = lastViewportYRef.current;
       if (saved != null) {
         restoreTerminalViewportScroll(termRef.current, saved);
-      } else if (isActivePanel) {
+      } else if (isActivePanel && !kimiTuiLive) {
         scrollTerminalToBottom(true);
       }
     } else {
       // Panel becoming invisible - save current scroll position
       lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
     }
-  }, [isVisibleInLayout, isActivePanel]);
+  }, [initialCommand, isVisibleInLayout, isActivePanel]);
 
   // ── Custom context menu for terminal ────────────────────────────────────────
   const handleContextMenu = useCallback((e) => {
