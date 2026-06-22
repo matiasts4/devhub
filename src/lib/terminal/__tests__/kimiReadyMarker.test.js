@@ -1,4 +1,5 @@
 const {
+  detectKimiReadyFromTerminalBuffer,
   detectKimiTuiReady,
   isKimiLaunchCommand,
   isKimiTuiLive,
@@ -34,48 +35,68 @@ describe('kimiReadyMarker', () => {
     expect(detectKimiTuiReady('thinking / 12.3% (tokens)')).toBe(true);
   });
 
-  test('isKimiTuiLive requires launch command and readiness flag', () => {
+  test('isKimiTuiLive requires launch command and readiness or connected tui session', () => {
     const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
     expect(isKimiTuiLive({ initialCommand: kimiCmd, kimiReady: true })).toBe(true);
-    expect(isKimiTuiLive({ initialCommand: kimiCmd, kimiReady: false })).toBe(false);
+    expect(
+      isKimiTuiLive({
+        initialCommand: kimiCmd,
+        kimiReady: false,
+        tuiSessionActive: true,
+        hasConnectedOnce: true,
+      })
+    ).toBe(true);
+    expect(
+      isKimiTuiLive({
+        initialCommand: kimiCmd,
+        kimiReady: false,
+        tuiSessionActive: false,
+        hasConnectedOnce: true,
+      })
+    ).toBe(false);
     expect(isKimiTuiLive({ initialCommand: 'opencode', kimiReady: true })).toBe(false);
   });
 
-  test('shouldFreezeKimiTuiViewportOnWorkspaceShow freezes live kimi on any workspace show', () => {
+  test('shouldFreezeKimiTuiViewportOnWorkspaceShow freezes any kimi launch panel', () => {
+    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
+    expect(shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand: kimiCmd })).toBe(true);
+    expect(shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand: 'opencode' })).toBe(false);
+  });
+
+  test('shouldSkipKimiTuiPtyResize requires connected kimi session', () => {
     const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
     expect(
-      shouldFreezeKimiTuiViewportOnWorkspaceShow({
+      shouldSkipKimiTuiPtyResize({
         initialCommand: kimiCmd,
-        kimiReady: true,
+        hasConnectedOnce: true,
       })
     ).toBe(true);
     expect(
-      shouldFreezeKimiTuiViewportOnWorkspaceShow({
+      shouldSkipKimiTuiPtyResize({
         initialCommand: kimiCmd,
-        kimiReady: false,
+        hasConnectedOnce: false,
       })
     ).toBe(false);
     expect(
-      shouldFreezeKimiTuiViewportOnWorkspaceShow({
+      shouldSkipKimiTuiPtyResize({
         initialCommand: 'opencode',
-        kimiReady: true,
+        hasConnectedOnce: true,
       })
     ).toBe(false);
   });
 
-  test('shouldSkipKimiTuiPtyResize mirrors live kimi detection', () => {
-    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
-    expect(
-      shouldSkipKimiTuiPtyResize({
-        initialCommand: kimiCmd,
-        kimiReady: true,
-      })
-    ).toBe(true);
-    expect(
-      shouldSkipKimiTuiPtyResize({
-        initialCommand: 'opencode',
-        kimiReady: true,
-      })
-    ).toBe(false);
+  test('detectKimiReadyFromTerminalBuffer scans scrollback tail', () => {
+    const term = {
+      buffer: {
+        active: {
+          length: 2,
+          getLine: (index) => ({
+            translateToString: () => (index === 1 ? 'Welcome to Kimi Code' : 'booting'),
+          }),
+        },
+      },
+    };
+    expect(detectKimiReadyFromTerminalBuffer(term)).toBe(true);
+    expect(detectKimiReadyFromTerminalBuffer(null)).toBe(false);
   });
 });

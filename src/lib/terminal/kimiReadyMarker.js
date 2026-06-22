@@ -28,23 +28,46 @@ export function detectKimiTuiReady(text) {
 }
 
 /** Live kimi Ink TUI — scroll lives in the PTY app, not xterm scrollback. */
-export function isKimiTuiLive({ initialCommand = '', kimiReady = false } = {}) {
-  return isKimiLaunchCommand(initialCommand) && kimiReady;
+export function isKimiTuiLive({
+  initialCommand = '',
+  kimiReady = false,
+  tuiSessionActive = false,
+  hasConnectedOnce = false,
+} = {}) {
+  if (!isKimiLaunchCommand(initialCommand)) return false;
+  if (kimiReady) return true;
+  return Boolean(hasConnectedOnce && tuiSessionActive);
 }
 
 /**
  * Skip fit/PTY resize on workspace/window show.
  * Kimi transcript scroll lives in the Ink TUI; any SIGWINCH reflow resets it. xterm
  * viewportY stays 0 while the user scrolls inside Kimi — saving/restoring 0 jumps to top.
+ * Uses launch command only — readiness markers can lag behind reattach/output on restart.
  */
-export function shouldFreezeKimiTuiViewportOnWorkspaceShow({
-  initialCommand = '',
-  kimiReady = false,
-} = {}) {
-  return isKimiTuiLive({ initialCommand, kimiReady });
+export function shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand = '' } = {}) {
+  return isKimiLaunchCommand(initialCommand);
 }
 
 /** Kimi Ink scroll resets on redundant PTY resize even when cols/rows are unchanged. */
-export function shouldSkipKimiTuiPtyResize({ initialCommand = '', kimiReady = false } = {}) {
-  return isKimiTuiLive({ initialCommand, kimiReady });
+export function shouldSkipKimiTuiPtyResize({ initialCommand = '', hasConnectedOnce = false } = {}) {
+  return isKimiLaunchCommand(initialCommand) && hasConnectedOnce;
+}
+
+/** Scan xterm scrollback for kimi chrome after reattach before fresh output arrives. */
+export function detectKimiReadyFromTerminalBuffer(term) {
+  const buffer = term?.buffer?.active;
+  if (!buffer || buffer.length === 0) return false;
+
+  try {
+    const lines = [];
+    const start = Math.max(0, buffer.length - 48);
+    for (let lineIndex = start; lineIndex < buffer.length; lineIndex += 1) {
+      const line = buffer.getLine(lineIndex);
+      if (line) lines.push(line.translateToString(true));
+    }
+    return detectKimiTuiReady(lines.join('\n'));
+  } catch {
+    return false;
+  }
 }
