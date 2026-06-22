@@ -237,9 +237,9 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 
 ---
 
-### Fase 3 — Capa C (scroll kimi) — implementada, pendiente QA manual
+### Fase 3 — Capa C (scroll kimi) — **DEFERIDO**
 
-**Objetivo:** scroll dentro de kimi TUI.
+**Objetivo:** scroll dentro de kimi TUI. _(No logrado; código wheel retirado.)_
 
 **Implementado (commit `[kimi-rebuild] fase-3`):**
 
@@ -258,9 +258,9 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 
 ---
 
-### Fase 3b — Capa C fix (scroll kimi) — implementada, pendiente QA manual
+### Fase 3b — Capa C fix (scroll kimi) — **DEFERIDO**
 
-**Problema:** Fase 3 dejó terminales OK pero scroll kimi no respondía.
+**Problema:** Fase 3 dejó terminales OK pero scroll kimi no respondía. Usuario confirmó: otras TUIs OK, scroll kimi no — se deja de lado.
 
 **Causas identificadas:**
 
@@ -288,9 +288,9 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 
 ---
 
-### Fase 4 — Capa D (focus/mouse) — solo si F3 estable
+### Fase 4 — Capa D (focus/mouse) — **POSPUESTO**
 
-Implementación mínima; si rompe, **no aplicar** — kimi puede vivir sin rebind agresivo.
+Dependía de scroll kimi estable (F3). No implementar hasta nueva evidencia o investigación aparte.
 
 ---
 
@@ -302,16 +302,34 @@ Solo paneles `native_vte`; tests aparte.
 
 ## Registro de intentos
 
-| Fecha      | Fase | Commit    | Resultado        | Notas                                            |
-| ---------- | ---- | --------- | ---------------- | ------------------------------------------------ |
-| 2026-06-22 | —    | `7b769c4` | **FALLÓ**        | Cherry-pick completo `12435b1`; terminales rotas |
-| 2026-06-22 | 0    | `cca90af` | **OK**           | Revert kimi; baseline estable                    |
-| 2026-06-22 | 1    | `f96c649` | **OK**           | Capa A launch+marker; terminales OK (usuario)    |
-| 2026-06-22 | 2    | `896600d` | **OK**           | Capa B readiness; terminales OK (usuario)        |
-| 2026-06-22 | 3    | `0dfd006` | **parcial**      | Capa C aislada; terminales OK, scroll kimi no    |
-| 2026-06-22 | 3b   | `bc86c68` | **pendiente QA** | Fix gates wheel + detector readiness ampliado    |
+| Fecha      | Fase | Commit    | Resultado    | Notas                                            |
+| ---------- | ---- | --------- | ------------ | ------------------------------------------------ |
+| 2026-06-22 | —    | `7b769c4` | **FALLÓ**    | Cherry-pick completo `12435b1`; terminales rotas |
+| 2026-06-22 | 0    | `cca90af` | **OK**       | Revert kimi; baseline estable                    |
+| 2026-06-22 | 1    | `f96c649` | **OK**       | Capa A launch+marker; terminales OK (usuario)    |
+| 2026-06-22 | 2    | `896600d` | **OK**       | Capa B readiness; terminales OK (usuario)        |
+| 2026-06-22 | 3    | `0dfd006` | **parcial**  | Capa C aislada; terminales OK, scroll kimi no    |
+| 2026-06-22 | 3b   | `bc86c68` | **FALLÓ**    | Gates relajados; scroll kimi sigue sin funcionar |
+| 2026-06-22 | —    | —         | **DEFERIDO** | Capa C/D scroll+focus; otras TUIs OK (usuario)   |
 
 _(Actualizar esta tabla en cada intento.)_
+
+---
+
+## Estado entregable (MVP)
+
+**Incluido y verificado:**
+
+- Capa A — lanzamiento kimi (`--yolo --auto`, skills-dir, marker `/tmp/devhub-agent-ready-kimi-*`)
+- Capa B — readiness mínima (detector + marker client/server; sin wheel/focus)
+- Terminales opencode/grok/shell sin regresión
+
+**Conocido / diferido:**
+
+- Scroll dentro del TUI kimi (Capa C) — no funciona con inyección SGR aislada; código wheel retirado para no interceptar eventos
+- Focus/mouse kimi (Capa D) — pospuesto
+
+**Próximo paso sugerido:** merge `task/kimi-minimal` → `task/rebuild-from-stable` (solo capas A+B), o Capa F (Zed/packaging) en rama aparte.
 
 ---
 

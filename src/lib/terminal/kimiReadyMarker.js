@@ -26,8 +26,3 @@ export function detectKimiTuiReady(text) {
   if (/\bthinking\b/i.test(text) && /\/\s*[\d.]+%\s*\(/i.test(text)) return true;
   return false;
 }
-
-/** Capa C gate — inject wheel only for live kimi panels (see KIMI_REBUILD_PLAN.md). */
-export function shouldInjectKimiWheelScroll({ initialCommand = '', kimiReady = false } = {}) {
-  return isKimiLaunchCommand(initialCommand) && kimiReady;
-}

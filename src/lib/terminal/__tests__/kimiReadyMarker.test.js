@@ -2,7 +2,6 @@ const {
   detectKimiTuiReady,
   isKimiLaunchCommand,
   normalizeKimiLaunchCommand,
-  shouldInjectKimiWheelScroll,
 } = require('../kimiReadyMarker.js');
 
 describe('kimiReadyMarker', () => {
@@ -30,27 +29,5 @@ describe('kimiReadyMarker', () => {
     expect(detectKimiTuiReady('session_abc12345-dead-beef')).toBe(true);
     expect(detectKimiTuiReady('k2.5 code')).toBe(true);
     expect(detectKimiTuiReady('thinking / 12.3% (tokens)')).toBe(true);
-  });
-
-  test('shouldInjectKimiWheelScroll requires kimi command and readiness only', () => {
-    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
-    expect(
-      shouldInjectKimiWheelScroll({
-        initialCommand: kimiCmd,
-        kimiReady: true,
-      })
-    ).toBe(true);
-    expect(
-      shouldInjectKimiWheelScroll({
-        initialCommand: kimiCmd,
-        kimiReady: false,
-      })
-    ).toBe(false);
-    expect(
-      shouldInjectKimiWheelScroll({
-        initialCommand: 'opencode',
-        kimiReady: true,
-      })
-    ).toBe(false);
   });
 });

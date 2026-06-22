@@ -56,11 +56,7 @@ import {
   detectOpenCodeTuiReady,
   shouldDiscardOpenCodeCatchupReplay,
 } from '@/lib/terminal/opencodeReadyMarker';
-import {
-  detectKimiTuiReady,
-  isKimiLaunchCommand,
-  shouldInjectKimiWheelScroll,
-} from '@/lib/terminal/kimiReadyMarker';
+import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
   isSwarmLaunchWrapperDispatched,
   markSwarmLaunchWrapperDispatched,
@@ -304,13 +300,9 @@ export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession =
 
 export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;
 
-/** Grok/Kimi shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
-export function resolveTerminalWheelInputZoneRows({
-  isGrokSession = false,
-  isKimiSession = false,
-} = {}) {
-  if (isGrokSession || isKimiSession) return TERMINAL_GROK_INPUT_ZONE_ROWS;
-  return TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
+/** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
+export function resolveTerminalWheelInputZoneRows({ isGrokSession = false } = {}) {
+  return isGrokSession ? TERMINAL_GROK_INPUT_ZONE_ROWS : TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
 }
 
 export const TERMINAL_WHEEL_ARROW_UP_SEQ = '\x1b[A';
@@ -5688,41 +5680,6 @@ export default function TerminalTTY({
         term.scrollLines(direction === 'up' ? -lines : lines);
         event.preventDefault();
         event.stopPropagation();
-        return;
-      }
-
-      // Capa C: Kimi scroll — isolated SGR injection; does not alter opencode/grok paths.
-      if (
-        shouldInjectKimiWheelScroll({
-          initialCommand,
-          kimiReady: kimiReadyNotifiedRef.current,
-        })
-      ) {
-        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
-        if (!direction) return;
-
-        const inputZoneRows = resolveTerminalWheelInputZoneRows({ isKimiSession: true });
-        const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
-        const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
-        if (cell) {
-          lastPointerZoneRef.current = isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
-            ? 'transcript'
-            : 'input';
-        }
-
-        const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
-        const steps = Math.max(1, Math.min(2, rawSteps));
-        const coords = resolveGrokWheelSgrCoords(cell, term, inputZoneRows);
-        const payload = buildGrokWheelScrollPayload(direction, coords.col, coords.row, steps);
-        const sent = sendTerminalPasteInput({
-          socket: wsRef.current,
-          transport: transportRef.current,
-          text: payload,
-        });
-        if (sent) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
         return;
       }
 
