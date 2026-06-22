@@ -491,8 +491,8 @@ export function clampTerminalViewportDimensions(dims) {
   };
 }
 
-// Horizontal: add one more column when slack remains. Vertical: same — clip the
-// partial last row under overflow:hidden instead of leaving a dead band.
+// Horizontal: add one more column when slack remains. Vertical: keep floored rows
+// unless clip cost beats slack — fillSlack on rows clips partial lines → rayitas.
 function proposeTerminalAxisDimension({ available, cellSize, minValue, fillSlack = false }) {
   const avail = Number(available);
   const cell = Number(cellSize);
@@ -561,7 +561,7 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
     available: availH,
     cellSize: cellH,
     minValue: 1,
-    fillSlack: true,
+    fillSlack: false,
   });
 
   return clampTerminalViewportDimensions({ cols, rows });
@@ -1086,6 +1086,19 @@ export function shouldAttachCanvasRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-canvas';
 }
 
+/** Only the active visible panel mounts Canvas; inactive split siblings stay on DOM. */
+export function shouldMountCanvasAddon({
+  operationalRendererMode,
+  isActivePanel = true,
+  isVisibleInLayout = true,
+  visibleTerminalPanelCount = 1,
+} = {}) {
+  if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return false;
+  if (!isVisibleInLayout) return false;
+  if (visibleTerminalPanelCount <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) return isActivePanel;
+  return isActivePanel;
+}
+
 export function shouldUseGpuTerminalRenderer({ operationalRendererMode }) {
   return (
     shouldAttachWebglRenderer({ operationalRendererMode }) ||
@@ -1104,6 +1117,59 @@ export function shouldRefitVisibleInactiveSplitPanel({
 /** Full viewport sync when a workspace shell becomes visible again after being hidden. */
 export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible) {
   return !prevVisible && nextVisible;
+}
+
+/** Workspace tab switch and in-workspace V1/V2/V3 window switch share the same GPU recovery path. */
+export function isWorkspaceLayoutSwitchReason(reason = '') {
+  const normalized = String(reason);
+  if (normalized.includes('workspace-window')) return true;
+  return normalized.includes('workspace-switch');
+}
+
+/**
+ * DOM renderer on WebKitGTK: skip fit/resize on app resume when a live TUI already
+ * has the correct grid. Refitting corrupts alternate-screen Ink layouts.
+ */
+export function shouldFreezeDomViewportOnAppResume({
+  operationalRendererMode = 'xterm',
+  tuiSessionActive = false,
+  term = null,
+  container = null,
+  fitAddon = null,
+} = {}) {
+  if (operationalRendererMode !== 'xterm') return false;
+  if (!tuiSessionActive) return false;
+  if (!term || !container || !fitAddon) return false;
+  const dims = proposeTerminalViewportDimensions({ container, fitAddon, term });
+  if (!dims) return false;
+  return term.cols === dims.cols && term.rows === dims.rows;
+}
+
+/** Same freeze policy as single-panel WebGL, but for DOM + live TUI on workspace show. */
+export function shouldFreezeDomViewportOnWorkspaceShow({
+  reason = '',
+  sizeUnchanged = false,
+  operationalRendererMode = 'xterm',
+  tuiSessionActive = false,
+} = {}) {
+  if (!sizeUnchanged || !tuiSessionActive) return false;
+  if (operationalRendererMode !== 'xterm') return false;
+
+  const normalizedReason = String(reason);
+  if (normalizedReason.includes('workspace-switch')) return true;
+  if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
+    return true;
+  }
+  if (isWorkspaceLayoutSwitchReason(normalizedReason)) return true;
+  if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
+  if (/^reactivate-/.test(normalizedReason)) return true;
+  if (
+    normalizedReason.includes('window-focus') ||
+    normalizedReason.includes('visibility-visible')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** Skip redundant fit/PTY resize when layout-settled fires but cols/rows are already correct. */
@@ -1131,15 +1197,20 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
   return /layout-settled-|workspace-switch/.test(normalized);
 }
 
-/** Buffer PTY output while layout-hidden or inactive-split in GPU modes. */
+/** Buffer PTY output while layout-hidden or inactive split still has canvas attached. */
 export function shouldSkipTerminalOutputWhileLayoutHidden({
   isVisibleInLayout = true,
   isActivePanel = true,
   operationalRendererMode,
+  canvasAttached = false,
 } = {}) {
-  if (!shouldUseGpuTerminalRenderer({ operationalRendererMode })) return false;
-  if (!isVisibleInLayout) return true;
-  return !isActivePanel && shouldAttachCanvasRenderer({ operationalRendererMode });
+  if (!isVisibleInLayout) {
+    return shouldUseGpuTerminalRenderer({ operationalRendererMode });
+  }
+  if (!isActivePanel && shouldAttachCanvasRenderer({ operationalRendererMode }) && canvasAttached) {
+    return true;
+  }
+  return false;
 }
 
 export const HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX = 256 * 1024;
@@ -2849,7 +2920,12 @@ export default function TerminalTTY({
     const term = termRef.current;
     if (!term || canvasAddonRef.current) return false;
     if (
-      !shouldAttachCanvasRenderer({ operationalRendererMode: effectiveRendererModeRef.current })
+      !shouldMountCanvasAddon({
+        operationalRendererMode: effectiveRendererModeRef.current,
+        isActivePanel: isActivePanelRef.current,
+        isVisibleInLayout: isVisibleInLayoutRef.current,
+        visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+      })
     ) {
       return false;
     }
@@ -3118,6 +3194,26 @@ export default function TerminalTTY({
       }
 
       if (
+        shouldFreezeDomViewportOnWorkspaceShow({
+          reason,
+          sizeUnchanged,
+          operationalRendererMode: operationalRendererModeRef.current,
+          tuiSessionActive: tuiSessionActiveRef.current,
+        })
+      ) {
+        needsViewportSyncOnShowRef.current = false;
+        logViewportDiagnostic(`${reason}-frozen-dom-tui`);
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        refreshTerminalViewport(termRef.current);
+        return;
+      }
+
+      if (
         shouldSkipRedundantLayoutSettleViewportSync({
           reason,
           sizeUnchanged,
@@ -3183,8 +3279,11 @@ export default function TerminalTTY({
       }
 
       if (
-        shouldAttachCanvasRenderer({
+        shouldMountCanvasAddon({
           operationalRendererMode: operationalRendererModeRef.current,
+          isActivePanel: isActivePanelRef.current,
+          isVisibleInLayout: isVisibleInLayoutRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
         }) &&
         !canvasAddonRef.current
       ) {
@@ -3341,9 +3440,20 @@ export default function TerminalTTY({
 
       const clearAtlas =
         options.clearAtlas ??
-        shouldAttachCanvasRenderer({
+        shouldMountCanvasAddon({
           operationalRendererMode: operationalRendererModeRef.current,
+          isActivePanel: isActivePanelRef.current,
+          isVisibleInLayout: isVisibleInLayoutRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
         });
+
+      const skipDomFit = shouldFreezeDomViewportOnAppResume({
+        operationalRendererMode: operationalRendererModeRef.current,
+        tuiSessionActive: tuiSessionActiveRef.current,
+        term: termRef.current,
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+      });
 
       const kimiConnected = shouldSkipKimiTuiPtyResize({
         initialCommand,
@@ -3354,7 +3464,16 @@ export default function TerminalTTY({
       prepareActiveTuiTerminalFocus(termRef.current, {
         tuiSessionActive: tuiSessionActiveRef.current,
       });
-      if (!kimiConnected) {
+      if (skipDomFit) {
+        logViewportDiagnostic('reactivate-frozen-dom-tui');
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        refreshTerminalViewport(termRef.current);
+      } else if (!kimiConnected) {
         fitAndResize({ clearAtlas });
         stabilizeTerminalRenderer(termRef.current, { clearAtlas });
         if (isActivePanelRef.current) scrollTerminalToBottom();
@@ -3367,7 +3486,9 @@ export default function TerminalTTY({
       }
 
       rafRef.current = requestAnimationFrame(() => {
-        if (!kimiConnected) {
+        if (skipDomFit) {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        } else if (!kimiConnected) {
           fitAndResize({ clearAtlas: false });
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
           if (isActivePanelRef.current) scrollTerminalToBottom();
@@ -3804,14 +3925,31 @@ export default function TerminalTTY({
     }
 
     if (wantsCanvas) {
-      // Focus mode hides sibling panels via CSS — do not tear down their GPU
-      // renderer while hidden or they come back as a black viewport (path header only).
       if (!isVisibleInLayoutRef.current) return;
 
       if (webglAddonRef.current) {
         releaseWebglAddonForInactivePanel('split-open-canvas');
       }
-      if (!canvasAddonRef.current) {
+
+      if (
+        !isActivePanelRef.current &&
+        visibleTerminalPanelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT &&
+        canvasAddonRef.current
+      ) {
+        releaseCanvasAddon('panel-inactive-dom-fallback');
+        refreshTerminalViewport(termRef.current);
+        return;
+      }
+
+      if (
+        shouldMountCanvasAddon({
+          operationalRendererMode,
+          isActivePanel: isActivePanelRef.current,
+          isVisibleInLayout: isVisibleInLayoutRef.current,
+          visibleTerminalPanelCount,
+        }) &&
+        !canvasAddonRef.current
+      ) {
         void tryReattachCanvasAddonRef.current?.();
       }
       return;
@@ -3825,6 +3963,7 @@ export default function TerminalTTY({
     }
   }, [
     id,
+    isActivePanel,
     isVisibleInLayout,
     operationalRendererMode,
     releaseCanvasAddon,
@@ -3833,11 +3972,44 @@ export default function TerminalTTY({
     visibleTerminalPanelCount,
   ]);
 
+  // Active-only canvas: release GPU addon on inactive split siblings so DOM stays visible.
+  useLayoutEffect(() => {
+    if (shouldUseNativeRenderer || !termRef.current) return;
+    if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return;
+    if (!isVisibleInLayout) return;
+
+    if (!isActivePanel) {
+      if (canvasAddonRef.current) {
+        releaseCanvasAddon('panel-inactive-dom-fallback');
+        refreshTerminalViewport(termRef.current);
+      }
+      return;
+    }
+
+    if (!canvasAddonRef.current) {
+      void tryReattachCanvasAddonRef.current?.();
+    }
+  }, [
+    isActivePanel,
+    isVisibleInLayout,
+    operationalRendererMode,
+    releaseCanvasAddon,
+    shouldUseNativeRenderer,
+  ]);
+
   // Shared-surface / split layouts: re-attach canvas when a panel becomes visible again.
   useEffect(() => {
     if (!isVisibleInLayout || shouldUseNativeRenderer || !termRef.current) return undefined;
 
-    if (shouldAttachCanvasRenderer({ operationalRendererMode }) && !canvasAddonRef.current) {
+    if (
+      shouldMountCanvasAddon({
+        operationalRendererMode,
+        isActivePanel,
+        isVisibleInLayout,
+        visibleTerminalPanelCount,
+      }) &&
+      !canvasAddonRef.current
+    ) {
       void tryReattachCanvasAddonRef.current?.();
     }
 
@@ -4376,6 +4548,7 @@ export default function TerminalTTY({
             isVisibleInLayout: isVisibleInLayoutRef.current,
             isActivePanel: isActivePanelRef.current,
             operationalRendererMode: operationalRendererModeRef.current,
+            canvasAttached: Boolean(canvasAddonRef.current),
           })
         ) {
           if (typeof filtered === 'string' && filtered.length > 0) {

@@ -1,3 +1,5 @@
+import { shouldAvoidWebglOnThisRuntime } from './terminalRendererPreferences';
+
 /**
  * TerminalThemeSync — Reads CSS custom properties from the document and
  * converts them into an xterm.js ITheme-compatible object.
@@ -164,11 +166,13 @@ export function getTerminalFontOptions() {
   const rawLine = getRawVar('--terminal-line-height');
   const rawLetter = getRawVar('--terminal-letter-spacing');
 
+  const domSafeMetrics = shouldAvoidWebglOnThisRuntime();
+
   return {
     fontFamily: fontFamily.replace(/\s+/g, ' ').trim(),
     fontWeight: rawWeight || 'bold',
     fontWeightBold: rawWeightBold || 'bold',
-    lineHeight: parseFloat(rawLine) || 1.1,
-    letterSpacing: parseFloat(rawLetter) || -0.5,
+    lineHeight: domSafeMetrics ? 1 : parseFloat(rawLine) || 1.1,
+    letterSpacing: domSafeMetrics ? 0 : parseFloat(rawLetter) || -0.5,
   };
 }

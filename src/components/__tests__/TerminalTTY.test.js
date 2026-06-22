@@ -924,26 +924,34 @@ describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
     ).toBe(true);
   });
 
-  test('buffers inactive visible canvas splits and keeps active or DOM panels live', () => {
+  test('buffers layout-hidden GPU panels and inactive splits only while canvas is attached', () => {
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
-        isVisibleInLayout: true,
-        isActivePanel: false,
+        isVisibleInLayout: false,
         operationalRendererMode: 'xterm-canvas',
       })
     ).toBe(true);
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: true,
-        isActivePanel: true,
+        isActivePanel: false,
         operationalRendererMode: 'xterm-canvas',
+        canvasAttached: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipTerminalOutputWhileLayoutHidden({
+        isVisibleInLayout: true,
+        isActivePanel: false,
+        operationalRendererMode: 'xterm-canvas',
+        canvasAttached: false,
       })
     ).toBe(false);
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: true,
-        isActivePanel: false,
-        operationalRendererMode: 'xterm-webgl',
+        isActivePanel: true,
+        operationalRendererMode: 'xterm-canvas',
       })
     ).toBe(false);
     expect(
