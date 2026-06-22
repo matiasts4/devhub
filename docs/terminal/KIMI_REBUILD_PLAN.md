@@ -1,8 +1,8 @@
 # Plan de reimplementación Kimi (sin romper terminales)
 
-**Estado:** activo  
+**Estado:** cerrado — versión definitiva  
 **Última actualización:** 2026-06-22  
-**Rama de trabajo:** `task/rebuild-from-stable` (MVP kimi mergeado desde `task/kimi-minimal`)  
+**Rama definitiva:** `task/rebuild-from-stable` @ `0a5f22e` (kimi MVP + Capa F; scroll kimi OK en QA manual)  
 **Baseline estable:** `stable/terminal-jun20` (`ebc5030`) + collab en `task/rebuild-from-stable` (`cca90af`)
 
 ---
@@ -325,10 +325,12 @@ _(Actualizar esta tabla en cada intento.)_
 - Capa B — readiness mínima (detector + marker client/server; sin wheel/focus)
 - Terminales opencode/grok/shell sin regresión
 
-**Conocido / diferido:**
+**QA manual definitivo (usuario, 2026-06-22):** terminales OK, opencode/grok/shell OK, **scroll kimi OK** (sin capa C dedicada en el árbol actual).
 
-- Scroll dentro del TUI kimi (Capa C) — no funciona con inyección SGR aislada; código wheel retirado para no interceptar eventos
-- Focus/mouse kimi (Capa D) — pospuesto
+**Diferido / no necesario por ahora:**
+
+- Capa C wheel kimi dedicada — retirada; scroll funciona con comportamiento baseline
+- Capa D focus/mouse kimi — pospuesto
 
 **Merge:** `task/kimi-minimal` → `task/rebuild-from-stable` @ `8086148` (fast-forward, capas A+B).
 
