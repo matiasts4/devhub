@@ -285,20 +285,18 @@ export function resolveGrokWheelSgrCoords(
 
 /** Grok Ink accepts SGR wheel and/or arrow scroll depending on focus — send both. */
 export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
-  const normalizedSteps = Math.max(1, Math.floor(steps));
-  return (
-    buildTerminalWheelSgrSequence(direction, col, row) +
-    buildTerminalWheelArrowSequence(direction, normalizedSteps)
-  );
+  return buildTerminalWheelSgrSequence(direction, col, row);
 }
 
 /**
  * Pre-ready fallback when neither grok injection nor OpenCode passthrough is active.
  */
-export function resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession = false) {
-  if (isGrokSession || isGrokTuiInitialCommand(initialCommand)) {
-    // Pre-ready grok: Page Up/Down avoids hitting the Ink input; live grok uses native passthrough.
-    return 'page';
+export function resolveTerminalWheelScrollPrefer(
+  initialCommand,
+  { isGrokSession = false, tuiActive = false } = {}
+) {
+  if (isGrokSession || tuiActive || isGrokTuiInitialCommand(initialCommand)) {
+    return 'sgr';
   }
   if (isLikelyTuiInitialCommand(initialCommand)) {
     return 'sgr';
@@ -6146,10 +6144,19 @@ export default function TerminalTTY({
       const TERMINAL_WHEEL_MAX_PAGE_STEPS = 2;
       const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
       const steps = Math.max(1, Math.min(TERMINAL_WHEEL_MAX_PAGE_STEPS, rawSteps));
-      const wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
-      const wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
+      let wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
+      let wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
 
-      const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
+      if (isTuiSession) {
+        const coords = resolveGrokWheelSgrCoords(cell, term, inputZoneRows);
+        wheelCol = coords.col;
+        wheelRow = coords.row;
+      }
+
+      const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, {
+        isGrokSession,
+        tuiActive: tuiSessionActiveRef.current,
+      });
       const payload = isGrokSession
         ? buildGrokWheelScrollPayload(direction, wheelCol, wheelRow, steps)
         : scrollPrefer === 'sgr'
