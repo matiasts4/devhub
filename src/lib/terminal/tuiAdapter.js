@@ -1,4 +1,3 @@
- 
 /**
  * tuiAdapter.js — per-TUI strategy registry.
  *
@@ -29,7 +28,7 @@ const TUI_ADAPTER_REGISTRY = Object.freeze({
     id: 'grok',
     detectReady: ({ refs } = {}) => Boolean(refs?.grokTuiReadyRef?.current),
     wheelStrategy: Object.freeze({
-      passThrough: true,
+      passThrough: false,
       buttons: [64, 65],
     }),
     clickStrategy: Object.freeze({

@@ -1,4 +1,5 @@
 const os = require('os');
+const path = require('path');
 const { spawnSync } = require('child_process');
 
 let tmuxAvailabilityCache = null;
@@ -49,8 +50,16 @@ function buildSidecarSpawnConfig({
   const resolvedShell = env.SHELL || 'bash';
   const swarmSessionName = isSwarmRole ? buildSwarmTmuxSessionName(launchId, roleKey) : null;
   const tmuxSession = swarmSessionName;
+
+  const kimiBinDir = path.join(os.homedir(), '.kimi-code', 'bin');
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
+  const existingPath = env[pathKey] || '';
+  const separator = os.platform() === 'win32' ? ';' : ':';
+  const newPath = existingPath ? `${kimiBinDir}${separator}${existingPath}` : kimiBinDir;
+
   const spawnEnv = {
     ...env,
+    [pathKey]: newPath,
     TERM: 'xterm-256color',
     DEVHUB_PROJECT_DIR: cwd,
     MOTD_SHOWN: 'true',

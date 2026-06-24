@@ -4502,7 +4502,7 @@ export default function TerminalTTY({
         if (grokReady) {
           isGrokSessionRef.current = true;
           grokTuiReadyRef.current = true;
-          setNativeWheelPassthrough(true);
+          setNativeWheelPassthrough(false);
         }
         if (footerReady) {
           tuiSessionFooterConfirmedRef.current = true;
@@ -6150,8 +6150,9 @@ export default function TerminalTTY({
       const wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
 
       const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, isGrokSession);
-      const payload =
-        scrollPrefer === 'sgr'
+      const payload = isGrokSession
+        ? buildGrokWheelScrollPayload(direction, wheelCol, wheelRow, steps)
+        : scrollPrefer === 'sgr'
           ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
           : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
 
