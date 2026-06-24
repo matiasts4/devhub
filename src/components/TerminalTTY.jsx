@@ -3144,18 +3144,17 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
-          refreshTerminalViewport(termRef.current);
-          webglReleasedOnLayoutHideRef.current = false;
+          void tryReattachWebglAddonRef.current?.({
+            clearAtlas: false,
+            skipFitWhenUnchanged: true,
+          });
         } else if (
           canvasReleasedOnLayoutHideRef.current &&
           shouldAttachCanvasRenderer({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
-          refreshTerminalViewport(termRef.current);
-          canvasReleasedOnLayoutHideRef.current = false;
+          void tryReattachCanvasAddonRef.current?.();
         }
         return;
       }
@@ -3181,18 +3180,17 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
-          refreshTerminalViewport(termRef.current);
-          webglReleasedOnLayoutHideRef.current = false;
+          void tryReattachWebglAddonRef.current?.({
+            clearAtlas: true,
+            skipFitWhenUnchanged: true,
+          });
         } else if (
           canvasReleasedOnLayoutHideRef.current &&
           shouldAttachCanvasRenderer({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
-          refreshTerminalViewport(termRef.current);
-          canvasReleasedOnLayoutHideRef.current = false;
+          void tryReattachCanvasAddonRef.current?.();
         } else {
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         }
@@ -3246,23 +3244,41 @@ export default function TerminalTTY({
           canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
         });
 
-      if (shouldClearAtlas && canvasReleasedOnLayoutHideRef.current) {
-        canvasReleasedOnLayoutHideRef.current = false;
-      }
+      let fitWorked = false;
 
-      const fitWorked = fitTerminalViewport({
-        container: containerRef.current,
-        fitAddon: fitRef.current,
-        term: termRef.current,
-        socket: wsRef.current,
-        clearAtlas: shouldClearAtlas,
-        lastPtySizeRef: lastPtySizeRef.current,
-      });
+      if (
+        webglReleasedOnLayoutHideRef.current &&
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        })
+      ) {
+        fitWorked = await tryReattachWebglAddonRef.current?.({ clearAtlas: shouldClearAtlas });
+      } else if (
+        canvasReleasedOnLayoutHideRef.current &&
+        shouldAttachCanvasRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        })
+      ) {
+        fitWorked = await tryReattachCanvasAddonRef.current?.();
+      } else {
+        if (shouldClearAtlas && canvasReleasedOnLayoutHideRef.current) {
+          canvasReleasedOnLayoutHideRef.current = false;
+        }
 
-      stabilizeTerminalRenderer(termRef.current, { clearAtlas: shouldClearAtlas });
+        fitWorked = fitTerminalViewport({
+          container: containerRef.current,
+          fitAddon: fitRef.current,
+          term: termRef.current,
+          socket: wsRef.current,
+          clearAtlas: shouldClearAtlas,
+          lastPtySizeRef: lastPtySizeRef.current,
+        });
 
-      if (fitWorked && termRef.current) {
-        confirmViewportFit(termRef.current.cols, termRef.current.rows);
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: shouldClearAtlas });
+
+        if (fitWorked && termRef.current) {
+          confirmViewportFit(termRef.current.cols, termRef.current.rows);
+        }
       }
 
       const kimiTuiLive = isKimiTuiLive({
