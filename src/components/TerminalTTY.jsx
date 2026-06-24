@@ -1086,17 +1086,18 @@ export function shouldAttachCanvasRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-canvas';
 }
 
-/** Only the active visible panel mounts Canvas; inactive split siblings stay on DOM. */
+/** Visible panels with xterm-canvas operational mode all mount Canvas (including inactive split siblings). */
 export function shouldMountCanvasAddon({
   operationalRendererMode,
-  isActivePanel = true,
+  isActivePanel: _isActivePanel = true,
   isVisibleInLayout = true,
-  visibleTerminalPanelCount = 1,
+  visibleTerminalPanelCount: _visibleTerminalPanelCount = 1,
 } = {}) {
   if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return false;
   if (!isVisibleInLayout) return false;
-  if (visibleTerminalPanelCount <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) return isActivePanel;
-  return isActivePanel;
+  // Releasing canvas on inactive siblings drops to DOM and corrupts alternate-screen TUIs
+  // (horizontal seam artifacts). Canvas 2D has no WebGL-style single-context limit.
+  return true;
 }
 
 export function shouldUseGpuTerminalRenderer({ operationalRendererMode }) {
@@ -1197,7 +1198,7 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
   return /layout-settled-|workspace-switch/.test(normalized);
 }
 
-/** Buffer PTY output while layout-hidden or inactive split still has canvas attached. */
+/** Buffer PTY output while layout-hidden. */
 export function shouldSkipTerminalOutputWhileLayoutHidden({
   isVisibleInLayout = true,
   isActivePanel = true,
@@ -1206,9 +1207,6 @@ export function shouldSkipTerminalOutputWhileLayoutHidden({
 } = {}) {
   if (!isVisibleInLayout) {
     return shouldUseGpuTerminalRenderer({ operationalRendererMode });
-  }
-  if (!isActivePanel && shouldAttachCanvasRenderer({ operationalRendererMode }) && canvasAttached) {
-    return true;
   }
   return false;
 }
@@ -2842,6 +2840,9 @@ export default function TerminalTTY({
               lastPtySizeRef: lastPtySizeRef.current,
             });
           }
+          if (connectPendingUntilFitRef.current) {
+            maybeConnectAfterViewportFit(fitWorked);
+          }
         }
       }
       if (
@@ -3932,16 +3933,6 @@ export default function TerminalTTY({
       }
 
       if (
-        !isActivePanelRef.current &&
-        visibleTerminalPanelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT &&
-        canvasAddonRef.current
-      ) {
-        releaseCanvasAddon('panel-inactive-dom-fallback');
-        refreshTerminalViewport(termRef.current);
-        return;
-      }
-
-      if (
         shouldMountCanvasAddon({
           operationalRendererMode,
           isActivePanel: isActivePanelRef.current,
@@ -3972,47 +3963,21 @@ export default function TerminalTTY({
     visibleTerminalPanelCount,
   ]);
 
-  // Active-only canvas: release GPU addon on inactive split siblings so DOM stays visible.
+  // Keep canvas on all visible split siblings; DOM fallback corrupts TUIs with horizontal seams.
   useLayoutEffect(() => {
     if (shouldUseNativeRenderer || !termRef.current) return;
     if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return;
     if (!isVisibleInLayout) return;
 
-    if (!isActivePanel) {
-      if (canvasAddonRef.current) {
-        releaseCanvasAddon('panel-inactive-dom-fallback');
-        refreshTerminalViewport(termRef.current);
-      }
+    if (!canvasAddonRef.current) {
+      void tryReattachCanvasAddonRef.current?.();
       return;
     }
 
-    if (!canvasAddonRef.current) {
-      void tryReattachCanvasAddonRef.current?.();
+    if (!isActivePanel && isTerminalRendererReady(termRef.current)) {
+      refreshTerminalViewport(termRef.current);
     }
-  }, [
-    isActivePanel,
-    isVisibleInLayout,
-    operationalRendererMode,
-    releaseCanvasAddon,
-    shouldUseNativeRenderer,
-  ]);
-
-  // initializeTerminal() can attach canvas before this layout effect runs — sweep stragglers.
-  useEffect(() => {
-    if (isInitializing || shouldUseNativeRenderer || !termRef.current) return undefined;
-    if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return undefined;
-    if (isActivePanel || !canvasAddonRef.current) return undefined;
-
-    releaseCanvasAddon('panel-inactive-post-init');
-    refreshTerminalViewport(termRef.current);
-    return undefined;
-  }, [
-    isActivePanel,
-    isInitializing,
-    operationalRendererMode,
-    releaseCanvasAddon,
-    shouldUseNativeRenderer,
-  ]);
+  }, [isActivePanel, isVisibleInLayout, operationalRendererMode, shouldUseNativeRenderer]);
 
   // Shared-surface / split layouts: re-attach canvas when a panel becomes visible again.
   useEffect(() => {

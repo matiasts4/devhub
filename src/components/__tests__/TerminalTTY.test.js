@@ -724,7 +724,7 @@ describe('shouldAttachCanvasRenderer()', () => {
 });
 
 describe('shouldMountCanvasAddon()', () => {
-  test('mounts canvas only on the active visible split panel', () => {
+  test('mounts canvas on every visible split panel (active and inactive)', () => {
     expect(
       shouldMountCanvasAddon({
         operationalRendererMode: 'xterm-canvas',
@@ -736,6 +736,14 @@ describe('shouldMountCanvasAddon()', () => {
       shouldMountCanvasAddon({
         operationalRendererMode: 'xterm-canvas',
         isActivePanel: false,
+        visibleTerminalPanelCount: 4,
+      })
+    ).toBe(true);
+    expect(
+      shouldMountCanvasAddon({
+        operationalRendererMode: 'xterm-canvas',
+        isActivePanel: false,
+        isVisibleInLayout: false,
         visibleTerminalPanelCount: 4,
       })
     ).toBe(false);
@@ -951,7 +959,7 @@ describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
     ).toBe(true);
   });
 
-  test('buffers layout-hidden GPU panels and inactive splits only while canvas is attached', () => {
+  test('buffers layout-hidden GPU panels and never buffers visible panels', () => {
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: false,
@@ -965,7 +973,7 @@ describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
         operationalRendererMode: 'xterm-canvas',
         canvasAttached: true,
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldSkipTerminalOutputWhileLayoutHidden({
         isVisibleInLayout: true,
