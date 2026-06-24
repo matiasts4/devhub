@@ -14,7 +14,8 @@ const { buildXtermTheme, getTerminalFontOptions } = require('../terminal/Termina
 
 describe('buildXtermTheme()', () => {
   // Helper: simulate CSS var resolution with known values
-  const makeGetVar = (overrides = {}) =>
+  const makeGetVar =
+    (overrides = {}) =>
     (name) => {
       const defaults = {
         '--accent-primary': 'oklch(0.74 0.16 57)',
@@ -74,10 +75,26 @@ describe('buildXtermTheme()', () => {
   test('theme object has all required xterm color keys', () => {
     const theme = buildXtermTheme(makeGetVar());
     const requiredKeys = [
-      'background', 'foreground', 'cursor', 'selectionBackground',
-      'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
-      'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
-      'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
+      'background',
+      'foreground',
+      'cursor',
+      'selectionBackground',
+      'black',
+      'red',
+      'green',
+      'yellow',
+      'blue',
+      'magenta',
+      'cyan',
+      'white',
+      'brightBlack',
+      'brightRed',
+      'brightGreen',
+      'brightYellow',
+      'brightBlue',
+      'brightMagenta',
+      'brightCyan',
+      'brightWhite',
     ];
     requiredKeys.forEach((key) => {
       expect(theme).toHaveProperty(key);
@@ -113,12 +130,12 @@ describe('buildXtermTheme()', () => {
 });
 
 describe('getTerminalFontOptions()', () => {
-  test('returns bold Kali-style defaults when CSS vars are unset', () => {
+  test('returns clean standard defaults when CSS vars are unset', () => {
     const opts = getTerminalFontOptions();
-    expect(opts.fontWeight).toBe('bold');
-    expect(opts.fontWeightBold).toBe('bold');
-    expect(opts.lineHeight).toBe(1.1);
-    expect(opts.letterSpacing).toBe(-0.5);
+    expect(opts.fontWeight).toBe('500');
+    expect(opts.fontWeightBold).toBe('800');
+    expect(opts.lineHeight).toBe(1.5);
+    expect(opts.letterSpacing).toBe(0);
     expect(opts.fontFamily).toContain('monospace');
   });
 });

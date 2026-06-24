@@ -1,4 +1,8 @@
 import { shouldAvoidWebglOnThisRuntime } from './terminalRendererPreferences';
+import {
+  DEFAULT_TERMINAL_TYPOGRAPHY,
+  getStoredTerminalTypography,
+} from './terminalTypographyPreferences';
 
 /**
  * TerminalThemeSync — Reads CSS custom properties from the document and
@@ -157,22 +161,31 @@ export function getTerminalFontOptions() {
     }
   };
 
+  const stored =
+    typeof window !== 'undefined' ? getStoredTerminalTypography(window.localStorage) : null;
+  const fallback = stored || DEFAULT_TERMINAL_TYPOGRAPHY;
+
   const fontFamily =
     getRawVar('--font-family-mono') ||
+    fallback.fontFamily ||
     "'Noto Sans Mono', 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace";
 
-  const rawWeight = getRawVar('--terminal-font-weight');
-  const rawWeightBold = getRawVar('--terminal-font-weight-bold');
-  const rawLine = getRawVar('--terminal-line-height');
-  const rawLetter = getRawVar('--terminal-letter-spacing');
+  const rawWeight = getRawVar('--terminal-font-weight') || fallback.fontWeight;
+  const rawWeightBold = getRawVar('--terminal-font-weight-bold') || fallback.fontWeightBold;
+  const rawLine =
+    getRawVar('--terminal-line-height') ||
+    (fallback.lineHeight != null ? String(fallback.lineHeight) : '');
+  const rawLetter =
+    getRawVar('--terminal-letter-spacing') ||
+    (fallback.letterSpacing != null ? String(fallback.letterSpacing) : '');
 
   const domSafeMetrics = shouldAvoidWebglOnThisRuntime();
 
   return {
     fontFamily: fontFamily.replace(/\s+/g, ' ').trim(),
-    fontWeight: rawWeight || 'bold',
-    fontWeightBold: rawWeightBold || 'bold',
-    lineHeight: domSafeMetrics ? 1 : parseFloat(rawLine) || 1.1,
-    letterSpacing: domSafeMetrics ? 0 : parseFloat(rawLetter) || -0.5,
+    fontWeight: rawWeight || '500',
+    fontWeightBold: rawWeightBold || '800',
+    lineHeight: domSafeMetrics ? 1 : parseFloat(rawLine) || 1.5,
+    letterSpacing: domSafeMetrics ? 0 : parseFloat(rawLetter) || 0,
   };
 }

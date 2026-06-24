@@ -4679,13 +4679,8 @@ export default function TerminalTTY({
     id,
   ]);
 
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
-
-  useEffect(() => {
-    sendResizeRef.current = sendResize;
-  }, [sendResize]);
+  connectRef.current = connect;
+  sendResizeRef.current = sendResize;
 
   const adjustFontSize = useCallback((delta) => {
     setFontSize((prev) => {
