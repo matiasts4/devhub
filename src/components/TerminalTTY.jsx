@@ -3134,7 +3134,7 @@ export default function TerminalTTY({
           }
         }
         if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
-          void tryReattachWebglAddonRef.current?.({
+          await tryReattachWebglAddonRef.current?.({
             clearAtlas: false,
             skipFitWhenUnchanged: true,
           });
@@ -3144,7 +3144,7 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          void tryReattachWebglAddonRef.current?.({
+          await tryReattachWebglAddonRef.current?.({
             clearAtlas: false,
             skipFitWhenUnchanged: true,
           });
@@ -3154,7 +3154,10 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          void tryReattachCanvasAddonRef.current?.();
+          await tryReattachCanvasAddonRef.current?.();
+        }
+        if (termRef.current && isTerminalRendererReady(termRef.current)) {
+          refreshTerminalViewport(termRef.current);
         }
         return;
       }
@@ -3170,7 +3173,7 @@ export default function TerminalTTY({
         needsViewportSyncOnShowRef.current = false;
         logViewportDiagnostic(`${reason}-frozen-single-webgl`);
         if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
-          void tryReattachWebglAddonRef.current?.({
+          await tryReattachWebglAddonRef.current?.({
             clearAtlas: false,
             skipFitWhenUnchanged: true,
           });
@@ -3180,7 +3183,7 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          void tryReattachWebglAddonRef.current?.({
+          await tryReattachWebglAddonRef.current?.({
             clearAtlas: true,
             skipFitWhenUnchanged: true,
           });
@@ -3190,9 +3193,12 @@ export default function TerminalTTY({
             operationalRendererMode: operationalRendererModeRef.current,
           })
         ) {
-          void tryReattachCanvasAddonRef.current?.();
+          await tryReattachCanvasAddonRef.current?.();
         } else {
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        }
+        if (termRef.current && isTerminalRendererReady(termRef.current)) {
+          refreshTerminalViewport(termRef.current);
         }
         return;
       }
@@ -3377,6 +3383,10 @@ export default function TerminalTTY({
           socket: wsRef.current,
           lastPtySizeRef: lastPtySizeRef.current,
         });
+      }
+
+      if (termRef.current && isTerminalRendererReady(termRef.current)) {
+        refreshTerminalViewport(termRef.current);
       }
     },
     [
@@ -5686,12 +5696,31 @@ export default function TerminalTTY({
           } else {
             needsViewportSyncOnShowRef.current = true;
           }
+        } else if (
+          shouldAttachCanvasRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) &&
+          !canvasAddonRef.current
+        ) {
+          if (isVisibleInLayoutRef.current) {
+            void tryReattachCanvasAddonRef.current?.();
+          } else {
+            needsViewportSyncOnShowRef.current = true;
+          }
         } else if (isVisibleInLayoutRef.current) {
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
             clearAtlas: false,
           });
         } else {
           needsViewportSyncOnShowRef.current = true;
+        }
+        if (
+          isVisibleInLayoutRef.current &&
+          !isDisposingRef.current &&
+          termRef.current &&
+          isTerminalRendererReady(termRef.current)
+        ) {
+          refreshTerminalViewport(termRef.current);
         }
         return;
       }
@@ -5735,6 +5764,14 @@ export default function TerminalTTY({
           });
         } else {
           needsViewportSyncOnShowRef.current = true;
+        }
+        if (
+          isVisibleInLayoutRef.current &&
+          !isDisposingRef.current &&
+          termRef.current &&
+          isTerminalRendererReady(termRef.current)
+        ) {
+          refreshTerminalViewport(termRef.current);
         }
         return;
       }
