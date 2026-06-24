@@ -1776,11 +1776,6 @@ export default function TerminalTTY({
       cancelAnimationFrame(inactiveRepaintRafRef.current);
       inactiveRepaintRafRef.current = null;
     }
-
-    if (connectDeferTimerRef.current) {
-      clearTimeout(connectDeferTimerRef.current);
-      connectDeferTimerRef.current = null;
-    }
   }, []);
 
   const clearConnectDeferTimer = useCallback(() => {
@@ -1854,6 +1849,7 @@ export default function TerminalTTY({
       //    fitAddon.fit() on a terminal that has already started disposing
       //    and trigger the WebGL addon's stale-renderer crash on Linux.
       clearTimers();
+      clearConnectDeferTimer();
 
       // 3. Silence and close the websocket. Closing it first means the
       //    onmessage/onclose can't push more output into a disposed terminal.
@@ -5345,6 +5341,7 @@ export default function TerminalTTY({
       isInitializingRef.current = false;
       if (initStaggerTimer) clearTimeout(initStaggerTimer);
       clearTimers();
+      clearConnectDeferTimer();
       resizeObserverRef.current?.disconnect();
       nativeResizeObserverRef.current?.disconnect();
       nativeResizeObserverRef.current = null;
