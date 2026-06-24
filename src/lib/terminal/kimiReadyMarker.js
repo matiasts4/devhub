@@ -34,8 +34,8 @@ export function isKimiTuiLive({
   tuiSessionActive = false,
   hasConnectedOnce = false,
 } = {}) {
-  if (!isKimiLaunchCommand(initialCommand)) return false;
   if (kimiReady) return true;
+  if (!isKimiLaunchCommand(initialCommand)) return false;
   return Boolean(hasConnectedOnce && tuiSessionActive);
 }
 
@@ -45,13 +45,20 @@ export function isKimiTuiLive({
  * viewportY stays 0 while the user scrolls inside Kimi — saving/restoring 0 jumps to top.
  * Uses launch command only — readiness markers can lag behind reattach/output on restart.
  */
-export function shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand = '' } = {}) {
-  return isKimiLaunchCommand(initialCommand);
+export function shouldFreezeKimiTuiViewportOnWorkspaceShow({
+  initialCommand = '',
+  kimiReady = false,
+} = {}) {
+  return isKimiLaunchCommand(initialCommand) || kimiReady;
 }
 
 /** Kimi Ink scroll resets on redundant PTY resize even when cols/rows are unchanged. */
-export function shouldSkipKimiTuiPtyResize({ initialCommand = '', hasConnectedOnce = false } = {}) {
-  return isKimiLaunchCommand(initialCommand) && hasConnectedOnce;
+export function shouldSkipKimiTuiPtyResize({
+  initialCommand = '',
+  hasConnectedOnce = false,
+  kimiReady = false,
+} = {}) {
+  return (isKimiLaunchCommand(initialCommand) || kimiReady) && hasConnectedOnce;
 }
 
 /** Scan xterm scrollback for kimi chrome after reattach before fresh output arrives. */

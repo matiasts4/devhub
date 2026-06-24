@@ -28,7 +28,7 @@ const TUI_ADAPTER_REGISTRY = Object.freeze({
     id: 'grok',
     detectReady: ({ refs } = {}) => Boolean(refs?.grokTuiReadyRef?.current),
     wheelStrategy: Object.freeze({
-      passThrough: false,
+      passThrough: true,
       buttons: [64, 65],
     }),
     clickStrategy: Object.freeze({

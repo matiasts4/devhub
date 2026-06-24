@@ -2750,6 +2750,7 @@ export default function TerminalTTY({
           (shouldSkipKimiTuiPtyResize({
             initialCommand,
             hasConnectedOnce: hasConnectedOnceRef.current,
+            kimiReady: kimiReadyNotifiedRef.current,
           }) &&
             !options.forcePtyResize),
       });
@@ -2811,6 +2812,7 @@ export default function TerminalTTY({
       const kimiConnected = shouldSkipKimiTuiPtyResize({
         initialCommand,
         hasConnectedOnce: hasConnectedOnceRef.current,
+        kimiReady: kimiReadyNotifiedRef.current,
       });
 
       if (!kimiConnected && rect && rect.width > 0 && rect.height > 0 && fitAddon && term) {
@@ -3095,20 +3097,29 @@ export default function TerminalTTY({
         sizeUnchanged &&
         !pendingWebglRecoveryRef.current &&
         !canvasReleasedOnLayoutHideRef.current &&
-        !shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand })
+        !shouldFreezeKimiTuiViewportOnWorkspaceShow({
+          initialCommand,
+          kimiReady: kimiReadyNotifiedRef.current,
+        })
       ) {
         logViewportDiagnostic(`${reason}-skipped-unchanged`);
         return;
       }
 
-      if (isKimiLaunchCommand(initialCommand) && !kimiReadyNotifiedRef.current && termRef.current) {
-        if (detectKimiReadyFromTerminalBuffer(termRef.current)) {
+      if (!kimiReadyNotifiedRef.current && termRef.current) {
+        const isKimiLaunch = isKimiLaunchCommand(initialCommand);
+        if (isKimiLaunch || detectKimiReadyFromTerminalBuffer(termRef.current)) {
           kimiReadyNotifiedRef.current = true;
           tuiSessionActiveRef.current = true;
         }
       }
 
-      if (shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand })) {
+      if (
+        shouldFreezeKimiTuiViewportOnWorkspaceShow({
+          initialCommand,
+          kimiReady: kimiReadyNotifiedRef.current,
+        })
+      ) {
         needsViewportSyncOnShowRef.current = false;
         logViewportDiagnostic(`${reason}-frozen-kimi-tui`);
         stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
@@ -3306,6 +3317,7 @@ export default function TerminalTTY({
               !shouldSkipKimiTuiPtyResize({
                 initialCommand,
                 hasConnectedOnce: hasConnectedOnceRef.current,
+                kimiReady: kimiReadyNotifiedRef.current,
               })
             ) {
               nudgeTerminalPtyResize({
@@ -3341,6 +3353,7 @@ export default function TerminalTTY({
         !shouldSkipKimiTuiPtyResize({
           initialCommand,
           hasConnectedOnce: hasConnectedOnceRef.current,
+          kimiReady: kimiReadyNotifiedRef.current,
         })
       ) {
         nudgeTerminalPtyResize({
@@ -3390,6 +3403,7 @@ export default function TerminalTTY({
     const kimiConnected = shouldSkipKimiTuiPtyResize({
       initialCommand,
       hasConnectedOnce: hasConnectedOnceRef.current,
+      kimiReady: kimiReadyNotifiedRef.current,
     });
     fitAndResize({ clearAtlas: true, forcePtyResize: true });
     if (!kimiConnected) scrollTerminalToBottom();
@@ -3453,6 +3467,7 @@ export default function TerminalTTY({
       const kimiConnected = shouldSkipKimiTuiPtyResize({
         initialCommand,
         hasConnectedOnce: hasConnectedOnceRef.current,
+        kimiReady: kimiReadyNotifiedRef.current,
       });
 
       logViewportDiagnostic('reactivate-start');
@@ -4476,17 +4491,19 @@ export default function TerminalTTY({
         tuiOutputTailRef.current = tail;
 
         // Capa B: kimi readiness posts marker only — never fall through to opencode/grok.
-        if (isKimiLaunchCommand(initialCommand)) {
-          if (!kimiReadyNotifiedRef.current) {
-            if (detectKimiTuiReady(chunk) || detectKimiTuiReady(tail)) {
-              kimiReadyNotifiedRef.current = true;
-              void notifyAgentReady('kimi', null, 'client-tui-footer');
-            }
+        const isKimiLaunch = isKimiLaunchCommand(initialCommand);
+        const kimiTuiReady = detectKimiTuiReady(chunk) || detectKimiTuiReady(tail);
+        if (isKimiLaunch || kimiTuiReady) {
+          if (!kimiReadyNotifiedRef.current && kimiTuiReady) {
+            kimiReadyNotifiedRef.current = true;
+            void notifyAgentReady('kimi', null, 'client-tui-footer');
           }
           if (kimiReadyNotifiedRef.current) {
             tuiSessionActiveRef.current = true;
           }
-          return;
+          if (isKimiLaunch) {
+            return;
+          }
         }
 
         const footerReady = detectOpenCodeTuiReady(chunk) || detectOpenCodeTuiReady(tail);
@@ -5929,8 +5946,12 @@ export default function TerminalTTY({
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
     if (!termRef.current) return;
-    const kimiTuiLive =
-      shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand }) && hasConnectedOnceRef.current;
+    const kimiTuiLive = isKimiTuiLive({
+      initialCommand,
+      kimiReady: kimiReadyNotifiedRef.current,
+      tuiSessionActive: tuiSessionActiveRef.current,
+      hasConnectedOnce: hasConnectedOnceRef.current,
+    });
     // Kimi scroll is inside the Ink TUI — xterm viewportY stays 0; save/restore jumps to top.
     if (kimiTuiLive) return;
 
@@ -6065,7 +6086,7 @@ export default function TerminalTTY({
 
   // Wheel: synthetic routing for shell/TUI bootstrap; live OpenCode uses xterm native SGR directly.
   useEffect(() => {
-    if (shouldUseNativeRenderer || nativeWheelPassthrough) return undefined;
+    if (shouldUseNativeRenderer) return undefined;
 
     const shell = viewportShellRef.current;
     if (!shell) return undefined;
@@ -6111,6 +6132,9 @@ export default function TerminalTTY({
         }) &&
         isActivePanelRef.current
       ) {
+        forwardTerminalWheelToXterm(term, event);
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
