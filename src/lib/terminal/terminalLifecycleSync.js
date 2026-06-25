@@ -1,5 +1,12 @@
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
 
+/** Grace period after V1/V2/V3 switch — panel-group onLayout must not burst-sync all panels. */
+export const WINDOW_SWITCH_PANEL_LAYOUT_SUPPRESS_MS = 320;
+
+export function shouldSuppressPanelGroupLayoutOnWindowSwitch(nowMs, suppressUntilMs) {
+  return Number.isFinite(suppressUntilMs) && nowMs < suppressUntilMs;
+}
+
 export const PANEL_LIFECYCLE_REASONS = Object.freeze({
   SWARM_LAUNCH: 'swarm-launch',
   WORKSPACE_CREATED: 'workspace-created',
@@ -9,6 +16,7 @@ export const PANEL_LIFECYCLE_REASONS = Object.freeze({
   PANEL_FOCUS: 'panel-focus-toggle',
   PANEL_GROUP_LAYOUT: 'panel-group-layout',
   WORKSPACE_REMOVED: 'workspace-removed',
+  WORKSPACE_WINDOW_SWITCH: 'workspace-window-switch',
 });
 
 /** Preset burst timings per lifecycle (docs/errores/04-terminal-lifecycle-coverage-gaps). */
@@ -52,6 +60,11 @@ export const LIFECYCLE_BURST_PHASES = Object.freeze({
     immediate: true,
     raf: false,
     delayMs: Object.freeze([]),
+  }),
+  [PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH]: Object.freeze({
+    immediate: true,
+    raf: true,
+    delayMs: Object.freeze([80, 180, 340]),
   }),
 });
 

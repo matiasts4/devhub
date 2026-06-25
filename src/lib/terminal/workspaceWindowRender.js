@@ -3,9 +3,17 @@ export function resolvePanelVisibleInLayout({
   isWorkspaceVisibleInLayout,
   focusedPanelId,
   panelId,
+  activeWindowPanelIds,
 }) {
   if (!isWorkspaceVisibleInLayout) return false;
   if (!focusedPanelId) return true;
+  if (
+    Array.isArray(activeWindowPanelIds) &&
+    activeWindowPanelIds.length > 0 &&
+    !activeWindowPanelIds.includes(focusedPanelId)
+  ) {
+    return true;
+  }
   return focusedPanelId === panelId;
 }
 

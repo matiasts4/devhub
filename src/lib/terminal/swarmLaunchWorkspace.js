@@ -150,7 +150,9 @@ export function applyActiveWindowColumnSnapshot(
     if (win.id !== activeWindowId) return win;
     return {
       ...win,
-      columns,
+      // Clone deeply so later mutations to the live workspace.columns do not
+      // leak back into the parked window snapshot.
+      columns: JSON.parse(JSON.stringify(columns)),
       activePanelId:
         activePanelId ||
         win.activePanelId ||
