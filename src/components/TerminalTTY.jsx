@@ -3244,6 +3244,14 @@ export default function TerminalTTY({
         return;
       }
 
+      const proposedDims = proposeTerminalViewportDimensions({
+        container: containerRef.current,
+        fitAddon: fitRef.current,
+        term: termRef.current,
+      });
+      const proposedDimsMatch =
+        proposedDims && proposedDims.cols === colsBefore && proposedDims.rows === rowsBefore;
+
       if (
         shouldSkipRedundantLayoutSettleViewportSync({
           reason,
@@ -3252,6 +3260,7 @@ export default function TerminalTTY({
           canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
           hasGpuRenderer: Boolean(webglAddonRef.current || canvasAddonRef.current),
         }) &&
+        proposedDimsMatch &&
         !hiddenOutputCatchupPendingRef.current
       ) {
         needsViewportSyncOnShowRef.current = false;
