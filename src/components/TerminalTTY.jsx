@@ -3165,6 +3165,17 @@ export default function TerminalTTY({
           })
         ) {
           await tryReattachCanvasAddonRef.current?.();
+        } else {
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+            skipPtyNotify: true,
+          });
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         }
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
           refreshTerminalViewport(termRef.current);
@@ -5696,47 +5707,6 @@ export default function TerminalTTY({
       const isWorkspaceOrWindowSwitch =
         String(reason).includes('workspace-switch') || String(reason).includes('workspace-window');
 
-      if (
-        String(reason).includes('workspace-window-switch') ||
-        String(reason).includes('workspace-window-settled')
-      ) {
-        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
-          if (isVisibleInLayoutRef.current) {
-            void tryReattachWebglAddonRef.current?.({
-              clearAtlas: false,
-              skipFitWhenUnchanged: true,
-            });
-          } else {
-            needsViewportSyncOnShowRef.current = true;
-          }
-        } else if (
-          shouldAttachCanvasRenderer({
-            operationalRendererMode: operationalRendererModeRef.current,
-          }) &&
-          !canvasAddonRef.current
-        ) {
-          if (isVisibleInLayoutRef.current) {
-            void tryReattachCanvasAddonRef.current?.();
-          } else {
-            needsViewportSyncOnShowRef.current = true;
-          }
-        } else if (isVisibleInLayoutRef.current) {
-          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-            clearAtlas: false,
-          });
-        } else {
-          needsViewportSyncOnShowRef.current = true;
-        }
-        if (
-          isVisibleInLayoutRef.current &&
-          !isDisposingRef.current &&
-          termRef.current &&
-          isTerminalRendererReady(termRef.current)
-        ) {
-          refreshTerminalViewport(termRef.current);
-        }
-      }
-
       if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
@@ -5746,45 +5716,6 @@ export default function TerminalTTY({
           clearAtlas: false,
         });
         return;
-      }
-
-      if (String(reason).includes('workspace-switch')) {
-        if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {
-          if (isVisibleInLayoutRef.current) {
-            void tryReattachWebglAddonRef.current?.({
-              clearAtlas: false,
-              skipFitWhenUnchanged: true,
-            });
-          } else {
-            needsViewportSyncOnShowRef.current = true;
-          }
-        } else if (
-          shouldAttachCanvasRenderer({
-            operationalRendererMode: operationalRendererModeRef.current,
-          }) &&
-          !canvasAddonRef.current
-        ) {
-          if (isVisibleInLayoutRef.current) {
-            void tryReattachCanvasAddonRef.current?.();
-          } else {
-            needsViewportSyncOnShowRef.current = true;
-          }
-        } else if (isVisibleInLayoutRef.current) {
-          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-            clearAtlas:
-              webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
-          });
-        } else {
-          needsViewportSyncOnShowRef.current = true;
-        }
-        if (
-          isVisibleInLayoutRef.current &&
-          !isDisposingRef.current &&
-          termRef.current &&
-          isTerminalRendererReady(termRef.current)
-        ) {
-          refreshTerminalViewport(termRef.current);
-        }
       }
 
       if (
