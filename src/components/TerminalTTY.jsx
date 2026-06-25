@@ -1072,10 +1072,12 @@ export function shouldFreezeSingleWebglViewportOnWorkspaceShow({
 
   const normalizedReason = String(reason);
   if (normalizedReason.includes('workspace-switch')) return true;
+  if (normalizedReason.includes('workspace-window')) return true;
   if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
     return true;
   }
   if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
+  if (normalizedReason.startsWith('layout-settled-workspace-window-')) return true;
   return false;
 }
 
@@ -1193,7 +1195,7 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
   if (normalized.includes('pizarra-mode-exit') || normalized.includes('pizarra-mode-enter')) {
     return true;
   }
-  return /layout-settled-|workspace-switch/.test(normalized);
+  return /layout-settled-|workspace-switch|workspace-window/.test(normalized);
 }
 
 /** Buffer PTY output while layout-hidden. */
@@ -1286,12 +1288,25 @@ export function nudgeTerminalPtyResize({
   lastPtySizeRef = null,
   websocketOpenState = WebSocket.OPEN,
   skipPtyNotify = false,
+  force = false,
 } = {}) {
   if (skipPtyNotify) return false;
   if (!term || !socket || socket.readyState !== websocketOpenState) return false;
   const cols = Number(term.cols ?? 0);
   const rows = Number(term.rows ?? 0);
   if (cols <= 0 || rows <= 0 || typeof term.resize !== 'function') return false;
+
+  // Avoid SIGWINCH to live TUIs when the PTY dimensions are already in sync.
+  // The forced path is reserved for callers that intentionally need a redraw.
+  if (
+    !force &&
+    lastPtySizeRef &&
+    Number(lastPtySizeRef.cols) === cols &&
+    Number(lastPtySizeRef.rows) === rows
+  ) {
+    return false;
+  }
+
   if (rows > 2) {
     term.resize(cols, rows - 1);
     term.resize(cols, rows);
@@ -1667,6 +1682,8 @@ export default function TerminalTTY({
   const isVisibleInLayoutRef = useRef(isVisibleInLayout);
   const prevVisibleInLayoutRef = useRef(isVisibleInLayout);
   const needsViewportSyncOnShowRef = useRef(false);
+  const containerWasZeroSizedOnShowRef = useRef(false);
+  const syncTerminalViewportOnWorkspaceShowRef = useRef(null);
   const workspaceShowSyncTimerRef = useRef(null);
   const workspaceShowRecoverTimerRef = useRef(null);
   const inactiveRepaintRafRef = useRef(null);
@@ -2747,11 +2764,13 @@ export default function TerminalTTY({
         lastPtySizeRef: lastPtySizeRef.current,
         skipPtyNotify:
           options.skipPtyNotify ??
-          (shouldSkipKimiTuiPtyResize({
-            initialCommand,
-            hasConnectedOnce: hasConnectedOnceRef.current,
-            kimiReady: kimiReadyNotifiedRef.current,
-          }) &&
+          (hasConnectedOnceRef.current &&
+            (tuiSessionActiveRef.current ||
+              shouldSkipKimiTuiPtyResize({
+                initialCommand,
+                hasConnectedOnce: hasConnectedOnceRef.current,
+                kimiReady: kimiReadyNotifiedRef.current,
+              })) &&
             !options.forcePtyResize),
       });
 
@@ -2944,11 +2963,13 @@ export default function TerminalTTY({
         socket: wsRef.current,
         clearAtlas: true,
         lastPtySizeRef: lastPtySizeRef.current,
-        skipPtyNotify: shouldSkipKimiTuiPtyResize({
-          initialCommand,
-          hasConnectedOnce: hasConnectedOnceRef.current,
-          kimiReady: kimiReadyNotifiedRef.current,
-        }),
+        skipPtyNotify:
+          tuiSessionActiveRef.current ||
+          shouldSkipKimiTuiPtyResize({
+            initialCommand,
+            hasConnectedOnce: hasConnectedOnceRef.current,
+            kimiReady: kimiReadyNotifiedRef.current,
+          }),
       });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
       canvasReleasedOnLayoutHideRef.current = false;
@@ -3018,11 +3039,13 @@ export default function TerminalTTY({
             socket: wsRef.current,
             clearAtlas,
             lastPtySizeRef: lastPtySizeRef.current,
-            skipPtyNotify: shouldSkipKimiTuiPtyResize({
-              initialCommand,
-              hasConnectedOnce: hasConnectedOnceRef.current,
-              kimiReady: kimiReadyNotifiedRef.current,
-            }),
+            skipPtyNotify:
+              tuiSessionActiveRef.current ||
+              shouldSkipKimiTuiPtyResize({
+                initialCommand,
+                hasConnectedOnce: hasConnectedOnceRef.current,
+                kimiReady: kimiReadyNotifiedRef.current,
+              }),
           });
           stabilizeTerminalRenderer(termRef.current, { clearAtlas });
         }
@@ -3089,10 +3112,52 @@ export default function TerminalTTY({
 
       const rect = containerRef.current.getBoundingClientRect();
       if (!rect || rect.width <= 0 || rect.height <= 0) {
+        containerWasZeroSizedOnShowRef.current = true;
         logViewportDiagnostic(`${reason}-skipped-zero-size`);
         needsViewportSyncOnShowRef.current = true;
+
+        // Defensive recovery: the panel container may still be zero-sized because
+        // react-resizable-panels has not laid out the right sibling yet. Schedule a
+        // bounded retry so we don't rely on a later event that may never fire.
+        const scheduleZeroSizeRecovery = ({
+          attempt = 1,
+          maxAttempts = 2,
+          baseDelayMs = 80,
+        } = {}) => {
+          if (workspaceShowRecoverTimerRef.current) {
+            clearTimeout(workspaceShowRecoverTimerRef.current);
+            workspaceShowRecoverTimerRef.current = null;
+          }
+          if (attempt > maxAttempts) {
+            logViewportDiagnostic(`${reason}-zero-size-gave-up`);
+            return;
+          }
+          logViewportDiagnostic(`${reason}-zero-size-retry-scheduled`, { attempt, maxAttempts });
+          workspaceShowRecoverTimerRef.current = setTimeout(() => {
+            workspaceShowRecoverTimerRef.current = null;
+            if (isDisposingRef.current) return;
+            if (!isVisibleInLayoutRef.current) {
+              needsViewportSyncOnShowRef.current = true;
+              return;
+            }
+            if (!termRef.current || !fitRef.current || !containerRef.current) return;
+            const retryRect = containerRef.current.getBoundingClientRect();
+            if (!retryRect || retryRect.width <= 0 || retryRect.height <= 0) {
+              scheduleZeroSizeRecovery({ attempt: attempt + 1, maxAttempts, baseDelayMs });
+              return;
+            }
+            void syncTerminalViewportOnWorkspaceShowRef.current?.(`${reason}-zero-size-recovered`, {
+              clearAtlas,
+            });
+          }, baseDelayMs * attempt);
+        };
+
+        scheduleZeroSizeRecovery();
         return;
       }
+
+      const recoveredFromZeroSizeThisPass = containerWasZeroSizedOnShowRef.current;
+      containerWasZeroSizedOnShowRef.current = false;
 
       const colsBefore = Number(termRef.current.cols ?? 0);
       const rowsBefore = Number(termRef.current.rows ?? 0);
@@ -3177,6 +3242,28 @@ export default function TerminalTTY({
           });
           stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         }
+
+        // If this panel just recovered from a zero-sized container, nudge the
+        // viewport without notifying the PTY. This forces xterm to repaint with
+        // real dimensions without sending SIGWINCH to Kimi's Ink TUI.
+        if (
+          recoveredFromZeroSizeThisPass &&
+          termRef.current &&
+          containerRef.current &&
+          fitRef.current
+        ) {
+          logViewportDiagnostic(`${reason}-kimi-viewport-fit-probe`);
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+            skipPtyNotify: true,
+          });
+        }
+
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
           refreshTerminalViewport(termRef.current);
         }
@@ -3252,6 +3339,11 @@ export default function TerminalTTY({
       const proposedDimsMatch =
         proposedDims && proposedDims.cols === colsBefore && proposedDims.rows === rowsBefore;
 
+      // If the container was zero-sized earlier in this show transition, force a
+      // real viewport sync now that it finally has dimensions. Otherwise the
+      // redundant-skip guard can leave a blank panel forever.
+      const recoveredFromZeroSize = containerWasZeroSizedOnShowRef.current;
+
       if (
         shouldSkipRedundantLayoutSettleViewportSync({
           reason,
@@ -3261,7 +3353,8 @@ export default function TerminalTTY({
           hasGpuRenderer: Boolean(webglAddonRef.current || canvasAddonRef.current),
         }) &&
         proposedDimsMatch &&
-        !hiddenOutputCatchupPendingRef.current
+        !hiddenOutputCatchupPendingRef.current &&
+        !recoveredFromZeroSize
       ) {
         needsViewportSyncOnShowRef.current = false;
         logViewportDiagnostic(`${reason}-skipped-unchanged-dims`);
@@ -3428,6 +3521,10 @@ export default function TerminalTTY({
       scrollTerminalToBottom,
     ]
   );
+
+  useEffect(() => {
+    syncTerminalViewportOnWorkspaceShowRef.current = syncTerminalViewportOnWorkspaceShow;
+  }, [syncTerminalViewportOnWorkspaceShow]);
 
   const sendResize = useCallback(() => {
     if (!termRef.current || !fitRef.current) return;
@@ -4399,9 +4496,6 @@ export default function TerminalTTY({
       return;
     }
 
-    processExitedRef.current = false;
-    sessionReattachedRef.current = false;
-    hasSentInitialCommand.current = false;
     initialCommandDelayScheduledRef.current = false;
     clearPanelInitialCommandLifecycle(id);
 
@@ -4411,6 +4505,14 @@ export default function TerminalTTY({
       sendResize();
       return;
     }
+
+    // Only a fresh WebSocket connection is a new PTY session. When the socket
+    // is already open this is a visibility re-attach; resetting these flags here
+    // would re-inject the initial command or replay hidden output after
+    // workspace/window switches.
+    processExitedRef.current = false;
+    sessionReattachedRef.current = false;
+    hasSentInitialCommand.current = false;
 
     if (!hasConnectedOnceRef.current) {
       setConnectionState('connecting');
@@ -4844,6 +4946,13 @@ export default function TerminalTTY({
     }
     clearConnectDeferTimer();
     connectPendingUntilFitRef.current = false;
+
+    // Layout-show useLayoutEffect owns false→true recovery (route / workspace /
+    // window switches). Skip a second sync pass that duplicated fit+PTY churn.
+    if (shouldSyncTerminalViewportOnLayoutShow(prevVisibleInLayoutRef.current, isVisibleInLayout)) {
+      return;
+    }
+
     const raf = requestAnimationFrame(() => {
       if (!isVisibleInLayoutRef.current || !termRef.current) return;
       syncTerminalViewportOnWorkspaceShow('projection-host-ready', {
@@ -4905,10 +5014,14 @@ export default function TerminalTTY({
       syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
         clearAtlas: gpuShowRecover,
       });
-      if (
+      const needsRafRecovery =
         shouldAttachWebglRenderer({ operationalRendererMode }) ||
-        visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT
-      ) {
+        visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT ||
+        needsViewportSyncOnShowRef.current ||
+        canvasReleasedOnLayoutHideRef.current ||
+        webglReleasedOnLayoutHideRef.current;
+
+      if (needsRafRecovery) {
         requestAnimationFrame(() => {
           if (!isVisibleInLayoutRef.current) return;
           syncTerminalViewportOnWorkspaceShow('workspace-show-raf', {
