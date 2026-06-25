@@ -2944,6 +2944,11 @@ export default function TerminalTTY({
         socket: wsRef.current,
         clearAtlas: true,
         lastPtySizeRef: lastPtySizeRef.current,
+        skipPtyNotify: shouldSkipKimiTuiPtyResize({
+          initialCommand,
+          hasConnectedOnce: hasConnectedOnceRef.current,
+          kimiReady: kimiReadyNotifiedRef.current,
+        }),
       });
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
       canvasReleasedOnLayoutHideRef.current = false;
@@ -2956,7 +2961,7 @@ export default function TerminalTTY({
       );
       return false;
     }
-  }, [buildViewportSnapshot, id]);
+  }, [buildViewportSnapshot, id, initialCommand]);
 
   const tryReattachWebglAddon = useCallback(
     async ({ clearAtlas = true, skipFitWhenUnchanged = false } = {}) => {
@@ -3013,6 +3018,11 @@ export default function TerminalTTY({
             socket: wsRef.current,
             clearAtlas,
             lastPtySizeRef: lastPtySizeRef.current,
+            skipPtyNotify: shouldSkipKimiTuiPtyResize({
+              initialCommand,
+              hasConnectedOnce: hasConnectedOnceRef.current,
+              kimiReady: kimiReadyNotifiedRef.current,
+            }),
           });
           stabilizeTerminalRenderer(termRef.current, { clearAtlas });
         }
@@ -3027,7 +3037,7 @@ export default function TerminalTTY({
         return false;
       }
     },
-    [id]
+    [id, initialCommand]
   );
 
   const scheduleWebglRecovery = useCallback(
@@ -5683,6 +5693,9 @@ export default function TerminalTTY({
         hasConnectedOnce: hasConnectedOnceRef.current,
       });
 
+      const isWorkspaceOrWindowSwitch =
+        String(reason).includes('workspace-switch') || String(reason).includes('workspace-window');
+
       if (
         String(reason).includes('workspace-window-switch') ||
         String(reason).includes('workspace-window-settled')
@@ -5722,10 +5735,9 @@ export default function TerminalTTY({
         ) {
           refreshTerminalViewport(termRef.current);
         }
-        return;
       }
 
-      if (kimiTuiLive && !String(reason).includes('panel-closed')) {
+      if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
           return;
@@ -5773,7 +5785,6 @@ export default function TerminalTTY({
         ) {
           refreshTerminalViewport(termRef.current);
         }
-        return;
       }
 
       if (
@@ -5958,8 +5969,8 @@ export default function TerminalTTY({
         ? []
         : String(reason).includes('panel-closed')
           ? [120, 180, 340]
-          : String(reason).includes('workspace-switch')
-            ? []
+          : isWorkspaceOrWindowSwitch
+            ? [80, 180, 340]
             : String(reason).includes('panel-focus-toggle') ||
                 String(reason).includes('panel-group-layout')
               ? [120, 180, 340, 500]
