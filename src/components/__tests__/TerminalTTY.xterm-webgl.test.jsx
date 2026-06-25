@@ -783,6 +783,62 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     disposeSpy.mockRestore();
   });
 
+  test('reattaches the Canvas addon when a split panel becomes visible again', async () => {
+    const view = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-canvas-show-again',
+        requestedRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 2,
+        autoFocus: true,
+        isActivePanel: true,
+        isVisibleInLayout: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    expect(CanvasAddon.instances).toHaveLength(1);
+    const canvasAddon = CanvasAddon.instances[0];
+    const disposeSpy = jest.spyOn(canvasAddon, 'dispose');
+
+    flushSync(() => {
+      view.root.render(
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-show-again',
+          requestedRendererMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 2,
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: false,
+          showQuickCopyButton: false,
+        })
+      );
+    });
+    await flushTerminalEffects();
+
+    expect(disposeSpy).toHaveBeenCalled();
+    CanvasAddon.__reset();
+
+    flushSync(() => {
+      view.root.render(
+        React.createElement(TerminalTTY, {
+          id: 'term-canvas-show-again',
+          requestedRendererMode: 'xterm-webgl',
+          visibleTerminalPanelCount: 2,
+          autoFocus: true,
+          isActivePanel: true,
+          isVisibleInLayout: true,
+          showQuickCopyButton: false,
+        })
+      );
+    });
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await flushTerminalEffects();
+
+    expect(CanvasAddon.instances.length).toBeGreaterThan(0);
+    disposeSpy.mockRestore();
+  });
+
   test('onData drops xterm focus/DA answerback before sending to the PTY websocket', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {

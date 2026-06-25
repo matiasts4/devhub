@@ -4,6 +4,7 @@ import {
   PANEL_LIFECYCLE_REASONS,
   scheduleSwarmProjectionReadyBurst,
   scheduleTerminalLifecycleSync,
+  shouldSuppressPanelGroupLayoutOnWindowSwitch,
 } from '../terminalLifecycleSync.js';
 
 describe('scheduleTerminalLifecycleSync', () => {
@@ -126,6 +127,7 @@ describe('scheduleTerminalLifecycleSync', () => {
       PANEL_FOCUS: 'panel-focus-toggle',
       PANEL_GROUP_LAYOUT: 'panel-group-layout',
       WORKSPACE_REMOVED: 'workspace-removed',
+      WORKSPACE_WINDOW_SWITCH: 'workspace-window-switch',
     });
   });
 
@@ -144,6 +146,11 @@ describe('scheduleTerminalLifecycleSync', () => {
     expect(LIFECYCLE_BURST_PHASES['panel-group-layout'].delayMs).toEqual([120, 340, 500]);
     expect(LIFECYCLE_BURST_PHASES['panel-closed'].delayMs).toEqual([120, 340]);
     expect(LIFECYCLE_BURST_PHASES['workspace-removed'].raf).toBe(false);
+    expect(LIFECYCLE_BURST_PHASES['workspace-window-switch']).toEqual({
+      immediate: true,
+      raf: true,
+      delayMs: [80, 180, 340],
+    });
   });
 
   test('scheduleSwarmProjectionReadyBurst emits projection-ready reasons for all panelIds', async () => {
@@ -168,5 +175,13 @@ describe('scheduleTerminalLifecycleSync', () => {
     const reasons = dispatch.mock.calls.map((call) => call[0].reason);
     expect(reasons).toContain('shared-surface-projection-ready-raf');
     expect(reasons).toContain('shared-surface-projection-ready-delay');
+  });
+});
+
+describe('shouldSuppressPanelGroupLayoutOnWindowSwitch', () => {
+  test('suppresses panel-group-layout sync during the window-switch grace window', () => {
+    expect(shouldSuppressPanelGroupLayoutOnWindowSwitch(1000, 1320)).toBe(true);
+    expect(shouldSuppressPanelGroupLayoutOnWindowSwitch(1320, 1320)).toBe(false);
+    expect(shouldSuppressPanelGroupLayoutOnWindowSwitch(1500, 1320)).toBe(false);
   });
 });

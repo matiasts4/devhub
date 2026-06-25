@@ -941,6 +941,37 @@ describe('hidden terminal output buffer helpers', () => {
     expect(term.resize).toHaveBeenCalledWith(80, 24);
     expect(sends.at(-1)).toEqual({ type: 'resize', cols: 80, rows: 24 });
   });
+
+  test('nudgeTerminalPtyResize skips unchanged dimensions to avoid SIGWINCH to live TUIs', () => {
+    const sends = [];
+    const term = { cols: 80, rows: 24, resize: jest.fn() };
+    const socket = {
+      readyState: 1,
+      send: (payload) => sends.push(JSON.parse(payload)),
+    };
+    const lastPtySizeRef = { cols: 80, rows: 24 };
+    expect(nudgeTerminalPtyResize({ term, socket, websocketOpenState: 1, lastPtySizeRef })).toBe(
+      false
+    );
+    expect(term.resize).not.toHaveBeenCalled();
+    expect(sends).toHaveLength(0);
+  });
+
+  test('nudgeTerminalPtyResize can force an unchanged-dimension nudge', () => {
+    const sends = [];
+    const term = { cols: 80, rows: 24, resize: jest.fn() };
+    const socket = {
+      readyState: 1,
+      send: (payload) => sends.push(JSON.parse(payload)),
+    };
+    const lastPtySizeRef = { cols: 80, rows: 24 };
+    expect(
+      nudgeTerminalPtyResize({ term, socket, websocketOpenState: 1, lastPtySizeRef, force: true })
+    ).toBe(true);
+    expect(term.resize).toHaveBeenCalledWith(80, 23);
+    expect(term.resize).toHaveBeenCalledWith(80, 24);
+    expect(sends.at(-1)).toEqual({ type: 'resize', cols: 80, rows: 24 });
+  });
 });
 
 describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
