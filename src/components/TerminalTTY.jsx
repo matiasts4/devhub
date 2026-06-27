@@ -260,12 +260,17 @@ export function detectGrokSessionFromOutput(text) {
 /** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
 export function shouldPassthroughNativeTuiWheel({
   isGrokSession = false,
+  isKimiSession = false,
   grokTuiReady = false,
+  kimiTuiReady = false,
   opencodeFooterConfirmed = false,
 } = {}) {
   if (isGrokSession) {
     const adapter = getTuiAdapter('grok');
     return adapter.wheelStrategy.passThrough && grokTuiReady;
+  }
+  if (isKimiSession) {
+    return kimiTuiReady;
   }
   const adapter = getTuiAdapter('opencode');
   return adapter.wheelStrategy.passThrough && opencodeFooterConfirmed;
@@ -6492,7 +6497,9 @@ export default function TerminalTTY({
       if (
         shouldPassthroughNativeTuiWheel({
           isGrokSession,
+          isKimiSession,
           grokTuiReady: grokTuiReadyRef.current,
+          kimiTuiReady: kimiReadyNotifiedRef.current,
           opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
         }) &&
         isActivePanelRef.current

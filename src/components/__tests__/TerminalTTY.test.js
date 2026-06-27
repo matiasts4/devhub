@@ -2516,6 +2516,18 @@ describe('TerminalTTY renderer fallback UI', () => {
           opencodeFooterConfirmed: true,
         })
       ).toBe(true);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isKimiSession: true,
+          kimiTuiReady: false,
+        })
+      ).toBe(false);
+      expect(
+        shouldPassthroughNativeTuiWheel({
+          isKimiSession: true,
+          kimiTuiReady: true,
+        })
+      ).toBe(true);
       expect(resolveGrokWheelSgrCoords({ col: 10, row: 20 }, { cols: 80, rows: 24 }, 5)).toEqual({
         col: 10,
         row: 9,
