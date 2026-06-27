@@ -305,15 +305,11 @@ export function resolveTerminalWheelScrollPrefer(
   initialCommand,
   { isGrokSession = false, isKimiSession = false, tuiActive = false } = {}
 ) {
-  if (isKimiSession || isKimiLaunchCommand(initialCommand)) {
-    // Kimi uses arrow-key scrolling; SGR wheel reports are not honored by its Ink chrome.
-    return 'arrow';
-  }
-  if (isGrokSession || tuiActive) {
+  if (isGrokSession || isKimiSession || tuiActive) {
     return 'sgr';
   }
   if (isLikelyTuiInitialCommand(initialCommand)) {
-    if (isGrokTuiInitialCommand(initialCommand)) {
+    if (isGrokTuiInitialCommand(initialCommand) || isKimiLaunchCommand(initialCommand)) {
       return 'page';
     }
     return 'sgr';
