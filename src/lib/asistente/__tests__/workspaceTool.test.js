@@ -29,6 +29,14 @@ describe('workspaceActionTool', () => {
     });
   });
 
+  test('accepts arrange_pizarra', async () => {
+    const result = await workspaceActionTool.execute({ action: 'arrange_pizarra' });
+    expect(result).toMatchObject({
+      success: true,
+      action: 'arrange_pizarra',
+    });
+  });
+
   test('rejects invalid action', async () => {
     const result = await workspaceActionTool.execute({ action: 'invalid_action' });
     expect(result).toMatchObject({

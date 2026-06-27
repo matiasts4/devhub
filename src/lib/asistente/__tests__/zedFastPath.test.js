@@ -370,6 +370,26 @@ describe('zedFastPath intent cache', () => {
     });
   });
 
+  test('workspace_action: arrange pizarra', () => {
+    const hit = resolveZedFastPathIntent('organiza la pizarra', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'arrange_pizarra',
+      steps: [{ tool: 'workspace_action', input: { action: 'arrange_pizarra' } }],
+    });
+  });
+
+  test('workspace_action: auto-arrange canvas', () => {
+    const hit = resolveZedFastPathIntent('auto-ordena el lienzo', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'arrange_pizarra',
+      steps: [{ tool: 'workspace_action', input: { action: 'arrange_pizarra' } }],
+    });
+  });
+
   test('devhub_mcp: list tasks', () => {
     const hit = resolveZedFastPathIntent('¿Qué tareas tengo?', {
       workspace_terminals: TERMINALS,

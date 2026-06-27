@@ -5,6 +5,7 @@ import {
   getWorkspaceAnimProps,
   resolveRightDockTakeoverChromeStyle,
   resolveWorkspaceShellVisibilityStyle,
+  resolveWorkspaceWindowVisibilityStyle,
 } from './terminal/workspaceAnimProps';
 import {
   applyRightDockLayerBounds,
@@ -228,9 +229,8 @@ import {
   LIFECYCLE_BURST_PHASES,
   PANEL_LIFECYCLE_REASONS,
   scheduleSwarmProjectionReadyBurst,
+  schedulePostSplitLayoutViewportSync,
   scheduleTerminalLifecycleSync,
-  shouldSuppressPanelGroupLayoutOnWindowSwitch,
-  WINDOW_SWITCH_PANEL_LAYOUT_SUPPRESS_MS,
 } from '@/lib/terminal/terminalLifecycleSync';
 import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
 import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
@@ -882,6 +882,7 @@ function renderWorkspacePanel(
     activeWsId,
     isActivePanel,
     isVisibleInLayout,
+    isWorkspaceShellVisible = true,
     cwd,
     wsId,
     setActivePanelIds,
@@ -933,6 +934,7 @@ function renderWorkspacePanel(
     autoFocus: isActive,
     isActivePanel: Boolean(isActivePanel ?? isActive),
     isVisibleInLayout: Boolean(isVisibleInLayout),
+    isWorkspaceShellVisible: Boolean(isWorkspaceShellVisible),
     visibleTerminalPanelCount,
     coldMountOrdinal,
     initialCommand: panel.initialCommand,
@@ -1211,6 +1213,7 @@ function renderWorkspacePanel(
               autoFocus={isActive}
               isActivePanel={Boolean(isActivePanel ?? isActive)}
               isVisibleInLayout={Boolean(isVisibleInLayout)}
+              isWorkspaceShellVisible={Boolean(isWorkspaceShellVisible)}
               visibleTerminalPanelCount={visibleTerminalPanelCount}
               coldMountOrdinal={coldMountOrdinal}
               initialCommand={panel.initialCommand}
@@ -3510,23 +3513,81 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     []
   );
 
+  const resolveActiveWindowPanelIds = useCallback(
+    (wsId) => {
+      if (!wsId) return [];
+      const windowId = resolveActiveWorkspaceWindowId(wsId, workspaceWindows, activeWindowIds);
+      const windows = workspaceWindows?.[wsId] || [];
+      const activeWindow = windows.find((win) => win.id === windowId);
+      if (activeWindow) {
+        return getPanelIdsFromColumns(activeWindow.columns || []);
+      }
+      const ws = workspaces.find((entry) => entry.id === wsId);
+      return getPanelIdsFromColumns(ws?.columns || []);
+    },
+    [activeWindowIds, getPanelIdsFromColumns, workspaceWindows, workspaces]
+  );
+
+  const prevActiveWsIdRef = useRef('');
   useEffect(() => {
     if (typeof window === 'undefined' || !isClientLoaded) return undefined;
-    if (pizarraOwnsLiveSurfaces) {
-      const timer = setTimeout(() => {
-        notifyNativeWorkspaceSurfaceSync('workspace-switch');
-      }, 320);
-      return () => clearTimeout(timer);
+
+    const wsId = activeWsId;
+    const isInitialMount = prevActiveWsIdRef.current === '';
+    const workspaceChanged = prevActiveWsIdRef.current !== wsId;
+    prevActiveWsIdRef.current = wsId || '';
+    if (isInitialMount || !workspaceChanged || !wsId) return undefined;
+
+    const focusedPanelId = focusedPanelByWorkspaceRef.current?.[wsId];
+    if (focusedPanelId) {
+      const windowId = resolveActiveWorkspaceWindowId(wsId, workspaceWindows, activeWindowIds);
+      const windows = workspaceWindows?.[wsId] || [];
+      const activeWindow = windows.find((win) => win.id === windowId);
+      const activeWindowPanelIds = getPanelIdsFromColumns(activeWindow?.columns || []);
+      if (!activeWindowPanelIds.includes(focusedPanelId)) {
+        setFocusedPanelByWorkspace((prev) => {
+          if (!prev[wsId]) return prev;
+          const next = { ...prev };
+          delete next[wsId];
+          return next;
+        });
+      }
     }
-    notifyNativeWorkspaceSurfaceSync('workspace-switch');
-    return undefined;
-  }, [activeWsId, isClientLoaded, notifyNativeWorkspaceSurfaceSync, pizarraOwnsLiveSurfaces]);
 
-  const suppressPanelGroupLayoutUntilRef = useRef(0);
+    const emitWorkspaceSwitchSync = () => {
+      notifyNativeWorkspaceSurfaceSync('workspace-switch');
+    };
 
-  const markWindowSwitchPanelLayoutSuppress = useCallback(() => {
-    suppressPanelGroupLayoutUntilRef.current = Date.now() + WINDOW_SWITCH_PANEL_LAYOUT_SUPPRESS_MS;
-  }, []);
+    const panelIds = resolveActiveWindowPanelIds(wsId);
+    const cleanupSplitSync =
+      panelIds.length > 1
+        ? schedulePostSplitLayoutViewportSync({
+            workspaceId: wsId,
+            panelIds,
+          })
+        : undefined;
+
+    if (pizarraOwnsLiveSurfaces) {
+      const timer = setTimeout(emitWorkspaceSwitchSync, 320);
+      return () => {
+        clearTimeout(timer);
+        cleanupSplitSync?.();
+      };
+    }
+
+    emitWorkspaceSwitchSync();
+    return () => {
+      cleanupSplitSync?.();
+    };
+  }, [
+    activeWindowIds,
+    activeWsId,
+    isClientLoaded,
+    notifyNativeWorkspaceSurfaceSync,
+    pizarraOwnsLiveSurfaces,
+    resolveActiveWindowPanelIds,
+    workspaceWindows,
+  ]);
 
   const prevActiveWindowIdsJsonRef = useRef('');
   useEffect(() => {
@@ -3537,33 +3598,28 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     prevActiveWindowIdsJsonRef.current = json;
     if (isInitialMount) return undefined;
 
-    markWindowSwitchPanelLayoutSuppress();
     notifyNativeWorkspaceSurfaceSync('workspace-window-switch');
 
+    // Dispatch a workspace-window-switch burst so TerminalTTY forces a fresh
+    // canvas repaint on every destination panel (panel-group-layout alone no-ops
+    // when cols/rows are unchanged, leaving split siblings black).
     const wsId = activeWsId;
-    if (wsId) {
-      const windowId = activeWindowIds[wsId];
-      const windows = workspaceWindows?.[wsId] || [];
-      const destination = windows.find((win) => win.id === windowId);
-      const panelIds = destination ? getPanelIdsFromColumns(destination.columns || []) : [];
-      if (panelIds.length > 0) {
-        scheduleTerminalLifecycleSync({
-          reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
-          workspaceId: wsId,
-          panelIds,
-          phases: LIFECYCLE_BURST_PHASES[PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH],
-        });
-      }
-    }
+    const panelIds = wsId ? resolveActiveWindowPanelIds(wsId) : [];
+    const cleanupBurst =
+      wsId && panelIds.length > 0
+        ? syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds)
+        : undefined;
 
-    return undefined;
+    return () => {
+      cleanupBurst?.();
+    };
   }, [
     activeWindowIds,
     activeWsId,
     isClientLoaded,
-    markWindowSwitchPanelLayoutSuppress,
     notifyNativeWorkspaceSurfaceSync,
-    workspaceWindows,
+    resolveActiveWindowPanelIds,
+    syncPanelLifecycleLayout,
   ]);
 
   const prevPizarraOwnsLiveSurfacesRef = useRef(pizarraOwnsLiveSurfaces);
@@ -3620,14 +3676,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
   const handlePanelGroupLayout = useCallback(() => {
     if (isDraggingInternalSplit || isDraggingDock) return;
-    if (
-      shouldSuppressPanelGroupLayoutOnWindowSwitch(
-        Date.now(),
-        suppressPanelGroupLayoutUntilRef.current
-      )
-    ) {
-      return;
-    }
 
     if (panelLayoutDebounceRef.current) {
       clearTimeout(panelLayoutDebounceRef.current);
@@ -3635,8 +3683,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     panelLayoutDebounceRef.current = setTimeout(() => {
       panelLayoutDebounceRef.current = null;
-      const workspace = workspaces.find((ws) => ws.id === activeWsId);
-      const panelIds = workspace ? getAllPanelIds(workspace.columns) : [];
+      const panelIds = activeWsId ? resolveActiveWindowPanelIds(activeWsId) : [];
       const multiPanelGrid = panelIds.length > 1 && !focusedPanelByWorkspace[activeWsId];
 
       if (multiPanelGrid) {
@@ -3649,12 +3696,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [
     activeWsId,
     focusedPanelByWorkspace,
-    getAllPanelIds,
     isDraggingDock,
     isDraggingInternalSplit,
     notifyNativeLayoutSettled,
+    resolveActiveWindowPanelIds,
     syncPanelLifecycleLayout,
-    workspaces,
   ]);
 
   useEffect(
@@ -3793,6 +3839,26 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         activePanelIdsRef.current[nextWorkspaceId]
       );
 
+      const focusedPanelId = focusedPanelByWorkspaceRef.current?.[nextWorkspaceId];
+      if (focusedPanelId) {
+        const windowId = resolveActiveWorkspaceWindowId(
+          nextWorkspaceId,
+          workspaceWindowsRef.current,
+          activeWindowIdsRef.current
+        );
+        const windows = workspaceWindowsRef.current?.[nextWorkspaceId] || [];
+        const activeWindow = windows.find((win) => win.id === windowId);
+        const activeWindowPanelIds = getPanelIdsFromColumns(activeWindow?.columns || []);
+        if (!activeWindowPanelIds.includes(focusedPanelId)) {
+          setFocusedPanelByWorkspace((prev) => {
+            if (!prev[nextWorkspaceId]) return prev;
+            const next = { ...prev };
+            delete next[nextWorkspaceId];
+            return next;
+          });
+        }
+      }
+
       if (nextPanelId) {
         setActivePanelIds((prev) =>
           prev[nextWorkspaceId] === nextPanelId ? prev : { ...prev, [nextWorkspaceId]: nextPanelId }
@@ -3801,9 +3867,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
 
       setActiveWsId(nextWorkspaceId);
-      // Do NOT dispatch a layout-settled event here. The post-commit effect below
-      // will sync native VTE surfaces once React has committed the new active
-      // workspace/panel state. Browser-side panels rely on isVisibleInLayout.
+      // Post-commit activeWsId effect emits workspace-switch layout-settled for canvas/webgl.
+      // In-workspace V1/V2 switches: panels stay isVisibleInLayout=true; only the window
+      // shell toggles opacity (see resolveWorkspaceWindowVisibilityStyle).
     },
     [pulsePanelNavigation]
   );
@@ -4002,70 +4068,63 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
   }, []);
 
-  const switchWindowInWorkspace = useCallback(
-    (wsId, windowId) => {
-      const windows = workspaceWindowsRef.current?.[wsId] || [];
-      const nextWindow = windows.find((win) => win.id === windowId);
-      if (!nextWindow) return;
+  const switchWindowInWorkspace = useCallback((wsId, windowId) => {
+    const windows = workspaceWindowsRef.current?.[wsId] || [];
+    const nextWindow = windows.find((win) => win.id === windowId);
+    if (!nextWindow) return;
 
-      const activeWindowId = activeWindowIdsRef.current?.[wsId];
-      if (activeWindowId === windowId) return;
+    const activeWindowId = activeWindowIdsRef.current?.[wsId];
+    if (activeWindowId === windowId) return;
 
-      // Window visibility toggles fire panel-group onLayout; suppress the global
-      // layout-settled burst so each TerminalTTY only reacts via isVisibleInLayout.
-      markWindowSwitchPanelLayoutSuppress();
+    const ws = workspacesRef.current.find((entry) => entry.id === wsId);
+    const liveColumns = ws?.columns || [];
 
-      const ws = workspacesRef.current.find((entry) => entry.id === wsId);
-      const liveColumns = ws?.columns || [];
-
-      let resolvedWindows = windows;
-      if (activeWindowId && liveColumns.length > 0) {
-        resolvedWindows = applyActiveWindowColumnSnapshot(
-          windows,
-          activeWindowId,
-          liveColumns,
-          activePanelIdsRef.current?.[wsId]
-        );
-        setWorkspaceWindows((prev) => ({ ...prev, [wsId]: resolvedWindows }));
-      }
-
-      const destination = resolvedWindows.find((win) => win.id === windowId) || nextWindow;
-      const nextPanelId =
-        destination.activePanelId ||
-        destination.columns?.flatMap((col) => col.panels || [])[0]?.id ||
-        null;
-
-      const focusedPanelId = focusedPanelByWorkspaceRef.current?.[wsId];
-      const destinationPanelIds = getPanelIdsFromColumns(destination.columns || []);
-      if (focusedPanelId && !destinationPanelIds.includes(focusedPanelId)) {
-        setFocusedPanelByWorkspace((prev) => {
-          if (!prev[wsId]) return prev;
-          const next = { ...prev };
-          delete next[wsId];
-          return next;
-        });
-      }
-
-      setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
-      if (nextPanelId) {
-        setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
-      }
-
-      setWorkspaces((prev) =>
-        prev.map((entry) =>
-          entry.id === wsId ? { ...entry, columns: destination.columns || entry.columns } : entry
-        )
+    let resolvedWindows = windows;
+    if (activeWindowId && liveColumns.length > 0) {
+      resolvedWindows = applyActiveWindowColumnSnapshot(
+        windows,
+        activeWindowId,
+        liveColumns,
+        activePanelIdsRef.current?.[wsId]
       );
+      setWorkspaceWindows((prev) => ({ ...prev, [wsId]: resolvedWindows }));
+    }
 
-      // Do NOT dispatch a layout-settled event here. React state is still stale
-      // in this tick (activeWindowIds / activePanelIds / workspaces have not
-      // committed yet), so any native sync or GPU recovery would use incorrect
-      // panel lists. The post-commit effect below emits a single
-      // `workspace-window-switch` once all state is consistent, mirroring the
-      // route switch and workspace switch paths.
-    },
-    [markWindowSwitchPanelLayoutSuppress]
-  );
+    const destination = resolvedWindows.find((win) => win.id === windowId) || nextWindow;
+    const nextPanelId =
+      destination.activePanelId ||
+      destination.columns?.flatMap((col) => col.panels || [])[0]?.id ||
+      null;
+
+    const focusedPanelId = focusedPanelByWorkspaceRef.current?.[wsId];
+    const destinationPanelIds = getPanelIdsFromColumns(destination.columns || []);
+    if (focusedPanelId && !destinationPanelIds.includes(focusedPanelId)) {
+      setFocusedPanelByWorkspace((prev) => {
+        if (!prev[wsId]) return prev;
+        const next = { ...prev };
+        delete next[wsId];
+        return next;
+      });
+    }
+
+    setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
+    if (nextPanelId) {
+      setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
+    }
+
+    setWorkspaces((prev) =>
+      prev.map((entry) =>
+        entry.id === wsId ? { ...entry, columns: destination.columns || entry.columns } : entry
+      )
+    );
+
+    // Do NOT dispatch a layout-settled event here. React state is still stale
+    // in this tick (activeWindowIds / activePanelIds / workspaces have not
+    // committed yet), so any native sync or GPU recovery would use incorrect
+    // panel lists. The post-commit effect below emits a single
+    // `workspace-window-switch` once all state is consistent, mirroring the
+    // route switch and workspace switch paths.
+  }, []);
 
   // pizarra-view-switch-complete: consolidate the active window so the workspace
   // state reflects the destination view. Without this the pane keeps receiving
@@ -6488,6 +6547,33 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         setRestoreSettingsModal({ open: false });
       } else if (action === 'toggle_pizarra') {
         dispatchZedOverlayToggle?.('pizarra');
+      } else if (action === 'arrange_pizarra') {
+        updateRightDockState((currentState) => {
+          const isCurrentlyPizarra =
+            currentState?.maximized && currentState?.maximizedView === 'pizarra';
+          if (!isCurrentlyPizarra) {
+            const nextEpoch = (Number(currentState?.browserLayoutEpoch) || 0) + 1;
+            return {
+              ...currentState,
+              visible: true,
+              activeTab: 'pizarra',
+              maximized: true,
+              maximizedView: 'pizarra',
+              browserLayoutEpoch: nextEpoch,
+            };
+          }
+          return currentState;
+        });
+
+        const dispatchArrangeFit = () => {
+          logPizarraBrowser('zed-workspace-action:arrange-fit-dispatch');
+          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
+        };
+        dispatchArrangeFit();
+        window.setTimeout(dispatchArrangeFit, 200);
+        window.setTimeout(dispatchArrangeFit, 400);
+        window.setTimeout(dispatchArrangeFit, 720);
+        window.setTimeout(dispatchArrangeFit, 1200);
       }
     };
     const unsubscribeWorkspaceAction = subscribeZedWorkspaceAction(handleZedWorkspaceAction);
@@ -6638,7 +6724,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   return (
                     <div
                       key={workspaceTabKey}
-                      onClick={() => setActiveWsId(ws.id)}
+                      onClick={() => switchWorkspace(ws.id)}
                       draggable
                       onDragStart={(e) => {
                         setDraggedWsId(ws.id);
@@ -7207,6 +7293,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                               panelId: panel.id,
                               activeWindowPanelIds,
                             }),
+                          isWorkspaceShellVisible:
+                            panelRenderOptions.isWorkspaceShellVisible ??
+                            isWorkspaceVisibleInLayout,
                           visibleTerminalPanelCount:
                             panelRenderOptions.visibleTerminalPanelCount ??
                             visibleTerminalPanelCount,
@@ -7346,9 +7435,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                           }
                                           style={{
                                             zIndex: isActiveWindow ? 2 : 1,
-                                            ...resolveWorkspaceShellVisibilityStyle({
-                                              isActiveWorkspace: isActiveWindow,
-                                              isManagerVisible: true,
+                                            ...resolveWorkspaceWindowVisibilityStyle({
+                                              isActiveWindow,
                                               isFullscreenTakeover: isFullscreenBrowser,
                                             }),
                                           }}
@@ -7405,6 +7493,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                                 }
                                                               >
                                                                 {renderWorkspacePanelSlot(panel, {
+                                                                  // Window V1/V2/V3 switch mirrors workspace tab switch:
+                                                                  // isVisibleInLayout toggles false→true on the destination
+                                                                  // window, firing the same viewport recovery (fit + GPU
+                                                                  // reattach) that keeps split siblings from going black.
                                                                   isVisibleInLayout:
                                                                     isActiveWindow &&
                                                                     resolvePanelVisibleInLayout({
@@ -7412,6 +7504,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                                       focusedPanelId,
                                                                       panelId: panel.id,
                                                                     }),
+                                                                  isWorkspaceShellVisible:
+                                                                    isWorkspaceVisibleInLayout,
                                                                   visibleTerminalPanelCount:
                                                                     focusedPanelId
                                                                       ? 1
@@ -7463,6 +7557,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                                                                   focusedPanelId,
                                                                   panelId: column.panels[0].id,
                                                                 }),
+                                                              isWorkspaceShellVisible:
+                                                                isWorkspaceVisibleInLayout,
                                                               visibleTerminalPanelCount:
                                                                 focusedPanelId
                                                                   ? 1

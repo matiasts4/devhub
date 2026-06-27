@@ -8,12 +8,12 @@
 export const workspaceActionTool = {
   name: 'workspace_action',
   description:
-    'Perform a high-level workspace UI action: open/close the terminal restore settings modal, or toggle the pizarra view. The UI listens for these results and applies the action.',
+    'Perform a high-level workspace UI action: open/close the terminal restore settings modal, toggle the pizarra view, or arrange the active elements on the pizarra canvas. The UI listens for these results and applies the action.',
   parameters: {
     action: {
       type: 'string',
       description:
-        'Action to perform: open_restore_settings, close_restore_settings, toggle_pizarra.',
+        'Action to perform: open_restore_settings, close_restore_settings, toggle_pizarra, arrange_pizarra.',
     },
     section: {
       type: 'string',
@@ -27,6 +27,7 @@ export const workspaceActionTool = {
       'open_restore_settings',
       'close_restore_settings',
       'toggle_pizarra',
+      'arrange_pizarra',
     ]);
 
     if (!validActions.has(action)) {

@@ -241,6 +241,13 @@ function isTogglePizarraIntent(lower) {
   );
 }
 
+const ARRANGE_VERBS =
+  /\b(auto-ordena|autoordena|ordena|ordenar|organiza|organizar|acomoda|acomodar|auto-organizar|autoorganizar|distribuye|distribuir|arrange|organize|tidy|clean|auto-arrange|fit)\b/;
+
+function isArrangePizarraIntent(lower) {
+  return ARRANGE_VERBS.test(lower) && PIZARRA_NOUN_RE.test(lower);
+}
+
 function isListProjectsIntent(lower) {
   return (
     /\b(cuales|cuáles|cuant|cuánt|que|qué|list|mostr|decime|dime|ver)\b/.test(lower) &&
@@ -465,6 +472,14 @@ export function resolveZedFastPathIntent(message, context = {}) {
       'toggle_pizarra',
       0.92,
       'toggle_pizarra'
+    );
+  }
+  if (isArrangePizarraIntent(lower)) {
+    return hit(
+      [{ tool: 'workspace_action', input: { action: 'arrange_pizarra' } }],
+      'arrange_pizarra',
+      0.94,
+      'arrange_pizarra'
     );
   }
 
