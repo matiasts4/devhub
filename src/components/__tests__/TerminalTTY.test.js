@@ -125,6 +125,7 @@ const {
   getTerminalRendererStatusCopy,
   getXtermContainerAnimProps,
   refreshTerminalViewport,
+  forceTerminalViewportRepaint,
   resolveTerminalRuntimePhase,
   resolveTerminalConnectionCloseState,
   resolveTerminalRendererViewModel,
@@ -143,7 +144,9 @@ const {
   shouldRefitVisibleInactiveSplitPanel,
   sendTerminalPasteInput,
   scheduleTerminalViewportSyncBurst,
+  resolveColdMountStaggerMs,
   shouldSyncTerminalViewportOnLayoutShow,
+  resolveConnectInitialCommandState,
   shouldSkipRedundantLayoutSettleViewportSync,
   shouldSkipTerminalOutputWhileLayoutHidden,
   appendHiddenTerminalOutputBuffer,
@@ -477,6 +480,52 @@ describe('refreshTerminalViewport()', () => {
   });
 });
 
+describe('forceTerminalViewportRepaint()', () => {
+  function makeTerm({ cols = 80, rows = 24 } = {}) {
+    return {
+      cols,
+      rows,
+      resize: jest.fn(),
+      refresh: jest.fn(),
+      _core: {
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+          clear: jest.fn(),
+        },
+      },
+    };
+  }
+
+  test('nudges 1 row down then back up to force a real canvas resize+repaint', () => {
+    const term = makeTerm({ cols: 80, rows: 24 });
+    expect(forceTerminalViewportRepaint(term)).toBe(true);
+    expect(term.resize).toHaveBeenNthCalledWith(1, 80, 23);
+    expect(term.resize).toHaveBeenNthCalledWith(2, 80, 24);
+    expect(term.refresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  test('nudges cols when only one row is available', () => {
+    const term = makeTerm({ cols: 80, rows: 1 });
+    expect(forceTerminalViewportRepaint(term)).toBe(true);
+    expect(term.resize).toHaveBeenNthCalledWith(1, 79, 1);
+    expect(term.resize).toHaveBeenNthCalledWith(2, 80, 1);
+  });
+
+  test('skips when the renderer is not ready', () => {
+    const term = makeTerm();
+    term._core._renderService._renderer.value = undefined;
+    expect(forceTerminalViewportRepaint(term)).toBe(false);
+    expect(term.resize).not.toHaveBeenCalled();
+  });
+
+  test('skips when cols/rows are zero', () => {
+    const term = makeTerm({ cols: 0, rows: 0 });
+    expect(forceTerminalViewportRepaint(term)).toBe(false);
+    expect(term.resize).not.toHaveBeenCalled();
+  });
+});
+
 describe('proposeTerminalViewportDimensions()', () => {
   function makeTerm(cell = { width: 10, height: 20 }) {
     return {
@@ -501,7 +550,7 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 26 });
+    ).toEqual({ cols: 80, rows: 25 });
   });
 
   test('keeps floored rows when slack is smaller than half a cell', () => {
@@ -515,7 +564,7 @@ describe('proposeTerminalViewportDimensions()', () => {
         fitAddon: { proposeDimensions: jest.fn() },
         term: makeTerm(),
       })
-    ).toEqual({ cols: 80, rows: 26 });
+    ).toEqual({ cols: 80, rows: 25 });
   });
 
   test('adds one extra row when slack is larger than the clip cost of an extra cell', () => {
@@ -628,12 +677,84 @@ describe('isTerminalViewportNearBottom()', () => {
   });
 });
 
+describe('resolveColdMountStaggerMs()', () => {
+  test('returns zero for hidden panels and when stagger is disabled', () => {
+    expect(
+      resolveColdMountStaggerMs({
+        coldMountOrdinal: 3,
+        isVisibleInLayout: false,
+        staggerMsPerPanel: 120,
+      })
+    ).toBe(0);
+    expect(
+      resolveColdMountStaggerMs({
+        coldMountOrdinal: 3,
+        isVisibleInLayout: true,
+        staggerMsPerPanel: 0,
+      })
+    ).toBe(0);
+  });
+
+  test('applies ordinal stagger only for visible panels when enabled', () => {
+    expect(
+      resolveColdMountStaggerMs({
+        coldMountOrdinal: 2,
+        isVisibleInLayout: true,
+        staggerMsPerPanel: 120,
+      })
+    ).toBe(240);
+  });
+});
+
 describe('shouldSyncTerminalViewportOnLayoutShow()', () => {
   test('only triggers a full viewport sync when a workspace shell becomes visible', () => {
     expect(shouldSyncTerminalViewportOnLayoutShow(false, true)).toBe(true);
     expect(shouldSyncTerminalViewportOnLayoutShow(true, true)).toBe(false);
     expect(shouldSyncTerminalViewportOnLayoutShow(false, false)).toBe(false);
     expect(shouldSyncTerminalViewportOnLayoutShow(true, false)).toBe(false);
+  });
+});
+
+describe('resolveConnectInitialCommandState()', () => {
+  const {
+    clearPanelInitialCommandLifecycle,
+    markPanelInitialCommandDispatched,
+  } = require('@/lib/terminal/panelInitialCommandLifecycle');
+
+  beforeEach(() => {
+    clearPanelInitialCommandLifecycle('panel-a');
+  });
+
+  test('clears lifecycle only on first connect', () => {
+    markPanelInitialCommandDispatched('panel-a', 'grok');
+    expect(
+      resolveConnectInitialCommandState({
+        hasConnectedOnce: false,
+        panelId: 'panel-a',
+        initialCommand: 'grok',
+      })
+    ).toEqual({
+      clearLifecycle: true,
+      sessionReattached: false,
+      hasSentInitialCommand: false,
+      markDispatched: false,
+    });
+  });
+
+  test('preserves dispatch guard when reconnecting a live session', () => {
+    markPanelInitialCommandDispatched('panel-a', 'grok');
+    expect(
+      resolveConnectInitialCommandState({
+        hasConnectedOnce: true,
+        panelId: 'panel-a',
+        initialCommand: 'grok',
+      })
+    ).toEqual({
+      clearLifecycle: false,
+      sessionReattached: true,
+      hasSentInitialCommand: true,
+      markDispatched: false,
+    });
   });
 });
 
@@ -1108,6 +1229,18 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
         reason: 'layout-settled-panel-focus-toggle-delay-340',
       })
     ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'layout-settled-workspace-switch-immediate',
+      })
+    ).toBe(true);
+    expect(
+      shouldClearGpuAtlasOnWorkspaceShow({
+        operationalRendererMode: 'xterm-canvas',
+        reason: 'layout-settled-workspace-window-immediate',
+      })
+    ).toBe(true);
   });
 
   test('keeps webgl atlas clears on recover only, not layout or settled show passes', () => {
@@ -1151,38 +1284,78 @@ describe('shouldClearGpuAtlasOnWorkspaceShow()', () => {
 });
 
 describe('shouldReleaseWebglRendererOnLayoutHide()', () => {
-  test('releases webgl only on visible→hidden edges in webgl mode', () => {
+  test('releases webgl when the whole workspace shell hides', () => {
     expect(
       shouldReleaseWebglRendererOnLayoutHide({
         operationalRendererMode: 'xterm-webgl',
         isVisibleInLayout: false,
         prevVisibleInLayout: true,
+        isWorkspaceShellVisible: false,
       })
     ).toBe(true);
+  });
+
+  test('keeps webgl attached when only a window is parked within the active workspace', () => {
+    expect(
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-webgl',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+        isWorkspaceShellVisible: true,
+      })
+    ).toBe(false);
+  });
+
+  test('ignores non-webgl renderers and show edges', () => {
     expect(
       shouldReleaseWebglRendererOnLayoutHide({
         operationalRendererMode: 'xterm-canvas',
         isVisibleInLayout: false,
         prevVisibleInLayout: true,
+        isWorkspaceShellVisible: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldReleaseWebglRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-webgl',
+        isVisibleInLayout: true,
+        prevVisibleInLayout: false,
+        isWorkspaceShellVisible: false,
       })
     ).toBe(false);
   });
 });
 
 describe('shouldReleaseCanvasRendererOnLayoutHide()', () => {
-  test('releases canvas only on visible→hidden edges in canvas mode', () => {
+  test('releases canvas when the whole workspace shell hides', () => {
     expect(
       shouldReleaseCanvasRendererOnLayoutHide({
         operationalRendererMode: 'xterm-canvas',
         isVisibleInLayout: false,
         prevVisibleInLayout: true,
+        isWorkspaceShellVisible: false,
       })
     ).toBe(true);
+  });
+
+  test('keeps canvas attached when only a window is parked within the active workspace', () => {
+    expect(
+      shouldReleaseCanvasRendererOnLayoutHide({
+        operationalRendererMode: 'xterm-canvas',
+        isVisibleInLayout: false,
+        prevVisibleInLayout: true,
+        isWorkspaceShellVisible: true,
+      })
+    ).toBe(false);
+  });
+
+  test('ignores non-canvas renderers and show edges', () => {
     expect(
       shouldReleaseCanvasRendererOnLayoutHide({
         operationalRendererMode: 'xterm-webgl',
         isVisibleInLayout: false,
         prevVisibleInLayout: true,
+        isWorkspaceShellVisible: false,
       })
     ).toBe(false);
     expect(
@@ -1190,6 +1363,7 @@ describe('shouldReleaseCanvasRendererOnLayoutHide()', () => {
         operationalRendererMode: 'xterm-canvas',
         isVisibleInLayout: true,
         prevVisibleInLayout: false,
+        isWorkspaceShellVisible: false,
       })
     ).toBe(false);
   });
@@ -2347,12 +2521,18 @@ describe('TerminalTTY renderer fallback UI', () => {
         row: 9,
       });
       expect(buildGrokWheelScrollPayload('down', 10, 9, 2)).toBe(
-        buildTerminalWheelSgrSequence('down', 10, 9) + buildTerminalWheelArrowSequence('down', 2)
+        buildTerminalWheelSgrSequence('down', 10, 9)
       );
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: true })).toBe(
         TERMINAL_GROK_INPUT_ZONE_ROWS
       );
       expect(resolveTerminalWheelInputZoneRows({ isGrokSession: false })).toBe(2);
+      expect(resolveTerminalWheelInputZoneRows({ isKimiSession: true })).toBe(
+        TERMINAL_GROK_INPUT_ZONE_ROWS
+      );
+      expect(resolveTerminalWheelScrollPrefer('kimi')).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('kimi', { tuiActive: true })).toBe('arrow');
+      expect(resolveTerminalWheelScrollPrefer('grok', { tuiActive: true })).toBe('sgr');
       expect(isTerminalTranscriptCell(18, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
       expect(isTerminalTranscriptCell(19, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
       expect(

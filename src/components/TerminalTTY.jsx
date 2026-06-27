@@ -70,6 +70,7 @@ import {
 } from '@/lib/terminal/swarmLaunchWrapperLifecycle';
 import {
   clearPanelInitialCommandLifecycle,
+  getPanelInitialCommandDispatch,
   markPanelInitialCommandDispatched,
   shouldSkipRedundantInitialCommandSend,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
@@ -134,7 +135,16 @@ export function shouldShowTerminalViewport(isInitializing, initError) {
 
 /** Max wait before first connect when viewport fit keeps deferring (mode-switch undersize). */
 export const TERMINAL_CONNECT_DEFER_MAX_MS = 1800;
-export const TERMINAL_COLD_MOUNT_STAGGER_MS = 120;
+/** ponytail: parallel cold mount — stagger caused left-to-right seconds-long panel pop-in. */
+export const TERMINAL_COLD_MOUNT_STAGGER_MS = 0;
+export function resolveColdMountStaggerMs({
+  coldMountOrdinal = 0,
+  isVisibleInLayout = true,
+  staggerMsPerPanel = TERMINAL_COLD_MOUNT_STAGGER_MS,
+} = {}) {
+  if (!isVisibleInLayout || staggerMsPerPanel <= 0) return 0;
+  return Math.max(0, Number(coldMountOrdinal) || 0) * staggerMsPerPanel;
+}
 
 /** Full-screen blocking loader — only on first boot, never on panel-switch reconnects. */
 export function shouldShowTerminalLoadingOverlay(
@@ -293,12 +303,19 @@ export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
  */
 export function resolveTerminalWheelScrollPrefer(
   initialCommand,
-  { isGrokSession = false, tuiActive = false } = {}
+  { isGrokSession = false, isKimiSession = false, tuiActive = false } = {}
 ) {
-  if (isGrokSession || tuiActive || isGrokTuiInitialCommand(initialCommand)) {
+  if (isKimiSession || isKimiLaunchCommand(initialCommand)) {
+    // Kimi uses arrow-key scrolling; SGR wheel reports are not honored by its Ink chrome.
+    return 'arrow';
+  }
+  if (isGrokSession || tuiActive) {
     return 'sgr';
   }
   if (isLikelyTuiInitialCommand(initialCommand)) {
+    if (isGrokTuiInitialCommand(initialCommand)) {
+      return 'page';
+    }
     return 'sgr';
   }
   return 'page';
@@ -306,8 +323,12 @@ export function resolveTerminalWheelScrollPrefer(
 
 export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;
 
-/** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly taller guard. */
-export function resolveTerminalWheelInputZoneRows({ isGrokSession = false } = {}) {
+/** Grok shortcut bar + prompt; OpenCode footer/input needs a slightly guard size. */
+export function resolveTerminalWheelInputZoneRows({
+  isGrokSession = false,
+  isKimiSession = false,
+} = {}) {
+  if (isKimiSession) return TERMINAL_GROK_INPUT_ZONE_ROWS;
   return isGrokSession ? TERMINAL_GROK_INPUT_ZONE_ROWS : TERMINAL_DEFAULT_INPUT_ZONE_ROWS;
 }
 
@@ -396,6 +417,40 @@ export function refreshTerminalViewport(term) {
   if (!isTerminalRendererReady(term)) return false;
 
   try {
+    term.refresh(0, term.rows - 1);
+    return true;
+  } catch (error) {
+    if (isStaleXtermRendererError(error)) return false;
+    throw error;
+  }
+}
+
+/**
+ * Force the canvas/webgl renderer to actually repaint, even when cols/rows are
+ * unchanged. `term.resize()` no-ops on identical dims, so a parked-then-shown
+ * split sibling whose container preserved its size never re-renders and stays
+ * black. A 1-cell nudge (resize to N-1 then back to N) is a real resize both
+ * ways, which is exactly what a manual drag does — the only reliable trigger
+ * for xterm's canvas bitmap to redraw. No PTY SIGWINCH is sent (xterm.resize
+ * does not notify the PTY; that is done separately and we skip it here).
+ */
+export function forceTerminalViewportRepaint(term) {
+  if (!term || typeof term.resize !== 'function') return false;
+  if (!isTerminalRendererReady(term)) return false;
+  const cols = Number(term.cols ?? 0);
+  const rows = Number(term.rows ?? 0);
+  if (cols <= 0 || rows <= 0) return false;
+  try {
+    term._core?._renderService?.clear?.();
+    if (rows > 1) {
+      term.resize(cols, rows - 1);
+      term.resize(cols, rows);
+    } else if (cols > 1) {
+      term.resize(cols - 1, rows);
+      term.resize(cols, rows);
+    } else {
+      return false;
+    }
     term.refresh(0, term.rows - 1);
     return true;
   } catch (error) {
@@ -1120,6 +1175,29 @@ export function shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)
   return !prevVisible && nextVisible;
 }
 
+/** Guards initialCommand re-injection when connect() runs after a live PTY session. */
+export function resolveConnectInitialCommandState({
+  hasConnectedOnce = false,
+  panelId = '',
+  initialCommand = '',
+} = {}) {
+  if (!hasConnectedOnce) {
+    return {
+      clearLifecycle: true,
+      sessionReattached: false,
+      hasSentInitialCommand: false,
+      markDispatched: false,
+    };
+  }
+  const dispatched = getPanelInitialCommandDispatch(panelId);
+  return {
+    clearLifecycle: false,
+    sessionReattached: true,
+    hasSentInitialCommand: Boolean(dispatched) || Boolean(initialCommand),
+    markDispatched: Boolean(initialCommand) && !dispatched,
+  };
+}
+
 /** Workspace tab switch and in-workspace V1/V2/V3 window switch share the same GPU recovery path. */
 export function isWorkspaceLayoutSwitchReason(reason = '') {
   const normalized = String(reason);
@@ -1332,7 +1410,8 @@ export function shouldClearAtlasForSplitCanvas({
 
 const CANVAS_SPLIT_LAYOUT_ATLAS_CLEAR_REASON =
   /layout-settled-(panel-group-layout|panel-focus-toggle|internal-split-drag-end|right-dock-drag-end|swarm-launch|shared-surface|panel-split|panel-relaunch)/;
-const CANVAS_WORKSPACE_SHOW_ATLAS_CLEAR_REASON = /layout-recover-|layout-settled-workspace-window/;
+const CANVAS_WORKSPACE_SHOW_ATLAS_CLEAR_REASON =
+  /layout-recover-|layout-settled-workspace-window|layout-settled-workspace-switch/;
 
 /** Canvas uses release-on-hide + reattach-on-show; avoid repeated atlas clears on delayed bursts. */
 export function shouldClearGpuAtlasOnWorkspaceShow({
@@ -1360,12 +1439,21 @@ export function shouldClearGpuAtlasOnWorkspaceShow({
   return reason.includes('recover');
 }
 
-/** Release WebGL while a panel is layout-hidden so PTY output cannot corrupt glyph atlases. */
+/**
+ * Release WebGL only when the whole workspace shell hides — NOT on window park.
+ * Keeping WebGL attached while a window is parked (workspace still visible) avoids
+ * the reattach race that leaves split siblings black on switch-back; PTY output is
+ * buffered while hidden so the glyph atlas cannot corrupt.
+ */
 export function shouldReleaseWebglRendererOnLayoutHide({
   operationalRendererMode,
   isVisibleInLayout,
   prevVisibleInLayout,
+  isWorkspaceShellVisible = true,
 } = {}) {
+  if (prevVisibleInLayout && !isVisibleInLayout && isWorkspaceShellVisible) {
+    return false;
+  }
   return (
     prevVisibleInLayout &&
     !isVisibleInLayout &&
@@ -1373,12 +1461,19 @@ export function shouldReleaseWebglRendererOnLayoutHide({
   );
 }
 
-/** Release Canvas while a panel is layout-hidden so PTY output cannot corrupt glyph atlases. */
+/**
+ * Release Canvas only when the whole workspace shell hides — NOT on window park.
+ * Same rationale as WebGL: avoid the reattach race for nested-window split siblings.
+ */
 export function shouldReleaseCanvasRendererOnLayoutHide({
   operationalRendererMode,
   isVisibleInLayout,
   prevVisibleInLayout,
+  isWorkspaceShellVisible = true,
 } = {}) {
+  if (prevVisibleInLayout && !isVisibleInLayout && isWorkspaceShellVisible) {
+    return false;
+  }
   return (
     prevVisibleInLayout &&
     !isVisibleInLayout &&
@@ -1541,6 +1636,7 @@ export default function TerminalTTY({
   visibleTerminalPanelCount = 1,
   isActivePanel = autoFocus,
   isVisibleInLayout = true,
+  isWorkspaceShellVisible = true,
   suspendNativeSurface = false,
   nativeSurfacePolicy = 'live',
   runtimePlatform,
@@ -1680,12 +1776,14 @@ export default function TerminalTTY({
   const sendResizeRef = useRef(null);
   const isActivePanelRef = useRef(isActivePanel);
   const isVisibleInLayoutRef = useRef(isVisibleInLayout);
+  const isWorkspaceShellVisibleRef = useRef(isWorkspaceShellVisible);
   const prevVisibleInLayoutRef = useRef(isVisibleInLayout);
   const needsViewportSyncOnShowRef = useRef(false);
   const containerWasZeroSizedOnShowRef = useRef(false);
   const syncTerminalViewportOnWorkspaceShowRef = useRef(null);
   const workspaceShowSyncTimerRef = useRef(null);
   const workspaceShowRecoverTimerRef = useRef(null);
+  const workspaceShowZeroSizeObserverRef = useRef(null);
   const inactiveRepaintRafRef = useRef(null);
   const pendingWebglRecoveryRef = useRef(false);
   const webglReleasedOnLayoutHideRef = useRef(false);
@@ -2034,7 +2132,8 @@ export default function TerminalTTY({
 
   useLayoutEffect(() => {
     isVisibleInLayoutRef.current = isVisibleInLayout;
-  }, [isVisibleInLayout]);
+    isWorkspaceShellVisibleRef.current = isWorkspaceShellVisible;
+  }, [isVisibleInLayout, isWorkspaceShellVisible]);
 
   useEffect(() => {
     connectionStateRef.current = connectionState;
@@ -2533,6 +2632,20 @@ export default function TerminalTTY({
     [id]
   );
 
+  const restoreInitialCommandDispatchGuard = useCallback(() => {
+    if (hasSentInitialCommand.current) return;
+    const record = getPanelInitialCommandDispatch(id);
+    if (record?.command) {
+      hasSentInitialCommand.current = true;
+      sessionReattachedRef.current = true;
+      return;
+    }
+    if (hasConnectedOnceRef.current && initialCommand) {
+      sessionReattachedRef.current = true;
+      hasSentInitialCommand.current = true;
+    }
+  }, [id, initialCommand]);
+
   const resolveInjectCommand = useCallback(() => {
     const storage = typeof window !== 'undefined' ? window.localStorage : null;
     const agentRun = readAgentRunForPanel(storage, id);
@@ -2687,9 +2800,12 @@ export default function TerminalTTY({
         notifyViewportReady(cols, rows);
       }
 
-      scheduleInitialCommandAfterViewport();
+      restoreInitialCommandDispatchGuard();
+      if (!hasSentInitialCommand.current) {
+        scheduleInitialCommandAfterViewport();
+      }
     },
-    [notifyViewportReady, scheduleInitialCommandAfterViewport]
+    [notifyViewportReady, restoreInitialCommandDispatchGuard, scheduleInitialCommandAfterViewport]
   );
 
   const maybeConnectAfterViewportFit = useCallback(
@@ -2722,8 +2838,10 @@ export default function TerminalTTY({
       clearConnectDeferTimer();
       connectPendingUntilFitRef.current = false;
       if (!hasConnectedOnceRef.current || wsRef.current?.readyState !== WebSocket.OPEN) {
-        const staggerMs =
-          Math.max(0, Number(coldMountOrdinal) || 0) * TERMINAL_COLD_MOUNT_STAGGER_MS;
+        const staggerMs = resolveColdMountStaggerMs({
+          coldMountOrdinal,
+          isVisibleInLayout: isVisibleInLayoutRef.current,
+        });
         if (staggerMs > 0 && !hasConnectedOnceRef.current) {
           connectDeferTimerRef.current = setTimeout(() => {
             connectDeferTimerRef.current = null;
@@ -2834,7 +2952,19 @@ export default function TerminalTTY({
         kimiReady: kimiReadyNotifiedRef.current,
       });
 
-      if (!kimiConnected && rect && rect.width > 0 && rect.height > 0 && fitAddon && term) {
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        needsViewportSyncOnShowRef.current = true;
+        if (workspaceShowRecoverTimerRef.current) {
+          clearTimeout(workspaceShowRecoverTimerRef.current);
+        }
+        workspaceShowRecoverTimerRef.current = window.setTimeout(() => {
+          workspaceShowRecoverTimerRef.current = null;
+          scheduleInactiveViewportRepaint();
+        }, 80);
+        return;
+      }
+
+      if (!kimiConnected && fitAddon && term) {
         colsBefore = term.cols;
         rowsBefore = term.rows;
         const fitWorked = fitTerminalViewport({
@@ -2956,7 +3086,7 @@ export default function TerminalTTY({
       canvasAddonRef.current = canvasAddon;
       termRef.current.loadAddon(canvasAddon);
 
-      fitTerminalViewport({
+      const fitWorked = fitTerminalViewport({
         container: containerRef.current,
         fitAddon: fitRef.current,
         term: termRef.current,
@@ -2971,6 +3101,16 @@ export default function TerminalTTY({
             kimiReady: kimiReadyNotifiedRef.current,
           }),
       });
+      if (!fitWorked) {
+        try {
+          canvasAddon.dispose?.();
+        } catch {
+          // ignore double dispose
+        }
+        canvasAddonRef.current = null;
+        canvasReleasedOnLayoutHideRef.current = true;
+        return false;
+      }
       stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
       canvasReleasedOnLayoutHideRef.current = false;
       cliLog(`RENDER:${id}`, 'canvas-attached', buildViewportSnapshot('canvas-reattach'));
@@ -3121,8 +3261,8 @@ export default function TerminalTTY({
         // bounded retry so we don't rely on a later event that may never fire.
         const scheduleZeroSizeRecovery = ({
           attempt = 1,
-          maxAttempts = 2,
-          baseDelayMs = 80,
+          maxAttempts = /workspace-show/.test(reason) ? 12 : 2,
+          baseDelayMs = 50,
         } = {}) => {
           if (workspaceShowRecoverTimerRef.current) {
             clearTimeout(workspaceShowRecoverTimerRef.current);
@@ -3151,6 +3291,31 @@ export default function TerminalTTY({
             });
           }, baseDelayMs * attempt);
         };
+
+        if (
+          typeof ResizeObserver !== 'undefined' &&
+          containerRef.current &&
+          !workspaceShowZeroSizeObserverRef.current
+        ) {
+          const observed = containerRef.current;
+          workspaceShowZeroSizeObserverRef.current = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            const width = entry?.contentRect?.width ?? 0;
+            const height = entry?.contentRect?.height ?? 0;
+            if (width <= 0 || height <= 0) return;
+            workspaceShowZeroSizeObserverRef.current?.disconnect();
+            workspaceShowZeroSizeObserverRef.current = null;
+            if (workspaceShowRecoverTimerRef.current) {
+              clearTimeout(workspaceShowRecoverTimerRef.current);
+              workspaceShowRecoverTimerRef.current = null;
+            }
+            void syncTerminalViewportOnWorkspaceShowRef.current?.(
+              `${reason}-resize-observer-recovered`,
+              { clearAtlas }
+            );
+          });
+          workspaceShowZeroSizeObserverRef.current.observe(observed);
+        }
 
         scheduleZeroSizeRecovery();
         return;
@@ -4420,6 +4585,10 @@ export default function TerminalTTY({
     surfaceHostRef.current = surfaceHost;
   }, [surfaceHost]);
 
+  useLayoutEffect(() => {
+    restoreInitialCommandDispatchGuard();
+  }, [restoreInitialCommandDispatchGuard]);
+
   useEffect(() => {
     const bridge = takeTerminalPanelBridge(id);
     if (!bridge) return;
@@ -4496,9 +4665,6 @@ export default function TerminalTTY({
       return;
     }
 
-    initialCommandDelayScheduledRef.current = false;
-    clearPanelInitialCommandLifecycle(id);
-
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       cliLog(`CLIENT:${id}`, 'connect() skipped — socket already open');
       setConnectionState('connected');
@@ -4506,13 +4672,22 @@ export default function TerminalTTY({
       return;
     }
 
-    // Only a fresh WebSocket connection is a new PTY session. When the socket
-    // is already open this is a visibility re-attach; resetting these flags here
-    // would re-inject the initial command or replay hidden output after
-    // workspace/window switches.
+    initialCommandDelayScheduledRef.current = false;
+
+    const connectCommandState = resolveConnectInitialCommandState({
+      hasConnectedOnce: hasConnectedOnceRef.current,
+      panelId: id,
+      initialCommand,
+    });
+    if (connectCommandState.clearLifecycle) {
+      clearPanelInitialCommandLifecycle(id);
+    }
+    sessionReattachedRef.current = connectCommandState.sessionReattached;
+    hasSentInitialCommand.current = connectCommandState.hasSentInitialCommand;
+    if (connectCommandState.markDispatched) {
+      markPanelInitialCommandDispatched(id, initialCommand);
+    }
     processExitedRef.current = false;
-    sessionReattachedRef.current = false;
-    hasSentInitialCommand.current = false;
 
     if (!hasConnectedOnceRef.current) {
       setConnectionState('connecting');
@@ -4984,6 +5159,7 @@ export default function TerminalTTY({
         operationalRendererMode,
         isVisibleInLayout,
         prevVisibleInLayout: prevVisible,
+        isWorkspaceShellVisible: isWorkspaceShellVisibleRef.current,
       }) &&
       !shouldUseNativeRenderer &&
       canvasAddonRef.current
@@ -4996,6 +5172,7 @@ export default function TerminalTTY({
         operationalRendererMode,
         isVisibleInLayout,
         prevVisibleInLayout: prevVisible,
+        isWorkspaceShellVisible: isWorkspaceShellVisibleRef.current,
       }) &&
       !shouldUseNativeRenderer &&
       webglAddonRef.current
@@ -5004,6 +5181,7 @@ export default function TerminalTTY({
     }
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
+      restoreInitialCommandDispatchGuard();
       if (shouldUseNativeRenderer && nativeVteOpened) {
         void showAndResizeNativeLease();
       }
@@ -5011,24 +5189,50 @@ export default function TerminalTTY({
         pendingWebglRecoveryRef.current ||
         webglReleasedOnLayoutHideRef.current ||
         canvasReleasedOnLayoutHideRef.current;
-      syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
-        clearAtlas: gpuShowRecover,
-      });
+      const splitGridVisible = visibleTerminalPanelCountRef.current > 1;
+      const clearAtlasForShow = gpuShowRecover || splitGridVisible;
       const needsRafRecovery =
         shouldAttachWebglRenderer({ operationalRendererMode }) ||
         visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT ||
         needsViewportSyncOnShowRef.current ||
         canvasReleasedOnLayoutHideRef.current ||
-        webglReleasedOnLayoutHideRef.current;
+        webglReleasedOnLayoutHideRef.current ||
+        splitGridVisible;
 
-      if (needsRafRecovery) {
-        requestAnimationFrame(() => {
-          if (!isVisibleInLayoutRef.current) return;
-          syncTerminalViewportOnWorkspaceShow('workspace-show-raf', {
-            clearAtlas: gpuShowRecover,
-          });
+      // ponytail: defer to rAF so every panel in the same commit batches into one
+      // paint instead of blocking useLayoutEffect left-to-right.
+      requestAnimationFrame(() => {
+        if (!isVisibleInLayoutRef.current) return;
+        syncTerminalViewportOnWorkspaceShow('workspace-show-layout', {
+          clearAtlas: clearAtlasForShow,
         });
-      }
+        if (
+          !splitGridVisible &&
+          shouldRefitVisibleInactiveSplitPanel({
+            isActivePanel: isActivePanelRef.current,
+            isVisibleInLayout: isVisibleInLayoutRef.current,
+          })
+        ) {
+          scheduleInactiveViewportRepaint();
+        }
+        if (needsRafRecovery) {
+          requestAnimationFrame(() => {
+            if (!isVisibleInLayoutRef.current) return;
+            syncTerminalViewportOnWorkspaceShow('workspace-show-raf', {
+              clearAtlas: clearAtlasForShow,
+            });
+            if (
+              !splitGridVisible &&
+              shouldRefitVisibleInactiveSplitPanel({
+                isActivePanel: isActivePanelRef.current,
+                isVisibleInLayout: isVisibleInLayoutRef.current,
+              })
+            ) {
+              scheduleInactiveViewportRepaint();
+            }
+          });
+        }
+      });
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
@@ -5046,13 +5250,18 @@ export default function TerminalTTY({
         clearTimeout(workspaceShowRecoverTimerRef.current);
         workspaceShowRecoverTimerRef.current = null;
       }
+      workspaceShowZeroSizeObserverRef.current?.disconnect();
+      workspaceShowZeroSizeObserverRef.current = null;
     };
   }, [
     isVisibleInLayout,
+    isWorkspaceShellVisible,
     nativeVteOpened,
     operationalRendererMode,
     releaseCanvasAddon,
     releaseWebglAddonForInactivePanel,
+    restoreInitialCommandDispatchGuard,
+    scheduleInactiveViewportRepaint,
     shouldUseNativeRenderer,
     showAndResizeNativeLease,
     syncTerminalViewportOnWorkspaceShow,
@@ -5509,8 +5718,10 @@ export default function TerminalTTY({
       }
     }
 
-    const initStaggerMs =
-      Math.max(0, Number(coldMountOrdinal) || 0) * TERMINAL_COLD_MOUNT_STAGGER_MS;
+    const initStaggerMs = resolveColdMountStaggerMs({
+      coldMountOrdinal,
+      isVisibleInLayout: isVisibleInLayoutRef.current,
+    });
     let initStaggerTimer = null;
     if (initStaggerMs > 0) {
       initStaggerTimer = setTimeout(() => {
@@ -5826,8 +6037,9 @@ export default function TerminalTTY({
         hasConnectedOnce: hasConnectedOnceRef.current,
       });
 
+      const isWorkspaceSwitch = String(reason).includes('workspace-switch');
       const isWorkspaceOrWindowSwitch =
-        String(reason).includes('workspace-switch') || String(reason).includes('workspace-window');
+        isWorkspaceSwitch || String(reason).includes('workspace-window');
 
       if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
         if (!isVisibleInLayoutRef.current) {
@@ -5920,6 +6132,33 @@ export default function TerminalTTY({
         syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
           clearAtlas: false,
         });
+        return;
+      }
+
+      if (String(reason).includes('workspace-window-switch')) {
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        // Fit to the (now visible) container, then force a real canvas repaint.
+        // fitTerminalViewport no-ops when cols/rows are unchanged (parked
+        // containers preserve size), so split siblings stay black until a manual
+        // resize. A 1-cell nudge forces term.resize → canvas re-render, exactly
+        // mirroring a manual drag, with no PTY SIGWINCH.
+        syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+          clearAtlas: true,
+        });
+        const repaint = () => {
+          if (isDisposingRef.current || !termRef.current) return;
+          if (!isVisibleInLayoutRef.current) return;
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (!rect || rect.width <= 0 || rect.height <= 0) {
+            requestAnimationFrame(repaint);
+            return;
+          }
+          forceTerminalViewportRepaint(termRef.current);
+        };
+        repaint();
         return;
       }
 
@@ -6018,6 +6257,14 @@ export default function TerminalTTY({
         return;
       }
 
+      if (isWorkspaceSwitch) {
+        // layout-show useLayoutEffect owns false→true canvas/webgl recovery.
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+        }
+        return;
+      }
+
       const extraDelaysMs = String(reason).includes('workspace-removed')
         ? []
         : String(reason).includes('panel-closed')
@@ -6111,7 +6358,11 @@ export default function TerminalTTY({
           ? resolveTerminalCellFromPointer(term, shell, event.clientX, event.clientY)
           : null;
       const grokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: grokSession });
+      const isKimiSession = kimiReadyNotifiedRef.current || isKimiLaunchCommand(initialCommand);
+      const inputZoneRows = resolveTerminalWheelInputZoneRows({
+        isGrokSession: grokSession,
+        isKimiSession,
+      });
       const inTranscript = cell
         ? isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
         : lastPointerZoneRef.current !== 'input';
@@ -6225,6 +6476,7 @@ export default function TerminalTTY({
       }
 
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
+      const isKimiSession = kimiReadyNotifiedRef.current || isKimiLaunchCommand(initialCommand);
       const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
 
       // Plain shells: scroll xterm scrollback locally — Page/arrow/SGR leaks as visible garbage.
@@ -6255,7 +6507,7 @@ export default function TerminalTTY({
         return;
       }
 
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession });
+      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession, isKimiSession });
 
       const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
       const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
@@ -6296,6 +6548,7 @@ export default function TerminalTTY({
 
       const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, {
         isGrokSession,
+        isKimiSession,
         tuiActive: tuiSessionActiveRef.current,
       });
       const payload = isGrokSession
