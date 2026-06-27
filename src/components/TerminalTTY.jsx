@@ -260,20 +260,34 @@ export function detectGrokSessionFromOutput(text) {
 /** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
 export function shouldPassthroughNativeTuiWheel({
   isGrokSession = false,
-  isKimiSession = false,
   grokTuiReady = false,
-  kimiTuiReady = false,
   opencodeFooterConfirmed = false,
 } = {}) {
   if (isGrokSession) {
     const adapter = getTuiAdapter('grok');
     return adapter.wheelStrategy.passThrough && grokTuiReady;
   }
-  if (isKimiSession) {
-    return kimiTuiReady;
-  }
   const adapter = getTuiAdapter('opencode');
   return adapter.wheelStrategy.passThrough && opencodeFooterConfirmed;
+}
+
+export function resolveTerminalWheelScrollPrefer(
+  initialCommand,
+  { isGrokSession = false, isKimiSession = false, tuiActive = false } = {}
+) {
+  if (isKimiSession || isKimiLaunchCommand(initialCommand)) {
+    return 'page';
+  }
+  if (isGrokSession || tuiActive) {
+    return 'sgr';
+  }
+  if (isLikelyTuiInitialCommand(initialCommand)) {
+    if (isGrokTuiInitialCommand(initialCommand) || isKimiLaunchCommand(initialCommand)) {
+      return 'page';
+    }
+    return 'sgr';
+  }
+  return 'page';
 }
 
 export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand = '') {
@@ -301,25 +315,6 @@ export function resolveGrokWheelSgrCoords(
 /** Grok Ink accepts SGR wheel and/or arrow scroll depending on focus — send both. */
 export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
   return buildTerminalWheelSgrSequence(direction, col, row);
-}
-
-/**
- * Pre-ready fallback when neither grok injection nor OpenCode passthrough is active.
- */
-export function resolveTerminalWheelScrollPrefer(
-  initialCommand,
-  { isGrokSession = false, isKimiSession = false, tuiActive = false } = {}
-) {
-  if (isGrokSession || isKimiSession || tuiActive) {
-    return 'sgr';
-  }
-  if (isLikelyTuiInitialCommand(initialCommand)) {
-    if (isGrokTuiInitialCommand(initialCommand) || isKimiLaunchCommand(initialCommand)) {
-      return 'page';
-    }
-    return 'sgr';
-  }
-  return 'page';
 }
 
 export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;

@@ -2527,7 +2527,7 @@ describe('TerminalTTY renderer fallback UI', () => {
           isKimiSession: true,
           kimiTuiReady: true,
         })
-      ).toBe(true);
+      ).toBe(false);
       expect(resolveGrokWheelSgrCoords({ col: 10, row: 20 }, { cols: 80, rows: 24 }, 5)).toEqual({
         col: 10,
         row: 9,
@@ -2543,7 +2543,7 @@ describe('TerminalTTY renderer fallback UI', () => {
         TERMINAL_GROK_INPUT_ZONE_ROWS
       );
       expect(resolveTerminalWheelScrollPrefer('kimi')).toBe('page');
-      expect(resolveTerminalWheelScrollPrefer('kimi', { tuiActive: true })).toBe('sgr');
+      expect(resolveTerminalWheelScrollPrefer('kimi', { tuiActive: true })).toBe('page');
       expect(resolveTerminalWheelScrollPrefer('grok', { tuiActive: true })).toBe('sgr');
       expect(isTerminalTranscriptCell(18, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(true);
       expect(isTerminalTranscriptCell(19, 24, TERMINAL_GROK_INPUT_ZONE_ROWS)).toBe(false);
