@@ -34,8 +34,8 @@ export function isKimiTuiLive({
   tuiSessionActive = false,
   hasConnectedOnce = false,
 } = {}) {
-  if (kimiReady) return true;
   if (!isKimiLaunchCommand(initialCommand)) return false;
+  if (kimiReady) return true;
   return Boolean(hasConnectedOnce && tuiSessionActive);
 }
 
@@ -53,12 +53,8 @@ export function shouldFreezeKimiTuiViewportOnWorkspaceShow({
 }
 
 /** Kimi Ink scroll resets on redundant PTY resize even when cols/rows are unchanged. */
-export function shouldSkipKimiTuiPtyResize({
-  initialCommand = '',
-  hasConnectedOnce = false,
-  kimiReady = false,
-} = {}) {
-  return (isKimiLaunchCommand(initialCommand) || kimiReady) && hasConnectedOnce;
+export function shouldSkipKimiTuiPtyResize() {
+  return false;
 }
 
 /** Scan xterm scrollback for kimi chrome after reattach before fresh output arrives. */

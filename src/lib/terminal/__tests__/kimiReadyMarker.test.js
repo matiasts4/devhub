@@ -70,7 +70,7 @@ describe('kimiReadyMarker', () => {
         initialCommand: kimiCmd,
         hasConnectedOnce: true,
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldSkipKimiTuiPtyResize({
         initialCommand: kimiCmd,
