@@ -3346,7 +3346,6 @@ export default function TerminalTTY({
         const isKimiLaunch = isKimiLaunchCommand(initialCommand);
         if (isKimiLaunch || detectKimiReadyFromTerminalBuffer(termRef.current)) {
           kimiReadyNotifiedRef.current = true;
-          tuiSessionActiveRef.current = true;
         }
       }
 
@@ -4826,9 +4825,6 @@ export default function TerminalTTY({
           if (!kimiReadyNotifiedRef.current && kimiTuiReady) {
             kimiReadyNotifiedRef.current = true;
             void notifyAgentReady('kimi', null, 'client-tui-footer');
-          }
-          if (kimiReadyNotifiedRef.current) {
-            tuiSessionActiveRef.current = true;
           }
           if (isKimiLaunch) {
             return;
