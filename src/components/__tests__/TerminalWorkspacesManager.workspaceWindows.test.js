@@ -392,26 +392,25 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     await click(focusBtn);
     await flushEffects();
 
-    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'terminal-p1',
-    ]);
+    expect(
+      visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
+    ).toEqual(['terminal-p1']);
 
     const switchBtn = container.querySelector('[data-testid="workspace-window-switch-2"]');
     expect(switchBtn).not.toBeNull();
     await click(switchBtn);
     await flushEffects();
 
-    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'terminal-p2',
-      'terminal-p3',
-    ]);
+    expect(
+      visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
+    ).toEqual(['terminal-p2', 'terminal-p3']);
 
     // Parked window mirrors workspace tab switch: its panels go isVisibleInLayout=false
     // (the false→true toggle on switch-back is what drives viewport recovery).
     const parkedP1 = container.querySelector('[data-testid="workspace-window-parked-v1"]');
-    expect(parkedP1?.querySelector('[data-testid="terminal-p1"]')?.getAttribute('data-visible')).toBe(
-      'false'
-    );
+    expect(
+      parkedP1?.querySelector('[data-testid="terminal-p1"]')?.getAttribute('data-visible')
+    ).toBe('false');
   });
 
   test('switching to a window that contains the focused panel keeps focus mode (TWS-S2)', async () => {
@@ -426,25 +425,25 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     await click(focusP2);
     await flushEffects();
 
-    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'terminal-p2',
-    ]);
+    expect(
+      visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
+    ).toEqual(['terminal-p2']);
 
     const switchToV1 = container.querySelector('[data-testid="workspace-window-switch-1"]');
     await click(switchToV1);
     await flushEffects();
 
-    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'terminal-p2',
-    ]);
+    expect(
+      visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
+    ).toEqual(['terminal-p2']);
 
     const switchBackToV2 = container.querySelector('[data-testid="workspace-window-switch-2"]');
     await click(switchBackToV2);
     await flushEffects();
 
-    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'terminal-p2',
-    ]);
+    expect(
+      visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
+    ).toEqual(['terminal-p2']);
     expect(terminalById(container, 'p3').getAttribute('data-visible')).toBe('false');
   });
 
