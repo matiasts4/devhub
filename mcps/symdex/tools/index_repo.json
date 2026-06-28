@@ -1,0 +1,36 @@
+{
+  "name": "index_repo",
+  "description": "Index a repo and register it in the central registry.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "repo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": ["path"],
+    "type": "object"
+  }
+}

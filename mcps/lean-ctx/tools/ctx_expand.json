@@ -1,0 +1,33 @@
+{
+  "name": "ctx_expand",
+  "description": "Retrieve archived tool output (zero-loss). Large outputs are auto-archived; use this to retrieve full details. Actions: retrieve (default), list.",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "retrieve (default) or list",
+        "type": "string"
+      },
+      "end_line": {
+        "description": "End line for range retrieval",
+        "type": "integer"
+      },
+      "id": {
+        "description": "Archive ID from the [Archived: ...] hint",
+        "type": "string"
+      },
+      "search": {
+        "description": "Search pattern to filter archived output",
+        "type": "string"
+      },
+      "session_id": {
+        "description": "Filter list by session ID",
+        "type": "string"
+      },
+      "start_line": {
+        "description": "Start line for range retrieval",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  }
+}

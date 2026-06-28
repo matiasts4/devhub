@@ -1,0 +1,23 @@
+{
+  "name": "get_symbol",
+  "description": "Get full source of a symbol by byte offsets.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "file": {
+        "type": "string"
+      },
+      "start_byte": {
+        "type": "integer"
+      },
+      "end_byte": {
+        "type": "integer"
+      }
+    },
+    "required": ["repo", "file", "start_byte", "end_byte"],
+    "type": "object"
+  }
+}

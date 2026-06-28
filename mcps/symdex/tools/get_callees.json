@@ -1,0 +1,17 @@
+{
+  "name": "get_callees",
+  "description": "Return all symbols called by the named function.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "repo": {
+        "type": "string"
+      }
+    },
+    "required": ["name", "repo"],
+    "type": "object"
+  }
+}

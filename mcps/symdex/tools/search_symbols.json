@@ -1,0 +1,40 @@
+{
+  "name": "search_symbols",
+  "description": "Find functions/classes by name. ~200 tokens per lookup.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "repo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "kind": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "limit": {
+        "default": 20,
+        "type": "integer"
+      }
+    },
+    "required": ["query"],
+    "type": "object"
+  }
+}

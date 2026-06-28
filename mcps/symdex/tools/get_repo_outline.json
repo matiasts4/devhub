@@ -1,0 +1,14 @@
+{
+  "name": "get_repo_outline",
+  "description": "Directory tree and code summary for an indexed repo.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

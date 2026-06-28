@@ -1,0 +1,29 @@
+{
+  "name": "semantic_search",
+  "description": "Find symbols by meaning using embedding similarity.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "repo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "limit": {
+        "default": 10,
+        "type": "integer"
+      }
+    },
+    "required": ["query"],
+    "type": "object"
+  }
+}

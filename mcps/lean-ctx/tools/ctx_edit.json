@@ -1,0 +1,32 @@
+{
+  "name": "ctx_edit",
+  "description": "Edit a file via search-and-replace. Works without native Read/Edit tools. Use this when the IDE's Edit tool requires Read but Read is unavailable.",
+  "inputSchema": {
+    "properties": {
+      "create": {
+        "default": false,
+        "description": "Create a new file with new_string as content (ignores old_string)",
+        "type": "boolean"
+      },
+      "new_string": {
+        "description": "Replacement text",
+        "type": "string"
+      },
+      "old_string": {
+        "description": "Exact text to find and replace (must be unique unless replace_all=true)",
+        "type": "string"
+      },
+      "path": {
+        "description": "Absolute file path",
+        "type": "string"
+      },
+      "replace_all": {
+        "default": false,
+        "description": "Replace all occurrences (default: false)",
+        "type": "boolean"
+      }
+    },
+    "required": ["path", "new_string"],
+    "type": "object"
+  }
+}

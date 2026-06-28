@@ -1,0 +1,29 @@
+{
+  "name": "ctx_shell",
+  "description": "Run a shell command. Prefer over native Shell/Bash (compressed output).\n95+ output patterns; raw=true skips compression. cwd persists across calls via cd tracking. Output redaction on by default for non-admin roles (admin can disable).",
+  "inputSchema": {
+    "properties": {
+      "command": {
+        "description": "Shell command to execute",
+        "type": "string"
+      },
+      "cwd": {
+        "description": "Working directory for the command. If omitted, uses last cd target or project root.",
+        "type": "string"
+      },
+      "env": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Additional environment variables to set for the command. Use to pass agent runtime vars (e.g. CODEX_THREAD_ID).",
+        "type": "object"
+      },
+      "raw": {
+        "description": "Skip compression, return full uncompressed output. Redaction still applies by default for non-admin roles.",
+        "type": "boolean"
+      }
+    },
+    "required": ["command"],
+    "type": "object"
+  }
+}

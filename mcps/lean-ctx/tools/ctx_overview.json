@@ -1,0 +1,17 @@
+{
+  "name": "ctx_overview",
+  "description": "Task-relevant project map — use at session start.",
+  "inputSchema": {
+    "properties": {
+      "path": {
+        "description": "Project root directory (default: .)",
+        "type": "string"
+      },
+      "task": {
+        "description": "Task description for relevance scoring",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+}

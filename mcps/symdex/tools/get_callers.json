@@ -1,0 +1,17 @@
+{
+  "name": "get_callers",
+  "description": "Return all symbols that call the named function.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "repo": {
+        "type": "string"
+      }
+    },
+    "required": ["name", "repo"],
+    "type": "object"
+  }
+}

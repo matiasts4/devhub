@@ -1,0 +1,33 @@
+{
+  "name": "get_graph_diagram",
+  "description": "Generate a Mermaid call-graph diagram for an indexed repo. Nodes are files; edges are call relationships. Optionally focus on a single file with BFS depth limit. Cycle edges are marked red. Renders in GitHub, Cursor, and Markdown viewers.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "focus_file": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "depth": {
+        "default": 2,
+        "type": "integer"
+      },
+      "direction": {
+        "default": "LR",
+        "type": "string"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

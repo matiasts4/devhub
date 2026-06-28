@@ -1,0 +1,53 @@
+{
+  "name": "build_context_pack",
+  "description": "Build a token-budgeted context pack for an agent query.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "query": {
+        "type": "string"
+      },
+      "token_budget": {
+        "default": 6000,
+        "type": "integer"
+      },
+      "include": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "exclude": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "format": {
+        "default": "json",
+        "type": "string"
+      }
+    },
+    "required": ["repo", "query"],
+    "type": "object"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "search_text",
+  "description": "Text search across indexed files. Returns matching lines only.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "repo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "file_pattern": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": ["query"],
+    "type": "object"
+  }
+}

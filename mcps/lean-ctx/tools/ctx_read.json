@@ -1,0 +1,26 @@
+{
+  "name": "ctx_read",
+  "description": "Read a file. Prefer over native Read/cat/head/tail (cached, compressed).\nUnchanged re-reads cost ~13 tokens. Auto-selects mode (full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M). fresh=true forces a disk re-read.",
+  "inputSchema": {
+    "properties": {
+      "fresh": {
+        "description": "Bypass cache and force a full re-read. Use when running as a subagent that may not have the parent's context.",
+        "type": "boolean"
+      },
+      "mode": {
+        "description": "Compression mode (default: auto — resolved per file type/size). Explicit 'full' for guaranteed complete content. Use 'map' for context-only files. For line ranges: 'lines:N-M' (e.g. 'lines:400-500').",
+        "type": "string"
+      },
+      "path": {
+        "description": "Absolute file path to read",
+        "type": "string"
+      },
+      "start_line": {
+        "description": "Start reading from this line (only used when no explicit mode is set, or with mode=lines). Does NOT override explicit modes like map/signatures.",
+        "type": "integer"
+      }
+    },
+    "required": ["path"],
+    "type": "object"
+  }
+}

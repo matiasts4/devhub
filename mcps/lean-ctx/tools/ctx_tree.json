@@ -1,0 +1,32 @@
+{
+  "name": "ctx_tree",
+  "description": "List a directory. Prefer over native ls/find (counts, compact tree).\nSupports multi-root via `paths` array. depth controls recursion (default 3).",
+  "inputSchema": {
+    "properties": {
+      "depth": {
+        "description": "Max depth (default: 3)",
+        "type": "integer"
+      },
+      "path": {
+        "description": "Directory path (default: .)",
+        "type": "string"
+      },
+      "paths": {
+        "description": "Multiple directories to list (alternative to path)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "respect_gitignore": {
+        "description": "Filter out .gitignore'd files (default: true). Set false to show all files.",
+        "type": "boolean"
+      },
+      "show_hidden": {
+        "description": "Show hidden files",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+}

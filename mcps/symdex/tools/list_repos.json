@@ -1,0 +1,9 @@
+{
+  "name": "list_repos",
+  "description": "List all indexed repositories in the central registry.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+}

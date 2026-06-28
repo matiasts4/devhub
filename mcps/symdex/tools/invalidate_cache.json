@@ -1,0 +1,25 @@
+{
+  "name": "invalidate_cache",
+  "description": "Force re-index of a repo or specific file on next call.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "file": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

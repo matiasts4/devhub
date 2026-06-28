@@ -1,0 +1,18 @@
+{
+  "name": "shell",
+  "description": "Execute a shell command. Returns token-optimized compressed output (95+ patterns for git, npm, cargo, docker, tsc, etc). Equivalent to running the command in a terminal but with automatic output compression for efficiency.",
+  "inputSchema": {
+    "properties": {
+      "command": {
+        "description": "The shell command to execute",
+        "type": "string"
+      },
+      "cwd": {
+        "description": "Working directory (optional, defaults to project root)",
+        "type": "string"
+      }
+    },
+    "required": ["command"],
+    "type": "object"
+  }
+}

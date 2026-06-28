@@ -1,0 +1,17 @@
+{
+  "name": "get_file_outline",
+  "description": "All symbols in a file without reading full content.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "file": {
+        "type": "string"
+      }
+    },
+    "required": ["repo", "file"],
+    "type": "object"
+  }
+}

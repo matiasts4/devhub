@@ -1,0 +1,14 @@
+{
+  "name": "get_index_status",
+  "description": "Get indexing status for a repo: symbol count, file count, Lines of Code, last indexed time, staleness, and watcher status.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

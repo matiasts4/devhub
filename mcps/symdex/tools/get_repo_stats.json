@@ -1,0 +1,14 @@
+{
+  "name": "get_repo_stats",
+  "description": "Get comprehensive statistics for a repo: Lines of Code, symbol count, language distribution, top callers/callees, orphan files, and circular dependency count.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

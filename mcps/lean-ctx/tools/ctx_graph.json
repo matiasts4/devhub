@@ -1,0 +1,31 @@
+{
+  "name": "ctx_graph",
+  "description": "Unified code graph. Actions: build (index), related (connected files), symbol (def/usages), impact (blast radius), status (stats), enrich (add commits+tests+knowledge), context (task-based query), diagram (Mermaid deps/calls).",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Graph operation",
+        "enum": ["build", "related", "symbol", "impact", "status", "enrich", "context", "diagram"],
+        "type": "string"
+      },
+      "depth": {
+        "description": "Optional depth for action=diagram (default: 2)",
+        "type": "integer"
+      },
+      "kind": {
+        "description": "Optional kind for action=diagram: deps|calls",
+        "type": "string"
+      },
+      "path": {
+        "description": "File path (related/impact) or file::symbol_name (symbol)",
+        "type": "string"
+      },
+      "project_root": {
+        "description": "Project root directory (default: .)",
+        "type": "string"
+      }
+    },
+    "required": ["action"],
+    "type": "object"
+  }
+}

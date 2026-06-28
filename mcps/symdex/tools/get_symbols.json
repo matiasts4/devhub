@@ -1,0 +1,28 @@
+{
+  "name": "get_symbols",
+  "description": "Bulk symbol retrieval by exact name list.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "names": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "repo": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": ["names"],
+    "type": "object"
+  }
+}

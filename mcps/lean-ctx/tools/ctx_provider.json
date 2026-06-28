@@ -1,0 +1,60 @@
+{
+  "name": "ctx_provider",
+  "description": "External context providers (GitHub, GitLab, Jira, Postgres, custom). action=discover|list: list registered providers. action=status: provider health + cache metrics. action=refresh: invalidate cache + re-fetch (provider= optional). action=configure: show config (resource=paths|template for details). action=query: provider+resource for data access. Legacy GitLab actions still supported.",
+  "inputSchema": {
+    "properties": {
+      "action": {
+        "description": "Provider action. 'discover'/'list' lists all. 'status' shows health+cache. 'refresh' invalidates+re-fetches. 'configure' shows config. 'query' uses registry routing.",
+        "enum": [
+          "discover",
+          "list",
+          "status",
+          "refresh",
+          "configure",
+          "query",
+          "mcp_resources",
+          "gitlab_issues",
+          "gitlab_issue",
+          "gitlab_mrs",
+          "gitlab_pipelines"
+        ],
+        "type": "string"
+      },
+      "iid": {
+        "description": "Issue/MR IID for single-item lookup (GitLab)",
+        "type": "integer"
+      },
+      "labels": {
+        "description": "Comma-separated labels filter (GitLab)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Max results (default 20, max 100)",
+        "type": "integer"
+      },
+      "mode": {
+        "description": "Output mode for action=query. 'compact' (default) or 'chunks' for BM25/embedding ingest.",
+        "enum": ["compact", "chunks"],
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider ID (e.g. 'github', 'gitlab', 'jira', 'mcp:my-kb'). Required for query, optional for refresh (omit to refresh all).",
+        "type": "string"
+      },
+      "resource": {
+        "description": "Resource type for action=query (e.g. 'issues', 'pull_requests'). For configure: 'paths'|'template'|'show'.",
+        "type": "string"
+      },
+      "state": {
+        "description": "Filter by state (open, closed, merged, all)",
+        "type": "string"
+      },
+      "status": {
+        "description": "Pipeline/Actions status filter (running, success, failed)",
+        "type": "string"
+      }
+    },
+    "required": ["action"],
+    "type": "object"
+  }
+}

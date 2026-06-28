@@ -1,0 +1,40 @@
+{
+  "name": "search_routes",
+  "description": "Find HTTP routes indexed from a repo. Filter by method or path substring.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "method": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "path_contains": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "limit": {
+        "default": 50,
+        "type": "integer"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

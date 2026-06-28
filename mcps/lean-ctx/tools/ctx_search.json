@@ -1,0 +1,37 @@
+{
+  "name": "ctx_search",
+  "description": "Search code by regex. Prefer over native Grep/rg/find (compact output).\nRespects .gitignore; supports multi-root via `paths` array. Secret-like files skipped unless role allows.",
+  "inputSchema": {
+    "properties": {
+      "ext": {
+        "description": "File extension filter",
+        "type": "string"
+      },
+      "ignore_gitignore": {
+        "description": "Set true to scan ALL files including .gitignore'd paths (default: false). Requires role policy (e.g. admin).",
+        "type": "boolean"
+      },
+      "max_results": {
+        "description": "Max results (default: 20)",
+        "type": "integer"
+      },
+      "path": {
+        "description": "Directory to search",
+        "type": "string"
+      },
+      "paths": {
+        "description": "Multiple directories to search (alternative to path)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "pattern": {
+        "description": "Regex pattern",
+        "type": "string"
+      }
+    },
+    "required": ["pattern"],
+    "type": "object"
+  }
+}

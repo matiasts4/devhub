@@ -1,0 +1,18 @@
+{
+  "name": "get_file_tree",
+  "description": "Directory tree of an indexed repo without file contents.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      },
+      "depth": {
+        "default": 3,
+        "type": "integer"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}

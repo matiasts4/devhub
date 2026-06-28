@@ -1,0 +1,14 @@
+{
+  "name": "find_circular_deps",
+  "description": "Detect circular dependencies in a repo's call graph. Returns up to 20 cycles. Each cycle is a list of files representing the dependency loop.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "repo": {
+        "type": "string"
+      }
+    },
+    "required": ["repo"],
+    "type": "object"
+  }
+}
