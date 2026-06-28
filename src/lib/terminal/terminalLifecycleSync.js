@@ -1,7 +1,16 @@
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
 
 /** Grace period after V1/V2/V3 switch — panel-group onLayout must not burst-sync all panels. */
-export const WINDOW_SWITCH_PANEL_LAYOUT_SUPPRESS_MS = 320;
+export const WINDOW_SWITCH_PANEL_LAYOUT_SUPPRESS_MS = 0;
+
+/** One immediate split refit after panel-group layout settles. */
+export const POST_WINDOW_SWITCH_SPLIT_SYNC_MS = 80;
+
+const POST_SPLIT_LAYOUT_PHASES = Object.freeze({
+  immediate: true,
+  raf: true,
+  delayMs: Object.freeze([120, 340]),
+});
 
 export function shouldSuppressPanelGroupLayoutOnWindowSwitch(nowMs, suppressUntilMs) {
   return Number.isFinite(suppressUntilMs) && nowMs < suppressUntilMs;
@@ -16,6 +25,7 @@ export const PANEL_LIFECYCLE_REASONS = Object.freeze({
   PANEL_FOCUS: 'panel-focus-toggle',
   PANEL_GROUP_LAYOUT: 'panel-group-layout',
   WORKSPACE_REMOVED: 'workspace-removed',
+  WORKSPACE_SWITCH: 'workspace-switch',
   WORKSPACE_WINDOW_SWITCH: 'workspace-window-switch',
 });
 
@@ -60,6 +70,11 @@ export const LIFECYCLE_BURST_PHASES = Object.freeze({
     immediate: true,
     raf: false,
     delayMs: Object.freeze([]),
+  }),
+  [PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH]: Object.freeze({
+    immediate: true,
+    raf: true,
+    delayMs: Object.freeze([80, 180, 340]),
   }),
   [PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH]: Object.freeze({
     immediate: true,
@@ -169,11 +184,45 @@ export function scheduleTerminalLifecycleSync({
 const SWARM_PROJECTION_READY_DELAYS_MS = Object.freeze([180, 340, 500]);
 
 /**
- * Post-mount burst for swarm panels — forces shared-surface projection-ready
- * dispatches so V-01 black panels recover after N portals mount at once.
- *
- * @returns {() => void} cleanup
+ * After a window/workspace switch, split siblings need one refit once panel-group
+ * layout has real widths. Immediate layout-show often runs while the right column
+ * is still 0px wide; panel-group onLayout is suppressed during the grace window.
  */
+export function schedulePostSplitLayoutViewportSync({
+  reason = PANEL_LIFECYCLE_REASONS.PANEL_GROUP_LAYOUT,
+  workspaceId,
+  panelIds,
+  delayMs = POST_WINDOW_SWITCH_SPLIT_SYNC_MS,
+  phases = POST_SPLIT_LAYOUT_PHASES,
+  dispatch = dispatchTerminalLayoutSettled,
+} = {}) {
+  const ids = Array.isArray(panelIds) ? panelIds.filter(Boolean) : [];
+  if (ids.length <= 1) {
+    return noopCleanup;
+  }
+
+  if (typeof globalThis === 'undefined' || globalThis.window == null) {
+    return noopCleanup;
+  }
+
+  let cancelled = false;
+  const timerId = globalThis.setTimeout(() => {
+    if (cancelled) return;
+    scheduleTerminalLifecycleSync({
+      reason,
+      workspaceId,
+      panelIds: ids,
+      phases,
+      dispatch,
+    });
+  }, delayMs);
+
+  return () => {
+    cancelled = true;
+    globalThis.clearTimeout(timerId);
+  };
+}
+
 export function scheduleSwarmProjectionReadyBurst({
   panelIds,
   workspaceId,

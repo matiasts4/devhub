@@ -2,6 +2,8 @@ import { JSDOM } from 'jsdom';
 import {
   LIFECYCLE_BURST_PHASES,
   PANEL_LIFECYCLE_REASONS,
+  POST_WINDOW_SWITCH_SPLIT_SYNC_MS,
+  schedulePostSplitLayoutViewportSync,
   scheduleSwarmProjectionReadyBurst,
   scheduleTerminalLifecycleSync,
   shouldSuppressPanelGroupLayoutOnWindowSwitch,
@@ -127,7 +129,16 @@ describe('scheduleTerminalLifecycleSync', () => {
       PANEL_FOCUS: 'panel-focus-toggle',
       PANEL_GROUP_LAYOUT: 'panel-group-layout',
       WORKSPACE_REMOVED: 'workspace-removed',
+      WORKSPACE_SWITCH: 'workspace-switch',
       WORKSPACE_WINDOW_SWITCH: 'workspace-window-switch',
+    });
+  });
+
+  test('WORKSPACE_SWITCH burst phases match workspace tab switch contract', () => {
+    expect(LIFECYCLE_BURST_PHASES[PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH]).toEqual({
+      immediate: true,
+      raf: true,
+      delayMs: [80, 180, 340],
     });
   });
 
@@ -146,6 +157,11 @@ describe('scheduleTerminalLifecycleSync', () => {
     expect(LIFECYCLE_BURST_PHASES['panel-group-layout'].delayMs).toEqual([120, 340, 500]);
     expect(LIFECYCLE_BURST_PHASES['panel-closed'].delayMs).toEqual([120, 340]);
     expect(LIFECYCLE_BURST_PHASES['workspace-removed'].raf).toBe(false);
+    expect(LIFECYCLE_BURST_PHASES['workspace-switch']).toEqual({
+      immediate: true,
+      raf: true,
+      delayMs: [80, 180, 340],
+    });
     expect(LIFECYCLE_BURST_PHASES['workspace-window-switch']).toEqual({
       immediate: true,
       raf: true,
@@ -175,6 +191,56 @@ describe('scheduleTerminalLifecycleSync', () => {
     const reasons = dispatch.mock.calls.map((call) => call[0].reason);
     expect(reasons).toContain('shared-surface-projection-ready-raf');
     expect(reasons).toContain('shared-surface-projection-ready-delay');
+  });
+});
+
+describe('schedulePostSplitLayoutViewportSync', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = new JSDOM('<!doctype html><html><body></body></html>');
+    global.window = dom.window;
+    global.document = dom.window.document;
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    dom.window.close();
+    delete global.window;
+    delete global.document;
+  });
+
+  test('schedules one panel-group-layout burst after the window-switch suppress window', () => {
+    const dispatch = jest.fn();
+
+    schedulePostSplitLayoutViewportSync({
+      workspaceId: 'ws1',
+      panelIds: ['p1', 'p2'],
+      dispatch,
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(POST_WINDOW_SWITCH_SPLIT_SYNC_MS);
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      reason: 'panel-group-layout',
+      workspaceId: 'ws1',
+      panelIds: ['p1', 'p2'],
+      phase: 'immediate',
+    });
+  });
+
+  test('no-ops for single-panel windows', () => {
+    const dispatch = jest.fn();
+    schedulePostSplitLayoutViewportSync({
+      workspaceId: 'ws1',
+      panelIds: ['p1'],
+      dispatch,
+    });
+    jest.advanceTimersByTime(POST_WINDOW_SWITCH_SPLIT_SYNC_MS);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });
 

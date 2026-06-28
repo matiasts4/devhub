@@ -180,6 +180,7 @@ const {
   resolveTerminalWheelScrollPrefer,
   shouldPassthroughNativeTuiWheel,
   shouldInjectGrokWheelSgr,
+  shouldScrollKimiWheelLocally,
   resolveGrokWheelSgrCoords,
   buildGrokWheelScrollPayload,
   resolveTerminalWheelInputZoneRows,
@@ -2564,6 +2565,38 @@ describe('TerminalTTY renderer fallback UI', () => {
       );
       expect(buildTerminalWheelSgrSequence('down', 10, 4)).toBe('\x1b[<65;11;5M');
       expect(buildTerminalWheelSgrSequence('down', 10, 4)).not.toContain('?1000');
+    });
+
+    test('Kimi wheel scrolls xterm locally like a normal terminal (no PTY injection)', () => {
+      // Kimi is a flowing-output terminal, not a fixed-pane Ink TUI: wheel must use the
+      // local scrollback path (scrollTerminalViewport -> term.scrollLines) and never
+      // inject SGR/PageUp/PageDown into the PTY.
+      expect(shouldScrollKimiWheelLocally(true)).toBe(true);
+      expect(shouldScrollKimiWheelLocally(false)).toBe(false);
+
+      const calls = [];
+      const term = { scrollLines: (n) => calls.push(n) };
+      // Kimi uses fine, clamped steps: one notch (deltaY=120) -> 2 lines, and a fast
+      // swipe (deltaY=2000) is capped so it can't overshoot to the top/bottom extreme.
+      expect(
+        scrollTerminalViewport(term, 'up', 120, { linesPerStep: 1, lineHeight: 60, maxSteps: 4 })
+      ).toBe(true);
+      expect(
+        scrollTerminalViewport(term, 'down', 2000, { linesPerStep: 1, lineHeight: 60, maxSteps: 4 })
+      ).toBe(true);
+      expect(calls[0]).toBe(-2); // up -> negative, fine
+      expect(calls[1]).toBe(4); // down -> positive, clamped to maxSteps * linesPerStep
+      // Default path (shells) is unchanged: maxSteps defaults to Infinity.
+      const shellCalls = [];
+      const shellTerm = { scrollLines: (n) => shellCalls.push(n) };
+      expect(scrollTerminalViewport(shellTerm, 'up', 120)).toBe(true);
+      expect(shellCalls[0]).toBe(-9);
+      // No PTY payload builders are involved in the Kimi path — guard against regressions
+      // to the old SGR/page injection that scrolled the prompt instead of the transcript.
+      expect(buildTerminalWheelSgrSequence('up', 40, 9).startsWith('\x1b[<64;')).toBe(true);
+      expect(buildTerminalWheelScrollPayload('up', 2, { prefer: 'page' })).toContain(
+        TERMINAL_PAGE_UP_SEQ
+      );
     });
 
     test('forwardTerminalWheelToXterm dispatches wheel on the xterm root element', () => {

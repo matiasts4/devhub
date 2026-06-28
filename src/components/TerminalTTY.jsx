@@ -294,6 +294,16 @@ export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand =
   return isGrokSession || isGrokTuiInitialCommand(initialCommand);
 }
 
+/**
+ * Kimi behaves like a normal scrolling terminal (output flows, inline input) — not a
+ * fixed-bottom-pane Ink TUI like grok/OpenCode. Wheel scrolls the xterm scrollback
+ * locally via term.scrollLines; never inject wheel bytes (SGR/PageUp/PageDown) into the
+ * PTY, which Kimi either ignores or routes to the prompt editor.
+ */
+export function shouldScrollKimiWheelLocally(isKimiSession = false) {
+  return Boolean(isKimiSession);
+}
+
 /** Keep grok wheel coords inside the transcript pane (Ink chrome owns the bottom rows). */
 export function resolveGrokWheelSgrCoords(
   cell,
@@ -888,10 +898,12 @@ export function scrollTerminalViewport(
   term,
   direction,
   deltaY,
-  { lineHeight = 40, linesPerStep = 3 } = {}
+  { lineHeight = 40, linesPerStep = 3, maxSteps = Infinity } = {}
 ) {
   if (!term || typeof term.scrollLines !== 'function') return false;
-  const steps = resolveTerminalWheelPageSteps(deltaY, { lineHeight });
+  const rawSteps = resolveTerminalWheelPageSteps(deltaY, { lineHeight });
+  if (!rawSteps) return false;
+  const steps = Math.min(maxSteps, rawSteps);
   if (!steps) return false;
   const lines = steps * linesPerStep;
   term.scrollLines(direction === 'up' ? -lines : lines);
@@ -1756,6 +1768,11 @@ export default function TerminalTTY({
   });
   const hasSentInitialCommand = useRef(false);
   const sessionReattachedRef = useRef(false);
+  // True once the server's `ready` message arrives. Initial commands must never be
+  // sent before this (the server may report `reattached: true`, meaning the tmux pane
+  // already has a live TUI — typing the launch command into it injects it into the
+  // conversation as visible text). See Bug B: resume-command injection on reload.
+  const serverReadyReceivedRef = useRef(false);
   const initialCommandConnectSnapshotRef = useRef(null);
   const viewportFitConfirmedRef = useRef(false);
   const opencodeReadyNotifiedRef = useRef(false);
@@ -2650,6 +2667,16 @@ export default function TerminalTTY({
 
   const sendInitialCommandIfReady = useCallback(() => {
     if (!initialCommand || hasSentInitialCommand.current) return;
+    // Never send the launch/resume command before the server's `ready` message, and
+    // never on reattach — a reattach means the tmux pane already has a live TUI, so
+    // typing `opencode --session …` / `grok` into it would echo as visible text in the
+    // conversation (Bug B). Only a fresh (reattached: false) session should be launched.
+    if (!serverReadyReceivedRef.current) return;
+    if (sessionReattachedRef.current) {
+      hasSentInitialCommand.current = true;
+      markPanelInitialCommandDispatched(id, initialCommand);
+      return;
+    }
     if (!viewportFitConfirmedRef.current) return;
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
@@ -3006,6 +3033,12 @@ export default function TerminalTTY({
           });
         }
         refreshTerminalViewport(termRef.current);
+        // Same stale-bitmap fix as reactivateTerminalViewport: an inactive split TUI
+        // panel whose geometry didn't change won't redraw on OS window restore without
+        // a real resize nudge (Bug A).
+        if (tuiSessionActiveRef.current) {
+          forceTerminalViewportRepaint(termRef.current);
+        }
       }
     });
   }, [confirmViewportFit, initialCommand]);
@@ -3802,6 +3835,15 @@ export default function TerminalTTY({
         if (isActivePanelRef.current) scrollTerminalToBottom();
       } else {
         stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+      }
+
+      // OS window restore (Alt+Tab back to DevHub) leaves the GPU canvas bitmap stale
+      // when cols/rows are unchanged — fitAndResize no-ops and clearAtlas+refresh alone
+      // don't redraw alt-screen Ink TUIs, so grok/OpenCode render garbled until the user
+      // clicks. Force a real 1-cell resize nudge so the canvas bitmap redraws (Bug A).
+      // No PTY SIGWINCH is sent (forceTerminalViewportRepaint never notifies the PTY).
+      if (clearAtlas && tuiSessionActiveRef.current) {
+        forceTerminalViewportRepaint(termRef.current);
       }
 
       if (autoFocus) {
@@ -4678,6 +4720,7 @@ export default function TerminalTTY({
       clearPanelInitialCommandLifecycle(id);
     }
     sessionReattachedRef.current = connectCommandState.sessionReattached;
+    serverReadyReceivedRef.current = false;
     hasSentInitialCommand.current = connectCommandState.hasSentInitialCommand;
     if (connectCommandState.markDispatched) {
       markPanelInitialCommandDispatched(id, initialCommand);
@@ -4803,7 +4846,10 @@ export default function TerminalTTY({
           hasSentInitialCommand.current = true;
         }
         sendResize();
-        sendInitialCommandIfReady();
+        // Note: sendInitialCommandIfReady() is NOT called here. It is gated on the
+        // server's `ready` message (see Bug B) to avoid typing the launch command into
+        // an already-live reattached TUI. The `ready` handler dispatches it for fresh
+        // sessions; confirmViewportFit dispatches it once both ready + fit are done.
 
         // Show restored toast for sessions from previous run
         if (restored && cwd) {
@@ -4903,6 +4949,7 @@ export default function TerminalTTY({
           const payload = JSON.parse(event.data);
 
           if (payload.type === 'ready') {
+            serverReadyReceivedRef.current = true;
             if (payload.reattached) {
               sessionReattachedRef.current = true;
               hasSentInitialCommand.current = true;
@@ -4924,6 +4971,10 @@ export default function TerminalTTY({
                 setNativeWheelPassthrough(false);
                 disableTerminalFocusReporting(termRef.current, { disableMouse: true });
               }
+            } else {
+              // Fresh session: the tmux pane is empty, so it is safe to launch the
+              // agent now. sendInitialCommandIfReady also waits for viewport fit.
+              sendInitialCommandIfReady();
             }
             return;
           }
@@ -5948,6 +5999,10 @@ export default function TerminalTTY({
       ) {
         logViewportDiagnostic('visibility-visible');
         scheduleReactivateTerminalViewport();
+      } else if (isVisibleInLayout) {
+        // Inactive split siblings don't get reactivate — repaint them too so they don't
+        // stay garbled after OS window restore (Bug A).
+        scheduleInactiveViewportRepaint();
       }
     };
 
@@ -5967,20 +6022,22 @@ export default function TerminalTTY({
     const handleWindowFocus = () => {
       restoreNativeSurfaceAfterAppResume();
 
-      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
-        return;
+      if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
+        logViewportDiagnostic('window-focus');
+        scheduleReactivateTerminalViewport();
+      } else if (isVisibleInLayout) {
+        scheduleInactiveViewportRepaint();
       }
-      logViewportDiagnostic('window-focus');
-      scheduleReactivateTerminalViewport();
     };
     const handlePageShow = () => {
       restoreNativeSurfaceAfterAppResume();
 
-      if (!shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
-        return;
+      if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
+        logViewportDiagnostic('pageshow');
+        scheduleReactivateTerminalViewport();
+      } else if (isVisibleInLayout) {
+        scheduleInactiveViewportRepaint();
       }
-      logViewportDiagnostic('pageshow');
-      scheduleReactivateTerminalViewport();
     };
 
     window.addEventListener('resize', handleWindowResize);
@@ -6005,6 +6062,7 @@ export default function TerminalTTY({
     queueNativeVteProbeRetry,
     fitAndResize,
     scheduleReactivateTerminalViewport,
+    scheduleInactiveViewportRepaint,
     sendResize,
     showAndResizeNativeLease,
   ]);
@@ -6302,15 +6360,9 @@ export default function TerminalTTY({
   // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
   useEffect(() => {
     if (!termRef.current) return;
-    const kimiTuiLive = isKimiTuiLive({
-      initialCommand,
-      kimiReady: kimiReadyNotifiedRef.current,
-      tuiSessionActive: tuiSessionActiveRef.current,
-      hasConnectedOnce: hasConnectedOnceRef.current,
-    });
-    // Kimi scroll is inside the Ink TUI — xterm viewportY stays 0; save/restore jumps to top.
-    if (kimiTuiLive) return;
-
+    // Kimi behaves like a normal scrolling terminal (xterm viewportY moves with the
+    // buffer), so it goes through the same save/restore path as shells — preserving the
+    // scroll position across panel/workspace switches instead of jumping.
     if (isVisibleInLayout) {
       const saved = lastViewportYRef.current;
       if (saved != null) {
@@ -6470,6 +6522,30 @@ export default function TerminalTTY({
       const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
       const isKimiSession = kimiReadyNotifiedRef.current || isKimiLaunchCommand(initialCommand);
       const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
+
+      // Kimi behaves like a normal scrolling terminal — output flows and the input is
+      // inline, not a fixed-bottom pane like grok/OpenCode. So scroll the xterm
+      // scrollback locally (term.scrollLines) and never inject wheel bytes into the
+      // PTY: SGR/PageUp/PageDown either get ignored or captured by Kimi's prompt and
+      // the conversation never moves. The near-bottom guard in scrollIfActivePanel
+      // already prevents snap-back while scrolled up.
+      if (shouldScrollKimiWheelLocally(isKimiSession)) {
+        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+        if (!direction) return;
+        // Fine, shell-like scroll: ~1-2 lines per notch, capped so a fast swipe or a
+        // short conversation doesn't overshoot to the top/bottom extreme.
+        if (
+          scrollTerminalViewport(term, direction, event.deltaY, {
+            linesPerStep: 1,
+            lineHeight: 60,
+            maxSteps: 4,
+          })
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
 
       // Plain shells: scroll xterm scrollback locally — Page/arrow/SGR leaks as visible garbage.
       if (!shouldInjectTerminalWheelIntoPty(isTuiSession)) {
