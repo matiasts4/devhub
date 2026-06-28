@@ -38,7 +38,10 @@ import { launchAgentSessionTool, launchSwarmTool } from './tools/agentLauncher';
 import { listAgentRunsTool, getAgentRunTool } from './tools/agentRuns';
 import { createPlanTool, executePlanTool } from './tools/planner';
 
-const DEFAULT_SKILLS_DIR = path.join(process.cwd(), 'src/lib/asistente/skills');
+const DEFAULT_SKILLS_DIR = path.join(
+  /*turbopackIgnore: true*/ process.cwd(),
+  'src/lib/asistente/skills'
+);
 
 export function buildZedRegistry({ skillsDir = DEFAULT_SKILLS_DIR } = {}) {
   const registry = new ToolRegistry();
@@ -73,7 +76,7 @@ export function buildZedRegistry({ skillsDir = DEFAULT_SKILLS_DIR } = {}) {
   registry.register(createPlanTool);
   registry.register(executePlanTool);
 
-  if (skillsDir && fs.existsSync(skillsDir)) {
+  if (skillsDir && fs.existsSync(/*turbopackIgnore: true*/ skillsDir)) {
     const skillRegistry = new SkillRegistry();
     skillRegistry.discoverFromDirectory(skillsDir);
     registry.registerFromSkillRegistry(skillRegistry);

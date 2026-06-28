@@ -58,13 +58,16 @@ function getCanonicalDevhubDir({ env = process.env, homeDir = os.homedir() } = {
     return ensureDirectory(path.resolve(env.DEVHUB_HOME));
   }
 
-  const productionDir = path.join(homeDir, '.devhub');
-  const developmentDir = path.join(homeDir, '.devhub-dev');
+  const productionDir = path.join(/*turbopackIgnore: true*/ homeDir, '.devhub');
+  const developmentDir = path.join(/*turbopackIgnore: true*/ homeDir, '.devhub-dev');
   const devSidecarPortFile = path.join(developmentDir, 'sidecar-port.txt');
   const devSidecarPidFile = path.join(developmentDir, 'sidecar.pid');
 
   // Tauri dev spawns the sidecar with ~/.devhub-dev; Next dev must read the same home.
-  if (fs.existsSync(devSidecarPortFile) || fs.existsSync(devSidecarPidFile)) {
+  if (
+    fs.existsSync(/*turbopackIgnore: true*/ devSidecarPortFile) ||
+    fs.existsSync(/*turbopackIgnore: true*/ devSidecarPidFile)
+  ) {
     return ensureDirectory(developmentDir);
   }
 

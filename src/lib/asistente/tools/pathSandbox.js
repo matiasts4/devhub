@@ -28,7 +28,8 @@ function isWithinRoot(resolved) {
 
   if (resolved === root) return true;
   if (resolved.startsWith(root + path.sep)) return true;
-  if (resolved.startsWith(path.join(root, '.devhub') + path.sep)) return true;
+  if (resolved.startsWith(path.join(/*turbopackIgnore: true*/ root, '.devhub') + path.sep))
+    return true;
   if (resolved.startsWith(DEV_TMP_PREFIX)) return true;
   return false;
 }
