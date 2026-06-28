@@ -8,14 +8,28 @@
  */
 html,
 body {
-  overflow: hidden;
+  overflow: auto;
+}
+
+/* Hide the body scrollbar in the Tauri shell; inner scrollable containers
+   provide their own scrollbars. Body scroll is only a fallback for WebView2. */
+body::-webkit-scrollbar {
+  display: none;
+}
+body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 #root {
   border-radius: 22px;
-  overflow: hidden;
+  overflow: auto;
   height: 100vh;
   width: 100vw;
+}
+
+#root::-webkit-scrollbar {
+  display: none;
 }
 
 body {

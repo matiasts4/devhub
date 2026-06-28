@@ -275,9 +275,8 @@ function WorkspaceLayout() {
 
           {/* Main Routed Content */}
           <main
-            className="flex-1 w-full overflow-y-auto"
+            className={`flex-1 w-full min-h-0 overflow-y-auto ${isTerminalRoute ? 'hidden' : ''}`}
             style={{
-              display: isTerminalRoute ? 'none' : 'block',
               scrollbarWidth: 'thin',
               scrollbarColor: 'var(--border-subtle) transparent',
             }}
