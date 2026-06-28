@@ -52,6 +52,45 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
   });
 });
 
+describe('resolveWorkspaceWindowVisibilityStyle', () => {
+  const { resolveWorkspaceWindowVisibilityStyle } = require('../workspaceAnimProps.js');
+
+  test('parks inactive windows with the same hidden contract as inactive workspace tabs', () => {
+    expect(
+      resolveWorkspaceWindowVisibilityStyle({
+        isActiveWindow: false,
+      })
+    ).toMatchObject({
+      opacity: 0,
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      contain: 'strict',
+    });
+  });
+
+  test('shows the active window with opaque background', () => {
+    expect(
+      resolveWorkspaceWindowVisibilityStyle({
+        isActiveWindow: true,
+      })
+    ).toMatchObject({
+      opacity: 1,
+      visibility: 'visible',
+      pointerEvents: 'auto',
+      backgroundColor: 'var(--surface-app)',
+    });
+  });
+
+  test('fullscreen takeover hides the active window too (matches workspace shell)', () => {
+    expect(
+      resolveWorkspaceWindowVisibilityStyle({
+        isActiveWindow: true,
+        isFullscreenTakeover: true,
+      }).visibility
+    ).toBe('hidden');
+  });
+});
+
 describe('resolveRightDockTakeoverChromeStyle', () => {
   test('adds opaque isolation only during fullscreen takeover', () => {
     expect(resolveRightDockTakeoverChromeStyle(false)).toEqual({});

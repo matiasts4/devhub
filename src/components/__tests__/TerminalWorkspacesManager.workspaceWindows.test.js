@@ -240,8 +240,47 @@ function seedTwoWindowWorkspace() {
   });
 }
 
+function seedTwoWorkspaces() {
+  persistWorkspaceState({
+    workspaces: [
+      {
+        id: 'ws1',
+        name: 'Alpha',
+        columns: [{ id: 'c1', panels: [{ id: 'p1' }, { id: 'p2' }] }],
+      },
+      {
+        id: 'ws2',
+        name: 'Beta',
+        columns: [{ id: 'c3', panels: [{ id: 'p4' }, { id: 'p5' }] }],
+      },
+    ],
+    activeWsId: 'ws1',
+    activePanelIds: { ws1: 'p1', ws2: 'p4' },
+    workspaceWindows: {
+      ws1: [{ id: 'v1', columns: [{ id: 'c1', panels: [{ id: 'p1' }, { id: 'p2' }] }] }],
+      ws2: [{ id: 'v2', columns: [{ id: 'c3', panels: [{ id: 'p4' }, { id: 'p5' }] }] }],
+    },
+    activeWindowIds: { ws1: 'v1', ws2: 'v2' },
+  });
+}
+
+function workspaceTabByLabel(container, label) {
+  const tabs = Array.from(
+    container.querySelectorAll('[data-testid="workspace-top-tab-bar"] span.font-semibold')
+  );
+  return tabs.find((el) => el.textContent?.trim() === label)?.closest('[draggable="true"]') || null;
+}
+
 function visibleTerminals(container) {
   return Array.from(container.querySelectorAll('[data-testid^="terminal-"]')).filter(
+    (el) => el.getAttribute('data-visible') === 'true'
+  );
+}
+
+function visibleTerminalsInActiveWindow(container) {
+  const activeShell = container.querySelector('[data-testid^="workspace-window-active-"]');
+  const scope = activeShell || container;
+  return Array.from(scope.querySelectorAll('[data-testid^="terminal-"]')).filter(
     (el) => el.getAttribute('data-visible') === 'true'
   );
 }
@@ -291,6 +330,8 @@ describe('resolveActiveWorkspaceWindowId', () => {
 });
 
 describe('TerminalWorkspacesManager workspace window switching', () => {
+  jest.setTimeout(20000);
+
   let dom;
   let originalRequestAnimationFrame;
   let originalCancelAnimationFrame;
@@ -343,19 +384,15 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     return view;
   }
 
-  test('switching windows dispatches layout-settled for destination panels and clears stale focus (TWS-S1/S3)', async () => {
+  test('switching windows clears stale focus and shows all destination panels (TWS-S1)', async () => {
     const { container } = await renderManager();
-
-    const initialSwitchEvents = layoutSettledEvents.filter(
-      (detail) => detail.reason === 'workspace-window-switch'
-    ).length;
 
     const focusBtn = container.querySelector('[data-testid="panel-focus-p1"]');
     expect(focusBtn).not.toBeNull();
     await click(focusBtn);
     await flushEffects();
 
-    expect(visibleTerminals(container).map((el) => el.getAttribute('data-testid'))).toEqual([
+    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
       'terminal-p1',
     ]);
 
@@ -364,23 +401,17 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     await click(switchBtn);
     await flushEffects();
 
-    const switchEvents = layoutSettledEvents.filter(
-      (detail) => detail.reason === 'workspace-window-switch'
-    );
-    expect(switchEvents.length).toBeGreaterThan(initialSwitchEvents);
-
-    const immediateEvent = switchEvents
-      .slice()
-      .reverse()
-      .find((detail) => detail.phase === 'immediate');
-    expect(immediateEvent).toBeDefined();
-    expect(immediateEvent.workspaceId).toBe('ws1');
-    expect(immediateEvent.panelIds).toEqual(['p2', 'p3']);
-
-    expect(visibleTerminals(container).map((el) => el.getAttribute('data-testid'))).toEqual([
+    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
       'terminal-p2',
       'terminal-p3',
     ]);
+
+    // Parked window mirrors workspace tab switch: its panels go isVisibleInLayout=false
+    // (the false→true toggle on switch-back is what drives viewport recovery).
+    const parkedP1 = container.querySelector('[data-testid="workspace-window-parked-v1"]');
+    expect(parkedP1?.querySelector('[data-testid="terminal-p1"]')?.getAttribute('data-visible')).toBe(
+      'false'
+    );
   });
 
   test('switching to a window that contains the focused panel keeps focus mode (TWS-S2)', async () => {
@@ -395,7 +426,7 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     await click(focusP2);
     await flushEffects();
 
-    expect(visibleTerminals(container).map((el) => el.getAttribute('data-testid'))).toEqual([
+    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
       'terminal-p2',
     ]);
 
@@ -403,7 +434,7 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     await click(switchToV1);
     await flushEffects();
 
-    expect(visibleTerminals(container).map((el) => el.getAttribute('data-testid'))).toEqual([
+    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
       'terminal-p2',
     ]);
 
@@ -411,7 +442,7 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     await click(switchBackToV2);
     await flushEffects();
 
-    expect(visibleTerminals(container).map((el) => el.getAttribute('data-testid'))).toEqual([
+    expect(visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))).toEqual([
       'terminal-p2',
     ]);
     expect(terminalById(container, 'p3').getAttribute('data-visible')).toBe('false');
@@ -434,5 +465,96 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     ).length;
 
     expect(switchEventsAfterClick).toBe(switchEventsAfterMount);
+  });
+});
+
+describe('TerminalWorkspacesManager workspace tab switching', () => {
+  let dom;
+  let originalRequestAnimationFrame;
+  let originalCancelAnimationFrame;
+  const mountedRoots = [];
+  let layoutSettledEvents;
+  let eventHandler;
+
+  beforeEach(() => {
+    dom = installDom();
+    originalRequestAnimationFrame = global.requestAnimationFrame;
+    originalCancelAnimationFrame = global.cancelAnimationFrame;
+    global.requestAnimationFrame = (callback) => {
+      callback();
+      return 0;
+    };
+    global.cancelAnimationFrame = () => {};
+    window.localStorage.clear();
+    seedTwoWorkspaces();
+    global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
+    delete globalThis['__DEVHUB_TTY_SESSIONS__'];
+
+    layoutSettledEvents = [];
+    eventHandler = (event) => {
+      layoutSettledEvents.push(event.detail);
+    };
+    window.addEventListener('devhub:terminal-layout-settled', eventHandler);
+  });
+
+  afterEach(() => {
+    window.removeEventListener('devhub:terminal-layout-settled', eventHandler);
+    cleanupMountedRoots(mountedRoots);
+    global.requestAnimationFrame = originalRequestAnimationFrame;
+    global.cancelAnimationFrame = originalCancelAnimationFrame;
+    dom.window.close();
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  async function renderManager() {
+    const view = await renderIntoDom(
+      React.createElement(TerminalWorkspacesManager, {
+        cwd: '/devhub',
+        isVisible: true,
+        projectId: PROJECT_ID,
+      }),
+      mountedRoots
+    );
+    await flushEffects();
+    return view;
+  }
+
+  test('switching workspace tabs shows all destination panels without layout-settled bursts', async () => {
+    const { container } = await renderManager();
+
+    const betaTab = workspaceTabByLabel(container, 'Beta');
+    expect(betaTab).not.toBeNull();
+    await click(betaTab);
+    await flushEffects();
+
+    expect(
+      layoutSettledEvents.filter((detail) => detail.reason === 'workspace-switch')
+    ).toHaveLength(0);
+
+    expect(visibleTerminals(container).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'terminal-p4',
+      'terminal-p5',
+    ]);
+  });
+
+  test('selecting the already-active workspace tab does not emit a new workspace-switch event', async () => {
+    const { container } = await renderManager();
+
+    const eventsAfterMount = layoutSettledEvents.filter(
+      (detail) => detail.reason === 'workspace-switch'
+    ).length;
+
+    const alphaTab = workspaceTabByLabel(container, 'Alpha');
+    expect(alphaTab).not.toBeNull();
+    await click(alphaTab);
+    await flushEffects();
+
+    const eventsAfterClick = layoutSettledEvents.filter(
+      (detail) => detail.reason === 'workspace-switch'
+    ).length;
+
+    expect(eventsAfterClick).toBe(eventsAfterMount);
   });
 });

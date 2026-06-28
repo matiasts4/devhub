@@ -92,6 +92,26 @@ export function resolveWorkspaceShellVisibilityStyle({
   };
 }
 
+/**
+ * Stacked V1/V2/V3 windows inside one workspace tab.
+ * Uses the same visibility contract as workspace tab shells; split refit after
+ * switch is driven by panel-group-layout bursts (same path as manual resize).
+ */
+export function resolveWorkspaceWindowVisibilityStyle({
+  isActiveWindow,
+  isFullscreenTakeover = false,
+} = {}) {
+  const base = resolveWorkspaceShellVisibilityStyle({
+    isActiveWorkspace: isActiveWindow,
+    isManagerVisible: true,
+    isFullscreenTakeover,
+  });
+
+  if (!isActiveWindow || isFullscreenTakeover) return base;
+
+  return { ...base, backgroundColor: 'var(--surface-app)' };
+}
+
 /** Opaque chrome for fullscreen dock takeover so terminals cannot show through. */
 export function resolveRightDockTakeoverChromeStyle(isFullscreenTakeover = false) {
   if (!isFullscreenTakeover) return {};

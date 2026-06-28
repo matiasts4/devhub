@@ -101,6 +101,7 @@ import WorkspaceRightDock from './workspace/WorkspaceRightDock';
 import WorkspaceWindowSwitcher, {
   MAX_WORKSPACE_WINDOWS,
 } from './terminal/components/WorkspaceWindowSwitcher';
+import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
 import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
@@ -913,6 +914,7 @@ function renderWorkspacePanel(
     onRenameValueChange = null,
     onCommitRename = null,
     onCancelRename = null,
+    agentRun = null,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -1009,6 +1011,13 @@ function renderWorkspacePanel(
                 {inboxPendingCount}
               </span>
             ) : null}
+            <PanelStatusBadge
+              panelId={panel.id}
+              terminalId={panel.id}
+              agentRun={agentRun}
+              initialCommand={panel.initialCommand}
+              connectionState={connectionState}
+            />
             <span
               data-testid={`panel-semantic-primary-${panel.id}`}
               className="truncate align-middle font-bold text-[rgba(241,245,249,0.95)]"
@@ -7322,6 +7331,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                             panel,
                             agentRunsByPanel[panel.id]
                           ),
+                          agentRun: agentRunsByPanel[panel.id] || null,
                           inboxPendingCount:
                             swarmInboxPendingByRole?.[
                               panel?.swarmRole?.roleKey ||

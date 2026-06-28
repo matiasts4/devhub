@@ -192,7 +192,7 @@ function getWorkspaceDisplayLabel(ws, workspaces) {
   if (explicitName && !/^workspace\s+\d+$/i.test(explicitName)) {
     return explicitName;
   }
-  return `Workspace ${index + 1}`;
+  return `ESPACIO-${index + 1}`;
 }
 
 export default WorkspaceWindowTabBar;
