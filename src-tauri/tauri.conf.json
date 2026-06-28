@@ -33,7 +33,7 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "targets": ["deb"],
+    "targets": ["deb", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -43,11 +43,18 @@
     ],
     "resources": {
       "../sidecar-backend": "sidecar-backend",
+      "../packaging/devhub-server.cjs": "devhub-server.cjs",
       "resources/standalone.zip": "standalone.zip",
       "../packages/veloce-audio/python/requirements.txt": "veloce-audio/requirements.txt",
       "../packages/veloce-audio/python/voices/**/*": "veloce-audio/voices/"
     },
     "externalBin": ["binaries/devhub-server"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    },
     "linux": {
       "deb": {
         "depends": [

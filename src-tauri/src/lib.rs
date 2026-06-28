@@ -441,11 +441,38 @@ fn get_running_build_id() -> Option<u64> {
         .and_then(|s| s.trim().parse::<u64>().ok())
 }
 
+fn installed_standalone_zip_path() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = [
+            PathBuf::from("/usr/lib/DevHub/resources/standalone.zip"),
+            PathBuf::from("/usr/local/lib/DevHub/resources/standalone.zip"),
+        ];
+        return candidates.into_iter().find(|path| path.exists());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+        let candidates = [
+            exe_dir.join("resources").join("standalone.zip"),
+            exe_dir.join("_up_").join("resources").join("standalone.zip"),
+            exe_dir.join("standalone.zip"),
+        ];
+        return candidates.into_iter().find(|path| path.exists());
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 /// Obtiene el mtime actual del standalone.zip instalado como build-id de referencia.
-/// Solo aplica a instalaciones .deb/.rpm; en dev mode el path no existe → None.
+/// Solo aplica a instalaciones empaquetadas; en dev mode el path no existe → None.
 fn get_installed_build_id() -> Option<u64> {
-    let path = std::path::Path::new("/usr/lib/DevHub/resources/standalone.zip");
-    fs::metadata(path)
+    let path = installed_standalone_zip_path()?;
+    fs::metadata(&path)
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())

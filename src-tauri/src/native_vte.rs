@@ -539,6 +539,7 @@ fn detect_agent_session_end_cause(text: &str) -> Option<&'static str> {
     None
 }
 
+#[cfg(target_os = "linux")]
 fn sample_terminal_tail_text(terminal: &Terminal, tail_rows: i64) -> String {
     let row_count = terminal.row_count().max(0);
     if row_count == 0 {
