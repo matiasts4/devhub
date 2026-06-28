@@ -163,15 +163,16 @@ function resolveTauriCliArgs({ args = [], buildConfig = null, devUrlReady = fals
 }
 
 function syncDevhubServerSidecar() {
-  if (process.platform !== 'linux') return;
-  const source = path.join(__dirname, '..', 'packaging', 'linux', 'devhub-server');
-  const binariesDir = path.join(__dirname, '..', 'src-tauri', 'binaries');
-  const target = path.join(binariesDir, 'devhub-server-x86_64-unknown-linux-gnu');
-  if (!fs.existsSync(source)) return;
-  fs.mkdirSync(binariesDir, { recursive: true });
-  fs.copyFileSync(source, target);
-  fs.chmodSync(target, 0o755);
-  console.log('[tauri-cli] Synced devhub-server sidecar wrapper from packaging/linux/devhub-server');
+  const { syncLinuxSidecar, syncWindowsSidecar } = require('./build-devhub-server-sidecar.cjs');
+  if (process.platform === 'linux') {
+    syncLinuxSidecar();
+    console.log('[tauri-cli] Synced Linux devhub-server sidecar wrapper');
+    return;
+  }
+  if (process.platform === 'win32') {
+    syncWindowsSidecar();
+    console.log('[tauri-cli] Built Windows devhub-server sidecar wrapper');
+  }
 }
 
 function patchPackagedDesktop() {
@@ -211,8 +212,19 @@ function patchPackagedDesktop() {
   }
 }
 
+function normalizeTauriCliArgs(args = []) {
+  const separatorIndex = args.indexOf('--');
+  if (separatorIndex === -1) {
+    return args;
+  }
+
+  const before = args.slice(0, separatorIndex).filter(Boolean);
+  const after = args.slice(separatorIndex + 1).filter(Boolean);
+  return [...before, ...after];
+}
+
 function runTauriCli({
-  args = process.argv.slice(2),
+  args = normalizeTauriCliArgs(process.argv.slice(2)),
   env = buildTauriEnv(),
   spawnSync: spawn = spawnSync,
 } = {}) {
@@ -262,6 +274,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  normalizeTauriCliArgs,
   buildDevReadyProbeUrl,
   buildTauriEnv,
   DEV_URL_READY_PATH,

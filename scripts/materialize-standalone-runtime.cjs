@@ -12,7 +12,7 @@ const SERVER_CHUNKS_DIR = path.join(STANDALONE_DIR, '.next', 'server', 'chunks')
 
 // Next standalone tracing leaves some runtime deps as package.json-only stubs
 // (pnpm hoists metadata but not the files Next resolves at the top level).
-const INJECTED_PACKAGES = ['ws', 'node-pty', '@swc/helpers', 'better-sqlite3'];
+const INJECTED_PACKAGES = ['ws', 'node-pty', '@swc/helpers', '@next/env', 'better-sqlite3', 'bindings', 'file-uri-to-path'];
 
 // Turbopack rewrites serverExternalPackages to hashed module ids in server chunks.
 const HASHED_EXTERNAL_BASES = ['better-sqlite3', 'node-pty', 'ws'];
@@ -59,6 +59,28 @@ function findPnpmPackageFallback(linkPath, linkTarget) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+function resolveProjectPackageDir(packageName) {
+  const directDir = path.join(PROJECT_NODE_MODULES, ...packageName.split('/'));
+  if (fs.existsSync(directDir)) {
+    return directDir;
+  }
+
+  const pnpmDir = path.join(PROJECT_NODE_MODULES, '.pnpm');
+  if (!fs.existsSync(pnpmDir)) {
+    return null;
+  }
+
+  const prefix = `${packageName.replace('/', '+')}@`;
+  const matches = fs
+    .readdirSync(pnpmDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
+    .map((entry) => path.join(pnpmDir, entry.name, 'node_modules', ...packageName.split('/')))
+    .filter((candidate) => fs.existsSync(candidate))
+    .sort();
+
+  return matches.at(-1) || null;
+}
+
 function materializeSymlink(linkPath) {
   const linkTarget = fs.readlinkSync(linkPath);
   let resolvedTarget = path.resolve(path.dirname(linkPath), linkTarget);
@@ -84,11 +106,11 @@ function materializeSymlink(linkPath) {
 }
 
 function injectPackageFromProject(packageName, targetNodeModules = NODE_MODULES) {
-  const sourceDir = path.join(PROJECT_NODE_MODULES, ...packageName.split('/'));
+  const sourceDir = resolveProjectPackageDir(packageName);
   const targetDir = path.join(targetNodeModules, ...packageName.split('/'));
 
-  if (!fs.existsSync(sourceDir)) {
-    throw new Error(`Project dependency missing: ${sourceDir}`);
+  if (!sourceDir) {
+    throw new Error(`Project dependency missing: ${packageName}`);
   }
 
   fs.rmSync(targetDir, { recursive: true, force: true });
@@ -170,8 +192,8 @@ function repairPackageJsonStubs(nodeModulesDir) {
     if (!isPackageJsonOnlyStub(packageDir)) continue;
 
     const relativePath = path.relative(nodeModulesDir, packageDir);
-    const sourceDir = path.join(PROJECT_NODE_MODULES, ...relativePath.split(path.sep));
-    if (!fs.existsSync(sourceDir) || isPackageJsonOnlyStub(sourceDir)) {
+    const sourceDir = resolveProjectPackageDir(relativePath.split(path.sep).join('/'));
+    if (!sourceDir || isPackageJsonOnlyStub(sourceDir)) {
       continue;
     }
 

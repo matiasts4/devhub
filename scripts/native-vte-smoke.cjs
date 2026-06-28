@@ -58,7 +58,7 @@ function writeNativeVteSmokeSummary({
 }
 
 function buildNativeVteSmokeArgs(args = []) {
-  return ['run', '--bin', 'gtk_vte_smoke', '--', ...args];
+  return ['run', '--features', 'gtk-vte-smoke', '--bin', 'gtk_vte_smoke', '--', ...args];
 }
 
 function runNativeVteSmoke({

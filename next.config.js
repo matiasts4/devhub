@@ -51,6 +51,27 @@ const nextConfig = {
   serverExternalPackages: ['node-pty', 'ws', 'better-sqlite3'],
   transpilePackages: ['react-konva', 'konva'],
   output: 'standalone',
+  // Evitar que el Node File Trace de Turbopack empaquete subárboles enteros del
+  // proyecto que se referencian vía path.join(process.cwd(), ...) en runtime.
+  // Esos paths (devhub-mcp, docs, src-tauri/target, etc.) no se copian al
+  // standalone y solo inflan el zip (735MB → ~120MB). Los archivos realmente
+  // necesarios se copian explícitamente en scripts/build-standalone-zip.cjs.
+  outputFileTracingExcludes: {
+    '/*': [
+      './src-tauri/**/*',
+      './devhub-mcp/**/*',
+      './docs/**/*',
+      './packaging/**/*',
+      './scripts/**/*',
+      './mcps/**/*',
+      './agent-transcripts/**/*',
+      './packages/**/*',
+      './terminals/**/*',
+      './logs/**/*',
+      './.git/**/*',
+      './.next/cache/**/*',
+    ],
+  },
 };
 
 module.exports = withBundleAnalyzer(nextConfig);

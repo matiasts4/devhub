@@ -138,3 +138,9 @@ devhub-cli/coverage/
 
 # === Tauri resources (vendored binaries) ===
 src-tauri/resources/
+
+# === Rust launcher build artifacts ===
+packaging/windows/devhub-server-launcher/target/
+
+# === Runtime terminal session state ===
+terminals/
