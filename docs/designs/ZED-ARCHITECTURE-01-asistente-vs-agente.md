@@ -145,9 +145,41 @@ Ejemplo:
 
 ---
 
-## 7. Componentes involucrados
+## 7. Asistente Zed (dock) vs ZED Orchestrator Pod (swarm)
 
-### 7.1 Asistente Zed
+Aunque ambos llevan el nombre "Zed", son dos modos de operación con diferentes superficies de lanzamiento:
+
+```
+┌─────────────────────────────┐        ┌─────────────────────────────────────┐
+│  Asistente Zed              │        │  ZED Orchestrator Pod               │
+│  (right dock / voice)       │        │  (Swarm Control → Launch wizard)    │
+│                             │        │                                     │
+│  • Reactivo                 │        │  • Proactivo / planificador         │
+│  • Fast-path local          │        │  • Lee/escribe DevHub MCP           │
+│  • 1 o pocas herramientas   │        │  • Lanza SDD Workers                │
+│  • No delega agentes        │───○───▶│  • Coordina misiones multi-paso     │
+│    (salvo que el usuario    │        │  • Pide confirmación de planes      │
+│     pida "abre OpenCode")   │        │                                     │
+└─────────────────────────────┘        └─────────────────────────────────────┘
+```
+
+- El **Asistente Zed** es la interfaz rápida de voz/chat del workspace. Su endpoint es `/api/assistant/chat` y su estado vive en la sesión del navegador.
+- El **ZED Orchestrator Pod** es una plantilla de swarm (`zed-orchestrator-pod`) que lanza 1 terminal ZED + N SDD Workers en tmux. ZED en ese contexto actúa como director/orquestador de la misión, no como asistente del dock.
+
+No se debe confundir el prompt del dock (`docs/prompts/asistente/zed-system-prompt.md`) con el prompt de swarm (`docs/prompts/swarm/zed-orchestrator-v1.md`). El primero ejecuta herramientas locales; el segundo coordina agentes y usa el bus DevHub.
+
+## 8. Correcciones de implementación ya aplicadas
+
+Los siguientes puntos del audit `docs/audits/06-zed.md` ya están resueltos:
+
+- **`PHASE_CONTRACTS.zed`** existe en `src/lib/sdd/SwarmPromptEngine.js` y otorga todas las fases SDD al rol `zed`.
+- **`modelProvider: 'minimax'`** se pasa a `buildLaunchWrapperForRole` en `src/app/api/agenthub/operations/health/route.js` cuando el modelo del rol contiene "minimax", inyectando las variables de entorno necesarias.
+- **`buildRoleAgentProfile('zed')`** devuelve `zed-orchestrator`, no `swarm-director`.
+- **DevHub MCP tools** (`src/lib/asistente/tools/devhubMcp.js`) ya están integradas en el `ToolRegistry` del asistente.
+
+## 9. Componentes involucrados
+
+### 9.1 Asistente Zed
 
 - `src/lib/asistente/zedIntentRouter.js`
 - `src/lib/asistente/zedFastPath.js`
@@ -155,36 +187,36 @@ Ejemplo:
 - `src/lib/asistente/useZedChat.js`
 - `src/lib/asistente/dispatchZedActions.js`
 - `src/lib/asistente/tools/*`
+- `src/app/api/assistant/chat/route.js`
 
-### 7.2 Agente Zed
+### 9.2 Agente Zed / ZED Orchestrator Pod
 
-- `src/lib/asistente/` (extensión de useZedChat / nuevo módulo de planning)
-- `devhub-mcp` tools (lectura/escritura de proyectos, tareas, hitos)
+- `src/lib/operations/swarmControl.js` — plantilla `zed-orchestrator-pod` y perfiles.
+- `src/lib/sdd/SwarmPromptEngine.js` — `PHASE_CONTRACTS.zed`.
+- `src/app/api/agenthub/operations/health/route.js` — lanzamiento con `modelProvider`.
 - `src/lib/agentLaunchCommand.shared.js`
 - `src/lib/agentLaunchWrapper.js`
 - `src/lib/terminal/swarmLaunchWorkspace.js`
-- `/api/agenthub/operations/health` (`launch_swarm_local`)
-- `devhub-bus` para comunicación entre agentes
+- `devhub-bus` para comunicación entre agentes.
 
-### 7.3 Métricas
+### 9.3 Métricas
 
 - `src/lib/asistente/zedIntentRouter.js` — hit-rate por intención.
 - `src/lib/asistente/runZedFastPath.js` — latencia fast-path.
 - `src/lib/asistente/useZedChat.js` — latencia total y razón de fallback.
+- `src/lib/asistente/zedTelemetry.js` — telemetría centralizada en SQLite.
 
 ---
 
-## 8. Próximos pasos inmediatos
+## 10. Próximos pasos inmediatos
 
-1. Implementar métricas base para establecer la línea de partida.
-2. Extender el fast-path con más intenciones locales.
-3. Integrar tools de DevHub MCP en el `ToolRegistry` de Zed.
-4. Registrar a Zed como agente en DevHub MCP.
-5. Conectar Zed con el lanzador de agentes existente.
-6. Implementar planificación multi-paso con confirmación humana.
+1. Extender el fast-path con más intenciones locales.
+2. Registrar a Zed como agente en DevHub MCP cuando actúa como orquestador.
+3. Implementar planificación multi-paso con confirmación humana en el asistente.
+4. Evaluar telemetría a backend remoto cuando DevHub tenga infra de observabilidad centralizada.
 
 ---
 
-## 9. Notas históricas
+## 11. Notas históricas
 
 El audit `docs/audits/06-zed.md` documenta un intento previo de tratar a Zed como un **swarm agent** más. Este documento corrige esa dirección: Zed **no es un participante del swarm**, sino el **orquestador local** que puede lanzar swarms y agentes sueltos cuando el usuario lo solicita.

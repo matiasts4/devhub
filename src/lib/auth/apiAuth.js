@@ -31,6 +31,11 @@ export async function getCurrentUser() {
       email: data.user.email,
     };
   } catch (error) {
+    // SSR / test environments may call this outside a request scope.
+    // Treat that as "no authenticated user" without noisy logs.
+    if (error?.message?.includes('outside a request scope')) {
+      return null;
+    }
     console.error('getCurrentUser failed:', error);
     return null;
   }

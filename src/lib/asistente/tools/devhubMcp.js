@@ -12,11 +12,11 @@ const DEFAULT_USER_ID = 'd9436f02-67b5-4610-904f-e13d81e1b7e5';
 const DEFAULT_PROJECT_ID = 'ccafadde-6ff3-480a-83dd-960cd3ed8f1c';
 
 function resolveProjectId(context) {
-  return context?.project_id || DEFAULT_PROJECT_ID;
+  return context?.project_id || process.env.DEVHUB_PROJECT_ID || DEFAULT_PROJECT_ID;
 }
 
 function resolveUserId(context) {
-  return context?.user_id || DEFAULT_USER_ID;
+  return context?.user_id || process.env.DEVHUB_DEFAULT_USER_ID || DEFAULT_USER_ID;
 }
 
 export const listProjectsTool = {

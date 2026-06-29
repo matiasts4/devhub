@@ -841,6 +841,20 @@ function ensureRuntimeSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_agent_events_created_at ON agent_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_agent_events_client_event_id ON agent_events(client_event_id);
 
+    CREATE TABLE IF NOT EXISTS zed_telemetry_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      user_id TEXT,
+      session_id TEXT,
+      message_id TEXT,
+      payload_json TEXT,
+      source TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_zed_telemetry_user ON zed_telemetry_events(user_id);
+    CREATE INDEX IF NOT EXISTS idx_zed_telemetry_type ON zed_telemetry_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_zed_telemetry_created ON zed_telemetry_events(created_at);
+
     CREATE TABLE IF NOT EXISTS operator_inbox (
       inbox_id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,

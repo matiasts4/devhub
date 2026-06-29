@@ -47,3 +47,5 @@ explore → propose → spec → design → tasks → apply → verify → archi
 - [x] E2E `tests/e2e/zed-orchestrator-pod.spec.ts` (4 escenarios)
 - [x] Tests unitarios/integration (Jest + MCP)
 - [ ] Manual QA en terminales reales — ver [MANUAL-QA.md](./MANUAL-QA.md)
+
+> **Relación con el Asistente Zed del dock**: el ZED Orchestrator Pod es el modo proactivo/orquestador de swarm, lanzado desde _Swarm Control_. No es el mismo producto que el asistente de voz/chat del dock derecho, aunque comparten voz e intenciones. Ver [`docs/designs/ZED-ARCHITECTURE-01-asistente-vs-agente.md`](../designs/ZED-ARCHITECTURE-01-asistente-vs-agente.md).

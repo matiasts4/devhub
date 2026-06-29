@@ -300,6 +300,8 @@ export function buildLaunchCommand(
   // and the terminal stays empty. Symptom: 4 workers with bash prompts,
   // 1 director with the OpenCode TUI.
   const effectiveProgramId = programId || 'opencode';
+  const modelProvider =
+    modelId && String(modelId).toLowerCase().includes('minimax') ? 'minimax' : null;
 
   const agentProfile = roleKey ? buildRoleAgentProfile(roleKey) : 'sdd-orchestrator';
   const tmuxSessionName = launchId && roleKey ? `devhub-swarm-${launchId}-${roleKey}` : null;
@@ -363,12 +365,12 @@ export function buildLaunchCommand(
     supervisorUrl,
     busBinaryPath: busPaths.busBinaryPath,
     dbPath: busPaths.dbPath,
-    // T-016.3: swarm agents are NOT the user's personal Zed session.
-    // Opt out of the minimax MCP env var injection. The minimax MCP
-    // routes the user's local Zed through their minimax subscription;
-    // swarm agents in worktrees should run on the default anthropic
-    // provider instead.
-    disableMinimaxMcp: true,
+    // T-016.3: most swarm agents are NOT the user's personal Zed session.
+    // Opt them out of the MiniMax MCP env var injection by default. ZED
+    // orchestrators are the exception: when their selected model is MiniMax,
+    // inject the MCP routing so the ZED agent talks to the right endpoint.
+    modelProvider,
+    disableMinimaxMcp: !(roleKey === 'zed' && modelProvider === 'minimax'),
     inboxPollIntervalSeconds: 5,
     tuiReadyGraceMs: SWARM_OPENCODE_READY_GRACE_MS,
     preLaunchDelayMs: Math.max(0, Number(workerBootstrapDelayMs) || 0),

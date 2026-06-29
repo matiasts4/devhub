@@ -23,6 +23,39 @@ function stubPrompt() {
   jest.resetModules();
 }
 
+async function cleanupTempDir(dir) {
+  if (!dir || !fs.existsSync(dir)) return;
+
+  async function retry(op, delayMs = 50) {
+    for (let i = 0; i < 10; i++) {
+      try {
+        return op();
+      } catch (err) {
+        if (i === 9) throw err;
+        await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+  }
+
+  async function removeRecursive(target) {
+    const stat = fs.lstatSync(target);
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(target)) {
+        await removeRecursive(path.join(target, entry));
+      }
+      await retry(() => fs.rmdirSync(target));
+    } else {
+      await retry(() => fs.unlinkSync(target));
+    }
+  }
+
+  try {
+    await removeRecursive(dir);
+  } catch (err) {
+    console.warn('Failed to clean up temp dir:', dir, err.message);
+  }
+}
+
 async function runOnce(modelText) {
   const realFetch = global.fetch;
   let n = 0;
@@ -57,9 +90,13 @@ describe('schema-aware no-params check (T-015)', () => {
     delete process.env.ANTHROPIC_API_KEY;
     POST = require('../route').POST;
   });
-  afterAll(() => {
+  afterAll(async () => {
+    // Require the same shared.js instance that route.js loaded after
+    // jest.resetModules(), so we actually close the open DB handle.
+    const { closeDb } = require('../../../../../lib/db/shared');
+    closeDb();
     if (originalCwd) process.chdir(originalCwd);
-    if (promptDir) fs.rmSync(promptDir, { recursive: true, force: true });
+    await cleanupTempDir(promptDir);
     delete process.env.MINIMAX_API_KEY;
   });
 

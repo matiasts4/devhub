@@ -146,6 +146,13 @@ function getDb() {
 
 function closeDb() {
   if (_db) {
+    try {
+      // Truncate WAL before closing so Windows releases the file handles
+      // promptly and temp directories can be cleaned up in tests.
+      _db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch {
+      // Ignore checkpoint errors during shutdown.
+    }
     _db.close();
     _db = null;
   }

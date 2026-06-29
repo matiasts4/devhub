@@ -12,19 +12,32 @@ import { NextResponse } from 'next/server';
 import { buildZedRegistry } from '@/lib/asistente/buildZedRegistry';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { searchZedMemoriesServer, saveZedMemoryServer } from '@/lib/asistente/zedEngramServer';
-import { detectMaliciousPrompt, createRateLimiter } from '@/lib/asistente/zedSecurityPolicy';
+import { detectMaliciousPrompt } from '@/lib/asistente/zedSecurityPolicy';
 import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
 import { runZedChatLoop, createZedSseStream } from '@/lib/asistente/runZedChatLoop';
 import { tryZedFastPath, createZedFastPathSseStream } from '@/lib/asistente/runZedFastPath';
 import { callMinimax, BASE_URL } from '@/lib/asistente/minimaxClient';
+import { checkZedRateLimit } from '@/lib/asistente/zedRateLimit';
 import { fitHistoryWithinBudget, resolveMaxTokens } from '@/lib/asistente/zedContextBudget';
 import { recordZedServerMetric } from '@/lib/asistente/zedServerMetrics';
+import { recordZedTelemetryEvent } from '@/lib/asistente/zedTelemetry';
+
+function recordZedTelemetry(payload) {
+  // Avoid opening a durable DB connection in unit/integration tests that
+  // change cwd to a temp directory; telemetry is covered by dedicated tests.
+  if (process.env.NODE_ENV === 'test') return;
+  try {
+    recordZedTelemetryEvent(payload);
+  } catch (err) {
+    // Telemetry is best-effort; never fail a user request because of it.
+    zedLog.info('TELEMETRY', 'Failed to record telemetry', { error: err.message });
+  }
+}
+import { getCurrentUser } from '@/lib/auth/apiAuth';
 
 export { BASE_URL };
 export const MODEL = 'minimax-coding-plan/MiniMax-M3';
-
-const chatRateLimiter = createRateLimiter({ maxCalls: 120, windowMs: 60000 });
 
 const PROMPT_PATH = path.join(
   process.cwd(),
@@ -106,6 +119,23 @@ export async function POST(request) {
   const msgId = Date.now().toString(36);
 
   try {
+    let user = null;
+    try {
+      user = await getCurrentUser();
+    } catch (err) {
+      zedLog.info('AUTH', 'getCurrentUser failed', { error: err.message });
+    }
+
+    const requireAuth = process.env.ZED_REQUIRE_AUTH === 'true';
+    if (requireAuth && !user) {
+      return NextResponse.json(
+        { error: 'Authentication required', code: 'AUTH_REQUIRED' },
+        { status: 401 }
+      );
+    }
+
+    const userId = user?.id || 'anonymous';
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'malformed body' }, { status: 400 });
@@ -114,6 +144,10 @@ export async function POST(request) {
     const requestContext = {
       ...clientContext,
       source,
+      user_id: userId,
+      email: user?.email || null,
+      authenticated: Boolean(user),
+      project_id: clientContext?.project_id || process.env.DEVHUB_PROJECT_ID || null,
       max_terminal_panels: Number(clientContext?.max_terminal_panels) || MAX_ZED_TERMINAL_PANELS,
       terminal_panel_count: Number(clientContext?.terminal_panel_count) || 0,
       workspace_terminals: Array.isArray(clientContext?.workspace_terminals)
@@ -146,6 +180,12 @@ export async function POST(request) {
     const securityCheck = detectMaliciousPrompt(message);
     if (securityCheck.blocked) {
       zedLog.security?.('blocked_prompt', { message, reason: securityCheck.reason });
+      recordZedTelemetry({
+        eventType: 'zed.security.blocked_prompt',
+        userId,
+        messageId: msgId,
+        payload: { reason: securityCheck.reason, messageLength: message.length },
+      });
       return NextResponse.json(
         { error: 'Prompt rejected for security reasons', reason: securityCheck.reason },
         { status: 400 }
@@ -199,10 +239,13 @@ export async function POST(request) {
       }
     }
 
-    if (!chatRateLimiter.canProceed()) {
-      return NextResponse.json({ error: 'rate limit exceeded' }, { status: 429 });
+    const rateLimit = await checkZedRateLimit(userId);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'rate limit exceeded', retry_after_ms: rateLimit.resetMs },
+        { status: 429 }
+      );
     }
-    chatRateLimiter.record();
 
     zedLog.sessionStart(msgId, message);
 
@@ -217,6 +260,16 @@ export async function POST(request) {
       recordZedServerMetric({
         type: 'fast_path_hit',
         durationMs: fastPath.body?.meta?.duration_ms || 0,
+      });
+      recordZedTelemetry({
+        eventType: 'zed.fast_path_hit',
+        userId,
+        messageId: msgId,
+        payload: {
+          intent: fastPath.intent?.intent,
+          durationMs: fastPath.body?.meta?.duration_ms || 0,
+          toolCount: fastPath.toolResults.length,
+        },
       });
       zedLog.sessionEnd(msgId, fastPath.text, fastPath.toolResults.length);
       if (wantsZedStream(request, body)) {
@@ -241,6 +294,12 @@ export async function POST(request) {
     }
 
     recordZedServerMetric({ type: 'fast_path_miss' });
+    recordZedTelemetry({
+      eventType: 'zed.fast_path_miss',
+      userId,
+      messageId: msgId,
+      payload: { intent: fastPath.intent?.intent },
+    });
 
     const { apiKey, source: apiKeySource } = resolveZedApiKey();
     if (!apiKey) {
@@ -315,6 +374,12 @@ export async function POST(request) {
       meta = loopResult.meta;
     } catch (err) {
       recordZedServerMetric({ type: 'llm_error' });
+      recordZedTelemetry({
+        eventType: 'zed.llm_error',
+        userId,
+        messageId: msgId,
+        payload: { upstream_status: err?.upstream_status ?? null, message: err.message },
+      });
       const upstreamStatus = err?.upstream_status;
       zedLog.error('API', 'MiniMax call failed', {
         error: err.message,
@@ -330,11 +395,24 @@ export async function POST(request) {
       );
     }
 
+    const llmDurationMs = Date.now() - llmStart;
     recordZedServerMetric({
       type: 'llm_call',
-      durationMs: Date.now() - llmStart,
+      durationMs: llmDurationMs,
       estimatedTokensIn: budget.estimatedInputTokens,
       estimatedTokensOut: Math.ceil((finalText || '').length / 4),
+    });
+    recordZedTelemetry({
+      eventType: 'zed.llm_call',
+      userId,
+      messageId: msgId,
+      payload: {
+        durationMs: llmDurationMs,
+        estimatedTokensIn: budget.estimatedInputTokens,
+        estimatedTokensOut: Math.ceil((finalText || '').length / 4),
+        toolCount: allToolResults.length,
+        model: MODEL,
+      },
     });
 
     zedLog.sessionEnd(msgId, finalText, allToolResults.length);
