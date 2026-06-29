@@ -75,6 +75,7 @@ export function useVoiceTts({ enabled = true } = {}) {
       const clipped = cleaned.length > 500 ? `${cleaned.slice(0, 497)}...` : cleaned;
       setTtsError('');
       setSpeaking(true);
+      await invokeVoice('voice_stop_speak');
       const result = await invokeVoice('voice_speak', { text: clipped });
       if (!result.ok) {
         setTtsError(result.error || 'voice_speak failed');

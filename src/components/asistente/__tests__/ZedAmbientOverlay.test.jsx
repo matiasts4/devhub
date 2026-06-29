@@ -33,6 +33,8 @@ jest.mock('lucide-react', () => {
 
 const mockUseZedChat = jest.fn();
 const mockUseZedOverlay = jest.fn();
+const mockUseVoiceCapture = jest.fn();
+const mockUseVoiceTts = jest.fn();
 
 jest.mock('@/lib/asistente/useZedChat', () => ({
   useZedChat: (...args) => mockUseZedChat(...args),
@@ -40,6 +42,14 @@ jest.mock('@/lib/asistente/useZedChat', () => ({
 
 jest.mock('@/lib/asistente/useZedOverlay', () => ({
   useZedOverlay: (...args) => mockUseZedOverlay(...args),
+}));
+
+jest.mock('@/lib/voice/useVoiceCapture', () => ({
+  useVoiceCapture: (...args) => mockUseVoiceCapture(...args),
+}));
+
+jest.mock('@/lib/voice/useVoiceTts', () => ({
+  useVoiceTts: (...args) => mockUseVoiceTts(...args),
 }));
 
 function installDom() {
@@ -99,6 +109,35 @@ function defaultZedChatMock(overrides = {}) {
 describe('ZedAmbientOverlay', () => {
   let dom;
 
+  function defaultVoiceCaptureMock(overrides = {}) {
+    return {
+      recording: false,
+      available: false,
+      engineReady: false,
+      enginePhase: 'idle',
+      statusText: '',
+      errorText: '',
+      liveTranscript: '',
+      vuLevel: 0,
+      micPermission: 'prompt',
+      audioDevices: [],
+      toggleRecording: jest.fn(),
+      startEngine: jest.fn(),
+      ...overrides,
+    };
+  }
+
+  function defaultVoiceTtsMock(overrides = {}) {
+    return {
+      speak: jest.fn(),
+      speaking: false,
+      stopSpeaking: jest.fn(),
+      ttsError: '',
+      clearTtsError: jest.fn(),
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     dom = installDom();
     jest.clearAllMocks();
@@ -108,6 +147,8 @@ describe('ZedAmbientOverlay', () => {
       toggle: jest.fn(),
     });
     mockUseZedChat.mockReturnValue(defaultZedChatMock());
+    mockUseVoiceCapture.mockReturnValue(defaultVoiceCaptureMock());
+    mockUseVoiceTts.mockReturnValue(defaultVoiceTtsMock());
   });
 
   afterEach(() => {
@@ -234,6 +275,42 @@ describe('ZedAmbientOverlay', () => {
 
     window.Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     window.removeEventListener('devhub:register-avoid-rect', handler);
+    act(() => root.unmount());
+  });
+
+  test('shows voice capture error as an ephemeral status line', () => {
+    mockUseVoiceCapture.mockReturnValue(
+      defaultVoiceCaptureMock({
+        enginePhase: 'error',
+        errorText: 'Micrófono no detectado',
+      })
+    );
+
+    const { container, root } = renderOverlay();
+
+    expect(container.textContent).toContain('Micrófono no detectado');
+    act(() => root.unmount());
+  });
+
+  test('shows stop-speaking button when TTS is active', () => {
+    mockUseVoiceTts.mockReturnValue(
+      defaultVoiceTtsMock({
+        speaking: true,
+      })
+    );
+
+    mockUseZedOverlay.mockReturnValue({
+      isOpen: true,
+      close: jest.fn(),
+      toggle: jest.fn(),
+    });
+
+    const { container, root } = renderOverlay();
+
+    const stopBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.getAttribute('aria-label')?.includes('Detener voz')
+    );
+    expect(stopBtn).toBeTruthy();
     act(() => root.unmount());
   });
 });

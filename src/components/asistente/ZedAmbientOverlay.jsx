@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, VolumeX } from 'lucide-react';
 import { useZedChat } from '@/lib/asistente/useZedChat';
 import { useZedOverlay } from '@/lib/asistente/useZedOverlay';
 import { buildZedAmbientStatus } from '@/lib/asistente/buildZedAmbientStatus';
@@ -175,6 +175,8 @@ const ZedPillComposer = memo(function ZedPillComposer({
   suggestionIndex,
   voiceEnabled,
   voiceButtonProps,
+  speaking,
+  onStopSpeaking,
   onStop,
   onSend,
 }) {
@@ -222,6 +224,16 @@ const ZedPillComposer = memo(function ZedPillComposer({
         ) : null}
       </div>
       {voiceEnabled ? <ZedVoiceButton {...voiceButtonProps} className="!h-7 !w-7" /> : null}
+      {speaking && !isLoading ? (
+        <button
+          type="button"
+          onClick={onStopSpeaking}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--warning,#f0b54a)] text-white"
+          aria-label="Detener voz"
+        >
+          <VolumeX className="h-3 w-3" />
+        </button>
+      ) : null}
       {isLoading ? (
         <button
           type="button"
@@ -256,6 +268,7 @@ const ZedCollapsedPill = memo(function ZedCollapsedPill({
   suggestionIndex,
   voiceEnabled,
   onVoiceToggle,
+  onStopSpeaking,
   onOpen,
 }) {
   const displayLine = streamingText || statusLine;
@@ -311,18 +324,32 @@ const ZedCollapsedPill = memo(function ZedCollapsedPill({
           </AnimatePresence>
         )}
       </span>
-      {voiceEnabled && !isLoading && !speaking ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onVoiceToggle();
-          }}
-          aria-label="Hablar con Zed"
-          className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
-        >
-          Mic
-        </button>
+      {voiceEnabled && !isLoading ? (
+        speaking ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onStopSpeaking();
+            }}
+            aria-label="Detener voz"
+            className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--warning,#f0b54a)] transition-colors hover:text-[var(--accent-primary)]"
+          >
+            Detener
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onVoiceToggle();
+            }}
+            aria-label="Hablar con Zed"
+            className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
+          >
+            Mic
+          </button>
+        )
       ) : null}
     </div>
   );
@@ -365,7 +392,9 @@ export default function ZedAmbientOverlay({
   } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals });
 
   const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings?.voiceEnabled;
-  const { speak, speaking } = useVoiceTts({ enabled: voiceSettings?.ttsEnabled });
+  const { speak, speaking, stopSpeaking, ttsError, clearTtsError } = useVoiceTts({
+    enabled: voiceSettings?.ttsEnabled,
+  });
 
   const onFinalTranscript = useCallback(
     (text) => {
@@ -407,7 +436,12 @@ export default function ZedAmbientOverlay({
         if (cancelled) return;
         await invoke('voice_set_enabled', { enabled: true });
         await invoke('voice_set_settings', {
-          settings: { model: voiceSettings?.sttModel, backend: 'auto', language: 'es' },
+          settings: {
+            model: voiceSettings?.sttModel,
+            backend: 'auto',
+            language: 'es',
+            microphone: voiceSettings?.selectedMicId || 'default',
+          },
         });
         await startEngine();
       } catch {
@@ -418,7 +452,7 @@ export default function ZedAmbientOverlay({
     return () => {
       cancelled = true;
     };
-  }, [voiceEnabled, voiceSettings?.sttModel, startEngine]);
+  }, [voiceEnabled, voiceSettings?.sttModel, voiceSettings?.selectedMicId, startEngine]);
 
   const handleVoiceToggle = useCallback(async () => {
     return toggleRecording();
@@ -529,6 +563,19 @@ export default function ZedAmbientOverlay({
     },
     [clearStatusTimers, dismissStatus]
   );
+
+  const lastVoicedErrorRef = useRef('');
+  useEffect(() => {
+    if (!errorText && !ttsError) {
+      lastVoicedErrorRef.current = '';
+      return;
+    }
+    const voiceError = errorText || ttsError;
+    if (voiceError === lastVoicedErrorRef.current) return;
+    lastVoicedErrorRef.current = voiceError;
+    showStatus(voiceError);
+    if (ttsError && clearTtsError) clearTtsError();
+  }, [errorText, ttsError, showStatus, clearTtsError]);
 
   const displayMessages = useMemo(
     () => (streamingMessage ? [...messages, streamingMessage] : messages),
@@ -812,6 +859,8 @@ export default function ZedAmbientOverlay({
                     suggestionIndex={suggestionIndex}
                     voiceEnabled={voiceEnabled}
                     voiceButtonProps={voiceButtonProps}
+                    speaking={speaking}
+                    onStopSpeaking={stopSpeaking}
                     onStop={handleStop}
                     onSend={submitAndCollapse}
                   />
@@ -826,6 +875,7 @@ export default function ZedAmbientOverlay({
                     suggestionIndex={suggestionIndex}
                     voiceEnabled={voiceEnabled}
                     onVoiceToggle={handleVoiceToggle}
+                    onStopSpeaking={stopSpeaking}
                     onOpen={onOpenCollapsed}
                   />
                 )}

@@ -754,7 +754,14 @@ export function useZedChat({
     [isLoading, processToolResults, sendToApi, setAgentStatus]
   );
 
-  const voiceSettings = readVoiceSettings();
+  const [voiceSettings, setVoiceSettings] = useState(() => readVoiceSettings());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onStorage = () => setVoiceSettings(readVoiceSettings());
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const handleRejectApproval = useCallback(() => {
     setPendingApproval(null);

@@ -59,6 +59,8 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
   const [errorText, setErrorText] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
   const [vuLevel, setVuLevel] = useState(0);
+  const [micPermission, setMicPermission] = useState('prompt');
+  const [audioDevices, setAudioDevices] = useState([]);
   const unlistenRef = useRef([]);
   const bootingRef = useRef(false);
   const wasRecordingRef = useRef(false);
@@ -68,18 +70,26 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
 
   const engineReady = enginePhase === 'ready' || enginePhase === 'listening';
 
-  const flushVoiceSend = useCallback(() => {
-    if (!pendingSendRef.current) return;
+  const cancelPendingSend = useCallback(() => {
     pendingSendRef.current = false;
     if (sendTimerRef.current) {
       clearTimeout(sendTimerRef.current);
       sendTimerRef.current = null;
     }
-    const finalText = lastTranscriptRef.current.trim();
-    if (finalText && onFinalTranscript) onFinalTranscript(finalText);
+  }, []);
+
+  const resetTranscript = useCallback(() => {
     lastTranscriptRef.current = '';
     setLiveTranscript('');
-  }, [onFinalTranscript]);
+  }, []);
+
+  const flushVoiceSend = useCallback(() => {
+    if (!pendingSendRef.current) return;
+    cancelPendingSend();
+    const finalText = lastTranscriptRef.current.trim();
+    if (finalText && onFinalTranscript) onFinalTranscript(finalText);
+    resetTranscript();
+  }, [cancelPendingSend, onFinalTranscript, resetTranscript]);
 
   useEffect(() => {
     wasRecordingRef.current = recording;
@@ -138,8 +148,8 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
           setEnginePhase(nextRecording ? 'listening' : 'ready');
 
           if (nextRecording && !wasRecording) {
-            lastTranscriptRef.current = '';
-            setLiveTranscript('');
+            cancelPendingSend();
+            resetTranscript();
           }
 
           if (wasRecording && !nextRecording) {
@@ -163,7 +173,39 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
       }
     }
 
+    async function checkMicAccess() {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
+      try {
+        const perm = await navigator.permissions?.query({ name: 'microphone' });
+        const state = perm?.state || 'prompt';
+        setMicPermission(state);
+        if (state === 'denied') {
+          setErrorText('Permiso de micrófono denegado. Verificá los permisos del sistema.');
+          setEnginePhase('error');
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        setAudioDevices(devices.filter((d) => d.kind === 'audioinput'));
+        setErrorText('');
+      } catch (err) {
+        setMicPermission('denied');
+        setErrorText('No se pudo acceder al micrófono. Verificá permisos y dispositivos.');
+        setEnginePhase('error');
+      }
+    }
+
+    function handleDeviceChange() {
+      checkMicAccess();
+    }
+
     setup();
+
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+      checkMicAccess();
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    }
 
     return () => {
       cancelled = true;
@@ -171,8 +213,12 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
         if (typeof fn === 'function') fn();
       }
       unlistenRef.current = [];
+      cancelPendingSend();
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      }
     };
-  }, [flushVoiceSend, onFinalTranscript, onPartial]);
+  }, [cancelPendingSend, flushVoiceSend, onFinalTranscript, onPartial, resetTranscript]);
 
   const startEngine = useCallback(async () => {
     if (!tauriAvailable || bootingRef.current) return { ok: false };
@@ -201,6 +247,8 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
       return { ok: false, error: 'Preparando micrófono, espera a que termine…' };
     }
 
+    cancelPendingSend();
+    resetTranscript();
     await invokeVoice('voice_stop_speak');
     const result = await invokeVoice('voice_toggle_recording');
     if (!result.ok) {
@@ -211,10 +259,10 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
     if (typeof result.data === 'boolean') {
       setRecording(result.data);
       setEnginePhase(result.data ? 'listening' : 'ready');
-      if (result.data) setLiveTranscript('');
+      if (result.data) resetTranscript();
     }
     return result;
-  }, [enginePhase, tauriAvailable]);
+  }, [cancelPendingSend, enginePhase, resetTranscript, tauriAvailable]);
 
   return {
     recording,
@@ -225,6 +273,8 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
     errorText,
     liveTranscript,
     vuLevel,
+    micPermission,
+    audioDevices,
     toggleRecording,
     startEngine,
   };

@@ -165,3 +165,25 @@ From `SWARM_COMMUNICATION_HANDOFF_2026-05-30.md`: deliveries are written to `/tm
 - Tests agregados:
   - `src/lib/asistente/__tests__/useZedChat.streaming.test.js`
   - `src/components/asistente/__tests__/ZedActivityDrawer.limit.test.jsx`
+
+### Fase 3 — Voz robusta (2026-06-29)
+
+- `src/lib/voice/useVoiceCapture.js`
+  - Detección de permisos de micrófono vía `navigator.permissions`/`getUserMedia`; si falla, se expone `errorText` y `enginePhase='error'`.
+  - Escucha `devicechange` para re-verificar acceso cuando cambian dispositivos.
+  - `cancelPendingSend` y `resetTranscript` estabilizados; al iniciar una nueva grabación se descarta cualquier envío pendiente.
+  - Expose `micPermission` y `audioDevices` para futura UI.
+- `src/lib/voice/useVoiceTts.js`
+  - Antes de cada `speak` se invoca `voice_stop_speak` para evitar colas.
+  - `tts-error`/`tts-done` siempre resetean `speaking`.
+- `src/components/settings/ZedVoiceSettings.jsx`
+  - Envía `microphone: selectedMicId || 'default'` al sidecar en `voice_set_settings`.
+- `src/components/asistente/ZedAmbientOverlay.jsx`
+  - Envía `microphone` al bootear voz.
+  - `voiceSettings` (desde `useZedChat`) ahora es reactivo ante cambios de `localStorage`.
+  - Errores de STT/TTS se muestran como status efímero en el pill.
+  - Botón "Detener voz" en composer y pill colapsado cuando `speaking`.
+- Tests agregados:
+  - `src/lib/voice/useVoiceCapture.test.js` (expandido con eventos Tauri)
+  - `src/lib/voice/useVoiceTts.test.js`
+  - Tests de overlay para error de voz y botón de stop TTS en `ZedAmbientOverlay.test.jsx`

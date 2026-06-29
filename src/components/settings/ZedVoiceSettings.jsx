@@ -20,7 +20,12 @@ export default function ZedVoiceSettings() {
         await invoke('voice_set_enabled', { enabled: settings.voiceEnabled });
         if (settings.voiceEnabled) {
           await invoke('voice_set_settings', {
-            settings: { model: settings.sttModel, backend: 'auto', language: 'es' },
+            settings: {
+              model: settings.sttModel,
+              backend: 'auto',
+              language: 'es',
+              microphone: settings.selectedMicId || 'default',
+            },
           });
         }
       } catch {
