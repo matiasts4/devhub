@@ -192,6 +192,7 @@ export const terminalTool = {
 
 export const listTerminalsTool = {
   name: 'list_terminals',
+  parallel: true,
   description:
     'List active terminal sessions visible in the workspace. Sources: sidecar PTYs (main Tauri-visible panels for shells and agent TUIs like OpenCode/Hermes), ttyServer tracked sessions, and tmux discovery fallback. Use the terminalId values with review_terminal_output to read their current contents/scrollback, or execute_in_terminal to send input to controllable ones.',
   parameters: {},
@@ -392,6 +393,7 @@ async function resolveSessionIdFromNameOrId(toolName, params, context = {}, opti
 
 export const reviewTerminalTool = {
   name: 'review_terminal_output',
+  parallel: true,
   description:
     'Read the recent output buffer of a terminal session. Pass `name` (display name) OR `session_id` (terminalId). Setting both returns a Spanish error before any HTTP call.',
   parameters: {

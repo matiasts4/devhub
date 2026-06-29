@@ -14,6 +14,7 @@ function guard(p) {
 
 export const fileTool = {
   name: 'browse_files',
+  parallel: true,
   description: 'Browse and read files in the project. Shows directory structure or file content.',
   parameters: {
     action: {
@@ -78,6 +79,7 @@ export const fileTool = {
 
 export const reviewLogFileTool = {
   name: 'review_log_file',
+  parallel: true,
   description: 'Read and analyze a log file. Returns last lines and any errors found.',
   parameters: {
     path: { type: 'string', required: true, description: 'Path to log file' },

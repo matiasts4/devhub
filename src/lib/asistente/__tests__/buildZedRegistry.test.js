@@ -50,4 +50,23 @@ describe('buildZedRegistry', () => {
     expect(registry.get('open_terminal')).toBeDefined();
     expect(registry.get('demo:hello')).toBeUndefined();
   });
+
+  test('memoizes toAnthropicTools until a new tool is registered', () => {
+    const registry = buildZedRegistry({ skillsDir: null });
+    const first = registry.toAnthropicTools();
+    const second = registry.toAnthropicTools();
+    expect(second).toBe(first);
+
+    registry.register({
+      name: 'memo_test_tool',
+      description: 'test',
+      parameters: {},
+      async execute() {
+        return {};
+      },
+    });
+    const third = registry.toAnthropicTools();
+    expect(third).not.toBe(first);
+    expect(third.length).toBe(first.length + 1);
+  });
 });

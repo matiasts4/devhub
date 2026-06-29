@@ -461,4 +461,74 @@ describe('zedFastPath intent cache', () => {
       ],
     });
   });
+
+  test('swarm status query', () => {
+    const hit = resolveZedFastPathIntent('cuál es el estado del swarm', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'get_swarm_status',
+      steps: [{ tool: 'get_swarm_status', input: {} }],
+    });
+  });
+
+  test('browse_files list', () => {
+    const hit = resolveZedFastPathIntent('lista los archivos de src', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'browse_files_list',
+      steps: [{ tool: 'browse_files', input: { action: 'list', path: 'src' } }],
+    });
+  });
+
+  test('browse_files read', () => {
+    const hit = resolveZedFastPathIntent('lee el archivo package.json', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'browse_files_read',
+      steps: [{ tool: 'browse_files', input: { action: 'read', path: 'package.json' } }],
+    });
+  });
+
+  test('review_log_file', () => {
+    const hit = resolveZedFastPathIntent('muéstrame el log errors.log', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'review_log_file',
+      steps: [{ tool: 'review_log_file', input: { path: 'errors.log' } }],
+    });
+  });
+
+  test('summarize_terminal named', () => {
+    const hit = resolveZedFastPathIntent('qué está pasando en Chase', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'summarize_terminal',
+      steps: [{ tool: 'summarize_terminal', input: { name: 'Chase' } }],
+    });
+  });
+
+  test('close_url', () => {
+    const hit = resolveZedFastPathIntent('cierra el navegador', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'close_url',
+      steps: [{ tool: 'close_url', input: { confirm: true } }],
+    });
+  });
+
+  test('execute command in existing named terminal', () => {
+    const hit = resolveZedFastPathIntent('ejecuta npm test en Chase', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'execute_in_terminal_named',
+      steps: [{ tool: 'execute_in_terminal', input: { name: 'Chase', input: 'npm test\n' } }],
+    });
+  });
 });

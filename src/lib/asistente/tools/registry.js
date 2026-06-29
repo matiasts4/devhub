@@ -3,6 +3,7 @@ import { SkillRegistry } from '../skillRegistry';
 export class ToolRegistry {
   constructor() {
     this.tools = new Map();
+    this._anthropicToolsCache = null;
   }
 
   register(tool) {
@@ -12,6 +13,7 @@ export class ToolRegistry {
       );
     }
     this.tools.set(tool.name, tool);
+    this._anthropicToolsCache = null;
   }
 
   list() {
@@ -44,6 +46,7 @@ export class ToolRegistry {
       throw new Error('Expected a SkillRegistry instance');
     }
     skillRegistry.registerTools(this);
+    this._anthropicToolsCache = null;
   }
 
   /**
@@ -63,8 +66,11 @@ export class ToolRegistry {
   // Convert registered tools to Anthropic/MiniMax compatible tool definitions
   // for native function calling (input_schema). This enables reliable tool_use
   // blocks instead of fragile textual TOOL:/PARAM: scraping.
+  // Cached until a new tool is registered.
   toAnthropicTools() {
-    return Array.from(this.tools.values()).map((tool) => {
+    if (this._anthropicToolsCache) return this._anthropicToolsCache;
+
+    const result = Array.from(this.tools.values()).map((tool) => {
       const params = tool.parameters || {};
       const required = Object.keys(params).filter((k) => params[k] && params[k].required === true);
       return {
@@ -77,5 +83,8 @@ export class ToolRegistry {
         },
       };
     });
+
+    this._anthropicToolsCache = result;
+    return result;
   }
 }

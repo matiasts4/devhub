@@ -55,6 +55,56 @@ export function mergeOpensIntoRequestContext(requestContext, turnToolResults) {
 }
 
 /**
+ * Execute a single tool call, emitting lifecycle events and returning the
+ * normalized result. Used by both the parallel and sequential phases.
+ *
+ * @param {import('./tools/registry').ToolRegistry} registry
+ * @param {object} requestContext
+ * @param {{ name: string, input: object, id?: string }} tc
+ * @param {(evt: { type: string, payload: unknown }) => void} emit
+ */
+async function executeSingleTool(registry, requestContext, tc, emit) {
+  const name = tc.name;
+  let effectiveInput = tc.input || {};
+  if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
+    const toolDef = registry.get(name);
+    if (toolHasRequiredSchema(toolDef)) {
+      const result = { error: 'missing required parameters' };
+      emit('tool_result', { tool: name, result, ok: false });
+      return { tool: name, input: effectiveInput || {}, result, id: tc.id };
+    }
+    effectiveInput = {};
+  }
+
+  emit('tool_start', {
+    tool: name,
+    input: effectiveInput,
+    label: labelForZedToolStart(name, effectiveInput),
+  });
+  zedLog.toolCall(name, effectiveInput);
+
+  const toolStart = Date.now();
+  let result;
+  try {
+    result = await registry.execute(name, effectiveInput, requestContext);
+  } catch (err) {
+    result = { error: err.message };
+  }
+  zedLog.toolResult(name, result, Date.now() - toolStart);
+
+  const ok = !result?.error;
+  emit('tool_result', {
+    tool: name,
+    input: effectiveInput,
+    result,
+    ok,
+    label: ok ? labelForZedToolDone(name) : null,
+  });
+
+  return { tool: name, input: effectiveInput, result, id: tc.id };
+}
+
+/**
  * @param {object} params
  * @param {string} params.systemPrompt
  * @param {Array} params.conversation
@@ -63,8 +113,9 @@ export function mergeOpensIntoRequestContext(requestContext, turnToolResults) {
  * @param {string} params.apiKey
  * @param {object} params.requestContext
  * @param {number} params.maxTurns
- * @param {typeof import('./chat/route').callMinimax} params.callMinimax
+ * @param {typeof import('./minimaxClient').callMinimax} params.callMinimax
  * @param {string} params.model
+ * @param {number} [params.maxTokens]
  * @param {(evt: { type: string, payload: unknown }) => void} [params.onEvent]
  * @returns {Promise<{ finalText: string, allToolResults: Array, meta: object }>}
  */
@@ -78,6 +129,7 @@ export async function runZedChatLoop({
   maxTurns,
   callMinimax,
   model,
+  maxTokens = 2048,
   onEvent = null,
 }) {
   const emit = (type, payload) => {
@@ -98,14 +150,19 @@ export async function runZedChatLoop({
     try {
       data = await callMinimax({
         model,
-        maxTokens: 2048,
+        maxTokens,
         system: systemPrompt,
         messages: conversation,
         apiKey,
         tools: anthropicTools,
       });
     } catch (err) {
-      emit('error', { message: err.message, upstream_status: err.upstream_status });
+      emit('error', {
+        message: err.message,
+        upstream_status: err.upstream_status,
+        retryable: err.retryable,
+        attempt: err.attempt,
+      });
       throw err;
     }
 
@@ -146,47 +203,27 @@ export async function runZedChatLoop({
     }
 
     if (toolCalls.length > 0) {
-      for (const tc of toolCalls) {
-        const name = tc.name;
-        let effectiveInput = tc.input || {};
-        if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
-          const toolDef = registry.get(name);
-          if (toolHasRequiredSchema(toolDef)) {
-            const result = { error: 'missing required parameters' };
-            turnToolResults.push({ tool: name, input: effectiveInput || {}, result, id: tc.id });
-            emit('tool_result', { tool: name, result, ok: false });
-            continue;
+      const resultsByIndex = new Array(toolCalls.length);
+
+      // Run parallel-safe tools concurrently while preserving call order for
+      // the conversation history.
+      await Promise.all(
+        toolCalls.map(async (tc, i) => {
+          const toolDef = registry.get(tc.name);
+          if (toolDef?.parallel) {
+            resultsByIndex[i] = await executeSingleTool(registry, requestContext, tc, emit);
           }
-          effectiveInput = {};
+        })
+      );
+
+      // Run remaining tools sequentially (writes, UI mutators, etc.).
+      for (let i = 0; i < toolCalls.length; i++) {
+        if (!resultsByIndex[i]) {
+          resultsByIndex[i] = await executeSingleTool(registry, requestContext, toolCalls[i], emit);
         }
-
-        emit('tool_start', {
-          tool: name,
-          input: effectiveInput,
-          label: labelForZedToolStart(name, effectiveInput),
-        });
-        zedLog.toolCall(name, effectiveInput);
-
-        const toolStart = Date.now();
-        let result;
-        try {
-          result = await registry.execute(name, effectiveInput, requestContext);
-        } catch (err) {
-          result = { error: err.message };
-        }
-        zedLog.toolResult(name, result, Date.now() - toolStart);
-
-        const ok = !result?.error;
-        emit('tool_result', {
-          tool: name,
-          input: effectiveInput,
-          result,
-          ok,
-          label: ok ? labelForZedToolDone(name) : null,
-        });
-
-        turnToolResults.push({ tool: name, input: effectiveInput, result, id: tc.id });
       }
+
+      turnToolResults.push(...resultsByIndex);
 
       if (hasNativeToolUse) {
         conversation.push({ role: 'assistant', content });
@@ -229,8 +266,10 @@ export async function runZedChatLoop({
       finalText = rawText;
       if (!finalText.trim() && thinkingBlocks.length > 0) {
         finalText =
-          thinkingBlocks.map((b) => b.thinking || b.text || '').join('\n').trim() ||
-          '(El modelo está razonando, aún no tiene respuesta final...)';
+          thinkingBlocks
+            .map((b) => b.thinking || b.text || '')
+            .join('\n')
+            .trim() || '(El modelo está razonando, aún no tiene respuesta final...)';
       }
       break;
     }

@@ -21,6 +21,7 @@ function resolveUserId(context) {
 
 export const listProjectsTool = {
   name: 'list_projects',
+  parallel: true,
   description: 'List all projects known to DevHub MCP.',
   parameters: {},
   async execute() {
@@ -31,6 +32,7 @@ export const listProjectsTool = {
 
 export const getProjectTool = {
   name: 'get_project',
+  parallel: true,
   description:
     'Get details for a DevHub project. If no project_id is provided, uses the current DevHub project.',
   parameters: {
@@ -48,6 +50,7 @@ export const getProjectTool = {
 
 export const getProjectContextTool = {
   name: 'get_project_context',
+  parallel: true,
   description:
     'Get rich context for a DevHub project: milestones, tasks, queue and recent activity.',
   parameters: {
@@ -65,6 +68,7 @@ export const getProjectContextTool = {
 
 export const listTasksTool = {
   name: 'list_tasks',
+  parallel: true,
   description: 'List tasks for a DevHub project, optionally filtered by milestone.',
   parameters: {
     project_id: {
@@ -89,6 +93,7 @@ export const listTasksTool = {
 
 export const getExecutionQueueTool = {
   name: 'get_execution_queue',
+  parallel: true,
   description: 'Get the current DevHub execution queue for a project.',
   parameters: {
     project_id: {

@@ -10,6 +10,7 @@ import { zedLog } from '../utils/zed-logger';
 
 export const listAgentRunsTool = {
   name: 'list_agent_runs',
+  parallel: true,
   description: 'List recent agent runs for a task, agent or workspace.',
   parameters: {
     task_id: { type: 'string', description: 'Filter by task ID.' },
@@ -58,6 +59,7 @@ export const listAgentRunsTool = {
 
 export const getAgentRunTool = {
   name: 'get_agent_run',
+  parallel: true,
   description: 'Get details of a single agent run by run_id.',
   parameters: {
     run_id: { type: 'string', description: 'Run ID.' },

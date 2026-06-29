@@ -17,9 +17,12 @@ import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
 import { runZedChatLoop, createZedSseStream } from '@/lib/asistente/runZedChatLoop';
 import { tryZedFastPath, createZedFastPathSseStream } from '@/lib/asistente/runZedFastPath';
+import { callMinimax, BASE_URL } from '@/lib/asistente/minimaxClient';
+import { fitHistoryWithinBudget, resolveMaxTokens } from '@/lib/asistente/zedContextBudget';
+import { recordZedServerMetric } from '@/lib/asistente/zedServerMetrics';
 
+export { BASE_URL };
 export const MODEL = 'minimax-coding-plan/MiniMax-M3';
-export const BASE_URL = 'https://api.minimax.io/anthropic/v1/messages';
 
 const chatRateLimiter = createRateLimiter({ maxCalls: 120, windowMs: 60000 });
 
@@ -55,52 +58,6 @@ function loadSystemPrompt() {
 // Back-compat: tests may still import this name. Thin wrapper.
 export async function buildZedSystemPrompt() {
   return loadSystemPrompt();
-}
-
-async function callMinimax({ model, maxTokens, system, messages, apiKey, tools }) {
-  const body = {
-    model,
-    max_tokens: maxTokens,
-    ...(system ? { system } : {}),
-    messages,
-    ...(tools && tools.length ? { tools } : {}),
-  };
-
-  const start = Date.now();
-  const response = await fetch(BASE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  });
-  const duration = Date.now() - start;
-
-  if (!response.ok) {
-    const errText = await response.text();
-    const err = new Error(`MiniMax API error ${response.status}: ${errText}`);
-    err.upstream_status = response.status;
-    throw err;
-  }
-
-  const data = await response.json();
-  const contentTypes = data.content?.map((b) => b.type) || [];
-  const hasToolUse = contentTypes.includes('tool_use');
-  zedLog.info('API', `MiniMax response (${duration}ms)`, {
-    contentTypes,
-    hasToolUse,
-  });
-  // Also emit the detailed apiResponse for the readable log (includes tool_use flag)
-  zedLog.apiResponse?.(
-    duration,
-    contentTypes,
-    contentTypes.includes('text'),
-    contentTypes.includes('thinking'),
-    hasToolUse
-  );
-  return data;
 }
 
 // T-015: a tool's `parameters` schema may have zero required keys — see toolHasRequiredSchema in runZedChatLoop.
@@ -149,11 +106,6 @@ export async function POST(request) {
   const msgId = Date.now().toString(36);
 
   try {
-    if (!chatRateLimiter.canProceed()) {
-      return NextResponse.json({ error: 'rate limit exceeded' }, { status: 429 });
-    }
-    chatRateLimiter.record();
-
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'malformed body' }, { status: 400 });
@@ -247,6 +199,11 @@ export async function POST(request) {
       }
     }
 
+    if (!chatRateLimiter.canProceed()) {
+      return NextResponse.json({ error: 'rate limit exceeded' }, { status: 429 });
+    }
+    chatRateLimiter.record();
+
     zedLog.sessionStart(msgId, message);
 
     const fastPath = await tryZedFastPath({
@@ -257,6 +214,10 @@ export async function POST(request) {
       confirmed: body.confirmed === true,
     });
     if (fastPath.hit) {
+      recordZedServerMetric({
+        type: 'fast_path_hit',
+        durationMs: fastPath.body?.meta?.duration_ms || 0,
+      });
       zedLog.sessionEnd(msgId, fastPath.text, fastPath.toolResults.length);
       if (wantsZedStream(request, body)) {
         zedLog.orchestration('fast_path_stream', { msgId, intent: fastPath.intent.intent });
@@ -278,6 +239,8 @@ export async function POST(request) {
       persistInteraction(fastPath.body?.text, fastPath.toolResults);
       return NextResponse.json(fastPath.body);
     }
+
+    recordZedServerMetric({ type: 'fast_path_miss' });
 
     const { apiKey, source: apiKeySource } = resolveZedApiKey();
     if (!apiKey) {
@@ -303,8 +266,17 @@ export async function POST(request) {
       return NextResponse.json({ error: err.message }, { status: 500 });
     }
 
-    const conversation = [...safeHistory, { role: 'user', content: message }];
+    const budget = fitHistoryWithinBudget(systemPrompt, safeHistory);
+    if (budget.droppedCount > 0) {
+      zedLog.orchestration('context_budget_trim', {
+        dropped: budget.droppedCount,
+        estimatedInputTokens: budget.estimatedInputTokens,
+      });
+    }
+
+    const conversation = [...budget.history, { role: 'user', content: message }];
     const anthropicTools = registry.toAnthropicTools();
+    const maxTokens = resolveMaxTokens(message);
 
     const loopParams = {
       systemPrompt,
@@ -316,6 +288,7 @@ export async function POST(request) {
       maxTurns: MAX_TURNS,
       callMinimax,
       model: MODEL,
+      maxTokens,
     };
 
     if (wantsZedStream(request, body)) {
@@ -334,12 +307,14 @@ export async function POST(request) {
     let allToolResults = [];
     let meta = {};
 
+    const llmStart = Date.now();
     try {
       const loopResult = await runZedChatLoop(loopParams);
       finalText = loopResult.finalText;
       allToolResults = loopResult.allToolResults;
       meta = loopResult.meta;
     } catch (err) {
+      recordZedServerMetric({ type: 'llm_error' });
       const upstreamStatus = err?.upstream_status;
       zedLog.error('API', 'MiniMax call failed', {
         error: err.message,
@@ -354,6 +329,13 @@ export async function POST(request) {
         { status: 500 }
       );
     }
+
+    recordZedServerMetric({
+      type: 'llm_call',
+      durationMs: Date.now() - llmStart,
+      estimatedTokensIn: budget.estimatedInputTokens,
+      estimatedTokensOut: Math.ceil((finalText || '').length / 4),
+    });
 
     zedLog.sessionEnd(msgId, finalText, allToolResults.length);
 

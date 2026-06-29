@@ -190,4 +190,68 @@ describe('runZedChatLoop', () => {
     expect(calls).toBe(2);
     expect(meta.max_turns_reached).toBe(true);
   });
+
+  test('runs parallel-safe tools concurrently and preserves order', async () => {
+    const order = [];
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'read_a',
+      description: 'read a',
+      parallel: true,
+      parameters: {},
+      async execute() {
+        order.push('a-start');
+        await new Promise((r) => setTimeout(r, 20));
+        order.push('a-end');
+        return { value: 'a' };
+      },
+    });
+    registry.register({
+      name: 'write_b',
+      description: 'write b',
+      parameters: {},
+      async execute() {
+        order.push('b');
+        return { value: 'b' };
+      },
+    });
+    registry.register({
+      name: 'read_c',
+      description: 'read c',
+      parallel: true,
+      parameters: {},
+      async execute() {
+        order.push('c-start');
+        await new Promise((r) => setTimeout(r, 10));
+        order.push('c-end');
+        return { value: 'c' };
+      },
+    });
+
+    const callMinimax = jest.fn().mockResolvedValue({
+      content: [
+        { type: 'tool_use', name: 'read_a', input: {}, id: 'tu-a' },
+        { type: 'tool_use', name: 'write_b', input: {}, id: 'tu-b' },
+        { type: 'tool_use', name: 'read_c', input: {}, id: 'tu-c' },
+      ],
+    });
+
+    const { allToolResults } = await runZedChatLoop({
+      systemPrompt: '',
+      conversation: [],
+      registry,
+      anthropicTools: registry.toAnthropicTools(),
+      apiKey: 'test',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax,
+      model: 'test-model',
+    });
+
+    // a and c start before the sequential b runs.
+    expect(order.indexOf('a-start')).toBeLessThan(order.indexOf('b'));
+    expect(order.indexOf('c-start')).toBeLessThan(order.indexOf('b'));
+    // Results remain in model order.
+    expect(allToolResults.map((r) => r.tool)).toEqual(['read_a', 'write_b', 'read_c']);
+  });
 });

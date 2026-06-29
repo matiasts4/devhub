@@ -6,6 +6,7 @@
 import { resolveTerminalByName } from './zedTerminalResolver';
 import { resolveNamedTerminalFromMessage } from './zedTerminalNamePhrase';
 import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
+import { stripDiacritics } from '../text';
 
 const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi']);
 const OPEN_VERBS = /\b(abre|abr[eía]s?|abrir|abramos|open|crea|crear|nueva|lanza|lanzar)\b/;
@@ -23,7 +24,7 @@ const TERMINAL_NOUN_RE = /\b(terminal(?:es)?|panel(?:es)?)\b/;
  */
 
 function normalizeText(text) {
-  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return stripDiacritics(text).toLowerCase();
 }
 
 /** Normalize STT variants like "open code" → opencode */
@@ -145,6 +146,85 @@ function detectAgentProgram(message) {
     if (norm.includes(p)) return p;
   }
   return null;
+}
+
+const SWARM_NOUN_RE = /\b(swarm|enjambre|misión|mision|mission|missions)\b/;
+const FILE_NOUN_RE = /\b(archivos?|file|files?|directorio|carpeta|folder)\b/;
+const LOG_NOUN_RE = /\b(log|logs|bitácora|registro)\b/;
+const BROWSER_NOUN_RE = /\b(navegador|browser|página|pagina|sitio|web|url)\b/;
+
+function isGetSwarmStatusIntent(lower) {
+  return (
+    SWARM_NOUN_RE.test(lower) && /\b(estado|status|activa|activo|hay|qu[eé]|que)\b/.test(lower)
+  );
+}
+
+function isBrowseFilesListIntent(lower) {
+  return (
+    /\b(lista|listar|mostrar|muestra|ver|explora|navega)\b/.test(lower) && FILE_NOUN_RE.test(lower)
+  );
+}
+
+function isBrowseFilesReadIntent(lower) {
+  return (
+    /\b(lee|leer|contenido|mostrar|muestra|ver)\b/.test(lower) && /\b(archivo|file)\b/.test(lower)
+  );
+}
+
+function isReviewLogFileIntent(lower) {
+  const asksReview =
+    /\b(lee|leer|mostr|ver|últimas|ultimas|revisar|revisa)\b/.test(lower) ||
+    /mu[eé]str/i.test(lower);
+  return LOG_NOUN_RE.test(lower) && asksReview;
+}
+
+function isSummarizeTerminalIntent(lower) {
+  const asksWhatHappens =
+    /\bqu[eé]\s+(?:está\s+)?pas/i.test(lower) || /\bque\s+(?:esta\s+)?pas/i.test(lower);
+  const asksStatus = /\b(estado|status)\b/.test(lower);
+  const asksResume = /\b(resume|resumí|resumen)\b/.test(lower);
+  return TERMINAL_NOUN_RE.test(lower) && (asksWhatHappens || asksStatus || asksResume);
+}
+
+function isCloseUrlIntent(lower) {
+  return CLOSE_VERBS.test(lower) && BROWSER_NOUN_RE.test(lower);
+}
+
+function extractQuotedOrPathToken(message) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return null;
+
+  const quoted = raw.match(/["']([^"']+)["']/);
+  if (quoted) {
+    const value = quoted[1];
+    if (!/^https?:\/\//i.test(value)) return value;
+  }
+
+  const preposition = raw.match(/\b(?:de|en)\s+(\S+)/i);
+  if (preposition) {
+    const value = preposition[1];
+    if (!/^https?:\/\//i.test(value)) return value;
+  }
+
+  const candidate = raw
+    .split(/\s+/)
+    .find(
+      (token) =>
+        !/^https?:\/\//i.test(token) &&
+        (token.includes('/') || token.includes('\\') || /\.[a-zA-Z0-9]{1,10}$/.test(token))
+    );
+  return candidate || null;
+}
+
+function extractCommandForExistingTerminal(message) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return null;
+
+  const match = raw.match(
+    /^(?:por\s+favor\s+)?(?:ejecuta|ejecutar|corre|correr|run|execute)\s+(.+?)\s+(?:en|in)\s+(.+)$/i
+  );
+  if (!match) return null;
+  return { command: match[1].trim(), terminalName: match[2].trim() };
 }
 
 const NUMBER_WORDS = {
@@ -583,6 +663,99 @@ export function resolveZedFastPathIntent(message, context = {}) {
       0.96,
       'list_terminals_pattern'
     );
+  }
+
+  // --- read-only workspace queries ---
+  if (isGetSwarmStatusIntent(lower)) {
+    return hit(
+      [{ tool: 'get_swarm_status', input: {} }],
+      'get_swarm_status',
+      0.94,
+      'get_swarm_status'
+    );
+  }
+
+  if (isSummarizeTerminalIntent(lower)) {
+    const name = extractTerminalNameFromMessage(text, terminals);
+    if (name && name !== 'AMBIGUOUS') {
+      return hit(
+        [{ tool: 'summarize_terminal', input: { name } }],
+        'summarize_terminal',
+        0.92,
+        'summarize_terminal_named'
+      );
+    }
+  }
+
+  // "qué pasa en Chase" — terminal name via explicit "en" phrase.
+  const summarizeTarget = resolveExplicitExistingTerminalTarget(text, terminals);
+  if (
+    summarizeTarget?.ok &&
+    /qu[eé]\s+(?:está\s+)?pas|que\s+(?:esta\s+)?pas|estado|status|resumen|resume/i.test(lower)
+  ) {
+    return hit(
+      [{ tool: 'summarize_terminal', input: { name: summarizeTarget.displayName } }],
+      'summarize_terminal',
+      0.92,
+      'summarize_terminal_explicit'
+    );
+  }
+
+  if (isBrowseFilesListIntent(lower)) {
+    const path = extractQuotedOrPathToken(text) || '.';
+    return hit(
+      [{ tool: 'browse_files', input: { action: 'list', path } }],
+      'browse_files_list',
+      0.91,
+      'browse_files_list'
+    );
+  }
+
+  if (isBrowseFilesReadIntent(lower)) {
+    const path = extractQuotedOrPathToken(text);
+    if (path) {
+      return hit(
+        [{ tool: 'browse_files', input: { action: 'read', path } }],
+        'browse_files_read',
+        0.92,
+        'browse_files_read'
+      );
+    }
+  }
+
+  if (isReviewLogFileIntent(lower)) {
+    const path = extractQuotedOrPathToken(text);
+    if (path) {
+      return hit(
+        [{ tool: 'review_log_file', input: { path } }],
+        'review_log_file',
+        0.92,
+        'review_log_file'
+      );
+    }
+  }
+
+  if (isCloseUrlIntent(lower)) {
+    return hit([{ tool: 'close_url', input: { confirm: true } }], 'close_url', 0.94, 'close_url');
+  }
+
+  // --- execute command in an existing named terminal ---
+  const execExisting = extractCommandForExistingTerminal(text);
+  if (execExisting) {
+    const lookup = resolveTerminalByName(execExisting.terminalName, terminals);
+    if (lookup.ok) {
+      return hit(
+        [
+          {
+            tool: 'execute_in_terminal',
+            input: { name: lookup.displayName, input: `${execExisting.command}\n` },
+          },
+        ],
+        'execute_in_terminal_named',
+        0.91,
+        'execute_in_terminal_named'
+      );
+    }
   }
 
   // --- DevHub MCP read actions ---

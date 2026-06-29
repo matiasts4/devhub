@@ -173,9 +173,8 @@ async function captureTail(baseUrl, terminalId) {
   const raw = typeof data?.output === 'string' ? data.output : '';
   const clean = stripAnsi(raw);
   // 8KB cap: drop the head, keep the tail, normalize line endings.
-  const capped = clean.length > OUTPUT_CAP_BYTES
-    ? clean.slice(clean.length - OUTPUT_CAP_BYTES)
-    : clean;
+  const capped =
+    clean.length > OUTPUT_CAP_BYTES ? clean.slice(clean.length - OUTPUT_CAP_BYTES) : clean;
   // The /capture route doesn't return displayName; we may have it from
   // the resolver pass, so the caller can pass it in.
   return { ok: true, cleanTail: capped, displayName: data?.displayName || null };
@@ -183,6 +182,7 @@ async function captureTail(baseUrl, terminalId) {
 
 export const summarizeTerminalTool = {
   name: SUMMARIZE_TOOL_NAME,
+  parallel: true,
   description:
     'Resume en español (2 frases) lo que está pasando en una terminal: si el agente está esperando tu input, qué opciones ofrece, o un estado neutro. Usa la cola de cache de 2s para no capturar la misma terminal dos veces en una misma ráfaga. Acepta name (recomendado) o terminalId.',
   parameters: {
