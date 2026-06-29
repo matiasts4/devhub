@@ -1,9 +1,12 @@
 'use client';
 
+import { memo, useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ZedActionCard from './ZedActionCard';
 import ZedAuditTrace from './ZedAuditTrace';
 import { dispatchZedOpenUrl } from '@/components/zedOpenUrlEvent';
+
+const MAX_VISIBLE_ACTIVITY_MESSAGES = 50;
 
 /**
  * Expandable activity timeline for Zed (Phase 5.1).
@@ -30,6 +33,31 @@ function StatusPill({ status }) {
   );
 }
 
+const ZedActivityMessage = memo(function ZedActivityMessage({ msg, onFocusTerminal, onOpenUrl }) {
+  return (
+    <div key={msg.timestamp} className="space-y-1.5">
+      {typeof msg.content === 'string' && msg.content && msg.content !== 'initial' ? (
+        <p
+          className={`text-[11px] leading-snug ${msg.partial ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}
+        >
+          {msg.content}
+          {msg.partial ? <span className="ml-0.5 inline-block animate-pulse">▌</span> : null}
+        </p>
+      ) : null}
+      {Array.isArray(msg.tool_results)
+        ? msg.tool_results.map((entry, i) => (
+            <ZedActionCard
+              key={`${msg.timestamp}-${i}`}
+              entry={entry}
+              onFocusTerminal={onFocusTerminal}
+              onOpenUrl={onOpenUrl}
+            />
+          ))
+        : null}
+    </div>
+  );
+});
+
 export default function ZedActivityDrawer({
   expanded,
   onToggle,
@@ -46,7 +74,30 @@ export default function ZedActivityDrawer({
   planControls = null,
   pendingStepApproval = null,
 }) {
-  const assistantTurns = messages.filter((m) => m.role === 'assistant' && m !== messages[0]);
+  const [showAll, setShowAll] = useState(false);
+
+  const assistantTurns = useMemo(
+    () => messages.filter((m) => m.role === 'assistant' && m !== messages[0]),
+    [messages]
+  );
+
+  const visibleTurns = showAll
+    ? assistantTurns
+    : assistantTurns.slice(-MAX_VISIBLE_ACTIVITY_MESSAGES);
+  const hiddenCount = assistantTurns.length - visibleTurns.length;
+
+  const handleFocusTerminal = useCallback((parsed) => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('devhub:terminal-focus', {
+        detail: { panelId: parsed?.terminalId || parsed?.session_id },
+      })
+    );
+  }, []);
+
+  const handleOpenUrl = useCallback((parsed) => {
+    if (parsed?.url) dispatchZedOpenUrl({ url: parsed.url, focus: true });
+  }, []);
 
   return (
     <AnimatePresence>
@@ -78,6 +129,7 @@ export default function ZedActivityDrawer({
             className="max-h-[min(320px,50vh)] space-y-2 overflow-y-auto px-3 py-2"
             role="log"
             aria-live="polite"
+            aria-busy={isLoading}
           >
             {(metrics || agentStatus) && (
               <div className="space-y-1.5 rounded-lg border border-[color-mix(in_srgb,var(--border-subtle)_60%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary)_3%,transparent)] p-2">
@@ -247,34 +299,24 @@ export default function ZedActivityDrawer({
               </div>
             ) : null}
 
-            {[...assistantTurns].reverse().map((msg, idx) => (
-              <div key={msg.timestamp || idx} className="space-y-1.5">
-                {typeof msg.content === 'string' && msg.content && msg.content !== 'initial' ? (
-                  <p className="text-[11px] leading-snug text-[var(--text-primary)]">
-                    {msg.content}
-                  </p>
-                ) : null}
-                {Array.isArray(msg.tool_results)
-                  ? msg.tool_results.map((entry, i) => (
-                      <ZedActionCard
-                        key={`${msg.timestamp}-${i}`}
-                        entry={entry}
-                        onFocusTerminal={(parsed) => {
-                          if (typeof window === 'undefined') return;
-                          window.dispatchEvent(
-                            new CustomEvent('devhub:terminal-focus', {
-                              detail: { panelId: parsed?.terminalId || parsed?.session_id },
-                            })
-                          );
-                        }}
-                        onOpenUrl={(parsed) => {
-                          if (parsed?.url) dispatchZedOpenUrl({ url: parsed.url, focus: true });
-                        }}
-                      />
-                    ))
-                  : null}
-              </div>
+            {[...visibleTurns].reverse().map((msg) => (
+              <ZedActivityMessage
+                key={msg.timestamp || msg.id}
+                msg={msg}
+                onFocusTerminal={handleFocusTerminal}
+                onOpenUrl={handleOpenUrl}
+              />
             ))}
+
+            {hiddenCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="w-full rounded-md border border-[var(--border-subtle)] py-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                Mostrar {hiddenCount} mensajes anteriores
+              </button>
+            ) : null}
           </div>
         </motion.div>
       ) : null}

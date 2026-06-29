@@ -24,11 +24,11 @@
 
 ## Architecture (corrected intent, 2026-06-03)
 
-| Surface | What it is | Status |
-| ------- | ---------- | ------ |
-| **Asistente Zed** | Workspace assistant: chat in right dock, visible terminals/browser | **Canonical** — 9 tools, MiniMax M3, `TOOL:`/`PARAM:` protocol |
-| **Launchpad “Zed” entry** | Legacy label in swarm launch roster mapping to `swarm-director` | **Misaligned** — not the same as Asistente Zed; should be renamed or removed |
-| **CommandBar** (WIP) | Single-shot command executor (deterministic router) | Complementary, not a replacement |
+| Surface                   | What it is                                                         | Status                                                                       |
+| ------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| **Asistente Zed**         | Workspace assistant: chat in right dock, visible terminals/browser | **Canonical** — 9 tools, MiniMax M3, `TOOL:`/`PARAM:` protocol               |
+| **Launchpad “Zed” entry** | Legacy label in swarm launch roster mapping to `swarm-director`    | **Misaligned** — not the same as Asistente Zed; should be renamed or removed |
+| **CommandBar** (WIP)      | Single-shot command executor (deterministic router)                | Complementary, not a replacement                                             |
 
 **Zed is not a swarm agent.** It can call `get_swarm_status` or (future) launch a mission, but it does not run inside the swarm protocol as a participant.
 
@@ -142,3 +142,26 @@ From `SWARM_COMMUNICATION_HANDOFF_2026-05-30.md`: deliveries are written to `/tm
 3. **Reconcile documentation** with implementation — either update the prompt template or fix `buildRoleAgentProfile` to route Zed through all 8 phases
 4. **Add Zed entry** to `SWARM_ROLE_DEFAULT_MODELS` if not already present
 5. **Integrate pending_deliveries** handoff mechanism so deliveries reach the agent runtime
+
+---
+
+## Implementation updates
+
+### Fase 2 — UI fluidez y optimización (2026-06-29)
+
+- `src/lib/asistente/useZedChat.js`
+  - Agregado `streamingMessage`/`streamingIdRef` para mostrar respuestas parciales mientras llegan los eventos SSE `text_delta`.
+  - El mensaje parcial se limpia en `done` y se reemplaza por el mensaje final con `tool_results`, `meta` y `model`.
+  - `handleStop` aborta el controller y descarta el mensaje parcial; un error de aborto se traduce a `(Solicitud cancelada)`.
+- `src/components/asistente/ZedAmbientOverlay.jsx`
+  - Refactor en subcomponentes memoizados: `ZedAuraContainer`, `ZedPillComposer`, `ZedCollapsedPill`.
+  - `displayMessages`/`displayAssistantMessage` unen `messages` + `streamingMessage` para aura, status y pill colapsado.
+  - Focus del compositor gestionado con `useLayoutEffect` + `requestAnimationFrame`; se guarda y restaura el elemento activo.
+  - Añadidos `aria-busy`, `aria-live="polite"` y un `span.sr-only` para anunciar deltas de streaming.
+- `src/components/asistente/ZedActivityDrawer.jsx`
+  - `assistantTurns` memoizado; render limitado a 50 mensajes con botón "Mostrar más".
+  - Extraído `ZedActivityMessage` memoizado con estilo y cursor para mensajes parciales.
+  - `onFocusTerminal`/`onOpenUrl` estabilizados con `useCallback`.
+- Tests agregados:
+  - `src/lib/asistente/__tests__/useZedChat.streaming.test.js`
+  - `src/components/asistente/__tests__/ZedActivityDrawer.limit.test.jsx`

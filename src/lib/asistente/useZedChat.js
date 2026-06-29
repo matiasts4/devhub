@@ -88,11 +88,13 @@ export function useZedChat({
     max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
     workspace_terminals: [],
   });
+  const [streamingMessage, setStreamingMessage] = useState(null);
   const textareaRef = useRef(null);
   const dispatchedSessionIdsRef = useRef(new Set());
   const lastDispatchedTypeRef = useRef(null);
   const hydratedOpenTerminalRef = useRef(null);
   const pendingPlanIdRef = useRef(null);
+  const streamingIdRef = useRef(null);
 
   const planRunner = useZedPlanRunner({ context: requestContext });
 
@@ -224,14 +226,25 @@ export function useZedChat({
               partial: true,
             });
           }
-          if (event === 'text_delta' && data?.text) {
+          if (event === 'text_delta' && typeof data?.text === 'string') {
             finalText = data.text;
+            if (!streamingIdRef.current) {
+              streamingIdRef.current = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            }
+            setStreamingMessage({
+              role: 'assistant',
+              content: data.text,
+              timestamp: streamingIdRef.current,
+              partial: true,
+            });
           }
           if (event === 'done' && data && typeof data === 'object') {
             finalText = data.text || finalText;
             toolResults = Array.isArray(data.tool_results) ? data.tool_results : toolResults;
             streamMeta = data.meta || null;
             streamModel = data.model || null;
+            streamingIdRef.current = null;
+            setStreamingMessage(null);
             if (data.meta?.fast_path) {
               zedClientDebug('fast_path', { intent: data.meta.intent, model: data.model });
             }
@@ -405,6 +418,8 @@ export function useZedChat({
         const durationMs = Date.now() - roundTripStart;
         recordChatRoundTrip({ durationMs, error: true, source: 'text' });
       }
+      streamingIdRef.current = null;
+      setStreamingMessage(null);
       const aborted = error?.name === 'AbortError';
       const content = aborted
         ? '(Solicitud cancelada)'
@@ -753,6 +768,8 @@ export function useZedChat({
     abortController?.abort();
     setIsLoading(false);
     setCurrentStep(null);
+    streamingIdRef.current = null;
+    setStreamingMessage(null);
   }, [abortController]);
 
   const handleKeyDown = useCallback(
@@ -861,6 +878,7 @@ export function useZedChat({
     voiceSettings,
     metrics,
     agentStatus,
+    streamingMessage,
     planState: planRunner.planState,
     planControls: {
       pause: planRunner.pause,

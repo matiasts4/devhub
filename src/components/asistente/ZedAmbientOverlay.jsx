@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Send, Square } from 'lucide-react';
 import { useZedChat } from '@/lib/asistente/useZedChat';
@@ -70,7 +70,6 @@ function ZedAuraFrame({
   listening = false,
   vuLevel = 0,
 }) {
-  // Speaking/listening force a livelier intensity than the base phase budget.
   const baseIntensity = clampZedAuraIntensity(phase);
   const intensity = speaking
     ? Math.max(baseIntensity, 0.42)
@@ -136,6 +135,199 @@ function ZedAuraFrame({
   );
 }
 
+const ZedAuraContainer = memo(function ZedAuraContainer({
+  phase,
+  reducedMotion,
+  toolType,
+  outcomeFlash,
+  speaking,
+  recording,
+  vuLevel,
+}) {
+  if (!shouldShowZedAura(phase) && !speaking && !recording) return null;
+  return (
+    <AnimatePresence>
+      <ZedAuraFrame
+        key="zed-aura"
+        phase={phase}
+        reducedMotion={reducedMotion}
+        toolType={toolType}
+        outcomeFlash={outcomeFlash}
+        speaking={speaking}
+        listening={recording}
+        vuLevel={vuLevel}
+      />
+    </AnimatePresence>
+  );
+});
+
+const ZedPillComposer = memo(function ZedPillComposer({
+  inputRef,
+  input,
+  composerValue,
+  setInput,
+  recording,
+  voiceActive,
+  isLoading,
+  onInputKeyDown,
+  onPaste,
+  quickSuggestions,
+  suggestionIndex,
+  voiceEnabled,
+  voiceButtonProps,
+  onStop,
+  onSend,
+}) {
+  return (
+    <div className="flex items-center gap-2" data-zed-voice-composer="1">
+      <div
+        className="zed-pill-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white bg-[linear-gradient(135deg,var(--accent-primary),color-mix(in_srgb,var(--accent-primary)_45%,#0f2744))]"
+        data-zed-state={isLoading ? 'executing' : recording ? 'listening' : 'idle'}
+      >
+        {voiceActive ? (
+          <ZedEqualizer className="text-white" />
+        ) : (
+          <span className="text-[10px] font-bold leading-none">Z</span>
+        )}
+      </div>
+      <div className="relative flex flex-1 items-center">
+        <textarea
+          ref={inputRef}
+          value={composerValue}
+          onChange={(e) => {
+            if (!recording) setInput(e.target.value);
+          }}
+          onKeyDown={onInputKeyDown}
+          onPaste={onPaste}
+          placeholder={voiceActive ? 'Escuchando…' : ''}
+          rows={1}
+          className="max-h-[140px] min-h-[28px] w-full resize-none bg-transparent py-1 text-[11px] leading-snug outline-none overflow-y-auto"
+          style={{ color: 'var(--text-primary)' }}
+          disabled={isLoading || recording}
+        />
+        {!input.trim() && !recording && !isLoading && !voiceActive ? (
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={suggestionIndex}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.35, ease: 'easeInOut' }}
+              className="pointer-events-none absolute left-0 top-0 flex h-full items-center text-[11px] text-[var(--text-muted)]"
+              aria-hidden="true"
+            >
+              Probá “{quickSuggestions[suggestionIndex]}”
+            </motion.span>
+          </AnimatePresence>
+        ) : null}
+      </div>
+      {voiceEnabled ? <ZedVoiceButton {...voiceButtonProps} className="!h-7 !w-7" /> : null}
+      {isLoading ? (
+        <button
+          type="button"
+          onClick={onStop}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--danger,#ef4444)] text-white"
+          aria-label="Detener Zed"
+        >
+          <Square className="h-3 w-3 fill-current" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={!input.trim()}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white disabled:opacity-40"
+          aria-label="Enviar a Zed"
+        >
+          <Send className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+});
+
+const ZedCollapsedPill = memo(function ZedCollapsedPill({
+  speaking,
+  isLoading,
+  currentStep,
+  statusLine,
+  streamingText,
+  quickSuggestions,
+  suggestionIndex,
+  voiceEnabled,
+  onVoiceToggle,
+  onOpen,
+}) {
+  const displayLine = streamingText || statusLine;
+  return (
+    <div
+      className="flex h-[32px] w-full cursor-pointer items-center gap-2.5 px-3"
+      role="button"
+      tabIndex={0}
+      aria-label="Abrir Zed"
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <span
+        className={[
+          'h-1.5 w-1.5 shrink-0 rounded-full',
+          isLoading || speaking
+            ? 'bg-[var(--accent-primary)]'
+            : 'bg-[var(--accent-primary)] shadow-[0_0_6px_color-mix(in_srgb,var(--accent-primary)_80%,transparent)]',
+        ].join(' ')}
+        aria-hidden="true"
+      />
+      <span
+        className="min-w-0 flex-1 truncate text-[11px] leading-none"
+        style={{ color: 'var(--text-secondary)' }}
+        role="status"
+        aria-live="polite"
+      >
+        {speaking ? (
+          <span className="uppercase tracking-wide">Hablando…</span>
+        ) : isLoading ? (
+          <span className="uppercase tracking-wide">{currentStep?.label || 'Zed…'}</span>
+        ) : displayLine ? (
+          <span key={displayLine} className="zed-status-line block truncate">
+            {displayLine}
+          </span>
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={suggestionIndex}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.35, ease: 'easeInOut' }}
+              className="zed-status-line block truncate"
+            >
+              Probá “{quickSuggestions[suggestionIndex]}”
+            </motion.span>
+          </AnimatePresence>
+        )}
+      </span>
+      {voiceEnabled && !isLoading && !speaking ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onVoiceToggle();
+          }}
+          aria-label="Hablar con Zed"
+          className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
+        >
+          Mic
+        </button>
+      ) : null}
+    </div>
+  );
+});
+
 export default function ZedAmbientOverlay({
   sessionKey = 'devhub-zed-chat-default',
   getTerminalPanelCount = null,
@@ -166,13 +358,14 @@ export default function ZedAmbientOverlay({
     voiceSettings,
     metrics,
     agentStatus,
+    streamingMessage,
     planState,
     planControls,
     pendingStepApproval,
   } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals });
 
   const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings?.voiceEnabled;
-  const { speak, speaking, ttsError } = useVoiceTts({ enabled: voiceSettings?.ttsEnabled });
+  const { speak, speaking } = useVoiceTts({ enabled: voiceSettings?.ttsEnabled });
 
   const onFinalTranscript = useCallback(
     (text) => {
@@ -202,7 +395,6 @@ export default function ZedAmbientOverlay({
     onPartial: onPartialTranscript,
   });
 
-  // ponytail: only bind composer to STT while PTT is held — leftover transcript must not block typing
   const voiceActive = recording;
   const composerValue = recording ? liveTranscript : input;
 
@@ -254,6 +446,7 @@ export default function ZedAmbientOverlay({
     }, 4500);
     return () => clearInterval(id);
   }, [quickSuggestions.length]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handler = (e) => {
@@ -284,10 +477,11 @@ export default function ZedAmbientOverlay({
     const nextHeight = Math.min(el.scrollHeight, 140);
     el.style.height = `${nextHeight}px`;
   }, [input]);
+
   const lastSpokenRef = useRef(null);
   const lastSpokenApprovalRef = useRef(null);
-
   const pillInnerRef = useRef(null);
+  const preOpenActiveElementRef = useRef(null);
 
   const lastUserMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -295,6 +489,7 @@ export default function ZedAmbientOverlay({
     }
     return null;
   }, [messages]);
+
   const [statusLine, setStatusLine] = useState(null);
   const [statusExiting, setStatusExiting] = useState(false);
   const lastStatusTurnRef = useRef(null);
@@ -335,19 +530,39 @@ export default function ZedAmbientOverlay({
     [clearStatusTimers, dismissStatus]
   );
 
+  const displayMessages = useMemo(
+    () => (streamingMessage ? [...messages, streamingMessage] : messages),
+    [messages, streamingMessage]
+  );
+
+  const displayAssistantMessage = useMemo(
+    () => streamingMessage || lastAssistantMessage,
+    [streamingMessage, lastAssistantMessage]
+  );
+
+  const streamingText = streamingMessage?.content || '';
+
   const phase = useMemo(
     () => resolveZedAmbientPhase(isLoading, isOpen, statusLine),
     [isLoading, isOpen, statusLine]
   );
-  const showAura = shouldShowZedAura(phase) || speaking || recording;
-  const showPill =
-    isOpen ||
-    isLoading ||
-    speaking ||
-    Boolean(statusLine) ||
-    activityExpanded ||
-    Boolean(currentStep);
-  const collapsed = !isOpen;
+
+  const { showAura, showPill, collapsed, pillState } = useMemo(() => {
+    const _showAura = shouldShowZedAura(phase) || speaking || recording;
+    const _showPill =
+      isOpen ||
+      isLoading ||
+      speaking ||
+      Boolean(statusLine) ||
+      activityExpanded ||
+      Boolean(currentStep);
+    return {
+      showAura: _showAura,
+      showPill: _showPill,
+      collapsed: !isOpen,
+      pillState: isLoading ? 'executing' : speaking ? 'speaking' : recording ? 'listening' : 'idle',
+    };
+  }, [phase, speaking, recording, isOpen, isLoading, statusLine, activityExpanded, currentStep]);
 
   useEffect(() => {
     if (!showPill || typeof window === 'undefined') return undefined;
@@ -387,18 +602,9 @@ export default function ZedAmbientOverlay({
     };
   }, [showPill]);
 
-  // Visual state drives pill glow + avatar treatment (CSS via data-zed-state).
-  const pillState = isLoading
-    ? 'executing'
-    : speaking
-      ? 'speaking'
-      : recording
-        ? 'listening'
-        : 'idle';
-
   const lastTurnTimestamp =
-    lastAssistantMessage && typeof lastAssistantMessage.timestamp === 'string'
-      ? lastAssistantMessage.timestamp
+    displayAssistantMessage && typeof displayAssistantMessage.timestamp === 'string'
+      ? displayAssistantMessage.timestamp
       : null;
 
   useEffect(() => {
@@ -409,20 +615,22 @@ export default function ZedAmbientOverlay({
     if (!lastTurnTimestamp || lastTurnTimestamp === 'initial') return;
     if (lastTurnTimestamp === lastStatusTurnRef.current) return;
 
-    const line = buildZedAmbientStatus(lastAssistantMessage);
+    const line = buildZedAmbientStatus(displayAssistantMessage);
     if (!line || line === DEFAULT_STATUS_SKIP) return;
 
     lastStatusTurnRef.current = lastTurnTimestamp;
     showStatus(line);
-  }, [hideStatus, isLoading, lastAssistantMessage, lastTurnTimestamp, showStatus]);
+  }, [hideStatus, isLoading, displayAssistantMessage, lastTurnTimestamp, showStatus]);
 
   useEffect(() => {
     if (isLoading || !voiceSettings?.ttsEnabled) return;
-    if (!lastAssistantMessage?.content || lastAssistantMessage.timestamp === 'initial') return;
-    if (lastSpokenRef.current === lastAssistantMessage.timestamp) return;
-    lastSpokenRef.current = lastAssistantMessage.timestamp;
-    speak(lastAssistantMessage.content);
-  }, [isLoading, lastAssistantMessage, speak, voiceSettings?.ttsEnabled]);
+    if (!displayAssistantMessage?.content || displayAssistantMessage.timestamp === 'initial')
+      return;
+    if (displayAssistantMessage.partial) return;
+    if (lastSpokenRef.current === displayAssistantMessage.timestamp) return;
+    lastSpokenRef.current = displayAssistantMessage.timestamp;
+    speak(displayAssistantMessage.content);
+  }, [isLoading, displayAssistantMessage, speak, voiceSettings?.ttsEnabled]);
 
   useEffect(() => {
     if (!voiceSettings?.ttsEnabled || !pendingApproval?.preview) return;
@@ -434,10 +642,21 @@ export default function ZedAmbientOverlay({
     speak(pendingApproval.preview);
   }, [lastUserMessage, pendingApproval, speak, voiceSettings?.ttsEnabled]);
 
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isOpen) {
+      preOpenActiveElementRef.current = document.activeElement;
+      const rafId = requestAnimationFrame(() => inputRef.current?.focus());
+      return () => cancelAnimationFrame(rafId);
+    }
+    const rafId = requestAnimationFrame(() => {
+      const el = preOpenActiveElementRef.current;
+      if (el && typeof el.focus === 'function') {
+        el.focus();
+      }
+      preOpenActiveElementRef.current = null;
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [isOpen]);
 
   useEffect(() => {
@@ -480,22 +699,43 @@ export default function ZedAmbientOverlay({
     [close, handleKeyDown, input, isLoading]
   );
 
+  const onOpenCollapsed = useCallback(() => open(), [open]);
+  const onToggleActivity = useCallback(() => setActivityExpanded((v) => !v), []);
+
+  const voiceButtonProps = useMemo(
+    () => ({
+      recording,
+      enginePhase,
+      available,
+      engineReady,
+      statusText,
+      errorText,
+      disabled: isLoading,
+      onToggle: handleVoiceToggle,
+    }),
+    [
+      recording,
+      enginePhase,
+      available,
+      engineReady,
+      statusText,
+      errorText,
+      isLoading,
+      handleVoiceToggle,
+    ]
+  );
+
   return (
     <>
-      <AnimatePresence>
-        {showAura ? (
-          <ZedAuraFrame
-            key="zed-aura"
-            phase={phase}
-            reducedMotion={prefersReducedMotion}
-            toolType={overlayToolType}
-            outcomeFlash={outcomeFlash}
-            speaking={speaking}
-            listening={recording}
-            vuLevel={vuLevel}
-          />
-        ) : null}
-      </AnimatePresence>
+      <ZedAuraContainer
+        phase={phase}
+        reducedMotion={prefersReducedMotion}
+        toolType={overlayToolType}
+        outcomeFlash={outcomeFlash}
+        speaking={speaking}
+        recording={recording}
+        vuLevel={vuLevel}
+      />
 
       <AnimatePresence>
         {showPill ? (
@@ -504,6 +744,7 @@ export default function ZedAmbientOverlay({
             data-testid="zed-ambient-pill"
             role="region"
             aria-label="Zed asistente"
+            aria-busy={isLoading}
             className="fixed inset-x-0 bottom-6 z-[260] flex justify-center pointer-events-none"
             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -523,8 +764,8 @@ export default function ZedAmbientOverlay({
             >
               <ZedActivityDrawer
                 expanded={activityExpanded}
-                onToggle={() => setActivityExpanded((v) => !v)}
-                messages={messages}
+                onToggle={onToggleActivity}
+                messages={displayMessages}
                 currentStep={currentStep}
                 pendingApproval={pendingApproval}
                 auditTrail={auditTrail}
@@ -557,153 +798,46 @@ export default function ZedAmbientOverlay({
                 />
 
                 {isOpen ? (
-                  <div className="flex items-center gap-2" data-zed-voice-composer="1">
-                    <div
-                      className="zed-pill-avatar flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white bg-[linear-gradient(135deg,var(--accent-primary),color-mix(in_srgb,var(--accent-primary)_45%,#0f2744))]"
-                      data-zed-state={pillState}
-                    >
-                      {speaking ? (
-                        <ZedEqualizer className="text-white" />
-                      ) : (
-                        <span className="text-[10px] font-bold leading-none">Z</span>
-                      )}
-                    </div>
-                    <div className="relative flex flex-1 items-center">
-                      <textarea
-                        ref={inputRef}
-                        value={composerValue}
-                        onChange={(e) => {
-                          if (!recording) setInput(e.target.value);
-                        }}
-                        onKeyDown={onInputKeyDown}
-                        onPaste={handlePaste}
-                        placeholder={voiceActive ? 'Escuchando…' : ''}
-                        rows={1}
-                        className="max-h-[140px] min-h-[28px] w-full resize-none bg-transparent py-1 text-[11px] leading-snug outline-none overflow-y-auto"
-                        style={{ color: 'var(--text-primary)' }}
-                        disabled={isLoading || recording}
-                      />
-                      {!input.trim() && !recording && !isLoading && !voiceActive ? (
-                        <AnimatePresence mode="wait">
-                          <motion.span
-                            key={suggestionIndex}
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: 0.35, ease: 'easeInOut' }}
-                            className="pointer-events-none absolute left-0 top-0 flex h-full items-center text-[11px] text-[var(--text-muted)]"
-                            aria-hidden="true"
-                          >
-                            Probá “{quickSuggestions[suggestionIndex]}”
-                          </motion.span>
-                        </AnimatePresence>
-                      ) : null}
-                    </div>
-                    {voiceEnabled ? (
-                      <ZedVoiceButton
-                        recording={recording}
-                        enginePhase={enginePhase}
-                        available={available}
-                        disabled={isLoading}
-                        onToggle={handleVoiceToggle}
-                        className="!h-7 !w-7"
-                      />
-                    ) : null}
-                    {isLoading ? (
-                      <button
-                        type="button"
-                        onClick={handleStop}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--danger,#ef4444)] text-white"
-                        aria-label="Detener Zed"
-                      >
-                        <Square className="h-3 w-3 fill-current" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={submitAndCollapse}
-                        disabled={!input.trim()}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white disabled:opacity-40"
-                        aria-label="Enviar a Zed"
-                      >
-                        <Send className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
+                  <ZedPillComposer
+                    inputRef={inputRef}
+                    input={input}
+                    composerValue={composerValue}
+                    setInput={setInput}
+                    recording={recording}
+                    voiceActive={voiceActive}
+                    isLoading={isLoading}
+                    onInputKeyDown={onInputKeyDown}
+                    onPaste={handlePaste}
+                    quickSuggestions={quickSuggestions}
+                    suggestionIndex={suggestionIndex}
+                    voiceEnabled={voiceEnabled}
+                    voiceButtonProps={voiceButtonProps}
+                    onStop={handleStop}
+                    onSend={submitAndCollapse}
+                  />
                 ) : (
-                  <div
-                    className="flex h-[32px] w-full cursor-pointer items-center gap-2.5 px-3"
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Abrir Zed"
-                    onClick={() => open()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        open();
-                      }
-                    }}
-                  >
-                    <span
-                      className={[
-                        'h-1.5 w-1.5 shrink-0 rounded-full',
-                        isLoading || speaking
-                          ? 'bg-[var(--accent-primary)]'
-                          : 'bg-[var(--accent-primary)] shadow-[0_0_6px_color-mix(in_srgb,var(--accent-primary)_80%,transparent)]',
-                      ].join(' ')}
-                      aria-hidden="true"
-                    />
-                    <span
-                      className="min-w-0 flex-1 truncate text-[11px] leading-none"
-                      style={{ color: 'var(--text-secondary)' }}
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {speaking ? (
-                        <span className="uppercase tracking-wide">Hablando…</span>
-                      ) : isLoading ? (
-                        <span className="uppercase tracking-wide">
-                          {currentStep?.label || 'Zed…'}
-                        </span>
-                      ) : statusLine ? (
-                        <span key={statusLine} className="zed-status-line block truncate">
-                          {statusLine}
-                        </span>
-                      ) : (
-                        <AnimatePresence mode="wait">
-                          <motion.span
-                            key={suggestionIndex}
-                            initial={{ opacity: 0, y: 4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -4 }}
-                            transition={{ duration: 0.35, ease: 'easeInOut' }}
-                            className="zed-status-line block truncate"
-                          >
-                            Probá “{quickSuggestions[suggestionIndex]}”
-                          </motion.span>
-                        </AnimatePresence>
-                      )}
-                    </span>
-                    {voiceEnabled && !isLoading && !speaking ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleVoiceToggle();
-                        }}
-                        aria-label="Hablar con Zed"
-                        className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
-                      >
-                        Mic
-                      </button>
-                    ) : null}
-                  </div>
+                  <ZedCollapsedPill
+                    speaking={speaking}
+                    isLoading={isLoading}
+                    currentStep={currentStep}
+                    statusLine={statusLine}
+                    streamingText={streamingText}
+                    quickSuggestions={quickSuggestions}
+                    suggestionIndex={suggestionIndex}
+                    voiceEnabled={voiceEnabled}
+                    onVoiceToggle={handleVoiceToggle}
+                    onOpen={onOpenCollapsed}
+                  />
                 )}
               </div>
             </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {streamingText}
+      </span>
     </>
   );
 }
