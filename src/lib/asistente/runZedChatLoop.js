@@ -9,6 +9,7 @@ import { labelForZedToolStart, labelForZedToolDone } from './zedToolLabels';
 import { mergeWorkspaceTerminalProcesses } from './workspaceTerminalRegistry';
 import { shouldShortCircuitAfterTools } from './zedShortCircuit';
 import { formatZedToolResultsReply } from './zedFastPathResponse';
+import { streamMinimax } from './streamMinimax';
 
 export function toolHasRequiredSchema(toolDef) {
   if (!toolDef || !toolDef.parameters) return false;
@@ -117,6 +118,7 @@ async function executeSingleTool(registry, requestContext, tc, emit) {
  * @param {string} params.model
  * @param {number} [params.maxTokens]
  * @param {(evt: { type: string, payload: unknown }) => void} [params.onEvent]
+ * @param {boolean} [params.enableStreaming] when true, use MiniMax SSE streaming for lower TTFT
  * @returns {Promise<{ finalText: string, allToolResults: Array, meta: object }>}
  */
 export async function runZedChatLoop({
@@ -131,6 +133,7 @@ export async function runZedChatLoop({
   model,
   maxTokens = 2048,
   onEvent = null,
+  enableStreaming = false,
 }) {
   const emit = (type, payload) => {
     if (typeof onEvent === 'function') onEvent({ type, payload });
@@ -147,15 +150,45 @@ export async function runZedChatLoop({
     const turnToolResults = [];
 
     let data;
+    let streamedThisTurn = false;
     try {
-      data = await callMinimax({
-        model,
-        maxTokens,
-        system: systemPrompt,
-        messages: conversation,
-        apiKey,
-        tools: anthropicTools,
-      });
+      if (enableStreaming) {
+        streamedThisTurn = true;
+        const streamingResult = await streamMinimax({
+          model,
+          maxTokens,
+          system: systemPrompt,
+          messages: conversation,
+          apiKey,
+          tools: anthropicTools,
+          onTextDelta: (text) => {
+            if (text) emit('text_delta', { text });
+          },
+          onThinkingDelta: (thinking) => {
+            if (thinking) emit('thinking', { thinking });
+          },
+        });
+        data = {
+          content: [
+            ...(streamingResult.text ? [{ type: 'text', text: streamingResult.text }] : []),
+            ...streamingResult.toolCalls.map((tc) => ({
+              type: 'tool_use',
+              id: tc.id,
+              name: tc.name,
+              input: tc.input,
+            })),
+          ],
+        };
+      } else {
+        data = await callMinimax({
+          model,
+          maxTokens,
+          system: systemPrompt,
+          messages: conversation,
+          apiKey,
+          tools: anthropicTools,
+        });
+      }
     } catch (err) {
       emit('error', {
         message: err.message,
@@ -198,7 +231,7 @@ export async function runZedChatLoop({
       }
     }
 
-    if (rawText.trim()) {
+    if (!streamedThisTurn && rawText.trim()) {
       emit('text_delta', { text: rawText });
     }
 
@@ -298,6 +331,7 @@ export function createZedSseStream(params) {
       try {
         const { finalText, allToolResults, meta } = await runZedChatLoop({
           ...params,
+          enableStreaming: true,
           onEvent: ({ type, payload }) => {
             controller.enqueue(encoder.encode(encodeZedSseEvent(type, payload)));
           },

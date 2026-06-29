@@ -9,6 +9,12 @@ import {
 } from '../runZedChatLoop';
 import { ToolRegistry } from '../tools/registry';
 
+jest.mock('../streamMinimax', () => ({
+  streamMinimax: jest.fn(),
+}));
+
+const { streamMinimax } = require('../streamMinimax');
+
 describe('toolHasRequiredSchema', () => {
   test('detects required parameter', () => {
     expect(toolHasRequiredSchema({ parameters: { url: { required: true } } })).toBe(true);
@@ -253,5 +259,71 @@ describe('runZedChatLoop', () => {
     expect(order.indexOf('c-start')).toBeLessThan(order.indexOf('b'));
     // Results remain in model order.
     expect(allToolResults.map((r) => r.tool)).toEqual(['read_a', 'write_b', 'read_c']);
+  });
+
+  test('streams text deltas when enableStreaming is true', async () => {
+    streamMinimax.mockImplementation(async ({ onTextDelta }) => {
+      onTextDelta('Hola desde streaming');
+      return { text: 'Hola desde streaming', toolCalls: [], stopReason: 'end_turn' };
+    });
+
+    const registry = buildRegistry();
+    const events = [];
+    const { finalText, allToolResults } = await runZedChatLoop({
+      systemPrompt: '',
+      conversation: [],
+      registry,
+      anthropicTools: registry.toAnthropicTools(),
+      apiKey: 'test',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax: jest.fn(),
+      model: 'test-model',
+      enableStreaming: true,
+      onEvent: (evt) => events.push(evt),
+    });
+
+    expect(finalText).toBe('Hola desde streaming');
+    expect(allToolResults).toEqual([]);
+    expect(
+      events.some((e) => e.type === 'text_delta' && e.payload.text === 'Hola desde streaming')
+    ).toBe(true);
+    expect(streamMinimax).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'test-model',
+        apiKey: 'test',
+        messages: [],
+      })
+    );
+  });
+
+  test('executes streamed native tool_use results', async () => {
+    streamMinimax.mockResolvedValue({
+      text: '',
+      toolCalls: [{ id: 'tu-stream', name: 'echo', input: { value: 'streamed' } }],
+      stopReason: 'tool_use',
+    });
+
+    const registry = buildRegistry({
+      echo: async (input) => ({ echoed: input.value }),
+    });
+
+    const { allToolResults } = await runZedChatLoop({
+      systemPrompt: '',
+      conversation: [],
+      registry,
+      anthropicTools: registry.toAnthropicTools(),
+      apiKey: 'test',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax: jest.fn(),
+      model: 'test-model',
+      enableStreaming: true,
+    });
+
+    expect(allToolResults).toHaveLength(1);
+    expect(allToolResults[0].tool).toBe('echo');
+    expect(allToolResults[0].result).toEqual({ echoed: 'streamed' });
+    expect(allToolResults[0].id).toBe('tu-stream');
   });
 });

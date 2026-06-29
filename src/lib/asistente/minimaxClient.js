@@ -29,7 +29,7 @@ export class MinimaxError extends Error {
   }
 }
 
-function isRetryableStatus(status) {
+export function isRetryableStatus(status) {
   if (!status) return true;
   return status === 429 || status === 502 || status === 503 || status === 504;
 }
