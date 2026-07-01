@@ -272,5 +272,71 @@ Build marker final: `2026-07-01-restore-v4-survivor-recovery-v6`.
 
 - Working tree con cambios no comiteados propios del entorno (backups de DB, ajustes de MCP, markers de build en `mcps/`).
 - Los tres commits de terminal ya están en la historia local.
-- **No se hizo push** en esta sesión; los commits quedan listos para push cuando se decida publicar la rama.
 - El fix v6 es el estado estable que se debe seguir probando en Tauri dev e installed app.
+
+---
+
+## 11. Seguimiento — Opción B: terminales vivas y montadas por workspace
+
+**Fecha de inicio:** 2026-07-01 (misma sesión, continuación).  
+**Objetivo:** reducir/eliminar el tiempo de carga y los parpadeos al cambiar de workspace, manteniendo la funcionalidad de que los paneles no se oscurezcan.
+
+### 11.1 Diagnóstico
+
+A pesar de la corrección v6, el cambio de workspace seguía mostrando:
+
+- Parpadeos durante el primer segundo.
+- Tiempos de carga de ~2-3 segundos para que la terminal/TUI esté usable.
+- En Grok: pantalla negra transitoria de hasta ~3 segundos antes de refrescar.
+
+La causa principal identificada es que **al ocultar un workspace el renderer GPU (WebGL/Canvas) se liberaba**, y al volver a mostrarlo se tenía que re-crear el contexto GPU y re-attach el addon, lo que introduce latencia y parpadeos.
+
+### 11.2 Decisión
+
+Implementar la **Opción B**: mantener terminales vivas y montadas mientras el workspace exista. Los workspaces ya se renderizan todos con `visibility:hidden` (no se desmontan), así que el cambio se concentra en:
+
+1. No liberar el renderer GPU al ocultar workspace.
+2. No matar el PTY cuando el socket se desconecta brevemente.
+3. Aceptar el mayor uso de memoria/GPU a cambio de carga instantánea.
+
+### 11.3 Cambios realizados (commits locales pendientes de aprobación)
+
+| Commit (local) | Archivo(s)                                                 | Descripción                                                                                           |
+| -------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `68f09cd`      | `src/components/TerminalWorkspacesManager.jsx`             | Fase 1: quitar `layout="position"` y `layoutId` de la tab bar superior para transiciones más fluidas. |
+| `6351b2c`      | `src/components/TerminalTTY.jsx`                           | Fase 2: evitar segundo `requestAnimationFrame` de recovery cuando no hay GPU work pendiente.          |
+| `7843874`      | `src/components/TerminalTTY.jsx`                           | Fase 4 previa: condicionar `forceRepaint`/`fitRepaint` a recovery real.                               |
+| `7fed4da`      | `src/components/TerminalTTY.jsx`                           | Opción B Paso 1: eliminar lazy release GPU; no liberar addons al ocultar workspace.                   |
+| `576a249`      | `src/lib/terminal/ttyServer.js`                            | Opción B Paso 4: extender `DEFAULT_AUTO_KILL_GRACE_MS` y `SWARM_AUTO_KILL_GRACE_MS` a 1 hora.         |
+| (pendiente)    | `docs/28_Correccion_Paneles_Terminal_Negros_2026-07-01.md` | Opción B Paso 6: esta sección.                                                                        |
+
+### 11.4 Arquitectura resultante
+
+- `TerminalWorkspacesManager.jsx`: renderiza todos los workspaces con `visibility:hidden`; los inactivos permanecen en el DOM.
+- `TerminalTTY.jsx`: el addon WebGL/Canvas solo se libera en `disposeXtermRuntime()` (unmount) o cierre explícito de panel. Mientras el panel esté montado, el renderer permanece adjunto.
+- `ttyServer.js`: si el último socket de una sesión se cierra, el PTY entra en grace timer de 1 hora antes de ser eliminado, permitiendo reanudación.
+
+### 11.5 Riesgos y monitoreo
+
+| Riesgo                                            | Mitigación                                                                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Alto consumo de memoria/GPU con muchos workspaces | Monitorear en Tauri/installed app. Si es excesivo, futura fase puede limitar a N workspaces activos o liberar los menos usados. |
+| Fugas al cerrar workspace/panel                   | La liberación real sigue en `disposeXtermRuntime` y en handlers de cierre. Tests de ciclo de vida.                              |
+| Context loss de WebGL no detectado                | Se mantiene `handleWebglContextLoss` y `pendingWebglRecoveryRef` para recuperación real.                                        |
+| PTY zombie                                        | Grace timer de 1 hora; eventualmente se limpia.                                                                                 |
+
+### 11.6 Verificación recomendada
+
+1. Cambiar entre workspaces con terminales: debe ser instantáneo y sin parpadeos.
+2. Dejar un workspace oculto por más de 30 s, volver: debe seguir funcionando.
+3. Cerrar un workspace con terminales: debe liberar recursos.
+4. Cerrar un panel individual: debe liberar recursos.
+5. Grok/OpenCode/Kimi: al cambiar de workspace y volver, la TUI debe estar visible sin recargar.
+6. Monitorizar uso de memoria/GPU con varios workspaces abiertos.
+
+### 11.7 Estado actual
+
+- Todos los cambios están **commiteados localmente** en `task/rebuild-from-stable`.
+- **Pendientes de aprobación del usuario para push.**
+- Los tests automatizados muestran fallos preexistentes (mismos con y sin estos cambios); no se introdujeron nuevos fallos.
+- El build y la prueba en Tauri/installed app deben hacerse manualmente.
