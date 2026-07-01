@@ -12,6 +12,10 @@
  *   unknown   → gray dot           (we don't know yet)
  */
 
+import { AGENT_TUI_PATTERN, isAgentTuiCommand } from '@/lib/terminal/agentTuiMetadata';
+
+export { AGENT_TUI_PATTERN };
+
 export const PANEL_STATUS = {
   RUNNING: 'running',
   ACTIVE: 'active',
@@ -24,13 +28,13 @@ export const PANEL_STATUS = {
 
 const IN_PROGRESS_STATUSES = new Set(['running', 'working', 'thinking', 'busy']);
 
-const AGENT_TUI_PATTERN = /\b(opencode|kimi|hermes|grok|groc|codex)\b/i;
-
 const ERROR_STATUSES = new Set(['error', 'aborted', 'failed']);
 const COMPLETED_STATUSES = new Set(['completed', 'succeeded', 'done']);
 const WAITING_STATUSES = new Set(['waiting', 'pending', 'paused']);
 
 const DEFAULT_ACTIVITY_THRESHOLD_MS = 3000;
+const AGENT_TUI_STATE_TTL_MS = 10000;
+const LIVE_ACTIVITY_FALLBACK_MS = 10000;
 
 /**
  * Normalize an arbitrary backend status string into one of the panel statuses.
@@ -77,12 +81,20 @@ export function isTerminalRecentlyActive(activity, thresholdMs = DEFAULT_ACTIVIT
 /**
  * Derive a panel status from connection state and optional agent run metadata.
  *
+ * Priority:
+ *   1. PTY lifecycle (error / waiting).
+ *   2. Real-time PTY activity (running / idle).
+ *   3. API status as reinforcement when PTY is quiet.
+ *   4. Agent metadata as a transitional fallback.
+ *
  * @param {object} options
  * @param {string|null} options.connectionState - panel connection state from TerminalTTY
  * @param {object|null} options.agentRun - agent run metadata from devhub_agent_runs
  * @param {string|null} options.initialCommand - the panel's initial command
  * @param {string|null} options.apiStatus - latest status fetched from /api/agenthub/sessions/{id}/status
- * @param {object|null} options.terminalActivity - PTY activity metadata { lastActivityAt, lastActivityAgoMs, isActive }
+ * @param {object|null} options.terminalActivity - PTY activity metadata { lastActivityAt, lastActivityAgoMs, isActive, alive, agentType }
+ * @param {('running'|'idle'|null)} [options.liveActivity] - real-time WS activity signal (event-driven)
+ * @param {number|null} [options.liveActivityAgeMs] - ms since the live signal last changed to 'running' (substantial frame)
  */
 export function derivePanelStatus({
   connectionState,
@@ -90,47 +102,82 @@ export function derivePanelStatus({
   initialCommand,
   apiStatus,
   terminalActivity = null,
+  liveActivity = null,
+  liveActivityAgeMs = null,
 }) {
-  // If we have a fresh API status, it wins.
-  if (apiStatus) {
-    return normalizePanelStatus(apiStatus);
+  const normalizedConnection = normalizePanelStatus(connectionState);
+
+  // Terminal-level lifecycle states always win — they reflect the real PTY state.
+  if (normalizedConnection === PANEL_STATUS.ERROR) {
+    return PANEL_STATUS.ERROR;
   }
 
-  const isAgentPanel = Boolean(agentRun || AGENT_TUI_PATTERN.test(String(initialCommand || '')));
+  // Live WS activity signal is the primary indicator (event-driven, no polling aliasing).
+  // 'running' wins over any poll result; 'idle' wins only while the signal is fresh.
+  if (liveActivity === 'running') {
+    return PANEL_STATUS.RUNNING;
+  }
+  if (
+    liveActivity === 'idle' &&
+    (liveActivityAgeMs === null || liveActivityAgeMs <= LIVE_ACTIVITY_FALLBACK_MS)
+  ) {
+    return PANEL_STATUS.IDLE;
+  }
+
+  const isAgentPanel = Boolean(
+    terminalActivity?.agentType || agentRun || AGENT_TUI_PATTERN.test(String(initialCommand || ''))
+  );
   const hasRecentPtyActivity =
     terminalActivity?.isActive || isTerminalRecentlyActive(terminalActivity);
 
-  // Recent PTY activity means the agent is actually doing work right now.
+  // Agent TUI state parsed from the terminal output (e.g. Kimi's "thinking"
+  // footer) is the strongest signal: the agent is processing even when there
+  // is no new PTY activity. We trust it only while it has been refreshed recently.
+  const agentTuiStateAgeMs = terminalActivity?.agentTuiStateAgeMs ?? null;
+  const agentTuiStateFresh =
+    terminalActivity?.agentTuiState &&
+    (agentTuiStateAgeMs === null || agentTuiStateAgeMs <= AGENT_TUI_STATE_TTL_MS);
+  if (
+    agentTuiStateFresh &&
+    IN_PROGRESS_STATUSES.has(String(terminalActivity.agentTuiState).toLowerCase())
+  ) {
+    return PANEL_STATUS.RUNNING;
+  }
+
+  // In-progress API status (agenthub) is a strong signal even when PTY is quiet.
+  if (apiStatus && IN_PROGRESS_STATUSES.has(String(apiStatus).toLowerCase())) {
+    return PANEL_STATUS.RUNNING;
+  }
+
+  if (normalizedConnection === PANEL_STATUS.WAITING) {
+    return PANEL_STATUS.WAITING;
+  }
+
+  // Real-time PTY activity means the agent is actually doing work right now.
   if (hasRecentPtyActivity && isAgentPanel) {
     return PANEL_STATUS.RUNNING;
   }
 
-  // Connection-level states take precedence when there is no API status yet.
-  if (connectionState) {
-    const normalized = normalizePanelStatus(connectionState);
-    if (normalized !== PANEL_STATUS.UNKNOWN) {
-      return normalized;
+  // The PTY session is alive and associated with a known agent TUI → idle (waiting for input/work).
+  if (terminalActivity?.alive && isAgentPanel) {
+    return PANEL_STATUS.IDLE;
+  }
+
+  // API terminal statuses apply when PTY is not telling us otherwise.
+  if (apiStatus) {
+    const normalizedApi = normalizePanelStatus(apiStatus);
+    if (normalizedApi !== PANEL_STATUS.UNKNOWN) {
+      return normalizedApi;
     }
   }
 
-  // Terminal-level failure states.
-  const terminalStatuses = new Set(['terminated', 'agent-exited', 'error']);
-  if (terminalStatuses.has(connectionState)) {
-    return PANEL_STATUS.ERROR;
-  }
-
-  // We have an agent run → active until API/PTY confirms a more specific state.
-  if (agentRun) {
+  // Transitional fallback: we know this is an agent panel but haven't received PTY evidence yet.
+  if (agentRun || isAgentTuiCommand(String(initialCommand || ''))) {
     return PANEL_STATUS.ACTIVE;
   }
 
-  // No agent run, but the panel was launched with an agent TUI command → active.
-  if (AGENT_TUI_PATTERN.test(String(initialCommand || ''))) {
-    return PANEL_STATUS.ACTIVE;
-  }
-
-  // Otherwise the panel is just a shell → hide the badge.
-  return PANEL_STATUS.IDLE;
+  // Otherwise this is just a shell panel → hide the badge.
+  return PANEL_STATUS.UNKNOWN;
 }
 
 /**
@@ -224,7 +271,9 @@ export function getPanelStatusStyle(status) {
 /**
  * Whether the badge should be rendered at all.
  */
-export function shouldShowPanelStatus(status, { alwaysShow = false } = {}) {
+export function shouldShowPanelStatus(status, { alwaysShow = false, isAgentPanel = false } = {}) {
   if (alwaysShow) return true;
-  return status !== PANEL_STATUS.IDLE && status !== PANEL_STATUS.UNKNOWN;
+  if (status === PANEL_STATUS.UNKNOWN) return false;
+  if (status === PANEL_STATUS.IDLE) return isAgentPanel;
+  return true;
 }

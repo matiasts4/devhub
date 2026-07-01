@@ -28,7 +28,9 @@ use native_vte::{
     native_vte_close, native_vte_focus, native_vte_open, native_vte_paste, native_vte_probe,
     native_vte_raise, native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
-use system_clipboard::read_system_clipboard_text;
+use system_clipboard::{
+    read_system_clipboard_image, read_system_clipboard_text, write_clipboard_image_to_temp_file,
+};
 use voice_engine::{
     spawn_audio_engine, voice_set_enabled, voice_set_settings, voice_speak, voice_start_engine,
     voice_stop_engine, voice_stop_speak, voice_toggle_recording, VoiceState,
@@ -907,6 +909,8 @@ pub fn run() {
             native_vte_set_visibility,
             native_vte_close,
             read_system_clipboard_text,
+            read_system_clipboard_image,
+            write_clipboard_image_to_temp_file,
             dh_dispatch_action,
             voice_toggle_recording,
             voice_set_enabled,

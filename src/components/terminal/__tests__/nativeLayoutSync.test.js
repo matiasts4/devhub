@@ -1,9 +1,12 @@
 const { JSDOM } = require('jsdom');
 const {
   dispatchTerminalLayoutSettled,
+  dispatchTerminalSurvivorRecover,
   dispatchNativeVteWorkspaceSync,
   scheduleNativeSurfaceActivation,
   schedulePostLayoutNativeSync,
+  scheduleSurvivorRecoverAfterClose,
+  SURVIVOR_RECOVER_DELAYS_MS,
   createNativeLayoutSyncQueue,
   isNativeReattachReason,
   NATIVE_REATTACH_REASONS,
@@ -38,6 +41,52 @@ describe('nativeLayoutSync', () => {
     expect(received).toHaveLength(1);
     expect(received[0].reason).toBe('test-settle');
     expect(typeof received[0].at).toBe('number');
+  });
+
+  test('dispatchTerminalSurvivorRecover dispatches survivor recover event', () => {
+    const received = [];
+    const handler = (event) => received.push(event.detail);
+    window.addEventListener('devhub:terminal-survivor-recover', handler);
+
+    dispatchTerminalSurvivorRecover({ panelIds: ['p1', 'p2'], reason: 'workspace-removed' });
+
+    window.removeEventListener('devhub:terminal-survivor-recover', handler);
+
+    expect(received).toHaveLength(1);
+    expect(received[0].panelIds).toEqual(['p1', 'p2']);
+    expect(received[0].reason).toBe('workspace-removed');
+  });
+
+  test('scheduleSurvivorRecoverAfterClose staggers recover events and can cancel', () => {
+    jest.useFakeTimers();
+    window.requestAnimationFrame = (cb) => window.setTimeout(cb, 0);
+    window.cancelAnimationFrame = (id) => window.clearTimeout(id);
+    const received = [];
+    window.addEventListener('devhub:terminal-survivor-recover', (event) =>
+      received.push(event.detail)
+    );
+    let lifecycleRuns = 0;
+    const cancel = scheduleSurvivorRecoverAfterClose({
+      panelIds: ['p1'],
+      workspaceId: 'ws-a',
+      reason: 'workspace-removed',
+      onLifecycleSync: () => {
+        lifecycleRuns += 1;
+        return () => {
+          lifecycleRuns += 10;
+        };
+      },
+    });
+
+    expect(lifecycleRuns).toBe(0);
+    jest.runAllTimers();
+    expect(lifecycleRuns).toBe(1);
+    expect(received).toHaveLength(SURVIVOR_RECOVER_DELAYS_MS.length);
+    expect(received.every((d) => d.panelIds.includes('p1'))).toBe(true);
+
+    cancel();
+    expect(lifecycleRuns).toBe(11);
+    jest.useRealTimers();
   });
 
   test('dispatchNativeVteWorkspaceSync dispatches workspace sync event', () => {
@@ -135,11 +184,7 @@ describe('nativeLayoutSync', () => {
       queue.flushOnIdle();
 
       // Non-reattach reasons first (insertion order), reattach LAST and once.
-      expect(applied).toEqual([
-        'panel-group-layout',
-        'popup-avoid-rects',
-        'pizarra-mode-enter',
-      ]);
+      expect(applied).toEqual(['panel-group-layout', 'popup-avoid-rects', 'pizarra-mode-enter']);
       expect(queue.isAnimating()).toBe(false);
       expect(queue._pendingSize()).toBe(0);
     });

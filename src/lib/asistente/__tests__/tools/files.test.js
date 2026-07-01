@@ -56,7 +56,7 @@ describe('browse_files (fileTool)', () => {
   });
 
   test('read of 20KB file returns <= 4096 bytes content + total line_count', async () => {
-    const big = '/tmp/devhub-big-' + Date.now() + '.log';
+    const big = path.join(os.tmpdir(), 'devhub-big-' + Date.now() + '.log');
     const bigContent = Array.from({ length: 1000 }, (_, i) => `line ${i}`).join('\n');
     // bigContent is ~9-10KB; expand to ensure > 4096.
     const expanded = bigContent.repeat(3);

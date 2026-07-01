@@ -7,6 +7,7 @@
  */
 
 'use strict';
+/* eslint-env node */
 
 const SDD_PHASES = [
   'sdd-explore',
@@ -75,7 +76,23 @@ const PHASE_CONTRACTS = {
     reactivationContract:
       'Resume cross-phase audit for {{change_name}}. Check all artifact phases.',
   },
-  };
+  zed: {
+    executable: [
+      'sdd-explore',
+      'sdd-propose',
+      'sdd-spec',
+      'sdd-design',
+      'sdd-tasks',
+      'sdd-apply',
+      'sdd-verify',
+      'sdd-archive',
+    ],
+    delegatable: [],
+    contextBudget: 8000,
+    reactivationContract:
+      'Rejoin mission {{mission_id}} as ZED orchestrator. You may execute any SDD phase; use {{artifacts}} to coordinate workers and hand off via _devhub_chat.',
+  },
+};
 
 /**
  * Interpolate variables in a template string.
@@ -90,7 +107,6 @@ function interpolate(template, vars = {}) {
   });
 }
 
-
 /**
  * Build Phase Contract prompt section for a role.
  */
@@ -100,7 +116,7 @@ function buildPhaseContractSection(role, phase) {
   const delegatablePhases =
     contract.delegatable.length > 0 ? contract.delegatable.join(', ') : 'none';
 
-  let section = `## Phase Contract
+  const section = `## Phase Contract
 
 You are operating as **${role}** in SDD phase **${phase}**.
 
@@ -221,6 +237,7 @@ function getContextBudget(role) {
   return contract ? contract.contextBudget : 8000;
 }
 
+// eslint-disable-next-line no-undef -- CommonJS export surface for legacy require() callers
 module.exports = {
   SDD_PHASES,
   PHASE_CONTRACTS,

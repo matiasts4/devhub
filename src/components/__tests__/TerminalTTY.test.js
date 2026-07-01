@@ -139,13 +139,18 @@ const {
   shouldSkipReactivateViewportOnPanelActivation,
   shouldAttachWebglRenderer,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
+  shouldFreezeDomViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
   shouldMountCanvasAddon,
+  needsGpuRendererReattach,
   shouldRefitVisibleInactiveSplitPanel,
   sendTerminalPasteInput,
   scheduleTerminalViewportSyncBurst,
   resolveColdMountStaggerMs,
   shouldSyncTerminalViewportOnLayoutShow,
+  isWorkspaceCloseRecoverReason,
+  isWorkspaceSurvivorRecoverLayoutReason,
+  WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
   resolveConnectInitialCommandState,
   shouldSkipRedundantLayoutSettleViewportSync,
   shouldSkipTerminalOutputWhileLayoutHidden,
@@ -199,6 +204,7 @@ const {
   buildTerminalWheelSgrSequence,
   disableTerminalFocusReporting,
   prepareActiveTuiTerminalFocus,
+  resolveTerminalClipboardShortcut,
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
   TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
   TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,
@@ -337,6 +343,46 @@ function installTerminalRuntimeMocks() {
   global.WebSocket = MockWebSocket;
   window.WebSocket = MockWebSocket;
 }
+
+describe('resolveTerminalClipboardShortcut()', () => {
+  test('maps Ctrl+V and Ctrl+Shift+V to paste', () => {
+    expect(
+      resolveTerminalClipboardShortcut({ ctrlKey: true, shiftKey: false, altKey: false, key: 'v' })
+    ).toBe('paste');
+    expect(
+      resolveTerminalClipboardShortcut({ ctrlKey: true, shiftKey: true, altKey: false, key: 'V' })
+    ).toBe('paste');
+  });
+
+  test('maps Ctrl+Shift+C to copy', () => {
+    expect(
+      resolveTerminalClipboardShortcut({ ctrlKey: true, shiftKey: true, altKey: false, key: 'C' })
+    ).toBe('copy');
+  });
+
+  test('maps Shift+Insert to paste', () => {
+    expect(
+      resolveTerminalClipboardShortcut({
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: false,
+        key: 'Insert',
+      })
+    ).toBe('paste');
+  });
+
+  test('ignores plain keys and other shortcuts', () => {
+    expect(
+      resolveTerminalClipboardShortcut({ ctrlKey: true, shiftKey: false, altKey: false, key: 'c' })
+    ).toBeNull();
+    expect(
+      resolveTerminalClipboardShortcut({ ctrlKey: false, shiftKey: false, altKey: false, key: 'v' })
+    ).toBeNull();
+    expect(
+      resolveTerminalClipboardShortcut({ ctrlKey: true, shiftKey: false, altKey: true, key: 'v' })
+    ).toBeNull();
+  });
+});
 
 describe('getXtermContainerAnimProps()', () => {
   test('does not re-fade from opacity 0 on every visibility toggle', () => {
@@ -716,6 +762,30 @@ describe('shouldSyncTerminalViewportOnLayoutShow()', () => {
   });
 });
 
+describe('isWorkspaceCloseRecoverReason()', () => {
+  test('matches workspace switch and workspace removed lifecycle reasons', () => {
+    expect(isWorkspaceCloseRecoverReason('workspace-switch')).toBe(true);
+    expect(isWorkspaceCloseRecoverReason('layout-settled-workspace-switch-immediate')).toBe(true);
+    expect(isWorkspaceCloseRecoverReason('workspace-window-switch')).toBe(true);
+    expect(isWorkspaceCloseRecoverReason('layout-settled-workspace-window-switch-raf')).toBe(true);
+    expect(isWorkspaceCloseRecoverReason('workspace-removed')).toBe(true);
+    expect(isWorkspaceCloseRecoverReason('layout-settled-workspace-removed-delay-80')).toBe(true);
+    expect(isWorkspaceCloseRecoverReason('panel-closed')).toBe(false);
+  });
+});
+
+describe('isWorkspaceSurvivorRecoverLayoutReason()', () => {
+  test('matches survivor recover layout reason and raf follow-up', () => {
+    expect(isWorkspaceSurvivorRecoverLayoutReason(WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON)).toBe(
+      true
+    );
+    expect(
+      isWorkspaceSurvivorRecoverLayoutReason(`${WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON}-raf`)
+    ).toBe(true);
+    expect(isWorkspaceSurvivorRecoverLayoutReason('workspace-show-layout')).toBe(false);
+  });
+});
+
 describe('resolveConnectInitialCommandState()', () => {
   const {
     clearPanelInitialCommandLifecycle,
@@ -874,6 +944,88 @@ describe('shouldMountCanvasAddon()', () => {
         operationalRendererMode: 'xterm',
         isActivePanel: true,
         visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('needsGpuRendererReattach()', () => {
+  test('webgl mode needs reattach when the addon ref is null (disposed renderer still in slot)', () => {
+    // After a workspace hide the webgl addon is disposed and webglAddonRef is null,
+    // but RenderService._renderer.value still holds the disposed renderer object, so
+    // isTerminalRendererReady() would return true. The addon REF is the truthful
+    // signal that a reattach is needed to clear the black panel.
+    expect(
+      needsGpuRendererReattach({ operationalRendererMode: 'xterm-webgl', webglAddon: null })
+    ).toBe(true);
+    expect(
+      needsGpuRendererReattach({
+        operationalRendererMode: 'xterm-webgl',
+        webglAddon: { _renderer: { value: {} } },
+      })
+    ).toBe(false);
+  });
+
+  test('canvas mode needs reattach when the addon ref is null', () => {
+    expect(
+      needsGpuRendererReattach({ operationalRendererMode: 'xterm-canvas', canvasAddon: null })
+    ).toBe(true);
+    expect(
+      needsGpuRendererReattach({ operationalRendererMode: 'xterm-canvas', canvasAddon: {} })
+    ).toBe(false);
+  });
+
+  test('DOM renderer and native modes never need a GPU reattach', () => {
+    expect(
+      needsGpuRendererReattach({
+        operationalRendererMode: 'xterm',
+        webglAddon: null,
+        canvasAddon: null,
+      })
+    ).toBe(false);
+    expect(
+      needsGpuRendererReattach({
+        operationalRendererMode: 'vte-experimental',
+        webglAddon: null,
+        canvasAddon: null,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldFreezeDomViewportOnWorkspaceShow()', () => {
+  test('freezes DOM TUI on workspace show when cols already match container', () => {
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+        proposedDimsMatch: true,
+      })
+    ).toBe(true);
+  });
+
+  test('does not freeze when container wants different cols than the term grid', () => {
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+        proposedDimsMatch: false,
+      })
+    ).toBe(false);
+  });
+
+  test('does not freeze on survivor recover after workspace close', () => {
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+        proposedDimsMatch: true,
       })
     ).toBe(false);
   });
@@ -1186,6 +1338,15 @@ describe('shouldFreezeSingleWebglViewportOnWorkspaceShow()', () => {
         sizeUnchanged: false,
         operationalRendererMode: 'xterm-webgl',
         visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+        proposedDimsMatch: false,
       })
     ).toBe(false);
   });
@@ -1562,6 +1723,59 @@ describe('fitTerminalViewport()', () => {
     expect(fitAddon.fit).not.toHaveBeenCalled();
     expect(term.refresh).not.toHaveBeenCalled();
     expect(socket.send).not.toHaveBeenCalled();
+  });
+
+  test('fixes black gutters: resizes stale smaller cols to the container width and emits SIGWINCH with the new cols', () => {
+    // Reproduces the workspace-switch gutter symptom: while hidden the term kept
+    // stale smaller cols, and on show the container is wider. fitTerminalViewport
+    // must recompute cols from the container, resize the term, and notify the PTY
+    // so the TUI redraws at full width — the automatic equivalent of a manual resize
+    // (the only thing the user confirms clears the black right-edge gutter).
+    const container = {
+      getBoundingClientRect: () => ({ width: 800, height: 480 }),
+    };
+    const fitAddon = { fit: jest.fn() };
+    const term = {
+      cols: 40,
+      rows: 24,
+      resize: jest.fn(function (c, r) {
+        this.cols = c;
+        this.rows = r;
+      }),
+      refresh: jest.fn(),
+      _core: {
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell: { width: 10, height: 20 } } },
+          clear: jest.fn(),
+        },
+      },
+    };
+    const socket = {
+      readyState: 1,
+      send: jest.fn(),
+    };
+    const lastPtySizeRef = { cols: 40, rows: 24 };
+
+    expect(
+      fitTerminalViewport({
+        container,
+        fitAddon,
+        term,
+        socket,
+        websocketOpenState: 1,
+        lastPtySizeRef,
+        clearAtlas: false,
+      })
+    ).toBe(true);
+
+    // Resized from stale 40 cols to the container's real 80 cols (800px / 10px cell).
+    expect(term.resize).toHaveBeenCalledWith(80, 24);
+    // PTY got the NEW cols so the TUI redraws at full width — no black gutter.
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'resize', cols: 80, rows: 24 })
+    );
+    expect(lastPtySizeRef.cols).toBe(80);
   });
 });
 
@@ -4388,7 +4602,7 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  test('Ctrl+V is not intercepted as terminal paste in xterm', async () => {
+  test('Ctrl+V pastes into xterm', async () => {
     const clipboard = {
       writeText: jest.fn().mockResolvedValue(undefined),
       readText: jest.fn().mockResolvedValue('echo hello'),
@@ -4422,9 +4636,12 @@ describe('TerminalTTY renderer fallback UI', () => {
     shell.dispatchEvent(event);
     await flushTerminalEffects();
 
-    expect(clipboard.readText).not.toHaveBeenCalled();
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(mockWebSocketInstances[0].send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'input', data: 'echo hello' })
+    );
     expect(mockTerminalInstances[0].paste).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   test('Shift+Insert also pastes into xterm', async () => {
@@ -4891,5 +5108,111 @@ describe('TerminalTTY renderer fallback UI', () => {
     expect(mockNativeVteBridge.focusNativeVtePanel).not.toHaveBeenCalled();
     expect(mockNativeVteBridge.pasteNativeVtePanel).not.toHaveBeenCalled();
     expect(copyEvent.defaultPrevented).toBe(true);
+  });
+});
+
+describe('Workspace-created fresh panel initial command injection', () => {
+  const {
+    clearPanelInitialCommandLifecycle,
+  } = require('@/lib/terminal/panelInitialCommandLifecycle');
+
+  beforeEach(() => {
+    installTerminalDom();
+    installTerminalRuntimeMocks();
+    _resetNativeVteLayoutLifecycleForTests();
+    clearPanelInitialCommandLifecycle('term-ws-fresh');
+    mockTerminalInstances.length = 0;
+    mockWebSocketInstances.length = 0;
+    mockResizeObserverInstances.length = 0;
+  });
+
+  afterEach(async () => {
+    jest.useRealTimers();
+    _resetNativeVteLayoutLifecycleForTests();
+    cleanupMountedRoots();
+    await flushTerminalEffects();
+    if (global.document?.body) {
+      global.document.body.innerHTML = '';
+    }
+    mockTerminalInstances.length = 0;
+    mockWebSocketInstances.length = 0;
+    Object.values(mockNativeVteBridge).forEach((value) => {
+      if (value && typeof value.mockReset === 'function') {
+        value.mockReset();
+      }
+    });
+    mockNativeVteBridge.isNativeVteRuntimeAvailable.mockReturnValue(false);
+    mockNativeVteBridge.probeNativeVte.mockResolvedValue({
+      ready: false,
+      reason: 'tauri-unavailable',
+    });
+    mockNativeVteBridge.openNativeVtePanel.mockResolvedValue({
+      opened: false,
+      reason: 'tauri-unavailable',
+    });
+    mockNativeVteBridge.pasteNativeVtePanel.mockResolvedValue({
+      supported: false,
+      reason: 'tauri-unavailable',
+    });
+    mockNativeVteBridge.subscribeNativeVteEvents.mockReturnValue(jest.fn());
+    _resetNativeVteLayoutLifecycleForTests();
+    jest.clearAllMocks();
+  });
+
+  test('sends initial TUI command after workspace-created layout-settled', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'term-ws-fresh',
+        initialCommand: 'opencode',
+        requestedRendererMode: 'xterm',
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+
+    // Wait for the websocket to open after xterm boot + viewport fit.
+    await new Promise((resolve, reject) => {
+      const deadline = Date.now() + 2000;
+      const check = () => {
+        if (mockWebSocketInstances.length > 0) return resolve();
+        if (Date.now() > deadline) return reject(new Error('WebSocket was never created'));
+        setTimeout(check, 20);
+      };
+      check();
+    });
+
+    const socket = mockWebSocketInstances[mockWebSocketInstances.length - 1];
+
+    // Simulate the host layout settling (this is what the workspace modal triggers).
+    window.dispatchEvent(
+      new CustomEvent('devhub:terminal-layout-settled', {
+        detail: {
+          reason: 'workspace-created',
+          panelIds: ['term-ws-fresh'],
+          phase: 'immediate',
+        },
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const inputSends = socket.send.mock.calls.filter((call) => {
+      try {
+        const payload = JSON.parse(call[0]);
+        return payload.type === 'input';
+      } catch {
+        return false;
+      }
+    });
+
+    expect(inputSends.length).toBeGreaterThan(0);
+    const lastInput = JSON.parse(inputSends[inputSends.length - 1][0]);
+    expect(lastInput.data).toBe('opencode\r');
   });
 });

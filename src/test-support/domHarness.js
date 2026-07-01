@@ -30,6 +30,17 @@ function installDom(url = 'https://devhub.test') {
   global.CustomEvent = dom.window.CustomEvent;
   global.localStorage = dom.window.localStorage;
 
+  // jsdom only implements requestAnimationFrame/cancelAnimationFrame when
+  // constructed with `pretendToBeVisual: true` (not the case here). Component
+  // code that schedules recovery bursts via window.requestAnimationFrame would
+  // otherwise throw "not a function" the moment a test exercises that path.
+  // Tests that need deterministic (synchronous) frame timing can still
+  // override dom.window.requestAnimationFrame/cancelAnimationFrame themselves.
+  if (typeof dom.window.requestAnimationFrame !== 'function') {
+    dom.window.requestAnimationFrame = (callback) => setTimeout(() => callback(Date.now()), 0);
+    dom.window.cancelAnimationFrame = (id) => clearTimeout(id);
+  }
+
   return dom;
 }
 

@@ -32,7 +32,7 @@ describe('T-011 — bus helper wiring in production launch path', () => {
       env: { ...process.env, DEVHUB_DB_PATH: '/tmp/explicit.db' },
     });
     expect(out.busBinaryPath).toMatch(/devhub-bus\.js$/);
-    expect(out.dbPath).toBe('/tmp/explicit.db');
+    expect(out.dbPath).toBe(path.resolve('/tmp/explicit.db'));
   });
 
   test('resolveBusHelperPaths defaults dbPath to canonical resolveDbPath when env is unset', () => {
@@ -41,7 +41,7 @@ describe('T-011 — bus helper wiring in production launch path', () => {
     const env = {};
     delete env.DEVHUB_DB_PATH;
     const out = launchPaths.resolveBusHelperPaths({ repoRoot: '/repo/root', env });
-    expect(out.busBinaryPath).toBe('/repo/root/devhub-cli/bin/devhub-bus.js');
+    expect(out.busBinaryPath).toBe(path.resolve('/repo/root/devhub-cli/bin/devhub-bus.js'));
     expect(out.dbPath).toBe(resolveDbPath({ env, cwd: '/repo/root' }));
   });
 
@@ -107,5 +107,54 @@ describe('T-011 — bus helper wiring in production launch path', () => {
     fs.writeFileSync(tmp, wrapper, { mode: 0o644 });
     const r = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
     expect(r.status).toBe(0);
+  });
+
+  test('buildLaunchWrapperForRole injects MiniMax MCP env vars for zed role with modelProvider=minimax', () => {
+    jest.resetModules();
+    jest.doMock('../../llmProviderConfig', () => ({
+      getLlmProviderConfigSync: () => ({
+        ANTHROPIC_BASE_URL: 'https://api.minimax.example/anthropic',
+        MINIMAX_MODEL: 'minimax-test-mock',
+      }),
+    }));
+    const launchPaths = require('../../bus/launchPaths.js');
+    const wrapper = launchPaths.buildLaunchWrapperForRole({
+      agentId: 'launch-abc-zed',
+      missionId: 'launch-abc',
+      role: 'zed',
+      workspacePath: '/tmp/ws',
+      repoRoot: process.cwd(),
+      dbPath: '/tmp/ws/devhub.db',
+      innerCommand: 'sleep 1',
+      modelProvider: 'minimax',
+    });
+    jest.dontMock('../../llmProviderConfig');
+    expect(wrapper).toMatch(/export ANTHROPIC_BASE_URL=/);
+    expect(wrapper).toMatch(/export ANTHROPIC_MODEL=/);
+  });
+
+  test('buildLaunchWrapperForRole does NOT inject MiniMax MCP env vars for non-zed roles', () => {
+    jest.resetModules();
+    jest.doMock('../../llmProviderConfig', () => ({
+      getLlmProviderConfigSync: () => ({
+        ANTHROPIC_BASE_URL: 'https://api.minimax.example/anthropic',
+        MINIMAX_MODEL: 'minimax-test-mock',
+      }),
+    }));
+    const launchPaths = require('../../bus/launchPaths.js');
+    const wrapper = launchPaths.buildLaunchWrapperForRole({
+      agentId: 'launch-abc-coder',
+      missionId: 'launch-abc',
+      role: 'coder',
+      workspacePath: '/tmp/ws',
+      repoRoot: process.cwd(),
+      dbPath: '/tmp/ws/devhub.db',
+      innerCommand: 'sleep 1',
+      modelProvider: 'minimax',
+      disableMinimaxMcp: true,
+    });
+    jest.dontMock('../../llmProviderConfig');
+    expect(wrapper).not.toMatch(/export ANTHROPIC_BASE_URL=/);
+    expect(wrapper).not.toMatch(/export ANTHROPIC_MODEL=/);
   });
 });

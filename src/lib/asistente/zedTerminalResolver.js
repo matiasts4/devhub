@@ -9,6 +9,7 @@
  */
 
 import { DISPLAY_NAME_POOL } from '../terminal/displayNamePool';
+import { stripDiacritics } from '../text';
 
 const MAX_QUERY_LEN = 48;
 const MIN_PREFIX_LEN = 2;
@@ -47,10 +48,8 @@ const CARDINAL_WORDS = {
  */
 function normalizeForLookup(name) {
   if (typeof name !== 'string') return '';
-  return name
+  return stripDiacritics(name)
     .trim()
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '');
 }

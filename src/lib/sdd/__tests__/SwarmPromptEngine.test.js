@@ -103,9 +103,7 @@ describe('SwarmPromptEngine', () => {
     });
 
     test('throws on invalid SDD phase', () => {
-      expect(() => buildPhaseContractPrompt('coder', 'invalid-phase')).toThrow(
-        'Invalid SDD phase'
-      );
+      expect(() => buildPhaseContractPrompt('coder', 'invalid-phase')).toThrow('Invalid SDD phase');
     });
 
     test('uses defaults when vars are missing', () => {
@@ -246,7 +244,17 @@ describe('SwarmPromptEngine', () => {
 
   describe('PHASE_CONTRACTS coverage', () => {
     test('all 8 swarm roles have contracts', () => {
-      const roles = ['director', 'architect', 'coder', 'explorer', 'qa', 'reviewer', 'devops', 'auditor'];
+      const roles = [
+        'director',
+        'architect',
+        'coder',
+        'explorer',
+        'qa',
+        'reviewer',
+        'devops',
+        'auditor',
+        'zed',
+      ];
       for (const role of roles) {
         expect(PHASE_CONTRACTS[role]).toBeDefined();
         expect(PHASE_CONTRACTS[role].contextBudget).toBe(8000);

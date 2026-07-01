@@ -57,9 +57,20 @@ describe('kimiReadyMarker', () => {
     expect(isKimiTuiLive({ initialCommand: 'opencode', kimiReady: true })).toBe(false);
   });
 
-  test('shouldFreezeKimiTuiViewportOnWorkspaceShow freezes any kimi launch panel', () => {
+  test('shouldFreezeKimiTuiViewportOnWorkspaceShow freezes only when dims match container', () => {
     const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
-    expect(shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand: kimiCmd })).toBe(true);
+    expect(
+      shouldFreezeKimiTuiViewportOnWorkspaceShow({
+        initialCommand: kimiCmd,
+        proposedDimsMatch: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeKimiTuiViewportOnWorkspaceShow({
+        initialCommand: kimiCmd,
+        proposedDimsMatch: false,
+      })
+    ).toBe(false);
     expect(shouldFreezeKimiTuiViewportOnWorkspaceShow({ initialCommand: 'opencode' })).toBe(false);
   });
 

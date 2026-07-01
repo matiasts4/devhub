@@ -9,10 +9,12 @@ import {
 } from './agentSessionExit';
 
 describe('agentSessionExit', () => {
-  test('isAgentTuiCommand recognizes kimi and opencode anywhere in command', () => {
+  test('isAgentTuiCommand recognizes all agent TUIs anywhere in command', () => {
     expect(isAgentTuiCommand('kimi')).toBe(true);
     expect(isAgentTuiCommand('opencode --session ses_1')).toBe(true);
     expect(isAgentTuiCommand("bash -lc 'opencode --session ses_1'")).toBe(true);
+    expect(isAgentTuiCommand('claude')).toBe(true);
+    expect(isAgentTuiCommand('codex --session cd-1')).toBe(true);
     expect(isAgentTuiCommand('bash')).toBe(false);
   });
 

@@ -55,19 +55,49 @@ describe('PanelStatusBadge', () => {
     delete global.localStorage;
   });
 
-  test('does not render when status is idle', async () => {
+  test('does not render when status is idle for shell panels', async () => {
     mockUsePanelAgentStatus.mockReturnValue(createMockResult({ status: PANEL_STATUS.IDLE }));
 
     const view = await renderIntoDom(
       React.createElement(PanelStatusBadge, {
         panelId: 'panel-1',
-        agentRun: { selectedAgent: 'opencode' },
+        agentRun: null,
+        initialCommand: null,
         connectionState: 'connected',
       }),
       mountedRoots
     );
 
     expect(view.container.querySelector('[data-testid="panel-status-badge-panel-1"]')).toBeNull();
+  });
+
+  test('renders when status is idle for agent panels', async () => {
+    mockUsePanelAgentStatus.mockReturnValue(
+      createMockResult({
+        status: PANEL_STATUS.IDLE,
+        label: 'Inactivo',
+        details: {
+          connectionState: 'connected',
+          agentRun: null,
+          apiStatus: null,
+          terminalActivity: { agentType: 'kimi' },
+        },
+      })
+    );
+
+    const view = await renderIntoDom(
+      React.createElement(PanelStatusBadge, {
+        panelId: 'panel-1',
+        agentRun: null,
+        initialCommand: null,
+        connectionState: 'connected',
+      }),
+      mountedRoots
+    );
+
+    expect(
+      view.container.querySelector('[data-testid="panel-status-badge-panel-1"]')
+    ).not.toBeNull();
   });
 
   test('renders running badge with pulsing green dot', async () => {

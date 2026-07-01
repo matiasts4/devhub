@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import usePanelAgentStatus from '@/hooks/usePanelAgentStatus';
 import {
+  AGENT_TUI_PATTERN,
   PANEL_STATUS,
   shouldShowPanelStatus,
 } from '@/components/terminal/utils/panelStatusHelpers';
@@ -45,7 +46,7 @@ function DetailRow({ label, value, muted = false }) {
  * PanelStatusBadge — clickable status indicator for a terminal panel header.
  *
  * Shows a compact badge with a colored dot and opens a small popover with
- * details when clicked. Hidden for idle/unknown states.
+ * details when clicked. Hidden for shell panels; always shown for agent TUIs.
  */
 export default function PanelStatusBadge({
   panelId,
@@ -68,7 +69,16 @@ export default function PanelStatusBadge({
     }
   );
 
-  const visible = useMemo(() => shouldShowPanelStatus(status, { alwaysShow: false }), [status]);
+  const isAgentPanel = Boolean(
+    details?.terminalActivity?.agentType ||
+    agentRun ||
+    AGENT_TUI_PATTERN.test(String(initialCommand || ''))
+  );
+
+  const visible = useMemo(
+    () => shouldShowPanelStatus(status, { alwaysShow: false, isAgentPanel }),
+    [status, isAgentPanel]
+  );
 
   if (!visible || !style) return null;
 
@@ -119,6 +129,9 @@ export default function PanelStatusBadge({
         <div className="space-y-1.5">
           {details?.connectionState && (
             <DetailRow label="Conexión" value={details.connectionState} />
+          )}
+          {details?.terminalActivity?.agentType && (
+            <DetailRow label="Agente" value={details.terminalActivity.agentType} />
           )}
           {details?.agentRun?.selectedAgent && (
             <DetailRow label="Agente" value={details.agentRun.selectedAgent} />

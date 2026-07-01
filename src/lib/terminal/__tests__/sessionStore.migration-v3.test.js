@@ -336,6 +336,6 @@ describe('saveSessions persists restorePolicy', () => {
 
     const written = mockFs.writeFileSync.mock.calls[0][1];
     const parsed = JSON.parse(written);
-    expect(parsed.version).toBe(3);
+    expect(parsed.version).toBe(4);
   });
 });

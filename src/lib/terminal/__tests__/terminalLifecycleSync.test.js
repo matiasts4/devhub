@@ -156,7 +156,8 @@ describe('scheduleTerminalLifecycleSync', () => {
     expect(LIFECYCLE_BURST_PHASES['panel-focus-toggle'].delayMs).toEqual([120, 340]);
     expect(LIFECYCLE_BURST_PHASES['panel-group-layout'].delayMs).toEqual([120, 340, 500]);
     expect(LIFECYCLE_BURST_PHASES['panel-closed'].delayMs).toEqual([120, 340]);
-    expect(LIFECYCLE_BURST_PHASES['workspace-removed'].raf).toBe(false);
+    expect(LIFECYCLE_BURST_PHASES['workspace-removed'].raf).toBe(true);
+    expect(LIFECYCLE_BURST_PHASES['workspace-removed'].delayMs).toEqual([80, 180, 340]);
     expect(LIFECYCLE_BURST_PHASES['workspace-switch']).toEqual({
       immediate: true,
       raf: true,

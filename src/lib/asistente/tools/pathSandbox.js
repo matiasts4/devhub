@@ -23,6 +23,21 @@ function containsNullBytes(p) {
   return typeof p === 'string' && p.includes('\0');
 }
 
+/**
+ * Normalize Unix-style `/tmp/devhub-*` paths to the host's real temp dir.
+ * This makes the sandbox cross-platform: `/tmp/devhub-x.log` resolves to
+ * `C:\Users\...\AppData\Local\Temp\devhub-x.log` on Windows.
+ */
+function normalizeDevhubTmpPath(p) {
+  if (typeof p !== 'string') return p;
+  const normalized = path.normalize(p);
+  const tmpBase = path.normalize('/tmp/');
+  if (normalized.startsWith(tmpBase) && normalized.slice(tmpBase.length).startsWith('devhub-')) {
+    return path.join(os.tmpdir(), normalized.slice(tmpBase.length));
+  }
+  return normalized;
+}
+
 function isWithinRoot(resolved) {
   const root = resolveProjectRoot();
 
@@ -36,7 +51,7 @@ function isWithinRoot(resolved) {
 
 export function assertWithinRoot(p) {
   if (containsNullBytes(p)) return false;
-  const resolved = path.resolve(p);
+  const resolved = path.resolve(normalizeDevhubTmpPath(p));
   return isWithinRoot(resolved);
 }
 
@@ -54,7 +69,7 @@ export function validateSandboxedPath(p) {
     return { ok: false, error: 'path contains null bytes' };
   }
 
-  const resolved = path.resolve(p);
+  const resolved = path.resolve(normalizeDevhubTmpPath(p));
 
   // Reject obvious traversal attempts before hitting the filesystem.
   if (!isWithinRoot(resolved)) {

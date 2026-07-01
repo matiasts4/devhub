@@ -20,10 +20,22 @@
  *   - src/lib/terminal/terminalNoiseFilter.js (ESM source of truth)
  *   - sidecar-backend/sessionTransport.js     (this CJS mirror)
  */
+const {
+  detectAgentTypeFromCommand,
+  extractAgentSessionId,
+  synthesizeAgentSessionId,
+} = require('./agentTuiMetadata');
+const { detectKimiTuiReady } = require('./kimiReadyMarker');
+
 const SHELL_TERMINAL_RESPONSE_RE =
   /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
 const TERMINAL_FOCUS_REPORTING_RE = /\x1b\[[IO]/g;
 const TERMINAL_MOUSE_MOTION_LEAK_RE = /\x1b\[<(?!0;|[1-3];|64;|65;)\d+;[\d;]*[mM]/g;
+// Windows PowerShell 5.1 prints a banner with a link to install PowerShell 7.
+// Microsoft does not provide a flag to disable it, so we strip it from output.
+// Matches both English and Spanish variants (the two most common locales).
+const POWERSHELL_UPDATE_BANNER_RE =
+  /Windows PowerShell\s*\r?\n\s*Copyright \(C\) Microsoft Corporation\.[^\r\n]*\r?\n(?:\s*\r?\n)?(?:Install the latest PowerShell|Instale la versión más reciente de PowerShell)[^\r\n]*\r?\n\s*https:\/\/aka\.ms\/PSWindows[^\r\n]*\r?\n?/gi;
 
 function getTransportMode(requestUrl = '/') {
   const pathname = new URL(requestUrl, 'http://localhost').pathname;
@@ -96,7 +108,7 @@ function stripTerminalFocusReporting(chunk) {
 
 function stripShellTerminalResponseNoise(chunk) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
-  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '');
+  return chunk.replace(SHELL_TERMINAL_RESPONSE_RE, '').replace(POWERSHELL_UPDATE_BANNER_RE, '');
 }
 
 function stripTerminalMouseMotionLeak(chunk) {
@@ -163,35 +175,56 @@ function switchSessionToTuiMode(session) {
   session.history = [];
 }
 
+function applyAgentTuiDetection(session, command) {
+  const type = detectAgentTypeFromCommand(command);
+  if (!type) return false;
+  session.mode = 'tui';
+  session.historyEnabled = false;
+  session.history = [];
+  if (!session.agentType) {
+    session.agentType = type;
+  }
+  if (!session.agentSessionId) {
+    const explicit = extractAgentSessionId(type, command);
+    session.agentSessionId = explicit || synthesizeAgentSessionId(type, session.id) || null;
+  }
+  return true;
+}
+
 function updateSessionModeFromInput(session, input) {
   if (!session || !input || typeof input !== 'string') return;
 
-  if (/^[\x00-\x20]*opencode\b/i.test(input)) {
-    switchSessionToTuiMode(session);
+  // Fast path: the whole command came in one chunk.
+  if (applyAgentTuiDetection(session, input)) {
     return;
   }
 
-  if (/^[\x00-\x20]*hermes\b/i.test(input)) {
-    switchSessionToTuiMode(session);
-    return;
-  }
-
+  // Multi-chunk fallback: buffer by lines and re-check each completed line.
   session.pendingInput = `${session.pendingInput || ''}${input}`;
   const lines = session.pendingInput.split(/\r\n|\n|\r/);
   session.pendingInput = lines.pop() || '';
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (/^\s*opencode\b/i.test(trimmed) || /^\s*hermes\b/i.test(trimmed)) {
-      switchSessionToTuiMode(session);
+    if (applyAgentTuiDetection(session, trimmed)) {
       return;
     }
   }
 }
 
+function detectAgentStateFromOutput(output, agentType) {
+  if (!output || typeof output !== 'string' || !agentType) return null;
+  if (/\b(?:thinking|working|busy|running)\b/i.test(output)) return 'running';
+  if (/\b(?:idle|ready|waiting)\b/i.test(output)) return 'idle';
+  return null;
+}
+
 module.exports = {
+  applyAgentTuiDetection,
   buildHistoryReplay,
   buildServerMessage,
+  detectAgentStateFromOutput,
+  detectKimiTuiReady,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
   detectOpenCodeSessionId,
@@ -199,5 +232,6 @@ module.exports = {
   getTransportMode,
   parseClientMessage,
   stripShellTerminalResponseNoise,
+  synthesizeAgentSessionId,
   updateSessionModeFromInput,
 };

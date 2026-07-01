@@ -15,6 +15,12 @@ import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { detectKimiTuiReady } from './kimiReadyMarker.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
+import {
+  detectAgentStateFromOutput,
+  detectAgentTypeFromCommand,
+  extractAgentSessionId,
+  synthesizeAgentSessionId,
+} from './agentTuiMetadata.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -481,44 +487,41 @@ function ensureHermesSessionId(session) {
   return session.hermesSessionId;
 }
 
-function detectSessionModeFromInput(session, input) {
-  if (!input || typeof input !== 'string') return;
+/**
+ * Apply agent TUI identity to a session once a command/input is recognized as an agent launcher.
+ */
+function applyAgentTuiDetection(session, command) {
+  const type = detectAgentTypeFromCommand(command);
+  if (!type) return false;
 
-  // Fast path for the launcher case, where the whole command comes in one chunk.
-  if (/\bopencode\b/i.test(input)) {
-    session.mode = 'tui';
-    session.historyEnabled = false;
-    session.history = '';
+  session.mode = 'tui';
+  session.historyEnabled = false;
+  session.history = '';
+  session.agentType = type;
 
-    // Extract OpenCode session ID from --session <id> pattern immediately
-    if (!session.opencodeSessionId) {
-      const sessionMatch = input.match(/opencode\s+(?:--session\s+)([\w-]+)/i);
-      if (sessionMatch?.[1] && !sessionMatch[1].startsWith('-')) {
-        session.opencodeSessionId = sessionMatch[1];
-        broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
-      }
+  const explicitSessionId = extractAgentSessionId(type, command);
+  session.agentSessionId = explicitSessionId || synthesizeAgentSessionId(type, session.id) || null;
+
+  if (type === 'opencode') {
+    if (explicitSessionId && !session.opencodeSessionId) {
+      session.opencodeSessionId = explicitSessionId;
+      broadcastOpenCodeSessionDetected(session, explicitSessionId);
     }
-    return;
-  }
-
-  // Hermes detection
-  if (/\bhermes\b/i.test(input)) {
-    session.mode = 'tui';
-    session.historyEnabled = false;
-    session.history = '';
-
+  } else if (type === 'hermes') {
     if (!session.hermesSessionId) {
       const hermesId = ensureHermesSessionId(session);
       broadcastHermesSessionDetected(session, hermesId);
     }
-    return;
   }
 
-  // Grok Build TUI (groc is a legacy launcher alias)
-  if (/\b(?:grok|groc)\b/i.test(input)) {
-    session.mode = 'tui';
-    session.historyEnabled = false;
-    session.history = '';
+  return true;
+}
+
+function detectSessionModeFromInput(session, input) {
+  if (!input || typeof input !== 'string') return;
+
+  // Fast path: the whole command came in one chunk.
+  if (applyAgentTuiDetection(session, input)) {
     return;
   }
 
@@ -530,38 +533,7 @@ function detectSessionModeFromInput(session, input) {
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (/^\s*opencode\b/i.test(trimmed)) {
-      session.mode = 'tui';
-      session.historyEnabled = false;
-      session.history = '';
-
-      // Extract session ID from the command line
-      if (!session.opencodeSessionId) {
-        const sessionMatch = trimmed.match(/opencode\s+(?:--session\s+)([\w-]+)/i);
-        if (sessionMatch?.[1] && !sessionMatch[1].startsWith('-')) {
-          session.opencodeSessionId = sessionMatch[1];
-          broadcastOpenCodeSessionDetected(session, sessionMatch[1]);
-        }
-      }
-      return;
-    }
-
-    if (/^\s*hermes\b/i.test(trimmed)) {
-      session.mode = 'tui';
-      session.historyEnabled = false;
-      session.history = '';
-
-      if (!session.hermesSessionId) {
-        const hermesId = ensureHermesSessionId(session);
-        broadcastHermesSessionDetected(session, hermesId);
-      }
-      return;
-    }
-
-    if (/^\s*(?:grok|groc)\b/i.test(trimmed)) {
-      session.mode = 'tui';
-      session.historyEnabled = false;
-      session.history = '';
+    if (applyAgentTuiDetection(session, trimmed)) {
       return;
     }
   }
@@ -838,15 +810,24 @@ export function createSession({
     title: null,
     restored,
     id,
+    initialCommand: initialCommand || null,
     swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
     swarmId: swarmContext?.launchId || null,
     tmuxSession: tmuxSession || null,
     tmuxEnabled: Boolean(tmuxEnabled),
+    agentTuiState: null,
+    agentTuiStateAt: null,
     _saveDebounceTimer: null,
     _lastDiagnosticSnapshot: null,
   };
 
   sessions.set(id, session);
+
+  // Pre-detect agent TUI from the initial command so the first snapshot already
+  // knows this is an agent panel, even before the user sends any input.
+  if (session.initialCommand) {
+    applyAgentTuiDetection(session, session.initialCommand);
+  }
 
   // PTY-3: Update workspace PTY identity on session activation
   tryUpdatePtyIdentity(session);
@@ -965,13 +946,27 @@ function handleSessionOutput(sessions, session, chunk) {
     // Swarm agents start OpenCode inside tmux before the DevHub client attaches,
     // so session.mode may still be 'shell' when the TUI footer first appears.
     if (detectKimiTuiReady(filtered)) {
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'kimi');
+      }
       maybeWriteAgentReadyMarker(session, 'kimi', { reason: 'tty-tui-footer' });
     } else if (detectOpenCodeTuiReady(filtered)) {
       if (session.mode !== 'tui') {
         session.mode = 'tui';
         session.historyEnabled = false;
       }
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'opencode');
+      }
       maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
+    }
+
+    // Detect active-agent states such as Kimi's "thinking" footer even when
+    // there is no new PTY input/output (the TUI itself is animating/processing).
+    const detectedState = detectAgentStateFromOutput(filtered, session.agentType);
+    if (detectedState) {
+      session.agentTuiState = detectedState;
+      session.agentTuiStateAt = Date.now();
     }
   }
 
@@ -1770,6 +1765,11 @@ export function getTTYSessionsSnapshot() {
       alive: true,
       opencodeSessionId: session.opencodeSessionId || null,
       hermesSessionId: session.hermesSessionId || null,
+      agentType: session.agentType || null,
+      agentSessionId: session.agentSessionId || null,
+      agentTuiState: session.agentTuiState || null,
+      agentTuiStateAt: session.agentTuiStateAt || null,
+      initialCommand: session.initialCommand || null,
     });
   }
 

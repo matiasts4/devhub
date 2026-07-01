@@ -68,8 +68,8 @@ export const LIFECYCLE_BURST_PHASES = Object.freeze({
   }),
   [PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED]: Object.freeze({
     immediate: true,
-    raf: false,
-    delayMs: Object.freeze([]),
+    raf: true,
+    delayMs: Object.freeze([80, 180, 340]),
   }),
   [PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH]: Object.freeze({
     immediate: true,

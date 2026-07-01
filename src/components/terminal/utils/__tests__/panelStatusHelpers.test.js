@@ -60,14 +60,14 @@ describe('panelStatusHelpers', () => {
       ).toBe(PANEL_STATUS.WAITING);
     });
 
-    test('no agent run and no connection state returns idle', () => {
+    test('no agent run and no connection state returns unknown', () => {
       expect(
         derivePanelStatus({
           connectionState: null,
           agentRun: null,
           apiStatus: null,
         })
-      ).toBe(PANEL_STATUS.IDLE);
+      ).toBe(PANEL_STATUS.UNKNOWN);
     });
 
     test('agent run with no other signal returns active', () => {
@@ -103,13 +103,14 @@ describe('panelStatusHelpers', () => {
 
     test.each([
       ['kimi', PANEL_STATUS.ACTIVE],
+      ['claude', PANEL_STATUS.ACTIVE],
       ['hermes --task fix-auth', PANEL_STATUS.ACTIVE],
       ['grok', PANEL_STATUS.ACTIVE],
       ['codex', PANEL_STATUS.ACTIVE],
-      ['bash', PANEL_STATUS.IDLE],
-      ['ls -la', PANEL_STATUS.IDLE],
-      ['', PANEL_STATUS.IDLE],
-      [null, PANEL_STATUS.IDLE],
+      ['bash', PANEL_STATUS.UNKNOWN],
+      ['ls -la', PANEL_STATUS.UNKNOWN],
+      ['', PANEL_STATUS.UNKNOWN],
+      [null, PANEL_STATUS.UNKNOWN],
     ])('initial command %j → %s', (initialCommand, expected) => {
       expect(
         derivePanelStatus({
@@ -119,6 +120,23 @@ describe('panelStatusHelpers', () => {
           apiStatus: null,
         })
       ).toBe(expected);
+    });
+
+    test('terminal activity agentType marks panel as agent even without initialCommand', () => {
+      expect(
+        derivePanelStatus({
+          connectionState: 'connected',
+          agentRun: null,
+          initialCommand: null,
+          apiStatus: null,
+          terminalActivity: {
+            agentType: 'claude',
+            alive: true,
+            lastActivityAt: new Date(Date.now() - 30000).toISOString(),
+            isActive: false,
+          },
+        })
+      ).toBe(PANEL_STATUS.IDLE);
     });
 
     test('recent PTY activity makes agent TUI running', () => {
@@ -136,7 +154,7 @@ describe('panelStatusHelpers', () => {
       ).toBe(PANEL_STATUS.RUNNING);
     });
 
-    test('stale PTY activity keeps agent TUI active', () => {
+    test('agent TUI thinking state from output makes it running even without PTY activity', () => {
       expect(
         derivePanelStatus({
           connectionState: 'connected',
@@ -144,14 +162,34 @@ describe('panelStatusHelpers', () => {
           initialCommand: 'kimi',
           apiStatus: null,
           terminalActivity: {
+            agentType: 'kimi',
+            alive: true,
+            agentTuiState: 'running',
             lastActivityAt: new Date(Date.now() - 30000).toISOString(),
             isActive: false,
           },
         })
-      ).toBe(PANEL_STATUS.ACTIVE);
+      ).toBe(PANEL_STATUS.RUNNING);
     });
 
-    test('recent PTY activity without agent command stays idle', () => {
+    test('stale PTY activity keeps agent TUI idle', () => {
+      expect(
+        derivePanelStatus({
+          connectionState: 'connected',
+          agentRun: null,
+          initialCommand: 'kimi',
+          apiStatus: null,
+          terminalActivity: {
+            agentType: 'kimi',
+            alive: true,
+            lastActivityAt: new Date(Date.now() - 30000).toISOString(),
+            isActive: false,
+          },
+        })
+      ).toBe(PANEL_STATUS.IDLE);
+    });
+
+    test('recent PTY activity without agent command stays hidden', () => {
       expect(
         derivePanelStatus({
           connectionState: 'connected',
@@ -163,10 +201,10 @@ describe('panelStatusHelpers', () => {
             isActive: true,
           },
         })
-      ).toBe(PANEL_STATUS.IDLE);
+      ).toBe(PANEL_STATUS.UNKNOWN);
     });
 
-    test('api status wins over recent PTY activity', () => {
+    test('recent PTY activity wins over completed api status', () => {
       expect(
         derivePanelStatus({
           connectionState: 'connected',
@@ -177,6 +215,18 @@ describe('panelStatusHelpers', () => {
             lastActivityAt: new Date().toISOString(),
             isActive: true,
           },
+        })
+      ).toBe(PANEL_STATUS.RUNNING);
+    });
+
+    test('api status is used when PTY activity is absent', () => {
+      expect(
+        derivePanelStatus({
+          connectionState: 'connected',
+          agentRun: null,
+          initialCommand: 'kimi',
+          apiStatus: 'completed',
+          terminalActivity: null,
         })
       ).toBe(PANEL_STATUS.COMPLETED);
     });
@@ -241,9 +291,13 @@ describe('panelStatusHelpers', () => {
   });
 
   describe('shouldShowPanelStatus', () => {
-    test('hides idle and unknown by default', () => {
+    test('hides idle and unknown for shell panels', () => {
       expect(shouldShowPanelStatus(PANEL_STATUS.IDLE)).toBe(false);
       expect(shouldShowPanelStatus(PANEL_STATUS.UNKNOWN)).toBe(false);
+    });
+
+    test('shows idle for agent panels', () => {
+      expect(shouldShowPanelStatus(PANEL_STATUS.IDLE, { isAgentPanel: true })).toBe(true);
     });
 
     test('shows running, active, waiting, error, completed', () => {

@@ -4,6 +4,21 @@ const { spawnSync } = require('child_process');
 
 let tmuxAvailabilityCache = null;
 
+function resolveWindowsShell() {
+  if (os.platform() !== 'win32') return null;
+  try {
+    const result = spawnSync(
+      'pwsh.exe',
+      ['-NoLogo', '-Command', '$PSVersionTable.PSVersion.ToString()'],
+      { encoding: 'utf8', stdio: 'pipe', timeout: 3000 }
+    );
+    if (result.status === 0 && result.stdout?.trim()) return 'pwsh.exe';
+  } catch {
+    // pwsh not available
+  }
+  return 'powershell.exe';
+}
+
 function shellQuote(value = '') {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -47,14 +62,15 @@ function buildSidecarSpawnConfig({
   roleKey = null,
   env = process.env,
 } = {}) {
-  const resolvedShell = env.SHELL || 'bash';
+  const isWin = os.platform() === 'win32';
+  const resolvedShell = isWin ? resolveWindowsShell() : env.SHELL || 'bash';
   const swarmSessionName = isSwarmRole ? buildSwarmTmuxSessionName(launchId, roleKey) : null;
   const tmuxSession = swarmSessionName;
 
   const kimiBinDir = path.join(os.homedir(), '.kimi-code', 'bin');
   const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
   const existingPath = env[pathKey] || '';
-  const separator = os.platform() === 'win32' ? ';' : ':';
+  const separator = isWin ? ';' : ':';
   const newPath = existingPath ? `${kimiBinDir}${separator}${existingPath}` : kimiBinDir;
 
   const spawnEnv = {
@@ -71,7 +87,16 @@ function buildSidecarSpawnConfig({
     spawnEnv.DEVHUB_TMUX_SESSION = tmuxSession;
   }
 
-  if (tmuxSession && hasTmux() && os.platform() !== 'win32') {
+  let args = [];
+  const shellBase = path.basename(resolvedShell).toLowerCase();
+  if (isWin && (shellBase.includes('powershell') || shellBase.includes('pwsh'))) {
+    // -NoLogo hides the copyright banner; POWERSHELL_UPDATECHECK=Off disables
+    // the "install the latest PowerShell" update prompt in PowerShell 7.
+    args = ['-NoLogo'];
+    spawnEnv.POWERSHELL_UPDATECHECK = 'Off';
+  }
+
+  if (tmuxSession && hasTmux() && !isWin) {
     const { buildTmuxPanelAttachCommand } = require('../src/lib/terminal/tmuxStatusBar.js');
     const attachCommand = buildTmuxPanelAttachCommand(tmuxSession, cwd);
     return {
@@ -86,7 +111,7 @@ function buildSidecarSpawnConfig({
 
   return {
     shell: resolvedShell,
-    args: [],
+    args,
     env: spawnEnv,
     tmuxSession: null,
     tmuxEnabled: false,

@@ -40,16 +40,17 @@ export function isKimiTuiLive({
 }
 
 /**
- * Skip fit/PTY resize on workspace/window show.
- * Kimi transcript scroll lives in the Ink TUI; any SIGWINCH reflow resets it. xterm
- * viewportY stays 0 while the user scrolls inside Kimi — saving/restoring 0 jumps to top.
- * Uses launch command only — readiness markers can lag behind reattach/output on restart.
+ * Skip fit/PTY resize on workspace/window show when cols already match the container.
+ * Kimi transcript scroll resets on redundant SIGWINCH at unchanged dims; when the
+ * container wants wider cols after a switch, caller must run a real fit + SIGWINCH.
  */
 export function shouldFreezeKimiTuiViewportOnWorkspaceShow({
   initialCommand = '',
   kimiReady = false,
+  proposedDimsMatch = true,
 } = {}) {
-  return isKimiLaunchCommand(initialCommand) || kimiReady;
+  if (!isKimiLaunchCommand(initialCommand) && !kimiReady) return false;
+  return proposedDimsMatch;
 }
 
 /** Kimi Ink scroll resets on redundant PTY resize even when cols/rows are unchanged. */

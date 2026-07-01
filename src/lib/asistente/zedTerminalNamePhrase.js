@@ -3,6 +3,7 @@
  */
 
 import { resolveTerminalByName } from './zedTerminalResolver';
+import { stripDiacritics } from '../text';
 
 const EN_STOP_WORDS = new Set([
   'el',
@@ -25,7 +26,7 @@ const EN_STOP_WORDS = new Set([
 ]);
 
 function normalizeText(text) {
-  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return stripDiacritics(text).toLowerCase();
 }
 
 /**

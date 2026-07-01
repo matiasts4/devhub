@@ -75,7 +75,7 @@ describe('saveSessions writes version:2 with sessionType', () => {
 
     const written = mockFs.writeFileSync.mock.calls[0][1];
     const parsed = JSON.parse(written);
-    expect(parsed.version).toBe(3);
+    expect(parsed.version).toBe(4);
   });
 
   it('writes sessionType per session for pty-durable', async () => {

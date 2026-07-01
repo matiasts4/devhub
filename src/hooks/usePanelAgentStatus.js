@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
 import {
   derivePanelStatus,
@@ -6,13 +6,21 @@ import {
   getPanelStatusStyle,
   PANEL_STATUS,
 } from '@/components/terminal/utils/panelStatusHelpers';
+import {
+  getPanelActivity,
+  getPanelActivityAgeMs,
+  subscribePanelActivity,
+} from '@/components/terminal/utils/panelActivityStore';
 
 const DEFAULT_POLLING_INTERVAL_MS = 6000;
 const FETCH_TIMEOUT_MS = 3000;
 
-function resolveApiSessionId(agentRun, initialCommand) {
+function resolveApiSessionId(agentRun, initialCommand, terminalActivity) {
   if (agentRun) {
     return agentRun.sessionId || agentRun.runId || null;
+  }
+  if (terminalActivity?.agentSessionId) {
+    return terminalActivity.agentSessionId;
   }
   return extractOpenCodeSessionId(initialCommand);
 }
@@ -54,6 +62,12 @@ export default function usePanelAgentStatus(
   const [error, setError] = useState(null);
   const requestIdRef = useRef(0);
 
+  // Live event-driven activity signal from the PTY WebSocket (TerminalTTY tracker).
+  const subscribe = useCallback((cb) => subscribePanelActivity(panelId, cb), [panelId]);
+  const getSnapshot = useCallback(() => getPanelActivity(panelId), [panelId]);
+  const liveActivity = useSyncExternalStore(subscribe, getSnapshot, () => null);
+  const liveActivityAgeMs = liveActivity ? getPanelActivityAgeMs(panelId) : null;
+
   const status = useMemo(
     () =>
       derivePanelStatus({
@@ -62,8 +76,18 @@ export default function usePanelAgentStatus(
         initialCommand,
         apiStatus,
         terminalActivity,
+        liveActivity,
+        liveActivityAgeMs,
       }),
-    [connectionState, agentRun, initialCommand, apiStatus, terminalActivity]
+    [
+      connectionState,
+      agentRun,
+      initialCommand,
+      apiStatus,
+      terminalActivity,
+      liveActivity,
+      liveActivityAgeMs,
+    ]
   );
 
   const style = useMemo(() => getPanelStatusStyle(status), [status]);
@@ -73,7 +97,7 @@ export default function usePanelAgentStatus(
   useEffect(() => {
     if (!enabled || !panelId) return undefined;
 
-    const sessionId = resolveApiSessionId(agentRun, initialCommand);
+    const sessionId = resolveApiSessionId(agentRun, initialCommand, terminalActivity);
     if (!sessionId) {
       setApiStatus(null);
       return undefined;
@@ -97,6 +121,14 @@ export default function usePanelAgentStatus(
         });
 
         if (cancelled || requestId !== requestIdRef.current) return;
+
+        if (res.status === 404) {
+          // Session id is not tracked in agenthub (e.g. synthesized id for a
+          // manually launched Kimi/Grok). This is not an error; just ignore it
+          // and let PTY activity drive the badge.
+          setError(null);
+          return;
+        }
 
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
@@ -127,7 +159,14 @@ export default function usePanelAgentStatus(
       currentController?.abort();
       if (intervalId) clearInterval(intervalId);
     };
-  }, [panelId, agentRun, initialCommand, enabled, pollingInterval]);
+  }, [
+    panelId,
+    agentRun,
+    initialCommand,
+    terminalActivity?.agentSessionId,
+    enabled,
+    pollingInterval,
+  ]);
 
   // Poll PTY activity to detect real-time work for agent TUIs without tracked sessions.
   useEffect(() => {
@@ -168,10 +207,19 @@ export default function usePanelAgentStatus(
         const lastActivityTime = lastActivityAt ? new Date(lastActivityAt).getTime() : 0;
         const lastActivityAgoMs = lastActivityTime ? Date.now() - lastActivityTime : null;
 
+        const agentTuiStateAt = data?.agentTuiStateAt || null;
         setTerminalActivity({
           lastActivityAt,
           lastActivityAgoMs,
           isActive: lastActivityAgoMs !== null && lastActivityAgoMs <= 3000,
+          alive: Boolean(data?.alive),
+          socketCount: Number(data?.socketCount || 0),
+          agentType: data?.agentType || null,
+          agentSessionId: data?.agentSessionId || null,
+          agentTuiState: data?.agentTuiState || null,
+          agentTuiStateAt,
+          agentTuiStateAgeMs: agentTuiStateAt ? Date.now() - agentTuiStateAt : null,
+          mode: data?.mode || null,
         });
         setLastUpdated(new Date().toISOString());
       } catch {

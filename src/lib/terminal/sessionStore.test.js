@@ -101,7 +101,7 @@ describe('saveSessions', () => {
     const written = mockFs.writeFileSync.mock.calls[0][1];
     const parsed = JSON.parse(written);
 
-    expect(parsed.version).toBe(3);
+    expect(parsed.version).toBe(4);
     expect(Array.isArray(parsed.sessions)).toBe(true);
     expect(parsed.sessions).toHaveLength(1);
     expect(parsed.sessions[0].id).toBe('term-1');

@@ -1,6 +1,11 @@
 /** @typedef {'agent' | 'shell'} TerminalExitKind */
 
-const AGENT_TUI_COMMAND_PATTERN = /\b(opencode|hermes|grok|groc|kimi|codex)\b/i;
+import {
+  AGENT_TUI_PATTERN,
+  detectAgentTypeFromCommand,
+  isAgentTuiCommand as isAgentTuiCommandFromMetadata,
+  resolveAgentTuiLabel as resolveAgentTuiLabelFromMetadata,
+} from './agentTuiMetadata.js';
 
 /** @type {Map<string, { reason: string | null, connectionState: string }>} */
 const persistedPanelSessionExits = new Map();
@@ -10,10 +15,10 @@ const persistedPanelSessionExits = new Map();
  * Matches anywhere in the command (e.g. `bash -lc opencode --session …`).
  */
 export function isAgentTuiCommand(initialCommand) {
-  const cmd = String(initialCommand || '').trim();
-  if (!cmd) return false;
-  return AGENT_TUI_COMMAND_PATTERN.test(cmd);
+  return isAgentTuiCommandFromMetadata(initialCommand);
 }
+
+export { AGENT_TUI_PATTERN };
 
 /** Survives React unmount/remount on workspace window switches. */
 export function persistPanelSessionExit(
@@ -33,15 +38,8 @@ export function clearPanelSessionExit(panelId) {
 }
 
 export function resolveAgentTuiLabel(initialCommand) {
-  const cmd = String(initialCommand || '')
-    .trim()
-    .toLowerCase();
-  if (cmd.startsWith('opencode')) return 'OpenCode';
-  if (cmd.startsWith('kimi')) return 'Kimi Code';
-  if (cmd.startsWith('hermes')) return 'Hermes';
-  if (cmd.startsWith('codex')) return 'Codex';
-  if (cmd.startsWith('grok') || cmd.startsWith('groc')) return 'Grok';
-  return 'Agente TUI';
+  const type = detectAgentTypeFromCommand(initialCommand);
+  return resolveAgentTuiLabelFromMetadata(type);
 }
 
 /**

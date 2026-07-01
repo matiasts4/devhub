@@ -202,8 +202,18 @@ describe('usePanelAgentStatus', () => {
       );
     });
 
-    fetchSpy.mockRejectedValueOnce(new Error('network down'));
-    intervalCallbacks[0]?.();
+    // Simulate a network failure on the agent-hub polling loop while keeping
+    // the PTY loop healthy. Both setInterval callbacks may fire; the agent-hub
+    // rejection should surface as the hook's error without clearing apiStatus.
+    fetchSpy.mockImplementation((url) => {
+      const isAgentHub = typeof url === 'string' && url.includes('/api/agenthub/');
+      if (isAgentHub) {
+        return Promise.reject(new Error('network down'));
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    intervalCallbacks.forEach((cb) => cb());
     await flushEffects();
 
     await waitFor(() => {
@@ -301,10 +311,78 @@ describe('usePanelAgentStatus', () => {
     expect(view.container.querySelector('[data-testid="pulsing"]')?.textContent).toBe('true');
   });
 
-  test('prioritizes API status over PTY activity', async () => {
+  test('uses terminal agentType when initialCommand is unavailable', async () => {
     fetchSpy.mockResolvedValue({
       ok: true,
-      json: async () => ({ status: 'completed' }),
+      json: async () => ({
+        lastActivityAt: new Date(Date.now() - 30000).toISOString(),
+        alive: true,
+        agentType: 'claude',
+      }),
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(Harness, {
+        panelId: 'panel-1',
+        terminalId: 'panel-1',
+        agentRun: null,
+        initialCommand: null,
+        connectionState: 'connected',
+        pollingInterval: 5000,
+        enabled: true,
+      }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-testid="status"]')?.textContent).toBe(
+        PANEL_STATUS.IDLE
+      );
+    });
+  });
+
+  test('prioritizes recent PTY activity over completed API status', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const isAgentHub = typeof url === 'string' && url.includes('/api/agenthub/');
+      const response = isAgentHub
+        ? { status: 'completed' }
+        : { lastActivityAt: new Date().toISOString(), alive: true, agentType: 'kimi' };
+      return Promise.resolve({
+        ok: true,
+        json: async () => response,
+      });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(Harness, {
+        panelId: 'panel-1',
+        terminalId: 'panel-1',
+        agentRun: { sessionId: 'sess-1' },
+        initialCommand: 'kimi',
+        connectionState: 'connected',
+        pollingInterval: 5000,
+        enabled: true,
+      }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-testid="status"]')?.textContent).toBe(
+        PANEL_STATUS.RUNNING
+      );
+    });
+  });
+
+  test('falls back to API status when PTY has no activity', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const response =
+        typeof url === 'string' && url.includes('/api/agenthub/')
+          ? { status: 'completed' }
+          : { status: 'completed' };
+      return Promise.resolve({
+        ok: true,
+        json: async () => response,
+      });
     });
 
     const view = await renderIntoDom(
@@ -342,5 +420,79 @@ describe('usePanelAgentStatus', () => {
     await flushEffects();
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(setIntervalSpy).not.toHaveBeenCalled();
+  });
+
+  test('polls agenthub using agentSessionId from terminal when no agentRun or initialCommand', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const isAgentHub = typeof url === 'string' && url.includes('/api/agenthub/');
+      const response = isAgentHub
+        ? { status: 'running' }
+        : {
+            lastActivityAt: new Date(Date.now() - 30000).toISOString(),
+            alive: true,
+            agentType: 'kimi',
+            agentSessionId: 'kimi-panel-1',
+          };
+      return Promise.resolve({ ok: true, json: async () => response });
+    });
+
+    renderIntoDom(
+      React.createElement(Harness, {
+        panelId: 'panel-1',
+        terminalId: 'panel-1',
+        agentRun: null,
+        initialCommand: null,
+        connectionState: 'connected',
+        pollingInterval: 5000,
+        enabled: true,
+      }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/agenthub/sessions/kimi-panel-1/status',
+        expect.any(Object)
+      );
+    });
+  });
+
+  test('treats 404 from agenthub as missing tracker, not an error', async () => {
+    fetchSpy.mockImplementation((url) => {
+      const isAgentHub = typeof url === 'string' && url.includes('/api/agenthub/');
+      if (isAgentHub) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: async () => ({ error: 'not found' }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          lastActivityAt: new Date(Date.now() - 30000).toISOString(),
+          alive: true,
+          agentType: 'kimi',
+          agentSessionId: 'kimi-panel-1',
+        }),
+      });
+    });
+
+    const view = await renderIntoDom(
+      React.createElement(Harness, {
+        panelId: 'panel-1',
+        terminalId: 'panel-1',
+        agentRun: null,
+        initialCommand: null,
+        connectionState: 'connected',
+        pollingInterval: 5000,
+        enabled: true,
+      }),
+      mountedRoots
+    );
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-testid="error"]')?.textContent).toBe('');
+    });
   });
 });

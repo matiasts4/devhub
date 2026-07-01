@@ -20,14 +20,18 @@ const cors = require('cors');
 const { resolveSidecarSessionCwd } = require('./sessionCwd');
 const { buildSidecarSpawnConfig, parseBooleanQueryFlag } = require('./sessionSpawn');
 const {
+  applyAgentTuiDetection,
   buildHistoryReplay,
   buildServerMessage,
+  detectAgentStateFromOutput,
+  detectKimiTuiReady,
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
   getTransportMode,
   parseClientMessage,
+  synthesizeAgentSessionId,
   updateSessionModeFromInput,
 } = require('./sessionTransport');
 const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
@@ -123,7 +127,8 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     env: process.env,
   });
   const shell =
-    os.platform() === 'win32' ? 'powershell.exe' : spawnConfig.shell || process.env.SHELL || 'bash';
+    spawnConfig.shell ||
+    (os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash');
   const ptyProcess = pty.spawn(shell, spawnConfig.args, {
     name: 'xterm-256color',
     cols: 120,
@@ -133,14 +138,21 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
   });
 
   const session = {
+    id: sessionId,
     ptyProcess,
     history: [], // Buffer de los últimos 5000 chars para replay al reconectar
     clients: new Set(),
     cwd: effectiveCwd,
     createdAt: Date.now(),
+    lastSeenAt: new Date().toISOString(),
+    lastActivityAt: Date.now(),
     mode: 'shell',
     historyEnabled: true,
     opencodeSessionId: null,
+    agentType: null,
+    agentSessionId: null,
+    agentTuiState: null,
+    agentTuiStateAt: null,
     pendingInput: '',
     tmuxSession: spawnConfig.tmuxSession || null,
     swarmContext: {
@@ -152,6 +164,10 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
 
   // Capturar output del PTY y enviarlo a todos los clientes conectados
   ptyProcess.on('data', (data) => {
+    const now = Date.now();
+    session.lastSeenAt = new Date().toISOString();
+    session.lastActivityAt = now;
+
     const filteredData = filterTerminalOutputForSession(session, data);
 
     if (typeof filteredData === 'string' && filteredData.length === 0) {
@@ -177,12 +193,34 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
       });
     }
 
-    if (session.tmuxSession && detectOpenCodeTuiReady(filteredData)) {
-      writeOpencodeReadyMarker(session.tmuxSession, {
-        sessionId,
-        opencodeSessionId: session.opencodeSessionId || null,
-        reason: 'sidecar-tui-footer',
-      });
+    // Detect TUI readiness for agents started without an explicit initialCommand.
+    if (detectKimiTuiReady(filteredData)) {
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'kimi');
+      }
+    } else if (detectOpenCodeTuiReady(filteredData)) {
+      if (session.mode !== 'tui') {
+        session.mode = 'tui';
+        session.historyEnabled = false;
+      }
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'opencode');
+      }
+      if (session.tmuxSession) {
+        writeOpencodeReadyMarker(session.tmuxSession, {
+          sessionId,
+          opencodeSessionId: session.opencodeSessionId || null,
+          reason: 'sidecar-tui-footer',
+        });
+      }
+    }
+
+    // Detect active-agent states such as Kimi's "thinking" footer even when
+    // there is no new PTY input/output (the TUI itself is animating/processing).
+    const detectedState = detectAgentStateFromOutput(filteredData, session.agentType);
+    if (detectedState) {
+      session.agentTuiState = detectedState;
+      session.agentTuiStateAt = now;
     }
 
     broadcastSessionPayload(session, { type: 'output', data: filteredData });
@@ -235,6 +273,34 @@ app.get('/sessions', (_req, res) => {
     createdAt: s.createdAt,
   }));
   res.json({ sessions: list });
+});
+
+// Single session snapshot for panel status polling.
+app.get('/sessions/:id', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  res.json({
+    terminalId: req.params.id,
+    mode: session.mode || 'shell',
+    socketCount: session.clients?.size || 0,
+    createdAt: session.createdAt || null,
+    lastActivityAt: session.lastActivityAt || null,
+    lastSeenAt: session.lastSeenAt || null,
+    cwd: session.cwd || null,
+    shell: session.ptyProcess?.shell || null,
+    title: null,
+    restored: false,
+    alive: true,
+    opencodeSessionId: session.opencodeSessionId || null,
+    hermesSessionId: null,
+    agentType: session.agentType || null,
+    agentSessionId: session.agentSessionId || null,
+    agentTuiState: session.agentTuiState || null,
+    agentTuiStateAt: session.agentTuiStateAt || null,
+    initialCommand: null,
+  });
 });
 
 // Output buffer for a specific session (for external observers like Zed assistant to "see" contents)
@@ -351,11 +417,16 @@ wss.on('connection', (ws, req) => {
   };
   ws.__devhubTransport = getTransportMode(req.url || '/');
 
+  // El frontend espera este mensaje para decidir si inyectar el comando inicial.
+  // En reattach (sesión ya existente) NO se reenvía, porque el PTY puede tener
+  // una TUI viva. En sesión fresca el frontend inyecta initialCommand vía WebSocket.
+  // Este contrato debe mantenerse en paralelo con src/lib/terminal/ttyServer.js.
+  const isReattach = sessions.has(sessionId);
   const session = getOrCreateSession(sessionId, cwd, swarmContext);
   session.clients.add(ws);
 
   console.log(
-    `[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport})`
+    `[Sidecar] WS conectado a sesión ${sessionId} (${session.clients.size} clientes, transport=${ws.__devhubTransport}, reattach=${isReattach})`
   );
 
   // Replay del historial al reconectar
@@ -372,6 +443,16 @@ wss.on('connection', (ws, req) => {
       sessionId: session.opencodeSessionId,
     });
   }
+
+  // Notificar al cliente que la sesión está lista. El frontend usa esto para
+  // enviar (o no) el comando inicial. Se envía DESPUÉS del replay para que
+  // el historial ya esté escrito antes de que el comando inicial corra.
+  sendToClient(ws, {
+    type: 'ready',
+    reattached: isReattach,
+    mode: session?.mode || 'shell',
+    lastActivityAgeMs: Date.now() - (session?.lastActivityAt || 0),
+  });
 
   ws.on('message', (msg) => {
     const payload = parseClientMessage(msg, ws.__devhubTransport || 'raw');

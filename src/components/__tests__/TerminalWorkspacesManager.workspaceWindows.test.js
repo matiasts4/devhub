@@ -266,9 +266,14 @@ function seedTwoWorkspaces() {
 
 function workspaceTabByLabel(container, label) {
   const tabs = Array.from(
-    container.querySelectorAll('[data-testid="workspace-top-tab-bar"] span.font-semibold')
+    container.querySelectorAll(
+      '[data-testid="workspace-top-tab-bar"] [data-testid^="workspace-tab-"]'
+    )
   );
-  return tabs.find((el) => el.textContent?.trim() === label)?.closest('[draggable="true"]') || null;
+  return (
+    tabs.find((tab) => tab.querySelector('span.font-semibold')?.textContent?.trim() === label) ||
+    null
+  );
 }
 
 function visibleTerminals(container) {
@@ -343,11 +348,17 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
     dom = installDom();
     originalRequestAnimationFrame = global.requestAnimationFrame;
     originalCancelAnimationFrame = global.cancelAnimationFrame;
-    global.requestAnimationFrame = (callback) => {
+    // Component code reads window.requestAnimationFrame (== dom.window, set by
+    // installDom above), not global.requestAnimationFrame — mock both so the
+    // synchronous/immediate behavior these tests rely on actually takes effect.
+    const immediateRaf = (callback) => {
       callback();
       return 0;
     };
+    global.requestAnimationFrame = immediateRaf;
     global.cancelAnimationFrame = () => {};
+    window.requestAnimationFrame = immediateRaf;
+    window.cancelAnimationFrame = () => {};
     window.localStorage.clear();
     seedTwoWindowWorkspace();
     global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
@@ -479,11 +490,17 @@ describe('TerminalWorkspacesManager workspace tab switching', () => {
     dom = installDom();
     originalRequestAnimationFrame = global.requestAnimationFrame;
     originalCancelAnimationFrame = global.cancelAnimationFrame;
-    global.requestAnimationFrame = (callback) => {
+    // Component code reads window.requestAnimationFrame (== dom.window, set by
+    // installDom above), not global.requestAnimationFrame — mock both so the
+    // synchronous/immediate behavior these tests rely on actually takes effect.
+    const immediateRaf = (callback) => {
       callback();
       return 0;
     };
+    global.requestAnimationFrame = immediateRaf;
     global.cancelAnimationFrame = () => {};
+    window.requestAnimationFrame = immediateRaf;
+    window.cancelAnimationFrame = () => {};
     window.localStorage.clear();
     seedTwoWorkspaces();
     global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
@@ -555,5 +572,94 @@ describe('TerminalWorkspacesManager workspace tab switching', () => {
     ).length;
 
     expect(eventsAfterClick).toBe(eventsAfterMount);
+  });
+
+  test('drag-and-dropping a workspace tab reorders workspaces', async () => {
+    const { container } = await renderManager();
+
+    const alphaTab = workspaceTabByLabel(container, 'Alpha');
+    const betaTab = workspaceTabByLabel(container, 'Beta');
+    expect(alphaTab).not.toBeNull();
+    expect(betaTab).not.toBeNull();
+
+    const tabLabels = () =>
+      Array.from(
+        container.querySelectorAll(
+          '[data-testid="workspace-top-tab-bar"] [data-testid^="workspace-tab-"]'
+        )
+      ).map((el) => el.querySelector('span.font-semibold')?.textContent?.trim());
+
+    expect(tabLabels()).toEqual(['Alpha', 'Beta']);
+
+    const originalElementFromPoint = document.elementFromPoint;
+
+    function dispatchPointerEvent(target, type, options = {}) {
+      const event = new window.MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        ...options,
+      });
+      event.pointerId = options.pointerId ?? 1;
+      target.dispatchEvent(event);
+    }
+
+    // Drag Alpha over Beta to swap positions.
+    dispatchPointerEvent(alphaTab, 'pointerdown');
+    await flushEffects();
+
+    // Move past the drag threshold so the drag is considered active.
+    dispatchPointerEvent(alphaTab, 'pointermove', { clientX: 10, clientY: 10 });
+    await flushEffects();
+
+    // Simulate the cursor hovering over the Beta tab.
+    document.elementFromPoint = () => betaTab;
+    dispatchPointerEvent(betaTab, 'pointermove', { clientX: 20, clientY: 0 });
+    await flushEffects();
+
+    // Release to drop on Beta.
+    dispatchPointerEvent(betaTab, 'pointerup');
+    await flushEffects();
+
+    document.elementFromPoint = originalElementFromPoint;
+
+    expect(tabLabels()).toEqual(['Beta', 'Alpha']);
+  });
+
+  test('closing the active workspace dispatches a workspace-switch burst for the destination panels (RC0c)', async () => {
+    // Regression: closing the ACTIVE workspace used to skip the layout-settled burst
+    // (the activeWsId effect only emits a NATIVE VTE sync, no browser event for xterm),
+    // so xterm destination panels relied solely on the layout-show useLayoutEffect and
+    // stayed black when the async GPU reattach lost the race. The fix reuses the same
+    // WORKSPACE_SWITCH burst a tab switch would (if it dispatched one), targeting the
+    // destination workspace's panels so handleLayoutSettled can force-repaint them.
+    const { container } = await renderManager();
+
+    const eventsBeforeClose = layoutSettledEvents.filter(
+      (detail) => detail.reason === 'workspace-switch'
+    ).length;
+
+    // ws1 (Alpha) is the active workspace; closing it lands the user on ws2 (Beta).
+    const ws1CloseBtn = container.querySelector('[data-testid="workspace-close-ws1"]');
+    expect(ws1CloseBtn).not.toBeNull();
+    await click(ws1CloseBtn);
+
+    // removeWorkspace awaits a 200ms settle timer before the state setters + burst
+    // dispatch; flushEffects only drains microtasks, so wait past the timer then flush.
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await flushEffects();
+
+    const switchEvents = layoutSettledEvents
+      .filter((detail) => detail.reason === 'workspace-switch')
+      .slice(eventsBeforeClose);
+
+    expect(switchEvents.length).toBeGreaterThan(0);
+    // Every switch burst must target the destination workspace (ws2) and its panels
+    // (p4, p5), never the closed workspace's panels (p1, p2).
+    switchEvents.forEach((detail) => {
+      expect(detail.workspaceId).toBe('ws2');
+      expect(detail.panelIds).toEqual(expect.arrayContaining(['p4', 'p5']));
+      expect(detail.panelIds).toEqual(expect.not.arrayContaining(['p1', 'p2']));
+    });
   });
 });

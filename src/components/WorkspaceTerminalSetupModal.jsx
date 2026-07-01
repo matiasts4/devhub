@@ -44,6 +44,13 @@ const COMMAND_PRESETS = [
     Icon: Bot,
   },
   {
+    id: 'kimi',
+    label: 'Kimi',
+    command: 'kimi',
+    description: 'Inicia Kimi en cada terminal',
+    Icon: Sparkles,
+  },
+  {
     id: 'grok',
     label: 'Grok',
     command: 'grok',
@@ -84,6 +91,7 @@ export default function WorkspaceTerminalSetupModal({
   const commandInputRef = useRef(null);
   const confirmButtonRef = useRef(null);
   const presetButtonRefs = useRef([]);
+  const didInitialFocusRef = useRef(false);
 
   const commandApplies = terminalCount > 0;
   const resolvedPresetId = useMemo(() => resolvePresetId(initialCommand), [initialCommand]);
@@ -137,7 +145,14 @@ export default function WorkspaceTerminalSetupModal({
   );
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      didInitialFocusRef.current = false;
+      return;
+    }
+    // Evitar que cambios de identidad de focusWorkspaceSection (provocados por
+    // escribir en el input de comando) vuelvan a robar el foco del usuario.
+    if (didInitialFocusRef.current) return;
+    didInitialFocusRef.current = true;
     focusWorkspaceSection('terminals');
   }, [focusWorkspaceSection, open]);
 
@@ -472,7 +487,7 @@ export default function WorkspaceTerminalSetupModal({
             </div>
 
             <div
-              className="grid grid-cols-3 gap-2"
+              className="grid grid-cols-4 gap-2"
               data-testid="workspace-terminal-command-presets"
             >
               {COMMAND_PRESETS.map(({ id, label, command, description, Icon }, index) => {
@@ -489,7 +504,7 @@ export default function WorkspaceTerminalSetupModal({
                     disabled={!commandApplies}
                     onFocus={() => setActiveSection('commandPresets')}
                     onClick={() => handlePresetSelect({ id, command })}
-                    className="flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed"
+                    className="flex flex-col items-start gap-1.5 rounded-lg border p-2.5 text-left transition-colors disabled:cursor-not-allowed"
                     style={{
                       background: isActive
                         ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
@@ -500,7 +515,7 @@ export default function WorkspaceTerminalSetupModal({
                     title={description}
                   >
                     <span
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border"
                       style={{
                         borderColor: isActive
                           ? 'color-mix(in srgb, var(--accent-primary) 35%, transparent)'
@@ -539,7 +554,7 @@ export default function WorkspaceTerminalSetupModal({
                 onChange={handleCommandInputChange}
                 onFocus={() => setActiveSection('customCommand')}
                 disabled={!commandApplies}
-                placeholder="ej. opencode, grok, npm run dev"
+                placeholder="ej. opencode, kimi, grok, npm run dev"
                 data-testid="workspace-terminal-initial-command-input"
                 className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors focus:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                 style={{

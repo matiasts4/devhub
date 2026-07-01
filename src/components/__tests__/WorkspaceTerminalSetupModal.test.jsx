@@ -139,4 +139,33 @@ describe('WorkspaceTerminalSetupModal keyboard flow', () => {
     expect(onConfirm).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
+
+  test('typing in the custom command input keeps focus on the input', async () => {
+    const onConfirm = jest.fn();
+    await renderIntoDom(
+      React.createElement(WorkspaceTerminalSetupModal, {
+        open: true,
+        onClose: jest.fn(),
+        onConfirm,
+      }),
+      mountedRoots
+    );
+    await flushEffects();
+
+    const customInput = document.querySelector(
+      '[data-testid="workspace-terminal-initial-command-input"]'
+    );
+    customInput.focus();
+    await flushEffects();
+    expect(document.activeElement).toBe(customInput);
+
+    flushSync(() => {
+      customInput.value = 'kimi';
+      customInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(document.activeElement).toBe(customInput);
+    expect(customInput.value).toBe('kimi');
+  });
 });

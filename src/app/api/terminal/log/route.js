@@ -14,6 +14,7 @@ const LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log
  */
 function shouldEchoToStdout(tag, msg, extra) {
   if (typeof tag === 'string' && tag.startsWith('RENDER:')) return true;
+  if (typeof tag === 'string' && tag === 'BUILD') return true;
   if (typeof msg !== 'string') return false;
   if (msg.includes('viewport diagnostic')) return true;
   if (msg.includes('xterm-webgl')) return true;

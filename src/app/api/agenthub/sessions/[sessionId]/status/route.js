@@ -98,36 +98,44 @@ export async function GET(_req, { params }) {
     }
 
     let dbStatus = session.status || 'active';
+    const isOpenCodeSession = Boolean(session.opencode_session_id);
 
     // Fast-path: if DB already shows a terminal status, return it directly
     if (!IN_PROGRESS_DB_STATUSES.has(dbStatus)) {
-      const opencodeSessionIdFast = session.opencode_session_id || session.id;
+      const outputSessionId = session.opencode_session_id || session.id;
       return NextResponse.json({
         sessionId: session.id,
         status: dbStatus,
         error_message: session.error_message || null,
-        text_output: getTextOutput(opencodeSessionIdFast),
+        text_output: isOpenCodeSession ? getTextOutput(outputSessionId) : null,
         opencodeSessionId: session.opencode_session_id || null,
         updated_at: session.updated_at,
       });
     }
 
-    // DB still shows in-progress — ask OpenCode directly for source-of-truth
-    const opencodeSessionId = session.opencode_session_id || session.id;
-    const ocStatus = await checkOpenCodeSessionStatus(opencodeSessionId);
+    // DB still shows in-progress. Only consult the OpenCode local server when
+    // this session is actually bound to an OpenCode session id. For other agent
+    // TUIs (Kimi, Grok, etc.) the PTY activity is the source of truth.
+    if (isOpenCodeSession) {
+      const ocStatus = await checkOpenCodeSessionStatus(session.opencode_session_id);
 
-    if (ocStatus === 'idle') {
-      // OpenCode says done — persist immediately so next poll is instant
-      updateSessionStatus(session.id, 'completed');
-      dbStatus = 'completed';
+      if (ocStatus === 'idle') {
+        // OpenCode says done — persist immediately so next poll is instant
+        updateSessionStatus(session.id, 'completed');
+        dbStatus = 'completed';
+      }
     }
 
     return NextResponse.json({
       sessionId: session.id,
       status: dbStatus,
-      text_output: dbStatus !== 'active' && dbStatus !== 'working' && dbStatus !== 'running'
-        ? getTextOutput(opencodeSessionId)
-        : null,
+      text_output:
+        dbStatus !== 'active' &&
+        dbStatus !== 'working' &&
+        dbStatus !== 'running' &&
+        isOpenCodeSession
+          ? getTextOutput(session.opencode_session_id)
+          : null,
       opencodeSessionId: session.opencode_session_id || null,
       updated_at: session.updated_at,
     });

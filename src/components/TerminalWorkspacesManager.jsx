@@ -223,6 +223,7 @@ import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
   dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
+  scheduleSurvivorRecoverAfterClose,
   computeCarvedBounds,
   createNativeLayoutSyncQueue,
 } from '@/components/terminal/nativeLayoutSync';
@@ -260,6 +261,30 @@ import RightDockSharedMirror from './workspace/RightDockSharedMirror';
 // maximizedView re-targets the active host, never the
 // surface.
 import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
+
+// Bump alongside TERMINAL_TTY_BUILD_MARKER (TerminalTTY.jsx) to prove the running
+// dev server picked up a fresh edit: watch `pnpm tauri dev` stdout for
+// `[devhub-log] [BUILD] TerminalWorkspacesManager.jsx ...` on startup, or check
+// window.__DEVHUB_BUILD_MARKERS__.workspacesManager in devtools.
+const WORKSPACES_MANAGER_BUILD_MARKER = '2026-07-01-survivor-gpu-recycle-golden-path-v4';
+if (typeof window !== 'undefined') {
+  window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
+  if (window.__DEVHUB_BUILD_MARKERS__.workspacesManager !== WORKSPACES_MANAGER_BUILD_MARKER) {
+    window.__DEVHUB_BUILD_MARKERS__.workspacesManager = WORKSPACES_MANAGER_BUILD_MARKER;
+    try {
+      fetch('/api/terminal/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag: 'BUILD',
+          msg: `TerminalWorkspacesManager.jsx loaded — marker=${WORKSPACES_MANAGER_BUILD_MARKER}`,
+        }),
+      }).catch(() => {});
+    } catch {
+      // never crash module load — diagnostic only
+    }
+  }
+}
 
 // --- Helper Functions ---
 
@@ -915,6 +940,7 @@ function renderWorkspacePanel(
     onCommitRename = null,
     onCancelRename = null,
     agentRun = null,
+    onConnectionStateChange = null,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
@@ -948,6 +974,7 @@ function renderWorkspacePanel(
     nativeSurfacePolicy: nativeSurfacePolicy || 'live',
     surfaceHost: pizarraOwnsLiveSurfaces ? 'pizarra' : 'workspace',
     pizarraOwnsLiveSurfaces: Boolean(pizarraOwnsLiveSurfaces),
+    onConnectionStateChange,
   };
 
   return (
@@ -1428,6 +1455,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
   const materializedSwarmLaunchIdsRef = useRef(new Set());
   const swarmProjectionBurstCleanupRef = useRef(null);
+  const workspaceCloseRecoverCleanupRef = useRef(null);
 
   const [activeWsId, setActiveWsId] = useState(() => createDefaultWorkspaceState().activeWsId);
   const [activePanelIds, setActivePanelIds] = useState(
@@ -1435,6 +1463,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   );
   const [draggedWsId, setDraggedWsId] = useState(null);
   const [dragOverWsId, setDragOverWsId] = useState(null);
+  const pendingDragRef = useRef(null);
   const [gridCommand, setGridCommand] = useState('opencode');
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [workspaceTerminalSetupOpen, setWorkspaceTerminalSetupOpen] = useState(false);
@@ -1458,10 +1487,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   });
   const [restoreSettingsModal, setRestoreSettingsModal] = useState({ open: false });
   const [panelRestoreModes, setPanelRestoreModes] = useState({});
+  const [panelConnectionStateById, setPanelConnectionStateById] = useState({});
   const getPanelConnectionState = useCallback(
-    (panel) => resolvePanelStartupConnectionState(panel, panelRestoreModes),
-    [panelRestoreModes]
+    (panel) =>
+      panelConnectionStateById[panel?.id] ??
+      resolvePanelStartupConnectionState(panel, panelRestoreModes),
+    [panelConnectionStateById, panelRestoreModes]
   );
+  const handleTerminalConnectionStateChange = useCallback((panelId, connectionState) => {
+    if (!panelId || !connectionState) return;
+    setPanelConnectionStateById((prev) => {
+      if (prev[panelId] === connectionState) return prev;
+      return { ...prev, [panelId]: connectionState };
+    });
+  }, []);
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
   const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
   const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
@@ -3598,30 +3637,38 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     workspaceWindows,
   ]);
 
-  const prevActiveWindowIdsJsonRef = useRef('');
+  const prevActiveWorkspaceWindowIdRef = useRef(undefined);
+  const isFirstActiveWindowIdsRunRef = useRef(true);
   useEffect(() => {
     if (!isClientLoaded) return undefined;
-    const json = JSON.stringify(activeWindowIds);
-    if (prevActiveWindowIdsJsonRef.current === json) return undefined;
-    const isInitialMount = prevActiveWindowIdsJsonRef.current === '';
-    prevActiveWindowIdsJsonRef.current = json;
+    const isInitialMount = isFirstActiveWindowIdsRunRef.current;
+    isFirstActiveWindowIdsRunRef.current = false;
+    const activeWorkspaceWindowIdChanged =
+      !isInitialMount && prevActiveWorkspaceWindowIdRef.current !== activeWindowIds[activeWsId];
+    prevActiveWorkspaceWindowIdRef.current = activeWindowIds[activeWsId];
     if (isInitialMount) return undefined;
+    // Closing/opening OTHER workspaces also mutates this map (keys get added or
+    // removed), which would otherwise re-fire this effect and double up with
+    // removeWorkspace's own survivor-recover burst for the same close. Only the
+    // currently active workspace's own window selection changing warrants a
+    // window-switch recovery here.
+    if (!activeWorkspaceWindowIdChanged) return undefined;
 
     notifyNativeWorkspaceSurfaceSync('workspace-window-switch');
 
-    // Dispatch a workspace-window-switch burst so TerminalTTY forces a fresh
-    // canvas repaint on every destination panel (panel-group-layout alone no-ops
-    // when cols/rows are unchanged, leaving split siblings black).
     const wsId = activeWsId;
     const panelIds = wsId ? resolveActiveWindowPanelIds(wsId) : [];
-    const cleanupBurst =
-      wsId && panelIds.length > 0
-        ? syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds)
-        : undefined;
+    if (typeof window === 'undefined' || !wsId || panelIds.length === 0) {
+      return undefined;
+    }
 
-    return () => {
-      cleanupBurst?.();
-    };
+    return scheduleSurvivorRecoverAfterClose({
+      panelIds,
+      workspaceId: wsId,
+      reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
+      onLifecycleSync: () =>
+        syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
+    });
   }, [
     activeWindowIds,
     activeWsId,
@@ -4331,10 +4378,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       activeWsId === idToRemove
         ? remainingWorkspaces[remainingWorkspaces.length - 1]?.id
         : activeWsId;
-    const targetWorkspace = remainingWorkspaces.find(
-      (workspace) => workspace.id === nextActiveWsId
-    );
-    const targetPanelIds = targetWorkspace ? getAllPanelIds(targetWorkspace.columns) : [];
+    const survivorPanelIds = remainingWorkspaces.flatMap((ws) => {
+      const windowId = resolveActiveWorkspaceWindowId(ws.id, workspaceWindows, activeWindowIds);
+      const windows = workspaceWindows?.[ws.id] || [];
+      const activeWindow = windows.find((win) => win.id === windowId);
+      return getPanelIdsFromColumns(activeWindow?.columns || ws.columns || []);
+    });
 
     // TIC-1: Clean devhub_agent_runs BEFORE anything else
     // This prevents stale identity bleed into new workspaces created before React state removal
@@ -4409,18 +4458,41 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       window.setTimeout(() => panelsClosingRef.current.delete(panelId), 2000);
     });
 
-    // When the active workspace changes, activeWsId effect already emits workspace-switch.
-    // Avoid duplicate layout bursts that flash/refit survivor terminals on close.
-    if (!activeWsWillChange && typeof window !== 'undefined') {
-      if (targetPanelIds.length > 0) {
-        syncPanelLifecycleLayout(
-          PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED,
-          nextActiveWsId,
-          targetPanelIds
-        );
-      } else {
-        notifyNativeLayoutSettled('workspace-removed');
-      }
+    if (typeof window !== 'undefined' && survivorPanelIds.length > 0) {
+      // Closing the ACTIVE workspace lands the user on another workspace — that
+      // landing IS a workspace switch, so reuse the same WORKSPACE_SWITCH lifecycle
+      // burst a normal tab switch uses (handleLayoutSettled isWorkspaceSwitch branch
+      // → syncTerminalViewportOnWorkspaceShow + scheduleBoundedForceRepaint retry).
+      // The activeWsId post-commit effect only emits a NATIVE VTE workspace-switch
+      // sync (notifyNativeWorkspaceSurfaceSync intentionally does NOT dispatch a
+      // browser terminal-layout-settled for xterm), so without this dispatch xterm
+      // destination panels relied solely on the layout-show useLayoutEffect's
+      // false→true repaint, which races the async GPU renderer reattach and leaves
+      // the destination black until a manual resize. The burst's raf/delay phases
+      // fire after re-render (once isVisibleInLayout is true) and retry the repaint
+      // until the renderer is ready. fitTerminalViewport is a no-op on parked
+      // (unchanged) containers, so there is no refit/flash/SIGWINCH on survivors.
+      // ponytail: notifyNative=false on close-active because the activeWsId effect
+      // already emits the native VTE sync; a second native notify would double-sync.
+      const lifecycleReason = activeWsWillChange
+        ? PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH
+        : PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED;
+      const lifecycleOpts = activeWsWillChange ? { notifyNative: false } : undefined;
+      workspaceCloseRecoverCleanupRef.current?.();
+      workspaceCloseRecoverCleanupRef.current = scheduleSurvivorRecoverAfterClose({
+        panelIds: survivorPanelIds,
+        workspaceId: nextActiveWsId,
+        reason: lifecycleReason,
+        onLifecycleSync: () =>
+          syncPanelLifecycleLayout(
+            lifecycleReason,
+            nextActiveWsId,
+            survivorPanelIds,
+            lifecycleOpts
+          ),
+      });
+    } else if (!activeWsWillChange && typeof window !== 'undefined') {
+      notifyNativeLayoutSettled('workspace-removed');
     }
   };
 
@@ -4743,6 +4815,50 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return next;
     });
   }, []);
+
+  const handleWorkspaceTabPointerDown = useCallback(
+    (wsId) => (e) => {
+      if (e.button !== 0) return;
+      // Ignore drags that start on interactive children (close buttons, browser close).
+      if (e.target.closest('button')) return;
+      if (typeof e.currentTarget.setPointerCapture === 'function') {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      pendingDragRef.current = { wsId, startX: e.clientX, startY: e.clientY };
+    },
+    []
+  );
+
+  const handleWorkspaceTabPointerMove = useCallback(
+    (e) => {
+      const pending = pendingDragRef.current;
+      if (!pending) return;
+
+      const dx = e.clientX - pending.startX;
+      const dy = e.clientY - pending.startY;
+      if (!draggedWsId && Math.sqrt(dx * dx + dy * dy) < 5) return;
+
+      if (!draggedWsId) {
+        setDraggedWsId(pending.wsId);
+      }
+
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const tab = target?.closest('[data-testid="workspace-top-tab-bar"] [data-workspace-id]');
+      const targetWsId = tab?.dataset.workspaceId || null;
+      setDragOverWsId(targetWsId && targetWsId !== pending.wsId ? targetWsId : null);
+    },
+    [draggedWsId]
+  );
+
+  const endWorkspaceTabDrag = useCallback(() => {
+    const pending = pendingDragRef.current;
+    pendingDragRef.current = null;
+    if (draggedWsId && dragOverWsId) {
+      reorderWorkspaceTabs(draggedWsId, dragOverWsId);
+    }
+    setDraggedWsId(null);
+    setDragOverWsId(null);
+  }, [draggedWsId, dragOverWsId, reorderWorkspaceTabs]);
 
   const handleSplit = useCallback(
     (
@@ -6731,30 +6847,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
                   const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
                   return (
-                    <div
+                    <motion.div
+                      layout="position"
+                      transition={{ type: 'spring', stiffness: 500, damping: 42, mass: 0.7 }}
                       key={workspaceTabKey}
+                      data-workspace-id={ws.id}
+                      data-testid={`workspace-tab-${ws.id}`}
                       onClick={() => switchWorkspace(ws.id)}
-                      draggable
-                      onDragStart={(e) => {
-                        setDraggedWsId(ws.id);
-                        e.dataTransfer.effectAllowed = 'move';
-                      }}
-                      onDragEnd={() => {
-                        setDraggedWsId(null);
-                        setDragOverWsId(null);
-                      }}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        if (draggedWsId && draggedWsId !== ws.id) setDragOverWsId(ws.id);
-                      }}
-                      onDragLeave={() => setDragOverWsId(null)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        reorderWorkspaceTabs(draggedWsId, ws.id);
-                        setDraggedWsId(null);
-                        setDragOverWsId(null);
-                      }}
-                      className={`group relative flex h-[34px] min-h-[34px] items-center justify-between px-3.5 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none border ${
+                      onPointerDown={handleWorkspaceTabPointerDown(ws.id)}
+                      onPointerMove={handleWorkspaceTabPointerMove}
+                      onPointerUp={endWorkspaceTabDrag}
+                      onPointerLeave={endWorkspaceTabDrag}
+                      onPointerCancel={endWorkspaceTabDrag}
+                      className={`group relative flex h-[34px] min-h-[34px] items-center justify-between px-3.5 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none touch-none border ${
                         draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
                       } ${
                         activeWsId === ws.id
@@ -6763,6 +6868,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                       }`}
                       title={workspaceTabLabel}
                       style={{
+                        touchAction: 'none',
                         ...getWorkspaceTabStyle(workspaces.length),
                         ...getWorkspaceTabChromeStyle({
                           active: activeWsId === ws.id,
@@ -6779,6 +6885,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         />
                       )}
                       <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
+                        <Grip
+                          className={`w-3 h-3 shrink-0 transition-opacity duration-150 ${
+                            activeWsId === ws.id
+                              ? 'opacity-50'
+                              : 'opacity-30 group-hover:opacity-50'
+                          }`}
+                          style={{
+                            color:
+                              activeWsId === ws.id
+                                ? `rgba(var(--accent-rgb,88,166,255),0.9)`
+                                : 'currentColor',
+                          }}
+                          aria-hidden="true"
+                        />
                         <LayoutGrid
                           className="w-3.5 h-3.5 shrink-0"
                           style={{
@@ -6839,7 +6959,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                           <X className="h-3 w-3" strokeWidth={2.25} />
                         </button>
                       )}
-                    </div>
+                    </motion.div>
                   );
                 })}
                 <button
@@ -7357,6 +7477,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                           deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
                           pizarraOwnsLiveSurfaces,
                           swarmDelegatedRoleKeys,
+                          onConnectionStateChange: handleTerminalConnectionStateChange,
                         });
                       return (
                         <div

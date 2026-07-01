@@ -14,7 +14,7 @@ import path from 'path';
 
 export const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const VALID_RESTORE_POLICIES = new Set(['auto', 'manual', 'off']);
 
@@ -151,6 +151,8 @@ export function saveSessions(sessionsMap) {
       ptyPid: session.ptyPid ?? null,
       opencodeSessionId: session.opencodeSessionId ?? null,
       initialCommand: session.initialCommand ?? null,
+      agentType: session.agentType ?? null,
+      agentSessionId: session.agentSessionId ?? null,
       swarmRole: session.swarmRole ?? null,
       swarmId: session.swarmId ?? null,
       sessionType,
