@@ -127,8 +127,13 @@ function tryClearPtyIdentity(session) {
 // Safe for concurrent calls — appendFileSync is atomic per call.
 const TTY_LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log');
 const CRASH_DUMP_DIR = path.resolve(process.cwd(), 'data', 'logs', 'crash-dumps');
-const DEFAULT_AUTO_KILL_GRACE_MS = 15_000;
-const SWARM_AUTO_KILL_GRACE_MS = 120_000;
+// Panels are kept mounted while their workspace is hidden, so the PTY should
+// stay alive for reactivation even if the client socket drops briefly. Use a
+// long grace period (1 hour) to avoid killing TUIs/shells during workspace
+// switches or transient disconnections. Real cleanup still happens on explicit
+// panel close or app exit.
+const DEFAULT_AUTO_KILL_GRACE_MS = 3_600_000;
+const SWARM_AUTO_KILL_GRACE_MS = 3_600_000;
 
 function resolveAutoKillGraceMs(session) {
   if (session?.swarmId) return SWARM_AUTO_KILL_GRACE_MS;
