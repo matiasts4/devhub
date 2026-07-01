@@ -4084,14 +4084,14 @@ export default function TerminalTTY({
         canvasReleasedOnLayoutHideRef.current;
       const splitGridVisible = visibleTerminalPanelCountRef.current > 1;
       const clearAtlasForShow = gpuShowRecover || splitGridVisible;
+      // Second rAF pass is only needed when there is real async GPU work pending
+      // (released renderer, pending recovery) or a split grid whose siblings may
+      // still be settling. A plain WebGL panel with no recovery pending recovers
+      // reliably in a single rAF pass, so skip the extra repaint to cut flicker.
       const needsRafRecovery =
-        shouldAttachWebglRenderer({
-          operationalRendererMode: operationalRendererModeRef.current,
-        }) ||
-        visibleTerminalPanelCountRef.current > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT ||
+        gpuShowRecover ||
+        pendingWebglRecoveryRef.current ||
         needsViewportSyncOnShowRef.current ||
-        canvasReleasedOnLayoutHideRef.current ||
-        webglReleasedOnLayoutHideRef.current ||
         splitGridVisible;
 
       const runPass = (reason) => {
