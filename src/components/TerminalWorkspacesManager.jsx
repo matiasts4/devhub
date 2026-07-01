@@ -6848,8 +6848,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                   const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
                   return (
                     <motion.div
-                      layout="position"
-                      transition={{ type: 'spring', stiffness: 500, damping: 42, mass: 0.7 }}
                       key={workspaceTabKey}
                       data-workspace-id={ws.id}
                       data-testid={`workspace-tab-${ws.id}`}
@@ -6876,14 +6874,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                         }),
                       }}
                     >
-                      {activeWsId === ws.id && (
-                        <motion.span
-                          layoutId="workspace-active-tab-indicator"
-                          className="absolute inset-0 rounded-xl border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.07)]"
-                          transition={{ type: 'spring', stiffness: 500, damping: 42, mass: 0.7 }}
-                          style={{ zIndex: 0, willChange: 'transform' }}
-                        />
-                      )}
+                      <motion.span
+                        initial={false}
+                        animate={{
+                          opacity: activeWsId === ws.id ? 1 : 0,
+                          scale: activeWsId === ws.id ? 1 : 0.96,
+                        }}
+                        transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
+                        className="absolute inset-0 rounded-xl border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.07)]"
+                        style={{ zIndex: 0, willChange: 'transform', transformOrigin: 'center' }}
+                      />
                       <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
                         <Grip
                           className={`w-3 h-3 shrink-0 transition-opacity duration-150 ${
