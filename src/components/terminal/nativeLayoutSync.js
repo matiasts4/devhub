@@ -25,8 +25,8 @@ export function dispatchTerminalSurvivorRecover(detail = {}) {
   );
 }
 
-/** One immediate pass + late safety nets after peer xterm teardown (was 7 — caused visible flicker). */
-export const SURVIVOR_RECOVER_DELAYS_MS = Object.freeze([0, 250, 700]);
+/** Context loss from peer unmount often lands after the first recover pass. */
+export const SURVIVOR_RECOVER_DELAYS_MS = Object.freeze([0, 50, 150, 350, 600, 1000, 1600]);
 
 /**
  * Double-rAF then lifecycle burst + staggered survivor-recover events.

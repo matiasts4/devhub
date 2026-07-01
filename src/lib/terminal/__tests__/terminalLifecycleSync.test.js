@@ -166,7 +166,7 @@ describe('scheduleTerminalLifecycleSync', () => {
     expect(LIFECYCLE_BURST_PHASES['workspace-window-switch']).toEqual({
       immediate: true,
       raf: true,
-      delayMs: [120],
+      delayMs: [80, 180, 340],
     });
   });
 
