@@ -126,7 +126,7 @@ function cliLog(tag, msg, extra = {}) {
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-01-survivor-gpu-recycle-golden-path-v4';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-01-survivor-recover-coalesce-v5';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -1860,6 +1860,7 @@ export default function TerminalTTY({
   const prevVisibleInLayoutRef = useRef(isVisibleInLayout);
   const needsViewportSyncOnShowRef = useRef(false);
   const survivorGpuRecycleAtRef = useRef(0);
+  const survivorRecoverCoalesceTimerRef = useRef(null);
   const containerWasZeroSizedOnShowRef = useRef(false);
   const syncTerminalViewportOnWorkspaceShowRef = useRef(null);
   const workspaceShowSyncTimerRef = useRef(null);
@@ -5733,17 +5734,15 @@ export default function TerminalTTY({
         return;
       }
 
-      // Golden path parity: the dashboard→Terminales route always releases the
-      // GPU addon on hide and fully reattaches it on show, and that transition
-      // never leaves black panels. Workspace close / window switch keep the old
-      // WebGL/Canvas addon alive (its context or bitmap can be corrupted by peer
-      // xterm teardown), and fit/repaint alone cannot heal a dead context — so
-      // recycle the addon here exactly like the route show does.
-      // ponytail: dedupe window (1.5s) means one recycle per staggered burst;
-      // if a context dies again later, the onContextLoss handler still covers it.
-      const now = Date.now();
-      if (now - survivorGpuRecycleAtRef.current > 1500) {
-        survivorGpuRecycleAtRef.current = now;
+      // Golden path parity on workspace close/switch: release + reattach GPU like
+      // dashboard→Terminales. Window switches skip this — WebGL stays attached
+      // during window park and a recycle there only flashes without benefit.
+      const reason = String(event?.detail?.reason || '');
+      const shouldRecycleGpu =
+        (reason === 'workspace-removed' || reason === 'workspace-switch') &&
+        Date.now() - survivorGpuRecycleAtRef.current > 1500;
+      if (shouldRecycleGpu) {
+        survivorGpuRecycleAtRef.current = Date.now();
         if (webglAddonRef.current) {
           releaseWebglAddonForInactivePanel('survivor-recover-webgl');
         } else if (canvasAddonRef.current) {
@@ -5751,14 +5750,26 @@ export default function TerminalTTY({
         }
         needsViewportSyncOnShowRef.current = true;
       }
-      // Same reason the route show uses, so the released addon takes the full
-      // reattach + real-fit branch inside syncTerminalViewportOnWorkspaceShow.
-      scheduleWorkspaceShowRecovery();
+
+      // Coalesce staggered survivor events into one show-recovery pass to avoid
+      // the first-second flicker from repeated fit/repaint/GPU bursts.
+      if (survivorRecoverCoalesceTimerRef.current) {
+        clearTimeout(survivorRecoverCoalesceTimerRef.current);
+      }
+      const coalesceMs = process.env.NODE_ENV === 'test' ? 0 : 120;
+      survivorRecoverCoalesceTimerRef.current = setTimeout(() => {
+        survivorRecoverCoalesceTimerRef.current = null;
+        scheduleWorkspaceShowRecovery();
+      }, coalesceMs);
     };
 
     window.addEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
     return () => {
       window.removeEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
+      if (survivorRecoverCoalesceTimerRef.current) {
+        clearTimeout(survivorRecoverCoalesceTimerRef.current);
+        survivorRecoverCoalesceTimerRef.current = null;
+      }
     };
   }, [id, releaseCanvasAddon, releaseWebglAddonForInactivePanel, scheduleWorkspaceShowRecovery]);
 

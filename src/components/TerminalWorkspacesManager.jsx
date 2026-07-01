@@ -266,7 +266,7 @@ import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
 // dev server picked up a fresh edit: watch `pnpm tauri dev` stdout for
 // `[devhub-log] [BUILD] TerminalWorkspacesManager.jsx ...` on startup, or check
 // window.__DEVHUB_BUILD_MARKERS__.workspacesManager in devtools.
-const WORKSPACES_MANAGER_BUILD_MARKER = '2026-07-01-survivor-gpu-recycle-golden-path-v4';
+const WORKSPACES_MANAGER_BUILD_MARKER = '2026-07-01-survivor-recover-coalesce-v5';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.workspacesManager !== WORKSPACES_MANAGER_BUILD_MARKER) {
@@ -3662,13 +3662,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return undefined;
     }
 
-    return scheduleSurvivorRecoverAfterClose({
-      panelIds,
-      workspaceId: wsId,
-      reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
-      onLifecycleSync: () =>
-        syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
-    });
+    return syncPanelLifecycleLayout(
+      PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
+      wsId,
+      panelIds
+    );
   }, [
     activeWindowIds,
     activeWsId,

@@ -79,7 +79,7 @@ export const LIFECYCLE_BURST_PHASES = Object.freeze({
   [PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH]: Object.freeze({
     immediate: true,
     raf: true,
-    delayMs: Object.freeze([80, 180, 340]),
+    delayMs: Object.freeze([120]),
   }),
 });
 
