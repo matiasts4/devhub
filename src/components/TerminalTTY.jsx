@@ -1869,11 +1869,6 @@ export default function TerminalTTY({
   const pendingWebglRecoveryRef = useRef(false);
   const webglReleasedOnLayoutHideRef = useRef(false);
   const canvasReleasedOnLayoutHideRef = useRef(false);
-  /** Time before releasing a GPU addon after a workspace hide. Keeps the addon
-   * alive during quick workspace switches so the panel does not pay the async
-   * reattach cost (and the associated flicker) on every tab change. */
-  const GPU_LAZY_RELEASE_MS = 3000;
-  const gpuLazyReleaseTimerRef = useRef(null);
   const webglRecoveryTimerRef = useRef(null);
   const handleWebglContextLossRef = useRef(null);
   const scheduleWorkspaceShowRecoveryRef = useRef(null);
@@ -1978,11 +1973,6 @@ export default function TerminalTTY({
     if (webglRecoveryTimerRef.current) {
       clearTimeout(webglRecoveryTimerRef.current);
       webglRecoveryTimerRef.current = null;
-    }
-
-    if (gpuLazyReleaseTimerRef.current) {
-      clearTimeout(gpuLazyReleaseTimerRef.current);
-      gpuLazyReleaseTimerRef.current = null;
     }
 
     if (workspaceShowRecoverTimerRef.current) {
@@ -5675,45 +5665,10 @@ export default function TerminalTTY({
       workspaceShowRecoverTimerRef.current = null;
     }
 
-    const shouldReleaseCanvas = shouldReleaseCanvasRendererOnLayoutHide({
-      operationalRendererMode,
-      isVisibleInLayout,
-      prevVisibleInLayout: prevVisible,
-      isWorkspaceShellVisible: isWorkspaceShellVisibleRef.current,
-    });
-    const shouldReleaseWebgl = shouldReleaseWebglRendererOnLayoutHide({
-      operationalRendererMode,
-      isVisibleInLayout,
-      prevVisibleInLayout: prevVisible,
-      isWorkspaceShellVisible: isWorkspaceShellVisibleRef.current,
-    });
-
-    if (isVisibleInLayout) {
-      // Panel became visible again — abort any pending lazy release so the GPU
-      // addon stays attached and the panel can recover without async reattach.
-      if (gpuLazyReleaseTimerRef.current) {
-        clearTimeout(gpuLazyReleaseTimerRef.current);
-        gpuLazyReleaseTimerRef.current = null;
-      }
-    } else if (
-      !shouldUseNativeRenderer &&
-      (shouldReleaseCanvas || shouldReleaseWebgl) &&
-      !gpuLazyReleaseTimerRef.current
-    ) {
-      // Defer GPU addon disposal: quick workspace switches should not pay the
-      // reattach tax (and the visible flicker) on every tab change. Real
-      // disposal still happens if the panel stays hidden or is unmounted.
-      gpuLazyReleaseTimerRef.current = window.setTimeout(() => {
-        gpuLazyReleaseTimerRef.current = null;
-        if (isVisibleInLayoutRef.current) return;
-        if (webglAddonRef.current) {
-          releaseWebglAddonForInactivePanel('layout-hidden-webgl-lazy');
-        }
-        if (canvasAddonRef.current) {
-          releaseCanvasAddon('layout-hidden-canvas-lazy');
-        }
-      }, GPU_LAZY_RELEASE_MS);
-    }
+    // NOTE: we intentionally do NOT release WebGL/Canvas when the panel becomes
+    // hidden. Workspaces are kept mounted with visibility:hidden, so the addon
+    // must stay attached for instant reactivation. Real GPU disposal happens on
+    // unmount via disposeXtermRuntime().
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
       restoreInitialCommandDispatchGuard();
@@ -5737,10 +5692,6 @@ export default function TerminalTTY({
       if (workspaceShowRecoverTimerRef.current) {
         clearTimeout(workspaceShowRecoverTimerRef.current);
         workspaceShowRecoverTimerRef.current = null;
-      }
-      if (gpuLazyReleaseTimerRef.current) {
-        clearTimeout(gpuLazyReleaseTimerRef.current);
-        gpuLazyReleaseTimerRef.current = null;
       }
       workspaceShowZeroSizeObserverRef.current?.disconnect();
       workspaceShowZeroSizeObserverRef.current = null;
