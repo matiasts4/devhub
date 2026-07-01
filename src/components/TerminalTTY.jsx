@@ -4103,17 +4103,27 @@ export default function TerminalTTY({
         pendingWebglRecoveryRef.current ||
         needsViewportSyncOnShowRef.current ||
         splitGridVisible;
+      // Force-repaint/fit retries are only needed when there is real recovery work
+      // to do. If the GPU addon stayed attached (lazy release) and dims are stable,
+      // skip the 1-cell nudge and the fit loop — they are the main source of visible
+      // flicker during a quick workspace switch.
+      const needsForcedRepaint =
+        gpuShowRecover || survivorRecover || needsViewportSyncOnShowRef.current || splitGridVisible;
 
       const runPass = (reason) => {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
           scheduleBoundedGpuRecover();
-          scheduleBoundedFitRepaint(survivorRecover ? 40 : 24);
+          if (needsForcedRepaint) {
+            scheduleBoundedFitRepaint(survivorRecover ? 40 : 24);
+          }
           return;
         }
         void syncTerminalViewportOnWorkspaceShow(reason, { clearAtlas: clearAtlasForShow });
-        scheduleBoundedForceRepaint(survivorRecover ? 32 : 24);
-        scheduleBoundedFitRepaint(survivorRecover ? 40 : 24);
+        if (needsForcedRepaint) {
+          scheduleBoundedForceRepaint(survivorRecover ? 32 : 24);
+          scheduleBoundedFitRepaint(survivorRecover ? 40 : 24);
+        }
         scheduleBoundedGpuRecover(survivorRecover ? 48 : 40);
         if (
           !splitGridVisible &&
