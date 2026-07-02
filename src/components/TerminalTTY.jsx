@@ -3698,8 +3698,9 @@ export default function TerminalTTY({
       const colsBefore = Number(termRef.current.cols ?? 0);
       const rowsBefore = Number(termRef.current.rows ?? 0);
       const sizeUnchanged =
-        lastPtySizeRef.current.cols === colsBefore &&
-        lastPtySizeRef.current.rows === rowsBefore &&
+        ((lastPtySizeRef.current.cols === colsBefore &&
+          lastPtySizeRef.current.rows === rowsBefore) ||
+          proposedDimsMatch) &&
         colsBefore > 0 &&
         rowsBefore > 0;
       const proposedDims = proposeTerminalViewportDimensions({
@@ -5758,12 +5759,12 @@ export default function TerminalTTY({
         return;
       }
 
-      // Golden path parity: dashboard→Terminales releases GPU on hide and fully
-      // reattaches on show. Survivor recover must do the same — v5 coalescing /
-      // reason-gating broke Kimi and window-switch recovery; prefer flicker over black.
-      // ponytail: 1.5s dedupe = one recycle per staggered burst; onContextLoss covers late loss.
+      const reason = event?.detail?.reason || '';
+      const isWorkspaceRemove = String(reason).includes('workspace-removed');
+      // Workspace/window switches keep terminals mounted and the GPU addon attached.
+      // Only a real workspace removal needs the costly GPU recycle + reattach cycle.
       const now = Date.now();
-      if (now - survivorGpuRecycleAtRef.current > 1500) {
+      if (isWorkspaceRemove && now - survivorGpuRecycleAtRef.current > 1500) {
         survivorGpuRecycleAtRef.current = now;
         if (webglAddonRef.current) {
           releaseWebglAddonForInactivePanel('survivor-recover-webgl');
@@ -5772,7 +5773,9 @@ export default function TerminalTTY({
         }
         needsViewportSyncOnShowRef.current = true;
       }
-      scheduleWorkspaceShowRecovery();
+      scheduleWorkspaceShowRecovery(
+        isWorkspaceRemove ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON : 'workspace-show-layout'
+      );
     };
 
     window.addEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
@@ -6627,6 +6630,26 @@ export default function TerminalTTY({
       const isWorkspaceOrWindowSwitch =
         isWorkspaceSwitch || String(reason).includes('workspace-window');
 
+      // Lightweight guard: if the container dims already match the terminal grid and
+      // there is no GPU recovery pending, most layout-settled reasons do not need the
+      // heavy fit+repaint burst. This cuts the repeated flicker on workspace switch.
+      const canSkipLayoutSettledRepaint = () => {
+        if (!termRef.current || !fitRef.current || !containerRef.current) return false;
+        const proposed = proposeTerminalViewportDimensions({
+          container: containerRef.current,
+          fitAddon: fitRef.current,
+          term: termRef.current,
+        });
+        const cols = termRef.current.cols;
+        const rows = termRef.current.rows;
+        const dimsMatch = proposed && proposed.cols === cols && proposed.rows === rows;
+        const noGpuRecovery =
+          !pendingWebglRecoveryRef.current &&
+          !canvasReleasedOnLayoutHideRef.current &&
+          !webglReleasedOnLayoutHideRef.current;
+        return dimsMatch && noGpuRecovery && cols > 0 && rows > 0;
+      };
+
       if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
@@ -6644,6 +6667,10 @@ export default function TerminalTTY({
       ) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (canSkipLayoutSettledRepaint()) {
+          logViewportDiagnostic(`${reason}-skipped-no-change`);
           return;
         }
         if (
@@ -6674,6 +6701,10 @@ export default function TerminalTTY({
           needsViewportSyncOnShowRef.current = true;
           return;
         }
+        if (canSkipLayoutSettledRepaint()) {
+          logViewportDiagnostic(`${reason}-skipped-no-change`);
+          return;
+        }
         if (
           shouldAttachCanvasRenderer({
             operationalRendererMode: operationalRendererModeRef.current,
@@ -6698,6 +6729,10 @@ export default function TerminalTTY({
       if (String(reason).includes('workspace-created')) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (canSkipLayoutSettledRepaint()) {
+          logViewportDiagnostic(`${reason}-skipped-no-change`);
           return;
         }
         if (
@@ -6739,6 +6774,10 @@ export default function TerminalTTY({
           needsViewportSyncOnShowRef.current = true;
           return;
         }
+        if (canSkipLayoutSettledRepaint()) {
+          logViewportDiagnostic(`${reason}-skipped-no-change`);
+          return;
+        }
         if (
           shouldAttachCanvasRenderer({
             operationalRendererMode: operationalRendererModeRef.current,
@@ -6763,6 +6802,10 @@ export default function TerminalTTY({
       if (String(reason).includes('panel-split') || String(reason).includes('panel-relaunch')) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        if (canSkipLayoutSettledRepaint()) {
+          logViewportDiagnostic(`${reason}-skipped-no-change`);
           return;
         }
         if (
@@ -6853,6 +6896,15 @@ export default function TerminalTTY({
               String(reason).includes('panel-group-layout')
             ? [120, 180, 340, 500]
             : [180, 340];
+
+      // Workspace/window switches with mounted terminals and no GPU recovery do not
+      // need the multi-phase repaint burst. The layout-show useLayoutEffect already
+      // handles the single repaint needed for instant reactivation.
+      if (isWorkspaceOrWindowSwitch && canSkipLayoutSettledRepaint()) {
+        logViewportDiagnostic(`${reason}-burst-skipped-no-change`);
+        return;
+      }
+
       layoutSettleBurstCleanupRef.current = scheduleTerminalViewportSyncBurst(
         (phase) => {
           if (isDisposingRef.current) return;
