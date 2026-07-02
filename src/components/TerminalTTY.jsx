@@ -3719,6 +3719,9 @@ export default function TerminalTTY({
         !webglReleasedOnLayoutHideRef.current;
       const canSkipUnchanged =
         isDeferredShowPass || (reason === 'workspace-show-layout' && noGpuRecoveryPending);
+      console.log(
+        `[TTY:${id}] sync show reason=${reason} sizeUnchanged=${sizeUnchanged} canSkip=${canSkipUnchanged} noGpuRecovery=${noGpuRecoveryPending} colsBefore=${colsBefore} rowsBefore=${rowsBefore} lastPtySize=${JSON.stringify(lastPtySizeRef.current)} proposedDimsMatch=${proposedDimsMatch}`
+      );
       if (
         canSkipUnchanged &&
         sizeUnchanged &&
@@ -4123,6 +4126,9 @@ export default function TerminalTTY({
       // needsViewportSyncOnShowRef by skipping unchanged dims, so we do not need to
       // force repaints just because the panel was hidden.
       const needsForcedRepaint = gpuShowRecover || survivorRecover || splitGridVisible;
+      console.log(
+        `[TTY:${id}] scheduleWorkspaceShowRecovery reason=${layoutReason} gpuShowRecover=${gpuShowRecover} survivorRecover=${survivorRecover} splitGridVisible=${splitGridVisible} needsRafRecovery=${needsRafRecovery} needsForcedRepaint=${needsForcedRepaint} pendingWebgl=${pendingWebglRecoveryRef.current} webglReleased=${webglReleasedOnLayoutHideRef.current} canvasReleased=${canvasReleasedOnLayoutHideRef.current}`
+      );
 
       const runPass = (reason) => {
         if (!isVisibleInLayoutRef.current) {
@@ -4849,7 +4855,13 @@ export default function TerminalTTY({
 
       const afterRendererReady = () => {
         if (!isVisibleInLayoutRef.current || !termRef.current || isDisposingRef.current) return;
-        if (isTerminalRendererReady(termRef.current)) {
+        const canvasMode = shouldAttachCanvasRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        });
+        // Avoid refreshing WebGL panels from the canvas recovery timeout; the WebGL
+        // renderer is handled by its own recovery path and this refresh only adds
+        // visible flicker during a plain workspace switch.
+        if (canvasMode && isTerminalRendererReady(termRef.current)) {
           refreshTerminalViewport(termRef.current);
         }
         if (connectPendingUntilFitRef.current) {
