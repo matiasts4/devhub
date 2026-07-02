@@ -1245,7 +1245,7 @@ code {
    Used by AssistantTurn via the .chat-markdown wrapper.
    Scoped to avoid bleeding into other components.
    Mirrors VS Code chat: visible bullets, comfortable spacing, accent markers.
-───────────────────────────────────────────────────────────────────────────── */
+--------------------------------------------------------------------------- */
 .chat-markdown {
   font-size: 14px;
   line-height: 1.75;
@@ -1373,7 +1373,7 @@ code {
 /* ─── Filesystem markdown preview ────────────────────────────────────────────
    GitHub-like document surface for README/docs preview in file explorer.
    Separate from chat markdown because this is document reading, not message UI.
-───────────────────────────────────────────────────────────────────────────── */
+--------------------------------------------------------------------------- */
 .filesystem-markdown-shell {
   height: 100%;
   background: var(--surface-app);
@@ -1583,7 +1583,7 @@ code {
 /* ─── Typography Scale ───────────────────────────────────────────
    Use these classes for consistent typography across the app.
    Changes here affect ALL components at once.
-───────────────────────────────────────────────────────────────── */
+---------------------------------------------------------------- */
 
 /* Section labels: "// SECTION_NAME" */
 .typography-section-label {
