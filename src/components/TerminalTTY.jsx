@@ -3697,12 +3697,6 @@ export default function TerminalTTY({
 
       const colsBefore = Number(termRef.current.cols ?? 0);
       const rowsBefore = Number(termRef.current.rows ?? 0);
-      const sizeUnchanged =
-        ((lastPtySizeRef.current.cols === colsBefore &&
-          lastPtySizeRef.current.rows === rowsBefore) ||
-          proposedDimsMatch) &&
-        colsBefore > 0 &&
-        rowsBefore > 0;
       const proposedDims = proposeTerminalViewportDimensions({
         container: containerRef.current,
         fitAddon: fitRef.current,
@@ -3710,6 +3704,12 @@ export default function TerminalTTY({
       });
       const proposedDimsMatch =
         proposedDims && proposedDims.cols === colsBefore && proposedDims.rows === rowsBefore;
+      const sizeUnchanged =
+        ((lastPtySizeRef.current.cols === colsBefore &&
+          lastPtySizeRef.current.rows === rowsBefore) ||
+          proposedDimsMatch) &&
+        colsBefore > 0 &&
+        rowsBefore > 0;
       const isDeferredShowPass = /workspace-show-(settled|recover|raf)/.test(reason);
       // When the GPU addon stayed attached (workspace switch with no release),
       // the first 'workspace-show-layout' pass is also safe to skip if dims are
@@ -3718,16 +3718,26 @@ export default function TerminalTTY({
         !pendingWebglRecoveryRef.current &&
         !canvasReleasedOnLayoutHideRef.current &&
         !webglReleasedOnLayoutHideRef.current;
+      const isSurvivorRecover = isWorkspaceSurvivorRecoverLayoutReason(reason);
+      const isLayoutSettledImmediate =
+        String(reason).startsWith('layout-settled-') && String(reason).endsWith('-immediate');
+      // Window-switch survivors actually toggled visibility; keep the recovery pass
+      // non-skippable so the destination panel repaints. Workspace removals that
+      // did not release the GPU and left dims untouched can skip the heavy burst.
+      const isWindowSwitchRecover = String(reason).includes('workspace-window');
       const canSkipUnchanged =
-        isDeferredShowPass || (reason === 'workspace-show-layout' && noGpuRecoveryPending);
+        isDeferredShowPass ||
+        (reason === 'workspace-show-layout' && noGpuRecoveryPending) ||
+        ((isSurvivorRecover || isLayoutSettledImmediate) &&
+          noGpuRecoveryPending &&
+          !isWindowSwitchRecover);
       console.log(
         `[TTY:${id}] sync show reason=${reason} sizeUnchanged=${sizeUnchanged} canSkip=${canSkipUnchanged} noGpuRecovery=${noGpuRecoveryPending} colsBefore=${colsBefore} rowsBefore=${rowsBefore} lastPtySize=${JSON.stringify(lastPtySizeRef.current)} proposedDimsMatch=${proposedDimsMatch}`
       );
       if (
         canSkipUnchanged &&
         sizeUnchanged &&
-        !pendingWebglRecoveryRef.current &&
-        !canvasReleasedOnLayoutHideRef.current &&
+        noGpuRecoveryPending &&
         !shouldFreezeKimiTuiViewportOnWorkspaceShow({
           initialCommand,
           kimiReady: kimiReadyNotifiedRef.current,
@@ -5712,7 +5722,11 @@ export default function TerminalTTY({
       if (shouldUseNativeRenderer && nativeVteOpened) {
         void showAndResizeNativeLease();
       }
-      scheduleWorkspaceShowRecovery();
+      // Use a dedicated reason for panels that just became visible. The generic
+      // 'workspace-show-layout' can be skipped when dims are unchanged and no GPU
+      // recovery is pending, which left newly-visible panels black after a window
+      // switch. This reason is intentionally NOT skipped by canSkipUnchanged.
+      scheduleWorkspaceShowRecovery('workspace-show-visible');
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
@@ -5761,6 +5775,7 @@ export default function TerminalTTY({
 
       const reason = event?.detail?.reason || '';
       const isWorkspaceRemove = String(reason).includes('workspace-removed');
+      const isWorkspaceWindowSwitch = String(reason).includes('workspace-window-switch');
       // Workspace/window switches keep terminals mounted and the GPU addon attached.
       // Only a real workspace removal needs the costly GPU recycle + reattach cycle.
       const now = Date.now();
@@ -5773,9 +5788,17 @@ export default function TerminalTTY({
         }
         needsViewportSyncOnShowRef.current = true;
       }
-      scheduleWorkspaceShowRecovery(
-        isWorkspaceRemove ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON : 'workspace-show-layout'
-      );
+      // Distinguish the three survivor recovery cases:
+      // - workspace-removed: recycle GPU + force survivor recovery.
+      // - workspace-window-switch: panels toggled visibility; force survivor recovery
+      //   but do not recycle GPU (window switches keep addons attached).
+      // - workspace-switch: normal tab switch; use the lighter workspace-show-layout
+      //   path and let the layout-settled burst handle the rest.
+      const recoverReason =
+        isWorkspaceRemove || isWorkspaceWindowSwitch
+          ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON
+          : 'workspace-show-layout';
+      scheduleWorkspaceShowRecovery(recoverReason);
     };
 
     window.addEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
