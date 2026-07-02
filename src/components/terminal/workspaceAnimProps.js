@@ -60,9 +60,10 @@ export function getWorkspaceAnimProps(isMaximized) {
 }
 
 /**
- * Workspace shell visibility — instant hide (no crossfade) so inactive
- * xterm-canvas panels cannot bleed corrupted glyphs while opacity animates.
- * Fullscreen browser/pizarra/swarm suppresses the terminal grid entirely.
+ * Workspace shell visibility — Option B keep-alive: inactive shells stay
+ * compositor-visible (opacity 0 only). Avoid visibility:hidden and contain:strict
+ * toggles — they tear down GPU layers and cause a post-reveal blink on tab switch.
+ * Fullscreen browser/pizarra/swarm still fully suppresses the terminal grid.
  */
 export function resolveWorkspaceShellVisibilityStyle({
   isActiveWorkspace,
@@ -72,6 +73,34 @@ export function resolveWorkspaceShellVisibilityStyle({
   const shouldShow = Boolean(isManagerVisible && isActiveWorkspace && !isFullscreenTakeover);
 
   if (!shouldShow) {
+    return {
+      opacity: 0,
+      pointerEvents: 'none',
+      contain: 'layout paint',
+      transition: 'none',
+      willChange: 'auto',
+    };
+  }
+
+  return {
+    opacity: 1,
+    pointerEvents: 'auto',
+    contain: 'layout paint',
+    transition: 'none',
+    willChange: 'auto',
+  };
+}
+
+/**
+ * Stacked V1/V2/V3 windows inside one workspace tab.
+ * Parked windows use visibility:hidden (WebGL stops compositing under opacity-only
+ * hide and returns black on switch-back). Workspace *tabs* use opacity-only keep-alive.
+ */
+export function resolveWorkspaceWindowVisibilityStyle({
+  isActiveWindow,
+  isFullscreenTakeover = false,
+} = {}) {
+  if (!isActiveWindow || isFullscreenTakeover) {
     return {
       opacity: 0,
       visibility: 'hidden',
@@ -89,27 +118,8 @@ export function resolveWorkspaceShellVisibilityStyle({
     contain: 'layout paint',
     transition: 'none',
     willChange: 'auto',
+    backgroundColor: 'var(--surface-app)',
   };
-}
-
-/**
- * Stacked V1/V2/V3 windows inside one workspace tab.
- * Uses the same visibility contract as workspace tab shells; split refit after
- * switch is driven by panel-group-layout bursts (same path as manual resize).
- */
-export function resolveWorkspaceWindowVisibilityStyle({
-  isActiveWindow,
-  isFullscreenTakeover = false,
-} = {}) {
-  const base = resolveWorkspaceShellVisibilityStyle({
-    isActiveWorkspace: isActiveWindow,
-    isManagerVisible: true,
-    isFullscreenTakeover,
-  });
-
-  if (!isActiveWindow || isFullscreenTakeover) return base;
-
-  return { ...base, backgroundColor: 'var(--surface-app)' };
 }
 
 /** Opaque chrome for fullscreen dock takeover so terminals cannot show through. */

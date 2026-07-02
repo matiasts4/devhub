@@ -470,6 +470,21 @@ export function forceTerminalViewportRepaint(term) {
   if (cols <= 0 || rows <= 0) return false;
   try {
     term._core?._renderService?.clear?.();
+    return nudgeTerminalViewportRepaint(term);
+  } catch (error) {
+    if (isStaleXtermRendererError(error)) return false;
+    throw error;
+  }
+}
+
+/** 1-cell resize nudge + refresh without clearing the render service (less blink). */
+export function nudgeTerminalViewportRepaint(term) {
+  if (!term || typeof term.resize !== 'function') return false;
+  if (!isTerminalRendererReady(term)) return false;
+  const cols = Number(term.cols ?? 0);
+  const rows = Number(term.rows ?? 0);
+  if (cols <= 0 || rows <= 0) return false;
+  try {
     if (rows > 1) {
       term.resize(cols, rows - 1);
       term.resize(cols, rows);
@@ -1162,7 +1177,11 @@ export function shouldFreezeSingleWebglViewportOnWorkspaceShow({
   if (isWorkspaceSurvivorRecoverLayoutReason(normalizedReason)) return false;
   if (normalizedReason.includes('workspace-switch')) return true;
   if (normalizedReason.includes('workspace-window')) return true;
-  if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
+  if (
+    normalizedReason === 'workspace-show-layout' ||
+    normalizedReason === 'workspace-show-raf' ||
+    normalizedReason === 'workspace-show-visible'
+  ) {
     return true;
   }
   if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
@@ -1180,10 +1199,11 @@ export function shouldMountCanvasAddon({
   operationalRendererMode,
   isActivePanel: _isActivePanel = true,
   isVisibleInLayout = true,
-  visibleTerminalPanelCount: _visibleTerminalPanelCount = 1,
+  visibleTerminalPanelCount = 1,
 } = {}) {
   if (!shouldAttachCanvasRenderer({ operationalRendererMode })) return false;
-  if (!isVisibleInLayout) return false;
+  // ponytail: split workspaces keep canvas alive while the tab is opacity-hidden (Option B)
+  if (!isVisibleInLayout && visibleTerminalPanelCount <= 1) return false;
   // Releasing canvas on inactive siblings drops to DOM and corrupts alternate-screen TUIs
   // (horizontal seam artifacts). Canvas 2D has no WebGL-style single-context limit.
   return true;
@@ -1212,6 +1232,82 @@ export function needsGpuRendererReattach({
   if (shouldAttachWebglRenderer({ operationalRendererMode })) return !webglAddon;
   if (shouldAttachCanvasRenderer({ operationalRendererMode })) return !canvasAddon;
   return false;
+}
+
+/**
+ * Option B pure visibility reveal: the GPU addon stayed attached while the shell
+ * was visibility:hidden. The compositor already holds a valid framebuffer — any
+ * forceTerminalViewportRepaint (clear + 1-cell nudge) causes the single blink users
+ * see after an otherwise instant tab switch.
+ */
+export function shouldSkipGpuVisibilityReveal({
+  reason = '',
+  noGpuRecoveryPending = false,
+  sizeUnchanged = false,
+  proposedDimsMatch = true,
+  hiddenOutputCatchupPending = false,
+  operationalRendererMode = 'xterm',
+} = {}) {
+  if (String(reason) !== 'workspace-show-visible') return false;
+  if (!noGpuRecoveryPending || !sizeUnchanged || !proposedDimsMatch) return false;
+  if (hiddenOutputCatchupPending) return false;
+  return shouldUseGpuTerminalRenderer({ operationalRendererMode });
+}
+
+/** Option B tab/window reveal: GPU addon stayed attached, no teardown pending. */
+export function shouldSoftGpuWorkspaceReveal({
+  operationalRendererMode = 'xterm',
+  webglAddon = null,
+  canvasAddon = null,
+  visibleTerminalPanelCount: _visibleTerminalPanelCount = 1,
+  pendingWebglRecovery = false,
+  webglReleasedOnLayoutHide = false,
+  canvasReleasedOnLayoutHide = false,
+} = {}) {
+  if (!shouldUseGpuTerminalRenderer({ operationalRendererMode })) return false;
+  if (pendingWebglRecovery || webglReleasedOnLayoutHide || canvasReleasedOnLayoutHide) return false;
+  return !needsGpuRendererReattach({ operationalRendererMode, webglAddon, canvasAddon });
+}
+
+/** @deprecated alias — use shouldSoftGpuWorkspaceReveal */
+export const shouldPureGpuWorkspaceReveal = shouldSoftGpuWorkspaceReveal;
+
+/**
+ * Workspace tab reveal used to skip JS repaint (`pure`), but logs show active TUIs
+ * (Grok/OpenCode) stay black under opacity-hidden shells — WebGL needs at least
+ * refresh(). Window park always needed soft. When softGpuEligible, always soft.
+ */
+export function resolveWorkspaceLayoutShowRevealMode({
+  softGpuEligible = false,
+  hiddenOutputCatchupPending = false,
+  tuiSessionActive = false,
+  // kept for callers; tab vs window both use soft when eligible
+  isWorkspaceTabReveal: _isWorkspaceTabReveal = false,
+} = {}) {
+  if (!softGpuEligible) return 'full';
+  if (hiddenOutputCatchupPending || tuiSessionActive) return 'soft';
+  return 'soft';
+}
+
+/** Flush buffered PTY output and nudge the GPU bitmap — no renderService.clear(). */
+export function performSoftGpuVisibilityReveal(term, bufferRef, catchupPendingRef) {
+  flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupPendingRef);
+  if (term && isTerminalRendererReady(term)) {
+    refreshTerminalViewport(term);
+    nudgeTerminalViewportRepaint(term);
+  }
+}
+
+/** Flush PTY output buffered while layout-hidden — write only, no repaint nudge. */
+export function flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupPendingRef) {
+  if (!catchupPendingRef?.current || !term) return false;
+  const buffered = takeHiddenTerminalOutputBuffer(bufferRef);
+  catchupPendingRef.current = false;
+  if (!buffered) return false;
+  for (const chunk of chunkTerminalOutputForCatchup(buffered)) {
+    term.write(chunk);
+  }
+  return true;
 }
 
 /** Visible split siblings that are not focused still need fit+resize on layout churn. */
@@ -1303,7 +1399,11 @@ export function shouldFreezeDomViewportOnWorkspaceShow({
   const normalizedReason = String(reason);
   if (isWorkspaceSurvivorRecoverLayoutReason(normalizedReason)) return false;
   if (normalizedReason.includes('workspace-switch')) return true;
-  if (normalizedReason === 'workspace-show-layout' || normalizedReason === 'workspace-show-raf') {
+  if (
+    normalizedReason === 'workspace-show-layout' ||
+    normalizedReason === 'workspace-show-raf' ||
+    normalizedReason === 'workspace-show-visible'
+  ) {
     return true;
   }
   if (isWorkspaceLayoutSwitchReason(normalizedReason)) return true;
@@ -1857,6 +1957,7 @@ export default function TerminalTTY({
   const isActivePanelRef = useRef(isActivePanel);
   const isVisibleInLayoutRef = useRef(isVisibleInLayout);
   const isWorkspaceShellVisibleRef = useRef(isWorkspaceShellVisible);
+  const prevWorkspaceShellVisibleRef = useRef(isWorkspaceShellVisible);
   const prevVisibleInLayoutRef = useRef(isVisibleInLayout);
   const needsViewportSyncOnShowRef = useRef(false);
   const survivorGpuRecycleAtRef = useRef(0);
@@ -3235,8 +3336,8 @@ export default function TerminalTTY({
     ) {
       return false;
     }
-    if (!isVisibleInLayoutRef.current) return false;
-    if (!isTerminalRendererReady(term)) return false;
+    // ponytail: empty RenderService slot fails isTerminalRendererReady but loadAddon still revives GPU
+    if (!term.element?.isConnected || term._core?._isDisposed) return false;
 
     try {
       const { CanvasAddon: CanvasAddonCtor } = await import('xterm-addon-canvas');
@@ -3725,15 +3826,26 @@ export default function TerminalTTY({
       // non-skippable so the destination panel repaints. Workspace removals that
       // did not release the GPU and left dims untouched can skip the heavy burst.
       const isWindowSwitchRecover = String(reason).includes('workspace-window');
+      if (
+        shouldSkipGpuVisibilityReveal({
+          reason,
+          noGpuRecoveryPending,
+          sizeUnchanged,
+          proposedDimsMatch,
+          hiddenOutputCatchupPending: hiddenOutputCatchupPendingRef.current,
+          operationalRendererMode: operationalRendererModeRef.current,
+        })
+      ) {
+        needsViewportSyncOnShowRef.current = false;
+        logViewportDiagnostic(`${reason}-skipped-gpu-visibility-reveal`);
+        return;
+      }
       const canSkipUnchanged =
         isDeferredShowPass ||
         (reason === 'workspace-show-layout' && noGpuRecoveryPending) ||
         ((isSurvivorRecover || isLayoutSettledImmediate) &&
           noGpuRecoveryPending &&
           !isWindowSwitchRecover);
-      console.log(
-        `[TTY:${id}] sync show reason=${reason} sizeUnchanged=${sizeUnchanged} canSkip=${canSkipUnchanged} noGpuRecovery=${noGpuRecoveryPending} colsBefore=${colsBefore} rowsBefore=${rowsBefore} lastPtySize=${JSON.stringify(lastPtySizeRef.current)} proposedDimsMatch=${proposedDimsMatch}`
-      );
       if (
         canSkipUnchanged &&
         sizeUnchanged &&
@@ -3876,7 +3988,14 @@ export default function TerminalTTY({
         }
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
           refreshTerminalViewport(termRef.current);
-          forceTerminalViewportRepaint(termRef.current);
+          const skipForceRepaintOnReveal =
+            reason === 'workspace-show-visible' &&
+            !pendingWebglRecoveryRef.current &&
+            !webglReleasedOnLayoutHideRef.current &&
+            !canvasReleasedOnLayoutHideRef.current;
+          if (!skipForceRepaintOnReveal) {
+            forceTerminalViewportRepaint(termRef.current);
+          }
         }
         return;
       }
@@ -4124,27 +4243,33 @@ export default function TerminalTTY({
         webglReleasedOnLayoutHideRef.current ||
         canvasReleasedOnLayoutHideRef.current;
       const splitGridVisible = visibleTerminalPanelCountRef.current > 1;
-      const clearAtlasForShow = gpuShowRecover || splitGridVisible;
-      // Second rAF pass is only needed when there is real async GPU work pending
-      // (released renderer, pending recovery) or a split grid whose siblings may
-      // still be settling. A plain WebGL panel with no recovery pending recovers
-      // reliably in a single rAF pass, so skip the extra repaint to cut flicker.
-      const needsRafRecovery = gpuShowRecover || survivorRecover || splitGridVisible;
-      // Force-repaint/fit retries are only needed when there is real recovery work
-      // to do. If the GPU addon stayed attached (lazy release) and dims are stable,
-      // skip the 1-cell nudge and the fit loop — they are the main source of visible
-      // flicker during a quick workspace switch. The sync path already handles
-      // needsViewportSyncOnShowRef by skipping unchanged dims, so we do not need to
-      // force repaints just because the panel was hidden.
-      const needsForcedRepaint = gpuShowRecover || survivorRecover || splitGridVisible;
-      console.log(
-        `[TTY:${id}] scheduleWorkspaceShowRecovery reason=${layoutReason} gpuShowRecover=${gpuShowRecover} survivorRecover=${survivorRecover} splitGridVisible=${splitGridVisible} needsRafRecovery=${needsRafRecovery} needsForcedRepaint=${needsForcedRepaint} pendingWebgl=${pendingWebglRecoveryRef.current} webglReleased=${webglReleasedOnLayoutHideRef.current} canvasReleased=${canvasReleasedOnLayoutHideRef.current}`
-      );
+      const gpuStillAttached = !needsGpuRendererReattach({
+        operationalRendererMode: operationalRendererModeRef.current,
+        webglAddon: webglAddonRef.current,
+        canvasAddon: canvasAddonRef.current,
+      });
+      const clearAtlasForShow = gpuShowRecover || (splitGridVisible && !gpuStillAttached);
+      // Option B: GPU addons stay attached while the workspace is mounted. A plain
+      // visibility toggle (tab switch, window park) only needs the freeze-path sync
+      // (stabilize + one repaint) — not bounded fit/GPU recover loops.
+      const needsHeavyRecovery =
+        gpuShowRecover ||
+        (survivorRecover && !gpuStillAttached) ||
+        (splitGridVisible && !gpuStillAttached);
+      const needsRafRecovery = needsHeavyRecovery;
+      const needsForcedRepaint = needsHeavyRecovery;
+
+      if (!needsHeavyRecovery) {
+        void syncTerminalViewportOnWorkspaceShow(layoutReason, { clearAtlas: false });
+        return;
+      }
 
       const runPass = (reason) => {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
-          scheduleBoundedGpuRecover();
+          if (gpuShowRecover || survivorRecover) {
+            scheduleBoundedGpuRecover();
+          }
           if (needsForcedRepaint) {
             scheduleBoundedFitRepaint(survivorRecover ? 40 : 24);
           }
@@ -4155,7 +4280,9 @@ export default function TerminalTTY({
           scheduleBoundedForceRepaint(survivorRecover ? 32 : 24);
           scheduleBoundedFitRepaint(survivorRecover ? 40 : 24);
         }
-        scheduleBoundedGpuRecover(survivorRecover ? 48 : 40);
+        if (gpuShowRecover || survivorRecover) {
+          scheduleBoundedGpuRecover(survivorRecover ? 48 : 40);
+        }
         if (
           !splitGridVisible &&
           shouldRefitVisibleInactiveSplitPanel({
@@ -4169,7 +4296,7 @@ export default function TerminalTTY({
 
       requestAnimationFrame(() => {
         runPass(layoutReason);
-        if (needsRafRecovery || survivorRecover) {
+        if (needsRafRecovery) {
           requestAnimationFrame(() => {
             if (!isVisibleInLayoutRef.current) return;
             runPass(
@@ -4792,8 +4919,6 @@ export default function TerminalTTY({
     }
 
     if (wantsCanvas) {
-      if (!isVisibleInLayoutRef.current) return;
-
       if (webglAddonRef.current) {
         releaseWebglAddonForInactivePanel('split-open-canvas');
       }
@@ -5721,12 +5846,97 @@ export default function TerminalTTY({
       restoreInitialCommandDispatchGuard();
       if (shouldUseNativeRenderer && nativeVteOpened) {
         void showAndResizeNativeLease();
+      } else {
+        const isWorkspaceTabReveal =
+          isWorkspaceShellVisible && !prevWorkspaceShellVisibleRef.current;
+        const softGpuEligible = shouldSoftGpuWorkspaceReveal({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+          pendingWebglRecovery: pendingWebglRecoveryRef.current,
+          webglReleasedOnLayoutHide: webglReleasedOnLayoutHideRef.current,
+          canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
+        });
+        const revealMode = resolveWorkspaceLayoutShowRevealMode({
+          isWorkspaceTabReveal,
+          softGpuEligible,
+          hiddenOutputCatchupPending: hiddenOutputCatchupPendingRef.current,
+          tuiSessionActive: tuiSessionActiveRef.current,
+        });
+
+        if (revealMode === 'soft') {
+          needsViewportSyncOnShowRef.current = false;
+          performSoftGpuVisibilityReveal(
+            termRef.current,
+            hiddenOutputBufferRef.current,
+            hiddenOutputCatchupPendingRef
+          );
+          logViewportDiagnostic('workspace-show-visible-soft-gpu-reveal');
+          if (!isWorkspaceTabReveal) {
+            // Parked windows were visibility:hidden — one deferred refresh after the
+            // shell becomes visible so WebGL composites the live bitmap (no clear()).
+            requestAnimationFrame(() => {
+              if (!isVisibleInLayoutRef.current || !termRef.current) return;
+              performSoftGpuVisibilityReveal(
+                termRef.current,
+                hiddenOutputBufferRef.current,
+                hiddenOutputCatchupPendingRef
+              );
+            });
+          }
+        } else {
+          const rendererReadyNow = Boolean(
+            termRef.current && isTerminalRendererReady(termRef.current)
+          );
+          if (!rendererReadyNow) {
+            needsViewportSyncOnShowRef.current = true;
+            scheduleBoundedGpuRecoverRef.current?.(48);
+          }
+          void (async () => {
+            if (
+              needsGpuRendererReattach({
+                operationalRendererMode: operationalRendererModeRef.current,
+                webglAddon: webglAddonRef.current,
+                canvasAddon: canvasAddonRef.current,
+              })
+            ) {
+              if (
+                shouldAttachWebglRenderer({
+                  operationalRendererMode: operationalRendererModeRef.current,
+                })
+              ) {
+                await tryReattachWebglAddonRef.current?.({
+                  clearAtlas: false,
+                  skipFitWhenUnchanged: true,
+                });
+              } else if (
+                shouldAttachCanvasRenderer({
+                  operationalRendererMode: operationalRendererModeRef.current,
+                })
+              ) {
+                await tryReattachCanvasAddonRef.current?.();
+              }
+            }
+            const stillNeedsGpu = needsGpuRendererReattach({
+              operationalRendererMode: operationalRendererModeRef.current,
+              webglAddon: webglAddonRef.current,
+              canvasAddon: canvasAddonRef.current,
+            });
+            if (stillNeedsGpu || !isTerminalRendererReady(termRef.current)) {
+              needsViewportSyncOnShowRef.current = true;
+              scheduleBoundedGpuRecoverRef.current?.(48);
+            } else if (isVisibleInLayoutRef.current && termRef.current) {
+              performSoftGpuVisibilityReveal(
+                termRef.current,
+                hiddenOutputBufferRef.current,
+                hiddenOutputCatchupPendingRef
+              );
+            }
+            scheduleWorkspaceShowRecovery('workspace-show-visible');
+          })();
+        }
       }
-      // Use a dedicated reason for panels that just became visible. The generic
-      // 'workspace-show-layout' can be skipped when dims are unchanged and no GPU
-      // recovery is pending, which left newly-visible panels black after a window
-      // switch. This reason is intentionally NOT skipped by canSkipUnchanged.
-      scheduleWorkspaceShowRecovery('workspace-show-visible');
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
@@ -5734,6 +5944,7 @@ export default function TerminalTTY({
     }
 
     prevVisibleInLayoutRef.current = isVisibleInLayout;
+    prevWorkspaceShellVisibleRef.current = isWorkspaceShellVisible;
 
     return () => {
       if (workspaceShowSyncTimerRef.current) {
@@ -5776,6 +5987,19 @@ export default function TerminalTTY({
       const reason = event?.detail?.reason || '';
       const isWorkspaceRemove = String(reason).includes('workspace-removed');
       const isWorkspaceWindowSwitch = String(reason).includes('workspace-window-switch');
+      const gpuStillAttached = !needsGpuRendererReattach({
+        operationalRendererMode: operationalRendererModeRef.current,
+        webglAddon: webglAddonRef.current,
+        canvasAddon: canvasAddonRef.current,
+      });
+      const noGpuRecoveryPending =
+        !pendingWebglRecoveryRef.current &&
+        !webglReleasedOnLayoutHideRef.current &&
+        !canvasReleasedOnLayoutHideRef.current;
+      if (!isWorkspaceRemove && gpuStillAttached && noGpuRecoveryPending) {
+        // layout-show soft reveal owns tab/window park when GPU stayed attached.
+        return;
+      }
       // Workspace/window switches keep terminals mounted and the GPU addon attached.
       // Only a real workspace removal needs the costly GPU recycle + reattach cycle.
       const now = Date.now();
@@ -5788,14 +6012,9 @@ export default function TerminalTTY({
         }
         needsViewportSyncOnShowRef.current = true;
       }
-      // Distinguish the three survivor recovery cases:
-      // - workspace-removed: recycle GPU + force survivor recovery.
-      // - workspace-window-switch: panels toggled visibility; force survivor recovery
-      //   but do not recycle GPU (window switches keep addons attached).
-      // - workspace-switch: normal tab switch; use the lighter workspace-show-layout
-      //   path and let the layout-settled burst handle the rest.
-      const recoverReason =
-        isWorkspaceRemove || isWorkspaceWindowSwitch
+      const recoverReason = isWorkspaceRemove
+        ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON
+        : isWorkspaceWindowSwitch
           ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON
           : 'workspace-show-layout';
       scheduleWorkspaceShowRecovery(recoverReason);
@@ -6287,6 +6506,45 @@ export default function TerminalTTY({
               } else {
                 sendResizeRef.current?.();
               }
+            }
+
+            if (!mounted || !termRef.current || !isVisibleInLayoutRef.current) return;
+
+            const needsGpuAfterInit = needsGpuRendererReattach({
+              operationalRendererMode: operationalRendererModeRef.current,
+              webglAddon: webglAddonRef.current,
+              canvasAddon: canvasAddonRef.current,
+            });
+            if (needsGpuAfterInit) {
+              void (async () => {
+                if (
+                  shouldAttachWebglRenderer({
+                    operationalRendererMode: operationalRendererModeRef.current,
+                  })
+                ) {
+                  await tryReattachWebglAddonRef.current?.({
+                    clearAtlas: false,
+                    skipFitWhenUnchanged: true,
+                  });
+                } else {
+                  await tryReattachCanvasAddonRef.current?.();
+                }
+                if (termRef.current && isVisibleInLayoutRef.current) {
+                  performSoftGpuVisibilityReveal(
+                    termRef.current,
+                    hiddenOutputBufferRef.current,
+                    hiddenOutputCatchupPendingRef
+                  );
+                  needsViewportSyncOnShowRef.current = false;
+                }
+              })();
+            } else if (needsViewportSyncOnShowRef.current && termRef.current) {
+              performSoftGpuVisibilityReveal(
+                termRef.current,
+                hiddenOutputBufferRef.current,
+                hiddenOutputCatchupPendingRef
+              );
+              needsViewportSyncOnShowRef.current = false;
             }
           })
           .catch((error) => {
@@ -6899,14 +7157,22 @@ export default function TerminalTTY({
       }
 
       if (isWorkspaceCloseRecover) {
-        // Route dashboard↔terminales is the ONLY caller allowed to hit the DOM/webgl
-        // "frozen" fast-path (default 'workspace-show-layout' reason) — that path
-        // assumes the panel was genuinely hidden and nothing else could have touched
-        // it. Workspace close, workspace switch, and V1/V2/V3 window switch all reuse
-        // this branch but the panel usually never toggled isVisibleInLayout, so the
-        // freeze check's sizeUnchanged guard can true-positive on a stale grid and
-        // skip the real repaint — this is what left Grok's DOM/Ink TUI black on
-        // close/window-switch. Force the non-freezing survivor-recover reason here.
+        const isWorkspaceRemove = String(reason).includes('workspace-removed');
+        const gpuStillAttached = !needsGpuRendererReattach({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+        });
+        const noGpuRecoveryPending =
+          !pendingWebglRecoveryRef.current &&
+          !canvasReleasedOnLayoutHideRef.current &&
+          !webglReleasedOnLayoutHideRef.current;
+        // Option B: tab/window switch with live GPU — layout-show soft reveal already repainted.
+        if (!isWorkspaceRemove && gpuStillAttached && noGpuRecoveryPending) {
+          logViewportDiagnostic(`${reason}-survivor-skipped-gpu-attached`);
+          return;
+        }
+        // Workspace close may dispose peer GPU contexts after the first pass — keep survivor path.
         scheduleWorkspaceShowRecovery(WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON);
         return;
       }

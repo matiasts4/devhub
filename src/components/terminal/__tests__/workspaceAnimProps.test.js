@@ -23,18 +23,27 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
       })
     ).toMatchObject({
       opacity: 0,
-      visibility: 'hidden',
+      pointerEvents: 'none',
       transition: 'none',
-      contain: 'strict',
+      contain: 'layout paint',
     });
+    expect(
+      resolveWorkspaceShellVisibilityStyle({
+        isActiveWorkspace: false,
+        isManagerVisible: true,
+      }).visibility
+    ).toBeUndefined();
 
     expect(
       resolveWorkspaceShellVisibilityStyle({
         isActiveWorkspace: true,
         isManagerVisible: true,
         isFullscreenTakeover: true,
-      }).visibility
-    ).toBe('hidden');
+      })
+    ).toMatchObject({
+      opacity: 0,
+      pointerEvents: 'none',
+    });
   });
 
   test('shows the active workspace shell instantly without opacity animation', () => {
@@ -45,9 +54,9 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
       })
     ).toMatchObject({
       opacity: 1,
-      visibility: 'visible',
       pointerEvents: 'auto',
       transition: 'none',
+      contain: 'layout paint',
     });
   });
 });
@@ -55,7 +64,7 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
 describe('resolveWorkspaceWindowVisibilityStyle', () => {
   const { resolveWorkspaceWindowVisibilityStyle } = require('../workspaceAnimProps.js');
 
-  test('parks inactive windows with the same hidden contract as inactive workspace tabs', () => {
+  test('parks inactive windows with visibility:hidden (WebGL needs soft refresh on return)', () => {
     expect(
       resolveWorkspaceWindowVisibilityStyle({
         isActiveWindow: false,
@@ -86,8 +95,12 @@ describe('resolveWorkspaceWindowVisibilityStyle', () => {
       resolveWorkspaceWindowVisibilityStyle({
         isActiveWindow: true,
         isFullscreenTakeover: true,
-      }).visibility
-    ).toBe('hidden');
+      })
+    ).toMatchObject({
+      opacity: 0,
+      visibility: 'hidden',
+      pointerEvents: 'none',
+    });
   });
 });
 

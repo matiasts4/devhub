@@ -139,6 +139,12 @@ const {
   shouldSkipReactivateViewportOnPanelActivation,
   shouldAttachWebglRenderer,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
+  shouldSkipGpuVisibilityReveal,
+  shouldSoftGpuWorkspaceReveal,
+  shouldPureGpuWorkspaceReveal,
+  resolveWorkspaceLayoutShowRevealMode,
+  performSoftGpuVisibilityReveal,
+  flushHiddenTerminalCatchupToTerm,
   shouldFreezeDomViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
   shouldMountCanvasAddon,
@@ -938,6 +944,14 @@ describe('shouldMountCanvasAddon()', () => {
         isVisibleInLayout: false,
         visibleTerminalPanelCount: 4,
       })
+    ).toBe(true);
+    expect(
+      shouldMountCanvasAddon({
+        operationalRendererMode: 'xterm-canvas',
+        isActivePanel: true,
+        isVisibleInLayout: false,
+        visibleTerminalPanelCount: 1,
+      })
     ).toBe(false);
     expect(
       shouldMountCanvasAddon({
@@ -998,6 +1012,15 @@ describe('shouldFreezeDomViewportOnWorkspaceShow()', () => {
     expect(
       shouldFreezeDomViewportOnWorkspaceShow({
         reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm',
+        tuiSessionActive: true,
+        proposedDimsMatch: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeDomViewportOnWorkspaceShow({
+        reason: 'workspace-show-visible',
         sizeUnchanged: true,
         operationalRendererMode: 'xterm',
         tuiSessionActive: true,
@@ -1303,11 +1326,141 @@ describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
   });
 });
 
+describe('resolveWorkspaceLayoutShowRevealMode()', () => {
+  test('uses soft reveal whenever GPU is eligible (never pure — TUIs go black)', () => {
+    expect(
+      resolveWorkspaceLayoutShowRevealMode({
+        isWorkspaceTabReveal: true,
+        softGpuEligible: true,
+      })
+    ).toBe('soft');
+    expect(
+      resolveWorkspaceLayoutShowRevealMode({
+        isWorkspaceTabReveal: false,
+        softGpuEligible: true,
+      })
+    ).toBe('soft');
+    expect(
+      resolveWorkspaceLayoutShowRevealMode({
+        isWorkspaceTabReveal: true,
+        softGpuEligible: true,
+        tuiSessionActive: true,
+      })
+    ).toBe('soft');
+    expect(
+      resolveWorkspaceLayoutShowRevealMode({
+        isWorkspaceTabReveal: true,
+        softGpuEligible: false,
+      })
+    ).toBe('full');
+  });
+});
+
+describe('shouldSoftGpuWorkspaceReveal()', () => {
+  test('allows soft reveal for GPU workspaces with attached addon (single or split)', () => {
+    expect(
+      shouldSoftGpuWorkspaceReveal({
+        operationalRendererMode: 'xterm-webgl',
+        webglAddon: {},
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(true);
+    expect(
+      shouldSoftGpuWorkspaceReveal({
+        operationalRendererMode: 'xterm-canvas',
+        canvasAddon: {},
+        visibleTerminalPanelCount: 3,
+      })
+    ).toBe(true);
+  });
+
+  test('requires recovery for DOM renderer, missing GPU addon, or release flags', () => {
+    expect(
+      shouldSoftGpuWorkspaceReveal({
+        operationalRendererMode: 'xterm-canvas',
+        canvasAddon: null,
+        visibleTerminalPanelCount: 3,
+      })
+    ).toBe(false);
+    expect(
+      shouldSoftGpuWorkspaceReveal({
+        operationalRendererMode: 'xterm-webgl',
+        webglAddon: null,
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
+    expect(
+      shouldSoftGpuWorkspaceReveal({
+        operationalRendererMode: 'xterm',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('flushHiddenTerminalCatchupToTerm()', () => {
+  test('writes buffered output and clears the catchup flag without repainting', () => {
+    const term = { write: jest.fn() };
+    const bufferRef = { value: 'hello' };
+    const catchupRef = { current: true };
+
+    expect(flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupRef)).toBe(true);
+    expect(term.write).toHaveBeenCalled();
+    expect(bufferRef.value).toBe('');
+    expect(catchupRef.current).toBe(false);
+  });
+});
+
+describe('shouldSkipGpuVisibilityReveal()', () => {
+  test('skips JS repaint on pure GPU visibility reveal when dims are stable', () => {
+    expect(
+      shouldSkipGpuVisibilityReveal({
+        reason: 'workspace-show-visible',
+        noGpuRecoveryPending: true,
+        sizeUnchanged: true,
+        proposedDimsMatch: true,
+        hiddenOutputCatchupPending: false,
+        operationalRendererMode: 'xterm-webgl',
+      })
+    ).toBe(true);
+  });
+
+  test('does not skip when output was buffered while hidden or GPU recovery is pending', () => {
+    expect(
+      shouldSkipGpuVisibilityReveal({
+        reason: 'workspace-show-visible',
+        noGpuRecoveryPending: true,
+        sizeUnchanged: true,
+        proposedDimsMatch: true,
+        hiddenOutputCatchupPending: true,
+        operationalRendererMode: 'xterm-webgl',
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipGpuVisibilityReveal({
+        reason: 'workspace-show-visible',
+        noGpuRecoveryPending: false,
+        sizeUnchanged: true,
+        proposedDimsMatch: true,
+        operationalRendererMode: 'xterm-webgl',
+      })
+    ).toBe(false);
+  });
+});
+
 describe('shouldFreezeSingleWebglViewportOnWorkspaceShow()', () => {
   test('freezes unchanged single-panel webgl workspace tab switches', () => {
     expect(
       shouldFreezeSingleWebglViewportOnWorkspaceShow({
         reason: 'workspace-show-layout',
+        sizeUnchanged: true,
+        operationalRendererMode: 'xterm-webgl',
+        visibleTerminalPanelCount: 1,
+      })
+    ).toBe(true);
+    expect(
+      shouldFreezeSingleWebglViewportOnWorkspaceShow({
+        reason: 'workspace-show-visible',
         sizeUnchanged: true,
         operationalRendererMode: 'xterm-webgl',
         visibleTerminalPanelCount: 1,
