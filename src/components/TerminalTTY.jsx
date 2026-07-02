@@ -3692,8 +3692,17 @@ export default function TerminalTTY({
       const proposedDimsMatch =
         proposedDims && proposedDims.cols === colsBefore && proposedDims.rows === rowsBefore;
       const isDeferredShowPass = /workspace-show-(settled|recover|raf)/.test(reason);
+      // When the GPU addon stayed attached (workspace switch with no release),
+      // the first 'workspace-show-layout' pass is also safe to skip if dims are
+      // unchanged. This removes a forced fit+repaint that caused visible flicker.
+      const noGpuRecoveryPending =
+        !pendingWebglRecoveryRef.current &&
+        !canvasReleasedOnLayoutHideRef.current &&
+        !webglReleasedOnLayoutHideRef.current;
+      const canSkipUnchanged =
+        isDeferredShowPass || (reason === 'workspace-show-layout' && noGpuRecoveryPending);
       if (
-        isDeferredShowPass &&
+        canSkipUnchanged &&
         sizeUnchanged &&
         !pendingWebglRecoveryRef.current &&
         !canvasReleasedOnLayoutHideRef.current &&
