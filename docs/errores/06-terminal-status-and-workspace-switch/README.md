@@ -334,3 +334,47 @@ El effect `activeWindowIds` disparaba el burst **sincronamente** sin double-rAF 
 
 1. Eliminar branch débil `workspace-window-switch`; cae en `isWorkspaceCloseRecover` → golden path.
 2. Effect `activeWindowIds`: double-rAF + lifecycle burst + survivor recover @ 100/300/600ms (mismo patrón que workspace close).
+
+---
+
+## 10 — Follow-up: negro al abrir/splitear/cerrar terminal en otro workspace
+
+### Síntoma residual (post-09)
+
+Al abrir una nueva terminal, dividir o cerrar un panel en un workspace, los paneles de **otro workspace** (u otra ventana V1/V2/V3) quedaban negros al volver a ellos. Un resize manual los recuperaba.
+
+### Causa
+
+El fix de la sección 09 (Option B) mantiene los addons GPU (Canvas/WebGL) attachados mientras el workspace está `opacity:0`. El reveal al volver usa `performSoftGpuVisibilityReveal` (`refresh` + nudge 1-cell **sin** `clear()`) o incluso salta por completo (`shouldSkipGpuVisibilityReveal`) cuando las dimensiones no cambiaron y no hay recovery pendiente.
+
+Eso funciona para un tab switch limpio, pero falla cuando mientras el panel estaba oculto ocurrió un evento de **layout churn** (`panel-split`, `panel-closed`, `panel-group-layout`, `workspace-removed`, etc.) en otro workspace. `scheduleTerminalLifecycleSync` filtra esos eventos por `panelIds` del workspace activo, así que el panel oculto nunca recibe el `layout-settled` y no sabe que debe correr el recovery. El compositor/GPU puede descartar el backing store del canvas oculto aunque el addon siga attachado. Al volver, el soft reveal no recrea el bitmap → negro hasta un resize manual.
+
+### Fix v1 (insuficiente)
+
+Se agregó `layoutChurnedWhileHiddenRef` y se marcó en `handleLayoutSettled`/`handleSurvivorRecover` cuando el evento llegaba a un panel oculto. No funcionó en el caso real porque los eventos de otro workspace no llegan al panel oculto (filtrado por `panelIds`).
+
+### Fix v2 (generación global)
+
+1. **`src/components/terminal/nativeLayoutSync.js`**: contador monotónico `terminalLayoutSettledGeneration` que se incrementa en cada `dispatchTerminalLayoutSettled`. Exportado como `getTerminalLayoutSettledGeneration()`.
+2. **`src/components/TerminalTTY.jsx`**:
+   - Nuevo ref `layoutHiddenGenerationRef`.
+   - Cuando el panel se oculta, guarda `getTerminalLayoutSettledGeneration()`.
+   - Al revelar, compara la generación guardada contra la generación actual. Si creció, significa que hubo layout churn en cualquier workspace mientras este panel estaba oculto.
+   - Combinado con `layoutChurnedWhileHiddenRef` (eventos que sí llegaron al panel oculto), decide `hadLayoutChurn`.
+   - Si `hadLayoutChurn` es true, descarta el camino soft/skip.
+   - Para **shells normales**: ejecuta `syncTerminalViewportOnWorkspaceShow('workspace-show-layout-churn-recover', { clearAtlas: true })` + `scheduleBoundedGpuRecover`. El reason evade freeze/skip y fuerza fit real + `forceTerminalViewportRepaint`.
+   - Para **TUIs (OpenCode/Grok/etc.)**: `clearAtlas: true` destruye el canvas porque el TUI no repinta hasta recibir SIGWINCH/input. Se usa un path TUI-safe: `fitTerminalViewport(..., { clearAtlas: false, skipPtyNotify: true })` + `stabilizeTerminalRenderer({ clearAtlas: false })` + `refreshTerminalViewport` + `forceTerminalViewportRepaint` + `nudgeTerminalPtyResize({ force: true })`. Esto fuerza al TUI a repintar con sus dimensiones actuales.
+   - Si no hubo churn: mantiene el reveal soft actual (sin parpadeo).
+
+### Archivos cambiados
+
+| Archivo                                                      | Cambio                                                                                              |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `src/components/terminal/nativeLayoutSync.js`                | `terminalLayoutSettledGeneration`, `getTerminalLayoutSettledGeneration()`                           |
+| `src/components/TerminalTTY.jsx`                             | `layoutHiddenGenerationRef`, snapshot en hide, comparación en reveal, churn path, recovery TUI-safe |
+| `src/components/TerminalWorkspacesManager.jsx`               | build marker bump                                                                                   |
+| `src/components/terminal/__tests__/nativeLayoutSync.test.js` | test de la generación monotónica                                                                    |
+
+### Resultado
+
+Verificado en runtime (2026-07-02): tras splitear/cerrar terminales en otro workspace, los paneles de shell normales y los TUIs (OpenCode, Grok) vuelven visibles sin quedarse en negro. Los tab switches limpios siguen usando el soft reveal sin parpadeo.

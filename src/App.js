@@ -238,15 +238,15 @@ function WorkspaceLayout() {
   const sidebarTransition = getTransition('nav', motionMode);
 
   const routeTransition = getTransition('nav', motionMode);
-  const routeDistance = motionMode === 'reduced' ? 0 : motionMode === 'amplified' ? 44 : 24;
+  const routeScale = motionMode === 'reduced' ? 1 : motionMode === 'amplified' ? 0.95 : 0.98;
   const routeVariants = {
     enter: {
-      x: direction === 'forward' ? routeDistance : -routeDistance,
+      scale: routeScale,
       opacity: 0,
     },
-    center: { x: 0, opacity: 1 },
+    center: { scale: 1, opacity: 1 },
     exit: {
-      x: direction === 'forward' ? -routeDistance : routeDistance,
+      scale: direction === 'forward' ? 1.01 : 0.99,
       opacity: 0,
     },
   };

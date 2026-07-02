@@ -80,6 +80,7 @@ import {
   shouldSkipRedundantInitialCommandSend,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
 import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
@@ -126,7 +127,7 @@ function cliLog(tag, msg, extra = {}) {
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-01-restore-v4-survivor-recovery-v6';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-02-layout-churn-recover-v3';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -1960,6 +1961,17 @@ export default function TerminalTTY({
   const prevWorkspaceShellVisibleRef = useRef(isWorkspaceShellVisible);
   const prevVisibleInLayoutRef = useRef(isVisibleInLayout);
   const needsViewportSyncOnShowRef = useRef(false);
+  // Set by layout-settled/survivor-recover events that arrive while the panel
+  // is hidden (e.g. split/close in another workspace). When the panel is shown
+  // again we must run the heavy recovery path instead of the soft/skip paths,
+  // because the GPU framebuffer may have been discarded while the shell was
+  // opacity-hidden even though the addon stayed attached.
+  const layoutChurnedWhileHiddenRef = useRef(false);
+  // Snapshot of the global layout-settled generation taken when this panel
+  // becomes hidden. On reveal we compare it against the current generation to
+  // detect churn that happened in *other* workspaces whose panelIds filter
+  // prevented the layout-settled event from reaching this panel.
+  const layoutHiddenGenerationRef = useRef(0);
   const survivorGpuRecycleAtRef = useRef(0);
   const containerWasZeroSizedOnShowRef = useRef(false);
   const syncTerminalViewportOnWorkspaceShowRef = useRef(null);
@@ -5827,6 +5839,15 @@ export default function TerminalTTY({
 
   useLayoutEffect(() => {
     const prevVisible = prevVisibleInLayoutRef.current;
+    const nextVisible = isVisibleInLayout;
+
+    // Snapshot the global layout-settled generation when this panel becomes hidden.
+    // On reveal we compare it against the live generation to detect churn that
+    // happened in other workspaces; those events carry panelIds of the active
+    // workspace, so they never reach this hidden panel via the normal listener.
+    if (!nextVisible && layoutHiddenGenerationRef.current === 0) {
+      layoutHiddenGenerationRef.current = getTerminalLayoutSettledGeneration();
+    }
 
     if (workspaceShowSyncTimerRef.current) {
       clearTimeout(workspaceShowSyncTimerRef.current);
@@ -5842,7 +5863,7 @@ export default function TerminalTTY({
     // must stay attached for instant reactivation. Real GPU disposal happens on
     // unmount via disposeXtermRuntime().
 
-    if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, isVisibleInLayout)) {
+    if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)) {
       restoreInitialCommandDispatchGuard();
       if (shouldUseNativeRenderer && nativeVteOpened) {
         void showAndResizeNativeLease();
@@ -5865,7 +5886,18 @@ export default function TerminalTTY({
           tuiSessionActive: tuiSessionActiveRef.current,
         });
 
-        if (revealMode === 'soft') {
+        // If layout churn happened while this panel was hidden, the GPU framebuffer
+        // may be stale even though the addon is still attached. Skip the soft/no-op
+        // paths and run a real fit + clear + repaint, with bounded retries.
+        const hadLocalChurn = layoutChurnedWhileHiddenRef.current;
+        const hiddenGeneration = layoutHiddenGenerationRef.current;
+        const currentGeneration = getTerminalLayoutSettledGeneration();
+        const hadGlobalChurn = hiddenGeneration > 0 && currentGeneration > hiddenGeneration;
+        const hadLayoutChurn = hadLocalChurn || hadGlobalChurn;
+        layoutChurnedWhileHiddenRef.current = false;
+        layoutHiddenGenerationRef.current = 0;
+
+        if (revealMode === 'soft' && !hadLayoutChurn) {
           needsViewportSyncOnShowRef.current = false;
           performSoftGpuVisibilityReveal(
             termRef.current,
@@ -5927,13 +5959,53 @@ export default function TerminalTTY({
               needsViewportSyncOnShowRef.current = true;
               scheduleBoundedGpuRecoverRef.current?.(48);
             } else if (isVisibleInLayoutRef.current && termRef.current) {
-              performSoftGpuVisibilityReveal(
-                termRef.current,
-                hiddenOutputBufferRef.current,
-                hiddenOutputCatchupPendingRef
-              );
+              if (hadLayoutChurn) {
+                // The GPU framebuffer may have been discarded while the panel was
+                // opacity-hidden. For plain shells a real clear+repaint is safe.
+                // For live TUIs (OpenCode/Grok/etc.) a clearAtlas wipes the canvas
+                // and the TUI does not repaint until it receives SIGWINCH/input, so
+                // we use a TUI-safe path: fit without PTY notify, refresh+force
+                // repaint, then nudge the PTY with an unchanged-dimension SIGWINCH
+                // to make the TUI redraw without altering its layout.
+                if (tuiSessionActiveRef.current && containerRef.current && fitRef.current) {
+                  fitTerminalViewport({
+                    container: containerRef.current,
+                    fitAddon: fitRef.current,
+                    term: termRef.current,
+                    socket: wsRef.current,
+                    clearAtlas: false,
+                    lastPtySizeRef: lastPtySizeRef.current,
+                    skipPtyNotify: true,
+                  });
+                  stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+                  refreshTerminalViewport(termRef.current);
+                  if (isTerminalRendererReady(termRef.current)) {
+                    forceTerminalViewportRepaint(termRef.current);
+                  }
+                  nudgeTerminalPtyResize({
+                    term: termRef.current,
+                    socket: wsRef.current,
+                    lastPtySizeRef: lastPtySizeRef.current,
+                    force: true,
+                  });
+                  logViewportDiagnostic('workspace-show-layout-churn-recover-tui');
+                } else {
+                  void syncTerminalViewportOnWorkspaceShow('workspace-show-layout-churn-recover', {
+                    clearAtlas: true,
+                  });
+                }
+                scheduleBoundedGpuRecoverRef.current?.(24);
+              } else {
+                performSoftGpuVisibilityReveal(
+                  termRef.current,
+                  hiddenOutputBufferRef.current,
+                  hiddenOutputCatchupPendingRef
+                );
+              }
             }
-            scheduleWorkspaceShowRecovery('workspace-show-visible');
+            scheduleWorkspaceShowRecovery(
+              hadLayoutChurn ? 'workspace-show-layout-churn-recover' : 'workspace-show-visible'
+            );
           })();
         }
       }
@@ -5981,6 +6053,7 @@ export default function TerminalTTY({
       // panels that are not on screen; defer those to the show edge.
       if (!isVisibleInLayoutRef.current) {
         needsViewportSyncOnShowRef.current = true;
+        layoutChurnedWhileHiddenRef.current = true;
         return;
       }
 
@@ -6934,6 +7007,7 @@ export default function TerminalTTY({
       if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
           return;
         }
         syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
@@ -6948,6 +7022,7 @@ export default function TerminalTTY({
       ) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
           return;
         }
         if (canSkipLayoutSettledRepaint()) {
@@ -6980,6 +7055,7 @@ export default function TerminalTTY({
       if (String(reason).includes('swarm-launch')) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
           return;
         }
         if (canSkipLayoutSettledRepaint()) {
@@ -7010,6 +7086,7 @@ export default function TerminalTTY({
       if (String(reason).includes('workspace-created')) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
           return;
         }
         if (canSkipLayoutSettledRepaint()) {
@@ -7053,6 +7130,7 @@ export default function TerminalTTY({
       ) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
           return;
         }
         if (canSkipLayoutSettledRepaint()) {
@@ -7083,6 +7161,7 @@ export default function TerminalTTY({
       if (String(reason).includes('panel-split') || String(reason).includes('panel-relaunch')) {
         if (!isVisibleInLayoutRef.current) {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
           return;
         }
         if (canSkipLayoutSettledRepaint()) {
@@ -7152,6 +7231,7 @@ export default function TerminalTTY({
           }
         } else {
           needsViewportSyncOnShowRef.current = true;
+          layoutChurnedWhileHiddenRef.current = true;
         }
         return;
       }
@@ -7199,6 +7279,7 @@ export default function TerminalTTY({
           if (isDisposingRef.current) return;
           if (!isVisibleInLayoutRef.current) {
             needsViewportSyncOnShowRef.current = true;
+            layoutChurnedWhileHiddenRef.current = true;
             return;
           }
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-${phase}`, {

@@ -6,11 +6,24 @@
 /** Follow-up sync delays after the first frame (ms). Keep minimal for snappy UX. */
 export const NATIVE_SURFACE_SETTLE_DELAYS_MS = [16];
 
+/**
+ * Monotonic generation counter for every `devhub:terminal-layout-settled`
+ * dispatch. Lets hidden panels detect that layout churn happened somewhere
+ * (including another workspace) while they were opacity-hidden, even when the
+ * event itself is filtered to the active workspace's panelIds.
+ */
+let terminalLayoutSettledGeneration = 0;
+
+export function getTerminalLayoutSettledGeneration() {
+  return terminalLayoutSettledGeneration;
+}
+
 export function dispatchTerminalLayoutSettled(detail = {}) {
   if (typeof window === 'undefined') return;
+  terminalLayoutSettledGeneration += 1;
   window.dispatchEvent(
     new CustomEvent('devhub:terminal-layout-settled', {
-      detail: { ...detail, at: Date.now() },
+      detail: { ...detail, at: Date.now(), generation: terminalLayoutSettledGeneration },
     })
   );
 }

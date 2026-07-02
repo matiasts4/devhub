@@ -66,11 +66,14 @@ describe('App.js — Slice 2 motion migrations', () => {
       expect(app).toMatch(/key=\{location\.pathname\}/);
     });
 
-    test('route motion wrapper uses direction-aware x + opacity variants', () => {
+    test('route motion wrapper uses scale + opacity variants (no lateral slide)', () => {
       expect(app).toMatch(/variants=\{routeVariants\}/);
       expect(app).toMatch(/initial=["']enter["']/);
       expect(app).toMatch(/animate=["']center["']/);
       expect(app).toMatch(/exit=["']exit["']/);
+      // Variants must use scale, not x (no lateral slide on desktop)
+      expect(app).toMatch(/scale:\s*routeScale/);
+      expect(app).not.toMatch(/x:\s*direction/);
     });
 
     test('route transition comes from getTransition with nav intent', () => {

@@ -3,6 +3,7 @@ const {
   dispatchTerminalLayoutSettled,
   dispatchTerminalSurvivorRecover,
   dispatchNativeVteWorkspaceSync,
+  getTerminalLayoutSettledGeneration,
   scheduleNativeSurfaceActivation,
   schedulePostLayoutNativeSync,
   scheduleSurvivorRecoverAfterClose,
@@ -41,6 +42,18 @@ describe('nativeLayoutSync', () => {
     expect(received).toHaveLength(1);
     expect(received[0].reason).toBe('test-settle');
     expect(typeof received[0].at).toBe('number');
+    expect(typeof received[0].generation).toBe('number');
+  });
+
+  test('getTerminalLayoutSettledGeneration increments on each dispatch', () => {
+    const before = getTerminalLayoutSettledGeneration();
+    dispatchTerminalLayoutSettled({ reason: 'first' });
+    const afterFirst = getTerminalLayoutSettledGeneration();
+    dispatchTerminalLayoutSettled({ reason: 'second' });
+    const afterSecond = getTerminalLayoutSettledGeneration();
+
+    expect(afterFirst).toBe(before + 1);
+    expect(afterSecond).toBe(before + 2);
   });
 
   test('dispatchTerminalSurvivorRecover dispatches survivor recover event', () => {
