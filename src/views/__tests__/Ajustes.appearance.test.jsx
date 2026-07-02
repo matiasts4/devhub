@@ -68,8 +68,8 @@ jest.mock('lucide-react', () => {
 
 jest.mock('@/lib/theme/themes', () => ({
   ACCENT_OPTIONS: [
-    { id: 'theme', label: 'Theme sync', description: 'desc', primary: null },
-    { id: 'amber', label: 'Signal Amber', description: 'desc', primary: '#E3B341' },
+    { id: 'theme', label: 'Theme sync', desc: 'desc', primary: null },
+    { id: 'amber', label: 'Signal Amber', desc: 'desc', primary: '#E3B341' },
   ],
   THEMES: {
     DEEP_SEA: 'deep-sea',
@@ -80,21 +80,28 @@ jest.mock('@/lib/theme/themes', () => ({
     BRUTALIST_STAGE: 'brutalist-stage',
     CURSOR: 'cursor',
   },
+  MOTION_MODES: {
+    REDUCED: 'reduced',
+    NORMAL: 'normal',
+    AMPLIFIED: 'amplified',
+  },
   THEME_OPTIONS: [
-    { id: 'deep-sea', label: 'Deep Sea', description: 'desc', accent: '#58A6FF' },
-    { id: 'light', label: 'Light', description: 'desc', accent: '#0969DA' },
+    { id: 'deep-sea', label: 'Deep Sea', desc: 'desc', accent: '#58A6FF' },
+    { id: 'light', label: 'Light', desc: 'desc', accent: '#0969DA' },
   ],
   MORPHOLOGY_OPTIONS: [
-    { id: 'default', label: 'Default', description: 'base chrome' },
-    { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
-    { id: 'cursor', label: 'Cursor', description: 'Warm amber Cursor-style chrome.' },
+    { id: 'default', label: 'Default', desc: 'base chrome' },
+    { id: 'brutalist-stage', label: 'Brutalist Stage', desc: 'brutalist chrome' },
+    { id: 'cursor', label: 'Cursor', desc: 'Warm amber Cursor-style chrome.' },
   ],
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
-  setTheme: jest.fn((value) => value),
-  setMorphology: jest.fn((value) => value),
-  setAccent: jest.fn((value) => value),
+  getStoredMotionMode: jest.fn(() => 'normal'),
+  setTheme: jest.fn((val) => val),
+  setMorphology: jest.fn((val) => val),
+  setAccent: jest.fn((val) => val),
+  setMotionMode: jest.fn((val) => val),
 }));
 
 const Ajustes = require('../Ajustes').default;
@@ -111,6 +118,7 @@ function installDom() {
   global.HTMLElement = dom.window.HTMLElement;
   global.Event = dom.window.Event;
   global.MouseEvent = dom.window.MouseEvent;
+  global.CustomEvent = dom.window.CustomEvent;
   global.localStorage = dom.window.localStorage;
   global.fetch = jest.fn(() =>
     Promise.resolve({
@@ -215,5 +223,32 @@ describe('Ajustes appearance tab — interactive controls', () => {
     await flushEffects();
 
     expect(themeModule.setMorphology).toHaveBeenCalledWith('cursor');
+  });
+
+  test('renders the motion mode section and persists changes', async () => {
+    rendered = await renderIntoDom(React.createElement(Ajustes));
+    const appearanceTab = findButton(rendered.container, (button) =>
+      /apariencia|appearance/i.test(button.textContent || '')
+    );
+    flushSync(() => {
+      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    const motionSection = rendered.container.querySelector(
+      '[data-testid="ajustes-motion-mode-section"]'
+    );
+    expect(motionSection).toBeTruthy();
+
+    const amplifiedButton = Array.from(motionSection.querySelectorAll('button')).find((b) =>
+      /amplified/i.test(b.textContent || '')
+    );
+    expect(amplifiedButton).toBeTruthy();
+    flushSync(() => {
+      amplifiedButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.setMotionMode).toHaveBeenCalledWith('amplified');
   });
 });

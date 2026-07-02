@@ -69,8 +69,7 @@ jest.mock('@/components/ui/date-picker', () => ({ DatePicker: () => null }));
 
 jest.mock('lucide-react', () => {
   const React = require('react');
-  const icon = (name) => (props) =>
-    React.createElement('svg', { ...props, 'data-icon': name });
+  const icon = (name) => (props) => React.createElement('svg', { ...props, 'data-icon': name });
   return new Proxy(
     {},
     {
@@ -94,12 +93,19 @@ jest.mock('@/lib/theme/themes', () => ({
     { id: 'default', label: 'Default', description: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
   ],
+  MOTION_MODES: {
+    REDUCED: 'reduced',
+    NORMAL: 'normal',
+    AMPLIFIED: 'amplified',
+  },
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
+  getStoredMotionMode: jest.fn(() => 'normal'),
   setTheme: jest.fn((value) => value),
   setMorphology: jest.fn((value) => value),
   setAccent: jest.fn((value) => value),
+  setMotionMode: jest.fn((value) => value),
   // TRD-5 terminal sub-control surface (rendered when flag is on)
   getStoredZoom: jest.fn(() => 1),
   setZoom: jest.fn((z) => z),
@@ -270,12 +276,8 @@ describe('Ajustes Apariencia — terminal sub-section (flag ON, TRD-5)', () => {
     expect(
       rendered.container.querySelector('[data-testid="restore-policy-opencode"]')
     ).toBeTruthy();
-    expect(
-      rendered.container.querySelector('[data-testid="restore-policy-generic"]')
-    ).toBeTruthy();
-    expect(
-      rendered.container.querySelector('[data-testid="restore-policy-swarm"]')
-    ).toBeTruthy();
+    expect(rendered.container.querySelector('[data-testid="restore-policy-generic"]')).toBeTruthy();
+    expect(rendered.container.querySelector('[data-testid="restore-policy-swarm"]')).toBeTruthy();
 
     // 6. Zoom (+/-) controls — buttons keyed by aria-label or data-testid
     // We accept any two buttons whose text is "+" and "-" inside the

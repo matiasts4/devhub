@@ -1,4 +1,5 @@
 export { MotionProvider } from './MotionProvider';
+export { useMotionMode, MotionModeContext } from './MotionModeContext';
 export { Crossfade } from './Crossfade';
 export { FadeSlide, FadeSlidePresence } from './FadeSlide';
 export { SlidePanel } from './SlidePanel';

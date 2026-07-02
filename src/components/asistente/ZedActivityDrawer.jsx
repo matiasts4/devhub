@@ -2,6 +2,8 @@
 
 import { memo, useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import ZedActionCard from './ZedActionCard';
 import ZedAuditTrace from './ZedAuditTrace';
 import { dispatchZedOpenUrl } from '@/components/zedOpenUrlEvent';
@@ -74,6 +76,9 @@ export default function ZedActivityDrawer({
   planControls = null,
   pendingStepApproval = null,
 }) {
+  const motionMode = useMotionMode();
+  const isReduced = motionMode === 'reduced';
+  const isAmplified = motionMode === 'amplified';
   const [showAll, setShowAll] = useState(false);
 
   const assistantTurns = useMemo(
@@ -105,10 +110,10 @@ export default function ZedActivityDrawer({
         <motion.div
           key="zed-activity-drawer"
           data-testid="zed-activity-drawer"
-          initial={{ opacity: 0, y: 8, height: 0 }}
-          animate={{ opacity: 1, y: 0, height: 'auto' }}
-          exit={{ opacity: 0, y: 6, height: 0 }}
-          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+          initial={isReduced ? { opacity: 0 } : { opacity: 0, y: isAmplified ? 14 : 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={isReduced ? { opacity: 0 } : { opacity: 0, y: isAmplified ? 10 : 6 }}
+          transition={getTransition('open', motionMode)}
           className="pointer-events-auto mb-2 w-[min(400px,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--accent-primary)_20%,var(--border-subtle))] bg-[color-mix(in_srgb,#0a1018_94%,transparent)] shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md"
         >
           <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] px-3 py-2">

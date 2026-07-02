@@ -17,8 +17,10 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Command } from 'cmdk';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import { useCommandBar } from '@/lib/commandBar/useCommandBar';
 import { isCommandBarEnabled } from '@/lib/commandBar/featureFlag';
 import { buildCommandBarContext, resolveCommandBarIntent } from '@/lib/commandBar/zedIntentBridge';
@@ -36,8 +38,10 @@ export default function CommandBar({ surfaceController }) {
   const [inputValue, setInputValue] = useState('');
   const [status, setStatus] = useState(null); // { phase, message, error, result }
 
-  // Detect reduced motion preference
-  const prefersReducedMotion = useReducedMotion();
+  // Detect motion mode preference
+  const motionMode = useMotionMode();
+  const isReduced = motionMode === 'reduced';
+  const isAmplified = motionMode === 'amplified';
 
   // Execute command when user presses Enter
   const handleSubmit = useCallback(
@@ -110,25 +114,25 @@ export default function CommandBar({ surfaceController }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.01 : 0.2 }}
+            transition={getTransition('base', motionMode)}
             className="fixed inset-0 bg-black/50"
             onClick={close}
           />
 
           {/* Command palette */}
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -20, scale: 0.95 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -20, scale: 0.95 }}
-            transition={
-              prefersReducedMotion
-                ? { duration: 0.01 }
-                : {
-                    type: 'spring',
-                    stiffness: 500,
-                    damping: 30,
-                  }
+            initial={
+              isReduced
+                ? { opacity: 0 }
+                : { opacity: 0, y: isAmplified ? -32 : -20, scale: isAmplified ? 0.88 : 0.95 }
             }
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={
+              isReduced
+                ? { opacity: 0 }
+                : { opacity: 0, y: isAmplified ? -32 : -20, scale: isAmplified ? 0.88 : 0.95 }
+            }
+            transition={getTransition('toggle', motionMode)}
             className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-2xl"
           >
             <div className="bg-popover border border-border rounded-lg shadow-2xl overflow-hidden">
@@ -156,10 +160,10 @@ export default function CommandBar({ surfaceController }) {
               {/* Status display with aria-live region */}
               {status && (
                 <motion.div
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                  animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                  transition={{ duration: prefersReducedMotion ? 0.01 : 0.2 }}
+                  initial={isReduced ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={isReduced ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                  transition={getTransition('base', motionMode)}
                   id="commandbar-status"
                   role="status"
                   aria-live="polite"
@@ -176,10 +180,10 @@ export default function CommandBar({ surfaceController }) {
                     <AnimatePresence mode="wait">
                       <motion.div
                         key={status.phase}
-                        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
-                        animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-                        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
-                        transition={{ duration: prefersReducedMotion ? 0.01 : 0.14 }}
+                        initial={isReduced ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={isReduced ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+                        transition={getTransition('fast', motionMode)}
                       >
                         {status.phase === 'running' && (
                           <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -199,12 +203,9 @@ export default function CommandBar({ surfaceController }) {
                   {/* Read-back panel for terminal-read results */}
                   {status.phase === 'done' && status.result && (
                     <motion.div
-                      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}
-                      animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1 }}
-                      transition={{
-                        duration: prefersReducedMotion ? 0.01 : 0.3,
-                        delay: prefersReducedMotion ? 0 : 0.1,
-                      }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={getTransition('base', motionMode)}
                       className="mt-3 space-y-2"
                     >
                       <div className="flex items-center gap-2 text-xs">

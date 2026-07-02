@@ -65,8 +65,7 @@ jest.mock('@/components/ui/date-picker', () => ({ DatePicker: () => null }));
 
 jest.mock('lucide-react', () => {
   const React = require('react');
-  const icon = (name) => (props) =>
-    React.createElement('svg', { ...props, 'data-icon': name });
+  const icon = (name) => (props) => React.createElement('svg', { ...props, 'data-icon': name });
   return new Proxy({}, { get: (_, key) => icon(String(key)) });
 });
 
@@ -85,16 +84,28 @@ jest.mock('@/lib/theme/themes', () => ({
     { id: 'default', label: 'Default', description: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
   ],
+  MOTION_MODES: {
+    REDUCED: 'reduced',
+    NORMAL: 'normal',
+    AMPLIFIED: 'amplified',
+  },
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
+  getStoredMotionMode: jest.fn(() => 'normal'),
   setTheme: jest.fn((v) => v),
   setMorphology: jest.fn((v) => v),
   setAccent: jest.fn((v) => v),
+  setMotionMode: jest.fn((v) => v),
   // Terminal helpers are exported but should not be exercised when flag is off.
   getStoredZoom: jest.fn(() => 1),
   setZoom: jest.fn((z) => z),
-  TERMINAL_HEADER_STYLES: { DRAGON: 'dragon', MINIMAL: 'minimal', GRADIENT: 'gradient', PLAIN: 'plain' },
+  TERMINAL_HEADER_STYLES: {
+    DRAGON: 'dragon',
+    MINIMAL: 'minimal',
+    GRADIENT: 'gradient',
+    PLAIN: 'plain',
+  },
   getStoredTerminalHeaderStyle: jest.fn(() => 'dragon'),
   setTerminalHeaderStyle: jest.fn((v) => v),
   getTerminalHeaderStyleOptions: jest.fn(() => [
@@ -233,9 +244,7 @@ describe('Ajustes Apariencia — terminal sub-section (flag OFF, default)', () =
     expect(
       rendered.container.querySelector('[data-testid="terminal-accent-bar-toggle"]')
     ).toBeNull();
-    expect(
-      rendered.container.querySelector('[data-testid="restore-policy-opencode"]')
-    ).toBeNull();
+    expect(rendered.container.querySelector('[data-testid="restore-policy-opencode"]')).toBeNull();
     expect(rendered.container.querySelector('[data-testid="settings-zoom"]')).toBeNull();
   });
 });

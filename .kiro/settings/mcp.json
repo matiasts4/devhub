@@ -2,8 +2,8 @@
   "servers": {
     "devhub": {
       "type": "stdio",
-      "command": "/home/matias/.nvm/versions/node/v24.14.0/bin/node",
-      "args": ["/home/matias/ArxonLabs/devhub/devhub-mcp/server.js"]
+      "command": "C:/Program Files/nodejs/node.exe",
+      "args": ["D:/devhub/devhub-mcp/server.js"]
     },
     "supabase": {
       "type": "http",

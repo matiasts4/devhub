@@ -87,12 +87,19 @@ jest.mock('@/lib/theme/themes', () => ({
     { id: 'default', label: 'Default', description: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', description: 'brutalist chrome' },
   ],
+  MOTION_MODES: {
+    REDUCED: 'reduced',
+    NORMAL: 'normal',
+    AMPLIFIED: 'amplified',
+  },
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
+  getStoredMotionMode: jest.fn(() => 'normal'),
   setTheme: jest.fn((value) => value),
   setMorphology: jest.fn((value) => value),
   setAccent: jest.fn((value) => value),
+  setMotionMode: jest.fn((value) => value),
 }));
 
 const themeModule = require('@/lib/theme/themes');

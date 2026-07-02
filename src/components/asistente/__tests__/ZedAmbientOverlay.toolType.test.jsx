@@ -5,7 +5,12 @@ const { JSDOM } = require('jsdom');
 const { flushSync } = require('react-dom');
 const { createRoot } = require('react-dom/client');
 
-let mockUseReducedMotionValue = true;
+let mockMotionMode = 'normal';
+
+jest.mock('@/components/ui/motion/MotionModeContext', () => ({
+  useMotionMode: () => mockMotionMode,
+  MotionModeProvider: ({ children }) => children,
+}));
 
 jest.mock('framer-motion', () => {
   const React = require('react');
@@ -16,7 +21,6 @@ jest.mock('framer-motion', () => {
   return {
     motion: { div: mockEl('div'), span: mockEl('span') },
     AnimatePresence: ({ children }) => children,
-    useReducedMotion: () => mockUseReducedMotionValue,
   };
 });
 
@@ -99,7 +103,7 @@ describe('ZedAmbientOverlay — tool-type wiring (ZAA-4)', () => {
   beforeEach(() => {
     dom = installDom();
     jest.clearAllMocks();
-    mockUseReducedMotionValue = false;
+    mockMotionMode = 'normal';
     mockUseZedOverlay.mockReturnValue({
       isOpen: false,
       close: jest.fn(),
@@ -155,7 +159,7 @@ describe('ZedAmbientOverlay — tool-type wiring (ZAA-4)', () => {
   });
 
   test('reduced motion: no per-tool pulse class even with a tool type', () => {
-    mockUseReducedMotionValue = true;
+    mockMotionMode = 'reduced';
     mockUseZedChat.mockReturnValue(baseChatMock({ isLoading: true, lastToolType: 'terminal' }));
     const { container, root } = renderOverlay();
     const inner = container.querySelector('.zed-aura-root');

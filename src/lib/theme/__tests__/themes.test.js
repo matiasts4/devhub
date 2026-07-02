@@ -17,18 +17,25 @@ const {
   THEMES,
   WARNING,
   applyAccentToDocument,
+  applyMotionModeToDocument,
   applyMorphologyToDocument,
   applyPaletteToDocument,
   applyWarning,
   getStoredAccent,
   getStoredMorphology,
+  getStoredMotionMode,
   getStoredPalette,
+  MOTION_MODES,
+  MOTION_MODE_STORAGE_KEY,
   normalizeAccent,
+  normalizeMotionMode,
   normalizeMorphology,
   normalizePalette,
   setAccent,
+  setMotionMode,
   setMorphology,
   setPalette,
+  setStoredMotionMode,
   setTheme,
 } = require('../themes.js');
 
@@ -358,5 +365,100 @@ describe('cursor morphology token block', () => {
 
     expect(switchyardDecls['--chrome-radius-panel']).toBe('18px');
     expect(switchyardDecls['--accent-primary']).toBe('#63d0c2');
+  });
+});
+
+describe('motion mode preference helpers', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = new JSDOM('<!doctype html><html><body></body></html>', {
+      url: 'https://devhub.test',
+    });
+
+    global.window = dom.window;
+    global.document = dom.window.document;
+    document.documentElement.removeAttribute('data-motion-mode');
+    document.documentElement.removeAttribute('data-theme');
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    dom.window.close();
+    delete global.window;
+    delete global.document;
+  });
+
+  test('exposes the devhub:motion-mode storage key and three mode constants', () => {
+    expect(MOTION_MODE_STORAGE_KEY).toBe('devhub:motion-mode');
+    expect(MOTION_MODES).toEqual({
+      REDUCED: 'reduced',
+      NORMAL: 'normal',
+      AMPLIFIED: 'amplified',
+    });
+  });
+
+  test('normalizeMotionMode returns each supported mode unchanged', () => {
+    expect(normalizeMotionMode('reduced')).toBe('reduced');
+    expect(normalizeMotionMode('normal')).toBe('normal');
+    expect(normalizeMotionMode('amplified')).toBe('amplified');
+  });
+
+  test('normalizeMotionMode falls back to normal for unknown, null, or undefined', () => {
+    expect(normalizeMotionMode('bouncy')).toBe('normal');
+    expect(normalizeMotionMode(null)).toBe('normal');
+    expect(normalizeMotionMode(undefined)).toBe('normal');
+    expect(normalizeMotionMode('')).toBe('normal');
+  });
+
+  test('getStoredMotionMode returns normal when nothing is stored', () => {
+    expect(getStoredMotionMode()).toBe('normal');
+  });
+
+  test('getStoredMotionMode returns the stored mode value', () => {
+    window.localStorage.setItem(MOTION_MODE_STORAGE_KEY, 'amplified');
+    expect(getStoredMotionMode()).toBe('amplified');
+  });
+
+  test('getStoredMotionMode falls back to normal for an unknown stored value', () => {
+    window.localStorage.setItem(MOTION_MODE_STORAGE_KEY, 'bouncy');
+    expect(getStoredMotionMode()).toBe('normal');
+  });
+
+  test('setStoredMotionMode persists a normalized mode under the motion-mode key', () => {
+    setStoredMotionMode('amplified');
+    expect(window.localStorage.getItem(MOTION_MODE_STORAGE_KEY)).toBe('amplified');
+  });
+
+  test('setStoredMotionMode normalizes unknown values to normal before persisting', () => {
+    setStoredMotionMode('bouncy');
+    expect(window.localStorage.getItem(MOTION_MODE_STORAGE_KEY)).toBe('normal');
+  });
+
+  test('applyMotionModeToDocument sets data-motion-mode on documentElement', () => {
+    applyMotionModeToDocument('reduced');
+    expect(document.documentElement.getAttribute('data-motion-mode')).toBe('reduced');
+  });
+
+  test('applyMotionModeToDocument normalizes unknown values to normal', () => {
+    applyMotionModeToDocument('bouncy');
+    expect(document.documentElement.getAttribute('data-motion-mode')).toBe('normal');
+  });
+
+  test('setMotionMode applies to document, persists, and returns the normalized mode', () => {
+    const result = setMotionMode('amplified');
+    expect(result).toBe('amplified');
+    expect(document.documentElement.getAttribute('data-motion-mode')).toBe('amplified');
+    expect(window.localStorage.getItem(MOTION_MODE_STORAGE_KEY)).toBe('amplified');
+  });
+
+  test('setMotionMode does not mutate the stored theme selection', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, THEMES.DRACULA);
+
+    const result = setMotionMode('reduced');
+
+    expect(result).toBe('reduced');
+    expect(window.localStorage.getItem(MOTION_MODE_STORAGE_KEY)).toBe('reduced');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(THEMES.DRACULA);
   });
 });

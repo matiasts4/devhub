@@ -36,16 +36,20 @@ import {
   ACCENT_OPTIONS,
   getStoredAccent,
   getStoredMorphology,
+  getStoredMotionMode,
   getStoredTheme,
   getStoredZoom,
   MORPHOLOGY_OPTIONS,
+  MOTION_MODES,
   setAccent,
+  setMotionMode,
   setMorphology,
   setTheme,
   setZoom,
   THEMES,
   THEME_OPTIONS,
 } from '@/lib/theme/themes';
+import { MotionModeToggle } from '@/components/motion-lab/MotionModeToggle';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
 import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
 import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
@@ -460,6 +464,7 @@ export default function Ajustes() {
   const [activeTheme, setActiveTheme] = useState(THEMES.DEEP_SEA);
   const [activeMorphology, setActiveMorphology] = useState('default');
   const [activeAccent, setActiveAccent] = useState('theme');
+  const [activeMotionMode, setActiveMotionMode] = useState(MOTION_MODES.NORMAL);
   const [themeFilter, setThemeFilter] = useState('all'); // all | dark | light
 
   // Tabs
@@ -512,9 +517,11 @@ export default function Ajustes() {
     const storedTheme = getStoredTheme();
     const storedMorphology = getStoredMorphology();
     const storedAccent = getStoredAccent();
+    const storedMotionMode = getStoredMotionMode();
     setActiveTheme(storedTheme);
     setActiveMorphology(storedMorphology);
     setActiveAccent(storedAccent);
+    setActiveMotionMode(storedMotionMode);
     setTheme(storedTheme);
     setMorphology(storedMorphology);
     setAccent(storedAccent);
@@ -545,6 +552,15 @@ export default function Ajustes() {
     setActiveAccent(next);
     sileo.success({
       title: `Acento aplicado: ${ACCENT_OPTIONS.find((option) => option.id === next)?.label || next}`,
+    });
+  }, []);
+
+  const handleMotionModeChange = useCallback((mode) => {
+    const next = setMotionMode(mode);
+    setActiveMotionMode(next);
+    window.dispatchEvent(new CustomEvent('devhub:motion-mode-change'));
+    sileo.success({
+      title: `Motion mode: ${next}`,
     });
   }, []);
 
@@ -1200,6 +1216,37 @@ export default function Ajustes() {
               ))}
             </div>
           </div>
+
+          <div
+            data-testid="ajustes-motion-mode-section"
+            className="border-t px-6 py-5"
+            style={{ borderColor: 'var(--border-subtle)' }}
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h4
+                  className="font-mono text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Motion
+                </h4>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Controla la cantidad de animación en toda la interfaz.
+                </p>
+              </div>
+              <span
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em]"
+                style={{
+                  ...chromeSurfaceStyle({ surface: 'pill', emphasized: true, tone: 'accent' }),
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {activeMotionMode}
+              </span>
+            </div>
+            <MotionModeToggle mode={activeMotionMode} onModeChange={handleMotionModeChange} />
+          </div>
+
           {terminalSettingsEnabled ? <TerminalSettingsSection /> : null}
         </div>
       </ChromeSurface>

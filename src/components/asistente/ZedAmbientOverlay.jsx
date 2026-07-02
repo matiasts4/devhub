@@ -1,8 +1,10 @@
 'use client';
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Send, Square, VolumeX } from 'lucide-react';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import { useZedChat } from '@/lib/asistente/useZedChat';
 import { useZedOverlay } from '@/lib/asistente/useZedOverlay';
 import { buildZedAmbientStatus } from '@/lib/asistente/buildZedAmbientStatus';
@@ -360,7 +362,9 @@ export default function ZedAmbientOverlay({
   getTerminalPanelCount = null,
   getWorkspaceTerminals = null,
 }) {
-  const prefersReducedMotion = useReducedMotion();
+  const motionMode = useMotionMode();
+  const isReduced = motionMode === 'reduced';
+  const isAmplified = motionMode === 'amplified';
   const { isOpen, close, open, toggle } = useZedOverlay();
   const {
     input,
@@ -776,7 +780,7 @@ export default function ZedAmbientOverlay({
     <>
       <ZedAuraContainer
         phase={phase}
-        reducedMotion={prefersReducedMotion}
+        reducedMotion={isReduced}
         toolType={overlayToolType}
         outcomeFlash={outcomeFlash}
         speaking={speaking}
@@ -793,14 +797,18 @@ export default function ZedAmbientOverlay({
             aria-label="Zed asistente"
             aria-busy={isLoading}
             className="fixed inset-x-0 bottom-6 z-[260] flex justify-center pointer-events-none"
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.97 }}
-            transition={
-              prefersReducedMotion
-                ? { duration: 0.01 }
-                : { type: 'spring', stiffness: 360, damping: 30, mass: 0.7 }
+            initial={
+              isReduced
+                ? { opacity: 0 }
+                : { opacity: 0, y: isAmplified ? 20 : 14, scale: isAmplified ? 0.85 : 0.96 }
             }
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={
+              isReduced
+                ? { opacity: 0 }
+                : { opacity: 0, y: isAmplified ? 14 : 8, scale: isAmplified ? 0.9 : 0.97 }
+            }
+            transition={getTransition('toggle', motionMode)}
           >
             <div
               ref={pillInnerRef}
@@ -839,7 +847,7 @@ export default function ZedAmbientOverlay({
                 <div
                   className={[
                     'zed-pill-topline pointer-events-none absolute inset-x-0 top-0 h-px',
-                    pillState !== 'idle' && !prefersReducedMotion ? 'zed-pill-topline-active' : '',
+                    pillState !== 'idle' && !isReduced ? 'zed-pill-topline-active' : '',
                   ].join(' ')}
                   aria-hidden="true"
                 />

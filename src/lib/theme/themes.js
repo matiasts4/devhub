@@ -6,6 +6,13 @@ export const APPEARANCE_STORAGE_KEY = 'devhub:appearance';
 export const PALETTE_STORAGE_KEY = 'devhub:palette';
 export const TERMINAL_HEADER_STYLE_STORAGE_KEY = 'devhub:terminal-header-style';
 export const TERMINAL_ACCENT_BAR_STORAGE_KEY = 'devhub:terminal-accent-bar';
+export const MOTION_MODE_STORAGE_KEY = 'devhub:motion-mode';
+
+export const MOTION_MODES = {
+  REDUCED: 'reduced',
+  NORMAL: 'normal',
+  AMPLIFIED: 'amplified',
+};
 
 export const TERMINAL_HEADER_STYLES = {
   DRAGON: 'dragon',
@@ -425,6 +432,33 @@ export function setAccent(accent) {
   const normalized = normalizeAccent(accent);
   applyAccentToDocument(normalized);
   setStoredAccent(normalized);
+  return normalized;
+}
+
+export function normalizeMotionMode(value) {
+  const all = Object.values(MOTION_MODES);
+  return all.includes(value) ? value : MOTION_MODES.NORMAL;
+}
+
+export function getStoredMotionMode() {
+  if (typeof window === 'undefined') return MOTION_MODES.NORMAL;
+  return normalizeMotionMode(window.localStorage.getItem(MOTION_MODE_STORAGE_KEY));
+}
+
+export function setStoredMotionMode(mode) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(MOTION_MODE_STORAGE_KEY, normalizeMotionMode(mode));
+}
+
+export function applyMotionModeToDocument(mode) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-motion-mode', normalizeMotionMode(mode));
+}
+
+export function setMotionMode(mode) {
+  const normalized = normalizeMotionMode(mode);
+  applyMotionModeToDocument(normalized);
+  setStoredMotionMode(normalized);
   return normalized;
 }
 

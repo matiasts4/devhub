@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
+import { useRouteDirection } from '@/hooks/useRouteDirection';
 import {
   HashRouter,
   Routes,
@@ -27,6 +28,7 @@ import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
+import MotionLab from './views/MotionLab';
 import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
@@ -55,6 +57,8 @@ import {
 import { resolveWorkspaceShellVisibilityStyle } from './components/terminal/workspaceAnimProps';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { MotionProvider } from '@/components/ui/motion/MotionProvider';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -95,6 +99,8 @@ function WorkspaceLayout() {
 
   const { activeWorkspaceId } = useAuth();
   const navigate = useNavigate();
+  const motionMode = useMotionMode();
+  const direction = useRouteDirection();
 
   const loadProject = useCallback(async () => {
     const { data } = await db.from('projects').select('*').eq('id', projectId).single();
@@ -227,6 +233,24 @@ function WorkspaceLayout() {
     channelName: `public:tasks-progress:${projectId || 'none'}`,
   });
 
+  const sidebarWidth = collapsed ? 48 : 256;
+  const sidebarOffset = motionMode === 'reduced' ? 0 : -sidebarWidth;
+  const sidebarTransition = getTransition('nav', motionMode);
+
+  const routeTransition = getTransition('nav', motionMode);
+  const routeDistance = motionMode === 'reduced' ? 0 : motionMode === 'amplified' ? 44 : 24;
+  const routeVariants = {
+    enter: {
+      x: direction === 'forward' ? routeDistance : -routeDistance,
+      opacity: 0,
+    },
+    center: { x: 0, opacity: 1 },
+    exit: {
+      x: direction === 'forward' ? -routeDistance : routeDistance,
+      opacity: 0,
+    },
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-surface-app">
@@ -251,20 +275,24 @@ function WorkspaceLayout() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <AnimatePresence initial={false}>
           {!((isTerminalMaximized || isPizarraActive) && isTerminalRoute) && (
-            <motion.div
+            <div
               key="workspace-sidebar-wrapper"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: collapsed ? 48 : 256, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
-              style={{ overflow: 'hidden', display: 'flex', flexShrink: 0 }}
+              style={{ width: sidebarWidth, overflow: 'hidden', display: 'flex', flexShrink: 0 }}
             >
-              <WorkspaceSidebar
-                project={project}
-                collapsed={collapsed}
-                onToggleCollapse={setCollapsed}
-              />
-            </motion.div>
+              <motion.div
+                initial={{ x: sidebarOffset, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: sidebarOffset, opacity: 0 }}
+                transition={sidebarTransition}
+                style={{ width: sidebarWidth, flexShrink: 0 }}
+              >
+                <WorkspaceSidebar
+                  project={project}
+                  collapsed={collapsed}
+                  onToggleCollapse={setCollapsed}
+                />
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
 
@@ -281,7 +309,19 @@ function WorkspaceLayout() {
               scrollbarColor: 'var(--border-subtle) transparent',
             }}
           >
-            <Outlet context={{ project }} />
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={location.pathname}
+                variants={routeVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={routeTransition}
+                style={{ width: '100%' }}
+              >
+                <Outlet context={{ project }} />
+              </motion.div>
+            </AnimatePresence>
           </main>
 
           {/* Persistent Terminal IDE Container */}
@@ -423,6 +463,7 @@ function App() {
               <Route path="ajustes" element={<Ajustes />} />
               <Route path="swarm" element={<SwarmControl />} />
               <Route path="telegram" element={<TelegramMonitor />} />
+              <Route path="motion-lab" element={<MotionLab />} />
               <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
 
               {/* Dummy route for terminales to avoid Router 404, actual render is done globally */}

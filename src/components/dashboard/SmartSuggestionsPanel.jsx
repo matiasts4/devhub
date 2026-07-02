@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import {
   RefreshCw,
   AlertTriangle,
@@ -107,13 +109,16 @@ function TypeIcon({ iconName, color, size = 16 }) {
 
 // ── SuggestionCard ────────────────────────────────────────────────────────────
 
-function SuggestionCard({ suggestion }) {
+function SuggestionCard({ suggestion, motionMode }) {
   const cfg = getTypeConfig(suggestion.type);
+  const isReduced = motionMode === 'reduced';
+  const isAmplified = motionMode === 'amplified';
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
+      initial={isReduced ? { opacity: 0 } : { opacity: 0, y: isAmplified ? 12 : 6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }}
+      exit={isReduced ? { opacity: 0 } : { opacity: 0, y: isAmplified ? -8 : -4 }}
+      transition={getTransition('open', motionMode)}
       className="rounded-xl p-4 flex flex-col gap-2"
       style={{
         background: cfg.bgColor,
@@ -200,6 +205,7 @@ function EmptyState() {
  * @param {{ project: object, tasks: Array, milestones: Array }} props
  */
 export default function SmartSuggestionsPanel({ project, tasks, milestones }) {
+  const motionMode = useMotionMode();
   const [suggestions, setSuggestions] = useState([]);
   const [isLLMLoading, setIsLLMLoading] = useState(false);
   const [llmError, setLlmError] = useState(null);
@@ -436,7 +442,7 @@ export default function SmartSuggestionsPanel({ project, tasks, milestones }) {
           <AnimatePresence mode="popLayout">
             <div className="space-y-3">
               {validSuggestions.map((s) => (
-                <SuggestionCard key={s.id} suggestion={s} />
+                <SuggestionCard key={s.id} suggestion={s} motionMode={motionMode} />
               ))}
             </div>
           </AnimatePresence>

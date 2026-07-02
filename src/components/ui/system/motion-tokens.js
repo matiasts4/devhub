@@ -12,6 +12,8 @@
  *  - All GPU-composited (transform + opacity only — no layout props)
  */
 
+import { spring, amplified } from '../motion/motionPresets';
+
 // ─── Durations (ms) ───────────────────────────────────────────────────────────
 
 export const DUR = {
@@ -27,6 +29,17 @@ export const DUR = {
   enter: 280,
   /** Slow emphasis: onboarding callouts, loading reveals. */
   slow: 400,
+};
+
+/**
+ * Surface durations absorbed from src/lib/pizarra/surfaceMotion.js.
+ * Kept as a separate namespace so the existing DUR values stay
+ * backward-compatible while Phase B can retire the pizarra fork.
+ */
+export const SURFACE_DUR = {
+  fast: 140,
+  base: 220,
+  enter: 340,
 };
 
 // ─── Easings (cubic-bezier strings) ──────────────────────────────────────────
@@ -50,6 +63,23 @@ export const EASE_CSS = {
   inOut: 'cubic-bezier(0.4, 0, 0.2, 1)',
 };
 
+/**
+ * Absorbed pizarra easings (surfaceMotion.js). Re-exported under the same
+ * names so Phase B can swap the fork to these tokens without renames.
+ */
+export const EASE_OUT = EASE_CSS.out;
+export const EASE_SOFT = EASE_CSS.inOut;
+
+/**
+ * Host-surface safety contract for Phase B. React subtrees that host
+ * native OS overlays (VTE / WebKitGTK) must restrict motion to opacity
+ * only; everything else may animate transform + opacity.
+ */
+export const HOST_MOTION_MODES = {
+  TRANSFORM_SAFE: 'transform-safe',
+  OPACITY_ONLY: 'opacity-only',
+};
+
 // ─── Framer-motion transition presets ─────────────────────────────────────────
 
 /**
@@ -69,12 +99,27 @@ export const TRANSITION = {
   /** 280ms rich — modal enter, sheet slide-in. */
   enter: { duration: DUR.enter / 1000, ease: EASE.out },
 
-  /** Spring — active pill, drag feedback. Feels physical. */
-  spring: { type: 'spring', stiffness: 380, damping: 38, mass: 0.8 },
+  /** Spring — active pill, drag feedback, toggle. Uses the approved preset. */
+  spring: spring.toggle.transition,
 
   /** Reduced motion fallback — opacity only, 50ms max. */
   reduced: { duration: 0.05, ease: EASE.linear },
 };
+
+export { spring, amplified };
+
+/**
+ * Returns the transition object for a given animation intent and motion mode.
+ *
+ * @param {'toggle'|'open'|'nav'|'sheet'|'drag'|'settle'} intent
+ * @param {'reduced'|'normal'|'amplified'} mode
+ * @returns {object} framer-motion transition object
+ */
+export function getTransition(intent, mode) {
+  if (mode === 'reduced') return TRANSITION.reduced;
+  const source = mode === 'amplified' ? amplified : spring;
+  return source[intent]?.transition || spring[intent]?.transition || TRANSITION.base;
+}
 
 // ─── Shared initial/animate/exit variant sets ─────────────────────────────────
 

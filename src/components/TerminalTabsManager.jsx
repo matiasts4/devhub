@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, ChevronDown, TerminalSquare } from 'lucide-react';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import TerminalTTY from './TerminalTTY';
 
 /**
@@ -49,6 +51,7 @@ export function getCloseButtonVisibility(isActive) {
 }
 
 export default function TerminalTabsManager({ onClose, cwd }) {
+  const motionMode = useMotionMode();
   const [tabs, setTabs] = useState([{ id: '1', name: 'matias@kali: ~' }]);
   const [activeTabId, setActiveTabId] = useState('1');
   const counterRef = useRef(1);
@@ -171,13 +174,18 @@ export default function TerminalTabsManager({ onClose, cwd }) {
               className="absolute inset-0"
               initial={{ opacity: 0 }}
               animate={{ opacity: activeTabId === tab.id ? 1 : 0 }}
-              transition={{ duration: 0.12, ease: 'easeInOut' }}
+              transition={getTransition('toggle', motionMode)}
               style={{
                 zIndex: activeTabId === tab.id ? 10 : 0,
                 pointerEvents: activeTabId === tab.id ? 'auto' : 'none',
               }}
             >
-              <TerminalTTY cwd={tab.cwd || cwd} autoFocus={activeTabId === tab.id} hideTitleBar={true} restored={tab.restored} />
+              <TerminalTTY
+                cwd={tab.cwd || cwd}
+                autoFocus={activeTabId === tab.id}
+                hideTitleBar={true}
+                restored={tab.restored}
+              />
             </motion.div>
           ))}
         </AnimatePresence>
