@@ -2761,6 +2761,24 @@ export default function TerminalTTY({
 
   const sendInitialCommandIfReady = useCallback(() => {
     if (!initialCommand || hasSentInitialCommand.current) return;
+    // Extra guard against re-injection when the local ref was reset (e.g. a reconnect
+    // race or a remount that kept the panel ID). The lifecycle store survives remounts.
+    if (
+      shouldSkipRedundantInitialCommandSend({
+        panelId: id,
+        command: initialCommand,
+        sessionReattached: sessionReattachedRef.current,
+      })
+    ) {
+      logTerminalSession('initial-command-skipped', {
+        panelId: id,
+        reason: 'redundant-lifecycle-early',
+        command: initialCommand,
+        sessionReattached: sessionReattachedRef.current,
+      });
+      hasSentInitialCommand.current = true;
+      return;
+    }
     // Never send the launch/resume command before the server's `ready` message, and
     // never on reattach — a reattach means the tmux pane already has a live TUI, so
     // typing `opencode --session …` / `grok` into it would echo as visible text in the
@@ -4097,17 +4115,14 @@ export default function TerminalTTY({
       // (released renderer, pending recovery) or a split grid whose siblings may
       // still be settling. A plain WebGL panel with no recovery pending recovers
       // reliably in a single rAF pass, so skip the extra repaint to cut flicker.
-      const needsRafRecovery =
-        gpuShowRecover ||
-        pendingWebglRecoveryRef.current ||
-        needsViewportSyncOnShowRef.current ||
-        splitGridVisible;
+      const needsRafRecovery = gpuShowRecover || survivorRecover || splitGridVisible;
       // Force-repaint/fit retries are only needed when there is real recovery work
       // to do. If the GPU addon stayed attached (lazy release) and dims are stable,
       // skip the 1-cell nudge and the fit loop — they are the main source of visible
-      // flicker during a quick workspace switch.
-      const needsForcedRepaint =
-        gpuShowRecover || survivorRecover || needsViewportSyncOnShowRef.current || splitGridVisible;
+      // flicker during a quick workspace switch. The sync path already handles
+      // needsViewportSyncOnShowRef by skipping unchanged dims, so we do not need to
+      // force repaints just because the panel was hidden.
+      const needsForcedRepaint = gpuShowRecover || survivorRecover || splitGridVisible;
 
       const runPass = (reason) => {
         if (!isVisibleInLayoutRef.current) {
