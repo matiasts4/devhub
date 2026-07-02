@@ -127,7 +127,7 @@ function cliLog(tag, msg, extra = {}) {
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-02-layout-churn-recover-v3';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-02-panel-close-global-recover-v1';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -4226,6 +4226,28 @@ export default function TerminalTTY({
         refreshTerminalViewport(termRef.current);
         forceTerminalViewportRepaint(termRef.current);
       }
+
+      // Panel-close churn can discard the GPU bitmap of a live TUI even when the
+      // viewport dimensions never changed. The force repaint above redraws the
+      // current xterm buffer, but if the TUI itself needs to repaint (OpenCode,
+      // Grok, etc.) we must send a same-dimension SIGWINCH so it emits fresh frames.
+      if (
+        String(reason).includes('panel-closed') &&
+        tuiSessionActiveRef.current &&
+        wsRef.current &&
+        !shouldSkipKimiTuiPtyResize({
+          initialCommand,
+          hasConnectedOnce: hasConnectedOnceRef.current,
+          kimiReady: kimiReadyNotifiedRef.current,
+        })
+      ) {
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+          force: true,
+        });
+      }
     },
     [
       confirmViewportFit,
@@ -6957,9 +6979,41 @@ export default function TerminalTTY({
 
       const reason = event?.detail?.reason || 'layout-settled';
       const panelIds = Array.isArray(event?.detail?.panelIds) ? event.detail.panelIds : null;
-      if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
+      // Closing a panel in one workspace can re-render the global workspace grid and
+      // discard the GPU backing store of panels that are opacity-hidden in other
+      // workspaces. Those panels never receive the filtered layout-settled event, so
+      // allow panel-closed events to reach every mounted TerminalTTY.
+      const isPanelClosedReason = String(reason).includes('panel-closed');
+      if (panelIds && panelIds.length > 0 && !panelIds.includes(id) && !isPanelClosedReason) {
+        return;
+      }
 
       layoutSettleBurstCleanupRef.current?.();
+
+      // Best-effort recovery for panels that are currently opacity-hidden in another
+      // workspace. We cannot fit() safely because the container may be zero-sized, but
+      // we can still force the renderer to repaint its internal bitmap and nudge a
+      // live TUI so it redraws. This prevents the panel from staying black until a
+      // manual resize when a panel is closed elsewhere.
+      const recoverHiddenPanelForChurn = (churnReason) => {
+        if (!termRef.current || !isTerminalRendererReady(termRef.current)) return;
+        try {
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          refreshTerminalViewport(termRef.current);
+          forceTerminalViewportRepaint(termRef.current);
+          if (tuiSessionActiveRef.current && wsRef.current) {
+            nudgeTerminalPtyResize({
+              term: termRef.current,
+              socket: wsRef.current,
+              lastPtySizeRef: lastPtySizeRef.current,
+              force: true,
+            });
+          }
+          logViewportDiagnostic(`hidden-panel-churn-recover-${churnReason}`);
+        } catch (error) {
+          if (!isStaleXtermRendererError(error)) throw error;
+        }
+      };
 
       const isProjectionReason =
         String(reason).includes('workspace-created') ||
@@ -7004,12 +7058,20 @@ export default function TerminalTTY({
         return dimsMatch && noGpuRecovery && cols > 0 && rows > 0;
       };
 
-      if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
-        if (!isVisibleInLayoutRef.current) {
-          needsViewportSyncOnShowRef.current = true;
-          layoutChurnedWhileHiddenRef.current = true;
-          return;
+      // Unified hidden-panel handling: a panel that is opacity-hidden in another
+      // workspace cannot run the visible burst safely, but panel-closed churn from
+      // any workspace can still corrupt its GPU bitmap. Mark churn for the reveal
+      // edge and, for panel-closed, run a lightweight in-place recovery.
+      if (!isVisibleInLayoutRef.current) {
+        needsViewportSyncOnShowRef.current = true;
+        layoutChurnedWhileHiddenRef.current = true;
+        if (isPanelClosedReason) {
+          recoverHiddenPanelForChurn(reason);
         }
+        return;
+      }
+
+      if (kimiTuiLive && !String(reason).includes('panel-closed') && !isWorkspaceOrWindowSwitch) {
         syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
           clearAtlas: false,
         });

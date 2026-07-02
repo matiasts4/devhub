@@ -378,3 +378,37 @@ Se agregó `layoutChurnedWhileHiddenRef` y se marcó en `handleLayoutSettled`/`h
 ### Resultado
 
 Verificado en runtime (2026-07-02): tras splitear/cerrar terminales en otro workspace, los paneles de shell normales y los TUIs (OpenCode, Grok) vuelven visibles sin quedarse en negro. Los tab switches limpios siguen usando el soft reveal sin parpadeo.
+
+---
+
+## 11 — Follow-up: paneles negros al cerrar una terminal (otros workspaces)
+
+### Síntoma residual (post-10)
+
+Al cerrar una terminal en un workspace, los paneles de **otros workspaces** (u otras ventanas V1/V2/V3) quedaban negros. Algunas TUIs como OpenCode se seguían viendo, pero shells inactivos y otras TUIs no. Un resize manual o abrir/splitear una nueva terminal en el workspace afectado los recuperaba.
+
+### Causa
+
+La generación global de la sección 10 detecta churn cuando el panel oculto se **revela**, pero no recupera el bitmap **mientras está oculto**. Además:
+
+1. **`scheduleTerminalLifecycleSync` filtra `panel-closed` por `panelIds` del workspace activo.** Los paneles ocultos en otros workspaces nunca reciben el `layout-settled` del cierre, así que no marcan churn local ni ejecutan ningún recovery hasta el reveal.
+2. **El reveal puede tomar el camino soft.** Si `hadGlobalChurn` se detecta, el reveal corre el recovery TUI-safe, pero si el panel estaba oculto durante muchos frames el compositor puede haber descartado el backing store y el soft path no es suficiente.
+3. **Para paneles visibles en el mismo workspace, el burst de `panel-closed` no envía SIGWINCH a TUIs cuando las dimensiones no cambian.** OpenCode puede repintar por output propio, pero otros TUIs/shells necesitan un nudge explícito.
+
+### Fix
+
+1. **`handleLayoutSettled` deja pasar los eventos `panel-closed` a todos los paneles montados**, sin filtrar por `panelIds`. Esto permite que tanto paneles visibles como ocultos reaccionen al cierre.
+2. **Paneles ocultos ejecutan un recovery ligero in-place** cuando reciben `panel-closed`: `stabilizeTerminalRenderer({ clearAtlas: false })` + `refreshTerminalViewport` + `forceTerminalViewportRepaint` + `nudgeTerminalPtyResize({ force: true })` para TUIs. No se hace `fit()` porque el contenedor puede estar zero-sized; no se tocan las dimensiones del PTY.
+3. **Paneles visibles reciben un SIGWINCH forzado al final del burst** cuando el reason incluye `panel-closed` y la sesión es TUI, para que el TUI repinte incluso si cols/rows no cambiaron.
+4. Se actualiza el build marker de `TerminalTTY` a `2026-07-02-panel-close-global-recover-v1`.
+
+### Archivos cambiados
+
+| Archivo                                                          | Cambio                                                                                                                                          |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/TerminalTTY.jsx`                                 | `panel-closed` bypass del filtro `panelIds`; recovery ligero en paneles ocultos; SIGWINCH forzado para TUIs en burst visible; build marker bump |
+| `docs/errores/06-terminal-status-and-workspace-switch/README.md` | Sección 11 documenting el fix                                                                                                                   |
+
+### Nota
+
+- El recovery ligero en paneles ocultos es intencionalmente conservador: no `fit()`, no `clearAtlas: true`, y SIGWINCH forzado solo para TUIs. Esto evita cambiar el grid o disparar repintados masivos en shells normales que simplemente necesitan que su bitmap se reconstruya.
