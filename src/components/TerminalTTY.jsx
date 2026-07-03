@@ -208,6 +208,11 @@ export const TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ =
 export const TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ =
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ + TERMINAL_DISABLE_MOUSE_REPORTING_SEQ;
 
+/** Synchronized output (DEC mode 2026) — TUIs use this to suppress flicker during bulk repaints. */
+const TERMINAL_SYNC_OUTPUT_START_SEQ = '\x1b[?2026h';
+const TERMINAL_SYNC_OUTPUT_END_SEQ = '\x1b[?2026l';
+const TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS = 100;
+
 export function disableTerminalFocusReporting(term, { disableMouse = false } = {}) {
   if (!term || typeof term.write !== 'function') return;
   try {
@@ -2001,6 +2006,11 @@ export default function TerminalTTY({
   const outputPendingRef = useRef({ value: '' });
   const hiddenOutputBufferRef = useRef({ value: '' });
   const hiddenOutputCatchupPendingRef = useRef(false);
+  const terminalOutputQueueRef = useRef([]);
+  const terminalOutputFlushRafRef = useRef(null);
+  const syncOutputActiveRef = useRef(false);
+  const syncOutputBufferRef = useRef('');
+  const syncOutputTimeoutRef = useRef(null);
   const surfaceHostRef = useRef(surfaceHost);
   const connectPendingUntilFitRef = useRef(false);
   const connectDeferTimerRef = useRef(null);
@@ -2176,6 +2186,14 @@ export default function TerminalTTY({
       //    and trigger the WebGL addon's stale-renderer crash on Linux.
       clearTimers();
       clearConnectDeferTimer();
+      if (terminalOutputFlushRafRef.current) {
+        cancelAnimationFrame(terminalOutputFlushRafRef.current);
+        terminalOutputFlushRafRef.current = null;
+      }
+      if (syncOutputTimeoutRef.current) {
+        clearTimeout(syncOutputTimeoutRef.current);
+        syncOutputTimeoutRef.current = null;
+      }
 
       // 3. Silence and close the websocket. Closing it first means the
       //    onmessage/onclose can't push more output into a disposed terminal.
@@ -5568,6 +5586,83 @@ export default function TerminalTTY({
         prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
       };
 
+      const clearSyncOutputTimeout = () => {
+        if (syncOutputTimeoutRef.current) {
+          clearTimeout(syncOutputTimeoutRef.current);
+          syncOutputTimeoutRef.current = null;
+        }
+      };
+
+      const flushTerminalOutputQueue = () => {
+        terminalOutputFlushRafRef.current = null;
+        if (isDisposingRef.current) {
+          terminalOutputQueueRef.current = [];
+          syncOutputBufferRef.current = '';
+          syncOutputActiveRef.current = false;
+          clearSyncOutputTimeout();
+          return;
+        }
+
+        let combined = terminalOutputQueueRef.current.join('');
+        terminalOutputQueueRef.current = [];
+        if (!combined) return;
+
+        // Respect synchronized output (DEC mode 2026) so TUIs don't flicker
+        // during bulk repaints. Buffer everything between ?2026h and ?2026l.
+        if (syncOutputActiveRef.current) {
+          syncOutputBufferRef.current += combined;
+          if (syncOutputBufferRef.current.includes(TERMINAL_SYNC_OUTPUT_END_SEQ)) {
+            clearSyncOutputTimeout();
+            combined = syncOutputBufferRef.current;
+            syncOutputBufferRef.current = '';
+            syncOutputActiveRef.current = false;
+          } else {
+            return;
+          }
+        } else {
+          const startIdx = combined.indexOf(TERMINAL_SYNC_OUTPUT_START_SEQ);
+          if (startIdx !== -1) {
+            const before = combined.slice(0, startIdx);
+            if (before) {
+              termRef.current?.write(before);
+              handleTuiReadyFromOutput(before);
+            }
+            syncOutputActiveRef.current = true;
+            syncOutputBufferRef.current = combined.slice(startIdx);
+            if (syncOutputBufferRef.current.includes(TERMINAL_SYNC_OUTPUT_END_SEQ)) {
+              clearSyncOutputTimeout();
+              combined = syncOutputBufferRef.current;
+              syncOutputBufferRef.current = '';
+              syncOutputActiveRef.current = false;
+            } else {
+              syncOutputTimeoutRef.current = setTimeout(() => {
+                if (!syncOutputActiveRef.current) return;
+                const forced = syncOutputBufferRef.current;
+                syncOutputBufferRef.current = '';
+                syncOutputActiveRef.current = false;
+                if (forced && termRef.current && !isDisposingRef.current) {
+                  termRef.current.write(forced);
+                  handleTuiReadyFromOutput(forced);
+                  scrollIfActivePanel();
+                }
+              }, TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS);
+              return;
+            }
+          }
+        }
+
+        termRef.current?.write(combined);
+        handleTuiReadyFromOutput(combined);
+        scrollIfActivePanel();
+      };
+
+      const scheduleTerminalOutputWrite = (chunk) => {
+        terminalOutputQueueRef.current.push(chunk);
+        if (!terminalOutputFlushRafRef.current) {
+          terminalOutputFlushRafRef.current = requestAnimationFrame(flushTerminalOutputQueue);
+        }
+      };
+
       const writeTerminalOutput = (chunk) => {
         if (containsTerminalResponseNoise(chunk)) {
           cliLog(`RENDER:${id}`, 'output-noise-filtered', {
@@ -5600,9 +5695,7 @@ export default function TerminalTTY({
           return;
         }
 
-        termRef.current?.write(filtered);
-        handleTuiReadyFromOutput(filtered);
-        scrollIfActivePanel();
+        scheduleTerminalOutputWrite(filtered);
       };
 
       socket.onmessage = (event) => {
@@ -5654,6 +5747,13 @@ export default function TerminalTTY({
           if (payload.type === 'output' && typeof payload.data === 'string') {
             panelActivityTrackerRef.current?.onFrame('output', payload.data);
             writeTerminalOutput(payload.data);
+            return;
+          }
+
+          // Some proxies / older server builds send title updates as JSON messages.
+          // They are not terminal output; dropping them prevents stray control text
+          // from appearing inside the TUI prompt.
+          if (payload.type === 'title') {
             return;
           }
 

@@ -1,9 +1,10 @@
 /**
- * agentTuiMetadata — client-safe re-export of agent TUI detection helpers.
+ * agentTuiMetadata.node — server-only entry point for agent TUI detection.
  *
- * Server-only code (e.g. ttyServer.js) should import from
- * `./agentTuiMetadata.node.js` instead, so server-side dependencies are never
- * pulled into the Next.js client bundle.
+ * Import this from Node.js code (PTY server, API routes, etc.). Never import
+ * this into a Next.js client component; the `.node.js` suffix keeps it out of
+ * the browser bundle and prevents server-only modules from leaking into the
+ * client chunk graph.
  */
 
 export {

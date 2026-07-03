@@ -22,8 +22,8 @@ import {
   synthesizeAgentSessionId,
   detectAgentState,
   AgentStateMachine,
-} from './agentTuiMetadata.js';
-import { processOscTitle } from './oscTitleParser.js';
+} from './agentTuiMetadata.node.js';
+import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -937,6 +937,12 @@ function handleSessionOutput(sessions, session, chunk) {
   processOscTitle(session, chunk);
 
   let filtered = chunk;
+  if (typeof filtered === 'string') {
+    // Strip the title sequences before forwarding; xterm.js on the client still
+    // parses them, but removing them server-side guarantees they never render
+    // as visible text if a chunk boundary or encoding issue confuses the parser.
+    filtered = stripOscTitleSequences(filtered);
+  }
   if (typeof filtered === 'string') {
     filtered = filtered.replace(
       /┃\s*This is a minimal installation of Kali Linux[\s\S]*?┃\s*\(Run: "touch ~\/\.hushlogin" to hide this message\)\s*\n?/g,
