@@ -127,7 +127,7 @@ function cliLog(tag, msg, extra = {}) {
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-02-panel-close-global-recover-v1';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-03-window-focus-webgl-context-lost-v1';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -566,6 +566,24 @@ export function isTerminalRendererReady(term) {
   if (cell && (!Number(cell.width) || !Number(cell.height))) return false;
 
   return true;
+}
+
+/**
+ * Defensive check for the xterm-webgl addon's underlying WebGL context.
+ * The addon registers its own `webglcontextlost` listener, but on some
+ * platforms/OS window switches the context is silently lost without firing
+ * the event, leaving the canvas black on restore. Reading `addon._gl` is
+ * private API, so every access is guarded.
+ */
+export function isWebglAddonContextLost(addon) {
+  if (!addon) return false;
+  try {
+    const gl = addon._gl;
+    if (!gl || typeof gl.isContextLost !== 'function') return false;
+    return gl.isContextLost();
+  } catch {
+    return false;
+  }
 }
 
 function isStaleXtermRendererError(error) {
@@ -3315,6 +3333,34 @@ export default function TerminalTTY({
     if (isActivePanelRef.current) scrollTerminalToBottom();
   }, [scrollTerminalToBottom]);
 
+  /**
+   * Best-effort disposal of a WebGL addon whose context was lost while the
+   * OS window was in the background. Marks the panel for reattach so the
+   * bounded GPU recover loop will recreate the renderer on restore.
+   */
+  const disposeWebglAddonForContextLoss = useCallback(
+    (reason = 'webgl-context-lost') => {
+      const addon = webglAddonRef.current;
+      if (!addon) return false;
+
+      cliLog(`RENDER:${id}`, reason, buildViewportSnapshot(reason));
+
+      neutralizeWebglAddonForDisposal(addon);
+      try {
+        addon.dispose?.();
+      } catch {
+        // ignore double dispose
+      }
+      webglAddonRef.current = null;
+      pendingWebglRecoveryRef.current = true;
+      webglReleasedOnLayoutHideRef.current = true;
+
+      stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+      return true;
+    },
+    [buildViewportSnapshot, id]
+  );
+
   const scheduleInactiveViewportRepaint = useCallback(() => {
     if (isActivePanelRef.current && isVisibleInLayoutRef.current) return;
     if (!termRef.current) return;
@@ -3382,6 +3428,20 @@ export default function TerminalTTY({
         }
       }
       if (
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        isWebglAddonContextLost(webglAddonRef.current)
+      ) {
+        disposeWebglAddonForContextLoss('inactive-webgl-context-lost');
+        void tryReattachWebglAddonRef.current?.({ clearAtlas: true }).then((reattached) => {
+          if (reattached && termRef.current && isTerminalRendererReady(termRef.current)) {
+            refreshTerminalViewport(termRef.current);
+          }
+        });
+        return;
+      }
+      if (
         shouldAttachCanvasRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
         }) &&
@@ -3409,7 +3469,7 @@ export default function TerminalTTY({
         }
       }
     });
-  }, [confirmViewportFit, initialCommand]);
+  }, [confirmViewportFit, disposeWebglAddonForContextLoss, initialCommand]);
 
   const releaseCanvasAddon = useCallback(
     (reason = 'canvas-released') => {
@@ -7102,6 +7162,18 @@ export default function TerminalTTY({
       restoreNativeSurfaceAfterAppResume();
 
       if (
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        isWebglAddonContextLost(webglAddonRef.current)
+      ) {
+        logViewportDiagnostic('visibility-webgl-context-lost');
+        disposeWebglAddonForContextLoss('visibility-webgl-context-lost');
+        scheduleBoundedGpuRecoverRef.current?.(30);
+        return;
+      }
+
+      if (
         shouldRunTerminalViewportReactivation({
           isActivePanel,
           isVisibleInLayout,
@@ -7133,6 +7205,18 @@ export default function TerminalTTY({
     const handleWindowFocus = () => {
       restoreNativeSurfaceAfterAppResume();
 
+      if (
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        isWebglAddonContextLost(webglAddonRef.current)
+      ) {
+        logViewportDiagnostic('window-focus-webgl-context-lost');
+        disposeWebglAddonForContextLoss('window-focus-webgl-context-lost');
+        scheduleBoundedGpuRecoverRef.current?.(30);
+        return;
+      }
+
       if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
         logViewportDiagnostic('window-focus');
         scheduleReactivateTerminalViewport();
@@ -7142,6 +7226,18 @@ export default function TerminalTTY({
     };
     const handlePageShow = () => {
       restoreNativeSurfaceAfterAppResume();
+
+      if (
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        isWebglAddonContextLost(webglAddonRef.current)
+      ) {
+        logViewportDiagnostic('pageshow-webgl-context-lost');
+        disposeWebglAddonForContextLoss('pageshow-webgl-context-lost');
+        scheduleBoundedGpuRecoverRef.current?.(30);
+        return;
+      }
 
       if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
         logViewportDiagnostic('pageshow');
@@ -7169,6 +7265,7 @@ export default function TerminalTTY({
   }, [
     isActivePanel,
     isVisibleInLayout,
+    id,
     logViewportDiagnostic,
     queueNativeVteProbeRetry,
     fitAndResize,
@@ -7176,6 +7273,7 @@ export default function TerminalTTY({
     scheduleInactiveViewportRepaint,
     sendResize,
     showAndResizeNativeLease,
+    disposeWebglAddonForContextLoss,
   ]);
 
   const layoutSettleBurstCleanupRef = useRef(null);

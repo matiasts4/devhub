@@ -126,6 +126,7 @@ const {
   getXtermContainerAnimProps,
   refreshTerminalViewport,
   forceTerminalViewportRepaint,
+  isWebglAddonContextLost,
   resolveTerminalRuntimePhase,
   resolveTerminalConnectionCloseState,
   resolveTerminalRendererViewModel,
@@ -960,6 +961,31 @@ describe('shouldMountCanvasAddon()', () => {
         visibleTerminalPanelCount: 1,
       })
     ).toBe(false);
+  });
+});
+
+describe('isWebglAddonContextLost()', () => {
+  test('returns false for missing addon or unsupported shape', () => {
+    expect(isWebglAddonContextLost(null)).toBe(false);
+    expect(isWebglAddonContextLost({})).toBe(false);
+    expect(isWebglAddonContextLost({ _gl: null })).toBe(false);
+    expect(isWebglAddonContextLost({ _gl: {} })).toBe(false);
+  });
+
+  test('returns true only when the underlying WebGL context reports lost', () => {
+    const healthyAddon = { _gl: { isContextLost: () => false } };
+    const lostAddon = { _gl: { isContextLost: () => true } };
+    expect(isWebglAddonContextLost(healthyAddon)).toBe(false);
+    expect(isWebglAddonContextLost(lostAddon)).toBe(true);
+  });
+
+  test('swallows private-API access errors and returns false', () => {
+    const brokenAddon = {
+      get _gl() {
+        throw new Error('addon internals changed');
+      },
+    };
+    expect(isWebglAddonContextLost(brokenAddon)).toBe(false);
   });
 });
 
