@@ -135,12 +135,13 @@ const CRASH_DUMP_DIR = path.resolve(process.cwd(), 'data', 'logs', 'crash-dumps'
 // long grace period (1 hour) to avoid killing TUIs/shells during workspace
 // switches or transient disconnections. Real cleanup still happens on explicit
 // panel close or app exit.
-const DEFAULT_AUTO_KILL_GRACE_MS = 3_600_000;
-const SWARM_AUTO_KILL_GRACE_MS = 3_600_000;
+// These defaults can be overridden via environment variables for QA/ad-hoc tuning.
+const DEFAULT_AUTO_KILL_GRACE_MS = Number(process.env.DEVHUB_TTY_AUTO_KILL_GRACE_MS) || 3_600_000;
+const TUI_AUTO_KILL_GRACE_MS = Number(process.env.DEVHUB_TTY_TUI_AUTO_KILL_GRACE_MS) || 3_600_000;
 
 function resolveAutoKillGraceMs(session) {
-  if (session?.swarmId) return SWARM_AUTO_KILL_GRACE_MS;
-  if (session?.mode === 'tui') return SWARM_AUTO_KILL_GRACE_MS;
+  if (session?.swarmId) return TUI_AUTO_KILL_GRACE_MS;
+  if (session?.mode === 'tui') return TUI_AUTO_KILL_GRACE_MS;
   return DEFAULT_AUTO_KILL_GRACE_MS;
 }
 
@@ -1059,6 +1060,14 @@ function handleSessionExit(sessions, session, exitCode, signal) {
     session._saveDebounceTimer = null;
   }
 
+  // Best-effort cleanup of child processes/tmux/opencode sessions so exits do
+  // not leave agent subprocesses alive after the PTY is gone.
+  try {
+    teardownPanelSessionProcesses(session, { hasTmux });
+  } catch {
+    // ignore cleanup failures during shutdown
+  }
+
   for (const socket of session.sockets) {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify({ type: 'exit', exitCode, signal }));
@@ -1655,9 +1664,11 @@ export async function ensureTTYServer() {
         try {
           session.pty.write(filteredInput);
         } catch (err) {
-          // PTY file descriptor already closed (EBADF) — ignore silently
+          // PTY file descriptor already closed (EBADF) — treat as terminal death.
           ttyLog('EBADF', `pty.write failed`, { id: session.id, error: err?.message });
           console.warn(`[ttyServer] pty.write failed for session ${session.id}:`, err.message);
+          handleSessionExit(terminalSessions, session, 1, null);
+          return;
         }
       }
 
@@ -1678,9 +1689,11 @@ export async function ensureTTYServer() {
         try {
           session.pty.resize(message.cols, message.rows);
         } catch (err) {
-          // PTY file descriptor already closed (EBADF) — ignore silently
+          // PTY file descriptor already closed (EBADF) — treat as terminal death.
           ttyLog('EBADF', `pty.resize failed`, { id: session.id, error: err?.message });
           console.warn(`[ttyServer] pty.resize failed for session ${session.id}:`, err.message);
+          handleSessionExit(terminalSessions, session, 1, null);
+          return;
         }
       }
     });

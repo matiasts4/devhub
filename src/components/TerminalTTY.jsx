@@ -213,6 +213,10 @@ const TERMINAL_SYNC_OUTPUT_START_SEQ = '\x1b[?2026h';
 const TERMINAL_SYNC_OUTPUT_END_SEQ = '\x1b[?2026l';
 const TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS = 100;
 
+/** Output throttle — prevent xterm.js from choking on PTY floods. */
+const TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME = 32 * 1024;
+const TERMINAL_OUTPUT_BACKLOG_THRESHOLD = 128 * 1024;
+
 export function disableTerminalFocusReporting(term, { disableMouse = false } = {}) {
   if (!term || typeof term.write !== 'function') return;
   try {
@@ -236,6 +240,34 @@ export function prepareActiveTuiTerminalFocus(term, { tuiSessionActive = false }
     } else {
       term.write(TERMINAL_DISABLE_MOUSE_REPORTING_SEQ);
     }
+  } catch {
+    // terminal may be mid-dispose
+  }
+}
+
+/** Device Attributes query — asks the TUI/shell to re-announce its active modes. */
+const TERMINAL_DEVICE_ATTRIBUTES_QUERY_SEQ = '\x1b[c';
+/** Full reset of private modes commonly set by TUIs; a clean slate for reattach. */
+const TERMINAL_PRIVATE_MODES_RESET_SEQ =
+  '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1007l\x1b[?1015l';
+/** Force a full screen redraw so the TUI repaints after reconnect. */
+const TERMINAL_FORCE_REDRAW_SEQ = '\x0c';
+
+/**
+ * After reconnecting to a live PTY, xterm.js is a fresh emulator with no memory
+ * of the TUI's private DECSET modes. Send a mode reset, a device-attributes
+ * query (so the TUI re-emits its modes), and a Ctrl+L redraw. For known agent
+ * TUIs also inject the mouse-reporting burst they expect as a fallback.
+ */
+export function resetTerminalModesForReattach(term, { tuiSessionActive = false } = {}) {
+  if (!term || typeof term.write !== 'function') return;
+  try {
+    term.write(TERMINAL_PRIVATE_MODES_RESET_SEQ);
+    term.write(TERMINAL_DEVICE_ATTRIBUTES_QUERY_SEQ);
+    if (tuiSessionActive) {
+      term.write(TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+    }
+    term.write(TERMINAL_FORCE_REDRAW_SEQ);
   } catch {
     // terminal may be mid-dispose
   }
@@ -568,6 +600,80 @@ function neutralizeWebglAddonForDisposal(addon) {
     }
   } catch {
     // ignore — addon internals are private API; if shape changed, skip.
+  }
+}
+
+/**
+ * Centralized WebGL/Canvas attach logic used during terminal boot.
+ *
+ * Keeping the renderer decision and addon registration in one place makes it
+ * easier to reason about lifecycle ordering (create → attach → context-loss
+ * handler → dispose) and avoids duplicating fallback logic between cold boot
+ * and later reattach paths.
+ */
+function attachTerminalRendererAddons({
+  terminal,
+  wantsWebgl,
+  wantsCanvas,
+  mountCanvasOnInit,
+  WebglAddonCtor,
+  CanvasAddonCtor,
+  panelId,
+  webglAddonRef,
+  canvasAddonRef,
+  setWebglFallback,
+  pendingWebglRecoveryRef,
+  handleWebglContextLossRef,
+  isActivePanel,
+  visibleTerminalPanelCount,
+}) {
+  if (wantsWebgl) {
+    if (WebglAddonCtor) {
+      try {
+        const webglAddon = new WebglAddonCtor();
+        webglAddonRef.current = webglAddon;
+
+        if (typeof webglAddon.onContextLoss === 'function') {
+          webglAddon.onContextLoss(() => handleWebglContextLossRef.current?.());
+        }
+
+        terminal.loadAddon(webglAddon);
+        setWebglFallback(null);
+        pendingWebglRecoveryRef.current = false;
+        cliLog(`RENDER:${panelId}`, 'webgl-attached-on-init', { isActivePanel });
+      } catch (err) {
+        console.warn(
+          `[TTY:${panelId}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
+          err?.message || err
+        );
+        setWebglFallback({
+          active: true,
+          reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
+        });
+      }
+    } else {
+      setWebglFallback({
+        active: true,
+        reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
+      });
+    }
+  } else if (mountCanvasOnInit && CanvasAddonCtor) {
+    try {
+      const canvasAddon = new CanvasAddonCtor();
+      canvasAddonRef.current = canvasAddon;
+      terminal.loadAddon(canvasAddon);
+      cliLog(`RENDER:${panelId}`, 'canvas-attached-on-init', {
+        isActivePanel,
+        visibleTerminalPanelCount,
+      });
+    } catch (err) {
+      console.warn(`[TTY:${panelId}] xterm-addon-canvas failed to register`, err?.message || err);
+    }
+  } else if (wantsCanvas && !mountCanvasOnInit) {
+    cliLog(`RENDER:${panelId}`, 'canvas-deferred-dom-on-init', {
+      isActivePanel,
+      visibleTerminalPanelCount,
+    });
   }
 }
 
@@ -5605,6 +5711,23 @@ export default function TerminalTTY({
 
         let combined = terminalOutputQueueRef.current.join('');
         terminalOutputQueueRef.current = [];
+
+        // Backlog detection: if the PTY is flooding faster than xterm.js can
+        // paint, drop the middle of the burst and keep the tail so the user
+        // still sees the most recent state instead of a frozen/black terminal.
+        const pendingBytes = combined.length + syncOutputBufferRef.current.length;
+        if (pendingBytes > TERMINAL_OUTPUT_BACKLOG_THRESHOLD) {
+          cliLog(`RENDER:${id}`, 'output-throttle-backlog', {
+            pendingBytes,
+            droppedBytes: Math.max(0, pendingBytes - TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME),
+            isActivePanel: isActivePanelRef.current,
+          });
+          combined = combined.slice(-TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME);
+          syncOutputBufferRef.current = '';
+          syncOutputActiveRef.current = false;
+          clearSyncOutputTimeout();
+        }
+
         if (!combined) return;
 
         // Respect synchronized output (DEC mode 2026) so TUIs don't flicker
@@ -5648,6 +5771,19 @@ export default function TerminalTTY({
               }, TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS);
               return;
             }
+          }
+        }
+
+        // Per-frame byte cap: never write more than MAX_BYTES_PER_FRAME in a
+        // single animation frame. Queue the rest for the next frame so the main
+        // thread no se congela.
+        if (combined.length > TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME) {
+          const now = combined.slice(0, TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME);
+          const rest = combined.slice(TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME);
+          terminalOutputQueueRef.current.unshift(rest);
+          combined = now;
+          if (!terminalOutputFlushRafRef.current) {
+            terminalOutputFlushRafRef.current = requestAnimationFrame(flushTerminalOutputQueue);
           }
         }
 
@@ -5736,6 +5872,12 @@ export default function TerminalTTY({
                 setNativeWheelPassthrough(false);
                 disableTerminalFocusReporting(termRef.current, { disableMouse: true });
               }
+
+              // xterm.js is fresh after reconnect; prod the TUI/shell into
+              // re-emitting its private modes and redraw the screen.
+              resetTerminalModesForReattach(termRef.current, {
+                tuiSessionActive: tuiSessionActiveRef.current,
+              });
             } else {
               // Fresh session: the tmux pane is empty, so it is safe to launch the
               // agent now. sendInitialCommandIfReady also waits for viewport fit.
@@ -6532,56 +6674,22 @@ export default function TerminalTTY({
           blurTarget?.removeEventListener('focusout', handleTerminalBlur);
         };
 
-        if (wantsWebgl) {
-          if (WebglAddonCtor) {
-            try {
-              const webglAddon = new WebglAddonCtor();
-              webglAddonRef.current = webglAddon;
-
-              if (typeof webglAddon.onContextLoss === 'function') {
-                webglAddon.onContextLoss(() => handleWebglContextLossRef.current?.());
-              }
-
-              terminal.loadAddon(webglAddon);
-              setWebglFallback(null);
-              pendingWebglRecoveryRef.current = false;
-              cliLog(`RENDER:${id}`, 'webgl-attached-on-init', {
-                isActivePanel: isActivePanelRef.current,
-              });
-            } catch (err) {
-              console.warn(
-                `[TTY:${id}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
-                err?.message || err
-              );
-              setWebglFallback({
-                active: true,
-                reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
-              });
-            }
-          } else {
-            setWebglFallback({
-              active: true,
-              reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED,
-            });
-          }
-        } else if (mountCanvasOnInit && CanvasAddonCtor) {
-          try {
-            const canvasAddon = new CanvasAddonCtor();
-            canvasAddonRef.current = canvasAddon;
-            terminal.loadAddon(canvasAddon);
-            cliLog(`RENDER:${id}`, 'canvas-attached-on-init', {
-              isActivePanel: isActivePanelRef.current,
-              visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
-            });
-          } catch (err) {
-            console.warn(`[TTY:${id}] xterm-addon-canvas failed to register`, err?.message || err);
-          }
-        } else if (wantsCanvas && !mountCanvasOnInit) {
-          cliLog(`RENDER:${id}`, 'canvas-deferred-dom-on-init', {
-            isActivePanel: isActivePanelRef.current,
-            visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
-          });
-        }
+        attachTerminalRendererAddons({
+          terminal,
+          wantsWebgl,
+          wantsCanvas,
+          mountCanvasOnInit,
+          WebglAddonCtor,
+          CanvasAddonCtor,
+          panelId: id,
+          webglAddonRef,
+          canvasAddonRef,
+          setWebglFallback,
+          pendingWebglRecoveryRef,
+          handleWebglContextLossRef,
+          isActivePanel: isActivePanelRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+        });
 
         terminal.onData((data) => {
           const sessionContext = {
