@@ -20,7 +20,10 @@ import {
   detectAgentTypeFromCommand,
   extractAgentSessionId,
   synthesizeAgentSessionId,
+  detectAgentState,
+  AgentStateMachine,
 } from './agentTuiMetadata.js';
+import { processOscTitle } from './oscTitleParser.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -822,6 +825,9 @@ export function createSession({
     tmuxEnabled: Boolean(tmuxEnabled),
     agentTuiState: null,
     agentTuiStateAt: null,
+    agentStateMachine: new AgentStateMachine(),
+    detectionBuffer: '',
+    _oscTitleBuffer: '',
     _saveDebounceTimer: null,
     _lastDiagnosticSnapshot: null,
   };
@@ -926,6 +932,10 @@ function handleSessionOutput(sessions, session, chunk) {
   session.lastActivityAt = Date.now();
   _debouncedSave(sessions, session);
 
+  // Capture OSC 0/2 title changes directly from PTY output so we do not need
+  // to forward them over the WebSocket (which could leak into the TUI prompt).
+  processOscTitle(session, chunk);
+
   let filtered = chunk;
   if (typeof filtered === 'string') {
     filtered = filtered.replace(
@@ -968,10 +978,36 @@ function handleSessionOutput(sessions, session, chunk) {
 
     // Detect active-agent states such as Kimi's "thinking" footer even when
     // there is no new PTY input/output (the TUI itself is animating/processing).
-    const detectedState = detectAgentStateFromOutput(filtered, session.agentType);
-    if (detectedState) {
-      session.agentTuiState = detectedState;
+    // First try the legacy single-chunk detector for agents without a manifest.
+    const legacyDetectedState = detectAgentStateFromOutput(filtered, session.agentType);
+    if (legacyDetectedState && !session.agentStateMachine) {
+      session.agentTuiState = legacyDetectedState;
       session.agentTuiStateAt = Date.now();
+    }
+
+    // Herdr-style per-agent manifest detection on an accumulated buffer.
+    if (session.agentType && session.agentStateMachine) {
+      // Accumulate the last ~8KB of visible output for detection.
+      const visibleFiltered = typeof filtered === 'string' ? filtered : '';
+      session.detectionBuffer = (session.detectionBuffer || '') + visibleFiltered;
+      const MAX_DETECTION_BUFFER = 8192;
+      if (session.detectionBuffer.length > MAX_DETECTION_BUFFER) {
+        session.detectionBuffer = session.detectionBuffer.slice(-MAX_DETECTION_BUFFER);
+      }
+
+      const detected = detectAgentState(session.agentType, session.detectionBuffer, {
+        oscTitle: session.title || '',
+      });
+
+      // Skip state update for viewer screens (transcript/history) so they do
+      // not publish a false idle state while the user is reading scrollback.
+      if (!detected.skipStateUpdate) {
+        const published = session.agentStateMachine.publish(detected, Date.now());
+        if (published) {
+          session.agentTuiState = published.state;
+          session.agentTuiStateAt = Date.now();
+        }
+      }
     }
   }
 
@@ -1536,6 +1572,11 @@ export async function ensureTTYServer() {
         restored: false,
         swarmRole: swarmContext?.roleKey ? { roleKey: swarmContext.roleKey } : null,
         swarmId: swarmContext?.launchId || null,
+        agentTuiState: null,
+        agentTuiStateAt: null,
+        agentStateMachine: new AgentStateMachine(),
+        detectionBuffer: '',
+        _oscTitleBuffer: '',
         _saveDebounceTimer: null,
         _lastDiagnosticSnapshot: null,
       };

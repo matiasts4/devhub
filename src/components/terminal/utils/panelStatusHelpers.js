@@ -6,6 +6,7 @@
  *   running   → green pulsing dot  (the agent is actually doing work)
  *   active    → blue/accent dot    (agent/session connected and alive)
  *   waiting   → amber/yellow dot   (connecting, suspended, or blocked)
+ *   blocked   → rose/pink dot      (agent waiting for user input/approval)
  *   idle      → gray dot           (connected but no agent activity)
  *   error     → red dot            (error, aborted, terminated, disconnected)
  *   completed → slate/blue dot     (finished successfully)
@@ -20,6 +21,7 @@ export const PANEL_STATUS = {
   RUNNING: 'running',
   ACTIVE: 'active',
   WAITING: 'waiting',
+  BLOCKED: 'blocked',
   IDLE: 'idle',
   ERROR: 'error',
   COMPLETED: 'completed',
@@ -27,6 +29,7 @@ export const PANEL_STATUS = {
 };
 
 const IN_PROGRESS_STATUSES = new Set(['running', 'working', 'thinking', 'busy']);
+const BLOCKED_STATUSES = new Set(['blocked', 'awaiting_input', 'approval', 'needs_input']);
 
 const ERROR_STATUSES = new Set(['error', 'aborted', 'failed']);
 const COMPLETED_STATUSES = new Set(['completed', 'succeeded', 'done']);
@@ -45,6 +48,7 @@ export function normalizePanelStatus(status) {
     .toLowerCase();
   if (!raw) return PANEL_STATUS.UNKNOWN;
   if (IN_PROGRESS_STATUSES.has(raw)) return PANEL_STATUS.RUNNING;
+  if (BLOCKED_STATUSES.has(raw)) return PANEL_STATUS.BLOCKED;
   if (ERROR_STATUSES.has(raw)) return PANEL_STATUS.ERROR;
   if (COMPLETED_STATUSES.has(raw)) return PANEL_STATUS.COMPLETED;
   if (WAITING_STATUSES.has(raw)) return PANEL_STATUS.WAITING;
@@ -144,6 +148,14 @@ export function derivePanelStatus({
     return PANEL_STATUS.RUNNING;
   }
 
+  // Blocked agent TUI state (e.g. permission prompts) overrides idle/waiting.
+  if (
+    agentTuiStateFresh &&
+    BLOCKED_STATUSES.has(String(terminalActivity.agentTuiState).toLowerCase())
+  ) {
+    return PANEL_STATUS.BLOCKED;
+  }
+
   // In-progress API status (agenthub) is a strong signal even when PTY is quiet.
   if (apiStatus && IN_PROGRESS_STATUSES.has(String(apiStatus).toLowerCase())) {
     return PANEL_STATUS.RUNNING;
@@ -191,6 +203,8 @@ export function getPanelStatusLabel(status) {
       return 'Activo';
     case PANEL_STATUS.WAITING:
       return 'Esperando';
+    case PANEL_STATUS.BLOCKED:
+      return 'Bloqueado';
     case PANEL_STATUS.IDLE:
       return 'Inactivo';
     case PANEL_STATUS.ERROR:
@@ -231,6 +245,14 @@ export function getPanelStatusStyle(status) {
         border: 'border-amber-400/40',
         bg: 'bg-amber-400/12',
         text: 'text-amber-300',
+      };
+    case PANEL_STATUS.BLOCKED:
+      return {
+        dot: 'bg-rose-400',
+        pulse: true,
+        border: 'border-rose-400/40',
+        bg: 'bg-rose-400/12',
+        text: 'text-rose-300',
       };
     case PANEL_STATUS.IDLE:
       return {

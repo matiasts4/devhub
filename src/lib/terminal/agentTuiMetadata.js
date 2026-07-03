@@ -4,6 +4,8 @@
  * Covers: opencode, kimi, claude, codex, grok/groc, hermes.
  */
 
+import { detectAgentState, hasManifest, AgentStateMachine } from './agentStateDetection/index.js';
+
 export const AGENT_TUI_TYPES = ['opencode', 'kimi', 'claude', 'codex', 'grok', 'hermes'];
 
 const AGENT_TYPE_PATTERNS = {
@@ -117,10 +119,27 @@ const AGENT_STATE_PATTERNS = {
  * Returns 'running' when the agent is actively processing (e.g. Kimi's
  * "thinking" footer), 'idle' when it explicitly signals readiness, or null
  * when no state signal is present.
+ *
+ * NOTE: This is the legacy single-chunk fallback. For accumulated-buffer
+ * detection with per-agent manifests, use detectAgentState() from this module.
  */
 export function detectAgentStateFromOutput(output, agentType) {
   if (!output || typeof output !== 'string' || !agentType) return null;
+
+  // Delegate to the herdr-style manifest engine when available.
+  if (hasManifest(agentType)) {
+    const detected = detectAgentState(agentType, output);
+    if (detected && detected.state && detected.state !== 'unknown') {
+      return detected.state;
+    }
+  }
+
   if (AGENT_STATE_PATTERNS.running.test(output)) return 'running';
   if (AGENT_STATE_PATTERNS.idle.test(output)) return 'idle';
   return null;
 }
+
+/**
+ * Re-exported herdr-style detector for accumulated terminal buffers.
+ */
+export { detectAgentState, hasManifest, AgentStateMachine };
