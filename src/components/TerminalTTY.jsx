@@ -127,7 +127,7 @@ function cliLog(tag, msg, extra = {}) {
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-03-window-focus-webgl-context-lost-v1';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-03-window-focus-workspace-sync-v2';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -3914,7 +3914,7 @@ export default function TerminalTTY({
   }, [scheduleBoundedGpuRecover]);
 
   const syncTerminalViewportOnWorkspaceShow = useCallback(
-    async (reason = 'workspace-show', { clearAtlas } = {}) => {
+    async (reason = 'workspace-show', { clearAtlas, forceScroll = true } = {}) => {
       if (isDisposingRef.current) return;
       if (!termRef.current || !fitRef.current || !containerRef.current) return;
 
@@ -4301,7 +4301,7 @@ export default function TerminalTTY({
       });
 
       if (fitWorked && isActivePanelRef.current && !kimiTuiLive) {
-        scrollTerminalToBottom(true);
+        scrollTerminalToBottom(forceScroll);
       }
 
       if (
@@ -4586,17 +4586,6 @@ export default function TerminalTTY({
     scheduleInactiveViewportRepaint,
     scrollTerminalToBottom,
   ]);
-
-  const scheduleReactivateTerminalViewport = useCallback((options = {}) => {
-    if (reactivateCoalesceTimerRef.current) {
-      clearTimeout(reactivateCoalesceTimerRef.current);
-    }
-    const coalesceMs = process.env.NODE_ENV === 'test' ? 0 : 48;
-    reactivateCoalesceTimerRef.current = setTimeout(() => {
-      reactivateCoalesceTimerRef.current = null;
-      reactivateTerminalViewportRef.current?.(options);
-    }, coalesceMs);
-  }, []);
 
   const reactivateTerminalViewport = useCallback(
     (options = {}) => {
@@ -7161,6 +7150,13 @@ export default function TerminalTTY({
 
       restoreNativeSurfaceAfterAppResume();
 
+      if (!isVisibleInLayout) {
+        needsViewportSyncOnShowRef.current = true;
+        return;
+      }
+
+      // Treat OS window restore the same as a workspace shell reveal: run the full
+      // viewport sync pipeline so WebGL/Canvas reattach and the forced repaint happen.
       if (
         shouldAttachWebglRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
@@ -7169,8 +7165,6 @@ export default function TerminalTTY({
       ) {
         logViewportDiagnostic('visibility-webgl-context-lost');
         disposeWebglAddonForContextLoss('visibility-webgl-context-lost');
-        scheduleBoundedGpuRecoverRef.current?.(30);
-        return;
       }
 
       if (
@@ -7181,8 +7175,18 @@ export default function TerminalTTY({
         })
       ) {
         logViewportDiagnostic('visibility-visible');
-        scheduleReactivateTerminalViewport();
-      } else if (isVisibleInLayout) {
+        void syncTerminalViewportOnWorkspaceShowRef
+          .current?.('visibility-visible', { clearAtlas: true, forceScroll: false })
+          .then(() => {
+            if (isDisposingRef.current || !termRef.current) return;
+            prepareActiveTuiTerminalFocus(termRef.current, {
+              tuiSessionActive: tuiSessionActiveRef.current,
+            });
+            if (autoFocus) {
+              termRef.current?.focus?.();
+            }
+          });
+      } else {
         // Inactive split siblings don't get reactivate — repaint them too so they don't
         // stay garbled after OS window restore (Bug A).
         scheduleInactiveViewportRepaint();
@@ -7205,6 +7209,11 @@ export default function TerminalTTY({
     const handleWindowFocus = () => {
       restoreNativeSurfaceAfterAppResume();
 
+      if (!isVisibleInLayout) {
+        needsViewportSyncOnShowRef.current = true;
+        return;
+      }
+
       if (
         shouldAttachWebglRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
@@ -7213,19 +7222,32 @@ export default function TerminalTTY({
       ) {
         logViewportDiagnostic('window-focus-webgl-context-lost');
         disposeWebglAddonForContextLoss('window-focus-webgl-context-lost');
-        scheduleBoundedGpuRecoverRef.current?.(30);
-        return;
       }
 
       if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
         logViewportDiagnostic('window-focus');
-        scheduleReactivateTerminalViewport();
-      } else if (isVisibleInLayout) {
+        void syncTerminalViewportOnWorkspaceShowRef
+          .current?.('window-focus', { clearAtlas: true, forceScroll: false })
+          .then(() => {
+            if (isDisposingRef.current || !termRef.current) return;
+            prepareActiveTuiTerminalFocus(termRef.current, {
+              tuiSessionActive: tuiSessionActiveRef.current,
+            });
+            if (autoFocus) {
+              termRef.current?.focus?.();
+            }
+          });
+      } else {
         scheduleInactiveViewportRepaint();
       }
     };
     const handlePageShow = () => {
       restoreNativeSurfaceAfterAppResume();
+
+      if (!isVisibleInLayout) {
+        needsViewportSyncOnShowRef.current = true;
+        return;
+      }
 
       if (
         shouldAttachWebglRenderer({
@@ -7235,14 +7257,22 @@ export default function TerminalTTY({
       ) {
         logViewportDiagnostic('pageshow-webgl-context-lost');
         disposeWebglAddonForContextLoss('pageshow-webgl-context-lost');
-        scheduleBoundedGpuRecoverRef.current?.(30);
-        return;
       }
 
       if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
         logViewportDiagnostic('pageshow');
-        scheduleReactivateTerminalViewport();
-      } else if (isVisibleInLayout) {
+        void syncTerminalViewportOnWorkspaceShowRef
+          .current?.('pageshow', { clearAtlas: true, forceScroll: false })
+          .then(() => {
+            if (isDisposingRef.current || !termRef.current) return;
+            prepareActiveTuiTerminalFocus(termRef.current, {
+              tuiSessionActive: tuiSessionActiveRef.current,
+            });
+            if (autoFocus) {
+              termRef.current?.focus?.();
+            }
+          });
+      } else {
         scheduleInactiveViewportRepaint();
       }
     };
@@ -7266,10 +7296,10 @@ export default function TerminalTTY({
     isActivePanel,
     isVisibleInLayout,
     id,
+    autoFocus,
     logViewportDiagnostic,
     queueNativeVteProbeRetry,
     fitAndResize,
-    scheduleReactivateTerminalViewport,
     scheduleInactiveViewportRepaint,
     sendResize,
     showAndResizeNativeLease,
