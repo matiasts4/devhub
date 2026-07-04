@@ -217,8 +217,8 @@ import {
 import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
   dispatchTerminalLayoutSettled,
-  dispatchTerminalSurvivorRecover,
   dispatchTerminalWindowVisible,
+  filterLegacySurvivorPanelIds,
   scheduleSurvivorRecoverAfterClose,
   SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
 } from '@/components/terminal/nativeLayoutSync';
@@ -290,6 +290,7 @@ const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null
   swarmRole: metadata?.swarmRole || null,
   swarmContext: metadata?.swarmContext || null,
   displayName: metadata?.displayName ?? null,
+  terminalEngineV2: metadata?.terminalEngineV2 ?? false,
 });
 
 function createPanelWithDisplayNameFactory(workspaceId, getSiblingNames = () => []) {
@@ -436,6 +437,22 @@ function resolveFocusPanelSlotClassName({ focusedPanelId, panelId }) {
 
 function getPanelsFromColumns(columns = []) {
   return columns.flatMap((column) => column?.panels || []);
+}
+
+function collectEngineV2PanelIds(workspaces = [], workspaceWindows = {}, activeWindowIds = {}) {
+  const engineV2PanelIds = new Set();
+  for (const ws of workspaces) {
+    const windowId = resolveActiveWorkspaceWindowId(ws.id, workspaceWindows, activeWindowIds);
+    const windows = workspaceWindows?.[ws.id] || [];
+    const activeWindow = windows.find((win) => win.id === windowId);
+    const panels = getPanelsFromColumns(activeWindow?.columns || ws.columns || []);
+    for (const panel of panels) {
+      if (panel?.terminalEngineV2) {
+        engineV2PanelIds.add(panel.id);
+      }
+    }
+  }
+  return engineV2PanelIds;
 }
 
 function readWorkspaceSwarmLaunchSummary(
@@ -624,6 +641,7 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
           initialCommand: panel?.initialCommand || null,
           swarmRole: panel?.swarmRole || null,
           displayName: panel?.displayName || null,
+          terminalEngineV2: Boolean(panel?.terminalEngineV2),
         };
       });
 
@@ -896,7 +914,7 @@ function buildStableWorkspaceShellKey(scope, workspaceId) {
   return `${scope}-${String(workspaceId || 'unknown')}`;
 }
 
-function renderWorkspacePanel(
+export function renderWorkspacePanel(
   panel,
   {
     activePanelId,
@@ -970,7 +988,14 @@ function renderWorkspacePanel(
     surfaceHost: pizarraOwnsLiveSurfaces ? 'pizarra' : 'workspace',
     pizarraOwnsLiveSurfaces: Boolean(pizarraOwnsLiveSurfaces),
     onConnectionStateChange,
+    isEngineV2: Boolean(panel?.terminalEngineV2),
   };
+
+  const panelIsEngineV2 = Boolean(panel?.terminalEngineV2);
+  // Phase 4 terminal-engine-v2: hidden v2 panels unmount so TerminalTTY can
+  // stash the live xterm surface in the graveyard. Legacy v1 panels stay
+  // mounted and rely on the existing survivor-recovery paths.
+  const shouldMountTerminal = !panelIsEngineV2 || Boolean(isVisibleInLayout);
 
   return (
     <div
@@ -1234,9 +1259,10 @@ function renderWorkspacePanel(
               aria-hidden="true"
               style={{ background: 'var(--surface-app, #050814)' }}
             />
-          ) : (
+          ) : shouldMountTerminal ? (
             <TerminalTTY
               id={panel.id}
+              isEngineV2={panelIsEngineV2}
               cwd={panel.cwd || cwd}
               swarmContext={panel.swarmContext || null}
               hideTitleBar={true}
@@ -1254,6 +1280,12 @@ function renderWorkspacePanel(
               onActivatePanel={onActivatePanel}
               suspendNativeSurface={Boolean(suspendNativeSurface)}
               nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+            />
+          ) : (
+            <div
+              data-testid={`panel-body-v2-stash-${panel.id}`}
+              className="h-full w-full"
+              aria-hidden="true"
             />
           )}
         </div>
@@ -3396,8 +3428,17 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       });
     });
 
-    return scheduleSurvivorRecoverAfterClose({
+    const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
       panelIds,
+      collectEngineV2PanelIds(workspaces, workspaceWindows, activeWindowIds)
+    );
+    if (legacySurvivorPanelIds.length === 0) {
+      syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds);
+      return undefined;
+    }
+
+    return scheduleSurvivorRecoverAfterClose({
+      panelIds: legacySurvivorPanelIds,
       workspaceId: wsId,
       reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
       onLifecycleSync: () =>
@@ -3412,6 +3453,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     isClientLoaded,
     resolveActiveWindowPanelIds,
     syncPanelLifecycleLayout,
+    workspaceWindows,
+    workspaces,
   ]);
 
   useEffect(() => {
@@ -4095,7 +4138,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       window.setTimeout(() => panelsClosingRef.current.delete(panelId), 2000);
     });
 
-    if (typeof window !== 'undefined' && survivorPanelIds.length > 0) {
+    const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
+      survivorPanelIds,
+      collectEngineV2PanelIds(remainingWorkspaces, workspaceWindows, activeWindowIds)
+    );
+
+    if (typeof window !== 'undefined' && legacySurvivorPanelIds.length > 0) {
       // Closing the ACTIVE workspace lands the user on another workspace — that
       // landing IS a workspace switch, so reuse the same WORKSPACE_SWITCH lifecycle
       // burst a normal tab switch uses (handleLayoutSettled isWorkspaceSwitch branch
@@ -4108,13 +4156,15 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       // is a no-op on parked (unchanged) containers, so there is no refit/flash/SIGWINCH
       // on survivors. notifyNative=false on close-active because the activeWsId effect
       // already dispatches terminal-layout-settled; a second dispatch would double-sync.
+      // terminal-engine-v2 panels skip survivor recovery — they keep the PTY alive
+      // and rehydrate from the ring buffer / graveyard instead.
       const lifecycleReason = activeWsWillChange
         ? PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH
         : PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED;
       const lifecycleOpts = activeWsWillChange ? { notifyNative: false } : undefined;
       workspaceCloseRecoverCleanupRef.current?.();
       workspaceCloseRecoverCleanupRef.current = scheduleSurvivorRecoverAfterClose({
-        panelIds: survivorPanelIds,
+        panelIds: legacySurvivorPanelIds,
         workspaceId: nextActiveWsId,
         reason: lifecycleReason,
         onLifecycleSync: () =>

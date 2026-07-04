@@ -11,6 +11,11 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import {
+  applyOpencodeDurableMetadata,
+  isOpencodeDurableSession,
+  OPENCODE_SESSION_TYPE,
+} from './opencodeSessionRegistry.js';
 
 export const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -119,9 +124,23 @@ export function readPersistedSessionEvidence({ terminalId, now = Date.now() } = 
  * @returns {'pty-durable'|'opencode-durable'|'shell-ephemeral'}
  */
 export function classifySession(session) {
-  if (session?.opencodeSessionId) return 'opencode-durable';
+  if (isOpencodeDurableSession(session)) return OPENCODE_SESSION_TYPE;
   if (session?.ptyPid) return 'pty-durable';
   return 'shell-ephemeral';
+}
+
+function enrichPersistedSession(session) {
+  const sessionType = classifySession(session);
+  const enriched =
+    sessionType === OPENCODE_SESSION_TYPE ? applyOpencodeDurableMetadata(session) : session;
+
+  return {
+    ...enriched,
+    sessionType,
+    skipBackendRestore:
+      sessionType === OPENCODE_SESSION_TYPE ? true : Boolean(enriched.skipBackendRestore),
+    durableRestore: sessionType === OPENCODE_SESSION_TYPE ? true : Boolean(enriched.durableRestore),
+  };
 }
 
 /**
@@ -139,25 +158,27 @@ export function saveSessions(sessionsMap) {
 
   const sessions = [];
   for (const [id, session] of sessionsMap.entries()) {
-    const sessionType = classifySession(session);
+    const enriched = enrichPersistedSession(session);
     sessions.push({
-      id: session.id || id,
-      cwd: session.cwd || '',
-      shell: session.shell || '',
-      title: session.title || null,
-      createdAt: session.createdAt || new Date().toISOString(),
-      lastSeenAt: session.lastSeenAt || new Date().toISOString(),
-      lastActivityAt: session.lastActivityAt || null,
-      ptyPid: session.ptyPid ?? null,
-      opencodeSessionId: session.opencodeSessionId ?? null,
-      initialCommand: session.initialCommand ?? null,
-      agentType: session.agentType ?? null,
-      agentSessionId: session.agentSessionId ?? null,
-      swarmRole: session.swarmRole ?? null,
-      swarmId: session.swarmId ?? null,
-      sessionType,
-      restored: session.restored || false,
-      restorePolicy: session.restorePolicy || 'auto',
+      id: enriched.id || id,
+      cwd: enriched.cwd || '',
+      shell: enriched.shell || '',
+      title: enriched.title || null,
+      createdAt: enriched.createdAt || new Date().toISOString(),
+      lastSeenAt: enriched.lastSeenAt || new Date().toISOString(),
+      lastActivityAt: enriched.lastActivityAt || null,
+      ptyPid: enriched.ptyPid ?? null,
+      opencodeSessionId: enriched.opencodeSessionId ?? null,
+      initialCommand: enriched.initialCommand ?? null,
+      agentType: enriched.agentType ?? null,
+      agentSessionId: enriched.agentSessionId ?? null,
+      swarmRole: enriched.swarmRole ?? null,
+      swarmId: enriched.swarmId ?? null,
+      sessionType: enriched.sessionType,
+      skipBackendRestore: enriched.skipBackendRestore ?? false,
+      durableRestore: enriched.durableRestore ?? false,
+      restored: enriched.restored || false,
+      restorePolicy: enriched.restorePolicy || 'auto',
     });
   }
 
@@ -183,10 +204,8 @@ export function loadSessions() {
   });
 
   return fresh.map((s) => {
-    // Migrate v1 sessions: reclassify and bump version
-    const sessionType = s.sessionType || classifySession(s);
-    // Migrate v2→v3: add restorePolicy default; sanitize any existing value
-    const restorePolicy = sanitizeRestorePolicy(s.restorePolicy);
-    return { ...s, sessionType, restorePolicy, restored: true };
+    const enriched = enrichPersistedSession(s);
+    const restorePolicy = sanitizeRestorePolicy(enriched.restorePolicy);
+    return { ...enriched, restorePolicy, restored: true };
   });
 }

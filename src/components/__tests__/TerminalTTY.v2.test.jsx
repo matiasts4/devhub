@@ -9,6 +9,7 @@ const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
+const { disposeAllSurfaces: resetV2Graveyard } = require('@/lib/terminal/v2Graveyard');
 
 const mockTerminalInstances = [];
 const mountedRoots = [];
@@ -40,7 +41,15 @@ jest.mock(
       const instance = {
         rows: 24,
         cols: 80,
-        loadAddon: jest.fn(),
+        loadAddon: jest.fn((addon) => {
+          const isWebglAddonInstance =
+            addon && addon.constructor && addon.constructor.name === 'WebglAddon';
+          if (!isWebglAddonInstance) return;
+          const mockAddon = require('xterm-addon-webgl').WebglAddon;
+          if (mockAddon?.shouldThrow) {
+            throw new Error('webgl-context-creation-failed');
+          }
+        }),
         open: jest.fn(),
         onData: jest.fn(),
         focus: jest.fn(),
@@ -81,6 +90,38 @@ jest.mock(
   { virtual: true }
 );
 
+jest.mock(
+  'xterm-addon-serialize',
+  () => ({
+    SerializeAddon: jest.fn().mockImplementation(() => ({
+      serialize: jest.fn(() => '<serialized/>'),
+      dispose: jest.fn(),
+    })),
+  }),
+  { virtual: true }
+);
+
+let mockProbeReady = true;
+jest.mock('@/components/terminal/terminalRendererCapabilities', () => {
+  const actual = jest.requireActual('@/components/terminal/terminalRendererCapabilities');
+  return {
+    __esModule: true,
+    ...actual,
+    probeWebglSupport: () =>
+      Object.freeze({
+        ready: mockProbeReady,
+        reason: mockProbeReady ? null : 'webgl-unavailable',
+      }),
+  };
+});
+
+jest.mock('@/lib/terminal/terminalPanelBridge', () => ({
+  stashTerminalPanelBridge: jest.fn(),
+  takeTerminalPanelBridge: jest.fn(() => null),
+}));
+
+const terminalPanelBridge = require('@/lib/terminal/terminalPanelBridge');
+const { WebglAddon } = require('xterm-addon-webgl');
 const TerminalTTY = require('../TerminalTTY.jsx').default;
 
 function installTerminalDom() {
@@ -239,12 +280,20 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockWebSocketInstances.length = 0;
   mockTerminalInstances.length = 0;
+  mockProbeReady = true;
+  WebglAddon.__reset?.();
+  try {
+    resetV2Graveyard();
+  } catch {
+    // ignore — module may not be initialized in some jest transforms
+  }
   installTerminalDom();
   installTerminalRuntimeMocks();
 });
 
 afterEach(() => {
   cleanupMountedRoots();
+  WebglAddon.__reset?.();
 });
 
 describe('TerminalTTY — v2 engine path', () => {
@@ -516,6 +565,171 @@ describe('TerminalTTY — v2 engine path', () => {
     await flushTerminalEffects();
 
     expect(term.resize).toHaveBeenCalledWith(100, 35);
+  });
+
+  it('stashes the live xterm surface in the v2 graveyard on unmount', async () => {
+    const { root } = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-graveyard-stash',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const term = getLastTerminal();
+
+    flushSync(() => {
+      root.unmount();
+    });
+    await flushTerminalEffects();
+
+    // The legacy terminal instance should NOT have been disposed.
+    expect(term.dispose).not.toHaveBeenCalled();
+  });
+
+  it('restores a previously stashed xterm surface on remount', async () => {
+    // First mount and stash.
+    const { root } = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-graveyard-restore',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const firstTerm = getLastTerminal();
+
+    flushSync(() => {
+      root.unmount();
+    });
+    await flushTerminalEffects();
+
+    // Remount: should reuse the existing xterm instance.
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-graveyard-restore',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const secondTerm = getLastTerminal();
+    expect(secondTerm).toBe(firstTerm);
+  });
+
+  it('v2 WebGL context loss degrades to DOM without scheduling GPU recovery', async () => {
+    const harness = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-context-loss',
+        isEngineV2: true,
+        requestedRendererMode: 'xterm-webgl',
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    expect(WebglAddon.instances).toHaveLength(1);
+    const addon = WebglAddon.instances[0];
+    const disposeSpy = jest.spyOn(addon, 'dispose');
+    const instancesBeforeLoss = WebglAddon.instances.length;
+
+    addon.__triggerContextLoss();
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await flushTerminalEffects();
+
+    expect(disposeSpy).toHaveBeenCalled();
+    // v2 must not schedule GPU recovery after context loss — no new WebGL addons.
+    expect(WebglAddon.instances.length).toBe(instancesBeforeLoss);
+    // WEBGL_CONTEXT_LOST keeps the live xterm viewport (no blocking error overlay).
+    expect(
+      harness.container.querySelector('[data-testid="terminal-webgl-error-section"]')
+    ).toBeNull();
+    expect(harness.container.querySelector('.devhub-xterm-container')).not.toBeNull();
+  });
+
+  it('does not stash output in terminalPanelBridge on v2 unmount', async () => {
+    const { root } = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-no-bridge',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    terminalPanelBridge.stashTerminalPanelBridge.mockClear();
+
+    flushSync(() => {
+      root.unmount();
+    });
+    await flushTerminalEffects();
+
+    expect(terminalPanelBridge.stashTerminalPanelBridge).not.toHaveBeenCalled();
+  });
+
+  it('ignores devhub:terminal-survivor-recover events when isEngineV2 is true', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-no-survivor',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const term = getLastTerminal();
+    term.refresh.mockClear();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:terminal-survivor-recover', {
+        detail: {
+          panelIds: ['panel-v2-no-survivor'],
+          reason: 'workspace-removed',
+        },
+      })
+    );
+    await flushTerminalEffects();
+
+    expect(term.refresh).not.toHaveBeenCalled();
   });
 
   it('keeps legacy output handling working when isEngineV2 is false', async () => {

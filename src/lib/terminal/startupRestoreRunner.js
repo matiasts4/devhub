@@ -6,6 +6,7 @@ function sleep(ms) {
   });
 }
 import { inferPanelSessionKind } from './restorePolicyResolver';
+import { buildOpencodeResumeCommand } from './opencodeSessionRegistry.js';
 
 export const STARTUP_RESTORE_MAX_CONCURRENCY = 2;
 export const STARTUP_RESTORE_DELAY_MS = 350;
@@ -99,16 +100,10 @@ export function buildOpenCodeResumeCommand(panel, action) {
     return null;
   }
 
-  const fromPanel = String(panel?.initialCommand || '')
-    .replace(/\s*#recovery-\d+\s*$/i, '')
-    .trim();
-  if (fromPanel) return fromPanel;
-
-  if (action?.opencodeSessionId) {
-    return `opencode --session ${action.opencodeSessionId}`;
-  }
-
-  return null;
+  return buildOpencodeResumeCommand({
+    initialCommand: panel?.initialCommand,
+    opencodeSessionId: action?.opencodeSessionId,
+  });
 }
 
 export function shouldBumpRelaunchCommand(currentCommand, nextCommand) {

@@ -74,6 +74,11 @@ import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
 } from '@/lib/terminal/terminalPanelBridge';
+import {
+  hasSurface as graveyardHasSurface,
+  restoreSurface as graveyardRestoreSurface,
+  stashSurface as graveyardStashSurface,
+} from '@/lib/terminal/v2Graveyard';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 import {
   buildTerminalExitOverlayCopy,
@@ -1276,6 +1281,11 @@ export function shouldAttachWebglRenderer({ operationalRendererMode }) {
   return operationalRendererMode === 'xterm-webgl';
 }
 
+/** Phase 5 terminal-engine-v2: after WebGL context loss, stay on DOM permanently. */
+export function shouldBlockV2WebglRecovery({ isEngineV2, webglFallback }) {
+  return isEngineV2 && webglFallback?.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST;
+}
+
 /**
  * Single-panel WebGL workspaces should not refit/resize on tab switch when the
  * PTY grid is already correct — only reattach the GPU addon if it was released
@@ -2244,205 +2254,274 @@ export default function TerminalTTY({
     nativeVteProbeRetryDelayRef.current = null;
   }, []);
 
-  const disposeXtermRuntime = useCallback(() => {
-    // 0. Mark disposing BEFORE touching anything. Any callback that re-enters
-    //    during teardown (or a stray rAF/observer that fires while the renderer
-    //    slot is half-cleared) sees this and bails. Cleared in the finally so a
-    //    later boot is never wrongly blocked. A.4.
-    if (isDisposingRef.current) return;
-    isDisposingRef.current = true;
-    connectEpochRef.current += 1;
-    if (panelActivityTrackerRef.current) {
-      panelActivityTrackerRef.current.dispose();
-      panelActivityTrackerRef.current = null;
-    }
-    clearPanelActivity(id);
-    if (connectAbortRef.current) {
-      connectAbortRef.current.abort();
-      connectAbortRef.current = null;
-    }
-    // A.0 lifecycle telemetry: capture renderer + dims BEFORE refs are nulled.
-    // This is the dispose-count-per-toggle signal A.1 must drive to zero.
-    cliLog(
-      `LIFECYCLE:${id}`,
-      'dispose',
-      buildTerminalLifecycleEvent({
-        event: 'dispose',
-        panelId: id,
-        renderer: requestedRendererModeRef.current,
-        isVisible: isVisibleInLayoutRef.current,
-        cols: termRef.current?.cols,
-        rows: termRef.current?.rows,
-      })
-    );
-    try {
-      // 1. Stop observing the container FIRST so no new resize callbacks queue.
-      resizeObserverRef.current?.disconnect();
-      resizeObserverRef.current = null;
-
-      // 2. Cancel any RAF / setTimeout that might call fit() or sendResize()
-      //    after the runtime is gone. Without this, a queued RAF can fire
-      //    fitAddon.fit() on a terminal that has already started disposing
-      //    and trigger the WebGL addon's stale-renderer crash on Linux.
-      clearTimers();
-      clearConnectDeferTimer();
-      if (terminalOutputFlushRafRef.current) {
-        cancelAnimationFrame(terminalOutputFlushRafRef.current);
-        terminalOutputFlushRafRef.current = null;
+  const disposeXtermRuntime = useCallback(
+    ({ stashForV2 = false } = {}) => {
+      // 0. Mark disposing BEFORE touching anything. Any callback that re-enters
+      //    during teardown (or a stray rAF/observer that fires while the renderer
+      //    slot is half-cleared) sees this and bails. Cleared in the finally so a
+      //    later boot is never wrongly blocked. A.4.
+      if (isDisposingRef.current) return;
+      isDisposingRef.current = true;
+      connectEpochRef.current += 1;
+      if (panelActivityTrackerRef.current) {
+        panelActivityTrackerRef.current.dispose();
+        panelActivityTrackerRef.current = null;
       }
-      if (syncOutputTimeoutRef.current) {
-        clearTimeout(syncOutputTimeoutRef.current);
-        syncOutputTimeoutRef.current = null;
+      clearPanelActivity(id);
+      if (connectAbortRef.current) {
+        connectAbortRef.current.abort();
+        connectAbortRef.current = null;
       }
+      // A.0 lifecycle telemetry: capture renderer + dims BEFORE refs are nulled.
+      // This is the dispose-count-per-toggle signal A.1 must drive to zero.
+      cliLog(
+        `LIFECYCLE:${id}`,
+        'dispose',
+        buildTerminalLifecycleEvent({
+          event: 'dispose',
+          panelId: id,
+          renderer: requestedRendererModeRef.current,
+          isVisible: isVisibleInLayoutRef.current,
+          cols: termRef.current?.cols,
+          rows: termRef.current?.rows,
+        })
+      );
+      try {
+        // 1. Stop observing the container FIRST so no new resize callbacks queue.
+        resizeObserverRef.current?.disconnect();
+        resizeObserverRef.current = null;
 
-      // 3. Silence and close the websocket. Closing it first means the
-      //    onmessage/onclose can't push more output into a disposed terminal.
-      if (wsRef.current) {
-        const stale = wsRef.current;
-        // Phase 3 terminal-engine-v2: serialize and push a final snapshot before
-        // unsubscribing so the next show has the most recent state available.
+        // 2. Cancel any RAF / setTimeout that might call fit() or sendResize()
+        //    after the runtime is gone. Without this, a queued RAF can fire
+        //    fitAddon.fit() on a terminal that has already started disposing
+        //    and trigger the WebGL addon's stale-renderer crash on Linux.
+        clearTimers();
+        clearConnectDeferTimer();
+        if (terminalOutputFlushRafRef.current) {
+          cancelAnimationFrame(terminalOutputFlushRafRef.current);
+          terminalOutputFlushRafRef.current = null;
+        }
+        if (syncOutputTimeoutRef.current) {
+          clearTimeout(syncOutputTimeoutRef.current);
+          syncOutputTimeoutRef.current = null;
+        }
+
+        // 3. Silence and close the websocket. Closing it first means the
+        //    onmessage/onclose can't push more output into a disposed terminal.
+        if (wsRef.current) {
+          const stale = wsRef.current;
+          // Phase 3 terminal-engine-v2: serialize and push a final snapshot before
+          // unsubscribing so the next show has the most recent state available.
+          if (
+            isEngineV2Ref.current &&
+            stale.readyState === WebSocket.OPEN &&
+            serializeAddonRef.current &&
+            termRef.current
+          ) {
+            try {
+              const serialized = serializeAddonRef.current.serialize();
+              stale.send(
+                JSON.stringify({
+                  type: 'save-snapshot',
+                  serialized,
+                  ptyOffset: currentPtyOffsetRef.current,
+                  termsize: { cols: termRef.current.cols, rows: termRef.current.rows },
+                })
+              );
+            } catch {
+              // ignore snapshot send errors during teardown
+            }
+          }
+          // Phase 1 terminal-engine-v2: explicitly unsubscribe before closing so
+          // the sidecar keeps the PTY alive for hidden panels.
+          if (isEngineV2Ref.current && stale.readyState === WebSocket.OPEN) {
+            try {
+              stale.send(JSON.stringify({ type: 'unsubscribe' }));
+            } catch {
+              // ignore unsubscribe send errors during teardown
+            }
+          }
+          stale.onopen = null;
+          stale.onmessage = null;
+          stale.onerror = null;
+          stale.onclose = null;
+          try {
+            stale.close();
+          } catch {
+            // ignore
+          }
+          wsRef.current = null;
+        }
+
+        if (terminalBlurCleanupRef.current) {
+          try {
+            terminalBlurCleanupRef.current();
+          } catch {
+            // ignore
+          }
+          terminalBlurCleanupRef.current = null;
+        }
+
+        // Phase 4 terminal-engine-v2: instead of disposing the xterm surface on
+        // hide/close, stash it in the graveyard. The PTY stays alive in the sidecar
+        // and the surface can be restored on re-mount, avoiding a full rebuild.
+        const shouldStashForV2 = stashForV2 && isEngineV2Ref.current && termRef.current;
+        if (shouldStashForV2) {
+          const surface = {
+            termInstance: termRef.current,
+            webglAddon: webglAddonRef.current,
+            canvasAddon: canvasAddonRef.current,
+            serializeAddon: serializeAddonRef.current,
+            fitAddon: fitRef.current,
+            searchAddon: searchRef.current,
+            container: containerRef.current,
+            lastPtySize: { ...lastPtySizeRef.current },
+          };
+
+          // Null refs BEFORE stashing so concurrent callbacks see a detached runtime.
+          // The graveyard holds the live objects; we just drop our local handles.
+          webglAddonRef.current = null;
+          canvasAddonRef.current = null;
+          serializeAddonRef.current = null;
+          termRef.current = null;
+          fitRef.current = null;
+          searchRef.current = null;
+
+          if (outputPendingRef.current) {
+            outputPendingRef.current.value = '';
+          }
+          if (hiddenOutputBufferRef.current) {
+            hiddenOutputBufferRef.current.value = '';
+          }
+          hiddenOutputCatchupPendingRef.current = false;
+          connectPendingUntilFitRef.current = false;
+          if (connectDeferTimerRef.current) {
+            clearTimeout(connectDeferTimerRef.current);
+            connectDeferTimerRef.current = null;
+          }
+
+          try {
+            graveyardStashSurface(id, surface);
+          } catch (err) {
+            cliLog(`CLIENT:${id}`, 'graveyard stash failed', { error: err?.message });
+            // Fall back to disposal if stash fails.
+            try {
+              surface.webglAddon?.dispose?.();
+            } catch {
+              // ignore disposal errors during stash fallback
+            }
+            try {
+              surface.canvasAddon?.dispose?.();
+            } catch {
+              // ignore disposal errors during stash fallback
+            }
+            try {
+              surface.termInstance?.dispose?.();
+            } catch {
+              // ignore disposal errors during stash fallback
+            }
+          }
+          isDisposingRef.current = false;
+          return;
+        }
+
+        // 4. Snapshot refs and null them out IMMEDIATELY. Any concurrent code
+        //    (queued resize, focus handler, paste handler) that re-checks the
+        //    refs now sees null and bails out before we start tearing things
+        //    down. This is the key ordering change for the Linux/WebKitGTK race.
+        const webglAddon = webglAddonRef.current;
+        const canvasAddon = canvasAddonRef.current;
+        const term = termRef.current;
+        webglAddonRef.current = null;
+        canvasAddonRef.current = null;
+        const bufferedOutput = hiddenOutputBufferRef.current?.value || '';
+        const pendingOutput = outputPendingRef.current?.value || '';
         if (
-          isEngineV2Ref.current &&
-          stale.readyState === WebSocket.OPEN &&
-          serializeAddonRef.current &&
-          termRef.current
+          !isEngineV2Ref.current &&
+          (bufferedOutput || pendingOutput || hiddenOutputCatchupPendingRef.current)
         ) {
+          stashTerminalPanelBridge(id, {
+            buffer: bufferedOutput,
+            catchupPending: hiddenOutputCatchupPendingRef.current || Boolean(bufferedOutput),
+            outputPending: pendingOutput,
+            lastPtySize: { ...lastPtySizeRef.current },
+            host: surfaceHostRef.current,
+            reason: 'xterm-dispose',
+          });
+        }
+        if (outputPendingRef.current) {
+          outputPendingRef.current.value = '';
+        }
+        if (hiddenOutputBufferRef.current) {
+          hiddenOutputBufferRef.current.value = '';
+        }
+        hiddenOutputCatchupPendingRef.current = false;
+        connectPendingUntilFitRef.current = false;
+        if (connectDeferTimerRef.current) {
+          clearTimeout(connectDeferTimerRef.current);
+          connectDeferTimerRef.current = null;
+        }
+        termRef.current = null;
+        fitRef.current = null;
+        searchRef.current = null;
+
+        if (containerRef.current) {
           try {
-            const serialized = serializeAddonRef.current.serialize();
-            stale.send(
-              JSON.stringify({
-                type: 'save-snapshot',
-                serialized,
-                ptyOffset: currentPtyOffsetRef.current,
-                termsize: { cols: termRef.current.cols, rows: termRef.current.rows },
-              })
-            );
+            containerRef.current.replaceChildren();
           } catch {
-            // ignore snapshot send errors during teardown
+            // ignore — container may already be detached
           }
         }
-        // Phase 1 terminal-engine-v2: explicitly unsubscribe before closing so
-        // the sidecar keeps the PTY alive for hidden panels.
-        if (isEngineV2Ref.current && stale.readyState === WebSocket.OPEN) {
+
+        // 5. Neutralize the WebGL addon's internal handleResize before any
+        //    dispose runs. See neutralizeWebglAddonForDisposal — this is the
+        //    fix for the `_renderer.value.handleResize` undefined crash that
+        //    xterm-addon-webgl@0.16.0 exposes during teardown.
+        neutralizeWebglAddonForDisposal(webglAddon);
+
+        // 6. Dispose the terminal FIRST. xterm's AddonManager will walk the
+        //    registered addons (including WebglAddon) in a safe internal order
+        //    and detach the resize listener before clearing the renderer slot.
+        if (term) {
           try {
-            stale.send(JSON.stringify({ type: 'unsubscribe' }));
-          } catch {
-            // ignore unsubscribe send errors during teardown
+            term.dispose();
+          } catch (err) {
+            if (!isStaleXtermRendererError(err)) {
+              console.warn('Error disposing Terminal instance:', err);
+            }
           }
         }
-        stale.onopen = null;
-        stale.onmessage = null;
-        stale.onerror = null;
-        stale.onclose = null;
-        try {
-          stale.close();
-        } catch {
-          // ignore
-        }
-        wsRef.current = null;
-      }
 
-      if (terminalBlurCleanupRef.current) {
-        try {
-          terminalBlurCleanupRef.current();
-        } catch {
-          // ignore
-        }
-        terminalBlurCleanupRef.current = null;
-      }
-
-      // 4. Snapshot refs and null them out IMMEDIATELY. Any concurrent code
-      //    (queued resize, focus handler, paste handler) that re-checks the
-      //    refs now sees null and bails out before we start tearing things
-      //    down. This is the key ordering change for the Linux/WebKitGTK race.
-      const webglAddon = webglAddonRef.current;
-      const canvasAddon = canvasAddonRef.current;
-      const term = termRef.current;
-      webglAddonRef.current = null;
-      canvasAddonRef.current = null;
-      const bufferedOutput = hiddenOutputBufferRef.current?.value || '';
-      const pendingOutput = outputPendingRef.current?.value || '';
-      if (bufferedOutput || pendingOutput || hiddenOutputCatchupPendingRef.current) {
-        stashTerminalPanelBridge(id, {
-          buffer: bufferedOutput,
-          catchupPending: hiddenOutputCatchupPendingRef.current || Boolean(bufferedOutput),
-          outputPending: pendingOutput,
-          lastPtySize: { ...lastPtySizeRef.current },
-          host: surfaceHostRef.current,
-          reason: 'xterm-dispose',
-        });
-      }
-      if (outputPendingRef.current) {
-        outputPendingRef.current.value = '';
-      }
-      if (hiddenOutputBufferRef.current) {
-        hiddenOutputBufferRef.current.value = '';
-      }
-      hiddenOutputCatchupPendingRef.current = false;
-      connectPendingUntilFitRef.current = false;
-      if (connectDeferTimerRef.current) {
-        clearTimeout(connectDeferTimerRef.current);
-        connectDeferTimerRef.current = null;
-      }
-      termRef.current = null;
-      fitRef.current = null;
-      searchRef.current = null;
-
-      if (containerRef.current) {
-        try {
-          containerRef.current.replaceChildren();
-        } catch {
-          // ignore — container may already be detached
-        }
-      }
-
-      // 5. Neutralize the WebGL addon's internal handleResize before any
-      //    dispose runs. See neutralizeWebglAddonForDisposal — this is the
-      //    fix for the `_renderer.value.handleResize` undefined crash that
-      //    xterm-addon-webgl@0.16.0 exposes during teardown.
-      neutralizeWebglAddonForDisposal(webglAddon);
-
-      // 6. Dispose the terminal FIRST. xterm's AddonManager will walk the
-      //    registered addons (including WebglAddon) in a safe internal order
-      //    and detach the resize listener before clearing the renderer slot.
-      if (term) {
-        try {
-          term.dispose();
-        } catch (err) {
-          if (!isStaleXtermRendererError(err)) {
-            console.warn('Error disposing Terminal instance:', err);
+        // 7. Defensive second dispose for the addon ref. xterm cascades the
+        //    dispose in step 6, but if loadAddon never completed (WebGL context
+        //    creation threw) the addon won't be in the AddonManager's list, so
+        //    we still need to release its handlers explicitly. dispose() is
+        //    idempotent on the official addon.
+        if (webglAddon) {
+          try {
+            webglAddon.dispose?.();
+          } catch (err) {
+            if (!isStaleXtermRendererError(err)) {
+              console.warn('Error disposing WebglAddon:', err);
+            }
           }
         }
-      }
 
-      // 7. Defensive second dispose for the addon ref. xterm cascades the
-      //    dispose in step 6, but if loadAddon never completed (WebGL context
-      //    creation threw) the addon won't be in the AddonManager's list, so
-      //    we still need to release its handlers explicitly. dispose() is
-      //    idempotent on the official addon.
-      if (webglAddon) {
-        try {
-          webglAddon.dispose?.();
-        } catch (err) {
-          if (!isStaleXtermRendererError(err)) {
-            console.warn('Error disposing WebglAddon:', err);
+        if (canvasAddon) {
+          try {
+            canvasAddon.dispose?.();
+          } catch (err) {
+            if (!isStaleXtermRendererError(err)) {
+              console.warn('Error disposing CanvasAddon:', err);
+            }
           }
         }
+      } finally {
+        isDisposingRef.current = false;
       }
-
-      if (canvasAddon) {
-        try {
-          canvasAddon.dispose?.();
-        } catch (err) {
-          if (!isStaleXtermRendererError(err)) {
-            console.warn('Error disposing CanvasAddon:', err);
-          }
-        }
-      }
-    } finally {
-      isDisposingRef.current = false;
-    }
-  }, [clearTimers, id]);
+    },
+    [clearTimers, id]
+  );
 
   const shouldRetryNativeVteProbe =
     ENABLE_NATIVE_VTE &&
@@ -2711,7 +2790,10 @@ export default function TerminalTTY({
         stale.close();
         wsRef.current = null;
       }
-      disposeXtermRuntime();
+      // Phase 4 terminal-engine-v2: explicit panel close stashes the surface in
+      // the graveyard. Real disposal happens on LRU eviction (Phase 5) or user
+      // hard-close, not on normal close.
+      disposeXtermRuntime({ stashForV2: isEngineV2Ref.current });
       // Native GTK teardown is owned by handleClosePanel → closeNativeVtePanel (single close).
       setConnectionState('terminated');
     },
@@ -3484,7 +3566,11 @@ export default function TerminalTTY({
         shouldAttachWebglRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
         }) &&
-        isWebglAddonContextLost(webglAddonRef.current)
+        isWebglAddonContextLost(webglAddonRef.current) &&
+        !shouldBlockV2WebglRecovery({
+          isEngineV2: isEngineV2Ref.current,
+          webglFallback: webglFallbackRef.current,
+        })
       ) {
         disposeWebglAddonForContextLoss('inactive-webgl-context-lost');
         void tryReattachWebglAddonRef.current?.({ clearAtlas: true }).then((reattached) => {
@@ -3546,6 +3632,7 @@ export default function TerminalTTY({
 
   const releaseWebglAddonForInactivePanel = useCallback(
     (reason = 'panel-inactive-dom-fallback') => {
+      if (isEngineV2Ref.current) return false;
       const addon = webglAddonRef.current;
       if (!addon) return false;
 
@@ -3640,6 +3727,14 @@ export default function TerminalTTY({
       const term = termRef.current;
       if (!term || webglAddonRef.current) return false;
       if (
+        shouldBlockV2WebglRecovery({
+          isEngineV2: isEngineV2Ref.current,
+          webglFallback: webglFallbackRef.current,
+        })
+      ) {
+        return false;
+      }
+      if (
         !shouldAttachWebglRenderer({ operationalRendererMode: operationalRendererModeRef.current })
       ) {
         return false;
@@ -3716,6 +3811,14 @@ export default function TerminalTTY({
 
   const scheduleWebglRecovery = useCallback(
     (delayMs = 400, { clearAtlas = true } = {}) => {
+      if (
+        shouldBlockV2WebglRecovery({
+          isEngineV2: isEngineV2Ref.current,
+          webglFallback: webglFallbackRef.current,
+        })
+      ) {
+        return;
+      }
       if (webglRecoveryTimerRef.current) {
         clearTimeout(webglRecoveryTimerRef.current);
       }
@@ -3742,10 +3845,27 @@ export default function TerminalTTY({
       // Ignore double dispose
     }
     webglAddonRef.current = null;
-    setWebglFallback(null);
-    pendingWebglRecoveryRef.current = true;
 
     stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+
+    // Phase 5 terminal-engine-v2: stay on DOM permanently — no WebGL recovery
+    // timers, bounded GPU retries, or survivor-recovery repaints.
+    if (isEngineV2Ref.current) {
+      const fallback = {
+        active: true,
+        reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST,
+      };
+      // Ref-only: WEBGL_CONTEXT_LOST does not block the viewport for v2, and
+      // calling setWebglFallback here would re-run the xterm boot effect (via
+      // coalescedSoftGpuVisibilityReveal identity churn) and tear down the live
+      // surface we are keeping on DOM.
+      webglFallbackRef.current = fallback;
+      pendingWebglRecoveryRef.current = false;
+      return;
+    }
+
+    setWebglFallback(null);
+    pendingWebglRecoveryRef.current = true;
 
     if (isVisibleInLayoutRef.current) {
       scheduleWebglRecovery();
@@ -3826,6 +3946,7 @@ export default function TerminalTTY({
   // SIGWINCH is ever sent (forceTerminalViewportRepaint never notifies the PTY).
   const scheduleBoundedForceRepaint = useCallback(
     (maxAttempts = 24) => {
+      if (isEngineV2Ref.current) return;
       let attempts = 0;
       const attempt = () => {
         if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
@@ -3868,6 +3989,7 @@ export default function TerminalTTY({
   // Kimi/OpenCode once container dims differ from the stale grid.
   const scheduleBoundedFitRepaint = useCallback(
     (maxAttempts = 24) => {
+      if (isEngineV2Ref.current) return;
       let attempts = 0;
       // ponytail: require the container's proposed dims to be STABLE across 2
       // consecutive frames before stopping. On a workspace switch the PanelGroup /
@@ -3944,6 +4066,7 @@ export default function TerminalTTY({
   // live one, then the force-repaint actually paints.
   const scheduleBoundedGpuRecover = useCallback(
     (maxAttempts = 30) => {
+      if (isEngineV2Ref.current) return;
       let attempts = 0;
       // ponytail: same 2-frame stability gate as scheduleBoundedFitRepaint — stopping
       // when forceTerminalViewportRepaint "succeeds" at stale narrow cols leaves Grok
@@ -4433,7 +4556,11 @@ export default function TerminalTTY({
         shouldAttachWebglRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
         }) &&
-        (pendingWebglRecoveryRef.current || !webglAddonRef.current)
+        (pendingWebglRecoveryRef.current || !webglAddonRef.current) &&
+        !shouldBlockV2WebglRecovery({
+          isEngineV2: isEngineV2Ref.current,
+          webglFallback: webglFallbackRef.current,
+        })
       ) {
         scheduleWebglRecovery(80, { clearAtlas: false });
       }
@@ -5581,6 +5708,7 @@ export default function TerminalTTY({
   }, [restoreInitialCommandDispatchGuard]);
 
   useEffect(() => {
+    if (isEngineV2) return;
     const bridge = takeTerminalPanelBridge(id);
     if (!bridge) return;
     if (bridge.buffer) {
@@ -5605,7 +5733,7 @@ export default function TerminalTTY({
         rows: bridge.lastPtySize.rows,
       };
     }
-  }, [id, surfaceHost]);
+  }, [id, isEngineV2, surfaceHost]);
 
   useEffect(() => {
     if (!shouldUseNativeRenderer) return undefined;
@@ -6672,7 +6800,7 @@ export default function TerminalTTY({
 
   useEffect(() => {
     const handleSurvivorRecover = (event) => {
-      if (isDisposingRef.current) return;
+      if (isDisposingRef.current || isEngineV2Ref.current) return;
       const panelIds = Array.isArray(event?.detail?.panelIds) ? event.detail.panelIds : null;
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
       // survivorPanelIds spans every remaining workspace, so this can fire for
@@ -6995,7 +7123,9 @@ export default function TerminalTTY({
     let mounted = true;
 
     if (!shouldBootXterm) {
-      disposeXtermRuntime();
+      // Phase 4 terminal-engine-v2: stash the surface instead of disposing when
+      // the renderer is told to stand down (e.g. surface host change).
+      disposeXtermRuntime({ stashForV2: isEngineV2Ref.current });
       setInitError(null);
       setIsInitializing(runtimePhase === 'native-probing' || runtimePhase === 'native-opening');
 
@@ -7009,7 +7139,7 @@ export default function TerminalTTY({
           cancelAnimationFrame(nativeResizeRafRef.current);
           nativeResizeRafRef.current = null;
         }
-        disposeXtermRuntime();
+        disposeXtermRuntime({ stashForV2: isEngineV2Ref.current });
       };
     }
 
@@ -7100,6 +7230,100 @@ export default function TerminalTTY({
         if (termRef.current) {
           cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — runtime won race after import');
           return;
+        }
+
+        // Phase 4 terminal-engine-v2: restore a stashed surface before building a
+        // new xterm instance. The graveyard keeps the surface mounted-but-hidden;
+        // we move its container back into the visible tree and reconnect.
+        if (isEngineV2Ref.current && graveyardHasSurface(id)) {
+          const stashed = graveyardRestoreSurface(id);
+          if (stashed?.termInstance) {
+            cliLog(`CLIENT:${id}`, 'restoring surface from graveyard');
+
+            termRef.current = stashed.termInstance;
+            fitRef.current = stashed.fitAddon || null;
+            searchRef.current = stashed.searchAddon || null;
+            webglAddonRef.current = stashed.webglAddon || null;
+            canvasAddonRef.current = stashed.canvasAddon || null;
+            serializeAddonRef.current = stashed.serializeAddon || null;
+
+            if (containerRef.current) {
+              containerRef.current.replaceChildren();
+              if (stashed.termInstance.element) {
+                containerRef.current.appendChild(stashed.termInstance.element);
+              } else if (stashed.container) {
+                containerRef.current.appendChild(stashed.container);
+              }
+            }
+
+            if (terminalBlurCleanupRef.current) {
+              terminalBlurCleanupRef.current();
+              terminalBlurCleanupRef.current = null;
+            }
+            const blurTarget = stashed.termInstance.element || containerRef.current;
+            const handleTerminalBlur = () =>
+              prepareActiveTuiTerminalFocus(stashed.termInstance, {
+                tuiSessionActive: tuiSessionActiveRef.current,
+              });
+            blurTarget?.addEventListener('focusout', handleTerminalBlur);
+            terminalBlurCleanupRef.current = () => {
+              blurTarget?.removeEventListener('focusout', handleTerminalBlur);
+            };
+
+            resizeObserverRef.current = new ResizeObserver(() => {
+              if (isDisposingRef.current) return;
+              if (!isVisibleInLayoutRef.current) {
+                needsViewportSyncOnShowRef.current = true;
+                return;
+              }
+              const rect = containerRef.current?.getBoundingClientRect();
+              if (!rect || rect.width <= 0 || rect.height <= 0) return;
+              logViewportDiagnostic('resize-observer');
+              if (
+                shouldRefitVisibleInactiveSplitPanel({
+                  isActivePanel: isActivePanelRef.current,
+                  isVisibleInLayout: isVisibleInLayoutRef.current,
+                })
+              ) {
+                scheduleInactiveViewportRepaint();
+                return;
+              }
+              const scheduleResize = () => sendResizeRef.current?.();
+              if (tuiSessionActiveRef.current) {
+                if (tuiResizeDebounceTimerRef.current) {
+                  clearTimeout(tuiResizeDebounceTimerRef.current);
+                }
+                tuiResizeDebounceTimerRef.current = setTimeout(() => {
+                  tuiResizeDebounceTimerRef.current = null;
+                  scheduleResize();
+                }, 160);
+                return;
+              }
+              scheduleResize();
+            });
+            resizeObserverRef.current.observe(containerRef.current);
+
+            cliLog(
+              `LIFECYCLE:${id}`,
+              'restore',
+              buildTerminalLifecycleEvent({
+                event: 'restore',
+                panelId: id,
+                renderer: requestedRendererModeRef.current,
+                isVisible: isVisibleInLayoutRef.current,
+                cols: stashed.termInstance?.cols,
+                rows: stashed.termInstance?.rows,
+              })
+            );
+
+            setInitError(null);
+            setIsInitializing(false);
+            isInitializingRef.current = false;
+
+            // Reconnect to the sidecar and resume the subscription from the current offset.
+            connectRef.current?.();
+            return;
+          }
         }
 
         const theme = getTerminalTheme();
@@ -7408,7 +7632,9 @@ export default function TerminalTTY({
         stale.onerror = null;
         stale.onclose = null;
       }
-      disposeXtermRuntime();
+      // Phase 4 terminal-engine-v2: hide/close stashes the surface in the graveyard
+      // instead of disposing it. Non-v2 paths and error recovery keep force-dispose.
+      disposeXtermRuntime({ stashForV2: true });
     };
   }, [
     // NOTE: logViewportDiagnostic is intentionally omitted. It transitively

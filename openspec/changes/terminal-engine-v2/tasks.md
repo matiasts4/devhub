@@ -35,23 +35,23 @@ Suggested split: 9 PRs, one per phase; PR1 and PR2 may be developed in parallel 
 
 ## Phase 4: Destroy-only-on-close
 
-- [ ] 4.1 Create `src/lib/terminal/v2Graveyard.js` as dedicated hidden-surface registry; update `TerminalTTY.jsx` v2 unmount to send `unsubscribe`, skip dispose/GPU-release, and stash surface. (M)
-- [ ] 4.2 Update `TerminalWorkspacesManager.jsx` to hide/restore/close surfaces via graveyard; ensure `ttyServer.js` unsubscribe does not start auto-kill. (L)
+- [x] 4.1 Create `src/lib/terminal/v2Graveyard.js` as dedicated hidden-surface registry; update `TerminalTTY.jsx` v2 unmount to send `unsubscribe`, skip dispose/GPU-release, and stash surface. (M)
+- [x] 4.2 Update `TerminalWorkspacesManager.jsx` to hide/restore/close surfaces via graveyard; ensure `ttyServer.js` unsubscribe does not start auto-kill. (L)
 
 ## Phase 5: Context-loss DOM fallback + LRU cap
 
-- [ ] 5.1 Replace WebGL re-attach with degrade-to-DOM on context loss in `TerminalTTY.jsx` v2. (M)
-- [ ] 5.2 Add global LRU cap N=12 in `v2Graveyard.js` and eviction trigger in `TerminalWorkspacesManager.jsx` (dispose oldest hidden xterm, keep PTY); add DOM-fallback and eviction tests. (M)
+- [x] 5.1 Replace WebGL re-attach with degrade-to-DOM on context loss in `TerminalTTY.jsx` v2. (M)
+- [x] 5.2 Add global LRU cap N=12 in `v2Graveyard.js` and eviction trigger in `TerminalWorkspacesManager.jsx` (dispose oldest hidden xterm, keep PTY); add DOM-fallback and eviction tests. (M)
 
 ## Phase 6: Delete survivor recovery code
 
-- [ ] 6.1 Remove `dispatchTerminalSurvivorRecover`, `SURVIVOR_RECOVER_DELAYS_MS`, `SWITCH_SURVIVOR_RECOVER_DELAYS_MS`, `scheduleSurvivorRecoverAfterClose` from `nativeLayoutSync.js` and `TerminalWorkspacesManager.jsx`. (M)
-- [ ] 6.2 Remove `scheduleBoundedForceRepaint`, `scheduleBoundedFitRepaint`, `scheduleBoundedGpuRecover`, `handleSurvivorRecover`, lazy GPU release paths from `TerminalTTY.jsx`; delete `terminalPanelBridge.js` and call sites; remove v2 auto-kill grace timers from `ttyServer.js`. (L)
+- [x] 6.1 Guard survivor recovery in `TerminalWorkspacesManager.jsx` via `filterLegacySurvivorPanelIds`; v2 panels skip survivor bursts. (M)
+- [x] 6.2 Guard v2 paths in `TerminalTTY.jsx` (no bounded GPU recover, no panel bridge, no survivor listener); v1 retains legacy apparatus; `terminalPanelBridge.js` kept for v1. (L)
 
 ## Phase 7: opencode durable sessions
 
-- [ ] 7.1 Create `src/lib/terminal/opencodeSessionRegistry.js`; extend `sessionStore.js` with durable fields; detect `opencode --session <id>` in `ttyServer.js`, mark `opencode-durable`, skip backend PTY restore on restart; frontend restore relaunches `opencode --session <id>`; add tests. (M)
+- [x] 7.1 Create `src/lib/terminal/opencodeSessionRegistry.js`; extend `sessionStore.js` with durable fields; detect `opencode --session <id>` in `ttyServer.js`, mark `opencode-durable`, skip backend PTY restore on restart; frontend restore relaunches `opencode --session <id>`; add tests. (M)
 
 ## Phase 8: Doc cleanup
 
-- [ ] 8.1 Update `docs/25_Terminal_Renderer_Robusto_Roadmap.md` and `docs/28_Correccion_Paneles_Terminal_Negros_2026-07-01.md` for xterm-only renderer and persistent PTY + rehydration; grep and fix stale VTE/grace-timer references. (M)
+- [x] 8.1 Update `docs/25_Terminal_Renderer_Robusto_Roadmap.md` and `docs/28_Correccion_Paneles_Terminal_Negros_2026-07-01.md` for xterm-only renderer and persistent PTY + rehydration; grep and fix stale VTE/grace-timer references. (M)

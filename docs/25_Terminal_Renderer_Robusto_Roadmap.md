@@ -1,17 +1,17 @@
 # Terminal renderer robusto — estrategia activa y roadmap
 
-**Estado:** TERM-01 y TERM-02 cerrados, TERM-03 en hardening/verificación, TERM-04 cerrado como no-go por ahora, TERM-05 absorbido como decisión arquitectónica/documental.
-**Fecha:** 2026-05-16 (revisión: 2026-06-07 — flip de default a xterm-webgl, soft roll-out).
+**Estado:** TERM-01 y TERM-02 cerrados, TERM-03 **descartado** (VTE eliminado en `terminal-engine-v2` Phase 0), TERM-04 cerrado como no-go, TERM-05 absorbido como decisión arquitectónica/documental. **`terminal-engine-v2` apply completo** (2026-07-04).
+**Fecha:** 2026-05-16 (revisión: 2026-07-04 — xterm-only + motor v2 con PTY persistente y rehidratación).
 
-## Decisión guía
+## Decisión guía (vigente post `terminal-engine-v2`)
 
-DevHub adopta **xterm-webgl como renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore. `xterm-webgl` ya estaba disponible como opt-in y como default en pizarra desde antes de este cambio; la presente revisión alinea workspace y command-bar con la misma política.
+DevHub adopta **xterm-webgl como renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore. El stack es **xterm-only** (sin GTK/VTE nativo).
 
 - `xterm-webgl` es el **renderer por defecto** para fresh users y para nuevos paneles sin preferencia almacenada.
-- `xterm` (DOM) sigue siendo el **fallback estable** cuando xterm-webgl no esté disponible (WebView sin WebGL, addon registration failure, context lost, etc.).
-- `vte-experimental` (GTK/VTE) queda como **opt-in para Linux/Tauri operators** que prefieran el runtime nativo; **no es el default**.
+- `xterm` (DOM) es el **fallback estable** cuando xterm-webgl no esté disponible (WebView sin WebGL, addon registration failure, context lost, etc.). En paneles `terminal-engine-v2`, el context loss **degrada permanentemente a DOM** (sin re-attach WebGL).
+- **`vte-experimental` eliminado** — `native_vte.rs`, `nativeVteBridge.js` y branches VTE fueron retirados; preferencias legacy en `localStorage` se ignoran/migran a xterm.
 
-**Soft roll-out:** este cambio NO sobrescribe la preferencia almacenada de usuarios existentes. Quienes tengan `vte-experimental` en `localStorage` lo conservan. New users y users sin valor almacenado reciben `xterm-webgl`. No hay código de migración.
+**Motor `terminal-engine-v2` (flag por panel):** sidecar con ring buffer 2 MiB + pub/sub, termsize/cwd canónicos, rehidratación two-tier (`SerializeAddon` + delta), `unsubscribe` explícito (PTY vivo sin grace timer de 1 h), graveyard LRU global N=12, sesiones `opencode-durable` con `--session`. Spec: `openspec/changes/terminal-engine-v2/`.
 
 La rama `checkpoint/terminal-experiments-2026-05-14` sigue valiendo como **material de referencia**, NO como merge directo: **no conviene mover esa rama completa**.
 
@@ -21,9 +21,9 @@ La rama `checkpoint/terminal-experiments-2026-05-14` sigue valiendo como **mater
 | ------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TERM-01 | Implementado              | Evidence pack + baseline/fallback documentado en `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md`.                                                                                   |
 | TERM-02 | Implementado              | Quedó la infraestructura de requested/effective renderer y fallback. La UI actual todavía expone selectores temporales en la vista terminal.                                             |
-| TERM-03 | En curso                  | GTK/VTE ya avanzó más allá del spike inicial, pero ahora vive como opt-in; la verificación focalizada y hardening de compatibilidad siguen abiertas.                                     |
+| TERM-03 | **Descartado**            | VTE nativo eliminado (`terminal-engine-v2` Phase 0). Stack xterm-only.                                                                                                                   |
 | TERM-04 | Cerrado / no-go por ahora | **No se sigue con Ghostty/libghostty** salvo que TERM-03 y la auditoría de compatibilidad demuestren un bloqueo real que xterm-webgl + xterm fallback no puedan resolver razonablemente. |
-| TERM-05 | Dirección aceptada        | Se registran explícitamente las opciones degradadas/descartadas y se fija la estrategia canónica: xterm-webgl default, xterm fallback, GTK/VTE opt-in para Linux/Tauri.                  |
+| TERM-05 | Dirección aceptada        | Estrategia canónica vigente: xterm-webgl default, xterm DOM fallback. VTE descartado. Lifecycle v2 en `terminal-engine-v2`.                                                              |
 
 ## Qué queda descartado o degradado
 
@@ -119,7 +119,7 @@ Eso CONTRADICÍA la dirección actual. TERM-08/09 lo corrigen moviendo la prefer
 
 1. **xterm-webgl es el renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore.
 2. **xterm (DOM) queda como fallback único y estable** cuando xterm-webgl no esté disponible.
-3. **GTK/VTE (`vte-experimental`) queda como opt-in** para Linux/Tauri operators que prefieran el runtime nativo.
+3. **GTK/VTE descartado** — renderer xterm-only; ver `terminal-engine-v2` para lifecycle persistente.
 4. **Ghostty/libghostty sale del roadmap activo.**
 5. **No se aceptan terminales externas/overlay como camino principal.**
 6. **No se considera listo TERM-03** hasta auditar OpenCode, Hermes, Swarm y reanudación real.
@@ -175,5 +175,5 @@ Si no se cumplen esas tres condiciones, TERM-04 permanece cerrado.
 - `src/components/TerminalWorkspacesManager.jsx`
 - `src/components/terminal/terminalRendererCapabilities.js`
 - `src/components/terminal/terminalRendererPreferences.js`
-- `src/lib/terminal/nativeVteBridge.js`
-- `src-tauri/src/native_vte.rs`
+- `openspec/changes/terminal-engine-v2/` (motor v2, apply completo)
+- `src/lib/terminal/v2Graveyard.js`

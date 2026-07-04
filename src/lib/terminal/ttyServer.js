@@ -26,6 +26,12 @@ import {
 import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
 import { createScrollbackStore } from './terminalScrollbackStore.js';
 import { createOscCwdParser } from './oscCwdParser.js';
+import {
+  applyOpencodeDurableMetadata,
+  registerOpencodeSession,
+  shouldSkipBackendRestore,
+  unregisterOpencodeSession,
+} from './opencodeSessionRegistry.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -476,6 +482,31 @@ function broadcastOpenCodeSessionDetected(session, sessionId) {
   }
 }
 
+function markOpencodeDurableSession(
+  session,
+  { initialCommand = null, opencodeSessionId = null } = {}
+) {
+  if (!session) return false;
+
+  const enriched = applyOpencodeDurableMetadata(session, { initialCommand, opencodeSessionId });
+  if (!enriched.opencodeSessionId) return false;
+
+  session.opencodeSessionId = enriched.opencodeSessionId;
+  session.sessionType = enriched.sessionType;
+  session.skipBackendRestore = enriched.skipBackendRestore;
+  session.durableRestore = enriched.durableRestore;
+  if (enriched.initialCommand) {
+    session.initialCommand = enriched.initialCommand;
+  }
+
+  registerOpencodeSession(session.id, {
+    opencodeSessionId: enriched.opencodeSessionId,
+    initialCommand: session.initialCommand,
+  });
+
+  return true;
+}
+
 function broadcastHermesSessionDetected(session, sessionId) {
   for (const s of session.sockets) {
     if (s.readyState === s.OPEN) {
@@ -515,7 +546,10 @@ function applyAgentTuiDetection(session, command) {
 
   if (type === 'opencode') {
     if (explicitSessionId && !session.opencodeSessionId) {
-      session.opencodeSessionId = explicitSessionId;
+      markOpencodeDurableSession(session, {
+        initialCommand: command,
+        opencodeSessionId: explicitSessionId,
+      });
       broadcastOpenCodeSessionDetected(session, explicitSessionId);
     }
   } else if (type === 'hermes') {
@@ -931,6 +965,7 @@ export function createSession({
   // knows this is an agent panel, even before the user sends any input.
   if (session.initialCommand) {
     applyAgentTuiDetection(session, session.initialCommand);
+    markOpencodeDurableSession(session, { initialCommand: session.initialCommand });
   }
 
   // PTY-3: Update workspace PTY identity on session activation
@@ -987,6 +1022,7 @@ export function closeSession(id) {
     }
   }
 
+  unregisterOpencodeSession(id);
   sessions.delete(id);
   saveSessions(sessions);
 }
@@ -1051,7 +1087,7 @@ function handleSessionOutput(sessions, session, chunk) {
       if (outputMatch) {
         const detectedId = (outputMatch[1] || outputMatch[2] || outputMatch[3])?.trim();
         if (detectedId && !detectedId.startsWith('-')) {
-          session.opencodeSessionId = detectedId;
+          markOpencodeDurableSession(session, { opencodeSessionId: detectedId });
           broadcastOpenCodeSessionDetected(session, detectedId);
         }
       }
@@ -1381,8 +1417,11 @@ export function restoreSessions() {
       const sessionType = s.sessionType || classifySession(s);
 
       // opencode-durable: React handles via opencode --session; skip backend restore
-      if (sessionType === 'opencode-durable') {
-        ttyLog('RESTORE', `skipping opencode-durable session — React handles it`, { id: s.id });
+      if (shouldSkipBackendRestore({ ...s, sessionType })) {
+        ttyLog('RESTORE', `skipping opencode-durable session — React handles it`, {
+          id: s.id,
+          opencodeSessionId: s.opencodeSessionId || null,
+        });
         continue;
       }
 
@@ -1882,7 +1921,12 @@ export async function ensureTTYServer() {
       // Phase 3 terminal-engine-v2: subscribe may carry a fromOffset to replay
       // the ring-buffer delta (snapshot ptyOffset → current tail) before the
       // socket starts receiving live append frames.
-      if (message.type === 'subscribe' && message.v2 === true) {
+      if (
+        message.type === 'subscribe' &&
+        (message.v2 === true ||
+          typeof message.sessionId === 'string' ||
+          Number.isFinite(message.fromOffset))
+      ) {
         session.isEngineV2 = true;
         if (session._autoKillTimer) {
           clearTimeout(session._autoKillTimer);
@@ -1943,6 +1987,11 @@ export async function ensureTTYServer() {
 
       if (message.type === 'unsubscribe') {
         session.v2Subscribers.delete(socket);
+        // Phase 4 terminal-engine-v2: explicit unsubscribe detaches the client
+        // from the append stream but leaves the PTY running. Record the state so
+        // callers can distinguish a hidden panel from a dead session.
+        session.subscribed = false;
+        session.ptyAlive = true;
         if (session._autoKillTimer) {
           clearTimeout(session._autoKillTimer);
           session._autoKillTimer = null;

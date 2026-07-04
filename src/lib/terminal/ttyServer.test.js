@@ -180,6 +180,31 @@ describe('ttyServer — session create', () => {
     expect(calledMap.has('term-new')).toBe(true);
   });
 
+  it('detects opencode --session in spawn command and marks session opencode-durable', async () => {
+    const { createSession } = await import('./ttyServer.js');
+    const { getOpencodeSession, resetOpencodeSessionRegistryForTests } =
+      await import('./opencodeSessionRegistry.js');
+
+    resetOpencodeSessionRegistryForTests();
+
+    createSession({
+      id: 'term-opencode',
+      cwd: '/home/user',
+      shell: '/bin/zsh',
+      initialCommand: 'opencode --session ses_spawn_1',
+    });
+
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('term-opencode');
+
+    expect(session.opencodeSessionId).toBe('ses_spawn_1');
+    expect(session.sessionType).toBe('opencode-durable');
+    expect(session.skipBackendRestore).toBe(true);
+    expect(session.durableRestore).toBe(true);
+    expect(session.initialCommand).toBe('opencode --session ses_spawn_1');
+    expect(getOpencodeSession('term-opencode')?.opencodeSessionId).toBe('ses_spawn_1');
+  });
+
   it('falls back to a safe cwd when the requested cwd does not exist', async () => {
     const { createSession } = await import('./ttyServer.js');
 

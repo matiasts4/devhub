@@ -2,6 +2,7 @@ const { JSDOM } = require('jsdom');
 const {
   dispatchTerminalLayoutSettled,
   dispatchTerminalSurvivorRecover,
+  filterLegacySurvivorPanelIds,
   getTerminalLayoutSettledGeneration,
   scheduleSurvivorRecoverAfterClose,
   SURVIVOR_RECOVER_DELAYS_MS,
@@ -48,6 +49,16 @@ describe('nativeLayoutSync', () => {
 
     expect(afterFirst).toBe(before + 1);
     expect(afterSecond).toBe(before + 2);
+  });
+
+  test('filterLegacySurvivorPanelIds excludes terminal-engine-v2 panels', () => {
+    const engineV2PanelIds = new Set(['p-v2', 'p-v2b']);
+    expect(filterLegacySurvivorPanelIds(['p-v1', 'p-v2', 'p-v1b'], engineV2PanelIds)).toEqual([
+      'p-v1',
+      'p-v1b',
+    ]);
+    expect(filterLegacySurvivorPanelIds([], engineV2PanelIds)).toEqual([]);
+    expect(filterLegacySurvivorPanelIds(['p-v2'], engineV2PanelIds)).toEqual([]);
   });
 
   test('dispatchTerminalSurvivorRecover dispatches survivor recover event', () => {

@@ -4,6 +4,7 @@ import {
   inferPanelSessionKind,
   resolveEffectiveRestorePolicy,
 } from './restorePolicyResolver';
+import { buildOpencodeResumeCommand } from './opencodeSessionRegistry.js';
 
 export const RESTORE_ACTION = Object.freeze({
   RESTORE_READY: 'restore-ready',
@@ -109,13 +110,21 @@ export function buildRestoreManifestFromWorkspaceState({
       const roleKey =
         panel?.swarmContext?.roleKey || agentRun?.swarmRole || agentRun?.roleKey || null;
 
+      const durableInitialCommand =
+        opencodeSessionId && !extractOpenCodeSessionId(initialCommand)
+          ? buildOpencodeResumeCommand({ opencodeSessionId, initialCommand })
+          : initialCommand || null;
+
       return {
         terminalId: panel.id,
         panelId: panel.id,
         workspaceId: workspace?.id || null,
         cwd: panel?.cwd || null,
-        initialCommand: initialCommand || null,
+        initialCommand: durableInitialCommand,
         sessionKind,
+        sessionType: opencodeSessionId ? 'opencode-durable' : null,
+        skipBackendRestore: Boolean(opencodeSessionId),
+        durableRestore: Boolean(opencodeSessionId),
         roleKey,
         opencodeSessionId,
         restorePolicy: resolveEffectiveRestorePolicy({

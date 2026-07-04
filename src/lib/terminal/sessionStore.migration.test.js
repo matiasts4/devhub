@@ -158,6 +158,36 @@ describe('saveSessions writes version:2 with sessionType', () => {
     expect(parsed.sessions[0].sessionType).toBe('shell-ephemeral');
   });
 
+  it('writes durable restore flags for opencode-durable sessions', async () => {
+    mockFs.existsSync.mockReturnValue(true);
+    const { saveSessions } = await import('./sessionStore.js');
+
+    const sessions = new Map([
+      [
+        'term-1',
+        {
+          id: 'term-1',
+          opencodeSessionId: 'ses_abc',
+          initialCommand: 'opencode --session ses_abc',
+          cwd: '/home/user',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          restored: false,
+        },
+      ],
+    ]);
+
+    saveSessions(sessions);
+
+    const written = mockFs.writeFileSync.mock.calls[0][1];
+    const parsed = JSON.parse(written);
+    expect(parsed.sessions[0].skipBackendRestore).toBe(true);
+    expect(parsed.sessions[0].durableRestore).toBe(true);
+    expect(parsed.sessions[0].initialCommand).toBe('opencode --session ses_abc');
+  });
+
   it('writes opencodeSessionId and initialCommand fields when present', async () => {
     mockFs.existsSync.mockReturnValue(true);
     const { saveSessions } = await import('./sessionStore.js');

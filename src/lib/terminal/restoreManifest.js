@@ -51,6 +51,8 @@ function normalizeTerminalSessionRecord(record = null) {
     rendererEffective: asString(record.rendererEffective),
     opencodeSessionId: asString(record.opencodeSessionId),
     sessionType: asString(record.sessionType),
+    skipBackendRestore: Boolean(record.skipBackendRestore),
+    durableRestore: Boolean(record.durableRestore),
     initialCommand: asString(record.initialCommand),
     runId: asString(record.runId),
     launchId: asString(record.launchId),

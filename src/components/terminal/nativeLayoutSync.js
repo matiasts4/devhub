@@ -65,6 +65,15 @@ export const SWITCH_SURVIVOR_RECOVER_DELAYS_MS = Object.freeze([0, 50, 150, 350,
  * Double-rAF then lifecycle burst + staggered survivor-recover events.
  * Returns cancel fn (use in effects; one-shot close can skip storing it).
  */
+/**
+ * Exclude terminal-engine-v2 panels from legacy survivor-recovery bursts.
+ * v2 panels use persistent PTY + rehydration instead.
+ */
+export function filterLegacySurvivorPanelIds(panelIds = [], engineV2PanelIds = new Set()) {
+  if (!Array.isArray(panelIds) || panelIds.length === 0) return [];
+  return panelIds.filter((panelId) => panelId && !engineV2PanelIds.has(panelId));
+}
+
 export function scheduleSurvivorRecoverAfterClose({
   panelIds = [],
   workspaceId = null,

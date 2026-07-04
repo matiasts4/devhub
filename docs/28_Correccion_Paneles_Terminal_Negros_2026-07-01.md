@@ -340,3 +340,21 @@ Implementar la **Opción B**: mantener terminales vivas y montadas mientras el w
 - **Pendientes de aprobación del usuario para push.**
 - Los tests automatizados muestran fallos preexistentes (mismos con y sin estos cambios); no se introdujeron nuevos fallos.
 - El build y la prueba en Tauri/installed app deben hacerse manualmente.
+
+---
+
+## 12. Superseded by `terminal-engine-v2` (2026-07-04)
+
+La Opción B (mantener GPU montado + grace timer de 1 h) fue el parche interino. El SDD **`openspec/changes/terminal-engine-v2`** reemplaza la causa raíz del panel negro en paneles v2:
+
+| Antes (v1 / Opción B)                                         | Ahora (v2, flag `terminalEngineV2`)                      |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| Survivor recovery bursts (`devhub:terminal-survivor-recover`) | PTY persistente + rehidratación desde sidecar            |
+| Socket close → grace timer 1 h                                | `unsubscribe` explícito; PTY sigue vivo sin timer        |
+| Dispose xterm al ocultar workspace                            | Graveyard LRU (N=12); superficie xterm stashed, PTY vivo |
+| WebGL context loss → re-attach GPU                            | Degradación permanente a DOM (sin re-attach)             |
+| `terminalPanelBridge` buffer en unmount                       | Ring buffer + `SerializeAddon` snapshot + delta          |
+
+**Coexistencia:** paneles legacy (`terminalEngineV2: false`) conservan survivor recovery y grace timer. La migración es panel a panel hasta retirar v1.
+
+**Rama de implementación:** `feature/terminal-engine-v2`. Ver `openspec/changes/terminal-engine-v2/tasks.md` para el checklist de fases 0–8.
