@@ -230,6 +230,7 @@ import {
 } from '@/lib/terminal/workspaceWindowRender';
 import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
+  dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
   dispatchTerminalWindowVisible,
 } from '@/components/terminal/nativeLayoutSync';
@@ -1070,7 +1071,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? `devhub_restore_manifest:${projectId}`
     : 'devhub_restore_manifest';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
-  const [heavySurfacesReady, setHeavySurfacesReady] = useState(false);
+  const deferHeavySurfacesUntilPaint =
+    typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
+  const [heavySurfacesReady, setHeavySurfacesReady] = useState(!deferHeavySurfacesUntilPaint);
   const [reopenActionError, setReopenActionError] = useState(null);
   const pendingReopenPanelsRef = useRef(new Map());
   const swarmLaunchScheduledTimersRef = useRef(new Map());
@@ -1370,7 +1373,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, []); // Run once on mount
 
   useEffect(() => {
-    if (!isVisible || heavySurfacesReady) return undefined;
+    if (!deferHeavySurfacesUntilPaint || !isVisible || heavySurfacesReady) return undefined;
 
     let cancelled = false;
     let raf2 = 0;
@@ -1385,7 +1388,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       cancelAnimationFrame(raf1);
       if (raf2) cancelAnimationFrame(raf2);
     };
-  }, [heavySurfacesReady, isVisible]);
+  }, [deferHeavySurfacesUntilPaint, heavySurfacesReady, isVisible]);
 
   useEffect(() => {
     if (!isVisible || typeof document === 'undefined') return undefined;
@@ -2363,10 +2366,101 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return results;
   }, [inferProgramFromPanelCommand]);
 
-  const notifyNativeLayoutSettled = useCallback((reason) => {
-    if (typeof window === 'undefined') return;
-    dispatchTerminalLayoutSettled({ reason });
-  }, []);
+  const buildNativeWorkspaceSyncDetail = useCallback(
+    (reason = 'workspace-switch', { columnsOverride = null } = {}) => {
+      const activePanelIdsForNativeSurface = [];
+      const hiddenPanelIdsForNativeSurface = [];
+
+      workspaces.forEach((workspace) => {
+        const focusedPanelId = focusedPanelByWorkspace[workspace.id];
+        const windows = workspaceWindows[workspace.id] || [];
+
+        if (workspace.id === activeWsId) {
+          const activeWindowId = resolveActiveWorkspaceWindowId(
+            workspace.id,
+            workspaceWindows,
+            activeWindowIds
+          );
+          const windowsToSync =
+            windows.length > 0
+              ? windows
+              : [
+                  {
+                    id: activeWindowId || `${workspace.id}-default`,
+                    columns:
+                      (columnsOverride && columnsOverride[workspace.id]) || workspace.columns || [],
+                  },
+                ];
+
+          windowsToSync.forEach((window) => {
+            const isActiveWindow = window.id === activeWindowId;
+            const columns =
+              isActiveWindow && columnsOverride?.[workspace.id]
+                ? columnsOverride[workspace.id]
+                : window.columns || [];
+            const panelIds = getAllPanelIds(columns);
+
+            if (!isActiveWindow) {
+              hiddenPanelIdsForNativeSurface.push(...panelIds);
+              return;
+            }
+
+            if (focusedPanelId) {
+              activePanelIdsForNativeSurface.push(focusedPanelId);
+              panelIds.forEach((id) => {
+                if (id !== focusedPanelId) hiddenPanelIdsForNativeSurface.push(id);
+              });
+              return;
+            }
+
+            activePanelIdsForNativeSurface.push(...panelIds);
+          });
+        } else if (windows.length > 0) {
+          windows.forEach((window) => {
+            hiddenPanelIdsForNativeSurface.push(...getAllPanelIds(window.columns || []));
+          });
+        } else {
+          hiddenPanelIdsForNativeSurface.push(...getAllPanelIds(workspace.columns || []));
+        }
+      });
+
+      return {
+        activeWorkspaceId: activeWsId,
+        workspaceId: activeWsId,
+        activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
+        hiddenPanelIds: isVisible
+          ? hiddenPanelIdsForNativeSurface
+          : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
+        reason: isVisible ? reason : 'terminal-manager-hidden',
+      };
+    },
+    [
+      activeWindowIds,
+      activeWsId,
+      focusedPanelByWorkspace,
+      getAllPanelIds,
+      isVisible,
+      workspaceWindows,
+      workspaces,
+    ]
+  );
+
+  const notifyNativeWorkspaceSurfaceSync = useCallback(
+    (reason, options = {}) => {
+      if (typeof window === 'undefined') return;
+      dispatchNativeVteWorkspaceSync(buildNativeWorkspaceSyncDetail(reason, options));
+    },
+    [buildNativeWorkspaceSyncDetail]
+  );
+
+  const notifyNativeLayoutSettled = useCallback(
+    (reason, options = {}) => {
+      if (typeof window === 'undefined') return;
+      dispatchTerminalLayoutSettled({ reason });
+      dispatchNativeVteWorkspaceSync(buildNativeWorkspaceSyncDetail(reason, options));
+    },
+    [buildNativeWorkspaceSyncDetail]
+  );
 
   const markPanelsClosing = useCallback((panelIds = [], clearAfterMs = 2000) => {
     const ids = Array.isArray(panelIds) ? panelIds.filter(Boolean) : [];
@@ -2441,10 +2535,19 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           })
         : undefined;
 
+    notifyNativeWorkspaceSurfaceSync('workspace-switch');
+
     return () => {
       cleanupSplitSync?.();
     };
-  }, [activeWindowIds, activeWsId, isClientLoaded, resolveActiveWindowPanelIds, workspaceWindows]);
+  }, [
+    activeWindowIds,
+    activeWsId,
+    isClientLoaded,
+    notifyNativeWorkspaceSurfaceSync,
+    resolveActiveWindowPanelIds,
+    workspaceWindows,
+  ]);
 
   const prevActiveWorkspaceWindowIdRef = useRef(undefined);
   const isFirstActiveWindowIdsRunRef = useRef(true);
@@ -2462,6 +2565,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // currently active workspace's own window selection changing warrants a
     // window-switch recovery here.
     if (!activeWorkspaceWindowIdChanged) return undefined;
+
+    notifyNativeWorkspaceSurfaceSync('workspace-window-switch');
 
     const wsId = activeWsId;
     const panelIds = wsId ? resolveActiveWindowPanelIds(wsId) : [];
@@ -2506,6 +2611,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     activeWindowIds,
     activeWsId,
     isClientLoaded,
+    notifyNativeWorkspaceSurfaceSync,
     resolveActiveWindowPanelIds,
     syncPanelLifecycleLayout,
     workspaceWindows,
@@ -4143,10 +4249,12 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     workspaceTerminalSetupOpen,
     managerRootRef,
     activeWsIdRef,
+    workspacesRef,
     focusedPanelByWorkspaceRef,
     clearPanelFocusMode,
     applyTerminalNavigationAction,
     applyTerminalWorkspaceAction,
+    activateWorkspacePanel,
     handleSplit,
   });
 

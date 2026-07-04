@@ -140,7 +140,8 @@ function WorkspaceTerminalSurface({
                     <PanelGroup
                       direction="horizontal"
                       className="h-full w-full"
-                      data-testid={`workspace-columns-${ws.id}-${window.id}`}
+                      data-testid={`workspace-columns-${ws.id}`}
+                      data-workspace-window-id={window.id}
                       data-layout-direction="horizontal"
                       onLayout={isActiveWindow ? handlePanelGroupLayout : undefined}
                     >
@@ -174,11 +175,6 @@ function WorkspaceTerminalSurface({
                                             focusedPanelId,
                                             panelId: panel.id,
                                           })}
-                                          data-testid={
-                                            focusedPanelId === panel.id
-                                              ? `workspace-focused-panel-${panel.id}`
-                                              : `panel-slot-${panel.id}`
-                                          }
                                         >
                                           {renderWorkspacePanelSlot(panel, {
                                             isVisibleInLayout:
@@ -200,12 +196,10 @@ function WorkspaceTerminalSurface({
                                       </Panel>
                                       {!focusedPanelId && panelIndex < column.panels.length - 1 ? (
                                         <PanelResizeHandle
-                                          className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                          className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[#2a344a] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
                                           data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
                                           onDragging={handleInternalSplitDragging}
-                                        >
-                                          <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                        </PanelResizeHandle>
+                                        />
                                       ) : null}
                                     </React.Fragment>
                                   ))}
@@ -220,11 +214,6 @@ function WorkspaceTerminalSurface({
                                       focusedPanelId,
                                       panelId: column.panels[0].id,
                                     })}
-                                    data-testid={
-                                      focusedPanelId === column.panels[0].id
-                                        ? `workspace-focused-panel-${column.panels[0].id}`
-                                        : `panel-slot-${column.panels[0].id}`
-                                    }
                                   >
                                     {renderWorkspacePanelSlot(column.panels[0], {
                                       isVisibleInLayout:
@@ -248,12 +237,10 @@ function WorkspaceTerminalSurface({
                             </Panel>
                             {!focusedPanelId && columnIndex < windowColumns.length - 1 ? (
                               <PanelResizeHandle
-                                className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
+                                className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[#2a344a] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
                                 data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
                                 onDragging={handleInternalSplitDragging}
-                              >
-                                <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                              </PanelResizeHandle>
+                              />
                             ) : null}
                           </React.Fragment>
                         );

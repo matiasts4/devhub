@@ -271,8 +271,8 @@ export default function useSwarmLaunchController({
         swarmLaunchFlushTimerRef,
         materializedSwarmLaunchIdsRef: resolvedMaterializedSwarmLaunchIdsRef,
         createWorkspaceForSwarmLaunchRequests,
-        clearTimeoutFn: window.clearTimeout.bind(window),
-        setTimeoutFn: window.setTimeout.bind(window),
+        clearTimeoutFn: (...args) => window.clearTimeout(...args),
+        setTimeoutFn: (...args) => window.setTimeout(...args),
       }),
     [
       createWorkspaceForSwarmLaunchRequests,

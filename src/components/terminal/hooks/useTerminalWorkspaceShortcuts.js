@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import {
+  isTerminalWorkspaceUiAction,
   resolveTerminalNavigationAction,
   resolveTerminalShortcutAction,
   resolveTerminalWorkspaceAction,
@@ -20,10 +21,12 @@ export default function useTerminalWorkspaceShortcuts({
   workspaceTerminalSetupOpen,
   managerRootRef,
   activeWsIdRef,
+  workspacesRef,
   focusedPanelByWorkspaceRef,
   clearPanelFocusMode,
   applyTerminalNavigationAction,
   applyTerminalWorkspaceAction,
+  activateWorkspacePanel,
   handleSplit,
 }) {
   const workspaceTerminalSetupOpenRef = useRef(workspaceTerminalSetupOpen);
@@ -127,5 +130,47 @@ export default function useTerminalWorkspaceShortcuts({
     isVisible,
     managerRootRef,
     activeWsIdRef,
+  ]);
+
+  useEffect(() => {
+    const handleNativeVteRuntimeEvent = (event) => {
+      const detail = event.detail || {};
+
+      if (detail.type === 'navigation-shortcut') {
+        const action = typeof detail.action === 'string' ? detail.action.trim() : '';
+        if (!action) return;
+        if (isTerminalWorkspaceUiAction(action)) {
+          applyTerminalWorkspaceAction(action);
+        } else {
+          applyTerminalNavigationAction(action);
+        }
+        return;
+      }
+
+      if (detail.type !== 'panel-activated') return;
+
+      const panelId = typeof detail.panelId === 'string' ? detail.panelId.trim() : '';
+      if (!panelId) return;
+
+      const workspaceId =
+        workspacesRef.current.find((workspace) =>
+          workspace?.columns?.some((column) =>
+            (column.panels || []).some((panel) => panel.id === panelId)
+          )
+        )?.id || null;
+
+      if (!workspaceId) return;
+      activateWorkspacePanel(workspaceId, panelId);
+    };
+
+    window.addEventListener('devhub:terminal-native-vte-event', handleNativeVteRuntimeEvent);
+    return () => {
+      window.removeEventListener('devhub:terminal-native-vte-event', handleNativeVteRuntimeEvent);
+    };
+  }, [
+    activateWorkspacePanel,
+    applyTerminalNavigationAction,
+    applyTerminalWorkspaceAction,
+    workspacesRef,
   ]);
 }
