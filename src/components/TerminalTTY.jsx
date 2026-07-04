@@ -88,6 +88,7 @@ import {
   hasHiddenNativeVteLease,
   markNativeVteLeaseHidden,
 } from '@/lib/terminal/nativeVteLayoutLifecycle';
+import { NATIVE_VTE_STUBS } from '@/lib/terminal/nativeVteNoopStubs';
 import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
@@ -262,19 +263,6 @@ if (typeof window !== 'undefined') {
   }
 }
 const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
-
-// Legacy native VTE helpers removed in Phase 0; stable no-op stubs for teardown paths.
-const NATIVE_VTE_STUBS = Object.freeze({
-  setNativeVtePanelVisibility: async () => {},
-  openNativeVtePanel: async () => ({ opened: false, reason: 'vte-removed' }),
-  closeNativeVtePanel: async () => {},
-  resizeNativeVtePanel: async () => {},
-  focusNativeVtePanel: async () => {},
-  pasteNativeVtePanel: async () => ({ supported: false, reason: 'vte-removed' }),
-  subscribeNativeVteEvents: () => () => {},
-  probeNativeVte: async () => ({ ready: false, reason: 'vte-removed' }),
-  shouldOpenNativeVtePanel: () => false,
-});
 
 // Master switch for the legacy native VTE (GTK) backend.
 // We keep the entire implementation (nativeVteBridge, probes, lease logic, etc.)
