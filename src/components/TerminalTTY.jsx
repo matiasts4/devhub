@@ -17,6 +17,7 @@ import useTerminalWheelRouter from './terminal/hooks/useTerminalWheelRouter';
 import useTerminalV2Session from './terminal/hooks/useTerminalV2Session';
 import useTerminalRendererController from './terminal/hooks/useTerminalRendererController';
 import useTerminalViewportSync from './terminal/hooks/useTerminalViewportSync';
+import useTerminalEngine from './terminal/hooks/useTerminalEngine';
 import {
   readClipboardImage,
   readClipboardText,
@@ -727,267 +728,9 @@ export default function TerminalTTY({
     nativeVteProbeRetryDelayRef.current = null;
   }, []);
 
-  const disposeXtermRuntime = useCallback(
-    ({ stashForV2 = false } = {}) => {
-      // 0. Mark disposing BEFORE touching anything. Any callback that re-enters
-      //    during teardown (or a stray rAF/observer that fires while the renderer
-      //    slot is half-cleared) sees this and bails. Cleared in the finally so a
-      //    later boot is never wrongly blocked. A.4.
-      if (isDisposingRef.current) return;
-      isDisposingRef.current = true;
-      connectEpochRef.current += 1;
-      if (panelActivityTrackerRef.current) {
-        panelActivityTrackerRef.current.dispose();
-        panelActivityTrackerRef.current = null;
-      }
-      clearPanelActivity(id);
-      if (connectAbortRef.current) {
-        connectAbortRef.current.abort();
-        connectAbortRef.current = null;
-      }
-      // A.0 lifecycle telemetry: capture renderer + dims BEFORE refs are nulled.
-      // This is the dispose-count-per-toggle signal A.1 must drive to zero.
-      cliLog(
-        `LIFECYCLE:${id}`,
-        'dispose',
-        buildTerminalLifecycleEvent({
-          event: 'dispose',
-          panelId: id,
-          renderer: requestedRendererModeRef.current,
-          isVisible: isVisibleInLayoutRef.current,
-          cols: termRef.current?.cols,
-          rows: termRef.current?.rows,
-        })
-      );
-      try {
-        // 1. Stop observing the container FIRST so no new resize callbacks queue.
-        resizeObserverRef.current?.disconnect();
-        resizeObserverRef.current = null;
-
-        // 2. Cancel any RAF / setTimeout that might call fit() or sendResize()
-        //    after the runtime is gone. Without this, a queued RAF can fire
-        //    fitAddon.fit() on a terminal that has already started disposing
-        //    and trigger the WebGL addon's stale-renderer crash on Linux.
-        clearTimers();
-        clearConnectDeferTimer();
-        clearOutputQueue();
-
-        // 3. Silence and close the websocket. Closing it first means the
-        //    onmessage/onclose can't push more output into a disposed terminal.
-        if (wsRef.current) {
-          const stale = wsRef.current;
-          // Phase 3 terminal-engine-v2: serialize and push a final snapshot before
-          // unsubscribing so the next show has the most recent state available.
-          if (
-            isEngineV2Ref.current &&
-            stale.readyState === WebSocket.OPEN &&
-            serializeAddonRef.current &&
-            termRef.current
-          ) {
-            try {
-              const serialized = serializeAddonRef.current.serialize();
-              stale.send(
-                JSON.stringify({
-                  type: 'save-snapshot',
-                  serialized,
-                  ptyOffset: currentPtyOffsetRef.current,
-                  termsize: { cols: termRef.current.cols, rows: termRef.current.rows },
-                })
-              );
-            } catch {
-              // ignore snapshot send errors during teardown
-            }
-          }
-          // Phase 1 terminal-engine-v2: explicitly unsubscribe before closing so
-          // the sidecar keeps the PTY alive for hidden panels.
-          if (isEngineV2Ref.current && stale.readyState === WebSocket.OPEN) {
-            try {
-              stale.send(JSON.stringify({ type: 'unsubscribe' }));
-            } catch {
-              // ignore unsubscribe send errors during teardown
-            }
-          }
-          stale.onopen = null;
-          stale.onmessage = null;
-          stale.onerror = null;
-          stale.onclose = null;
-          try {
-            stale.close();
-          } catch {
-            // ignore
-          }
-          wsRef.current = null;
-        }
-
-        if (terminalBlurCleanupRef.current) {
-          try {
-            terminalBlurCleanupRef.current();
-          } catch {
-            // ignore
-          }
-          terminalBlurCleanupRef.current = null;
-        }
-
-        // Phase 4 terminal-engine-v2: instead of disposing the xterm surface on
-        // hide/close, stash it in the graveyard. The PTY stays alive in the sidecar
-        // and the surface can be restored on re-mount, avoiding a full rebuild.
-        const shouldStashForV2 = stashForV2 && isEngineV2Ref.current && termRef.current;
-        if (shouldStashForV2) {
-          const surface = {
-            termInstance: termRef.current,
-            webglAddon: webglAddonRef.current,
-            canvasAddon: canvasAddonRef.current,
-            serializeAddon: serializeAddonRef.current,
-            fitAddon: fitRef.current,
-            searchAddon: searchRef.current,
-            container: containerRef.current,
-            lastPtySize: { ...lastPtySizeRef.current },
-          };
-
-          // Null refs BEFORE stashing so concurrent callbacks see a detached runtime.
-          // The graveyard holds the live objects; we just drop our local handles.
-          webglAddonRef.current = null;
-          canvasAddonRef.current = null;
-          serializeAddonRef.current = null;
-          termRef.current = null;
-          fitRef.current = null;
-          searchRef.current = null;
-
-          if (outputPendingRef.current) {
-            outputPendingRef.current.value = '';
-          }
-          if (hiddenOutputBufferRef.current) {
-            hiddenOutputBufferRef.current.value = '';
-          }
-          hiddenOutputCatchupPendingRef.current = false;
-          connectPendingUntilFitRef.current = false;
-          if (connectDeferTimerRef.current) {
-            clearTimeout(connectDeferTimerRef.current);
-            connectDeferTimerRef.current = null;
-          }
-
-          try {
-            graveyardStashSurface(id, surface);
-          } catch (err) {
-            cliLog(`CLIENT:${id}`, 'graveyard stash failed', { error: err?.message });
-            // Fall back to disposal if stash fails.
-            try {
-              surface.webglAddon?.dispose?.();
-            } catch {
-              // ignore disposal errors during stash fallback
-            }
-            try {
-              surface.canvasAddon?.dispose?.();
-            } catch {
-              // ignore disposal errors during stash fallback
-            }
-            try {
-              surface.termInstance?.dispose?.();
-            } catch {
-              // ignore disposal errors during stash fallback
-            }
-          }
-          isDisposingRef.current = false;
-          return;
-        }
-
-        // 4. Snapshot refs and null them out IMMEDIATELY. Any concurrent code
-        //    (queued resize, focus handler, paste handler) that re-checks the
-        //    refs now sees null and bails out before we start tearing things
-        //    down. This is the key ordering change for the Linux/WebKitGTK race.
-        const webglAddon = webglAddonRef.current;
-        const canvasAddon = canvasAddonRef.current;
-        const term = termRef.current;
-        webglAddonRef.current = null;
-        canvasAddonRef.current = null;
-        const bufferedOutput = hiddenOutputBufferRef.current?.value || '';
-        const pendingOutput = outputPendingRef.current?.value || '';
-        if (
-          !isEngineV2Ref.current &&
-          (bufferedOutput || pendingOutput || hiddenOutputCatchupPendingRef.current)
-        ) {
-          stashTerminalPanelBridge(id, {
-            buffer: bufferedOutput,
-            catchupPending: hiddenOutputCatchupPendingRef.current || Boolean(bufferedOutput),
-            outputPending: pendingOutput,
-            lastPtySize: { ...lastPtySizeRef.current },
-            host: surfaceHostRef.current,
-            reason: 'xterm-dispose',
-          });
-        }
-        if (outputPendingRef.current) {
-          outputPendingRef.current.value = '';
-        }
-        if (hiddenOutputBufferRef.current) {
-          hiddenOutputBufferRef.current.value = '';
-        }
-        hiddenOutputCatchupPendingRef.current = false;
-        connectPendingUntilFitRef.current = false;
-        if (connectDeferTimerRef.current) {
-          clearTimeout(connectDeferTimerRef.current);
-          connectDeferTimerRef.current = null;
-        }
-        termRef.current = null;
-        fitRef.current = null;
-        searchRef.current = null;
-
-        if (containerRef.current) {
-          try {
-            containerRef.current.replaceChildren();
-          } catch {
-            // ignore — container may already be detached
-          }
-        }
-
-        // 5. Neutralize the WebGL addon's internal handleResize before any
-        //    dispose runs. See neutralizeWebglAddonForDisposal — this is the
-        //    fix for the `_renderer.value.handleResize` undefined crash that
-        //    xterm-addon-webgl@0.16.0 exposes during teardown.
-        neutralizeWebglAddonForDisposal(webglAddon);
-
-        // 6. Dispose the terminal FIRST. xterm's AddonManager will walk the
-        //    registered addons (including WebglAddon) in a safe internal order
-        //    and detach the resize listener before clearing the renderer slot.
-        if (term) {
-          try {
-            term.dispose();
-          } catch (err) {
-            if (!isStaleXtermRendererError(err)) {
-              console.warn('Error disposing Terminal instance:', err);
-            }
-          }
-        }
-
-        // 7. Defensive second dispose for the addon ref. xterm cascades the
-        //    dispose in step 6, but if loadAddon never completed (WebGL context
-        //    creation threw) the addon won't be in the AddonManager's list, so
-        //    we still need to release its handlers explicitly. dispose() is
-        //    idempotent on the official addon.
-        if (webglAddon) {
-          try {
-            webglAddon.dispose?.();
-          } catch (err) {
-            if (!isStaleXtermRendererError(err)) {
-              console.warn('Error disposing WebglAddon:', err);
-            }
-          }
-        }
-
-        if (canvasAddon) {
-          try {
-            canvasAddon.dispose?.();
-          } catch (err) {
-            if (!isStaleXtermRendererError(err)) {
-              console.warn('Error disposing CanvasAddon:', err);
-            }
-          }
-        }
-      } finally {
-        isDisposingRef.current = false;
-      }
-    },
-    [clearTimers, id]
-  );
+  const engineCtxRef = useRef(null);
+  const disposeXtermRuntimeRef = useRef(() => {});
+  const disposeXtermRuntime = useCallback((opts) => disposeXtermRuntimeRef.current?.(opts), []);
 
   const shouldRetryNativeVteProbe =
     ENABLE_NATIVE_VTE &&
@@ -3676,557 +3419,93 @@ export default function TerminalTTY({
     connect();
   }, [autoFocus, connect, initialCommand, sendResize]);
 
-  const prevInitialCommandRef = useRef(initialCommand);
-  useEffect(() => {
-    const previous = prevInitialCommandRef.current;
-    prevInitialCommandRef.current = initialCommand;
-
-    if (previous === initialCommand) return;
-    if (!/#recovery-\d+\s*$/i.test(initialCommand)) return;
-
-    logTerminalSession('initial-command-recovery-reconnect', {
-      panelId: id,
-      previous,
-      initialCommand,
-    });
-    hasSentInitialCommand.current = false;
-    clearPanelInitialCommandLifecycle(id);
-    reconnect();
-  }, [id, initialCommand, reconnect]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    if (!shouldBootXterm) {
-      // Phase 4 terminal-engine-v2: stash the surface instead of disposing when
-      // the renderer is told to stand down (e.g. surface host change).
-      disposeXtermRuntime({ stashForV2: isEngineV2Ref.current });
-      setInitError(null);
-      setIsInitializing(runtimePhase === 'native-probing' || runtimePhase === 'native-opening');
-
-      return () => {
-        mounted = false;
-        clearTimers();
-        resizeObserverRef.current?.disconnect();
-        nativeResizeObserverRef.current?.disconnect();
-        nativeResizeObserverRef.current = null;
-        if (nativeResizeRafRef.current) {
-          cancelAnimationFrame(nativeResizeRafRef.current);
-          nativeResizeRafRef.current = null;
-        }
-        disposeXtermRuntime({ stashForV2: isEngineV2Ref.current });
-      };
-    }
-
-    async function initializeTerminal() {
-      if (isInitializingRef.current || termRef.current) {
-        cliLog(`CLIENT:${id}`, 'initializeTerminal() skipped — runtime exists or init in flight');
-        return;
-      }
-      isInitializingRef.current = true;
-      cliLog(`CLIENT:${id}`, 'initializeTerminal() start', {
-        cwd,
-        autoFocus,
-        requestedRendererMode: requestedRendererModeRef.current,
-        effectiveRendererMode: rendererViewModel.effectiveMode,
-      });
-      try {
-        const importList = [
-          import('xterm'),
-          import('xterm-addon-fit'),
-          import('xterm-addon-search'),
-        ];
-        // Attempt WebGL addon on explicit user choice (requested) even if the snapshot effective
-        // was still 'xterm' because the async probe had not arrived yet. The probe only informs
-        // the switcher labels and initial resolver; the actual load decides.
-        const wantsWebgl = shouldAttachWebglRenderer({
-          operationalRendererMode: operationalRendererModeRef.current,
-        });
-        const wantsCanvas = shouldAttachCanvasRenderer({
-          operationalRendererMode: operationalRendererModeRef.current,
-        });
-        const mountCanvasOnInit = shouldMountCanvasAddon({
-          operationalRendererMode: operationalRendererModeRef.current,
-          isActivePanel: isActivePanelRef.current,
-          isVisibleInLayout: isVisibleInLayoutRef.current,
-          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
-        });
-        if (wantsWebgl) {
-          importList.push(
-            import('xterm-addon-webgl').catch((err) => {
-              console.warn(`[TTY:${id}] Failed to import xterm-addon-webgl:`, err?.message || err);
-              return { failed: true };
-            })
-          );
-        } else if (wantsCanvas && mountCanvasOnInit) {
-          importList.push(
-            import('xterm-addon-canvas').catch((err) => {
-              console.warn(`[TTY:${id}] Failed to import xterm-addon-canvas:`, err?.message || err);
-              return { failed: true };
-            })
-          );
-        }
-        const importResults = await Promise.all(importList);
-
-        const [{ Terminal }, { FitAddon }, { SearchAddon }] = importResults;
-        const optionalAddonImport = importResults[3];
-        const WebglAddonCtor =
-          wantsWebgl && optionalAddonImport && !optionalAddonImport.failed
-            ? optionalAddonImport.WebglAddon
-            : null;
-        const CanvasAddonCtor =
-          mountCanvasOnInit && optionalAddonImport && !optionalAddonImport.failed
-            ? optionalAddonImport.CanvasAddon
-            : null;
-
-        // Phase 3 terminal-engine-v2: load the SerializeAddon for periodic full
-        // terminal snapshots. It is only needed on the v2 path.
-        let SerializeAddonCtor = null;
-        if (isEngineV2Ref.current) {
-          try {
-            const serializeModule = await import('xterm-addon-serialize');
-            SerializeAddonCtor = serializeModule.SerializeAddon ?? null;
-          } catch (err) {
-            console.warn(
-              `[TTY:${id}] Failed to import xterm-addon-serialize:`,
-              err?.message || err
-            );
-          }
-        }
-
-        if (!mounted || !containerRef.current) {
-          cliLog(
-            `CLIENT:${id}`,
-            'initializeTerminal() aborted — unmounted or no container (after import)'
-          );
-          return;
-        }
-
-        if (termRef.current) {
-          cliLog(`CLIENT:${id}`, 'initializeTerminal() aborted — runtime won race after import');
-          return;
-        }
-
-        // Phase 4 terminal-engine-v2: restore a stashed surface before building a
-        // new xterm instance. The graveyard keeps the surface mounted-but-hidden;
-        // we move its container back into the visible tree and reconnect.
-        if (isEngineV2Ref.current && graveyardHasSurface(id)) {
-          const stashed = graveyardRestoreSurface(id);
-          if (stashed?.termInstance) {
-            cliLog(`CLIENT:${id}`, 'restoring surface from graveyard');
-
-            termRef.current = stashed.termInstance;
-            fitRef.current = stashed.fitAddon || null;
-            searchRef.current = stashed.searchAddon || null;
-            webglAddonRef.current = stashed.webglAddon || null;
-            canvasAddonRef.current = stashed.canvasAddon || null;
-            serializeAddonRef.current = stashed.serializeAddon || null;
-
-            if (containerRef.current) {
-              containerRef.current.replaceChildren();
-              if (stashed.termInstance.element) {
-                containerRef.current.appendChild(stashed.termInstance.element);
-              } else if (stashed.container) {
-                containerRef.current.appendChild(stashed.container);
-              }
-            }
-
-            if (terminalBlurCleanupRef.current) {
-              terminalBlurCleanupRef.current();
-              terminalBlurCleanupRef.current = null;
-            }
-            const blurTarget = stashed.termInstance.element || containerRef.current;
-            const handleTerminalBlur = () =>
-              prepareActiveTuiTerminalFocus(stashed.termInstance, {
-                tuiSessionActive: tuiSessionActiveRef.current,
-              });
-            blurTarget?.addEventListener('focusout', handleTerminalBlur);
-            terminalBlurCleanupRef.current = () => {
-              blurTarget?.removeEventListener('focusout', handleTerminalBlur);
-            };
-
-            resizeObserverRef.current = new ResizeObserver(() => {
-              if (isDisposingRef.current) return;
-              if (!isVisibleInLayoutRef.current) {
-                needsViewportSyncOnShowRef.current = true;
-                return;
-              }
-              const rect = containerRef.current?.getBoundingClientRect();
-              if (!rect || rect.width <= 0 || rect.height <= 0) return;
-              logViewportDiagnostic('resize-observer');
-              if (
-                shouldRefitVisibleInactiveSplitPanel({
-                  isActivePanel: isActivePanelRef.current,
-                  isVisibleInLayout: isVisibleInLayoutRef.current,
-                })
-              ) {
-                scheduleInactiveViewportRepaint();
-                return;
-              }
-              const scheduleResize = () => sendResizeRef.current?.();
-              if (tuiSessionActiveRef.current) {
-                if (tuiResizeDebounceTimerRef.current) {
-                  clearTimeout(tuiResizeDebounceTimerRef.current);
-                }
-                tuiResizeDebounceTimerRef.current = setTimeout(() => {
-                  tuiResizeDebounceTimerRef.current = null;
-                  scheduleResize();
-                }, 160);
-                return;
-              }
-              scheduleResize();
-            });
-            resizeObserverRef.current.observe(containerRef.current);
-
-            cliLog(
-              `LIFECYCLE:${id}`,
-              'restore',
-              buildTerminalLifecycleEvent({
-                event: 'restore',
-                panelId: id,
-                renderer: requestedRendererModeRef.current,
-                isVisible: isVisibleInLayoutRef.current,
-                cols: stashed.termInstance?.cols,
-                rows: stashed.termInstance?.rows,
-              })
-            );
-
-            setInitError(null);
-            setIsInitializing(false);
-            isInitializingRef.current = false;
-
-            // Reconnect to the sidecar and resume the subscription from the current offset.
-            connectRef.current?.();
-            return;
-          }
-        }
-
-        const theme = getTerminalTheme();
-        cliLog(`CLIENT:${id}`, 'computed theme colors', theme);
-
-        // Font configuration comes from CSS variables via the central TerminalThemeSync
-        // (opencode-vars.css / globals.css). This keeps the defaults (Kali thick style)
-        // in a general CSS layer instead of inside the terminal component.
-        const fontOpts = getTerminalFontOptions();
-
-        const terminal = new Terminal({
-          cursorBlink: true,
-          cursorStyle: 'bar',
-          cursorWidth: 2,
-          fontFamily: fontOpts.fontFamily || resolveTerminalFontFamily(),
-          fontSize: fontSize,
-          fontWeight: fontOpts.fontWeight,
-          fontWeightBold: fontOpts.fontWeightBold,
-          letterSpacing: fontOpts.letterSpacing,
-          lineHeight: fontOpts.lineHeight,
-          allowTransparency: false,
-          // T2.3 — per-pane scrollback buffer (R-BUF-3). The default
-          // xterm scrollback is 1000 lines, which is too shallow for
-          // director + 4 workers during a swarm launch: the user loses
-          // the prompt injection context as soon as the TUI scrolls.
-          // 5000 lines per pane × 5 panes = 25K total per launch, well
-          // under the xterm memory budget. Per-pane (not global) so
-          // single-pane users don't pay the extra memory.
-          scrollback: 5000,
-          theme: theme,
-        });
-
-        const fitAddon = new FitAddon();
-        const searchAddon = new SearchAddon();
-        terminal.loadAddon(fitAddon);
-        terminal.loadAddon(searchAddon);
-
-        if (SerializeAddonCtor) {
-          try {
-            const serializeAddon = new SerializeAddonCtor();
-            serializeAddonRef.current = serializeAddon;
-            terminal.loadAddon(serializeAddon);
-            cliLog(`CLIENT:${id}`, 'serialize-addon-attached');
-          } catch (err) {
-            console.warn(
-              `[TTY:${id}] xterm-addon-serialize failed to register`,
-              err?.message || err
-            );
-            serializeAddonRef.current = null;
-          }
-        }
-
-        containerRef.current.replaceChildren();
-        terminal.open(containerRef.current);
-        prepareActiveTuiTerminalFocus(terminal, {
-          tuiSessionActive: tuiSessionActiveRef.current,
-        });
-        if (terminalBlurCleanupRef.current) {
-          terminalBlurCleanupRef.current();
-          terminalBlurCleanupRef.current = null;
-        }
-        const blurTarget = terminal.element || containerRef.current;
-        const handleTerminalBlur = () =>
-          prepareActiveTuiTerminalFocus(terminal, {
-            tuiSessionActive: tuiSessionActiveRef.current,
-          });
-        blurTarget?.addEventListener('focusout', handleTerminalBlur);
-        terminalBlurCleanupRef.current = () => {
-          blurTarget?.removeEventListener('focusout', handleTerminalBlur);
-        };
-
-        attachTerminalRendererAddons({
-          terminal,
-          wantsWebgl,
-          wantsCanvas,
-          mountCanvasOnInit,
-          WebglAddonCtor,
-          CanvasAddonCtor,
-          panelId: id,
-          webglAddonRef,
-          canvasAddonRef,
-          setWebglFallback,
-          pendingWebglRecoveryRef,
-          handleWebglContextLossRef,
-          isActivePanel: isActivePanelRef.current,
-          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
-        });
-
-        terminal.onData((data) => {
-          const sessionContext = {
-            mode: tuiSessionActiveRef.current ? 'tui' : 'shell',
-            tuiReady: isGrokSessionRef.current
-              ? grokTuiReadyRef.current === true
-              : tuiSessionFooterConfirmedRef.current === true,
-            tuiAdapter: isGrokSessionRef.current
-              ? 'grok'
-              : tuiSessionActiveRef.current
-                ? 'opencode'
-                : 'shell',
-            panelHidden: isVisibleInLayoutRef.current !== true,
-            panelInactive: isActivePanelRef.current !== true,
-          };
-          const filtered = filterTerminalInputForSession(sessionContext, data);
-          if (filtered === null) return;
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            if (transportRef.current === 'raw') {
-              wsRef.current.send(filtered);
-            } else {
-              wsRef.current.send(JSON.stringify({ type: 'input', data: filtered }));
-            }
-          }
-        });
-
-        resizeObserverRef.current = new ResizeObserver(() => {
-          if (isDisposingRef.current) return;
-          if (!isVisibleInLayoutRef.current) {
-            needsViewportSyncOnShowRef.current = true;
-            return;
-          }
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (!rect || rect.width <= 0 || rect.height <= 0) return;
-          logViewportDiagnostic('resize-observer');
-          if (
-            shouldRefitVisibleInactiveSplitPanel({
-              isActivePanel: isActivePanelRef.current,
-              isVisibleInLayout: isVisibleInLayoutRef.current,
-            })
-          ) {
-            scheduleInactiveViewportRepaint();
-            return;
-          }
-          const scheduleResize = () => sendResizeRef.current?.();
-          if (tuiSessionActiveRef.current) {
-            if (tuiResizeDebounceTimerRef.current) {
-              clearTimeout(tuiResizeDebounceTimerRef.current);
-            }
-            tuiResizeDebounceTimerRef.current = setTimeout(() => {
-              tuiResizeDebounceTimerRef.current = null;
-              scheduleResize();
-            }, 160);
-            return;
-          }
-          scheduleResize();
-        });
-        resizeObserverRef.current.observe(containerRef.current);
-
-        termRef.current = terminal;
-        fitRef.current = fitAddon;
-        searchRef.current = searchAddon;
-
-        // A.0 lifecycle telemetry: a fresh xterm runtime came online.
-        cliLog(
-          `LIFECYCLE:${id}`,
-          'boot',
-          buildTerminalLifecycleEvent({
-            event: 'boot',
-            panelId: id,
-            renderer: requestedRendererModeRef.current,
-            isVisible: isVisibleInLayoutRef.current,
-            cols: terminal?.cols,
-            rows: terminal?.rows,
-          })
-        );
-
-        setInitError(null);
-        setIsInitializing(false);
-
-        void waitForVisibleDimensions()
-          .then((ready) => {
-            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions done', {
-              ready,
-              width: containerRef.current?.getBoundingClientRect().width,
-              height: containerRef.current?.getBoundingClientRect().height,
-            });
-
-            if (!mounted || !containerRef.current || !termRef.current || !fitRef.current) {
-              return;
-            }
-
-            logViewportDiagnostic(ready ? 'terminal-open-visible' : 'terminal-open-pending');
-
-            let fitWorked = false;
-            if (ready) {
-              fitWorked = fitTerminalViewport({
-                container: containerRef.current,
-                fitAddon,
-                term: termRef.current,
-                socket: wsRef.current,
-                clearAtlas: Boolean(canvasAddonRef.current),
-                lastPtySizeRef: lastPtySizeRef.current,
-              });
-              stabilizeTerminalRenderer(termRef.current, {
-                clearAtlas: Boolean(canvasAddonRef.current),
-              });
-              refreshTerminalViewport(termRef.current);
-            } else {
-              logViewportDiagnostic('terminal-open-timeout');
-              connectPendingUntilFitRef.current = true;
-            }
-
-            if (ready) {
-              if (!maybeConnectAfterViewportFit(fitWorked)) {
-                connectPendingUntilFitRef.current = true;
-              } else {
-                sendResizeRef.current?.();
-              }
-            }
-
-            if (!mounted || !termRef.current || !isVisibleInLayoutRef.current) return;
-
-            const needsGpuAfterInit = needsGpuRendererReattach({
-              operationalRendererMode: operationalRendererModeRef.current,
-              webglAddon: webglAddonRef.current,
-              canvasAddon: canvasAddonRef.current,
-            });
-            if (needsGpuAfterInit) {
-              void (async () => {
-                if (
-                  shouldAttachWebglRenderer({
-                    operationalRendererMode: operationalRendererModeRef.current,
-                  })
-                ) {
-                  await tryReattachWebglAddonRef.current?.({
-                    clearAtlas: false,
-                    skipFitWhenUnchanged: true,
-                  });
-                } else {
-                  await tryReattachCanvasAddonRef.current?.();
-                }
-                if (termRef.current && isVisibleInLayoutRef.current) {
-                  coalescedSoftGpuVisibilityReveal(
-                    termRef.current,
-                    hiddenOutputBufferRef.current,
-                    hiddenOutputCatchupPendingRef,
-                    { reason: 'visibility-visible-soft-reveal' }
-                  );
-                  needsViewportSyncOnShowRef.current = false;
-                }
-              })();
-            } else if (needsViewportSyncOnShowRef.current && termRef.current) {
-              coalescedSoftGpuVisibilityReveal(
-                termRef.current,
-                hiddenOutputBufferRef.current,
-                hiddenOutputCatchupPendingRef,
-                { reason: 'visibility-visible-soft-reveal-pending' }
-              );
-              needsViewportSyncOnShowRef.current = false;
-            }
-          })
-          .catch((error) => {
-            cliLog(`CLIENT:${id}`, 'waitForVisibleDimensions failed', {
-              error: error?.message,
-            });
-          });
-      } catch (error) {
-        console.error(`[TTY:${id}] initializeTerminal() failed:`, error);
-        cliLog(`CLIENT:${id}`, 'initializeTerminal() failed', { error: error?.message });
-
-        if (!mounted) return;
-
-        setInitError('No se pudo inicializar la terminal en esta ventana.');
-        setConnectionState('error');
-        setIsInitializing(false);
-        disposeXtermRuntime();
-        clearTimers();
-        return;
-      } finally {
-        isInitializingRef.current = false;
-      }
-    }
-
-    const initStaggerMs = resolveColdMountStaggerMs({
-      coldMountOrdinal,
-      isVisibleInLayout: isVisibleInLayoutRef.current,
-    });
-    let initStaggerTimer = null;
-    if (initStaggerMs > 0) {
-      initStaggerTimer = setTimeout(() => {
-        if (mounted) initializeTerminal();
-      }, initStaggerMs);
-    } else {
-      initializeTerminal();
-    }
-
-    return () => {
-      mounted = false;
-      isInitializingRef.current = false;
-      if (initStaggerTimer) clearTimeout(initStaggerTimer);
-      clearTimers();
-      clearConnectDeferTimer();
-      resizeObserverRef.current?.disconnect();
-      nativeResizeObserverRef.current?.disconnect();
-      nativeResizeObserverRef.current = null;
-      if (nativeResizeRafRef.current) {
-        cancelAnimationFrame(nativeResizeRafRef.current);
-        nativeResizeRafRef.current = null;
-      }
-      // Silence the socket before closing so it doesn't set 'disconnected'
-      // on the (possibly re-mounting) component during React Strict Mode double-invoke.
-      // We do NOT null wsRef here; disposeXtermRuntime needs it to send the final
-      // v2 snapshot before unsubscribing, and it nulls the ref after closing.
-      if (wsRef.current) {
-        const stale = wsRef.current;
-        stale.onopen = null;
-        stale.onmessage = null;
-        stale.onerror = null;
-        stale.onclose = null;
-      }
-      // Phase 4 terminal-engine-v2: hide/close stashes the surface in the graveyard
-      // instead of disposing it. Non-v2 paths and error recovery keep force-dispose.
-      disposeXtermRuntime({ stashForV2: true });
-    };
-  }, [
-    // NOTE: logViewportDiagnostic is intentionally omitted. It transitively
-    // depended on webglFallback.reason, so every WebGL fallback/recovery
-    // re-ran this effect and spawned a second xterm instance (TTY-DOUBLE).
-    clearTimers,
-    coalescedSoftGpuVisibilityReveal,
-    disposeXtermRuntime,
+  const { disposeXtermRuntime: disposeXtermRuntimeImpl } = useTerminalEngine({
+    ctxRef: engineCtxRef,
     requestedRendererMode,
     runtimePhase,
     shouldBootXterm,
-    waitForVisibleDimensions,
     xtermBootNonce,
     coldMountOrdinal,
     id,
+    initialCommand,
+  });
+  disposeXtermRuntimeRef.current = disposeXtermRuntimeImpl;
+
+  engineCtxRef.current = {
+    id,
+    cwd,
+    autoFocus,
+    coldMountOrdinal,
+    fontSize,
+    restored,
+    initialCommand,
+    isDisposingRef,
+    connectEpochRef,
+    panelActivityTrackerRef,
+    connectAbortRef,
+    requestedRendererModeRef,
+    isVisibleInLayoutRef,
+    termRef,
+    resizeObserverRef,
+    clearTimers,
+    clearConnectDeferTimer,
+    clearOutputQueue,
+    wsRef,
+    isEngineV2Ref,
+    serializeAddonRef,
+    currentPtyOffsetRef,
+    terminalBlurCleanupRef,
+    webglAddonRef,
+    canvasAddonRef,
+    fitRef,
+    searchRef,
+    containerRef,
+    outputPendingRef,
+    hiddenOutputBufferRef,
+    hiddenOutputCatchupPendingRef,
+    connectPendingUntilFitRef,
+    connectDeferTimerRef,
+    surfaceHostRef,
+    lastPtySizeRef,
+    stashTerminalPanelBridge,
+    setInitError,
+    setIsInitializing,
+    setConnectionState,
+    setWebglFallback,
+    rendererViewModel,
+    operationalRendererModeRef,
+    visibleTerminalPanelCountRef,
+    isActivePanelRef,
+    tuiSessionActiveRef,
+    isGrokSessionRef,
+    grokTuiReadyRef,
+    tuiSessionFooterConfirmedRef,
+    isInitializingRef,
+    handleWebglContextLossRef,
+    pendingWebglRecoveryRef,
+    tuiResizeDebounceTimerRef,
+    needsViewportSyncOnShowRef,
+    nativeResizeObserverRef,
+    nativeResizeRafRef,
+    connectRef,
+    sendResizeRef,
+    tryReattachWebglAddonRef,
+    tryReattachCanvasAddonRef,
+    writeTerminalOutput,
+    transportRef,
+    waitForVisibleDimensions,
     maybeConnectAfterViewportFit,
-  ]);
+    coalescedSoftGpuVisibilityReveal,
+    scheduleInactiveViewportRepaint,
+    logViewportDiagnostic,
+    shouldBootXterm,
+    runtimePhase,
+    requestedRendererMode,
+    xtermBootNonce,
+    reconnect,
+    hasSentInitialCommand,
+    disposeXtermRuntime: disposeXtermRuntimeImpl,
+  };
 
   useEffect(() => {
     const handleSearch = (event) => {
