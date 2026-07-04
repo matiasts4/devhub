@@ -39,8 +39,8 @@ export function dispatchTerminalWindowVisible(detail = {}) {
   );
 }
 
-/** Legacy native-VTE workspace visibility sync — still consumed by TerminalTTY layout hooks. */
-export function dispatchNativeVteWorkspaceSync(detail = {}) {
+/** Workspace layout visibility sync — consumed by TerminalTTY layout hooks. */
+export function dispatchTerminalWorkspaceLayoutSync(detail = {}) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(
     new CustomEvent('devhub:native-vte-workspace-sync', {

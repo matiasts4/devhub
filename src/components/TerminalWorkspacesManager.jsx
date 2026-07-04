@@ -230,7 +230,7 @@ import {
 } from '@/lib/terminal/workspaceWindowRender';
 import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
-  dispatchNativeVteWorkspaceSync,
+  dispatchTerminalWorkspaceLayoutSync,
   dispatchTerminalLayoutSettled,
   dispatchTerminalWindowVisible,
 } from '@/components/terminal/nativeLayoutSync';
@@ -2448,7 +2448,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const notifyNativeWorkspaceSurfaceSync = useCallback(
     (reason, options = {}) => {
       if (typeof window === 'undefined') return;
-      dispatchNativeVteWorkspaceSync(buildNativeWorkspaceSyncDetail(reason, options));
+      dispatchTerminalWorkspaceLayoutSync(buildNativeWorkspaceSyncDetail(reason, options));
     },
     [buildNativeWorkspaceSyncDetail]
   );
@@ -2457,7 +2457,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     (reason, options = {}) => {
       if (typeof window === 'undefined') return;
       dispatchTerminalLayoutSettled({ reason });
-      dispatchNativeVteWorkspaceSync(buildNativeWorkspaceSyncDetail(reason, options));
+      dispatchTerminalWorkspaceLayoutSync(buildNativeWorkspaceSyncDetail(reason, options));
     },
     [buildNativeWorkspaceSyncDetail]
   );
