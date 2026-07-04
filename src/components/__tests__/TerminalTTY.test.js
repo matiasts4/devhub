@@ -803,8 +803,8 @@ describe('resolveConnectInitialCommandState()', () => {
     clearPanelInitialCommandLifecycle('panel-a');
   });
 
-  test('clears lifecycle only on first connect', () => {
-    markPanelInitialCommandDispatched('panel-a', 'grok');
+  test('clears lifecycle only on first connect for a fresh panel', () => {
+    // No prior dispatch record: this is a genuinely new panel.
     expect(
       resolveConnectInitialCommandState({
         hasConnectedOnce: false,
@@ -815,6 +815,22 @@ describe('resolveConnectInitialCommandState()', () => {
       clearLifecycle: true,
       sessionReattached: false,
       hasSentInitialCommand: false,
+      markDispatched: false,
+    });
+  });
+
+  test('preserves dispatch guard on remount (no connected-once but lifecycle exists)', () => {
+    markPanelInitialCommandDispatched('panel-a', 'grok');
+    expect(
+      resolveConnectInitialCommandState({
+        hasConnectedOnce: false,
+        panelId: 'panel-a',
+        initialCommand: 'grok',
+      })
+    ).toEqual({
+      clearLifecycle: false,
+      sessionReattached: false,
+      hasSentInitialCommand: true,
       markDispatched: false,
     });
   });

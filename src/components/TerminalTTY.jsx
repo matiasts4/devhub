@@ -148,7 +148,11 @@ export function getXtermContainerAnimProps(visible) {
     // Avoid re-fading on every panel switch/reconnect — only animate the target state.
     initial: false,
     animate: { opacity: visible ? 1 : 0 },
-    transition: { duration: 0.1, ease: 'easeOut' },
+    // Keep the transition instant during workspace/window switches. A 100 ms fade
+    // combined with forced GPU repaints made the terminal look like it was blinking
+    // for ~1 s while the recovery helpers ran. The workspace shell already handles
+    // the visual transition; the xterm canvas should just be there once ready.
+    transition: { duration: 0 },
   };
 }
 
@@ -2127,6 +2131,15 @@ export default function TerminalTTY({
   // initialization" on EVERY render. Route the calls through refs instead.
   const scheduleBoundedFitRepaintRef = useRef(null);
   const scheduleBoundedGpuRecoverRef = useRef(null);
+  // Viewport force-repaint coalescing: the first second after a workspace/window
+  // switch can fire 4+ forced repaints (layout-show, scheduleWorkspaceShowRecovery,
+  // bounded force/fit/GPU retries, survivor-recover events). Each clear()+resize
+  // nudge produces a visible blink. Coalescing repeats inside a short window keeps
+  // the recovery robust but removes redundant frames.
+  const viewportForceRepaintAtRef = useRef(0);
+  const rendererWasReadyAtLastRepaintRef = useRef(false);
+  const windowSwitchTuiRecoverAtRef = useRef(0);
+  const softRevealNudgeAtRef = useRef(0);
   const prevIsActivePanelRef = useRef(false);
   const reactivateTerminalViewportRef = useRef(null);
   const reactivateCoalesceTimerRef = useRef(null);
@@ -3713,6 +3726,61 @@ export default function TerminalTTY({
     handleWebglContextLossRef.current = handleWebglContextLoss;
   }, [handleWebglContextLoss]);
 
+  /**
+   * Execute a forced viewport repaint only if enough time has passed since the
+   * last one. This prevents the visual strobe that happens when layout-show,
+   * survivor-recover events and bounded retries all queue repaints within the
+   * same ~100 ms window. The coalesce window is short so legitimate delayed
+   * recovery (e.g. async GPU reattach) still gets a fresh repaint.
+   */
+  const coalescedForceRepaint = useCallback(
+    (term, { minMs = 200, reason = '' } = {}) => {
+      if (!term) return false;
+      const rendererReady = isTerminalRendererReady(term);
+      const wasReady = rendererWasReadyAtLastRepaintRef.current;
+      rendererWasReadyAtLastRepaintRef.current = rendererReady;
+      if (!rendererReady) return false;
+      const now = performance.now();
+      const elapsed = now - viewportForceRepaintAtRef.current;
+      // If the renderer just became ready after being unavailable (e.g. async GPU
+      // reattach after a window switch), paint immediately instead of waiting for
+      // the coalesce window. This prevents the black-screen window while keeping
+      // redundant repaints from the same ready state coalesced.
+      if (elapsed < minMs && wasReady) {
+        logViewportDiagnostic('force-repaint-coalesced', { reason, elapsed });
+        return false;
+      }
+      const ok = forceTerminalViewportRepaint(term);
+      if (ok) viewportForceRepaintAtRef.current = performance.now();
+      return ok;
+    },
+    [logViewportDiagnostic]
+  );
+
+  /**
+   * Soft GPU reveal (flush catchup + refresh + 1-cell nudge) with nudge
+   * coalescing. The deferred rAF soft-reveal in the layout-show effect was
+   * queueing a second nudge a few frames after the first, creating an extra
+   * micro-flicker. We still flush output and refresh, but we skip the resize
+   * nudge if one already ran recently.
+   */
+  const coalescedSoftGpuVisibilityReveal = useCallback(
+    (term, bufferRef, catchupPendingRef, { reason = '', minMs = 200 } = {}) => {
+      flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupPendingRef);
+      if (!term || !isTerminalRendererReady(term)) return;
+      refreshTerminalViewport(term);
+      const now = performance.now();
+      const elapsed = now - softRevealNudgeAtRef.current;
+      if (elapsed < minMs) {
+        logViewportDiagnostic('soft-reveal-nudge-coalesced', { reason, elapsed });
+        return;
+      }
+      softRevealNudgeAtRef.current = now;
+      nudgeTerminalViewportRepaint(term);
+    },
+    [logViewportDiagnostic]
+  );
+
   // Bounded retry that forces a REAL canvas repaint (1-cell nudge = equivalent to
   // a manual resize) across frames until forceTerminalViewportRepaint returns true.
   // Needed because the GPU renderer (canvas/webgl) is released while the workspace
@@ -3720,20 +3788,23 @@ export default function TerminalTTY({
   // reattach completes so the renderer slot is empty and force bails. Without retry,
   // panels stay black until a manual resize. Guards bail on dispose/hide; no PTY
   // SIGWINCH is ever sent (forceTerminalViewportRepaint never notifies the PTY).
-  const scheduleBoundedForceRepaint = useCallback((maxAttempts = 24) => {
-    let attempts = 0;
-    const attempt = () => {
-      if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect || rect.width <= 0 || rect.height <= 0) {
+  const scheduleBoundedForceRepaint = useCallback(
+    (maxAttempts = 24) => {
+      let attempts = 0;
+      const attempt = () => {
+        if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) {
+          if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
+          return;
+        }
+        if (coalescedForceRepaint(termRef.current, { reason: 'bounded-force-repaint' })) return;
         if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
-        return;
-      }
-      if (forceTerminalViewportRepaint(termRef.current)) return;
-      if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
-    };
-    attempt();
-  }, []);
+      };
+      attempt();
+    },
+    [coalescedForceRepaint]
+  );
 
   // Bounded retry that does a REAL fit (recalculate cols/rows from the container
   // AND send SIGWINCH to the PTY when cols change) across frames until the
@@ -3807,14 +3878,14 @@ export default function TerminalTTY({
             ? { cols: Number(proposed.cols), rows: Number(proposed.rows) }
             : lastProposed;
         if (settled && stable) {
-          forceTerminalViewportRepaint(termRef.current);
+          coalescedForceRepaint(termRef.current, { reason: 'bounded-fit-repaint' });
           return;
         }
         if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
       };
       attempt();
     },
-    [initialCommand]
+    [coalescedForceRepaint, initialCommand]
   );
 
   useEffect(() => {
@@ -3904,14 +3975,14 @@ export default function TerminalTTY({
           canvasAddon: canvasAddonRef.current,
         });
         if (gpuReady && settled && stable) {
-          forceTerminalViewportRepaint(termRef.current);
+          coalescedForceRepaint(termRef.current, { reason: 'bounded-gpu-recover' });
           return;
         }
         if (attempts++ < maxAttempts) requestAnimationFrame(tick);
       };
       tick();
     },
-    [initialCommand]
+    [coalescedForceRepaint, initialCommand]
   );
 
   useEffect(() => {
@@ -4046,7 +4117,19 @@ export default function TerminalTTY({
         (reason === 'workspace-show-layout' && noGpuRecoveryPending) ||
         ((isSurvivorRecover || isLayoutSettledImmediate) &&
           noGpuRecoveryPending &&
-          !isWindowSwitchRecover);
+          !isWindowSwitchRecover) ||
+        // Option B keep-alive: if the GPU addon never detached and the geometry
+        // did not change, the bitmap is still valid. Skip fit/refresh/force
+        // repaint entirely — this removes the remaining flicker on the happy
+        // path while leaving the heavy recovery path intact for real churn.
+        // Live TUIs (OpenCode/Grok/etc.) still need at least a soft reveal with
+        // a SIGWINCH nudge so they do not think the session hung and restart.
+        (noGpuRecoveryPending &&
+          sizeUnchanged &&
+          proposedDimsMatch &&
+          !hiddenOutputCatchupPendingRef.current &&
+          !recoveredFromZeroSizeThisPass &&
+          !tuiSessionActiveRef.current);
       if (
         canSkipUnchanged &&
         sizeUnchanged &&
@@ -4146,7 +4229,7 @@ export default function TerminalTTY({
 
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
           refreshTerminalViewport(termRef.current);
-          forceTerminalViewportRepaint(termRef.current);
+          coalescedForceRepaint(termRef.current, { reason });
         }
         return;
       }
@@ -4195,7 +4278,7 @@ export default function TerminalTTY({
             !webglReleasedOnLayoutHideRef.current &&
             !canvasReleasedOnLayoutHideRef.current;
           if (!skipForceRepaintOnReveal) {
-            forceTerminalViewportRepaint(termRef.current);
+            coalescedForceRepaint(termRef.current, { reason });
           }
         }
         return;
@@ -4224,7 +4307,7 @@ export default function TerminalTTY({
         stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         refreshTerminalViewport(termRef.current);
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
-          forceTerminalViewportRepaint(termRef.current);
+          coalescedForceRepaint(termRef.current, { reason });
         }
         return;
       }
@@ -4364,7 +4447,7 @@ export default function TerminalTTY({
             stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
             refreshTerminalViewport(termRef.current);
             if (isTerminalRendererReady(termRef.current)) {
-              forceTerminalViewportRepaint(termRef.current);
+              coalescedForceRepaint(termRef.current, { reason: `${reason}-catchup-discard` });
             }
           } else {
             for (const chunk of chunkTerminalOutputForCatchup(buffered)) {
@@ -4373,7 +4456,7 @@ export default function TerminalTTY({
             stabilizeTerminalRenderer(termRef.current, { clearAtlas: true });
             refreshTerminalViewport(termRef.current);
             if (isTerminalRendererReady(termRef.current)) {
-              forceTerminalViewportRepaint(termRef.current);
+              coalescedForceRepaint(termRef.current, { reason: `${reason}-catchup-keep` });
             }
             if (tuiSessionActiveRef.current && !kimiTuiLive) {
               nudgeTerminalPtyResize({
@@ -4413,7 +4496,7 @@ export default function TerminalTTY({
       // until a manual resize. See docs/errores/06-terminal-status-and-workspace-switch.
       if (termRef.current && isTerminalRendererReady(termRef.current)) {
         refreshTerminalViewport(termRef.current);
-        forceTerminalViewportRepaint(termRef.current);
+        coalescedForceRepaint(termRef.current, { reason });
       }
 
       // Panel-close churn can discard the GPU bitmap of a live TUI even when the
@@ -4439,6 +4522,7 @@ export default function TerminalTTY({
       }
     },
     [
+      coalescedForceRepaint,
       confirmViewportFit,
       id,
       initialCommand,
@@ -4679,7 +4763,7 @@ export default function TerminalTTY({
       // clicks. Force a real 1-cell resize nudge so the canvas bitmap redraws (Bug A).
       // No PTY SIGWINCH is sent (forceTerminalViewportRepaint never notifies the PTY).
       if (clearAtlas && tuiSessionActiveRef.current) {
-        forceTerminalViewportRepaint(termRef.current);
+        coalescedForceRepaint(termRef.current, { reason: 'reactivate-tui' });
       }
 
       if (autoFocus) {
@@ -4699,7 +4783,14 @@ export default function TerminalTTY({
         logViewportDiagnostic('reactivate-settled');
       });
     },
-    [autoFocus, fitAndResize, initialCommand, logViewportDiagnostic, scrollTerminalToBottom]
+    [
+      autoFocus,
+      coalescedForceRepaint,
+      fitAndResize,
+      initialCommand,
+      logViewportDiagnostic,
+      scrollTerminalToBottom,
+    ]
   );
 
   useEffect(() => {
@@ -6217,10 +6308,11 @@ export default function TerminalTTY({
 
         if (revealMode === 'soft' && !hadLayoutChurn) {
           needsViewportSyncOnShowRef.current = false;
-          performSoftGpuVisibilityReveal(
+          coalescedSoftGpuVisibilityReveal(
             termRef.current,
             hiddenOutputBufferRef.current,
-            hiddenOutputCatchupPendingRef
+            hiddenOutputCatchupPendingRef,
+            { reason: 'workspace-show-soft-reveal' }
           );
           logViewportDiagnostic('workspace-show-visible-soft-gpu-reveal');
           if (!isWorkspaceTabReveal) {
@@ -6228,10 +6320,11 @@ export default function TerminalTTY({
             // shell becomes visible so WebGL composites the live bitmap (no clear()).
             requestAnimationFrame(() => {
               if (!isVisibleInLayoutRef.current || !termRef.current) return;
-              performSoftGpuVisibilityReveal(
+              coalescedSoftGpuVisibilityReveal(
                 termRef.current,
                 hiddenOutputBufferRef.current,
-                hiddenOutputCatchupPendingRef
+                hiddenOutputCatchupPendingRef,
+                { reason: 'workspace-show-soft-reveal-deferred' }
               );
             });
           }
@@ -6298,7 +6391,9 @@ export default function TerminalTTY({
                   stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
                   refreshTerminalViewport(termRef.current);
                   if (isTerminalRendererReady(termRef.current)) {
-                    forceTerminalViewportRepaint(termRef.current);
+                    coalescedForceRepaint(termRef.current, {
+                      reason: 'workspace-show-layout-churn-recover-tui',
+                    });
                   }
                   nudgeTerminalPtyResize({
                     term: termRef.current,
@@ -6314,10 +6409,11 @@ export default function TerminalTTY({
                 }
                 scheduleBoundedGpuRecoverRef.current?.(24);
               } else {
-                performSoftGpuVisibilityReveal(
+                coalescedSoftGpuVisibilityReveal(
                   termRef.current,
                   hiddenOutputBufferRef.current,
-                  hiddenOutputCatchupPendingRef
+                  hiddenOutputCatchupPendingRef,
+                  { reason: 'workspace-show-soft-reveal-fallback' }
                 );
               }
             }
@@ -6349,8 +6445,11 @@ export default function TerminalTTY({
       workspaceShowZeroSizeObserverRef.current = null;
     };
   }, [
+    coalescedForceRepaint,
+    coalescedSoftGpuVisibilityReveal,
     isVisibleInLayout,
     isWorkspaceShellVisible,
+    logViewportDiagnostic,
     nativeVteOpened,
     operationalRendererMode,
     releaseCanvasAddon,
@@ -6396,7 +6495,7 @@ export default function TerminalTTY({
       // like OpenCode/Grok never get the layout-show TUI-safe churn path. Run the
       // same fit + stabilize + refresh + force-repaint + forced-SIGWINCH sequence
       // that workspace-show uses for churn recovery.
-      if (
+      const canRunWindowSwitchTuiRecover =
         isWorkspaceWindowSwitch &&
         tuiSessionActiveRef.current &&
         termRef.current &&
@@ -6408,29 +6507,43 @@ export default function TerminalTTY({
           kimiReady: kimiReadyNotifiedRef.current,
           tuiSessionActive: tuiSessionActiveRef.current,
           hasConnectedOnce: hasConnectedOnceRef.current,
-        })
-      ) {
-        logViewportDiagnostic('workspace-window-switch-tui-recover');
-        fitTerminalViewport({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-          socket: wsRef.current,
-          clearAtlas: false,
-          lastPtySizeRef: lastPtySizeRef.current,
-          skipPtyNotify: true,
         });
-        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
-        refreshTerminalViewport(termRef.current);
-        if (isTerminalRendererReady(termRef.current)) {
-          forceTerminalViewportRepaint(termRef.current);
+      if (canRunWindowSwitchTuiRecover) {
+        const now = performance.now();
+        const elapsed = now - windowSwitchTuiRecoverAtRef.current;
+        // Keep a shorter coalesce window for window-switch TUI recovery than for
+        // general force repaints. The visibility:hidden toggle can discard the WebGL
+        // bitmap, and the first event may run before the renderer is ready, so we
+        // want the follow-up survivor events (0, 50, 150, 350, 600 ms) to have a
+        // chance to repaint without restoring the full 7-event strobe.
+        if (elapsed < 80) {
+          logViewportDiagnostic('workspace-window-switch-tui-recover-coalesced', { elapsed });
+        } else {
+          windowSwitchTuiRecoverAtRef.current = now;
+          logViewportDiagnostic('workspace-window-switch-tui-recover');
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+            skipPtyNotify: true,
+          });
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          refreshTerminalViewport(termRef.current);
+          if (isTerminalRendererReady(termRef.current)) {
+            coalescedForceRepaint(termRef.current, {
+              reason: 'survivor-window-switch-tui',
+            });
+          }
+          nudgeTerminalPtyResize({
+            term: termRef.current,
+            socket: wsRef.current,
+            lastPtySizeRef: lastPtySizeRef.current,
+            force: true,
+          });
         }
-        nudgeTerminalPtyResize({
-          term: termRef.current,
-          socket: wsRef.current,
-          lastPtySizeRef: lastPtySizeRef.current,
-          force: true,
-        });
       }
       const gpuStillAttached = !needsGpuRendererReattach({
         operationalRendererMode: operationalRendererModeRef.current,
@@ -6466,14 +6579,37 @@ export default function TerminalTTY({
     };
 
     window.addEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
+
+    // Window switches don't toggle isVisibleInLayout, so the layout-show
+    // useLayoutEffect never fires for the destination panel. The manager dispatches
+    // a single-shot devhub:terminal-window-visible event for the active panel of the
+    // destination window; run the exact same workspace-show golden path here so
+    // window switches get the same fit/stabilize/recover sequence as tab switches.
+    const handleWindowVisible = (event) => {
+      if (isDisposingRef.current) return;
+      const panelIds = Array.isArray(event?.detail?.panelIds) ? event.detail.panelIds : null;
+      if (!panelIds || !panelIds.includes(id)) return;
+      if (!isVisibleInLayoutRef.current) {
+        needsViewportSyncOnShowRef.current = true;
+        layoutChurnedWhileHiddenRef.current = true;
+        return;
+      }
+      logViewportDiagnostic('workspace-window-switch-visible');
+      void syncTerminalViewportOnWorkspaceShowRef.current?.('workspace-window-switch-visible', {
+        clearAtlas: false,
+      });
+    };
+    window.addEventListener('devhub:terminal-window-visible', handleWindowVisible);
+
     return () => {
       window.removeEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
+      window.removeEventListener('devhub:terminal-window-visible', handleWindowVisible);
     };
   }, [
     id,
+    coalescedForceRepaint,
     disposeWebglAddonForContextLoss,
     fitTerminalViewport,
-    forceTerminalViewportRepaint,
     initialCommand,
     isKimiTuiLive,
     logViewportDiagnostic,
@@ -6955,19 +7091,21 @@ export default function TerminalTTY({
                   await tryReattachCanvasAddonRef.current?.();
                 }
                 if (termRef.current && isVisibleInLayoutRef.current) {
-                  performSoftGpuVisibilityReveal(
+                  coalescedSoftGpuVisibilityReveal(
                     termRef.current,
                     hiddenOutputBufferRef.current,
-                    hiddenOutputCatchupPendingRef
+                    hiddenOutputCatchupPendingRef,
+                    { reason: 'visibility-visible-soft-reveal' }
                   );
                   needsViewportSyncOnShowRef.current = false;
                 }
               })();
             } else if (needsViewportSyncOnShowRef.current && termRef.current) {
-              performSoftGpuVisibilityReveal(
+              coalescedSoftGpuVisibilityReveal(
                 termRef.current,
                 hiddenOutputBufferRef.current,
-                hiddenOutputCatchupPendingRef
+                hiddenOutputCatchupPendingRef,
+                { reason: 'visibility-visible-soft-reveal-pending' }
               );
               needsViewportSyncOnShowRef.current = false;
             }
@@ -7038,6 +7176,7 @@ export default function TerminalTTY({
     // depended on webglFallback.reason, so every WebGL fallback/recovery
     // re-ran this effect and spawned a second xterm instance (TTY-DOUBLE).
     clearTimers,
+    coalescedSoftGpuVisibilityReveal,
     disposeXtermRuntime,
     requestedRendererMode,
     runtimePhase,
@@ -7370,6 +7509,7 @@ export default function TerminalTTY({
     isVisibleInLayout,
     id,
     autoFocus,
+    coalescedSoftGpuVisibilityReveal,
     logViewportDiagnostic,
     queueNativeVteProbeRetry,
     fitAndResize,

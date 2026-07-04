@@ -38,8 +38,32 @@ export function dispatchTerminalSurvivorRecover(detail = {}) {
   );
 }
 
+/**
+ * Single-shot reveal event for a panel that just became visible inside a stacked
+ * window. Mirrors the layout-show useLayoutEffect path used by workspace tab
+ * switches, so window switches get the same soft-reveal/fit/recovery pipeline
+ * instead of relying only on the survivor-recover burst.
+ */
+export function dispatchTerminalWindowVisible(detail = {}) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent('devhub:terminal-window-visible', {
+      detail: { ...detail, at: Date.now() },
+    })
+  );
+}
+
 /** Context loss from peer unmount often lands after the first recover pass. */
 export const SURVIVOR_RECOVER_DELAYS_MS = Object.freeze([0, 50, 150, 350, 600, 1000, 1600]);
+
+/**
+ * Moderate burst for workspace/window switches under Option B: panels stay
+ * mounted and the GPU addon remains attached, so delayed context loss is far
+ * less likely than on a workspace removal. We keep a few follow-ups to catch
+ * async WebGL context loss and late compositor flushes, but stop earlier than
+ * the full removal burst to avoid dragging the flicker out for 1.6 s.
+ */
+export const SWITCH_SURVIVOR_RECOVER_DELAYS_MS = Object.freeze([0, 50, 150, 350, 600]);
 
 /**
  * Double-rAF then lifecycle burst + staggered survivor-recover events.
@@ -52,6 +76,7 @@ export function scheduleSurvivorRecoverAfterClose({
   onLifecycleSync,
   dispatchSurvivorRecover = dispatchTerminalSurvivorRecover,
   immediate = false,
+  delays = SURVIVOR_RECOVER_DELAYS_MS,
 } = {}) {
   const ids = panelIds.filter(Boolean);
   if (ids.length === 0 || typeof window === 'undefined') return () => {};
@@ -75,8 +100,8 @@ export function scheduleSurvivorRecoverAfterClose({
       if (!immediate) {
         burstCleanup = typeof onLifecycleSync === 'function' ? onLifecycleSync() : null;
       }
-      const delays = immediate ? SURVIVOR_RECOVER_DELAYS_MS.slice(1) : SURVIVOR_RECOVER_DELAYS_MS;
-      for (const delayMs of delays) {
+      const activeDelays = immediate ? delays.slice(1) : delays;
+      for (const delayMs of activeDelays) {
         timerIds.push(
           window.setTimeout(() => {
             if (cancelled) return;

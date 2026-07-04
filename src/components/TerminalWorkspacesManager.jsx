@@ -224,7 +224,9 @@ import {
   dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
   dispatchTerminalSurvivorRecover,
+  dispatchTerminalWindowVisible,
   scheduleSurvivorRecoverAfterClose,
+  SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
   computeCarvedBounds,
   createNativeLayoutSyncQueue,
 } from '@/components/terminal/nativeLayoutSync';
@@ -3663,6 +3665,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return undefined;
     }
 
+    const activeWindowPanelId = panelIds.includes(activePanelId) ? activePanelId : panelIds[0];
+
+    // Dispatch a single-shot window-visible event so the destination panel runs
+    // the same layout-show recovery path used by workspace tab switches. This is
+    // the missing piece that made window-switch recovery weaker than workspace
+    // switch recovery.
+    requestAnimationFrame(() => {
+      dispatchTerminalWindowVisible({
+        panelIds: [activeWindowPanelId],
+        workspaceId: wsId,
+        reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
+      });
+    });
+
     return scheduleSurvivorRecoverAfterClose({
       panelIds,
       workspaceId: wsId,
@@ -3670,8 +3686,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       onLifecycleSync: () =>
         syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
       immediate: true,
+      delays: SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
     });
   }, [
+    activePanelId,
     activeWindowIds,
     activeWsId,
     isClientLoaded,

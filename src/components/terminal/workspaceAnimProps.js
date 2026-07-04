@@ -93,8 +93,11 @@ export function resolveWorkspaceShellVisibilityStyle({
 
 /**
  * Stacked V1/V2/V3 windows inside one workspace tab.
- * Parked windows use visibility:hidden (WebGL stops compositing under opacity-only
- * hide and returns black on switch-back). Workspace *tabs* use opacity-only keep-alive.
+ * Parked windows now use the same opacity-only keep-alive as workspace tabs.
+ * With Option B the GPU addon stays attached, and visibility:hidden tears down
+ * the WebGL compositor, producing a black frame on switch-back. Keeping the
+ * surface compositor-alive (opacity:0, visibility:visible) lets the canvas keep
+ * its bitmap so the window reappears instantly.
  */
 export function resolveWorkspaceWindowVisibilityStyle({
   isActiveWindow,
@@ -103,9 +106,8 @@ export function resolveWorkspaceWindowVisibilityStyle({
   if (!isActiveWindow || isFullscreenTakeover) {
     return {
       opacity: 0,
-      visibility: 'hidden',
       pointerEvents: 'none',
-      contain: 'strict',
+      contain: 'layout paint',
       transition: 'none',
       willChange: 'auto',
     };
@@ -113,7 +115,6 @@ export function resolveWorkspaceWindowVisibilityStyle({
 
   return {
     opacity: 1,
-    visibility: 'visible',
     pointerEvents: 'auto',
     contain: 'layout paint',
     transition: 'none',

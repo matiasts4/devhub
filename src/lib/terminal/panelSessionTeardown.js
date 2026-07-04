@@ -2,6 +2,10 @@ import { spawnSync } from 'child_process';
 import os from 'os';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 
+function sleepAsync(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function normalizePanelTmuxSessionName(terminalId) {
   const cleaned = String(terminalId || 'terminal')
     .toLowerCase()
@@ -172,12 +176,72 @@ export function killProcessTreeBestEffort(pid, { spawnSyncImpl = spawnSync } = {
   return killUnixProcessTree(pid, { spawnSyncImpl });
 }
 
+/**
+ * Async variant of killUnixProcessTree. The grace-period sleep is non-blocking
+ * so that closing a panel never freezes the Node.js event loop.
+ */
+async function killUnixProcessTreeAsync(pid, { sleepMs = 2000 } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    // Not a group leader or already gone.
+  }
+
+  const children = getUnixChildPids(pid);
+  for (const child of children) {
+    await killUnixProcessTreeAsync(child, { sleepMs: 0 });
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    // already gone
+  }
+
+  if (sleepMs > 0) {
+    await sleepAsync(sleepMs);
+  }
+
+  const remaining = [pid, ...getUnixChildPids(pid)];
+  for (const p of remaining) {
+    try {
+      process.kill(-p, 'SIGKILL');
+    } catch {
+      // ignore
+    }
+    try {
+      process.kill(p, 'SIGKILL');
+    } catch {
+      // ignore
+    }
+  }
+
+  return true;
+}
+
+async function killProcessTreeBestEffortAsync(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+
+  if (os.platform() === 'win32') {
+    return killWindowsProcessTree(pid);
+  }
+
+  return killUnixProcessTreeAsync(pid);
+}
+
 export function teardownPanelSessionProcesses(session, { hasTmux, spawnSyncImpl, fetchImpl } = {}) {
   if (!session) return;
 
   abortOpenCodeSessionBestEffort(session.opencodeSessionId, { fetchImpl });
   killPanelTmuxSessionBestEffort(session, { hasTmux, spawnSyncImpl });
-  killProcessTreeBestEffort(session.ptyPid, { spawnSyncImpl });
+  // Defer process-tree teardown so that neither the initial pgrep nor the
+  // grace-period wait block the frontend's close request.
+  const pid = session.ptyPid;
+  setImmediate(() => {
+    void killProcessTreeBestEffortAsync(pid);
+  });
 }
 
 function defaultHasTmux() {
