@@ -48,6 +48,7 @@ jest.mock(
         writeln: jest.fn(),
         paste: jest.fn(),
         refresh: jest.fn(),
+        resize: jest.fn(),
         clearTextureAtlas: jest.fn(),
         dispose: jest.fn(),
         getSelection: jest.fn(() => ''),
@@ -343,6 +344,93 @@ describe('TerminalTTY — v2 engine path', () => {
 
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'unsubscribe' }));
     expect(socket.close).toHaveBeenCalled();
+  });
+
+  it('includes v2=true in the WebSocket URL for v2 panels', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-url',
+        isEngineV2: true,
+        cwd: '/home/user',
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    expect(socket.url).toContain('v2=true');
+  });
+
+  it('applies server termsize from the ready frame for v2 panels', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-termsize',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const term = getLastTerminal();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'ready',
+        reattached: false,
+        mode: 'shell',
+        v2: true,
+        cols: 90,
+        rows: 30,
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(term.resize).toHaveBeenCalledWith(90, 30);
+  });
+
+  it('applies server termsize from a metadata message', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-metadata-msg',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const term = getLastTerminal();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 100, rows: 35 },
+        cwd: '/home/user',
+        shell: '/bin/zsh',
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(term.resize).toHaveBeenCalledWith(100, 35);
   });
 
   it('keeps legacy output handling working when isEngineV2 is false', async () => {

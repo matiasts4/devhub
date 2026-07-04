@@ -25,8 +25,8 @@ Suggested split: 9 PRs, one per phase; PR1 and PR2 may be developed in parallel 
 
 ## Phase 2: Backend source of truth
 
-- [ ] 2.1 Create `src/lib/terminal/oscCwdParser.js` + tests; inject `DEVHUB_SESSION_ID`/`DEVHUB_BLOCK_ID` env in `buildSessionSpawnConfig`; ship shell RC snippets that emit OSC 7. (M)
-- [ ] 2.2 Make `src/lib/terminal/ttyServer.js` the canonical termsize owner: store `cols`/`rows`, broadcast resize, send `ready` with termsize + cwd on subscribe; apply server termsize in `TerminalTTY.jsx` v2 and send resize requests; add concurrency tests. (M)
+- [x] 2.1 Create `src/lib/terminal/oscCwdParser.js` + tests; inject `DEVHUB_SESSION_ID`/`DEVHUB_BLOCK_ID` env in `buildSessionSpawnConfig`; ship shell RC snippets that emit OSC 7. (M)
+- [x] 2.2 Make `src/lib/terminal/ttyServer.js` the canonical termsize owner: store `cols`/`rows`, broadcast resize, send `ready` with termsize + cwd on subscribe; apply server termsize in `TerminalTTY.jsx` v2 and send resize requests; add concurrency tests. (M)
 
 ## Phase 3: Two-tier rehydration
 

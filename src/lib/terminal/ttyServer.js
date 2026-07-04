@@ -25,6 +25,7 @@ import {
 } from './agentTuiMetadata.node.js';
 import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
 import { createScrollbackStore } from './terminalScrollbackStore.js';
+import { createOscCwdParser } from './oscCwdParser.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -617,6 +618,27 @@ export function readPtyRuntime({ terminalId } = {}) {
   );
 }
 
+/**
+ * getSessionMetadata — returns the canonical session metadata for a terminal.
+ *
+ * @param {string} sessionId
+ * @returns {{ shell, title, initialCommand, cwd, termsize, agentTuiState }|null}
+ */
+export function getSessionMetadata(sessionId) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+
+  return {
+    shell: session.shell || null,
+    title: session.title || null,
+    initialCommand: session.initialCommand || null,
+    cwd: session.cwd || null,
+    termsize: session.termsize ? { ...session.termsize } : null,
+    agentTuiState: session.agentTuiState || null,
+  };
+}
+
 export function openPtyLifecycle({ runtimeHint } = {}) {
   const terminalId = runtimeHint?.terminalId || null;
   const existingRuntime = readPtyRuntime({ terminalId });
@@ -657,7 +679,14 @@ export function attachPtyLifecycle({ runtimeHint } = {}) {
   };
 }
 
-function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null, initialCommand = null) {
+function buildSessionSpawnConfig(
+  cwd,
+  terminalId,
+  swarmContext = null,
+  initialCommand = null,
+  options = {}
+) {
+  const { isEngineV2 = false } = options;
   const tmuxEnabled = hasTmux();
   const isSwarm = Boolean(
     swarmContext?.isSwarmRole && swarmContext?.launchId && swarmContext?.roleKey
@@ -675,6 +704,15 @@ function buildSessionSpawnConfig(cwd, terminalId, swarmContext = null, initialCo
     SSH_CONNECTION: '',
     HUSHLOGIN: 'true',
   });
+
+  // Phase 2 terminal-engine-v2: expose session identifiers to the shell so
+  // shell-integration snippets can emit OSC 7 with the right context.
+  env.DEVHUB_SESSION_ID = terminalId;
+  env.DEVHUB_BLOCK_ID = terminalId;
+  if (isEngineV2) {
+    env.DEVHUB_TERM_VERSION = '2';
+    env.DEVHUB_SHELL_INTEGRATION = '1';
+  }
 
   const safeInitialCommand =
     typeof initialCommand === 'string' && initialCommand.trim() ? initialCommand.trim() : null;
@@ -773,7 +811,8 @@ export function createSession({
     resolvedCwd,
     id,
     swarmContext,
-    initialCommand
+    initialCommand,
+    { isEngineV2: false }
   );
 
   ttyLog('createSession', `spawning PTY`, {
@@ -835,6 +874,8 @@ export function createSession({
     scrollbackStore: createScrollbackStore(id),
     v2Subscribers: new Set(),
     isEngineV2: false,
+    termsize: { cols: 120, rows: 32 },
+    _oscCwdParser: createOscCwdParser(),
   };
 
   sessions.set(id, session);
@@ -1019,6 +1060,16 @@ function handleSessionOutput(sessions, session, chunk) {
           session.agentTuiStateAt = Date.now();
         }
       }
+    }
+  }
+
+  // Phase 2 terminal-engine-v2: capture cwd from OSC 7 sequences emitted by
+  // shell-integration snippets. The parser is stateful so split sequences work.
+  if (typeof filtered === 'string' && session._oscCwdParser) {
+    const { cwd: oscCwd } = session._oscCwdParser.parse(filtered);
+    if (oscCwd) {
+      session.cwd = oscCwd;
+      _debouncedSave(sessions, session);
     }
   }
 
@@ -1483,6 +1534,7 @@ export async function ensureTTYServer() {
   wss.on('connection', (socket, request) => {
     let requestedCwd = resolveHomeDirectory();
     let terminalId = `term-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    let requestedIsEngineV2 = false;
     let swarmContext = {
       isSwarmRole: false,
       roleKey: null,
@@ -1505,6 +1557,7 @@ export async function ensureTTYServer() {
         const isSwarmRoleFlag = parseBooleanQueryFlag(dummyUrl.searchParams.get('isSwarmRole'));
         const roleKey = dummyUrl.searchParams.get('roleKey');
         const launchId = dummyUrl.searchParams.get('launchId');
+        const isV2Flag = parseBooleanQueryFlag(dummyUrl.searchParams.get('v2'));
         if (wsRequestedCwd) requestedCwd = wsRequestedCwd;
         if (reqSessionId) terminalId = reqSessionId;
         else if (reqTermId) terminalId = reqTermId;
@@ -1513,6 +1566,9 @@ export async function ensureTTYServer() {
           roleKey: roleKey || null,
           launchId: launchId || null,
         };
+        if (isV2Flag) {
+          requestedIsEngineV2 = true;
+        }
       }
     } catch (e) {
       ttyLog('WS_CONN', `URL parse error`, { error: e?.message });
@@ -1568,7 +1624,9 @@ export async function ensureTTYServer() {
       const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(
         cwd,
         terminalId,
-        swarmContext
+        swarmContext,
+        null,
+        { isEngineV2: requestedIsEngineV2 }
       );
 
       ttyLog('WS_CONN', `creating new session`, {
@@ -1626,10 +1684,21 @@ export async function ensureTTYServer() {
         scrollbackStore: createScrollbackStore(terminalId),
         v2Subscribers: new Set(),
         isEngineV2: false,
+        termsize: { cols: 120, rows: 32 },
+        _oscCwdParser: createOscCwdParser(),
       };
 
       terminalSessions.set(terminalId, session);
       replaceSessionSockets(session, socket);
+
+      // Phase 2 terminal-engine-v2: if the client requested v2 via query param,
+      // opt this socket into the v2 append stream immediately so the initial
+      // ready frame can carry canonical termsize + cwd.
+      if (requestedIsEngineV2) {
+        session.isEngineV2 = true;
+        session.v2Subscribers.add(socket);
+      }
+
       wireSessionPty(session, terminalSessions);
       saveSessions(terminalSessions);
 
@@ -1650,6 +1719,14 @@ export async function ensureTTYServer() {
         historyLen: session.history?.length ?? 0,
       });
       replaceSessionSockets(session, socket);
+
+      // Phase 2 terminal-engine-v2: opt v2 query-param clients into the v2
+      // stream on reattach so the ready frame includes canonical metadata.
+      if (requestedIsEngineV2) {
+        session.isEngineV2 = true;
+        session.v2Subscribers.add(socket);
+      }
+
       session.lastActivityAt = Date.now();
       const isFirstClientAttach = session.sockets.size === 1;
       if (
@@ -1718,6 +1795,11 @@ export async function ensureTTYServer() {
         });
         maybeLogTTYSessionDiagnostic(session, session._lastDiagnosticSnapshot, diagnosticSnapshot);
 
+        // Phase 2 terminal-engine-v2: the server is the canonical owner of
+        // termsize. Store the requested size, apply it to the PTY, and
+        // broadcast it to all v2 subscribers so every client stays in sync.
+        session.termsize = { cols: message.cols, rows: message.rows };
+
         try {
           session.pty.resize(message.cols, message.rows);
         } catch (err) {
@@ -1726,6 +1808,23 @@ export async function ensureTTYServer() {
           console.warn(`[ttyServer] pty.resize failed for session ${session.id}:`, err.message);
           handleSessionExit(terminalSessions, session, 1, null);
           return;
+        }
+
+        if (session.isEngineV2) {
+          const termsizeFrame = JSON.stringify({
+            type: 'termsize',
+            cols: message.cols,
+            rows: message.rows,
+          });
+          for (const subscriber of session.v2Subscribers) {
+            if (subscriber.readyState === subscriber.OPEN) {
+              try {
+                subscriber.send(termsizeFrame);
+              } catch {
+                // ignore send errors on stale sockets
+              }
+            }
+          }
         }
       }
 
@@ -1739,6 +1838,22 @@ export async function ensureTTYServer() {
           clearTimeout(session._autoKillTimer);
           session._autoKillTimer = null;
         }
+        // Phase 2 terminal-engine-v2: send canonical metadata so the frontend
+        // can apply termsize + cwd before replaying buffered output.
+        const metadata = getSessionMetadata(session.id);
+        if (metadata) {
+          try {
+            socket.send(
+              JSON.stringify({
+                type: 'metadata',
+                ...metadata,
+                ptyOffset: session.scrollbackStore.getOffset(),
+              })
+            );
+          } catch {
+            // ignore send errors on stale sockets
+          }
+        }
         return;
       }
 
@@ -1747,6 +1862,21 @@ export async function ensureTTYServer() {
         if (session._autoKillTimer) {
           clearTimeout(session._autoKillTimer);
           session._autoKillTimer = null;
+        }
+        return;
+      }
+
+      // Phase 2 terminal-engine-v2: explicit metadata query for v2 panels on
+      // (re)connect. The ready frame already includes metadata; this message is
+      // available for clients that need to refresh it later.
+      if (message.type === 'get-metadata') {
+        const metadata = getSessionMetadata(session.id);
+        if (metadata) {
+          try {
+            socket.send(JSON.stringify({ type: 'metadata', ...metadata }));
+          } catch {
+            // ignore send errors on stale sockets
+          }
         }
         return;
       }
@@ -1846,13 +1976,34 @@ export async function ensureTTYServer() {
       reattached: isSessionReattach,
       mode: session?.mode || 'shell',
     });
-    socket.send(
-      JSON.stringify({
-        type: 'ready',
-        reattached: isSessionReattach,
-        mode: session?.mode || 'shell',
-      })
-    );
+
+    // Phase 2 terminal-engine-v2: v2 subscribers receive canonical termsize,
+    // cwd, and ptyOffset in the ready frame so the frontend can apply them
+    // before replaying buffered output.
+    const isV2Subscriber = session?.v2Subscribers?.has(socket);
+    if (isV2Subscriber) {
+      const metadata = getSessionMetadata(session.id);
+      socket.send(
+        JSON.stringify({
+          type: 'ready',
+          reattached: isSessionReattach,
+          mode: session?.mode || 'shell',
+          v2: true,
+          ptyOffset: session.scrollbackStore.getOffset(),
+          cols: metadata?.termsize?.cols ?? session.termsize?.cols ?? 120,
+          rows: metadata?.termsize?.rows ?? session.termsize?.rows ?? 32,
+          cwd: metadata?.cwd ?? session?.cwd ?? null,
+        })
+      );
+    } else {
+      socket.send(
+        JSON.stringify({
+          type: 'ready',
+          reattached: isSessionReattach,
+          mode: session?.mode || 'shell',
+        })
+      );
+    }
   });
 
   const serverState = { port, wsPath };

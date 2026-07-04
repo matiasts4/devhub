@@ -2028,6 +2028,7 @@ export default function TerminalTTY({
   const initialCommandDelayScheduledRef = useRef(false);
   const initialCommandProjectionRetryTimerRef = useRef(null);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
+  const serverTermsizeRef = useRef({ cols: 0, rows: 0 });
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const isEngineV2Ref = useRef(isEngineV2);
@@ -5649,6 +5650,7 @@ export default function TerminalTTY({
       const swarmLaunchIdParam = swarmContext?.launchId
         ? `launchId=${encodeURIComponent(swarmContext.launchId)}`
         : '';
+      const v2Param = isEngineV2Ref.current ? 'v2=true' : '';
       const queryParams = [
         cwdParam,
         sessionIdParam,
@@ -5656,6 +5658,7 @@ export default function TerminalTTY({
         swarmRoleParam,
         swarmRoleKeyParam,
         swarmLaunchIdParam,
+        v2Param,
       ]
         .filter(Boolean)
         .join('&');
@@ -5952,6 +5955,26 @@ export default function TerminalTTY({
           if (payload.type === 'ready') {
             panelActivityTrackerRef.current?.onReady(payload);
             serverReadyReceivedRef.current = true;
+
+            // Phase 2 terminal-engine-v2: the server owns canonical termsize.
+            // Apply it to xterm.js before any buffered output is written.
+            if (
+              payload.v2 &&
+              Number(payload.cols) > 0 &&
+              Number(payload.rows) > 0 &&
+              termRef.current &&
+              typeof termRef.current.resize === 'function'
+            ) {
+              serverTermsizeRef.current = {
+                cols: Number(payload.cols),
+                rows: Number(payload.rows),
+              };
+              termRef.current.resize(
+                serverTermsizeRef.current.cols,
+                serverTermsizeRef.current.rows
+              );
+            }
+
             if (payload.reattached) {
               sessionReattachedRef.current = true;
               hasSentInitialCommand.current = true;
@@ -5983,6 +6006,23 @@ export default function TerminalTTY({
               // Fresh session: the tmux pane is empty, so it is safe to launch the
               // agent now. sendInitialCommandIfReady also waits for viewport fit.
               sendInitialCommandIfReady();
+            }
+            return;
+          }
+
+          // Phase 2 terminal-engine-v2: server-side metadata message carrying
+          // canonical termsize + cwd. Apply termsize to xterm.js before output.
+          if (payload.type === 'metadata' && payload.termsize) {
+            const cols = Number(payload.termsize.cols);
+            const rows = Number(payload.termsize.rows);
+            if (
+              cols > 0 &&
+              rows > 0 &&
+              termRef.current &&
+              typeof termRef.current.resize === 'function'
+            ) {
+              serverTermsizeRef.current = { cols, rows };
+              termRef.current.resize(cols, rows);
             }
             return;
           }
