@@ -15,9 +15,9 @@ import {
   shouldAttachCanvasRenderer,
   shouldMountCanvasAddon,
   shouldBlockV2WebglRecovery,
-  shouldSkipKimiTuiPtyResize,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
 } from '@/components/terminal/TerminalTTY.helpers';
+import { shouldSkipKimiTuiPtyResize } from '@/lib/terminal/kimiReadyMarker';
 import { TERMINAL_WEBGL_FALLBACK_REASONS } from '@/components/terminal/terminalRendererCapabilities';
 
 export default function useTerminalRendererController({ ctxRef }) {

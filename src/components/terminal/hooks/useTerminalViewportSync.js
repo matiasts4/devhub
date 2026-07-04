@@ -12,7 +12,6 @@ import {
   shouldDeferTerminalConnectUntilViewportFitted,
   resolveColdMountStaggerMs,
   shouldClearAtlasForSplitCanvas,
-  shouldSkipKimiTuiPtyResize,
   shouldRefitVisibleInactiveSplitPanel,
   isTerminalRendererReady,
   isWebglAddonContextLost,
@@ -26,9 +25,6 @@ import {
   shouldBlockV2WebglRecovery,
   shouldSkipGpuVisibilityReveal,
   isWorkspaceSurvivorRecoverLayoutReason,
-  shouldFreezeKimiTuiViewportOnWorkspaceShow,
-  detectKimiReadyFromTerminalBuffer,
-  isKimiLaunchCommand,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldFreezeDomViewportOnWorkspaceShow,
   shouldSkipRedundantLayoutSettleViewportSync,
@@ -38,7 +34,6 @@ import {
   chunkTerminalOutputForCatchup,
   shouldDiscardHiddenOutputCatchup,
   terminalBufferHasRenderableContent,
-  isKimiTuiLive,
   isTerminalViewportNearBottom,
   prepareActiveTuiTerminalFocus,
   isGrokTuiInitialCommand,
@@ -46,6 +41,13 @@ import {
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
 } from '@/components/terminal/TerminalTTY.helpers';
+import {
+  detectKimiReadyFromTerminalBuffer,
+  isKimiLaunchCommand,
+  isKimiTuiLive,
+  shouldFreezeKimiTuiViewportOnWorkspaceShow,
+  shouldSkipKimiTuiPtyResize,
+} from '@/lib/terminal/kimiReadyMarker';
 import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
 
 export default function useTerminalViewportSync({ ctxRef }) {
