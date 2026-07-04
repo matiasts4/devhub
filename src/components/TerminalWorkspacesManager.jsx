@@ -111,6 +111,7 @@ import useWorkspaceWindowsController from './terminal/hooks/useWorkspaceWindowsC
 import useSwarmLaunchController from './terminal/hooks/useSwarmLaunchController';
 import useZedWorkspaceEvents from './terminal/hooks/useZedWorkspaceEvents';
 import useTerminalWorkspaceShortcuts from './terminal/hooks/useTerminalWorkspaceShortcuts';
+import useWorkspaceLayoutState from './terminal/hooks/useWorkspaceLayoutState';
 import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
 import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
@@ -1071,7 +1072,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [heavySurfacesReady, setHeavySurfacesReady] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
-  const [workspaces, setWorkspaces] = useState(() => createDefaultWorkspaceState().workspaces);
   const pendingReopenPanelsRef = useRef(new Map());
   const swarmLaunchScheduledTimersRef = useRef(new Map());
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
@@ -1079,10 +1079,21 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const swarmProjectionBurstCleanupRef = useRef(null);
   const workspaceCloseRecoverCleanupRef = useRef(null);
 
-  const [activeWsId, setActiveWsId] = useState(() => createDefaultWorkspaceState().activeWsId);
-  const [activePanelIds, setActivePanelIds] = useState(
-    () => createDefaultWorkspaceState().activePanelIds
-  );
+  const defaultWorkspaceState = createDefaultWorkspaceState();
+  const {
+    workspaces,
+    setWorkspaces,
+    activeWsId,
+    setActiveWsId,
+    activePanelIds,
+    setActivePanelIds,
+    focusedPanelByWorkspace,
+    setFocusedPanelByWorkspace,
+  } = useWorkspaceLayoutState({
+    initialWorkspaces: defaultWorkspaceState.workspaces,
+    initialActiveWsId: defaultWorkspaceState.activeWsId,
+    initialActivePanelIds: defaultWorkspaceState.activePanelIds,
+  });
   const [draggedWsId, setDraggedWsId] = useState(null);
   const [dragOverWsId, setDragOverWsId] = useState(null);
   const pendingDragRef = useRef(null);
@@ -1119,7 +1130,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   );
   const [browserWindowStates, setBrowserWindowStates] = useState(() => ({}));
   const [pizarraPendingViewId, setPizarraPendingViewId] = useState(null);
-  const [focusedPanelByWorkspace, setFocusedPanelByWorkspace] = useState(() => ({}));
   const [panelNavPulseId, setPanelNavPulseId] = useState(null);
   const [editingPanelId, setEditingPanelId] = useState(null);
   const [editingValue, setEditingValue] = useState('');
