@@ -109,6 +109,8 @@ import useRightDockController, {
 } from './terminal/hooks/useRightDockController';
 import useWorkspaceWindowsController from './terminal/hooks/useWorkspaceWindowsController';
 import useSwarmLaunchController from './terminal/hooks/useSwarmLaunchController';
+import useZedWorkspaceEvents from './terminal/hooks/useZedWorkspaceEvents';
+import useTerminalWorkspaceShortcuts from './terminal/hooks/useTerminalWorkspaceShortcuts';
 import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
 import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
@@ -2175,8 +2177,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   workspaceWindowsRef.current = workspaceWindows;
   focusedPanelByWorkspaceRef.current = focusedPanelByWorkspace;
 
-  const lastZedOpenUrlRef = useRef({ url: null, label: null });
-
   // Operator action cards — consumed from OperatorActionsDispatchContext (provider lives in App.js)
   const { cards: operatorCards, confirmCard, cancelCard } = useOperatorActionsDispatch();
 
@@ -4109,6 +4109,37 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [closeRightDock, handleRightDockTabSelect, isVisible, tryClosePanelWithDoubleShortcut]
   );
 
+  useZedWorkspaceEvents({
+    projectId,
+    activeWsId,
+    activePanelId,
+    rightDockState,
+    workspacesRef,
+    activeWsIdRef,
+    activePanelIdsRef,
+    handleSplit,
+    handleClosePanel,
+    getAllPanelIds,
+    activateWorkspacePanel,
+    setFocusedPanelByWorkspace,
+    updateRightDockState,
+    updateBrowserWindowState,
+    setWorkspaces,
+    setRestoreSettingsModal,
+  });
+
+  useTerminalWorkspaceShortcuts({
+    isVisible,
+    workspaceTerminalSetupOpen,
+    managerRootRef,
+    activeWsIdRef,
+    focusedPanelByWorkspaceRef,
+    clearPanelFocusMode,
+    applyTerminalNavigationAction,
+    applyTerminalWorkspaceAction,
+    handleSplit,
+  });
+
   // ─── Shared Live Surface Registry Hook & Interceptors ───────────────────
   const registry = useWorkspaceSurfaceRegistry(projectId, activeWorkspace?.id);
 
@@ -4463,92 +4494,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   );
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (workspaceTerminalSetupOpen) {
-        return;
-      }
-
-      const rootElement = managerRootRef.current;
-      const activeElement = document?.activeElement || null;
-      const currentWorkspaceId = activeWsIdRef.current;
-      const focusModeActive = Boolean(focusedPanelByWorkspaceRef.current[currentWorkspaceId]);
-
-      if (
-        shouldHandleTerminalFocusExitShortcut(e, {
-          isVisible,
-          rootElement,
-          activeElement,
-          focusModeActive,
-        })
-      ) {
-        e.preventDefault();
-        clearPanelFocusMode(currentWorkspaceId);
-        return;
-      }
-
-      if (
-        shouldHandleTerminalFocusShortcut(e, {
-          isVisible,
-          rootElement,
-          activeElement,
-        })
-      ) {
-        if (applyTerminalNavigationAction('togglePanelFocus')) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        return;
-      }
-
-      if (
-        shouldHandleTerminalNavigationShortcut(e, {
-          isVisible,
-          rootElement,
-          activeElement,
-        })
-      ) {
-        const navAction = resolveTerminalNavigationAction(e);
-        if (!navAction) return;
-        if (applyTerminalNavigationAction(navAction)) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        return;
-      }
-
-      if (
-        shouldHandleTerminalWorkspaceShortcut(e, {
-          isVisible,
-          rootElement,
-          activeElement,
-        })
-      ) {
-        const workspaceAction = resolveTerminalWorkspaceAction(e);
-        if (!workspaceAction) return;
-        if (applyTerminalWorkspaceAction(workspaceAction)) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        return;
-      }
-
-      if (!shouldHandleTerminalShortcut(e, { isVisible, rootElement, activeElement })) return;
-
-      const action = resolveTerminalShortcutAction(e);
-      if (!action) return;
-
-      e.preventDefault();
-
-      if (action === 'splitDown') {
-        handleSplit('vertical');
-        return;
-      }
-
-      if (action === 'splitRight') {
-        handleSplit('horizontal');
-      }
-    };
-
     const handleSwarmLaunchMaterialized = (e) => {
       const runtimeRequests = e.detail?.runtimeRequests || [];
       createWorkspaceForSwarmLaunchRequests(runtimeRequests);
@@ -4592,12 +4537,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('devhub:run-agent', handleRunAgent);
     window.addEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleSwarmLaunchMaterialized);
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('devhub:run-agent', handleRunAgent);
       window.removeEventListener(SWARM_LAUNCH_MATERIALIZED_EVENT, handleSwarmLaunchMaterialized);
     };
@@ -5010,236 +4953,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     };
 
-    // Handle Zed AI assistant terminal opening requests
-    // T-025: producer (useZedChat) already filters to `session_id`-only
-    // events, so the only defensive check we need is that the event
-    // carried a payload at all. `command` may be null (open empty shell)
-    // or a string (open + run). See `zedOpenTerminalEvent.js`.
-    const handleZedOpenTerminal = (e) => {
-      if (!isValidZedOpenTerminalEvent(e.detail)) return;
-      const { command, cwd, session_id, focus = false, displayName: zedDisplayName } = e.detail;
-      const explicitPanelId = resolveZedOpenTerminalPanelId(e.detail, null);
-
-      const targetWsId = activeWsIdRef.current || activeWsId;
-      if (!targetWsId) return;
-
-      const targetWorkspace = workspacesRef.current.find((ws) => ws.id === targetWsId);
-      const currentPanelCount = countPanelsInColumns(targetWorkspace?.columns || []);
-      const resolvedSourcePanelId =
-        activePanelIdsRef.current[targetWsId] ||
-        activePanelId ||
-        getAllPanelIds(targetWorkspace?.columns || [])[0] ||
-        null;
-
-      if (currentPanelCount > 0 && !resolvedSourcePanelId) return;
-
-      if (isWorkspaceTerminalPanelLimitReached(currentPanelCount, MAX_ZED_TERMINAL_PANELS)) {
-        console.warn(
-          `[Zed] Terminal open blocked: limit ${MAX_ZED_TERMINAL_PANELS} panels (current ${currentPanelCount})`
-        );
-        return;
-      }
-
-      // T-029b: pass session_id as the explicitPanelId so the new panel
-      // connects to the same PTY session the model opened. Falls back to
-      // auto-mint when session_id is null (e.g. legacy events).
-      // T-WSR-zed-001 (ASST-UI-002/003/004): capture the new panel id
-      // returned by handleSplit and pipe it through the post-handleSplit
-      // focus chain (activate + opt-in focused + opt-in pizarra de-max).
-      console.log(
-        `[Zed] Opening terminal command=${command} cwd=${cwd} session_id=${session_id} focus=${focus}`
-      );
-      const newPanelId = handleSplit(
-        'horizontal',
-        resolvedSourcePanelId,
-        command,
-        cwd || null,
-        explicitPanelId
-      );
-      if (!newPanelId) return;
-
-      const maximizedView = rightDockState?.maximizedView ?? null;
-      applyZedOpenTerminalFocus(
-        targetWsId,
-        newPanelId,
-        { focus },
-        {
-          activateWorkspacePanel,
-          setFocusedPanelByWorkspace,
-          updateRightDockState,
-          maximizedView,
-        }
-      );
-
-      if (typeof zedDisplayName === 'string' && zedDisplayName.trim()) {
-        const cleanName = zedDisplayName.trim();
-        const renameResult = setPanelDisplayNameInStore(newPanelId, targetWsId, cleanName);
-        if (renameResult?.ok) {
-          setWorkspaces((prev) =>
-            prev.map((ws) => {
-              if (ws.id !== targetWsId) return ws;
-              return {
-                ...ws,
-                columns: ws.columns.map((col) => ({
-                  ...col,
-                  panels: col.panels.map((p) =>
-                    p.id === newPanelId ? { ...p, displayName: cleanName } : p
-                  ),
-                })),
-              };
-            })
-          );
-        }
-      }
-
-      if (maximizedView === 'pizarra' && typeof window !== 'undefined') {
-        logPizarraBrowser('zed-open-terminal:in-pizarra', { panelId: newPanelId, focus });
-        window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-        }, 400);
-      }
-    };
-
-    const handleZedTerminalInput = (e) => {
-      const detail = e?.detail;
-      if (!detail || typeof detail.input !== 'string') return;
-      const panelId = detail.terminalId || detail.session_id || detail.panelId || null;
-      if (!panelId) return;
-      window.dispatchEvent(
-        new CustomEvent('devhub:zed-terminal-input', {
-          detail: { panelId, terminalId: panelId, input: detail.input },
-        })
-      );
-    };
-
-    const handleZedCloseTerminal = (e) => {
-      const sessionId = e?.detail?.session_id;
-      if (typeof sessionId === 'string' && sessionId.length > 0) {
-        handleClosePanel(sessionId);
-      }
-    };
-
-    const handleZedCloseUrl = () => {
-      const wsId = activeWsIdRef.current || activeWsId;
-      if (wsId) {
-        updateBrowserWindowState(wsId, {
-          open: false,
-          updatedAt: Date.now(),
-        });
-      }
-      updateRightDockState((currentState) => ({
-        ...currentState,
-        browserUrl: null,
-      }));
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-      }
-    };
-
     window.addEventListener('devhub:relaunch-panel', handleRelaunchPanel);
     window.addEventListener(
       'devhub:terminal-settings-modal-requested',
       handleTerminalSettingsModalRequested
     );
     window.addEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
-    window.addEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
-    window.addEventListener('devhub:zed-close-terminal', handleZedCloseTerminal);
-    window.addEventListener('devhub:zed-close-url', handleZedCloseUrl);
-    window.addEventListener('devhub:zed-terminal-input', handleZedTerminalInput);
-
-    const handleZedOpenUrl = (e) => {
-      logPizarraBrowser('zed-open-url:received', { detail: e?.detail ?? null });
-      if (!isValidZedOpenUrlEvent(e.detail)) {
-        logPizarraBrowser('zed-open-url:rejected-invalid', { detail: e?.detail ?? null });
-        return;
-      }
-      const { url, label } = e.detail;
-      const focus = coerceZedOpenUrlFocus(e.detail?.focus, true);
-      const last = lastZedOpenUrlRef.current;
-      if (focus !== true && last.url === url && (last.label ?? null) === (label ?? null)) {
-        logPizarraBrowser('zed-open-url:skipped-idempotent', { url, label, focus });
-        return;
-      }
-      lastZedOpenUrlRef.current = { url, label: label ?? null };
-
-      const wsId = activeWsIdRef.current || activeWsId;
-      if (wsId) {
-        updateBrowserWindowState(wsId, {
-          open: true,
-          url,
-          label: label || buildBrowserWindowLabel(projectId, wsId),
-          // Keeps auto-layout from hiding the carried browser when 2+ terminals exist.
-          pizarraLayoutPriority: focus === true,
-          updatedAt: Date.now(),
-        });
-        logPizarraBrowser('zed-open-url:browser-state', { wsId, url, focus });
-      }
-
-      updateRightDockState((currentState) => {
-        const next = applyZedOpenUrlDockUpdate(currentState, { url, focus });
-        logPizarraBrowser('zed-open-url:dock-state', {
-          activeTab: next.activeTab,
-          maximizedView: next.maximizedView,
-          visible: next.visible,
-          browserUrl: next.browserUrl,
-        });
-        return next;
-      });
-
-      if (focus === true && typeof window !== 'undefined') {
-        // After mode transition (~330ms) + registry reconcile; refit multiple times for late surfaces.
-        const dispatchArrangeFit = () => {
-          logPizarraBrowser('zed-open-url:arrange-fit-dispatch');
-          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-        };
-        window.setTimeout(dispatchArrangeFit, 400);
-        window.setTimeout(dispatchArrangeFit, 720);
-        window.setTimeout(dispatchArrangeFit, 1200);
-      }
-    };
-
-    window.addEventListener('devhub:zed-open-url', handleZedOpenUrl);
-
-    const handleZedWorkspaceAction = ({ action, section }) => {
-      if (action === 'open_restore_settings') {
-        setRestoreSettingsModal({ open: true, section });
-      } else if (action === 'close_restore_settings') {
-        setRestoreSettingsModal({ open: false });
-      } else if (action === 'toggle_pizarra') {
-        dispatchZedOverlayToggle?.('pizarra');
-      } else if (action === 'arrange_pizarra') {
-        updateRightDockState((currentState) => {
-          const isCurrentlyPizarra =
-            currentState?.maximized && currentState?.maximizedView === 'pizarra';
-          if (!isCurrentlyPizarra) {
-            const nextEpoch = (Number(currentState?.browserLayoutEpoch) || 0) + 1;
-            return {
-              ...currentState,
-              visible: true,
-              activeTab: 'pizarra',
-              maximized: true,
-              maximizedView: 'pizarra',
-              browserLayoutEpoch: nextEpoch,
-            };
-          }
-          return currentState;
-        });
-
-        const dispatchArrangeFit = () => {
-          logPizarraBrowser('zed-workspace-action:arrange-fit-dispatch');
-          window.dispatchEvent(new CustomEvent('pizarra:arrange-fit'));
-        };
-        dispatchArrangeFit();
-        window.setTimeout(dispatchArrangeFit, 200);
-        window.setTimeout(dispatchArrangeFit, 400);
-        window.setTimeout(dispatchArrangeFit, 720);
-        window.setTimeout(dispatchArrangeFit, 1200);
-      }
-    };
-    const unsubscribeWorkspaceAction = subscribeZedWorkspaceAction(handleZedWorkspaceAction);
 
     return () => {
-      unsubscribeWorkspaceAction();
       window.removeEventListener('devhub:opencode-session-detected', handleOpenCodeSessionDetected);
       window.removeEventListener('devhub:terminal-exit', handleTerminalExit);
       window.removeEventListener('devhub:swarm-launch-wrapper-sent', handleSwarmLaunchWrapperSent);
@@ -5249,11 +4970,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         handleTerminalSettingsModalRequested
       );
       window.removeEventListener('devhub:manual-revive-requested', handleManualReviveRequested);
-      window.removeEventListener('devhub:zed-open-terminal', handleZedOpenTerminal);
-      window.removeEventListener('devhub:zed-close-terminal', handleZedCloseTerminal);
-      window.removeEventListener('devhub:zed-close-url', handleZedCloseUrl);
-      window.removeEventListener('devhub:zed-terminal-input', handleZedTerminalInput);
-      window.removeEventListener('devhub:zed-open-url', handleZedOpenUrl);
     };
   }, [
     activeWsId,
@@ -5263,8 +4979,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     projectId,
     storage,
     terminalStateStorageKey,
-    updateBrowserWindowState,
-    updateRightDockState,
   ]);
 
   // --- Window Controls (for integrated titlebar) ---
