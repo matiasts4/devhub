@@ -1871,6 +1871,7 @@ export default function TerminalTTY({
   onConnectionStateChange,
   surfaceHost = 'workspace',
   coldMountOrdinal = 0,
+  isEngineV2 = false,
 }) {
   const terminalRootRef = useRef(null);
   const containerRef = useRef(null);
@@ -2029,6 +2030,7 @@ export default function TerminalTTY({
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+  const isEngineV2Ref = useRef(isEngineV2);
   const connectRef = useRef(null);
   const sendResizeRef = useRef(null);
   const isActivePanelRef = useRef(isActivePanel);
@@ -2279,6 +2281,15 @@ export default function TerminalTTY({
       //    onmessage/onclose can't push more output into a disposed terminal.
       if (wsRef.current) {
         const stale = wsRef.current;
+        // Phase 1 terminal-engine-v2: explicitly unsubscribe before closing so
+        // the sidecar keeps the PTY alive for hidden panels.
+        if (isEngineV2Ref.current && stale.readyState === WebSocket.OPEN) {
+          try {
+            stale.send(JSON.stringify({ type: 'unsubscribe' }));
+          } catch {
+            // ignore unsubscribe send errors during teardown
+          }
+        }
         stale.onopen = null;
         stale.onmessage = null;
         stale.onerror = null;
@@ -2456,6 +2467,10 @@ export default function TerminalTTY({
   useEffect(() => {
     requestedRendererModeRef.current = requestedRendererMode;
   }, [requestedRendererMode]);
+
+  useEffect(() => {
+    isEngineV2Ref.current = isEngineV2;
+  }, [isEngineV2]);
 
   useLayoutEffect(() => {
     effectiveRendererModeRef.current = operationalRendererMode;
@@ -2742,6 +2757,17 @@ export default function TerminalTTY({
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
+
+      // Phase 1 terminal-engine-v2: explicitly unsubscribe before React unmount
+      // so the sidecar keeps the PTY alive for hidden panels.
+      if (isEngineV2Ref.current && wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'unsubscribe' }));
+        } catch {
+          // ignore unsubscribe send errors during unmount
+        }
+      }
+
       // Window/view switches unmount React but must keep the GTK lease + PTY alive.
       // Permanent teardown runs via tearDownClientSession / handleClosePanel first.
       if (sessionClosingRef.current) {
@@ -5706,6 +5732,15 @@ export default function TerminalTTY({
           hasSentInitialCommand.current = true;
         }
         sendResize();
+
+        // Phase 1 terminal-engine-v2: opt this socket into the append stream.
+        if (isEngineV2Ref.current && socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify({ type: 'subscribe', v2: true }));
+          } catch {
+            // ignore subscribe send errors
+          }
+        }
         // Note: sendInitialCommandIfReady() is NOT called here. It is gated on the
         // server's `ready` message (see Bug B) to avoid typing the launch command into
         // an already-live reattached TUI. The `ready` handler dispatches it for fresh
@@ -5955,6 +5990,20 @@ export default function TerminalTTY({
           if (payload.type === 'output' && typeof payload.data === 'string') {
             panelActivityTrackerRef.current?.onFrame('output', payload.data);
             writeTerminalOutput(payload.data);
+            return;
+          }
+
+          // Phase 1 terminal-engine-v2: decode base64 append frames and write them
+          // directly into xterm.js. This path coexists with the legacy output path.
+          if (payload.type === 'append' && typeof payload.data === 'string') {
+            panelActivityTrackerRef.current?.onFrame('append', payload.data);
+            const binaryString = atob(payload.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i += 1) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const decoded = new TextDecoder().decode(bytes);
+            writeTerminalOutput(decoded);
             return;
           }
 

@@ -24,6 +24,7 @@ import {
   AgentStateMachine,
 } from './agentTuiMetadata.node.js';
 import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
+import { createScrollbackStore } from './terminalScrollbackStore.js';
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -831,6 +832,9 @@ export function createSession({
     _oscTitleBuffer: '',
     _saveDebounceTimer: null,
     _lastDiagnosticSnapshot: null,
+    scrollbackStore: createScrollbackStore(id),
+    v2Subscribers: new Set(),
+    isEngineV2: false,
   };
 
   sessions.set(id, session);
@@ -1022,6 +1026,12 @@ function handleSessionOutput(sessions, session, chunk) {
     return;
   }
 
+  // Phase 1 terminal-engine-v2: write every non-empty filtered byte into the
+  // per-session ring buffer, then route output to the appropriate subscribers.
+  // v2 panels receive terminal:append frames; legacy v1 panels receive the
+  // original output event. Dual paths coexist behind the per-panel flag.
+  const appendResult = session.scrollbackStore.append(filtered);
+
   if (session.historyEnabled) {
     session.history += filtered;
     if (session.history.length > 100000) {
@@ -1030,8 +1040,27 @@ function handleSessionOutput(sessions, session, chunk) {
   }
 
   for (const socket of session.sockets) {
-    if (socket.readyState === socket.OPEN) {
-      socket.send(JSON.stringify({ type: 'output', data: filtered }));
+    if (socket.readyState !== socket.OPEN) continue;
+
+    if (session.v2Subscribers.has(socket)) {
+      try {
+        socket.send(
+          JSON.stringify({
+            type: 'append',
+            sessionId: session.id,
+            offset: appendResult.endOffset,
+            data: session.scrollbackStore.read(appendResult.startOffset, { encoding: 'base64' }),
+          })
+        );
+      } catch {
+        // ignore send errors on stale sockets
+      }
+    } else {
+      try {
+        socket.send(JSON.stringify({ type: 'output', data: filtered }));
+      } catch {
+        // ignore send errors on stale sockets
+      }
     }
   }
 }
@@ -1594,6 +1623,9 @@ export async function ensureTTYServer() {
         _oscTitleBuffer: '',
         _saveDebounceTimer: null,
         _lastDiagnosticSnapshot: null,
+        scrollbackStore: createScrollbackStore(terminalId),
+        v2Subscribers: new Set(),
+        isEngineV2: false,
       };
 
       terminalSessions.set(terminalId, session);
@@ -1696,6 +1728,28 @@ export async function ensureTTYServer() {
           return;
         }
       }
+
+      // Phase 1 terminal-engine-v2: explicit pub/sub messages for v2 panels.
+      // subscribe upgrades this socket to the v2 append stream; unsubscribe
+      // removes it without killing the PTY.
+      if (message.type === 'subscribe' && message.v2 === true) {
+        session.v2Subscribers.add(socket);
+        session.isEngineV2 = true;
+        if (session._autoKillTimer) {
+          clearTimeout(session._autoKillTimer);
+          session._autoKillTimer = null;
+        }
+        return;
+      }
+
+      if (message.type === 'unsubscribe') {
+        session.v2Subscribers.delete(socket);
+        if (session._autoKillTimer) {
+          clearTimeout(session._autoKillTimer);
+          session._autoKillTimer = null;
+        }
+        return;
+      }
     });
 
     socket.on('close', (code, reason) => {
@@ -1713,11 +1767,14 @@ export async function ensureTTYServer() {
 
       if (session) {
         session.sockets.delete(socket);
+        session.v2Subscribers.delete(socket);
         session.lastActivityAt = Date.now();
 
-        // AUTO-KILL: If this was the last socket, start a grace timer
-        // If no one reconnects within 15s, kill the PTY to prevent zombies
-        if (remainingSockets <= 0 && session.pty) {
+        // AUTO-KILL: legacy v1 sessions keep the grace timer when the last
+        // socket closes. v2 sessions (terminal-engine-v2) rely on explicit
+        // unsubscribe/close lifecycle, so we skip the timer for them — the
+        // timer machinery itself stays intact for v1.
+        if (remainingSockets <= 0 && session.pty && !session.isEngineV2) {
           const autoKillGraceMs = resolveAutoKillGraceMs(session);
           ttyLog('WS_CLOSE', `last socket disconnected, starting auto-kill grace timer`, {
             terminalId,

@@ -20,8 +20,8 @@ Suggested split: 9 PRs, one per phase; PR1 and PR2 may be developed in parallel 
 
 ## Phase 1: Ring buffer + pub/sub
 
-- [ ] 1.1 Create `src/lib/terminal/terminalScrollbackStore.js` + tests: 2 MiB circular buffer, ptyOffset, append/subscribe/unsubscribe/snapshot. (M)
-- [ ] 1.2 Integrate store into `src/lib/terminal/ttyServer.js`: append output, broadcast `terminal:append` to v2 only, handle subscribe/unsubscribe without killing PTY; update `TerminalTTY.jsx` v2 to subscribe/render; add `ttyServer.v2.test.js`. (L)
+- [x] 1.1 Create `src/lib/terminal/terminalScrollbackStore.js` + tests: 2 MiB circular buffer, ptyOffset, append/subscribe/unsubscribe/snapshot. (M)
+- [x] 1.2 Integrate store into `src/lib/terminal/ttyServer.js`: append output, broadcast `terminal:append` to v2 only, handle subscribe/unsubscribe without killing PTY; update `TerminalTTY.jsx` v2 to subscribe/render; add `ttyServer.v2.test.js`. (L)
 
 ## Phase 2: Backend source of truth
 
