@@ -1,8 +1,9 @@
 /**
- * TerminalTTY.v2.test.jsx — TDD tests for the terminal-engine-v2 frontend path.
+ * TerminalTTY.rehydration.test.jsx — TDD tests for the terminal-engine-v2
+ * two-tier rehydration protocol.
  *
- * Verifies: v2 panels send subscribe on connect; decode terminal:append frames
- * and write them to xterm.js; send unsubscribe before disposal.
+ * Verifies: snapshot restore + delta replay + heldData buffering, temp-resize
+ * before serialized write, no-snapshot fresh subscribe, and the loaded gate.
  */
 
 const React = require('react');
@@ -11,6 +12,7 @@ const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
 const mockTerminalInstances = [];
+const mockSerializeInstances = [];
 const mountedRoots = [];
 const mockWebSocketInstances = [];
 
@@ -77,6 +79,20 @@ jest.mock(
       findNext: jest.fn(),
       findPrevious: jest.fn(),
     })),
+  }),
+  { virtual: true }
+);
+
+jest.mock(
+  'xterm-addon-serialize',
+  () => ({
+    SerializeAddon: jest.fn().mockImplementation(() => {
+      const instance = {
+        serialize: jest.fn(() => '<serialized/>'),
+      };
+      mockSerializeInstances.push(instance);
+      return instance;
+    }),
   }),
   { virtual: true }
 );
@@ -222,6 +238,10 @@ function getLastTerminal() {
   return mockTerminalInstances[mockTerminalInstances.length - 1];
 }
 
+function getLastSerializeAddon() {
+  return mockSerializeInstances[mockSerializeInstances.length - 1];
+}
+
 async function waitForWebSocket(timeoutMs = 2000) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
@@ -235,10 +255,20 @@ async function waitForWebSocket(timeoutMs = 2000) {
   });
 }
 
+function decodeAppendPayload(payload) {
+  const binaryString = atob(payload.data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockWebSocketInstances.length = 0;
   mockTerminalInstances.length = 0;
+  mockSerializeInstances.length = 0;
   installTerminalDom();
   installTerminalRuntimeMocks();
 });
@@ -247,102 +277,11 @@ afterEach(() => {
   cleanupMountedRoots();
 });
 
-describe('TerminalTTY — v2 engine path', () => {
-  it('requests snapshot on ready and subscribes after the snapshot response', async () => {
+describe('TerminalTTY — v2 rehydration protocol', () => {
+  it('temp-resizes to the cached snapshot termsize before writing the serialized scrollback', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {
-        id: 'panel-v2-sub',
-        isEngineV2: true,
-        isVisibleInLayout: true,
-        isActivePanel: true,
-        showQuickCopyButton: false,
-        requestedRendererMode: 'xterm',
-      })
-    );
-
-    await flushTerminalEffects();
-    await flushTerminalEffects();
-    await waitForWebSocket();
-
-    const socket = getLastSocket();
-    expect(socket).toBeDefined();
-
-    // The v2 path does NOT subscribe on open; it asks for the stored snapshot first.
-    const subscribeOnOpen = socket.send.mock.calls.some(([msg]) => {
-      try {
-        return JSON.parse(msg).type === 'subscribe';
-      } catch {
-        return false;
-      }
-    });
-    expect(subscribeOnOpen).toBe(false);
-
-    const getSnapshotCalls = socket.send.mock.calls.filter(([msg]) => {
-      try {
-        return JSON.parse(msg).type === 'get-snapshot';
-      } catch {
-        return false;
-      }
-    });
-    expect(getSnapshotCalls.length).toBe(1);
-
-    // Simulate a snapshot response; this should trigger subscribe with fromOffset.
-    socket.onmessage?.({
-      data: JSON.stringify({
-        type: 'snapshot',
-        serialized: '<snapshot/>',
-        ptyOffset: 42,
-        termsize: { cols: 80, rows: 24 },
-      }),
-    });
-    await flushTerminalEffects();
-
-    const subscribeCalls = socket.send.mock.calls.filter(([msg]) => {
-      try {
-        return JSON.parse(msg).type === 'subscribe';
-      } catch {
-        return false;
-      }
-    });
-    expect(subscribeCalls.length).toBe(1);
-    expect(JSON.parse(subscribeCalls[0][0])).toMatchObject({
-      type: 'subscribe',
-      v2: true,
-      fromOffset: 42,
-    });
-  });
-
-  it('does not send subscribe for legacy v1 panels', async () => {
-    await renderIntoDom(
-      React.createElement(TerminalTTY, {
-        id: 'panel-v1-no-sub',
-        isEngineV2: false,
-        isVisibleInLayout: true,
-        isActivePanel: true,
-        showQuickCopyButton: false,
-        requestedRendererMode: 'xterm',
-      })
-    );
-
-    await flushTerminalEffects();
-    await flushTerminalEffects();
-    await waitForWebSocket();
-
-    const socket = getLastSocket();
-    const subscribeCalls = socket.send.mock.calls.filter(([msg]) => {
-      try {
-        return JSON.parse(msg).type === 'subscribe';
-      } catch {
-        return false;
-      }
-    });
-    expect(subscribeCalls.length).toBe(0);
-  });
-
-  it('decodes terminal:append frames and writes them to xterm.js', async () => {
-    await renderIntoDom(
-      React.createElement(TerminalTTY, {
-        id: 'panel-v2-append',
+        id: 'panel-rehydrate-resize',
         isEngineV2: true,
         isVisibleInLayout: true,
         isActivePanel: true,
@@ -358,7 +297,219 @@ describe('TerminalTTY — v2 engine path', () => {
     const socket = getLastSocket();
     const term = getLastTerminal();
 
-    // Move past the rehydration handshake so append data is written live.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: 'SNAPSHOT_CONTENT',
+        ptyOffset: 100,
+        termsize: { cols: 120, rows: 40 },
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(term.resize).toHaveBeenCalledWith(120, 40);
+    expect(term.write).toHaveBeenCalledWith('SNAPSHOT_CONTENT');
+  });
+
+  it('replays the snapshot and then the ring-buffer delta before going live', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-rehydrate-delta',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const term = getLastTerminal();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: 'SNAPSHOT_CONTENT',
+        ptyOffset: 100,
+        termsize: { cols: 80, rows: 24 },
+      }),
+    });
+    await flushTerminalEffects();
+
+    // Delta arrives while still loading — it must be queued, not written yet.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'append',
+        sessionId: 'panel-rehydrate-delta',
+        offset: 112,
+        data: Buffer.from('delta-output').toString('base64'),
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(term.write).not.toHaveBeenCalledWith('delta-output');
+
+    // The metadata replayComplete message ends rehydration and flushes held data.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+
+    const writes = term.write.mock.calls.map(([arg]) => arg);
+    expect(writes).toEqual(expect.arrayContaining(['SNAPSHOT_CONTENT', 'delta-output']));
+    expect(writes.indexOf('SNAPSHOT_CONTENT')).toBeLessThan(writes.indexOf('delta-output'));
+  });
+
+  it('buffers heldData during rehydration and flushes it in order after replay completes', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-held-data',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const term = getLastTerminal();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: 'SNAPSHOT',
+        ptyOffset: 0,
+        termsize: { cols: 80, rows: 24 },
+      }),
+    });
+    await flushTerminalEffects();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'append',
+        sessionId: 'panel-held-data',
+        offset: 6,
+        data: Buffer.from('first').toString('base64'),
+      }),
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'append',
+        sessionId: 'panel-held-data',
+        offset: 11,
+        data: Buffer.from('second').toString('base64'),
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(term.write).not.toHaveBeenCalledWith('first');
+    expect(term.write).not.toHaveBeenCalledWith('second');
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+
+    const writes = term.write.mock.calls.map(([arg]) => arg);
+    const joined = writes.join('');
+    expect(joined).toContain('SNAPSHOT');
+    expect(joined.indexOf('SNAPSHOT')).toBeLessThan(joined.indexOf('first'));
+    expect(joined.indexOf('first')).toBeLessThan(joined.indexOf('second'));
+  });
+
+  it('subscribes from the current offset when no snapshot exists', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-no-snapshot',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: null,
+        ptyOffset: null,
+        termsize: null,
+      }),
+    });
+    await flushTerminalEffects();
+
+    const subscribeCalls = socket.send.mock.calls.filter(([msg]) => {
+      try {
+        return JSON.parse(msg).type === 'subscribe';
+      } catch {
+        return false;
+      }
+    });
+    expect(subscribeCalls).toHaveLength(1);
+    const subscribePayload = JSON.parse(subscribeCalls[0][0]);
+    expect(subscribePayload.v2).toBe(true);
+    expect(subscribePayload.fromOffset).toBeUndefined();
+  });
+
+  it('does not write append frames until loaded becomes true', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-loaded-gate',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const term = getLastTerminal();
+
+    // No snapshot response yet; append data must stay queued.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'append',
+        sessionId: 'panel-loaded-gate',
+        offset: 5,
+        data: Buffer.from('early').toString('base64'),
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(term.write).not.toHaveBeenCalledWith('early');
+
+    // Complete rehydration (no snapshot) and flush.
     socket.onmessage?.({
       data: JSON.stringify({
         type: 'snapshot',
@@ -377,23 +528,13 @@ describe('TerminalTTY — v2 engine path', () => {
     });
     await flushTerminalEffects();
 
-    const payload = JSON.stringify({
-      type: 'append',
-      sessionId: 'panel-v2-append',
-      offset: 42,
-      data: Buffer.from('hello v2').toString('base64'),
-    });
-
-    socket.onmessage?.({ data: payload });
-    await flushTerminalEffects();
-
-    expect(term.write).toHaveBeenCalledWith('hello v2');
+    expect(term.write).toHaveBeenCalledWith('early');
   });
 
-  it('sends unsubscribe before closing the socket on unmount', async () => {
-    const { root } = await renderIntoDom(
+  it('serializes and pushes a snapshot after ~100 KiB of processed output', async () => {
+    await renderIntoDom(
       React.createElement(TerminalTTY, {
-        id: 'panel-v2-unsub',
+        id: 'panel-snapshot-threshold',
         isEngineV2: true,
         isVisibleInLayout: true,
         isActivePanel: true,
@@ -407,6 +548,89 @@ describe('TerminalTTY — v2 engine path', () => {
     await waitForWebSocket();
 
     const socket = getLastSocket();
+    const serializeAddon = getLastSerializeAddon();
+    expect(serializeAddon).toBeDefined();
+    expect(mockSerializeInstances.length).toBeGreaterThanOrEqual(1);
+
+    // Move past rehydration.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: null,
+        ptyOffset: null,
+        termsize: null,
+      }),
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+
+    const bigChunk = 'x'.repeat(110 * 1024);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'append',
+        sessionId: 'panel-snapshot-threshold',
+        offset: bigChunk.length,
+        data: Buffer.from(bigChunk).toString('base64'),
+      }),
+    });
+    await flushTerminalEffects();
+
+    expect(serializeAddon.serialize).toHaveBeenCalled();
+    const saveSnapshotCalls = socket.send.mock.calls.filter(([msg]) => {
+      try {
+        return JSON.parse(msg).type === 'save-snapshot';
+      } catch {
+        return false;
+      }
+    });
+    expect(saveSnapshotCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('sends a final snapshot before unsubscribing on unmount', async () => {
+    const { root } = await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-snapshot-dispose',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const serializeAddon = getLastSerializeAddon();
+
+    // Move past rehydration.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: null,
+        ptyOffset: null,
+        termsize: null,
+      }),
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+
     socket.send.mockClear();
 
     flushSync(() => {
@@ -414,134 +638,17 @@ describe('TerminalTTY — v2 engine path', () => {
     });
     await flushTerminalEffects();
 
-    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'unsubscribe' }));
-    expect(socket.close).toHaveBeenCalled();
-  });
-
-  it('includes v2=true in the WebSocket URL for v2 panels', async () => {
-    await renderIntoDom(
-      React.createElement(TerminalTTY, {
-        id: 'panel-v2-url',
-        isEngineV2: true,
-        cwd: '/home/user',
-        isVisibleInLayout: true,
-        isActivePanel: true,
-        showQuickCopyButton: false,
-        requestedRendererMode: 'xterm',
-      })
-    );
-
-    await flushTerminalEffects();
-    await flushTerminalEffects();
-    await waitForWebSocket();
-
-    const socket = getLastSocket();
-    expect(socket.url).toContain('v2=true');
-  });
-
-  it('resizes back to container and notifies the PTY after rehydration completes', async () => {
-    await renderIntoDom(
-      React.createElement(TerminalTTY, {
-        id: 'panel-v2-termsize',
-        isEngineV2: true,
-        isVisibleInLayout: true,
-        isActivePanel: true,
-        showQuickCopyButton: false,
-        requestedRendererMode: 'xterm',
-      })
-    );
-
-    await flushTerminalEffects();
-    await flushTerminalEffects();
-    await waitForWebSocket();
-
-    const socket = getLastSocket();
-
-    // Simulate no-snapshot rehydration completion.
-    socket.onmessage?.({
-      data: JSON.stringify({
-        type: 'snapshot',
-        serialized: null,
-        ptyOffset: null,
-        termsize: null,
-      }),
-    });
-    socket.onmessage?.({
-      data: JSON.stringify({
-        type: 'metadata',
-        termsize: { cols: 90, rows: 30 },
-        cwd: '/home/user',
-        replayComplete: true,
-      }),
-    });
-    await flushTerminalEffects();
-
-    const resizeCalls = socket.send.mock.calls.filter(([msg]) => {
+    expect(serializeAddon.serialize).toHaveBeenCalled();
+    const saveSnapshotCalls = socket.send.mock.calls.filter(([msg]) => {
       try {
-        return JSON.parse(msg).type === 'resize';
+        return JSON.parse(msg).type === 'save-snapshot';
       } catch {
         return false;
       }
     });
-    expect(resizeCalls.length).toBeGreaterThanOrEqual(1);
-  });
+    expect(saveSnapshotCalls.length).toBeGreaterThanOrEqual(1);
 
-  it('applies server termsize from a metadata message', async () => {
-    await renderIntoDom(
-      React.createElement(TerminalTTY, {
-        id: 'panel-v2-metadata-msg',
-        isEngineV2: true,
-        isVisibleInLayout: true,
-        isActivePanel: true,
-        showQuickCopyButton: false,
-        requestedRendererMode: 'xterm',
-      })
-    );
-
-    await flushTerminalEffects();
-    await flushTerminalEffects();
-    await waitForWebSocket();
-
-    const socket = getLastSocket();
-    const term = getLastTerminal();
-
-    socket.onmessage?.({
-      data: JSON.stringify({
-        type: 'metadata',
-        termsize: { cols: 100, rows: 35 },
-        cwd: '/home/user',
-        shell: '/bin/zsh',
-      }),
-    });
-    await flushTerminalEffects();
-
-    expect(term.resize).toHaveBeenCalledWith(100, 35);
-  });
-
-  it('keeps legacy output handling working when isEngineV2 is false', async () => {
-    await renderIntoDom(
-      React.createElement(TerminalTTY, {
-        id: 'panel-v1-output',
-        isEngineV2: false,
-        isVisibleInLayout: true,
-        isActivePanel: true,
-        showQuickCopyButton: false,
-        requestedRendererMode: 'xterm',
-      })
-    );
-
-    await flushTerminalEffects();
-    await flushTerminalEffects();
-    await waitForWebSocket();
-
-    const socket = getLastSocket();
-    const term = getLastTerminal();
-
-    socket.onmessage?.({
-      data: JSON.stringify({ type: 'output', data: 'legacy output' }),
-    });
-    await flushTerminalEffects();
-
-    expect(term.write).toHaveBeenCalledWith('legacy output');
+    // Unsubscribe still happens after the snapshot.
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'unsubscribe' }));
   });
 });

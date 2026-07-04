@@ -639,6 +639,52 @@ export function getSessionMetadata(sessionId) {
   };
 }
 
+/**
+ * saveSnapshot — stores a full xterm.js serialized snapshot for a session.
+ *
+ * @param {string} sessionId
+ * @param {{ serialized: string, ptyOffset: number, termsize: { cols: number, rows: number } }} snapshot
+ */
+export function saveSnapshot(sessionId, snapshot) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(sessionId);
+  if (!session || !snapshot) return false;
+
+  session.snapshot = {
+    serialized: typeof snapshot.serialized === 'string' ? snapshot.serialized : null,
+    ptyOffset: Number.isFinite(snapshot.ptyOffset) ? snapshot.ptyOffset : null,
+    termsize:
+      snapshot.termsize &&
+      Number.isFinite(snapshot.termsize.cols) &&
+      Number.isFinite(snapshot.termsize.rows)
+        ? { cols: snapshot.termsize.cols, rows: snapshot.termsize.rows }
+        : null,
+    savedAt: Date.now(),
+  };
+
+  return true;
+}
+
+/**
+ * getSnapshot — returns the stored snapshot for a session, or null fields if none.
+ *
+ * @param {string} sessionId
+ * @returns {{ serialized: string|null, ptyOffset: number|null, termsize: {cols,rows}|null }}
+ */
+export function getSnapshot(sessionId) {
+  const sessions = getOrInitSessions();
+  const session = sessions.get(sessionId);
+  if (!session || !session.snapshot) {
+    return { serialized: null, ptyOffset: null, termsize: null };
+  }
+
+  return {
+    serialized: session.snapshot.serialized,
+    ptyOffset: session.snapshot.ptyOffset,
+    termsize: session.snapshot.termsize ? { ...session.snapshot.termsize } : null,
+  };
+}
+
 export function openPtyLifecycle({ runtimeHint } = {}) {
   const terminalId = runtimeHint?.terminalId || null;
   const existingRuntime = readPtyRuntime({ terminalId });
@@ -876,6 +922,7 @@ export function createSession({
     isEngineV2: false,
     termsize: { cols: 120, rows: 32 },
     _oscCwdParser: createOscCwdParser(),
+    snapshot: null,
   };
 
   sessions.set(id, session);
@@ -1686,6 +1733,7 @@ export async function ensureTTYServer() {
         isEngineV2: false,
         termsize: { cols: 120, rows: 32 },
         _oscCwdParser: createOscCwdParser(),
+        snapshot: null,
       };
 
       terminalSessions.set(terminalId, session);
@@ -1831,15 +1879,50 @@ export async function ensureTTYServer() {
       // Phase 1 terminal-engine-v2: explicit pub/sub messages for v2 panels.
       // subscribe upgrades this socket to the v2 append stream; unsubscribe
       // removes it without killing the PTY.
+      // Phase 3 terminal-engine-v2: subscribe may carry a fromOffset to replay
+      // the ring-buffer delta (snapshot ptyOffset → current tail) before the
+      // socket starts receiving live append frames.
       if (message.type === 'subscribe' && message.v2 === true) {
-        session.v2Subscribers.add(socket);
         session.isEngineV2 = true;
         if (session._autoKillTimer) {
           clearTimeout(session._autoKillTimer);
           session._autoKillTimer = null;
         }
+
+        const requestedFromOffset = Number(message.fromOffset);
+        const currentOffset = session.scrollbackStore.getOffset();
+        const approxStartOffset = Math.max(0, currentOffset - session.scrollbackStore.getSize());
+        const fromOffset = Number.isFinite(requestedFromOffset)
+          ? Math.max(requestedFromOffset, approxStartOffset)
+          : currentOffset;
+
+        // Replay missed bytes (if any) directly to this socket before adding it
+        // to the live subscriber set. This keeps the delta ordered before live
+        // output and lets the client flush it after the serialized snapshot.
+        if (fromOffset < currentOffset) {
+          const replayData = session.scrollbackStore.read(fromOffset, { encoding: 'base64' });
+          if (replayData) {
+            try {
+              socket.send(
+                JSON.stringify({
+                  type: 'append',
+                  sessionId: session.id,
+                  offset: currentOffset,
+                  data: replayData,
+                })
+              );
+            } catch {
+              // ignore send errors on stale sockets
+            }
+          }
+        }
+
+        session.v2Subscribers.add(socket);
+
         // Phase 2 terminal-engine-v2: send canonical metadata so the frontend
-        // can apply termsize + cwd before replaying buffered output.
+        // can apply termsize + cwd after replaying buffered output. The
+        // replayComplete flag tells the client that the snapshot+delta replay
+        // phase is finished and it may flush held live output.
         const metadata = getSessionMetadata(session.id);
         if (metadata) {
           try {
@@ -1847,7 +1930,8 @@ export async function ensureTTYServer() {
               JSON.stringify({
                 type: 'metadata',
                 ...metadata,
-                ptyOffset: session.scrollbackStore.getOffset(),
+                ptyOffset: currentOffset,
+                replayComplete: true,
               })
             );
           } catch {
@@ -1862,6 +1946,33 @@ export async function ensureTTYServer() {
         if (session._autoKillTimer) {
           clearTimeout(session._autoKillTimer);
           session._autoKillTimer = null;
+        }
+        return;
+      }
+
+      // Phase 3 terminal-engine-v2: store/serve full xterm.js serialized snapshots.
+      if (
+        (message.type === 'save-snapshot' || message.type === 'cache:term:full') &&
+        typeof message.serialized === 'string' &&
+        Number.isFinite(message.ptyOffset) &&
+        message.termsize &&
+        Number.isFinite(message.termsize.cols) &&
+        Number.isFinite(message.termsize.rows)
+      ) {
+        saveSnapshot(session.id, {
+          serialized: message.serialized,
+          ptyOffset: message.ptyOffset,
+          termsize: { cols: message.termsize.cols, rows: message.termsize.rows },
+        });
+        return;
+      }
+
+      if (message.type === 'get-snapshot') {
+        const snapshot = getSnapshot(session.id);
+        try {
+          socket.send(JSON.stringify({ type: 'snapshot', ...snapshot }));
+        } catch {
+          // ignore send errors on stale sockets
         }
         return;
       }

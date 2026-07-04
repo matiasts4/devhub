@@ -202,6 +202,10 @@ const TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS = 100;
 const TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME = 32 * 1024;
 const TERMINAL_OUTPUT_BACKLOG_THRESHOLD = 128 * 1024;
 
+/** Phase 3 terminal-engine-v2: SerializeAddon snapshot cadence. */
+const TERMINAL_SNAPSHOT_THRESHOLD_BYTES = 100 * 1024;
+const TERMINAL_SNAPSHOT_MAX_INTERVAL_MS = 5000;
+
 export function disableTerminalFocusReporting(term, { disableMouse = false } = {}) {
   if (!term || typeof term.write !== 'function') return;
   try {
@@ -2107,6 +2111,14 @@ export default function TerminalTTY({
   const operationalRendererModeRef = useRef(operationalRendererMode);
   const visibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
   const prevVisibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
+
+  // Phase 3 terminal-engine-v2: snapshot + rehydration refs.
+  const serializeAddonRef = useRef(null);
+  const dataProcessedSinceSnapshotRef = useRef(0);
+  const snapshotIntervalRef = useRef(null);
+  const rehydrationRef = useRef({ loaded: false, heldData: [] });
+  const currentPtyOffsetRef = useRef(0);
+
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
     isVisibleInLayout,
@@ -2189,6 +2201,11 @@ export default function TerminalTTY({
     if (inactiveRepaintRafRef.current) {
       cancelAnimationFrame(inactiveRepaintRafRef.current);
       inactiveRepaintRafRef.current = null;
+    }
+
+    if (snapshotIntervalRef.current) {
+      clearInterval(snapshotIntervalRef.current);
+      snapshotIntervalRef.current = null;
     }
   }, []);
 
@@ -2282,6 +2299,28 @@ export default function TerminalTTY({
       //    onmessage/onclose can't push more output into a disposed terminal.
       if (wsRef.current) {
         const stale = wsRef.current;
+        // Phase 3 terminal-engine-v2: serialize and push a final snapshot before
+        // unsubscribing so the next show has the most recent state available.
+        if (
+          isEngineV2Ref.current &&
+          stale.readyState === WebSocket.OPEN &&
+          serializeAddonRef.current &&
+          termRef.current
+        ) {
+          try {
+            const serialized = serializeAddonRef.current.serialize();
+            stale.send(
+              JSON.stringify({
+                type: 'save-snapshot',
+                serialized,
+                ptyOffset: currentPtyOffsetRef.current,
+                termsize: { cols: termRef.current.cols, rows: termRef.current.rows },
+              })
+            );
+          } catch {
+            // ignore snapshot send errors during teardown
+          }
+        }
         // Phase 1 terminal-engine-v2: explicitly unsubscribe before closing so
         // the sidecar keeps the PTY alive for hidden panels.
         if (isEngineV2Ref.current && stale.readyState === WebSocket.OPEN) {
@@ -2471,6 +2510,37 @@ export default function TerminalTTY({
 
   useEffect(() => {
     isEngineV2Ref.current = isEngineV2;
+  }, [isEngineV2]);
+
+  // Phase 3 terminal-engine-v2: push a final snapshot when the page unloads so
+  // the sidecar has the latest state for the next restore.
+  useEffect(() => {
+    if (!isEngineV2 || typeof window === 'undefined') return;
+
+    const handleBeforeUnload = () => {
+      if (
+        serializeAddonRef.current &&
+        termRef.current &&
+        wsRef.current?.readyState === WebSocket.OPEN
+      ) {
+        try {
+          const serialized = serializeAddonRef.current.serialize();
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'save-snapshot',
+              serialized,
+              ptyOffset: currentPtyOffsetRef.current,
+              termsize: { cols: termRef.current.cols, rows: termRef.current.rows },
+            })
+          );
+        } catch {
+          // ignore snapshot send errors during unload
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isEngineV2]);
 
   useLayoutEffect(() => {
@@ -5709,6 +5779,39 @@ export default function TerminalTTY({
       wsRef.current = socket;
       panelActivityTrackerRef.current = createPanelActivityTracker(id);
 
+      const flushHeldData = () => {
+        const { heldData } = rehydrationRef.current;
+        rehydrationRef.current.heldData = [];
+        for (const chunk of heldData) {
+          writeTerminalOutput(chunk);
+        }
+      };
+
+      const maybeSaveSnapshot = (force = false) => {
+        if (!isEngineV2Ref.current) return;
+        if (!serializeAddonRef.current) return;
+        if (!termRef.current) return;
+        if (socket.readyState !== WebSocket.OPEN) return;
+        if (dataProcessedSinceSnapshotRef.current < TERMINAL_SNAPSHOT_THRESHOLD_BYTES && !force) {
+          return;
+        }
+
+        try {
+          const serialized = serializeAddonRef.current.serialize();
+          socket.send(
+            JSON.stringify({
+              type: 'save-snapshot',
+              serialized,
+              ptyOffset: currentPtyOffsetRef.current,
+              termsize: { cols: termRef.current.cols, rows: termRef.current.rows },
+            })
+          );
+          dataProcessedSinceSnapshotRef.current = 0;
+        } catch (err) {
+          cliLog(`CLIENT:${id}`, 'snapshot save failed', { error: err?.message });
+        }
+      };
+
       const connectionTimeout = setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
           console.error(`[TTY:${id}] WebSocket connection timeout after 10s`);
@@ -5734,16 +5837,27 @@ export default function TerminalTTY({
         if (!initialCommand) {
           hasSentInitialCommand.current = true;
         }
-        sendResize();
 
-        // Phase 1 terminal-engine-v2: opt this socket into the append stream.
-        if (isEngineV2Ref.current && socket.readyState === WebSocket.OPEN) {
-          try {
-            socket.send(JSON.stringify({ type: 'subscribe', v2: true }));
-          } catch {
-            // ignore subscribe send errors
+        if (isEngineV2Ref.current) {
+          // Phase 3 terminal-engine-v2: start rehydration in a loaded=false state.
+          // Subscribe is deferred until after the snapshot response so the
+          // ring-buffer delta can be replayed from the snapshot ptyOffset without
+          // interleaving with live output.
+          rehydrationRef.current = { loaded: false, heldData: [] };
+          dataProcessedSinceSnapshotRef.current = 0;
+          currentPtyOffsetRef.current = 0;
+          if (snapshotIntervalRef.current) {
+            clearInterval(snapshotIntervalRef.current);
+            snapshotIntervalRef.current = null;
           }
+          snapshotIntervalRef.current = setInterval(() => {
+            maybeSaveSnapshot(true);
+          }, TERMINAL_SNAPSHOT_MAX_INTERVAL_MS);
+        } else {
+          // Legacy v1 path: fit the viewport and notify the PTY immediately.
+          sendResize();
         }
+
         // Note: sendInitialCommandIfReady() is NOT called here. It is gated on the
         // server's `ready` message (see Bug B) to avoid typing the launch command into
         // an already-live reattached TUI. The `ready` handler dispatches it for fresh
@@ -5956,15 +6070,31 @@ export default function TerminalTTY({
             panelActivityTrackerRef.current?.onReady(payload);
             serverReadyReceivedRef.current = true;
 
-            // Phase 2 terminal-engine-v2: the server owns canonical termsize.
-            // Apply it to xterm.js before any buffered output is written.
-            if (
-              payload.v2 &&
+            if (payload.v2) {
+              // Phase 3 terminal-engine-v2: remember the server's canonical
+              // termsize and current ring offset, then ask for the latest
+              // serialized snapshot. The snapshot response drives the
+              // temp-resize + replay sequence; we do NOT resize to the current
+              // server termsize here because the snapshot may have been saved at
+              // a different grid size.
+              serverTermsizeRef.current = {
+                cols: Number(payload.cols) || 0,
+                rows: Number(payload.rows) || 0,
+              };
+              currentPtyOffsetRef.current = Number(payload.ptyOffset) || 0;
+
+              try {
+                socket.send(JSON.stringify({ type: 'get-snapshot' }));
+              } catch {
+                // ignore snapshot request send errors
+              }
+            } else if (
               Number(payload.cols) > 0 &&
               Number(payload.rows) > 0 &&
               termRef.current &&
               typeof termRef.current.resize === 'function'
             ) {
+              // Legacy v1 path: apply server termsize if provided.
               serverTermsizeRef.current = {
                 cols: Number(payload.cols),
                 rows: Number(payload.rows),
@@ -6010,9 +6140,60 @@ export default function TerminalTTY({
             return;
           }
 
+          // Phase 3 terminal-engine-v2: the server responded with the stored
+          // serialized snapshot. Temp-resize to the snapshot's grid, write the
+          // serialized scrollback, then subscribe to the delta from the snapshot
+          // ptyOffset. If there is no snapshot, subscribe from the current offset
+          // for a fresh terminal.
+          if (payload.type === 'snapshot' && isEngineV2Ref.current) {
+            if (payload.serialized && payload.termsize) {
+              const cols = Number(payload.termsize.cols);
+              const rows = Number(payload.termsize.rows);
+              if (
+                cols > 0 &&
+                rows > 0 &&
+                termRef.current &&
+                typeof termRef.current.resize === 'function'
+              ) {
+                termRef.current.resize(cols, rows);
+              }
+              if (termRef.current && typeof termRef.current.write === 'function') {
+                termRef.current.write(payload.serialized);
+              }
+              try {
+                socket.send(
+                  JSON.stringify({
+                    type: 'subscribe',
+                    v2: true,
+                    fromOffset: Number(payload.ptyOffset) || 0,
+                  })
+                );
+              } catch {
+                // ignore subscribe send errors
+              }
+            } else {
+              try {
+                socket.send(JSON.stringify({ type: 'subscribe', v2: true }));
+              } catch {
+                // ignore subscribe send errors
+              }
+            }
+            return;
+          }
+
           // Phase 2 terminal-engine-v2: server-side metadata message carrying
-          // canonical termsize + cwd. Apply termsize to xterm.js before output.
+          // canonical termsize + cwd. On the v2 path the metadata that follows
+          // subscribe marks the end of the snapshot+delta replay; we flush held
+          // live output and resize back to the container instead of applying the
+          // cached server termsize.
           if (payload.type === 'metadata' && payload.termsize) {
+            if (isEngineV2Ref.current && !rehydrationRef.current.loaded && payload.replayComplete) {
+              rehydrationRef.current.loaded = true;
+              flushHeldData();
+              sendResizeRef.current?.();
+              return;
+            }
+
             const cols = Number(payload.termsize.cols);
             const rows = Number(payload.termsize.rows);
             if (
@@ -6033,8 +6214,10 @@ export default function TerminalTTY({
             return;
           }
 
-          // Phase 1 terminal-engine-v2: decode base64 append frames and write them
-          // directly into xterm.js. This path coexists with the legacy output path.
+          // Phase 1/3 terminal-engine-v2: decode base64 append frames. While the
+          // rehydration sequence is still in progress (loaded=false), append data
+          // is buffered in heldData so it can be flushed after the snapshot and
+          // delta replay complete, preserving output order.
           if (payload.type === 'append' && typeof payload.data === 'string') {
             panelActivityTrackerRef.current?.onFrame('append', payload.data);
             const binaryString = atob(payload.data);
@@ -6043,7 +6226,19 @@ export default function TerminalTTY({
               bytes[i] = binaryString.charCodeAt(i);
             }
             const decoded = new TextDecoder().decode(bytes);
-            writeTerminalOutput(decoded);
+
+            if (typeof payload.offset === 'number') {
+              currentPtyOffsetRef.current = payload.offset;
+            }
+
+            if (isEngineV2Ref.current && !rehydrationRef.current.loaded) {
+              rehydrationRef.current.heldData.push(decoded);
+            } else {
+              writeTerminalOutput(decoded);
+            }
+
+            dataProcessedSinceSnapshotRef.current += decoded.length;
+            maybeSaveSnapshot();
             return;
           }
 
@@ -6100,6 +6295,10 @@ export default function TerminalTTY({
 
       socket.onclose = (event) => {
         clearTimeout(connectionTimeout);
+        if (snapshotIntervalRef.current) {
+          clearInterval(snapshotIntervalRef.current);
+          snapshotIntervalRef.current = null;
+        }
         panelActivityTrackerRef.current?.onClose();
         console.log(`[TTY:${id}] WebSocket closed: code=${event.code}, reason=${event.reason}`);
         cliLog(`CLIENT:${id}`, 'WS onclose', {
@@ -6875,6 +7074,21 @@ export default function TerminalTTY({
             ? optionalAddonImport.CanvasAddon
             : null;
 
+        // Phase 3 terminal-engine-v2: load the SerializeAddon for periodic full
+        // terminal snapshots. It is only needed on the v2 path.
+        let SerializeAddonCtor = null;
+        if (isEngineV2Ref.current) {
+          try {
+            const serializeModule = await import('xterm-addon-serialize');
+            SerializeAddonCtor = serializeModule.SerializeAddon ?? null;
+          } catch (err) {
+            console.warn(
+              `[TTY:${id}] Failed to import xterm-addon-serialize:`,
+              err?.message || err
+            );
+          }
+        }
+
         if (!mounted || !containerRef.current) {
           cliLog(
             `CLIENT:${id}`,
@@ -6922,6 +7136,21 @@ export default function TerminalTTY({
         const searchAddon = new SearchAddon();
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(searchAddon);
+
+        if (SerializeAddonCtor) {
+          try {
+            const serializeAddon = new SerializeAddonCtor();
+            serializeAddonRef.current = serializeAddon;
+            terminal.loadAddon(serializeAddon);
+            cliLog(`CLIENT:${id}`, 'serialize-addon-attached');
+          } catch (err) {
+            console.warn(
+              `[TTY:${id}] xterm-addon-serialize failed to register`,
+              err?.message || err
+            );
+            serializeAddonRef.current = null;
+          }
+        }
 
         containerRef.current.replaceChildren();
         terminal.open(containerRef.current);
@@ -7170,14 +7399,14 @@ export default function TerminalTTY({
       }
       // Silence the socket before closing so it doesn't set 'disconnected'
       // on the (possibly re-mounting) component during React Strict Mode double-invoke.
+      // We do NOT null wsRef here; disposeXtermRuntime needs it to send the final
+      // v2 snapshot before unsubscribing, and it nulls the ref after closing.
       if (wsRef.current) {
         const stale = wsRef.current;
         stale.onopen = null;
         stale.onmessage = null;
         stale.onerror = null;
         stale.onclose = null;
-        stale.close();
-        wsRef.current = null;
       }
       disposeXtermRuntime();
     };
