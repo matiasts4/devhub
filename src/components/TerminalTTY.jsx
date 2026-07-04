@@ -127,7 +127,7 @@ function cliLog(tag, msg, extra = {}) {
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-03-window-focus-workspace-sync-v2';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-04-window-switch-tui-safe-recover-v2';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -1459,15 +1459,20 @@ export function resolveConnectInitialCommandState({
   panelId = '',
   initialCommand = '',
 } = {}) {
+  const dispatched = getPanelInitialCommandDispatch(panelId);
   if (!hasConnectedOnce) {
+    // If a lifecycle record already exists for this panel ID, the component was
+    // remounted (e.g. workspace layout churn) while the PTY session stayed live.
+    // Keep the guard so opencode/grok are not restarted; only a truly fresh panel
+    // should start with a clean lifecycle.
+    const isRemount = Boolean(dispatched);
     return {
-      clearLifecycle: true,
+      clearLifecycle: !isRemount,
       sessionReattached: false,
-      hasSentInitialCommand: false,
+      hasSentInitialCommand: isRemount,
       markDispatched: false,
     };
   }
-  const dispatched = getPanelInitialCommandDispatch(panelId);
   return {
     clearLifecycle: false,
     sessionReattached: true,
@@ -6373,6 +6378,60 @@ export default function TerminalTTY({
       const reason = event?.detail?.reason || '';
       const isWorkspaceRemove = String(reason).includes('workspace-removed');
       const isWorkspaceWindowSwitch = String(reason).includes('workspace-window-switch');
+      // Window/workspace switch survivors can have a WebGL addon that is still
+      // referenced but whose context was silently lost while the panel was parked.
+      // Use the same disposal pattern as window.focus/visibilitychange/pageshow so
+      // the recovery path reattaches the renderer instead of bailing out.
+      if (
+        !isWorkspaceRemove &&
+        shouldAttachWebglRenderer({
+          operationalRendererMode: operationalRendererModeRef.current,
+        }) &&
+        isWebglAddonContextLost(webglAddonRef.current)
+      ) {
+        logViewportDiagnostic('survivor-recover-webgl-context-lost');
+        disposeWebglAddonForContextLoss('survivor-recover-webgl-context-lost');
+      }
+      // Window switch (V1/V2/V3) does not toggle isVisibleInLayout, so live TUIs
+      // like OpenCode/Grok never get the layout-show TUI-safe churn path. Run the
+      // same fit + stabilize + refresh + force-repaint + forced-SIGWINCH sequence
+      // that workspace-show uses for churn recovery.
+      if (
+        isWorkspaceWindowSwitch &&
+        tuiSessionActiveRef.current &&
+        termRef.current &&
+        containerRef.current &&
+        fitRef.current &&
+        wsRef.current &&
+        !isKimiTuiLive({
+          initialCommand,
+          kimiReady: kimiReadyNotifiedRef.current,
+          tuiSessionActive: tuiSessionActiveRef.current,
+          hasConnectedOnce: hasConnectedOnceRef.current,
+        })
+      ) {
+        logViewportDiagnostic('workspace-window-switch-tui-recover');
+        fitTerminalViewport({
+          container: containerRef.current,
+          fitAddon: fitRef.current,
+          term: termRef.current,
+          socket: wsRef.current,
+          clearAtlas: false,
+          lastPtySizeRef: lastPtySizeRef.current,
+          skipPtyNotify: true,
+        });
+        stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+        refreshTerminalViewport(termRef.current);
+        if (isTerminalRendererReady(termRef.current)) {
+          forceTerminalViewportRepaint(termRef.current);
+        }
+        nudgeTerminalPtyResize({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef.current,
+          force: true,
+        });
+      }
       const gpuStillAttached = !needsGpuRendererReattach({
         operationalRendererMode: operationalRendererModeRef.current,
         webglAddon: webglAddonRef.current,
@@ -6410,7 +6469,21 @@ export default function TerminalTTY({
     return () => {
       window.removeEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
     };
-  }, [id, releaseCanvasAddon, releaseWebglAddonForInactivePanel, scheduleWorkspaceShowRecovery]);
+  }, [
+    id,
+    disposeWebglAddonForContextLoss,
+    fitTerminalViewport,
+    forceTerminalViewportRepaint,
+    initialCommand,
+    isKimiTuiLive,
+    logViewportDiagnostic,
+    nudgeTerminalPtyResize,
+    refreshTerminalViewport,
+    releaseCanvasAddon,
+    releaseWebglAddonForInactivePanel,
+    scheduleWorkspaceShowRecovery,
+    stabilizeTerminalRenderer,
+  ]);
 
   const reconnect = useCallback(() => {
     processExitedRef.current = false;
@@ -7636,6 +7709,61 @@ export default function TerminalTTY({
 
       if (isWorkspaceCloseRecover) {
         const isWorkspaceRemove = String(reason).includes('workspace-removed');
+        const isWindowSwitch = String(reason).includes('workspace-window');
+        // Window/workspace switch survivors can have a WebGL addon that is still
+        // referenced but whose context was silently lost while the panel was parked.
+        // Use the same disposal pattern as window.focus/visibilitychange/pageshow so
+        // the recovery path reattaches the renderer instead of bailing out.
+        if (
+          !isWorkspaceRemove &&
+          shouldAttachWebglRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) &&
+          isWebglAddonContextLost(webglAddonRef.current)
+        ) {
+          logViewportDiagnostic(`${reason}-webgl-context-lost`);
+          disposeWebglAddonForContextLoss(`${reason}-webgl-context-lost`);
+        }
+        // Window switch (V1/V2/V3) does not toggle isVisibleInLayout, so live TUIs
+        // like OpenCode/Grok never get the layout-show TUI-safe churn path. Run the
+        // same fit + stabilize + refresh + force-repaint + forced-SIGWINCH sequence
+        // that workspace-show uses for churn recovery.
+        if (
+          isWindowSwitch &&
+          tuiSessionActiveRef.current &&
+          termRef.current &&
+          containerRef.current &&
+          fitRef.current &&
+          wsRef.current &&
+          !isKimiTuiLive({
+            initialCommand,
+            kimiReady: kimiReadyNotifiedRef.current,
+            tuiSessionActive: tuiSessionActiveRef.current,
+            hasConnectedOnce: hasConnectedOnceRef.current,
+          })
+        ) {
+          logViewportDiagnostic(`${reason}-tui-recover`);
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+            skipPtyNotify: true,
+          });
+          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          refreshTerminalViewport(termRef.current);
+          if (isTerminalRendererReady(termRef.current)) {
+            forceTerminalViewportRepaint(termRef.current);
+          }
+          nudgeTerminalPtyResize({
+            term: termRef.current,
+            socket: wsRef.current,
+            lastPtySizeRef: lastPtySizeRef.current,
+            force: true,
+          });
+        }
         const gpuStillAttached = !needsGpuRendererReattach({
           operationalRendererMode: operationalRendererModeRef.current,
           webglAddon: webglAddonRef.current,
@@ -7712,14 +7840,22 @@ export default function TerminalTTY({
     };
   }, [
     id,
+    disposeWebglAddonForContextLoss,
+    fitTerminalViewport,
+    forceTerminalViewportRepaint,
     initialCommand,
+    isKimiTuiLive,
+    logViewportDiagnostic,
     maybeConnectAfterViewportFit,
+    nudgeTerminalPtyResize,
+    refreshTerminalViewport,
     scheduleBoundedForceRepaint,
     scheduleBoundedFitRepaint,
     scheduleBoundedGpuRecover,
     scheduleWorkspaceShowRecovery,
     scrollTerminalToBottom,
     sendInitialCommandIfReady,
+    stabilizeTerminalRenderer,
     syncTerminalViewportOnWorkspaceShow,
   ]);
 
