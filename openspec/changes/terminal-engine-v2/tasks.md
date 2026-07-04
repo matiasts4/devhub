@@ -30,8 +30,8 @@ Suggested split: 9 PRs, one per phase; PR1 and PR2 may be developed in parallel 
 
 ## Phase 3: Two-tier rehydration
 
-- [ ] 3.1 Add `@xterm/addon-serialize` to `package.json`; store/serve `cache:term:full` snapshots in `ttyServer.js`; publish snapshots from `TerminalTTY.jsx` v2 after ≥100 KiB new output. (M)
-- [ ] 3.2 Restore snapshot + delta + `heldData` queue in `TerminalTTY.jsx` v2 on mount; add rehydration-order tests and workspace-switch restore test. (L)
+- [x] 3.1 Add `xterm-addon-serialize@0.11.0` to `package.json` (matches existing `xterm`/`xterm-addon-*` family); store/serve `cache:term:full` snapshots in `ttyServer.js`; publish snapshots from `TerminalTTY.jsx` v2 after ≥100 KiB new output or 5 s, and on dispose/`beforeunload`. (M)
+- [x] 3.2 Restore snapshot + delta + `heldData` queue in `TerminalTTY.jsx` v2 on mount; add rehydration-order tests and workspace-switch restore test. (L)
 
 ## Phase 4: Destroy-only-on-close
 
