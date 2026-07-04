@@ -17,6 +17,7 @@ import useTerminalWheelRouter from './terminal/hooks/useTerminalWheelRouter';
 import useTerminalV2Session from './terminal/hooks/useTerminalV2Session';
 import useTerminalRendererController from './terminal/hooks/useTerminalRendererController';
 import useTerminalViewportSync from './terminal/hooks/useTerminalViewportSync';
+import useTerminalWorkspaceShowRecovery from './terminal/hooks/useTerminalWorkspaceShowRecovery';
 import useTerminalEngine from './terminal/hooks/useTerminalEngine';
 import {
   readClipboardImage,
@@ -1571,9 +1572,6 @@ export default function TerminalTTY({
     fitAndResize,
     sendResize,
     reactivateTerminalViewport,
-    scheduleInactiveViewportRepaint,
-    syncTerminalViewportOnWorkspaceShow,
-    scheduleWorkspaceShowRecovery,
   } = useTerminalViewportSync({ ctxRef: viewportCtxRef });
 
   const scrollIfActivePanel = useCallback(() => {
@@ -1677,216 +1675,14 @@ export default function TerminalTTY({
     [logViewportDiagnostic]
   );
 
-  // Bounded retry that forces a REAL canvas repaint (1-cell nudge = equivalent to
-  // a manual resize) across frames until forceTerminalViewportRepaint returns true.
-  // Needed because the GPU renderer (canvas/webgl) is released while the workspace
-  // shell is hidden and reattached async; the first attempt usually runs before the
-  // reattach completes so the renderer slot is empty and force bails. Without retry,
-  // panels stay black until a manual resize. Guards bail on dispose/hide; no PTY
-  // SIGWINCH is ever sent (forceTerminalViewportRepaint never notifies the PTY).
-  const scheduleBoundedForceRepaint = useCallback(
-    (maxAttempts = 24) => {
-      if (isEngineV2Ref.current) return;
-      let attempts = 0;
-      const attempt = () => {
-        if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect || rect.width <= 0 || rect.height <= 0) {
-          if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
-          return;
-        }
-        if (coalescedForceRepaint(termRef.current, { reason: 'bounded-force-repaint' })) return;
-        if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
-      };
-      attempt();
-    },
-    [coalescedForceRepaint]
-  );
-
-  // Bounded retry that does a REAL fit (recalculate cols/rows from the container
-  // AND send SIGWINCH to the PTY when cols change) across frames until the
-  // terminal's cols/rows match the container's real capacity. This is the
-  // automatic equivalent of a manual split-drag resize — the ONLY thing that
-  // reliably fixes the "black gutters on the right" symptom, where a TUI (grok,
-  // OpenCode, etc.) paints at a stale smaller width after a workspace switch and
-  // leaves a dead black strip between the TUI content and the panel border.
-  //
-  // Why a new helper and not scheduleBoundedForceRepaint: the 1-cell nudge only
-  // repaints xterm's bitmap at the CURRENT cols/rows — it never recomputes them
-  // from the container and never notifies the PTY, so a TUI drawing at stale dims
-  // stays guted. And syncTerminalViewportOnWorkspaceShow's DOM-TUI freeze path
-  // calls nudgeTerminalPtyResize WITHOUT force, which bails when lastPtySizeRef
-  // matches the (stale) cols → no SIGWINCH → the TUI never redraws at full width.
-  // fitTerminalViewport does both jobs (resize term + PTY notify) but bails until
-  // isTerminalRendererReady (async GPU reattach) and while the container is
-  // zero-sized during the switch transition, so it must be retried across frames.
-  //
-  // ponytail: skip kimi's live Ink TUI — its workspace-show path intentionally
-  // uses skipPtyNotify to avoid disrupting Ink's re-render loop; sending it a
-  // SIGWINCH here could worsen the "kimi crashes sometimes" symptom. Kimi keeps
-  // its existing specialized freeze path. fitTerminalViewport only sends SIGWINCH
-  // when cols actually change (lastPtySizeRef guard), so bounded fit is safe for
-  // Kimi/OpenCode once container dims differ from the stale grid.
-  const scheduleBoundedFitRepaint = useCallback(
-    (maxAttempts = 24) => {
-      if (isEngineV2Ref.current) return;
-      let attempts = 0;
-      // ponytail: require the container's proposed dims to be STABLE across 2
-      // consecutive frames before stopping. On a workspace switch the PanelGroup /
-      // xterm canvas is still settling a frame or two after the first fit, so the
-      // container often reports a transient narrow width; stopping on the first
-      // settled frame leaves the term at those narrow cols → black strip on the
-      // right (Grok/DOM TUI symptom). Waiting one extra frame for stability costs
-      // one no-op fit and catches the container's final width. Ceiling: a container
-      // that keeps oscillating forever would burn maxAttempts no-op fits then stop;
-      // upgrade path is a ResizeObserver-driven fit instead of rAF polling.
-      let lastProposed = null;
-      const attempt = () => {
-        if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect || rect.width <= 0 || rect.height <= 0) {
-          if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
-          return;
-        }
-        const fitWorked = fitTerminalViewport({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-          socket: wsRef.current,
-          clearAtlas: false,
-          lastPtySizeRef: lastPtySizeRef.current,
-        });
-        const proposed = proposeTerminalViewportDimensions({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-        });
-        const settled =
-          fitWorked &&
-          proposed &&
-          Number(proposed.cols) === Number(termRef.current.cols) &&
-          Number(proposed.rows) === Number(termRef.current.rows);
-        const stable =
-          lastProposed !== null &&
-          proposed &&
-          Number(lastProposed.cols) === Number(proposed.cols) &&
-          Number(lastProposed.rows) === Number(proposed.rows);
-        lastProposed =
-          proposed && Number(proposed.cols) > 0
-            ? { cols: Number(proposed.cols), rows: Number(proposed.rows) }
-            : lastProposed;
-        if (settled && stable) {
-          coalescedForceRepaint(termRef.current, { reason: 'bounded-fit-repaint' });
-          return;
-        }
-        if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
-      };
-      attempt();
-    },
-    [coalescedForceRepaint, initialCommand]
-  );
-
-  useEffect(() => {
-    scheduleBoundedFitRepaintRef.current = scheduleBoundedFitRepaint;
-  }, [scheduleBoundedFitRepaint]);
-
-  // Bounded ASYNC retry that guarantees the GPU renderer addon is reattached after a
-  // workspace show, then force-repaints. This is the deterministic backbone that ends
-  // the recurring black-screen-on-switch: it does not rely on the scattered
-  // reattach calls inside syncTerminalViewportOnWorkspaceShow's branches (some of
-  // which return early without reattaching) nor on the release/reattach flags (which
-  // diverge from the actual addon-ref state under rapid switching).
-  //
-  // Why this is needed on top of scheduleBoundedForceRepaint: when the GPU addon is
-  // disposed on hide, RenderService._renderer.value still holds the disposed renderer,
-  // so isTerminalRendererReady() returns true and forceTerminalViewportRepaint()
-  // returns true without painting (disposed renderer no-ops). The force-repaint retry
-  // therefore stops on its first "success" and never reattaches -> black panel. The
-  // addon REF is the truthful signal; reattach replaces the disposed renderer with a
-  // live one, then the force-repaint actually paints.
-  const scheduleBoundedGpuRecover = useCallback(
-    (maxAttempts = 30) => {
-      if (isEngineV2Ref.current) return;
-      let attempts = 0;
-      // ponytail: same 2-frame stability gate as scheduleBoundedFitRepaint — stopping
-      // when forceTerminalViewportRepaint "succeeds" at stale narrow cols leaves Grok
-      // TUIs drawing in a tiny corner with a black gutter on the right.
-      let lastProposed = null;
-      const tick = async () => {
-        if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect || rect.width <= 0 || rect.height <= 0) {
-          if (attempts++ < maxAttempts) requestAnimationFrame(tick);
-          return;
-        }
-        if (
-          needsGpuRendererReattach({
-            operationalRendererMode: operationalRendererModeRef.current,
-            webglAddon: webglAddonRef.current,
-            canvasAddon: canvasAddonRef.current,
-          })
-        ) {
-          if (
-            shouldAttachWebglRenderer({
-              operationalRendererMode: operationalRendererModeRef.current,
-            })
-          ) {
-            await tryReattachWebglAddonRef.current?.({
-              clearAtlas: false,
-              skipFitWhenUnchanged: true,
-            });
-          } else {
-            await tryReattachCanvasAddonRef.current?.();
-          }
-        }
-        if (isDisposingRef.current || !termRef.current || !isVisibleInLayoutRef.current) return;
-        let fitWorked = false;
-        fitWorked = fitTerminalViewport({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-          socket: wsRef.current,
-          clearAtlas: false,
-          lastPtySizeRef: lastPtySizeRef.current,
-        });
-        const proposed = proposeTerminalViewportDimensions({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-        });
-        const settled =
-          fitWorked &&
-          proposed &&
-          Number(proposed.cols) === Number(termRef.current.cols) &&
-          Number(proposed.rows) === Number(termRef.current.rows);
-        const stable =
-          lastProposed !== null &&
-          proposed &&
-          Number(lastProposed.cols) === Number(proposed.cols) &&
-          Number(lastProposed.rows) === Number(proposed.rows);
-        lastProposed =
-          proposed && Number(proposed.cols) > 0
-            ? { cols: Number(proposed.cols), rows: Number(proposed.rows) }
-            : lastProposed;
-        const gpuReady = !needsGpuRendererReattach({
-          operationalRendererMode: operationalRendererModeRef.current,
-          webglAddon: webglAddonRef.current,
-          canvasAddon: canvasAddonRef.current,
-        });
-        if (gpuReady && settled && stable) {
-          coalescedForceRepaint(termRef.current, { reason: 'bounded-gpu-recover' });
-          return;
-        }
-        if (attempts++ < maxAttempts) requestAnimationFrame(tick);
-      };
-      tick();
-    },
-    [coalescedForceRepaint, initialCommand]
-  );
-
-  useEffect(() => {
-    scheduleBoundedGpuRecoverRef.current = scheduleBoundedGpuRecover;
-  }, [scheduleBoundedGpuRecover]);
+  const {
+    scheduleBoundedForceRepaint,
+    scheduleBoundedFitRepaint,
+    scheduleBoundedGpuRecover,
+    scheduleInactiveViewportRepaint,
+    syncTerminalViewportOnWorkspaceShow,
+    scheduleWorkspaceShowRecovery,
+  } = useTerminalWorkspaceShowRecovery({ ctxRef: viewportCtxRef });
 
   useEffect(() => {
     let cancelled = false;
@@ -2762,6 +2558,8 @@ export default function TerminalTTY({
     syncTerminalViewportOnWorkspaceShowRef,
     scheduleWorkspaceShowRecoveryRef,
     reactivateTerminalViewportRef,
+    scheduleBoundedFitRepaintRef,
+    scheduleBoundedGpuRecoverRef,
     notifyViewportReady,
     restoreInitialCommandDispatchGuard,
     scheduleInitialCommandAfterViewport,

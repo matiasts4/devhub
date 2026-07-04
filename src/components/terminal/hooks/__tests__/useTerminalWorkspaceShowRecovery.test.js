@@ -1,12 +1,12 @@
 /**
- * Guard tests for useTerminalViewportSync — fit/resize coalescing.
+ * Guard tests for useTerminalWorkspaceShowRecovery — workspace-show sync.
  */
 
 const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
-const { renderHook, act } = require('@testing-library/react');
+const { renderHook } = require('@testing-library/react');
 
-const useTerminalViewportSync = require('../useTerminalViewportSync').default;
+const useTerminalWorkspaceShowRecovery = require('../useTerminalWorkspaceShowRecovery').default;
 
 function createCtx() {
   const term = { cols: 80, rows: 24, scrollToBottom: jest.fn() };
@@ -66,6 +66,8 @@ function createCtx() {
     syncTerminalViewportOnWorkspaceShowRef: { current: null },
     scheduleWorkspaceShowRecoveryRef: { current: null },
     reactivateTerminalViewportRef: { current: null },
+    scheduleBoundedFitRepaintRef: { current: null },
+    scheduleBoundedGpuRecoverRef: { current: null },
     notifyViewportReady: jest.fn(),
     restoreInitialCommandDispatchGuard: jest.fn(),
     scheduleInitialCommandAfterViewport: jest.fn(),
@@ -75,9 +77,6 @@ function createCtx() {
     disposeWebglAddonForContextLoss: jest.fn(),
     scheduleWebglRecovery: jest.fn(),
     coalescedForceRepaint: jest.fn(),
-    scheduleBoundedGpuRecover: jest.fn(),
-    scheduleBoundedFitRepaint: jest.fn(),
-    scheduleBoundedForceRepaint: jest.fn(),
     buildViewportSnapshot: jest.fn(() => ({})),
     confirmViewportFit: jest.fn(),
     maybeConnectAfterViewportFit: jest.fn(),
@@ -87,33 +86,25 @@ function createCtx() {
     scheduleWorkspaceShowRecovery: jest.fn(),
     sendResize: jest.fn(),
     reactivateTerminalViewport: jest.fn(),
+    scheduleBoundedGpuRecover: jest.fn(),
+    scheduleBoundedFitRepaint: jest.fn(),
+    scheduleBoundedForceRepaint: jest.fn(),
   };
 }
 
-describe('useTerminalViewportSync', () => {
+describe('useTerminalWorkspaceShowRecovery', () => {
   beforeAll(() => {
     installDom();
   });
 
-  it('returns fit and resize handlers', () => {
+  it('returns workspace-show recovery handlers', () => {
     const ctxRef = { current: createCtx() };
-    const { result } = renderHook(() => useTerminalViewportSync({ ctxRef }));
-    expect(typeof result.current.fitAndResize).toBe('function');
-    expect(typeof result.current.sendResize).toBe('function');
-    expect(typeof result.current.reactivateTerminalViewport).toBe('function');
-    expect(typeof result.current.waitForVisibleDimensions).toBe('function');
-  });
-
-  it('sendResize no-ops when container has zero size', () => {
-    const ctx = createCtx();
-    ctx.containerRef.current.getBoundingClientRect = () => ({ width: 0, height: 0 });
-    const ctxRef = { current: ctx };
-    const { result } = renderHook(() => useTerminalViewportSync({ ctxRef }));
-
-    act(() => {
-      result.current.sendResize();
-    });
-
-    expect(ctx.fitAndResize).not.toHaveBeenCalled();
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+    expect(typeof result.current.syncTerminalViewportOnWorkspaceShow).toBe('function');
+    expect(typeof result.current.scheduleWorkspaceShowRecovery).toBe('function');
+    expect(typeof result.current.scheduleBoundedForceRepaint).toBe('function');
+    expect(typeof result.current.scheduleBoundedFitRepaint).toBe('function');
+    expect(typeof result.current.scheduleBoundedGpuRecover).toBe('function');
+    expect(typeof result.current.scheduleInactiveViewportRepaint).toBe('function');
   });
 });
