@@ -1843,6 +1843,25 @@ export const TERMINAL_NATIVE_CONTENT_BODY_STYLE = Object.freeze({
 
 const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
 
+// Legacy native VTE helpers removed in Phase 0; stable no-op stubs for teardown paths.
+const NATIVE_VTE_STUBS = Object.freeze({
+  setNativeVtePanelVisibility: async () => {},
+  openNativeVtePanel: async () => ({ opened: false, reason: 'vte-removed' }),
+  closeNativeVtePanel: async () => {},
+  resizeNativeVtePanel: async () => {},
+  focusNativeVtePanel: async () => {},
+  pasteNativeVtePanel: async () => ({ supported: false, reason: 'vte-removed' }),
+  subscribeNativeVteEvents: () => () => {},
+  probeNativeVte: async () => ({ ready: false, reason: 'vte-removed' }),
+  shouldOpenNativeVtePanel: () => false,
+  cancelNativeVteLayoutHide: () => {},
+  deferNativeVteLayoutHide: () => {},
+  hasHiddenNativeVteLease: () => false,
+  consumeHiddenNativeVteLease: () => false,
+  clearNativeVteLease: () => {},
+  markNativeVteLeaseHidden: () => {},
+});
+
 // Master switch for the legacy native VTE (GTK) backend.
 // We keep the entire implementation (nativeVteBridge, probes, lease logic, etc.)
 // in the tree exactly as-is so it can be re-enabled later if needed.
@@ -1981,23 +2000,23 @@ export default function TerminalTTY({
   const terminalBlurCleanupRef = useRef(null);
   const tauriAvailable = false;
 
-  // Legacy native VTE helpers removed in Phase 0; keep stable no-op stubs so
-  // the remaining VTE-aware teardown/cleanup paths do not throw.
-  const setNativeVtePanelVisibility = async () => {};
-  const openNativeVtePanel = async () => ({ opened: false, reason: 'vte-removed' });
-  const closeNativeVtePanel = async () => {};
-  const resizeNativeVtePanel = async () => {};
-  const focusNativeVtePanel = async () => {};
-  const pasteNativeVtePanel = async () => ({ supported: false, reason: 'vte-removed' });
-  const subscribeNativeVteEvents = () => () => {};
-  const probeNativeVte = async () => ({ ready: false, reason: 'vte-removed' });
-  const shouldOpenNativeVtePanel = () => false;
-  const cancelNativeVteLayoutHide = () => {};
-  const deferNativeVteLayoutHide = () => {};
-  const hasHiddenNativeVteLease = () => false;
-  const consumeHiddenNativeVteLease = () => false;
-  const clearNativeVteLease = () => {};
-  const markNativeVteLeaseHidden = () => {};
+  const {
+    setNativeVtePanelVisibility,
+    openNativeVtePanel,
+    closeNativeVtePanel,
+    resizeNativeVtePanel,
+    focusNativeVtePanel,
+    pasteNativeVtePanel,
+    subscribeNativeVteEvents,
+    probeNativeVte,
+    shouldOpenNativeVtePanel,
+    cancelNativeVteLayoutHide,
+    deferNativeVteLayoutHide,
+    hasHiddenNativeVteLease,
+    consumeHiddenNativeVteLease,
+    clearNativeVteLease,
+    markNativeVteLeaseHidden,
+  } = NATIVE_VTE_STUBS;
 
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
   // Force the only supported active renderer. Any vte request (from stored
