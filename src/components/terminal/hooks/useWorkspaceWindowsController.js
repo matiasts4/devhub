@@ -1,32 +1,49 @@
 // useWorkspaceWindowsController — manages workspace window state and Tauri WebviewWindow IPC.
 // Extracted from TerminalWorkspacesManager.jsx.
-// Args: { projectId, workspaces, activeWsId, activePanelIds, isClientLoaded, browserWindowStates, setBrowserWindowStates, storage }
-// Returns: { workspaceWindows, setWorkspaceWindows, activeWindowIds, setActiveWindowIds, windowCounterRef, addWindowToWorkspace, switchWindowInWorkspace, removeWindowFromWorkspace, closeWorkspaceBrowserWindow }
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { buildBrowserWindowLabel } from '../../workspace/browserWindowState';
 import { closeTerminalSessions } from '../workspaceStateHelpers';
 import { createColumn, createWindow } from '../utils/panelHelpers';
-import { setPanelRendererPreference, TERMINAL_RENDERER_INHERIT_MODE } from '../terminalRendererPreferences';
+import {
+  setPanelRendererPreference,
+  TERMINAL_RENDERER_INHERIT_MODE,
+} from '../terminalRendererPreferences';
+import { applyActiveWindowColumnSnapshot } from '@/lib/terminal/swarmLaunchWorkspace';
+import { MAX_WORKSPACE_WINDOWS } from '../components/WorkspaceWindowSwitcher';
 
 export default function useWorkspaceWindowsController({
   projectId,
   workspaces,
-  activeWsId,
   activePanelIds,
   isClientLoaded,
   browserWindowStates,
   setBrowserWindowStates,
-  storage,
+  workspaceWindowsRef,
+  activeWindowIdsRef,
+  workspacesRef,
+  activePanelIdsRef,
+  focusedPanelByWorkspaceRef,
+  setFocusedPanelByWorkspace,
+  setWorkspaces,
+  setActivePanelIds,
+  setTerminalRendererPreferences,
+  panelCounterRef,
+  colCounterRef,
+  getAllPanelIds,
+  getPanelIdsFromColumns,
 }) {
   const [workspaceWindows, setWorkspaceWindows] = useState(() => ({}));
   const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
   const windowCounterRef = useRef(1);
-  const activeWindowIdsRef = useRef(activeWindowIds);
+
+  useEffect(() => {
+    workspaceWindowsRef.current = workspaceWindows;
+  }, [workspaceWindows, workspaceWindowsRef]);
 
   useEffect(() => {
     activeWindowIdsRef.current = activeWindowIds;
-  }, [activeWindowIds]);
+  }, [activeWindowIds, activeWindowIdsRef]);
 
   // Sync workspace windows when workspaces change
   useEffect(() => {
@@ -83,6 +100,51 @@ export default function useWorkspaceWindowsController({
     windowCounterRef.current = Math.max(windowCounterRef.current, maxWindowId);
   }, [workspaceWindows]);
 
+  const updateBrowserWindowState = useCallback(
+    (wsId, nextValue) => {
+      if (!wsId) return;
+      setBrowserWindowStates((prev) => {
+        const currentState = prev?.[wsId] || {};
+        const resolvedState =
+          typeof nextValue === 'function'
+            ? nextValue(currentState)
+            : { ...currentState, ...nextValue };
+        return {
+          ...prev,
+          [wsId]: resolvedState,
+        };
+      });
+    },
+    [setBrowserWindowStates]
+  );
+
+  const closeWorkspaceBrowserWindow = useCallback(
+    async (wsId) => {
+      if (!wsId) return;
+
+      const browserState = browserWindowStates?.[wsId];
+      const label = browserState?.label || buildBrowserWindowLabel(projectId, wsId);
+
+      try {
+        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+          const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+          const existingWindow = await WebviewWindow.getByLabel(label);
+          await existingWindow?.close().catch(() => {});
+        }
+      } catch {
+        // Ignore Tauri close failures so state can still be cleaned up locally.
+      } finally {
+        updateBrowserWindowState(wsId, {
+          open: false,
+          label,
+          url: '',
+          updatedAt: Date.now(),
+        });
+      }
+    },
+    [browserWindowStates, projectId, updateBrowserWindowState]
+  );
+
   // Tauri WebviewWindow reconciliation
   useEffect(() => {
     if (!isClientLoaded || typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return;
@@ -99,10 +161,12 @@ export default function useWorkspaceWindowsController({
 
             if (existingWindow) {
               existingWindow.once('tauri://destroyed', () => {
-                setBrowserWindowStates((prev) => ({
-                  ...prev,
-                  [wsId]: { ...prev?.[wsId], open: false, label, url: '', updatedAt: Date.now() },
-                }));
+                updateBrowserWindowState(wsId, {
+                  open: false,
+                  label,
+                  url: '',
+                  updatedAt: Date.now(),
+                });
               });
             }
 
@@ -149,59 +213,23 @@ export default function useWorkspaceWindowsController({
     return () => {
       cancelled = true;
     };
-  }, [browserWindowStates, isClientLoaded, projectId, setBrowserWindowStates]);
-
-  const updateBrowserWindowState = useCallback((wsId, nextValue) => {
-    if (!wsId) return;
-    setBrowserWindowStates((prev) => {
-      const currentState = prev?.[wsId] || {};
-      const resolvedState =
-        typeof nextValue === 'function'
-          ? nextValue(currentState)
-          : { ...currentState, ...nextValue };
-      return {
-        ...prev,
-        [wsId]: resolvedState,
-      };
-    });
-  }, [setBrowserWindowStates]);
-
-  const closeWorkspaceBrowserWindow = useCallback(
-    async (wsId) => {
-      if (!wsId) return;
-
-      const browserState = browserWindowStates?.[wsId];
-      const label = browserState?.label || buildBrowserWindowLabel(projectId, wsId);
-
-      try {
-        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-          const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-          const existingWindow = await WebviewWindow.getByLabel(label);
-          await existingWindow?.close().catch(() => {});
-        }
-      } catch {
-        // Ignore Tauri close failures so state can still be cleaned up locally.
-      } finally {
-        updateBrowserWindowState(wsId, {
-          open: false,
-          label,
-          url: '',
-          updatedAt: Date.now(),
-        });
-      }
-    },
-    [browserWindowStates, projectId, updateBrowserWindowState]
-  );
+  }, [
+    browserWindowStates,
+    isClientLoaded,
+    projectId,
+    setBrowserWindowStates,
+    updateBrowserWindowState,
+  ]);
 
   const addWindowToWorkspace = useCallback(
-    (
-      wsId,
-      panelCounterRef,
-      colCounterRef,
-      setTerminalRendererPreferences,
-      setWorkspaces,
-      setActivePanelIds
-    ) => {
+    (wsId) => {
+      const existing = workspaceWindowsRef.current?.[wsId] || [];
+      if (existing.length >= MAX_WORKSPACE_WINDOWS) return;
+
+      const ws = workspacesRef.current.find((entry) => entry.id === wsId);
+      const liveColumns = ws?.columns || [];
+      const activeWindowId = activeWindowIdsRef.current?.[wsId];
+
       panelCounterRef.current += 1;
       colCounterRef.current += 1;
       windowCounterRef.current += 1;
@@ -212,71 +240,122 @@ export default function useWorkspaceWindowsController({
       const newColumns = [createColumn(newColId, newPanelId)];
 
       setWorkspaceWindows((prev) => {
-        const existing = prev[wsId] || [];
+        const prevExisting = prev[wsId] || [];
+        const snapshotted =
+          activeWindowId && liveColumns.length > 0
+            ? applyActiveWindowColumnSnapshot(
+                prevExisting,
+                activeWindowId,
+                liveColumns,
+                activePanelIdsRef.current?.[wsId]
+              )
+            : prevExisting;
+
         return {
           ...prev,
           [wsId]: [
-            ...existing,
-            createWindow(newWindowId, `V${existing.length + 1}`, newColumns, newPanelId),
+            ...snapshotted,
+            createWindow(newWindowId, `V${prevExisting.length + 1}`, newColumns, newPanelId),
           ],
         };
       });
 
       setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
-
-      if (setActivePanelIds) {
-        setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
-      }
-
-      if (setTerminalRendererPreferences) {
-        setTerminalRendererPreferences((prev) =>
-          setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
-        );
-      }
+      setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
+      setTerminalRendererPreferences((prev) =>
+        setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
+      );
 
       setWorkspaces((prev) =>
-        prev.map((ws) => (ws.id === wsId ? { ...ws, columns: newColumns } : ws))
+        prev.map((entry) => (entry.id === wsId ? { ...entry, columns: newColumns } : entry))
       );
     },
-    []
+    [
+      workspaceWindowsRef,
+      workspacesRef,
+      activeWindowIdsRef,
+      activePanelIdsRef,
+      panelCounterRef,
+      colCounterRef,
+      setActivePanelIds,
+      setTerminalRendererPreferences,
+      setWorkspaces,
+    ]
   );
 
   const switchWindowInWorkspace = useCallback(
-    (wsId, windowId, setWorkspaces, setActivePanelIds) => {
-      const windows = workspaceWindows[wsId] || [];
+    (wsId, windowId) => {
+      const windows = workspaceWindowsRef.current?.[wsId] || [];
       const nextWindow = windows.find((win) => win.id === windowId);
       if (!nextWindow) return;
 
+      const activeWindowId = activeWindowIdsRef.current?.[wsId];
+      if (activeWindowId === windowId) return;
+
+      const ws = workspacesRef.current.find((entry) => entry.id === wsId);
+      const liveColumns = ws?.columns || [];
+
+      let resolvedWindows = windows;
+      if (activeWindowId && liveColumns.length > 0) {
+        resolvedWindows = applyActiveWindowColumnSnapshot(
+          windows,
+          activeWindowId,
+          liveColumns,
+          activePanelIdsRef.current?.[wsId]
+        );
+        setWorkspaceWindows((prev) => ({ ...prev, [wsId]: resolvedWindows }));
+      }
+
+      const destination = resolvedWindows.find((win) => win.id === windowId) || nextWindow;
       const nextPanelId =
-        nextWindow.activePanelId ||
-        nextWindow.columns?.flatMap((col) => col.panels || [])[0]?.id ||
+        destination.activePanelId ||
+        destination.columns?.flatMap((col) => col.panels || [])[0]?.id ||
         null;
 
-      setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
+      const focusedPanelId = focusedPanelByWorkspaceRef.current?.[wsId];
+      const destinationPanelIds = getPanelIdsFromColumns(destination.columns || []);
+      if (focusedPanelId && !destinationPanelIds.includes(focusedPanelId)) {
+        setFocusedPanelByWorkspace((prev) => {
+          if (!prev[wsId]) return prev;
+          const next = { ...prev };
+          delete next[wsId];
+          return next;
+        });
+      }
 
-      if (nextPanelId && setActivePanelIds) {
+      setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
+      if (nextPanelId) {
         setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
       }
 
       setWorkspaces((prev) =>
-        prev.map((ws) =>
-          ws.id === wsId ? { ...ws, columns: nextWindow.columns || ws.columns } : ws
+        prev.map((entry) =>
+          entry.id === wsId ? { ...entry, columns: destination.columns || entry.columns } : entry
         )
       );
     },
-    [workspaceWindows]
+    [
+      workspaceWindowsRef,
+      workspacesRef,
+      activeWindowIdsRef,
+      activePanelIdsRef,
+      focusedPanelByWorkspaceRef,
+      setFocusedPanelByWorkspace,
+      setActivePanelIds,
+      setWorkspaces,
+      getPanelIdsFromColumns,
+    ]
   );
 
   const removeWindowFromWorkspace = useCallback(
-    async (wsId, windowId, setWorkspaces, setActivePanelIds) => {
+    async (wsId, windowId) => {
       const windows = workspaceWindows[wsId] || [];
       if (windows.length <= 1) return;
 
       const targetWindow = windows.find((win) => win.id === windowId);
       if (targetWindow?.columns?.length) {
-        await closeTerminalSessions(
-          targetWindow.columns.flatMap((col) => col.panels || []).map((p) => p.id)
-        );
+        const panelIds = getAllPanelIds(targetWindow.columns);
+        await closeTerminalSessions(panelIds);
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);
@@ -302,7 +381,7 @@ export default function useWorkspaceWindowsController({
         );
       }
     },
-    [workspaceWindows, activeWindowIds]
+    [workspaceWindows, activeWindowIds, getAllPanelIds, setActivePanelIds, setWorkspaces]
   );
 
   return {

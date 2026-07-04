@@ -101,6 +101,15 @@ import WorkspaceRightDock from './workspace/WorkspaceRightDock';
 import WorkspaceWindowSwitcher, {
   MAX_WORKSPACE_WINDOWS,
 } from './terminal/components/WorkspaceWindowSwitcher';
+import WorkspaceWindowTabBar from './terminal/components/WorkspaceWindowTabBar';
+import WorkspaceTerminalSurface from './terminal/components/WorkspaceTerminalSurface';
+import useRightDockController, {
+  resolveMeasuredRightDockBounds,
+  resolveRightDockLayerStyle,
+} from './terminal/hooks/useRightDockController';
+import useWorkspaceWindowsController from './terminal/hooks/useWorkspaceWindowsController';
+import useSwarmLaunchController from './terminal/hooks/useSwarmLaunchController';
+import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
 import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
 import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
@@ -916,398 +925,6 @@ function buildStableWorkspaceShellKey(scope, workspaceId) {
   return `${scope}-${String(workspaceId || 'unknown')}`;
 }
 
-export function renderWorkspacePanel(
-  panel,
-  {
-    activePanelId,
-    activeWsId,
-    isActivePanel,
-    isVisibleInLayout,
-    isWorkspaceShellVisible = true,
-    cwd,
-    wsId,
-    setActivePanelIds,
-    onClosePanel,
-    onSplitRight,
-    onSplitDown,
-    onToggleFocus,
-    isFocusedPanel,
-    requestedRendererMode,
-    onResetRendererToXterm,
-    onSetPanelRenderer,
-    onActivatePanel,
-    panelLabel,
-    panelSemanticMetadata,
-    suspendNativeSurface,
-    nativeSurfacePolicy,
-    connectionState,
-    visibleTerminalPanelCount = 1,
-    coldMountOrdinal = 0,
-    deferLiveSurfaceToPizarra = false,
-    pizarraOwnsLiveSurfaces = false,
-    swarmDelegatedRoleKeys = null,
-    inboxPendingCount = 0,
-    renameEditing = false,
-    renameValue = '',
-    renameError = null,
-    onStartRename = null,
-    onRenameValueChange = null,
-    onCommitRename = null,
-    onCancelRename = null,
-    agentRun = null,
-    onConnectionStateChange = null,
-  }
-) {
-  const isActive = panel.id === activePanelId && activeWsId === wsId;
-  // Shared-surface singleton only when pizarra owns projection — workspace docks mount
-  // TerminalTTY directly to avoid hidden→portal remount (double xterm / double echo).
-  const sharedViewEnabled = isPizarraSharedViewEnabled() && pizarraOwnsLiveSurfaces;
-  const panelChromeSafeZoneMinTop = 30;
-  const semanticMetadata = buildPanelHeaderDisplay(
-    panelLabel,
-    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
-  );
-  const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
-  const sharedTerminalProps = {
-    id: panel.id,
-    cwd: panel.cwd || cwd,
-    swarmContext: panel.swarmContext || null,
-    hideTitleBar: true,
-    showQuickCopyButton: false,
-    autoFocus: isActive,
-    isActivePanel: Boolean(isActivePanel ?? isActive),
-    isVisibleInLayout: Boolean(isVisibleInLayout),
-    isWorkspaceShellVisible: Boolean(isWorkspaceShellVisible),
-    visibleTerminalPanelCount,
-    coldMountOrdinal,
-    initialCommand: panel.initialCommand,
-    connectionState,
-    requestedRendererMode,
-    onResetRendererToXterm,
-    onActivatePanel,
-    suspendNativeSurface: Boolean(suspendNativeSurface),
-    nativeSurfacePolicy: nativeSurfacePolicy || 'live',
-    surfaceHost: pizarraOwnsLiveSurfaces ? 'pizarra' : 'workspace',
-    pizarraOwnsLiveSurfaces: Boolean(pizarraOwnsLiveSurfaces),
-    onConnectionStateChange,
-    isEngineV2: Boolean(panel?.terminalEngineV2),
-  };
-
-  const panelIsEngineV2 = Boolean(panel?.terminalEngineV2);
-  // Phase 4 terminal-engine-v2: hidden v2 panels unmount so TerminalTTY can
-  // stash the live xterm surface in the graveyard. Legacy v1 panels stay
-  // mounted and rely on the existing survivor-recovery paths.
-  const shouldMountTerminal = !panelIsEngineV2 || Boolean(isVisibleInLayout);
-
-  return (
-    <div
-      key={panel.id}
-      data-testid={
-        isFocusedPanel ? `workspace-focused-panel-${panel.id}` : `panel-slot-${panel.id}`
-      }
-      className={`group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border ${
-        isActive
-          ? 'border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]'
-          : 'border-transparent'
-      }`}
-      style={swarmRole ? { '--swarm-role-rgb': swarmRole.rgb } : undefined}
-      onMouseDown={() => {
-        if (onActivatePanel) {
-          onActivatePanel(panel.id);
-          return;
-        }
-        setActivePanelIds((prev) => ({ ...prev, [wsId]: panel.id }));
-      }}
-    >
-      {swarmRole ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-1 left-0 z-20 w-0.5 rounded-r-full bg-[rgba(var(--swarm-role-rgb),0.9)] shadow-[0_0_12px_rgba(var(--swarm-role-rgb),0.32)]"
-        />
-      ) : null}
-      <div
-        data-testid={`panel-safe-zone-${panel.id}`}
-        data-native-safe-zone="floating-chrome"
-        data-safe-zone-min-top={String(panelChromeSafeZoneMinTop)}
-        className="pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5"
-        style={{
-          minHeight: `${panelChromeSafeZoneMinTop}px`,
-          ...getTerminalPanelHeaderStyle(),
-        }}
-      >
-        {/* Agent info bar — kept above the native terminal surface so VTE cannot cover it. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1">
-          <div
-            data-testid={`panel-semantic-header-${panel.id}`}
-            data-panel-metadata-source={semanticMetadata.source}
-            className="flex min-w-0 items-center gap-2 text-[11px] leading-none"
-            title={semanticMetadata.fullText}
-          >
-            {swarmRole ? (
-              <span
-                data-testid={`panel-role-badge-${panel.id}`}
-                className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(var(--swarm-role-rgb),0.42)] bg-[rgba(var(--swarm-role-rgb),0.14)] px-1.5 text-[9px] font-black tracking-[0.06em] text-[rgb(var(--swarm-role-rgb))] shadow-[0_0_10px_rgba(var(--swarm-role-rgb),0.1)]"
-              >
-                {swarmRole.abbrev}
-              </span>
-            ) : null}
-            {inboxPendingCount > 0 ? (
-              <span
-                data-testid={`panel-inbox-badge-${panel.id}`}
-                title={`${inboxPendingCount} directiva(s) pendiente(s)`}
-                className="inline-flex h-[18px] shrink-0 items-center rounded border border-[rgba(251,191,36,0.45)] bg-[rgba(251,191,36,0.14)] px-1.5 text-[9px] font-bold text-[rgb(251,191,36)]"
-              >
-                {inboxPendingCount}
-              </span>
-            ) : null}
-            <PanelStatusBadge
-              panelId={panel.id}
-              terminalId={panel.id}
-              agentRun={agentRun}
-              initialCommand={panel.initialCommand}
-              connectionState={connectionState}
-            />
-            <span
-              data-testid={`panel-semantic-primary-${panel.id}`}
-              className="truncate align-middle font-bold text-[rgba(241,245,249,0.95)]"
-            >
-              {semanticMetadata.primary}
-            </span>
-            {semanticMetadata.secondary ? (
-              <>
-                <span aria-hidden="true" className="mx-0.5 shrink-0 text-[rgba(148,163,184,0.55)]">
-                  {' · '}
-                </span>
-                <span
-                  data-testid={`panel-semantic-secondary-${panel.id}`}
-                  className="max-w-[200px] truncate align-middle text-[rgba(148,163,184,0.85)]"
-                >
-                  {semanticMetadata.secondary}
-                </span>
-              </>
-            ) : null}
-          </div>
-        </div>
-        <div
-          aria-hidden="true"
-          className={`absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity ${
-            isActive ? 'opacity-100' : 'opacity-70'
-          }`}
-        />
-        {/* Panel controls — top-right, outside the native terminal body. */}
-        <div
-          className="pointer-events-none absolute right-1 top-0.5 z-10"
-          data-testid={`panel-chrome-overlay-${panel.id}`}
-          data-floating-placement="inside-top-right"
-          aria-label={
-            renameEditing
-              ? `Rename panel ${panelLabel || panel.id}`
-              : `Panel ${panelLabel || panel.id} controls`
-          }
-          title={
-            renameEditing
-              ? `Rename panel ${panelLabel || panel.id}`
-              : `Panel ${panelLabel || panel.id} actions`
-          }
-          onDoubleClick={(e) => {
-            if (renameEditing) return;
-            e.stopPropagation();
-            onStartRename?.(panel, panelLabel);
-          }}
-        >
-          {renameEditing ? (
-            <span className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--text-primary)]">
-              <input
-                autoFocus
-                type="text"
-                data-testid={`panel-rename-input-${panel.id}`}
-                value={renameValue}
-                onChange={(e) => onRenameValueChange?.(e.target.value || '')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    onRenameValueChange?.(e.currentTarget.value || '');
-                    onCommitRename?.(panel);
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    onCancelRename?.();
-                  }
-                }}
-                onBlur={(e) => {
-                  onRenameValueChange?.(e.currentTarget.value || '');
-                  onCommitRename?.(panel);
-                }}
-                className="w-[120px] bg-transparent outline-none"
-                aria-label={`Rename panel ${panel.id}`}
-              />
-            </span>
-          ) : null}
-          {renameError && renameEditing ? (
-            <span
-              data-testid={`panel-rename-error-${panel.id}`}
-              className="pointer-events-auto absolute right-0 top-full mt-1 inline-flex items-center rounded-md border border-[rgba(251,113,133,0.45)] bg-[rgba(251,113,133,0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(251,113,133)]"
-            >
-              {renameError === 'name-in-use'
-                ? 'Name already in use in this workspace'
-                : renameError === 'invalid-name' || renameError === 'empty-name'
-                  ? 'Invalid name'
-                  : renameError === 'collision'
-                    ? 'Name already in use in this workspace'
-                    : renameError}
-            </span>
-          ) : null}
-          <div
-            className="pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors"
-            data-testid={`panel-header-actions-${panel.id}`}
-            title={`Panel ${panelLabel || panel.id} actions`}
-            style={getTerminalFloatingControlStyle({ active: isActive })}
-          >
-            {SHOW_RENDERER_SWITCH ? (
-              <PanelRendererSelect
-                panelId={panel.id}
-                currentMode={requestedRendererMode}
-                availableModes={['xterm-webgl', 'xterm']}
-                onChange={(mode) => onSetPanelRenderer?.(mode)}
-              />
-            ) : null}
-            <button
-              type="button"
-              data-testid={`panel-split-right-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-              title="Dividir a la derecha"
-              aria-label="Dividir a la derecha"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSplitRight?.();
-              }}
-            >
-              <SplitSquareVertical className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              data-testid={`panel-split-down-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-              title="Dividir hacia abajo"
-              aria-label="Dividir hacia abajo"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSplitDown?.();
-              }}
-            >
-              <SplitSquareHorizontal className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              data-testid={`panel-focus-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
-              title={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
-              aria-label={isFocusedPanel ? 'Salir de focus' : 'Focus terminal'}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFocus?.();
-              }}
-            >
-              {isFocusedPanel ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              type="button"
-              data-testid={`panel-close-${panel.id}`}
-              data-size="comfortable"
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
-              title="Cerrar terminal"
-              aria-label="Cerrar terminal"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClosePanel?.();
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-      <div
-        className="relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
-        data-testid={`panel-body-${panel.id}`}
-        style={getTerminalPanelBodyStyle({ withBackground: false })}
-      >
-        {sharedViewEnabled ? (
-          <SharedTerminalSurfaceRegistrar
-            surfaceId={panel.id}
-            terminalProps={sharedTerminalProps}
-          />
-        ) : null}
-        <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
-          {sharedViewEnabled ? (
-            pizarraOwnsLiveSurfaces ? null : (
-              <SharedTerminalSurfacePortal
-                surfaceId={panel.id}
-                hostId="workspace-dock"
-                isActiveHost={true}
-                className="h-full w-full"
-              />
-            )
-          ) : deferLiveSurfaceToPizarra ? (
-            <div
-              data-testid={`panel-body-deferred-pizarra-${panel.id}`}
-              className="h-full w-full"
-              aria-hidden="true"
-              style={{ background: 'var(--surface-app, #050814)' }}
-            />
-          ) : shouldMountTerminal ? (
-            <TerminalTTY
-              id={panel.id}
-              isEngineV2={panelIsEngineV2}
-              cwd={panel.cwd || cwd}
-              swarmContext={panel.swarmContext || null}
-              hideTitleBar={true}
-              showQuickCopyButton={false}
-              autoFocus={isActive}
-              isActivePanel={Boolean(isActivePanel ?? isActive)}
-              isVisibleInLayout={Boolean(isVisibleInLayout)}
-              isWorkspaceShellVisible={Boolean(isWorkspaceShellVisible)}
-              visibleTerminalPanelCount={visibleTerminalPanelCount}
-              coldMountOrdinal={coldMountOrdinal}
-              initialCommand={panel.initialCommand}
-              connectionState={connectionState}
-              requestedRendererMode={requestedRendererMode}
-              onResetRendererToXterm={onResetRendererToXterm}
-              onActivatePanel={onActivatePanel}
-              suspendNativeSurface={Boolean(suspendNativeSurface)}
-              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-            />
-          ) : (
-            <div
-              data-testid={`panel-body-v2-stash-${panel.id}`}
-              className="h-full w-full"
-              aria-hidden="true"
-            />
-          )}
-        </div>
-        {shouldShowSwarmStandbyOverlay(panel, swarmDelegatedRoleKeys) ? (
-          <div
-            data-testid={`panel-standby-hint-${panel.id}`}
-            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-[rgba(5,8,20,0.42)]"
-            aria-hidden="true"
-          >
-            <div className="rounded-md border border-white/10 bg-[rgba(8,12,24,0.88)] px-3 py-2 text-center text-[11px] text-[var(--text-muted)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-              <span className="block font-medium text-[var(--text-secondary)]">Standby</span>
-              <span className="mt-0.5 block">Esperando delegación desde ZED</span>
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function getWorkspaceTabStyle(totalWorkspaces) {
   if (totalWorkspaces <= 4) {
     return { flex: '1 1 0%', minWidth: '190px', maxWidth: '260px' };
@@ -1419,37 +1036,11 @@ function normalizeWorkspaceWindows(
   };
 }
 
-export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measuredBounds }) {
-  if (isFullscreenBrowser) {
-    return { top: 0, right: 'auto', bottom: 0, left: 0, width: '100%' };
-  }
-
-  if (measuredBounds) {
-    return {
-      top: 0,
-      right: 'auto',
-      bottom: 0,
-      left: measuredBounds.left,
-      width: measuredBounds.width,
-    };
-  }
-
-  return { top: 0, right: 'auto', bottom: 0, left: `${100 - size}%`, width: `${size}%` };
-}
-
-export function resolveMeasuredRightDockBounds(containerRect, placeholderRect) {
-  if (!containerRect || !placeholderRect) return null;
-
-  const containerWidth = Number(containerRect.width || 0);
-  const placeholderWidth = Number(placeholderRect.width || 0);
-  if (containerWidth <= 0 || placeholderWidth <= 0) return null;
-
-  return {
-    left: Math.max(0, placeholderRect.left - containerRect.left),
-    right: Math.max(0, containerRect.right - placeholderRect.right),
-    width: placeholderWidth,
-  };
-}
+export { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
+export {
+  resolveRightDockLayerStyle,
+  resolveMeasuredRightDockBounds,
+} from './terminal/hooks/useRightDockController';
 
 export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
   const managerRootRef = useRef(null);
@@ -1496,8 +1087,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [gridCommand, setGridCommand] = useState('opencode');
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [workspaceTerminalSetupOpen, setWorkspaceTerminalSetupOpen] = useState(false);
-  const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
-
   const [terminalSettingsModal, setTerminalSettingsModal] = useState({
     open: false,
     panelId: null,
@@ -1522,23 +1111,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return { ...prev, [panelId]: connectionState };
     });
   }, []);
-  const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
-  const [swarmLaunchDraft, setSwarmLaunchDraft] = useState(null);
-  const [swarmLaunchSubmitState, setSwarmLaunchSubmitState] = useState({
-    submitting: false,
-    error: null,
-  });
-  const [rightDockState, setRightDockState] = useState(() => ({ ...DEFAULT_RIGHT_DOCK_STATE }));
-  const [rightDockMeasuredBounds, setRightDockMeasuredBounds] = useState(null);
-  const [hasMountedRightDock, setHasMountedRightDock] = useState(false);
-  const [isDraggingDock, setIsDraggingDock] = useState(false);
   const [isDraggingInternalSplit, setIsDraggingInternalSplit] = useState(false);
   const [dockWorkspaceId, setDockWorkspaceId] = useState(
     () => createDefaultWorkspaceState().activeWsId
   );
   const [browserWindowStates, setBrowserWindowStates] = useState(() => ({}));
-  const [workspaceWindows, setWorkspaceWindows] = useState(() => ({}));
-  const [activeWindowIds, setActiveWindowIds] = useState(() => ({}));
   const [pizarraPendingViewId, setPizarraPendingViewId] = useState(null);
   const [focusedPanelByWorkspace, setFocusedPanelByWorkspace] = useState(() => ({}));
   const [panelNavPulseId, setPanelNavPulseId] = useState(null);
@@ -1611,23 +1188,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [cwd, projectId]
   );
   const swarmLaunchCatalog = useMemo(() => selectSwarmLaunchCatalog(), []);
-  const resolvedSwarmLaunchDraft = useMemo(
-    () =>
-      createSwarmLaunchDraft({
-        catalog: swarmLaunchCatalog,
-        project: swarmLaunchProject,
-        draft: swarmLaunchDraft || {},
-      }),
-    [swarmLaunchCatalog, swarmLaunchDraft, swarmLaunchProject]
-  );
-  const swarmLaunchPreview = useMemo(
-    () =>
-      deriveSwarmLaunchPreview({
-        catalog: swarmLaunchCatalog,
-        draft: resolvedSwarmLaunchDraft,
-      }),
-    [swarmLaunchCatalog, resolvedSwarmLaunchDraft]
-  );
 
   // Maximize state
   const [isMaximized, setIsMaximized] = useState(() => {
@@ -1707,7 +1267,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const wsCounterRef = useRef(1);
   const panelCounterRef = useRef(1);
   const colCounterRef = useRef(1);
-  const windowCounterRef = useRef(1);
   const hasRunStartupRestoreRef = useRef(false);
   const startupRestoreCompletedRef = useRef(false);
   const terminalHydrationReadyRef = useRef(false);
@@ -1717,10 +1276,67 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const workspacesRef = useRef(workspaces);
   const activeWsIdRef = useRef(activeWsId);
   const activePanelIdsRef = useRef(activePanelIds);
-  const activeWindowIdsRef = useRef(activeWindowIds);
-  const workspaceWindowsRef = useRef(workspaceWindows);
+  const activeWindowIdsRef = useRef({});
+  const workspaceWindowsRef = useRef({});
   const focusedPanelByWorkspaceRef = useRef(focusedPanelByWorkspace);
   const panelNavPulseTimeoutRef = useRef(null);
+
+  const {
+    rightDockState,
+    setRightDockState,
+    rightDockMeasuredBounds,
+    hasMountedRightDock,
+    isDraggingDock,
+    setIsDraggingDock,
+    updateRightDockState,
+    syncRightDockMeasuredBounds,
+  } = useRightDockController({
+    projectId,
+    isVisible,
+    dockWorkspaceId,
+    setDockWorkspaceId,
+    activeWsId,
+    storage,
+    isClientLoaded,
+    workspaceGridAreaRef,
+    rightDockPlaceholderRef,
+    isDraggingDockRef,
+    applyLiveRightDockBoundsRef,
+    heavySurfacesReady,
+  });
+
+  const {
+    workspaceWindows,
+    setWorkspaceWindows,
+    activeWindowIds,
+    setActiveWindowIds,
+    windowCounterRef,
+    updateBrowserWindowState,
+    closeWorkspaceBrowserWindow,
+    addWindowToWorkspace,
+    switchWindowInWorkspace,
+    removeWindowFromWorkspace,
+  } = useWorkspaceWindowsController({
+    projectId,
+    workspaces,
+    activePanelIds,
+    isClientLoaded,
+    browserWindowStates,
+    setBrowserWindowStates,
+    workspaceWindowsRef,
+    activeWindowIdsRef,
+    workspacesRef,
+    activePanelIdsRef,
+    focusedPanelByWorkspaceRef,
+    setFocusedPanelByWorkspace,
+    setWorkspaces,
+    setActivePanelIds,
+    setTerminalRendererPreferences,
+    panelCounterRef,
+    colCounterRef,
+    getAllPanelIds: getPanelIdsFromColumns,
+    getPanelIdsFromColumns,
+  });
 
   // TIC-2: Randomize panel/col/ws counters to HIGH range [1000,10000] on first mount
   // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
@@ -1780,23 +1396,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       document.getElementById(NEXT_DEV_OVERLAY_HIDE_STYLE_ID)?.remove();
     };
   }, [isVisible]);
-
-  useEffect(
-    () => () => {
-      if (swarmLaunchFlushTimerRef.current) {
-        window.clearTimeout(swarmLaunchFlushTimerRef.current);
-        swarmLaunchFlushTimerRef.current = null;
-      }
-      swarmLaunchScheduledTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-      swarmLaunchScheduledTimersRef.current.clear();
-      pendingSwarmLaunchRequestsRef.current = [];
-      pendingSwarmLaunchByLaunchIdRef.current.forEach((batch) => {
-        if (batch.timer) window.clearTimeout(batch.timer);
-      });
-      pendingSwarmLaunchByLaunchIdRef.current.clear();
-    },
-    []
-  );
 
   // Persist maximize state
   useEffect(() => {
@@ -2393,28 +1992,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     };
   }, [flushTerminalPersistenceNow, isClientLoaded]);
 
-  // Persist dock state for the workspace this state belongs to.
-  useEffect(() => {
-    if (!isClientLoaded || !dockWorkspaceId) return;
-    writeRightDockState(storage, projectId, dockWorkspaceId, rightDockState);
-  }, [dockWorkspaceId, isClientLoaded, projectId, rightDockState, storage]);
-
   useEffect(() => {
     if (!isClientLoaded) return;
     writeBrowserWindowStates(storage, projectId, browserWindowStates);
   }, [browserWindowStates, isClientLoaded, projectId, storage]);
-
-  useEffect(() => {
-    if (!isClientLoaded || !activeWsId || activeWsId === dockWorkspaceId) return;
-    setDockWorkspaceId(activeWsId);
-    setRightDockState(readRightDockState(storage, projectId, activeWsId));
-  }, [activeWsId, dockWorkspaceId, isClientLoaded, projectId, storage]);
-
-  useEffect(() => {
-    if (rightDockState.visible) {
-      setHasMountedRightDock(true);
-    }
-  }, [rightDockState.visible]);
 
   useEffect(() => {
     if (!isDraggingDock) return undefined;
@@ -2496,59 +2077,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     colCounterRef.current = nextCounters.column;
     panelCounterRef.current = nextCounters.panel;
   }, [workspaces]);
-
-  useEffect(() => {
-    if (!workspaces.length) return;
-
-    setWorkspaceWindows((prev) => {
-      let changed = false;
-      const next = { ...prev };
-
-      workspaces.forEach((ws) => {
-        const existing = Array.isArray(next[ws.id]) ? next[ws.id] : [];
-        if (existing.length === 0) {
-          windowCounterRef.current += 1;
-          const windowId = `v${windowCounterRef.current}`;
-          const panelId = activePanelIds[ws.id] || ws.columns?.[0]?.panels?.[0]?.id || null;
-          next[ws.id] = [createWindow(windowId, 'V1', ws.columns, panelId)];
-          changed = true;
-        }
-      });
-
-      return changed ? next : prev;
-    });
-
-    setActiveWindowIds((prev) => {
-      let changed = false;
-      const next = { ...prev };
-
-      workspaces.forEach((ws) => {
-        const windows = workspaceWindows[ws.id] || [];
-        const candidate = prev[ws.id];
-        if (!candidate || !windows.some((w) => w.id === candidate)) {
-          const firstId = windows[0]?.id;
-          if (firstId) {
-            next[ws.id] = firstId;
-            changed = true;
-          }
-        }
-      });
-
-      return changed ? next : prev;
-    });
-  }, [workspaces, workspaceWindows, activePanelIds]);
-
-  useEffect(() => {
-    const maxWindowId = Object.values(workspaceWindows || {})
-      .flat()
-      .reduce((maxValue, windowView) => {
-        const match = /^v(\d+)$/i.exec(String(windowView?.id || ''));
-        if (!match) return maxValue;
-        return Math.max(maxValue, Number(match[1]));
-      }, 1);
-
-    windowCounterRef.current = Math.max(windowCounterRef.current, maxWindowId);
-  }, [workspaceWindows]);
 
   useEffect(() => {
     const barElement = panelSubtabsBarRef.current;
@@ -2758,98 +2286,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? { top: 0, right: 'auto', bottom: 0 }
     : rightDockLayerStyle;
 
-  const syncRightDockMeasuredBounds = useCallback(() => {
-    if (
-      isFullscreenBrowser ||
-      !effectiveRightDockState.visible ||
-      effectiveRightDockState.maximized ||
-      hideRightDockPanel
-    ) {
-      setRightDockMeasuredBounds(null);
-      return;
-    }
-
-    const containerElement = workspaceGridAreaRef.current;
-    const placeholderElement = rightDockPlaceholderRef.current;
-    if (!containerElement || !placeholderElement) {
-      setRightDockMeasuredBounds(null);
-      return;
-    }
-
-    const containerRect = containerElement.getBoundingClientRect?.();
-    const placeholderRect = placeholderElement.getBoundingClientRect?.();
-
-    const nextBounds = resolveMeasuredRightDockBounds(containerRect, placeholderRect);
-    if (!nextBounds) {
-      setRightDockMeasuredBounds(null);
-      return;
-    }
-
-    if (isDraggingDockRef.current) {
-      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
-        applyLiveRightDockBoundsRef.current?.();
-      }
-      return;
-    }
-
-    setRightDockMeasuredBounds((prev) => {
-      if (
-        prev &&
-        prev.left === nextBounds.left &&
-        prev.right === nextBounds.right &&
-        prev.width === nextBounds.width
-      ) {
-        return prev;
-      }
-      return nextBounds;
-    });
-  }, [
-    effectiveRightDockState.maximized,
-    effectiveRightDockState.visible,
-    hideRightDockPanel,
-    isFullscreenBrowser,
-  ]);
   syncRightDockMeasuredBoundsRef.current = syncRightDockMeasuredBounds;
 
-  useLayoutEffect(() => {
-    syncRightDockMeasuredBounds();
-  }, [syncRightDockMeasuredBounds, effectiveRightDockState.size, activeWsId, isVisible]);
-
   useEffect(() => {
-    if (
-      isFullscreenBrowser ||
-      !effectiveRightDockState.visible ||
-      effectiveRightDockState.maximized ||
-      hideRightDockPanel
-    ) {
-      return undefined;
-    }
-
-    const containerElement = workspaceGridAreaRef.current;
-    const placeholderElement = rightDockPlaceholderRef.current;
-    if (!containerElement || !placeholderElement) {
-      return undefined;
-    }
-
-    if (typeof ResizeObserver !== 'function') {
-      window.addEventListener('resize', syncRightDockMeasuredBounds);
-      return () => window.removeEventListener('resize', syncRightDockMeasuredBounds);
-    }
-
-    const observer = new ResizeObserver(() => {
-      syncRightDockMeasuredBounds();
-    });
-
-    observer.observe(containerElement);
-    observer.observe(placeholderElement);
-    return () => observer.disconnect();
-  }, [
-    effectiveRightDockState.maximized,
-    effectiveRightDockState.visible,
-    hideRightDockPanel,
-    isFullscreenBrowser,
-    syncRightDockMeasuredBounds,
-  ]);
+    if (!heavySurfacesReady) return undefined;
+    syncRightDockMeasuredBounds();
+    return undefined;
+  }, [heavySurfacesReady, syncRightDockMeasuredBounds]);
 
   // Initial / visibility-change eager measurement for the right dock layer.
   // On default open of the browser (or dock), the first measuredBounds (pixel-accurate
@@ -2905,141 +2348,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   workspaceWindowsRef.current = workspaceWindows;
   focusedPanelByWorkspaceRef.current = focusedPanelByWorkspace;
 
-  useEffect(() => {
-    setSwarmLaunchDraft((current) =>
-      createSwarmLaunchDraft({
-        catalog: swarmLaunchCatalog,
-        project: swarmLaunchProject,
-        draft: current || {},
-      })
-    );
-  }, [swarmLaunchCatalog, swarmLaunchProject]);
-
-  const updateSwarmLaunchDraft = useCallback(
-    (patch = {}) => {
-      setSwarmLaunchDraft((current) =>
-        createSwarmLaunchDraft({
-          catalog: swarmLaunchCatalog,
-          project: swarmLaunchProject,
-          draft: { ...(current || {}), ...patch },
-        })
-      );
-    },
-    [swarmLaunchCatalog, swarmLaunchProject]
-  );
-
-  const openTerminalSwarmLauncher = useCallback(() => {
-    setSwarmLaunchDraft((current) =>
-      createSwarmLaunchDraft({
-        catalog: swarmLaunchCatalog,
-        project: swarmLaunchProject,
-        preferredTemplateId: swarmLaunchCatalog?.recommended_template_id,
-        draft: current || {},
-      })
-    );
-    setSwarmLaunchSubmitState({ submitting: false, error: null });
-    setSwarmLaunchWizardStep('team');
-    setSwarmLaunchWizardOpen(true);
-  }, [swarmLaunchCatalog, swarmLaunchProject]);
-
-  const handleTerminalSwarmLaunch = useCallback(async () => {
-    if (!projectId) {
-      setSwarmLaunchSubmitState({
-        submitting: false,
-        error: 'No hay project_id para lanzar el swarm desde terminales.',
-      });
-      return;
-    }
-
-    setSwarmLaunchSubmitState({ submitting: true, error: null });
-
-    try {
-      const response = await fetch('/api/agenthub/operations/health', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'launch_swarm_local',
-          project_id: projectId,
-          draft: swarmLaunchPreview?.draft,
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || 'No se pudo lanzar el swarm desde terminales.');
-      }
-
-      const runtimeRequests = payload?.launch_result?.runtime_requests || [];
-      if (runtimeRequests.length === 0) {
-        const failedRoles = payload?.launch_result?.failed_roles || [];
-        const failedDetail = failedRoles
-          .map(
-            (role) => `${role?.roleLabel || role?.roleKey}: ${role?.error || 'error desconocido'}`
-          )
-          .join(' | ');
-        throw new Error(
-          failedDetail
-            ? `El swarm no se lanzó: no se pudo inicializar ningún agente. ${failedDetail}`
-            : 'El swarm no se lanzó: no se pudo inicializar ningún agente.'
-        );
-      }
-
-      if (payload.control_room_snapshot_input) {
-        try {
-          localStorage.setItem(
-            getSwarmSnapshotStorageKey(projectId),
-            JSON.stringify(payload.control_room_snapshot_input)
-          );
-        } catch {
-          // Ignore localStorage failures.
-        }
-        setSwarmControlSnapshot(payload.control_room_snapshot_input);
-      }
-
-      dispatchSwarmLaunchMaterialized(runtimeRequests);
-
-      setSwarmLaunchWizardOpen(false);
-      setSwarmLaunchSubmitState({ submitting: false, error: null });
-    } catch (error) {
-      setSwarmLaunchSubmitState({
-        submitting: false,
-        error: error?.message || 'No se pudo lanzar el swarm desde terminales.',
-      });
-    }
-  }, [projectId, swarmLaunchPreview?.draft]);
-
-  const updateRightDockState = useCallback((nextValue) => {
-    setRightDockState((prev) => {
-      const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
-      const resolvedState =
-        typeof nextValue === 'function'
-          ? nextValue(currentState)
-          : { ...currentState, ...nextValue };
-      const nextState = sanitizeRightDockState(resolvedState);
-      // ponytail: sanitize always allocates — skip re-render when dock is unchanged
-      return rightDockStatesEqual(currentState, nextState) ? prev : nextState;
-    });
-  }, []);
-
   const lastZedOpenUrlRef = useRef({ url: null, label: null });
 
   // Operator action cards — consumed from OperatorActionsDispatchContext (provider lives in App.js)
   const { cards: operatorCards, confirmCard, cancelCard } = useOperatorActionsDispatch();
-
-  const updateBrowserWindowState = useCallback((wsId, nextValue) => {
-    if (!wsId) return;
-    setBrowserWindowStates((prev) => {
-      const currentState = prev?.[wsId] || {};
-      const resolvedState =
-        typeof nextValue === 'function'
-          ? nextValue(currentState)
-          : { ...currentState, ...nextValue };
-      return {
-        ...prev,
-        [wsId]: resolvedState,
-      };
-    });
-  }, []);
 
   const handleResetPanelRendererToXterm = useCallback((workspaceId, panelId) => {
     setTerminalRendererPreferences((prev) =>
@@ -3104,102 +2416,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       return changed ? { ...prev, [workspaceId]: nextWindows } : prev;
     });
   }, []);
-
-  const closeWorkspaceBrowserWindow = useCallback(
-    async (wsId) => {
-      if (!wsId) return;
-
-      const browserState = browserWindowStates?.[wsId];
-      const label = browserState?.label || buildBrowserWindowLabel(projectId, wsId);
-
-      try {
-        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-          const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-          const existingWindow = await WebviewWindow.getByLabel(label);
-          await existingWindow?.close().catch(() => {});
-        }
-      } catch {
-        // Ignore Tauri close failures so state can still be cleaned up locally.
-      } finally {
-        updateBrowserWindowState(wsId, {
-          open: false,
-          label,
-          url: '',
-          updatedAt: Date.now(),
-        });
-      }
-    },
-    [browserWindowStates, projectId, updateBrowserWindowState]
-  );
-
-  useEffect(() => {
-    if (!isClientLoaded || typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return;
-
-    let cancelled = false;
-
-    async function reconcileBrowserWindows() {
-      try {
-        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-        const entries = await Promise.all(
-          Object.entries(browserWindowStates || {}).map(async ([wsId, state]) => {
-            const label = state?.label || buildBrowserWindowLabel(projectId, wsId);
-            const existingWindow = await WebviewWindow.getByLabel(label);
-
-            if (existingWindow) {
-              existingWindow.once('tauri://destroyed', () => {
-                updateBrowserWindowState(wsId, {
-                  open: false,
-                  label,
-                  url: '',
-                  updatedAt: Date.now(),
-                });
-              });
-            }
-
-            return [
-              wsId,
-              {
-                ...state,
-                label,
-                open: Boolean(existingWindow),
-                url: existingWindow ? state?.url || '' : '',
-                updatedAt: Date.now(),
-              },
-            ];
-          })
-        );
-
-        if (cancelled || entries.length === 0) return;
-
-        setBrowserWindowStates((prev) => {
-          let changed = false;
-          const next = { ...prev };
-
-          entries.forEach(([wsId, state]) => {
-            const previous = prev?.[wsId] || {};
-            if (
-              previous.open !== state.open ||
-              previous.label !== state.label ||
-              previous.url !== state.url
-            ) {
-              changed = true;
-            }
-            next[wsId] = state;
-          });
-
-          return changed ? next : prev;
-        });
-      } catch {
-        // Ignore reconciliation errors outside desktop contexts.
-      }
-    }
-
-    reconcileBrowserWindows();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [browserWindowStates, isClientLoaded, projectId, updateBrowserWindowState]);
 
   const handleRightDockTabSelect = useCallback(
     (tab) => {
@@ -3779,113 +2995,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [activeWindowIds]
   );
 
-  const addWindowToWorkspace = useCallback((wsId) => {
-    const existing = workspaceWindowsRef.current?.[wsId] || [];
-    if (existing.length >= MAX_WORKSPACE_WINDOWS) return;
-
-    const ws = workspacesRef.current.find((entry) => entry.id === wsId);
-    const liveColumns = ws?.columns || [];
-    const activeWindowId = activeWindowIdsRef.current?.[wsId];
-
-    panelCounterRef.current += 1;
-    colCounterRef.current += 1;
-    windowCounterRef.current += 1;
-
-    const newPanelId = `p${panelCounterRef.current}`;
-    const newColId = `c${colCounterRef.current}`;
-    const newWindowId = `v${windowCounterRef.current}`;
-    const newColumns = [createColumn(newColId, newPanelId)];
-
-    setWorkspaceWindows((prev) => {
-      const prevExisting = prev[wsId] || [];
-      const snapshotted =
-        activeWindowId && liveColumns.length > 0
-          ? applyActiveWindowColumnSnapshot(
-              prevExisting,
-              activeWindowId,
-              liveColumns,
-              activePanelIdsRef.current?.[wsId]
-            )
-          : prevExisting;
-
-      return {
-        ...prev,
-        [wsId]: [
-          ...snapshotted,
-          createWindow(newWindowId, `V${prevExisting.length + 1}`, newColumns, newPanelId),
-        ],
-      };
-    });
-
-    setActiveWindowIds((prev) => ({ ...prev, [wsId]: newWindowId }));
-    setActivePanelIds((prev) => ({ ...prev, [wsId]: newPanelId }));
-    setTerminalRendererPreferences((prev) =>
-      setPanelRendererPreference(prev, wsId, newPanelId, TERMINAL_RENDERER_INHERIT_MODE)
-    );
-
-    setWorkspaces((prev) =>
-      prev.map((entry) => (entry.id === wsId ? { ...entry, columns: newColumns } : entry))
-    );
-  }, []);
-
-  const switchWindowInWorkspace = useCallback((wsId, windowId) => {
-    const windows = workspaceWindowsRef.current?.[wsId] || [];
-    const nextWindow = windows.find((win) => win.id === windowId);
-    if (!nextWindow) return;
-
-    const activeWindowId = activeWindowIdsRef.current?.[wsId];
-    if (activeWindowId === windowId) return;
-
-    const ws = workspacesRef.current.find((entry) => entry.id === wsId);
-    const liveColumns = ws?.columns || [];
-
-    let resolvedWindows = windows;
-    if (activeWindowId && liveColumns.length > 0) {
-      resolvedWindows = applyActiveWindowColumnSnapshot(
-        windows,
-        activeWindowId,
-        liveColumns,
-        activePanelIdsRef.current?.[wsId]
-      );
-      setWorkspaceWindows((prev) => ({ ...prev, [wsId]: resolvedWindows }));
-    }
-
-    const destination = resolvedWindows.find((win) => win.id === windowId) || nextWindow;
-    const nextPanelId =
-      destination.activePanelId ||
-      destination.columns?.flatMap((col) => col.panels || [])[0]?.id ||
-      null;
-
-    const focusedPanelId = focusedPanelByWorkspaceRef.current?.[wsId];
-    const destinationPanelIds = getPanelIdsFromColumns(destination.columns || []);
-    if (focusedPanelId && !destinationPanelIds.includes(focusedPanelId)) {
-      setFocusedPanelByWorkspace((prev) => {
-        if (!prev[wsId]) return prev;
-        const next = { ...prev };
-        delete next[wsId];
-        return next;
-      });
-    }
-
-    setActiveWindowIds((prev) => ({ ...prev, [wsId]: windowId }));
-    if (nextPanelId) {
-      setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
-    }
-
-    setWorkspaces((prev) =>
-      prev.map((entry) =>
-        entry.id === wsId ? { ...entry, columns: destination.columns || entry.columns } : entry
-      )
-    );
-
-    // Do NOT dispatch a layout-settled event here. React state is still stale
-    // in this tick (activeWindowIds / activePanelIds / workspaces have not
-    // committed yet), so any native sync or GPU recovery would use incorrect
-    // panel lists. The post-commit effect below emits a single
-    // `workspace-window-switch` once all state is consistent, mirroring the
-    // route switch and workspace switch paths.
-  }, []);
-
   // pizarra-view-switch-complete: consolidate the active window so the workspace
   // state reflects the destination view. Without this the pane keeps receiving
   // the old activeWorkspaceWindowId and the visible view collapses back to the
@@ -3904,43 +3013,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     window.addEventListener('devhub:pizarra-view-switch-complete', onComplete);
     return () => window.removeEventListener('devhub:pizarra-view-switch-complete', onComplete);
   }, [activeWsId, switchWindowInWorkspace]);
-
-  const removeWindowFromWorkspace = useCallback(
-    async (wsId, windowId) => {
-      const windows = workspaceWindows[wsId] || [];
-      if (windows.length <= 1) return;
-
-      const targetWindow = windows.find((win) => win.id === windowId);
-      if (targetWindow?.columns?.length) {
-        const panelIds = getAllPanelIds(targetWindow.columns);
-        await closeTerminalSessions(panelIds);
-      }
-
-      const nextWindows = windows.filter((win) => win.id !== windowId);
-      const nextActiveWindowId =
-        activeWindowIds[wsId] === windowId ? nextWindows[0]?.id : activeWindowIds[wsId];
-      const nextActiveWindow =
-        nextWindows.find((win) => win.id === nextActiveWindowId) || nextWindows[0];
-      const nextPanelId =
-        nextActiveWindow?.activePanelId ||
-        nextActiveWindow?.columns?.flatMap((col) => col.panels || [])[0]?.id ||
-        null;
-
-      setWorkspaceWindows((prev) => ({ ...prev, [wsId]: nextWindows }));
-      setActiveWindowIds((prev) => ({ ...prev, [wsId]: nextActiveWindowId }));
-
-      if (nextPanelId) {
-        setActivePanelIds((prev) => ({ ...prev, [wsId]: nextPanelId }));
-      }
-
-      if (nextActiveWindow?.columns) {
-        setWorkspaces((prev) =>
-          prev.map((ws) => (ws.id === wsId ? { ...ws, columns: nextActiveWindow.columns } : ws))
-        );
-      }
-    },
-    [workspaceWindows, activeWindowIds]
-  );
 
   const createWorkspaceWithTerminalCount = useCallback(
     (setup = {}) => {
@@ -4281,86 +3353,82 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [storage]
   );
 
-  const createWorkspaceForSwarmLaunchRequests = useMemo(
-    () =>
-      createWorkspaceForSwarmLaunchRequestsFn({
-        cwd,
-        wsCounterRef,
-        colCounterRef,
-        panelCounterRef,
-        materializedSwarmLaunchIdsRef,
-        getAllPanelIds,
-        buildPanel: (request, panelId, panelCwd) =>
-          createPanel(panelId, request.commandToRun, panelCwd, {
-            swarmRole: request.swarmRole,
-            swarmContext: {
-              isSwarmRole: Boolean(request.isSwarmRole),
-              roleKey: request.roleKey || request.swarmRole?.roleKey || null,
-              launchId: request.launchId || null,
-              needsLaunchWrapper: true,
-              startAfterMs: 0,
-              standbyAwaitingDelegation: resolveSwarmPanelStandbyFlag(request),
-              bootstrapMode: request.bootstrapMode || 'engram_first',
-            },
-          }),
-        setWorkspaces,
-        setActiveWsId,
-        setActivePanelIds,
-        setTerminalRendererPreferences,
-        applyRendererPreference: (acc, wsId, panelId) =>
-          setPanelRendererPreference(acc, wsId, panelId, TERMINAL_RENDERER_INHERIT_MODE),
-        syncActiveWindowSnapshot,
-        persistAgentRunMetadata,
-        onMarkPanelsClosing: markPanelsClosing,
-        onClearLaunchWrapperDispatch: (launchId) => {
-          clearSwarmLaunchWrapperDispatchForLaunch(launchId, storage);
-        },
-        onAfterMaterialize: ({ launchId, plan, panelAssignments }) => {
-          if (launchId) {
-            materializedSwarmLaunchIdsRef.current.add(launchId);
-            const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
-            if (pendingBatch?.timer) {
-              window.clearTimeout(pendingBatch.timer);
-            }
-            pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
-          }
-
-          const panelIds = panelAssignments.map(({ panelId }) => panelId);
-          syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.SWARM_LAUNCH, plan.newWsId, panelIds);
-
-          if (swarmProjectionBurstCleanupRef.current) {
-            swarmProjectionBurstCleanupRef.current();
-            swarmProjectionBurstCleanupRef.current = null;
-          }
-          swarmProjectionBurstCleanupRef.current = scheduleSwarmProjectionReadyBurst({
-            workspaceId: plan.newWsId,
-            panelIds,
-          });
+  const {
+    swarmLaunchWizardOpen,
+    setSwarmLaunchWizardOpen,
+    swarmLaunchWizardStep,
+    setSwarmLaunchWizardStep,
+    swarmLaunchDraft,
+    swarmLaunchSubmitState,
+    setSwarmLaunchSubmitState,
+    updateSwarmLaunchDraft,
+    openTerminalSwarmLauncher,
+    handleTerminalSwarmLaunch,
+    enqueueSwarmLaunchRequest,
+    createWorkspaceForSwarmLaunchRequests,
+    resolvedSwarmLaunchDraft,
+    swarmLaunchPreview,
+  } = useSwarmLaunchController({
+    projectId,
+    swarmLaunchCatalog,
+    swarmLaunchProject,
+    storage,
+    cwd,
+    wsCounterRef,
+    colCounterRef,
+    panelCounterRef,
+    setWorkspaces,
+    setActiveWsId,
+    setActivePanelIds,
+    setTerminalRendererPreferences,
+    getAllPanelIds,
+    syncActiveWindowSnapshot,
+    materializedSwarmLaunchIdsRef,
+    pendingSwarmLaunchByLaunchIdRef,
+    persistAgentRunMetadata,
+    buildPanel: (request, panelId, panelCwd) =>
+      createPanel(panelId, request.commandToRun, panelCwd, {
+        swarmRole: request.swarmRole,
+        swarmContext: {
+          isSwarmRole: Boolean(request.isSwarmRole),
+          roleKey: request.roleKey || request.swarmRole?.roleKey || null,
+          launchId: request.launchId || null,
+          needsLaunchWrapper: true,
+          startAfterMs: 0,
+          standbyAwaitingDelegation: resolveSwarmPanelStandbyFlag(request),
+          bootstrapMode: request.bootstrapMode || 'engram_first',
         },
       }),
-    [
-      cwd,
-      markPanelsClosing,
-      persistAgentRunMetadata,
-      storage,
-      syncActiveWindowSnapshot,
-      syncPanelLifecycleLayout,
-    ]
-  );
+    onMarkPanelsClosing: markPanelsClosing,
+    onClearLaunchWrapperDispatch: (launchId) => {
+      clearSwarmLaunchWrapperDispatchForLaunch(launchId, storage);
+    },
+    onAfterMaterialize: ({ launchId, plan, panelAssignments }) => {
+      if (launchId) {
+        materializedSwarmLaunchIdsRef.current.add(launchId);
+        const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+        if (pendingBatch?.timer) {
+          window.clearTimeout(pendingBatch.timer);
+        }
+        pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+      }
 
-  const { enqueueSwarmLaunchRequest } = useMemo(
-    () =>
-      createSwarmLaunchQueueHandlers({
-        pendingSwarmLaunchByLaunchIdRef,
-        pendingSwarmLaunchRequestsRef,
-        swarmLaunchFlushTimerRef,
-        materializedSwarmLaunchIdsRef,
-        createWorkspaceForSwarmLaunchRequests,
-        clearTimeoutFn: window.clearTimeout.bind(window),
-        setTimeoutFn: window.setTimeout.bind(window),
-      }),
-    [createWorkspaceForSwarmLaunchRequests]
-  );
+      const panelIds = panelAssignments.map(({ panelId }) => panelId);
+      syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.SWARM_LAUNCH, plan.newWsId, panelIds);
+
+      if (swarmProjectionBurstCleanupRef.current) {
+        swarmProjectionBurstCleanupRef.current();
+        swarmProjectionBurstCleanupRef.current = null;
+      }
+      swarmProjectionBurstCleanupRef.current = scheduleSwarmProjectionReadyBurst({
+        workspaceId: plan.newWsId,
+        panelIds,
+      });
+    },
+    setSwarmControlSnapshot,
+    applyRendererPreference: (acc, wsId, panelId) =>
+      setPanelRendererPreference(acc, wsId, panelId, TERMINAL_RENDERER_INHERIT_MODE),
+  });
 
   const consumedUiProvisionKeysRef = useRef(new Set());
 
@@ -6470,7 +5538,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 {shortcutHint}
               </div>
             ) : null}
-            {/* Top Workspace Tab Bar */}
             <div
               key="workspace-top-tab-bar"
               data-testid="workspace-top-tab-bar"
@@ -6480,139 +5547,22 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                 ...getWorkspaceTopBarStyle(),
               }}
             >
-              <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
-                {workspaces.map((ws, wsIndex) => {
-                  const totalPanels = getAllPanelIds(ws.columns).length;
-                  const workspaceTabKey = buildStableWorkspaceShellKey('workspace-tab', ws.id);
-                  const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
-                  const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
-                  return (
-                    <motion.div
-                      key={workspaceTabKey}
-                      data-workspace-id={ws.id}
-                      data-testid={`workspace-tab-${ws.id}`}
-                      onClick={() => switchWorkspace(ws.id)}
-                      onPointerDown={handleWorkspaceTabPointerDown(ws.id)}
-                      onPointerMove={handleWorkspaceTabPointerMove}
-                      onPointerUp={endWorkspaceTabDrag}
-                      onPointerLeave={endWorkspaceTabDrag}
-                      onPointerCancel={endWorkspaceTabDrag}
-                      className={`group relative flex h-[34px] min-h-[34px] items-center justify-between px-3.5 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none touch-none border ${
-                        draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
-                      } ${
-                        activeWsId === ws.id
-                          ? 'text-[var(--text-primary)] border-transparent'
-                          : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
-                      }`}
-                      title={workspaceTabLabel}
-                      style={{
-                        touchAction: 'none',
-                        ...getWorkspaceTabStyle(workspaces.length),
-                        ...getWorkspaceTabChromeStyle({
-                          active: activeWsId === ws.id,
-                          dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
-                        }),
-                      }}
-                    >
-                      <motion.span
-                        initial={false}
-                        animate={{
-                          opacity: activeWsId === ws.id ? 1 : 0,
-                          scale: activeWsId === ws.id ? 1 : 0.96,
-                        }}
-                        transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
-                        className="absolute inset-0 rounded-xl border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.07)]"
-                        style={{ zIndex: 0, willChange: 'transform', transformOrigin: 'center' }}
-                      />
-                      <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
-                        <Grip
-                          className={`w-3 h-3 shrink-0 transition-opacity duration-150 ${
-                            activeWsId === ws.id
-                              ? 'opacity-50'
-                              : 'opacity-30 group-hover:opacity-50'
-                          }`}
-                          style={{
-                            color:
-                              activeWsId === ws.id
-                                ? `rgba(var(--accent-rgb,88,166,255),0.9)`
-                                : 'currentColor',
-                          }}
-                          aria-hidden="true"
-                        />
-                        <LayoutGrid
-                          className="w-3.5 h-3.5 shrink-0"
-                          style={{
-                            color:
-                              activeWsId === ws.id
-                                ? `rgba(var(--accent-rgb,88,166,255),0.9)`
-                                : 'currentColor',
-                          }}
-                        />
-                        <span className="min-w-0 truncate text-[12px] font-semibold">
-                          {workspaceTabLabel}
-                        </span>
-                        {hasOpenBrowserWindow ? (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
-                            <span
-                              className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
-                              data-testid={`workspace-browser-indicator-${ws.id}`}
-                              title="Dedicated browser window open"
-                            />
-                            <button
-                              type="button"
-                              data-testid={`workspace-browser-close-${ws.id}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                closeWorkspaceBrowserWindow(ws.id);
-                              }}
-                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-emerald-100/80 transition-colors hover:bg-emerald-400/15 hover:text-white"
-                              title="Cerrar browser dedicado de este workspace"
-                              aria-label="Cerrar browser dedicado de este workspace"
-                            >
-                              <X className="h-3.5 w-3.5" strokeWidth={2.5} />
-                            </button>
-                          </span>
-                        ) : null}
-                        <span
-                          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
-                          style={{
-                            background: 'rgba(255,255,255,0.07)',
-                            color: 'var(--text-muted)',
-                          }}
-                        >
-                          {totalPanels}
-                        </span>
-                      </div>
-                      {workspaces.length > 1 && (
-                        <button
-                          type="button"
-                          data-testid={`workspace-close-${ws.id}`}
-                          onClick={(e) => removeWorkspace(e, ws.id)}
-                          aria-label={`Cerrar ${workspaceTabLabel}`}
-                          title={`Cerrar ${workspaceTabLabel}`}
-                          className={`relative z-[1] ml-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
-                            activeWsId === ws.id
-                              ? 'border-white/10 bg-white/[0.05] text-[var(--text-secondary)] opacity-90 hover:border-red-400/35 hover:bg-red-500/14 hover:text-red-300'
-                              : 'border-transparent text-[var(--text-muted)] opacity-0 hover:border-white/12 hover:bg-white/10 hover:text-[var(--text-primary)] group-hover:opacity-85'
-                          }`}
-                        >
-                          <X className="h-3 w-3" strokeWidth={2.25} />
-                        </button>
-                      )}
-                    </motion.div>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={addWorkspace}
-                  className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
-                  title="Nuevo workspace"
-                  aria-label="Nuevo workspace"
-                  data-testid="workspace-add-button"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
+              <WorkspaceWindowTabBar
+                workspaces={workspaces}
+                activeWsId={activeWsId}
+                draggedWsId={draggedWsId}
+                dragOverWsId={dragOverWsId}
+                browserWindowStates={browserWindowStates}
+                switchWorkspace={switchWorkspace}
+                handleWorkspaceTabPointerDown={handleWorkspaceTabPointerDown}
+                handleWorkspaceTabPointerMove={handleWorkspaceTabPointerMove}
+                endWorkspaceTabDrag={endWorkspaceTabDrag}
+                addWorkspace={addWorkspace}
+                removeWorkspace={removeWorkspace}
+                closeWorkspaceBrowserWindow={closeWorkspaceBrowserWindow}
+                getWorkspaceDisplayLabel={getWorkspaceDisplayLabel}
+                getAllPanelIds={getAllPanelIds}
+              />
 
               <WorkspaceWindowSwitcher
                 variant="header"
@@ -7120,284 +6070,33 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
                           onConnectionStateChange: handleTerminalConnectionStateChange,
                         });
                       return (
-                        <div
+                        <WorkspaceTerminalSurface
                           key={workspaceGridKey}
-                          data-testid={`workspace-shell-${ws.id}`}
-                          data-ws-active={
-                            !isFullscreenBrowser && activeWsId === ws.id && isVisible
-                              ? 'true'
-                              : 'false'
+                          ws={ws}
+                          workspaceGridKey={workspaceGridKey}
+                          activeWsId={activeWsId}
+                          isVisible={isVisible}
+                          isFullscreenBrowser={isFullscreenBrowser}
+                          hideRightDockPanel={hideRightDockPanel}
+                          wsDockState={wsDockState}
+                          workspaceWindows={workspaceWindows}
+                          activeWindowIds={activeWindowIds}
+                          focusedPanelId={focusedPanelId}
+                          totalTerminalPanelCount={totalTerminalPanelCount}
+                          isWorkspaceVisibleInLayout={isWorkspaceVisibleInLayout}
+                          panelSubtabsBarRef={panelSubtabsBarRef}
+                          rightDockPlaceholderRef={rightDockPlaceholderRef}
+                          renderWorkspaceWindowBar={(workspace, dockState) =>
+                            renderWorkspaceWindowBar(workspace, dockState, updateWsDockState)
                           }
-                          aria-hidden={activeWsId !== ws.id || !isVisible}
-                          className="absolute inset-0 p-0"
-                          style={{
-                            zIndex: activeWsId === ws.id ? 10 : 0,
-                            ...resolveWorkspaceShellVisibilityStyle({
-                              isActiveWorkspace: activeWsId === ws.id,
-                              isManagerVisible: isVisible,
-                              isFullscreenTakeover: isFullscreenBrowser,
-                            }),
-                          }}
-                        >
-                          <PanelGroup
-                            direction="horizontal"
-                            className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
-                            aria-hidden={isFullscreenBrowser}
-                          >
-                            <Panel
-                              key={`${ws.id}-terminal-grid`}
-                              minSize={18}
-                              className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden"
-                              style={getTerminalGridShellStyle()}
-                            >
-                              {renderWorkspaceWindowBar(ws, wsDockState, updateWsDockState)}
-
-                              {/* Terminal bodies — PanelGroup stays mounted in focus mode (CSS only). */}
-                              <div
-                                className="relative min-h-0 flex-1 overflow-hidden"
-                                data-focus-mode={focusedPanelId ? 'true' : undefined}
-                              >
-                                {totalTerminalPanelCount === 0 ? (
-                                  <div
-                                    data-testid="workspace-empty-terminal-state"
-                                    className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center"
-                                  >
-                                    <div className="flex flex-col items-center gap-2 max-w-sm">
-                                      <Terminal className="w-8 h-8 text-[var(--text-muted)]" />
-                                      <p className="text-sm text-[var(--text-secondary)]">
-                                        Este workspace no tiene terminales activas.
-                                      </p>
-                                      <p className="text-xs text-[var(--text-muted)]">
-                                        Creá una nueva shell para seguir trabajando sin cerrar el
-                                        workspace.
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      data-testid="workspace-add-terminal"
-                                      onClick={() => handleSplit('horizontal')}
-                                      className="inline-flex items-center gap-2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-4 py-2 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
-                                    >
-                                      <Plus className="w-4 h-4" />
-                                      Nueva terminal
-                                    </button>
-                                  </div>
-                                ) : (
-                                  resolveWorkspaceWindowsForRender(ws, workspaceWindows).map(
-                                    (window) => {
-                                      const activeWindowIdForWs = resolveActiveWorkspaceWindowId(
-                                        ws.id,
-                                        workspaceWindows,
-                                        activeWindowIds
-                                      );
-                                      const isActiveWindow = window.id === activeWindowIdForWs;
-                                      const windowColumns =
-                                        window.columns?.length > 0 ? window.columns : ws.columns;
-
-                                      return (
-                                        <div
-                                          key={`${ws.id}-view-${window.id}`}
-                                          className="absolute inset-0 min-h-0 min-w-0"
-                                          aria-hidden={!isActiveWindow}
-                                          data-testid={
-                                            isActiveWindow
-                                              ? `workspace-window-active-${window.id}`
-                                              : `workspace-window-parked-${window.id}`
-                                          }
-                                          style={{
-                                            zIndex: isActiveWindow ? 2 : 1,
-                                            ...resolveWorkspaceWindowVisibilityStyle({
-                                              isActiveWindow,
-                                              isFullscreenTakeover: isFullscreenBrowser,
-                                            }),
-                                          }}
-                                        >
-                                          <PanelGroup
-                                            direction="horizontal"
-                                            className="h-full w-full"
-                                            data-testid={`workspace-columns-${ws.id}-${window.id}`}
-                                            data-layout-direction="horizontal"
-                                            onLayout={
-                                              isActiveWindow ? handlePanelGroupLayout : undefined
-                                            }
-                                          >
-                                            {windowColumns.map((column, columnIndex) => {
-                                              const columnHiddenInFocus =
-                                                Boolean(focusedPanelId) &&
-                                                !columnContainsFocusedPanel(column, focusedPanelId);
-                                              return (
-                                                <React.Fragment key={`${window.id}-${column.id}`}>
-                                                  <Panel
-                                                    minSize={focusedPanelId ? 0 : 18}
-                                                    className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
-                                                  >
-                                                    {column.panels.length > 1 ? (
-                                                      <PanelGroup
-                                                        direction="vertical"
-                                                        className="h-full w-full"
-                                                        data-testid={`workspace-column-panels-${column.id}`}
-                                                        data-layout-direction="vertical"
-                                                        onLayout={
-                                                          isActiveWindow
-                                                            ? handlePanelGroupLayout
-                                                            : undefined
-                                                        }
-                                                      >
-                                                        {column.panels.map((panel, panelIndex) => (
-                                                          <React.Fragment key={panel.id}>
-                                                            <Panel
-                                                              minSize={focusedPanelId ? 0 : 20}
-                                                              className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
-                                                              data-testid={`workspace-column-${column.id}`}
-                                                            >
-                                                              <div
-                                                                className={resolveFocusPanelSlotClassName(
-                                                                  {
-                                                                    focusedPanelId,
-                                                                    panelId: panel.id,
-                                                                  }
-                                                                )}
-                                                                data-testid={
-                                                                  focusedPanelId === panel.id
-                                                                    ? `workspace-focused-panel-${panel.id}`
-                                                                    : `panel-slot-${panel.id}`
-                                                                }
-                                                              >
-                                                                {renderWorkspacePanelSlot(panel, {
-                                                                  // Window V1/V2/V3 switch mirrors workspace tab switch:
-                                                                  // isVisibleInLayout toggles false→true on the destination
-                                                                  // window, firing the same viewport recovery (fit + GPU
-                                                                  // reattach) that keeps split siblings from going black.
-                                                                  isVisibleInLayout:
-                                                                    isActiveWindow &&
-                                                                    resolvePanelVisibleInLayout({
-                                                                      isWorkspaceVisibleInLayout,
-                                                                      focusedPanelId,
-                                                                      panelId: panel.id,
-                                                                    }),
-                                                                  isWorkspaceShellVisible:
-                                                                    isWorkspaceVisibleInLayout,
-                                                                  visibleTerminalPanelCount:
-                                                                    focusedPanelId
-                                                                      ? 1
-                                                                      : totalTerminalPanelCount,
-                                                                })}
-                                                              </div>
-                                                            </Panel>
-                                                            {!focusedPanelId &&
-                                                            panelIndex <
-                                                              column.panels.length - 1 ? (
-                                                              <PanelResizeHandle
-                                                                className="relative z-30 h-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                                                data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
-                                                                onDragging={
-                                                                  handleInternalSplitDragging
-                                                                }
-                                                              >
-                                                                <div className="h-px w-full bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                                              </PanelResizeHandle>
-                                                            ) : null}
-                                                          </React.Fragment>
-                                                        ))}
-                                                      </PanelGroup>
-                                                    ) : (
-                                                      <div
-                                                        className="h-full w-full overflow-visible"
-                                                        data-testid={`workspace-column-${column.id}`}
-                                                      >
-                                                        <div
-                                                          className={resolveFocusPanelSlotClassName(
-                                                            {
-                                                              focusedPanelId,
-                                                              panelId: column.panels[0].id,
-                                                            }
-                                                          )}
-                                                          data-testid={
-                                                            focusedPanelId === column.panels[0].id
-                                                              ? `workspace-focused-panel-${column.panels[0].id}`
-                                                              : `panel-slot-${column.panels[0].id}`
-                                                          }
-                                                        >
-                                                          {renderWorkspacePanelSlot(
-                                                            column.panels[0],
-                                                            {
-                                                              isVisibleInLayout:
-                                                                isActiveWindow &&
-                                                                resolvePanelVisibleInLayout({
-                                                                  isWorkspaceVisibleInLayout,
-                                                                  focusedPanelId,
-                                                                  panelId: column.panels[0].id,
-                                                                }),
-                                                              isWorkspaceShellVisible:
-                                                                isWorkspaceVisibleInLayout,
-                                                              visibleTerminalPanelCount:
-                                                                focusedPanelId
-                                                                  ? 1
-                                                                  : totalTerminalPanelCount,
-                                                            }
-                                                          )}
-                                                        </div>
-                                                      </div>
-                                                    )}
-                                                  </Panel>
-                                                  {!focusedPanelId &&
-                                                  columnIndex < windowColumns.length - 1 ? (
-                                                    <PanelResizeHandle
-                                                      className="relative z-30 w-px shrink-0 flex items-center justify-center bg-transparent hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                                      data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
-                                                      onDragging={handleInternalSplitDragging}
-                                                    >
-                                                      <div className="h-full w-px bg-[rgba(var(--accent-rgb,88,166,255),0.78)] shadow-[0_0_10px_rgba(var(--accent-rgb,88,166,255),0.45)]" />
-                                                    </PanelResizeHandle>
-                                                  ) : null}
-                                                </React.Fragment>
-                                              );
-                                            })}
-                                          </PanelGroup>
-                                        </div>
-                                      );
-                                    }
-                                  )
-                                )}
-                              </div>
-                            </Panel>
-
-                            {wsDockState.visible && !wsDockState.maximized ? (
-                              <PanelResizeHandle
-                                key={`${ws.id}-right-dock-resize`}
-                                className="relative w-3 flex items-center justify-center z-20 cursor-col-resize"
-                                data-testid="workspace-right-dock-resize-handle"
-                                onDragging={handleDockDragging}
-                              >
-                                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#2a344a]" />
-                                <div className="w-1 h-12 rounded-full bg-[#3a4e70] hover:bg-[var(--accent-primary)] transition-colors cursor-pointer" />
-                              </PanelResizeHandle>
-                            ) : null}
-                            {wsDockState.visible &&
-                            !wsDockState.maximized &&
-                            !hideRightDockPanel ? (
-                              <Panel
-                                key={`${ws.id}-right-dock-panel`}
-                                minSize={wsDockState.maximized ? 100 : MIN_RIGHT_DOCK_SIZE}
-                                maxSize={100}
-                                defaultSize={wsDockState.maximized ? 100 : wsDockState.size}
-                                onResize={(size) => {
-                                  handleRightDockPanelResize(size, {
-                                    maximized: wsDockState.maximized,
-                                  });
-                                }}
-                                className="pointer-events-none flex flex-col"
-                                data-testid="workspace-right-dock-panel"
-                              >
-                                <div
-                                  ref={activeWsId === ws.id ? rightDockPlaceholderRef : undefined}
-                                  data-testid="workspace-right-dock-placeholder"
-                                  className="h-full w-full pointer-events-none"
-                                />
-                              </Panel>
-                            ) : null}
-                          </PanelGroup>
-                        </div>
+                          renderWorkspacePanelSlot={renderWorkspacePanelSlot}
+                          resolvePanelVisibleInLayout={resolvePanelVisibleInLayout}
+                          handleSplit={handleSplit}
+                          handlePanelGroupLayout={handlePanelGroupLayout}
+                          handleInternalSplitDragging={handleInternalSplitDragging}
+                          handleDockDragging={handleDockDragging}
+                          handleRightDockPanelResize={handleRightDockPanelResize}
+                        />
                       );
                     })
                   : null}

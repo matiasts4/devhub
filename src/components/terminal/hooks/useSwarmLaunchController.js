@@ -1,13 +1,9 @@
 // useSwarmLaunchController — manages swarm launch wizard state and enqueue logic.
 // Extracted from TerminalWorkspacesManager.jsx.
-// Args: { projectId, workspaces, activeWsId, activePanelIds, cwd, swarmLaunchCatalog, swarmLaunchProject, storage }
-// Returns: { swarmLaunchWizardOpen, swarmLaunchWizardStep, swarmLaunchDraft, swarmLaunchSubmitState, updateSwarmLaunchDraft, openTerminalSwarmLauncher, handleTerminalSwarmLaunch, enqueueSwarmLaunchRequest, resolvedSwarmLaunchDraft, swarmLaunchPreview }
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { createSwarmLaunchDraft, deriveSwarmLaunchPreview } from '@/lib/operations/swarmControl';
-import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
-import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
-import { buildSwarmRoleMetadata, getSwarmSnapshotStorageKey } from '../utils/swarmRoleMeta';
+import { getSwarmSnapshotStorageKey } from '../utils/swarmRoleMeta';
 import { setPanelRendererPreference } from '../terminalRendererPreferences';
 import { dispatchSwarmLaunchMaterialized } from '@/lib/terminal/swarmLaunchBatch';
 import {
@@ -18,17 +14,13 @@ import {
 
 export default function useSwarmLaunchController({
   projectId,
-  workspaces,
-  activeWsId,
-  activePanelIds,
-  cwd,
   swarmLaunchCatalog,
   swarmLaunchProject,
   storage,
+  cwd,
   wsCounterRef,
   colCounterRef,
   panelCounterRef,
-  windowCounterRef,
   setWorkspaces,
   setActiveWsId,
   setActivePanelIds,
@@ -36,6 +28,14 @@ export default function useSwarmLaunchController({
   getAllPanelIds,
   syncActiveWindowSnapshot,
   materializedSwarmLaunchIdsRef = null,
+  pendingSwarmLaunchByLaunchIdRef: externalPendingByLaunchIdRef = null,
+  persistAgentRunMetadata,
+  buildPanel,
+  onMarkPanelsClosing = null,
+  onClearLaunchWrapperDispatch = null,
+  onAfterMaterialize = null,
+  setSwarmControlSnapshot = null,
+  applyRendererPreference = null,
 }) {
   const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
   const [swarmLaunchWizardStep, setSwarmLaunchWizardStep] = useState('team');
@@ -46,8 +46,9 @@ export default function useSwarmLaunchController({
   });
   const pendingSwarmLaunchRequestsRef = useRef([]);
   const swarmLaunchFlushTimerRef = useRef(null);
-  const swarmLaunchScheduledTimersRef = useRef(new Map());
-  const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
+  const localPendingSwarmLaunchByLaunchIdRef = useRef(new Map());
+  const pendingSwarmLaunchByLaunchIdRef =
+    externalPendingByLaunchIdRef || localPendingSwarmLaunchByLaunchIdRef;
   const localMaterializedSwarmLaunchIdsRef = useRef(new Set());
   const resolvedMaterializedSwarmLaunchIdsRef =
     materializedSwarmLaunchIdsRef || localMaterializedSwarmLaunchIdsRef;
@@ -71,71 +72,42 @@ export default function useSwarmLaunchController({
     [swarmLaunchCatalog, resolvedSwarmLaunchDraft]
   );
 
-  // Initialize draft on catalog/project change
   useEffect(() => {
-    // Try to load persisted draft from localStorage first
-    let persistedDraft = {};
-    if (storage && projectId) {
-      try {
-        const saved = storage.getItem(`devhub_swarm_launch_draft_${projectId}`);
-        if (saved) {
-          persistedDraft = JSON.parse(saved);
-        }
-      } catch {
-        // Ignore parse failures
-      }
-    }
-
     setSwarmLaunchDraft((current) =>
       createSwarmLaunchDraft({
         catalog: swarmLaunchCatalog,
         project: swarmLaunchProject,
-        preferredTemplateId: swarmLaunchCatalog?.recommended_template_id,
-        draft: persistedDraft,
+        draft: current || {},
       })
     );
-  }, [swarmLaunchCatalog, swarmLaunchProject, projectId, storage]);
+  }, [swarmLaunchCatalog, swarmLaunchProject]);
 
-  // Cleanup timer on unmount
   useEffect(
     () => () => {
       if (swarmLaunchFlushTimerRef.current) {
         window.clearTimeout(swarmLaunchFlushTimerRef.current);
         swarmLaunchFlushTimerRef.current = null;
       }
-      swarmLaunchScheduledTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-      swarmLaunchScheduledTimersRef.current.clear();
       pendingSwarmLaunchRequestsRef.current = [];
       pendingSwarmLaunchByLaunchIdRef.current.forEach((batch) => {
         if (batch.timer) window.clearTimeout(batch.timer);
       });
       pendingSwarmLaunchByLaunchIdRef.current.clear();
     },
-    []
+    [pendingSwarmLaunchByLaunchIdRef]
   );
 
   const updateSwarmLaunchDraft = useCallback(
     (patch = {}) => {
-      setSwarmLaunchDraft((current) => {
-        const newDraft = createSwarmLaunchDraft({
+      setSwarmLaunchDraft((current) =>
+        createSwarmLaunchDraft({
           catalog: swarmLaunchCatalog,
           project: swarmLaunchProject,
           draft: { ...(current || {}), ...patch },
-        });
-
-        // Persist to localStorage
-        if (storage && projectId) {
-          try {
-            storage.setItem(`devhub_swarm_launch_draft_${projectId}`, JSON.stringify(newDraft));
-          } catch {
-            // Ignore localStorage failures
-          }
-        }
-
-        return newDraft;
-      });
+        })
+      );
     },
-    [swarmLaunchCatalog, swarmLaunchProject, projectId, storage]
+    [swarmLaunchCatalog, swarmLaunchProject]
   );
 
   const openTerminalSwarmLauncher = useCallback(() => {
@@ -179,6 +151,21 @@ export default function useSwarmLaunchController({
         throw new Error(payload?.error || 'No se pudo lanzar el swarm desde terminales.');
       }
 
+      const runtimeRequests = payload?.launch_result?.runtime_requests || [];
+      if (runtimeRequests.length === 0) {
+        const failedRoles = payload?.launch_result?.failed_roles || [];
+        const failedDetail = failedRoles
+          .map(
+            (role) => `${role?.roleLabel || role?.roleKey}: ${role?.error || 'error desconocido'}`
+          )
+          .join(' | ');
+        throw new Error(
+          failedDetail
+            ? `El swarm no se lanzó: no se pudo inicializar ningún agente. ${failedDetail}`
+            : 'El swarm no se lanzó: no se pudo inicializar ningún agente.'
+        );
+      }
+
       if (payload.control_room_snapshot_input) {
         try {
           localStorage.setItem(
@@ -188,9 +175,10 @@ export default function useSwarmLaunchController({
         } catch {
           // Ignore localStorage failures.
         }
+        setSwarmControlSnapshot?.(payload.control_room_snapshot_input);
       }
 
-      dispatchSwarmLaunchMaterialized(payload.launch_result?.runtime_requests || []);
+      dispatchSwarmLaunchMaterialized(runtimeRequests);
 
       setSwarmLaunchWizardOpen(false);
       setSwarmLaunchSubmitState({ submitting: false, error: null });
@@ -200,58 +188,25 @@ export default function useSwarmLaunchController({
         error: error?.message || 'No se pudo lanzar el swarm desde terminales.',
       });
     }
-  }, [projectId, swarmLaunchPreview?.draft]);
+  }, [projectId, swarmLaunchPreview?.draft, setSwarmControlSnapshot]);
 
-  const persistAgentRunMetadata = useCallback(
-    async (request, panelId, commandToRun, panelCwd = null) => {
-      const {
-        taskId,
-        selectedAgent,
-        launchOrigin,
-        promptSummary,
-        taskTitle,
-        workspacePath,
-        workspaceId,
-        runId,
-        sessionId,
-        evidenceRef,
-      } = request || {};
-      if (!taskId || !panelId) return;
-      const swarmRole = buildSwarmRoleMetadata(request);
-      const resolvedWorkspacePath = workspacePath || panelCwd || null;
-      const workspaceVerified = workspacePath ? workspacePath === panelCwd : null;
-
-      try {
-        const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-        const hints = JSON.parse(localStorage.getItem('devhub_agent_task_hints') || '{}');
-        runs[taskId] = {
-          panelId,
-          commandSummary: hints[taskId] || shortenCommandSummary(commandToRun),
-          promptSummary: promptSummary || hints[taskId] || shortenCommandSummary(commandToRun),
-          selectedAgent: selectedAgent || null,
-          launchOrigin: launchOrigin || null,
-          roleKey: swarmRole?.roleKey || request?.roleKey || null,
-          roleLabel: swarmRole?.label || request?.roleLabel || null,
-          roleAbbrev: swarmRole?.abbrev || request?.roleAbbrev || null,
-          taskTitle: taskTitle || null,
-          workspacePath: resolvedWorkspacePath,
-          actualWorkspacePath: panelCwd || null,
-          workspaceId: workspaceId || null,
-          runId: runId || null,
-          sessionId: sessionId || null,
-          workspaceVerified,
-          evidenceRef: evidenceRef || null,
-          launchedAt: Date.now(),
-        };
-        localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
-      } catch {
-        // Ignore localStorage failures.
-      }
-
-      // Keep launch metadata local-only here; registry lifecycle is managed by control-plane flows.
-    },
-    []
-  );
+  const resolvedBuildPanel =
+    buildPanel ||
+    ((request, panelId, panelCwd) => ({
+      id: panelId,
+      initialCommand: request.commandToRun,
+      cwd: panelCwd,
+      swarmRole: request.swarmRole,
+      swarmContext: {
+        isSwarmRole: Boolean(request.isSwarmRole),
+        roleKey: request.roleKey || request.swarmRole?.roleKey || null,
+        launchId: request.launchId || null,
+        needsLaunchWrapper: true,
+        startAfterMs: 0,
+        standbyAwaitingDelegation: resolveSwarmPanelStandbyFlag(request),
+        bootstrapMode: request.bootstrapMode || 'engram_first',
+      },
+    }));
 
   const createWorkspaceForSwarmLaunchRequests = useMemo(
     () =>
@@ -262,38 +217,29 @@ export default function useSwarmLaunchController({
         panelCounterRef,
         materializedSwarmLaunchIdsRef: resolvedMaterializedSwarmLaunchIdsRef,
         getAllPanelIds,
-        buildPanel: (request, panelId, panelCwd) => ({
-          id: panelId,
-          initialCommand: request.commandToRun,
-          cwd: panelCwd,
-          swarmRole: request.swarmRole,
-          swarmContext: {
-            isSwarmRole: Boolean(request.isSwarmRole),
-            roleKey: request.roleKey || request.swarmRole?.roleKey || null,
-            launchId: request.launchId || null,
-            needsLaunchWrapper: true,
-            startAfterMs: 0,
-            standbyAwaitingDelegation: resolveSwarmPanelStandbyFlag(request),
-            bootstrapMode: request.bootstrapMode || 'engram_first',
-          },
-        }),
+        buildPanel: resolvedBuildPanel,
         setWorkspaces,
         setActiveWsId,
         setActivePanelIds,
         setTerminalRendererPreferences,
-        applyRendererPreference: (acc, wsId, panelId) =>
-          setPanelRendererPreference(acc, wsId, panelId, 'xterm-webgl'),
+        applyRendererPreference:
+          applyRendererPreference ||
+          ((acc, wsId, panelId) => setPanelRendererPreference(acc, wsId, panelId, 'xterm-webgl')),
         syncActiveWindowSnapshot,
         persistAgentRunMetadata,
-        onAfterMaterialize: ({ launchId }) => {
-          if (!launchId) return;
-          resolvedMaterializedSwarmLaunchIdsRef.current.add(launchId);
-          const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
-          if (pendingBatch?.timer) {
-            window.clearTimeout(pendingBatch.timer);
-          }
-          pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
-        },
+        onMarkPanelsClosing,
+        onClearLaunchWrapperDispatch,
+        onAfterMaterialize:
+          onAfterMaterialize ||
+          (({ launchId }) => {
+            if (!launchId) return;
+            resolvedMaterializedSwarmLaunchIdsRef.current.add(launchId);
+            const pendingBatch = pendingSwarmLaunchByLaunchIdRef.current.get(launchId);
+            if (pendingBatch?.timer) {
+              window.clearTimeout(pendingBatch.timer);
+            }
+            pendingSwarmLaunchByLaunchIdRef.current.delete(launchId);
+          }),
       }),
     [
       cwd,
@@ -308,6 +254,12 @@ export default function useSwarmLaunchController({
       colCounterRef,
       panelCounterRef,
       resolvedMaterializedSwarmLaunchIdsRef,
+      resolvedBuildPanel,
+      onMarkPanelsClosing,
+      onClearLaunchWrapperDispatch,
+      onAfterMaterialize,
+      applyRendererPreference,
+      pendingSwarmLaunchByLaunchIdRef,
     ]
   );
 
@@ -322,7 +274,11 @@ export default function useSwarmLaunchController({
         clearTimeoutFn: window.clearTimeout.bind(window),
         setTimeoutFn: window.setTimeout.bind(window),
       }),
-    [createWorkspaceForSwarmLaunchRequests, resolvedMaterializedSwarmLaunchIdsRef]
+    [
+      createWorkspaceForSwarmLaunchRequests,
+      resolvedMaterializedSwarmLaunchIdsRef,
+      pendingSwarmLaunchByLaunchIdRef,
+    ]
   );
 
   return {
@@ -332,18 +288,13 @@ export default function useSwarmLaunchController({
     setSwarmLaunchWizardStep,
     swarmLaunchDraft,
     swarmLaunchSubmitState,
+    setSwarmLaunchSubmitState,
     updateSwarmLaunchDraft,
     openTerminalSwarmLauncher,
     handleTerminalSwarmLaunch,
     enqueueSwarmLaunchRequest,
+    createWorkspaceForSwarmLaunchRequests,
     resolvedSwarmLaunchDraft,
     swarmLaunchPreview,
   };
-}
-
-function shortenCommandSummary(command) {
-  const raw = String(command || '').trim();
-  if (!raw) return 'Ejecucion iniciada desde terminal';
-  if (raw.length <= 140) return raw;
-  return `${raw.slice(0, 137)}...`;
 }

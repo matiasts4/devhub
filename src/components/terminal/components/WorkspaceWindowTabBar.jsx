@@ -1,9 +1,24 @@
-// WorkspaceWindowTabBar — tab strip UI per workspace: drag handles, tab labels, add/close buttons.
+// WorkspaceWindowTabBar — workspace tab strip UI (drag handles, tab labels, add/close).
 // Extracted from TerminalWorkspacesManager.jsx top tab bar section.
 
 import React from 'react';
-import { LayoutGrid, Plus, X, Folder, Minus, Globe } from 'lucide-react';
-import { getWorkspaceTabStyle, shortPath } from '../utils/panelHelpers';
+import { motion } from 'framer-motion';
+import { LayoutGrid, Plus, X, Grip } from 'lucide-react';
+import { getWorkspaceTabChromeStyle } from '../terminalChromeStyles';
+
+function getWorkspaceTabStyle(totalWorkspaces) {
+  if (totalWorkspaces <= 4) {
+    return { flex: '1 1 0%', minWidth: '190px', maxWidth: '260px' };
+  }
+  if (totalWorkspaces <= 7) {
+    return { flex: '1 1 0%', minWidth: '158px', maxWidth: '220px' };
+  }
+  return { flex: '0 1 138px', minWidth: '138px', maxWidth: '180px' };
+}
+
+function buildStableWorkspaceShellKey(scope, workspaceId) {
+  return `${scope}-${String(workspaceId || 'unknown')}`;
+}
 
 function WorkspaceWindowTabBar({
   workspaces,
@@ -11,188 +26,149 @@ function WorkspaceWindowTabBar({
   draggedWsId,
   dragOverWsId,
   browserWindowStates,
-  cwd,
-  showWorkspacePathChip,
-  onWorkspaceClick,
-  onAddWorkspace,
-  onRemoveWorkspace,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onCloseWorkspaceBrowser,
-  // Window controls
-  isWinMaximized,
-  onWinMinimize,
-  onWinToggleMaximize,
-  onWinClose,
+  switchWorkspace,
+  handleWorkspaceTabPointerDown,
+  handleWorkspaceTabPointerMove,
+  endWorkspaceTabDrag,
+  addWorkspace,
+  removeWorkspace,
+  closeWorkspaceBrowserWindow,
+  getWorkspaceDisplayLabel,
+  getAllPanelIds,
 }) {
   return (
-    <div
-      key="workspace-top-tab-bar"
-      data-testid="workspace-top-tab-bar"
-      data-tauri-drag-region
-      onDoubleClick={onWinToggleMaximize}
-      className="flex items-center min-h-[44px] bg-[var(--surface-app)] select-none shrink-0 border-b border-[var(--border-subtle)] px-3 gap-2"
-    >
-      <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
-        {workspaces.map((ws, wsIndex) => {
-          const totalPanels = ws.columns?.flatMap((col) => col.panels || []).length || 0;
-          const workspaceTabLabel = getWorkspaceDisplayLabel(ws, workspaces);
-          const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
-          return (
-            <div
-              key={ws.id}
-              onClick={() => onWorkspaceClick(ws.id)}
-              draggable
-              onDragStart={(e) => onDragStart(ws.id, e)}
-              onDragEnd={onDragEnd}
-              onDragOver={(e) => onDragOver(ws.id, e)}
-              onDragLeave={onDragLeave}
-              onDrop={(e) => onDrop(ws.id, e)}
-              className={`group flex items-center justify-between h-full px-4 rounded-xl transition-all cursor-grab active:cursor-grabbing select-none border ${
-                draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
-              } ${
-                activeWsId === ws.id
-                  ? 'text-[var(--text-primary)] border-[var(--border-subtle)]'
-                  : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
-              }`}
-              title={workspaceTabLabel}
-              style={{
-                ...getWorkspaceTabStyle(workspaces.length),
-                ...(activeWsId === ws.id
-                  ? {
-                      background: `rgba(var(--accent-rgb,88,166,255),0.08)`,
-                      borderColor: `rgba(var(--accent-rgb,88,166,255),0.22)`,
-                      boxShadow: `inset 0 -2px 0 rgba(var(--accent-rgb,88,166,255),0.55)`,
-                    }
-                  : dragOverWsId === ws.id && draggedWsId !== ws.id
-                    ? {
-                        background: 'rgba(var(--accent-rgb,88,166,255),0.07)',
-                        borderColor: `rgba(var(--accent-rgb,88,166,255),0.35)`,
-                      }
-                    : {}),
-                WebkitAppRegion: 'no-drag',
+    <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
+      {workspaces.map((ws) => {
+        const totalPanels = getAllPanelIds(ws.columns).length;
+        const workspaceTabKey = buildStableWorkspaceShellKey('workspace-tab', ws.id);
+        const workspaceTabLabel = getWorkspaceDisplayLabel(ws.id);
+        const hasOpenBrowserWindow = browserWindowStates?.[ws.id]?.open === true;
+        return (
+          <motion.div
+            key={workspaceTabKey}
+            data-workspace-id={ws.id}
+            data-testid={`workspace-tab-${ws.id}`}
+            onClick={() => switchWorkspace(ws.id)}
+            onPointerDown={handleWorkspaceTabPointerDown(ws.id)}
+            onPointerMove={handleWorkspaceTabPointerMove}
+            onPointerUp={endWorkspaceTabDrag}
+            onPointerLeave={endWorkspaceTabDrag}
+            onPointerCancel={endWorkspaceTabDrag}
+            className={`group relative flex h-[34px] min-h-[34px] items-center justify-between px-3.5 rounded-xl transition-colors duration-150 cursor-grab active:cursor-grabbing select-none touch-none border ${
+              draggedWsId === ws.id ? 'opacity-40 scale-95' : ''
+            } ${
+              activeWsId === ws.id
+                ? 'text-[var(--text-primary)] border-transparent'
+                : 'text-[var(--text-muted)] border-transparent hover:bg-white/[0.04] hover:text-[var(--text-secondary)]'
+            }`}
+            title={workspaceTabLabel}
+            style={{
+              touchAction: 'none',
+              ...getWorkspaceTabStyle(workspaces.length),
+              ...getWorkspaceTabChromeStyle({
+                active: activeWsId === ws.id,
+                dragOver: dragOverWsId === ws.id && draggedWsId !== ws.id,
+              }),
+            }}
+          >
+            <motion.span
+              initial={false}
+              animate={{
+                opacity: activeWsId === ws.id ? 1 : 0,
+                scale: activeWsId === ws.id ? 1 : 0.96,
               }}
-            >
-              <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
-                <LayoutGrid
-                  className="w-3.5 h-3.5 shrink-0"
-                  style={{
-                    color:
-                      activeWsId === ws.id
-                        ? `rgba(var(--accent-rgb,88,166,255),0.9)`
-                        : 'currentColor',
-                  }}
-                />
-                <span className="min-w-0 truncate text-[12px] font-semibold">
-                  {workspaceTabLabel}
-                </span>
-                {hasOpenBrowserWindow ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
-                    <span
-                      className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
-                      data-testid={`workspace-browser-indicator-${ws.id}`}
-                      title="Dedicated browser window open"
-                    />
-                    <button
-                      type="button"
-                      data-testid={`workspace-browser-close-${ws.id}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onCloseWorkspaceBrowser(ws.id);
-                      }}
-                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-emerald-100/80 transition-colors hover:bg-emerald-400/15 hover:text-white"
-                      title="Cerrar browser dedicado de este workspace"
-                      aria-label="Cerrar browser dedicado de este workspace"
-                    >
-                      <X className="h-3.5 w-3.5" strokeWidth={2.5} />
-                    </button>
-                  </span>
-                ) : null}
-                <span
-                  className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
-                  style={{ background: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' }}
-                >
-                  {totalPanels}
-                </span>
-              </div>
-              {workspaces.length > 1 && (
-                <button
-                  type="button"
-                  onClick={(e) => onRemoveWorkspace(e, ws.id)}
-                  data-testid={`workspace-close-${ws.id}`}
-                  aria-label={`Cerrar ${workspaceTabLabel}`}
-                  title={`Cerrar ${workspaceTabLabel}`}
-                  className={`relative z-[1] ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
+              transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute inset-0 rounded-xl border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.07)]"
+              style={{ zIndex: 0, willChange: 'transform', transformOrigin: 'center' }}
+            />
+            <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
+              <Grip
+                className={`w-3 h-3 shrink-0 transition-opacity duration-150 ${
+                  activeWsId === ws.id ? 'opacity-50' : 'opacity-30 group-hover:opacity-50'
+                }`}
+                style={{
+                  color:
                     activeWsId === ws.id
-                      ? 'border-white/10 bg-white/[0.05] text-[var(--text-secondary)] opacity-90 hover:border-red-400/35 hover:bg-red-500/14 hover:text-red-300'
-                      : 'border-transparent text-[var(--text-muted)] opacity-0 hover:border-white/12 hover:bg-white/10 hover:text-[var(--text-primary)] group-hover:opacity-85'
-                  }`}
-                >
-                  <X className="h-3.5 w-3.5" strokeWidth={2.5} />
-                </button>
-              )}
+                      ? `rgba(var(--accent-rgb,88,166,255),0.9)`
+                      : 'currentColor',
+                }}
+                aria-hidden="true"
+              />
+              <LayoutGrid
+                className="w-3.5 h-3.5 shrink-0"
+                style={{
+                  color:
+                    activeWsId === ws.id
+                      ? `rgba(var(--accent-rgb,88,166,255),0.9)`
+                      : 'currentColor',
+                }}
+              />
+              <span className="min-w-0 truncate text-[12px] font-semibold">
+                {workspaceTabLabel}
+              </span>
+              {hasOpenBrowserWindow ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
+                  <span
+                    className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
+                    data-testid={`workspace-browser-indicator-${ws.id}`}
+                    title="Dedicated browser window open"
+                  />
+                  <button
+                    type="button"
+                    data-testid={`workspace-browser-close-${ws.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeWorkspaceBrowserWindow(ws.id);
+                    }}
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-emerald-100/80 transition-colors hover:bg-emerald-400/15 hover:text-white"
+                    title="Cerrar browser dedicado de este workspace"
+                    aria-label="Cerrar browser dedicado de este workspace"
+                  >
+                    <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  </button>
+                </span>
+              ) : null}
+              <span
+                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-mono leading-none"
+                style={{
+                  background: 'rgba(255,255,255,0.07)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                {totalPanels}
+              </span>
             </div>
-          );
-        })}
-        <button
-          type="button"
-          onClick={onAddWorkspace}
-          className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
-          title="Nuevo workspace"
-          aria-label="Nuevo workspace"
-          data-testid="workspace-add-button"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Window Controls */}
-      <div
-        className="flex items-center h-full shrink-0 gap-2"
-        style={{ WebkitAppRegion: 'no-drag' }}
+            {workspaces.length > 1 && (
+              <button
+                type="button"
+                data-testid={`workspace-close-${ws.id}`}
+                onClick={(e) => removeWorkspace(e, ws.id)}
+                aria-label={`Cerrar ${workspaceTabLabel}`}
+                title={`Cerrar ${workspaceTabLabel}`}
+                className={`relative z-[1] ml-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
+                  activeWsId === ws.id
+                    ? 'border-white/10 bg-white/[0.05] text-[var(--text-secondary)] opacity-90 hover:border-red-400/35 hover:bg-red-500/14 hover:text-red-300'
+                    : 'border-transparent text-[var(--text-muted)] opacity-0 hover:border-white/12 hover:bg-white/10 hover:text-[var(--text-primary)] group-hover:opacity-85'
+                }`}
+              >
+                <X className="h-3 w-3" strokeWidth={2.25} />
+              </button>
+            )}
+          </motion.div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={addWorkspace}
+        className="inline-flex items-center justify-center w-7 h-7 text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-sm transition-all ml-0.5 shrink-0"
+        title="Nuevo workspace"
+        aria-label="Nuevo workspace"
+        data-testid="workspace-add-button"
       >
-        <button
-          onClick={onWinMinimize}
-          className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#2f323e] hover:brightness-125 transition-[filter] duration-150"
-          title="Minimize"
-        >
-          <Minus
-            className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-            strokeWidth={3}
-          />
-        </button>
-        <button
-          onClick={onWinToggleMaximize}
-          className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#464a57] hover:brightness-125 transition-[filter] duration-150"
-          title={isWinMaximized ? 'Restore' : 'Maximize'}
-        >
-          <Plus
-            className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-            strokeWidth={3}
-          />
-        </button>
-        <button
-          onClick={onWinClose}
-          className="group flex items-center justify-center w-4 h-4 rounded-full bg-[#B80096] hover:brightness-110 transition-[filter] duration-150"
-          title="Close"
-        >
-          <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
-        </button>
-      </div>
+        <Plus className="w-4 h-4" />
+      </button>
     </div>
   );
-}
-
-function getWorkspaceDisplayLabel(ws, workspaces) {
-  const index = workspaces.findIndex((w) => w.id === ws.id);
-  const explicitName = typeof ws.name === 'string' ? ws.name.trim() : '';
-  if (explicitName && !/^workspace\s+\d+$/i.test(explicitName)) {
-    return explicitName;
-  }
-  return `ESPACIO-${index + 1}`;
 }
 
 export default WorkspaceWindowTabBar;

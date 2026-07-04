@@ -1,19 +1,18 @@
 // useRightDockController — manages right dock state, persistence, measured bounds, and drag.
 // Extracted from TerminalWorkspacesManager.jsx.
-// Args: { projectId, isVisible, dockWorkspaceId, setDockWorkspaceId, activeWsId, storage, isClientLoaded, workspaceGridAreaRef, rightDockPlaceholderRef }
-// Returns: { rightDockState, setRightDockState, rightDockMeasuredBounds, hasMountedRightDock, isDraggingDock, updateRightDockState, syncRightDockMeasuredBounds }
 
 import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import {
   DEFAULT_RIGHT_DOCK_STATE,
   readRightDockState,
+  rightDockStatesEqual,
   sanitizeRightDockState,
   writeRightDockState,
 } from '../../workspace/rightDockState';
 
 export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measuredBounds }) {
   if (isFullscreenBrowser) {
-    return { top: 0, right: 0, bottom: 0, left: 0, width: '100%' };
+    return { top: 0, right: 'auto', bottom: 0, left: 0, width: '100%' };
   }
 
   if (measuredBounds) {
@@ -26,7 +25,7 @@ export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measured
     };
   }
 
-  return { top: 0, right: 0, bottom: 0, left: 'auto', width: `${size}%` };
+  return { top: 0, right: 'auto', bottom: 0, left: `${100 - size}%`, width: `${size}%` };
 }
 
 export function resolveMeasuredRightDockBounds(containerRect, placeholderRect) {
@@ -53,6 +52,9 @@ export default function useRightDockController({
   isClientLoaded,
   workspaceGridAreaRef,
   rightDockPlaceholderRef,
+  isDraggingDockRef = null,
+  applyLiveRightDockBoundsRef = null,
+  heavySurfacesReady = true,
 }) {
   const [rightDockState, setRightDockState] = useState(() => ({ ...DEFAULT_RIGHT_DOCK_STATE }));
   const [rightDockMeasuredBounds, setRightDockMeasuredBounds] = useState(null);
@@ -72,40 +74,12 @@ export default function useRightDockController({
     setRightDockState(readRightDockState(storage, projectId, activeWsId));
   }, [activeWsId, dockWorkspaceId, isClientLoaded, projectId, storage, setDockWorkspaceId]);
 
-  // Detect when right dock has mounted (for editor tab).
+  // Detect when right dock has mounted.
   useEffect(() => {
-    if (rightDockState.visible && rightDockState.activeTab === 'editor') {
+    if (rightDockState.visible) {
       setHasMountedRightDock(true);
     }
-  }, [rightDockState.activeTab, rightDockState.visible]);
-
-  // Drag cleanup for dock resize handle.
-  useEffect(() => {
-    if (!isDraggingDock) return undefined;
-
-    const stopDockDrag = () => setIsDraggingDock(false);
-
-    window.addEventListener('mouseup', stopDockDrag);
-    window.addEventListener('pointerup', stopDockDrag);
-    window.addEventListener('dragend', stopDockDrag);
-    window.addEventListener('blur', stopDockDrag);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') {
-        stopDockDrag();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('mouseup', stopDockDrag);
-      window.removeEventListener('pointerup', stopDockDrag);
-      window.removeEventListener('dragend', stopDockDrag);
-      window.removeEventListener('blur', stopDockDrag);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isDraggingDock]);
+  }, [rightDockState.visible]);
 
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
@@ -114,15 +88,24 @@ export default function useRightDockController({
         typeof nextValue === 'function'
           ? nextValue(currentState)
           : { ...currentState, ...nextValue };
-      return sanitizeRightDockState(resolvedState);
+      const nextState = sanitizeRightDockState(resolvedState);
+      return rightDockStatesEqual(currentState, nextState) ? prev : nextState;
     });
   }, []);
 
-  const syncRightDockMeasuredBounds = useCallback(() => {
+  const resolveDockLayoutFlags = useCallback(() => {
     const isFullscreenBrowser =
-      rightDockState.maximized && rightDockState.maximizedView === 'browser';
+      rightDockState.maximized &&
+      (rightDockState.maximizedView === 'browser' ||
+        rightDockState.maximizedView === 'swarm' ||
+        rightDockState.maximizedView === 'pizarra');
     const hideRightDockPanel =
       rightDockState.maximized && rightDockState.maximizedView === 'window';
+    return { isFullscreenBrowser, hideRightDockPanel };
+  }, [rightDockState.maximized, rightDockState.maximizedView]);
+
+  const syncRightDockMeasuredBounds = useCallback(() => {
+    const { isFullscreenBrowser, hideRightDockPanel } = resolveDockLayoutFlags();
 
     if (
       isFullscreenBrowser ||
@@ -150,6 +133,13 @@ export default function useRightDockController({
       return;
     }
 
+    if (isDraggingDockRef?.current) {
+      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
+        applyLiveRightDockBoundsRef?.current?.();
+      }
+      return;
+    }
+
     setRightDockMeasuredBounds((prev) => {
       if (
         prev &&
@@ -162,11 +152,11 @@ export default function useRightDockController({
       return nextBounds;
     });
   }, [
-    rightDockState.maximized,
-    rightDockState.visible,
-    rightDockState.maximizedView,
+    resolveDockLayoutFlags,
     workspaceGridAreaRef,
     rightDockPlaceholderRef,
+    isDraggingDockRef,
+    applyLiveRightDockBoundsRef,
   ]);
 
   useLayoutEffect(() => {
@@ -174,10 +164,7 @@ export default function useRightDockController({
   }, [syncRightDockMeasuredBounds, rightDockState.size, activeWsId, isVisible]);
 
   useEffect(() => {
-    const isFullscreenBrowser =
-      rightDockState.maximized && rightDockState.maximizedView === 'browser';
-    const hideRightDockPanel =
-      rightDockState.maximized && rightDockState.maximizedView === 'window';
+    const { isFullscreenBrowser, hideRightDockPanel } = resolveDockLayoutFlags();
 
     if (
       isFullscreenBrowser ||
@@ -194,8 +181,9 @@ export default function useRightDockController({
       return undefined;
     }
 
+    window.addEventListener('resize', syncRightDockMeasuredBounds);
+
     if (typeof ResizeObserver !== 'function') {
-      window.addEventListener('resize', syncRightDockMeasuredBounds);
       return () => window.removeEventListener('resize', syncRightDockMeasuredBounds);
     }
 
@@ -205,14 +193,54 @@ export default function useRightDockController({
 
     observer.observe(containerElement);
     observer.observe(placeholderElement);
-    return () => observer.disconnect();
+    return () => {
+      window.removeEventListener('resize', syncRightDockMeasuredBounds);
+      observer.disconnect();
+    };
   }, [
-    rightDockState.maximized,
-    rightDockState.visible,
-    rightDockState.maximizedView,
+    resolveDockLayoutFlags,
     syncRightDockMeasuredBounds,
     workspaceGridAreaRef,
     rightDockPlaceholderRef,
+    heavySurfacesReady,
+  ]);
+
+  // Eager measurement on visibility/tab changes so the dock layer gets pixel bounds early.
+  useEffect(() => {
+    const { isFullscreenBrowser, hideRightDockPanel } = resolveDockLayoutFlags();
+
+    if (
+      isFullscreenBrowser ||
+      !rightDockState.visible ||
+      rightDockState.maximized ||
+      hideRightDockPanel
+    ) {
+      return undefined;
+    }
+
+    syncRightDockMeasuredBounds();
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+      return undefined;
+    }
+    const t0 = setTimeout(() => syncRightDockMeasuredBounds(), 0);
+    const t1 = setTimeout(() => syncRightDockMeasuredBounds(), 16);
+    const r1 = requestAnimationFrame(() => syncRightDockMeasuredBounds());
+    const r2 = requestAnimationFrame(() =>
+      requestAnimationFrame(() => syncRightDockMeasuredBounds())
+    );
+
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+  }, [
+    resolveDockLayoutFlags,
+    rightDockState.visible,
+    rightDockState.maximized,
+    rightDockState.activeTab,
+    syncRightDockMeasuredBounds,
   ]);
 
   return {
