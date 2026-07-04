@@ -13,6 +13,7 @@ module.exports = {
     '^react-router/dom$': '<rootDir>/node_modules/react-router/dist/development/dom-export.js',
   },
   modulePathIgnorePatterns: [
+    '<rootDir>/.tmp/',
     '<rootDir>/.next/',
     '<rootDir>/.plyrium-forge/',
     '<rootDir>/.plyrium-forge/worktrees/',
@@ -23,6 +24,7 @@ module.exports = {
   ],
   testPathIgnorePatterns: [
     '/node_modules/',
+    '<rootDir>/.tmp/',
     '<rootDir>/.next/',
     '<rootDir>/.plyrium-forge/',
     '<rootDir>/.plyrium-forge/worktrees/',
