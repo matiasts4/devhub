@@ -70,6 +70,7 @@ import {
 } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
+import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
@@ -1284,6 +1285,11 @@ export function shouldAttachWebglRenderer({ operationalRendererMode }) {
 /** Phase 5 terminal-engine-v2: after WebGL context loss, stay on DOM permanently. */
 export function shouldBlockV2WebglRecovery({ isEngineV2, webglFallback }) {
   return isEngineV2 && webglFallback?.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_LOST;
+}
+
+/** Phase 6 terminal-engine-v2: v2 panels never use legacy survivor recovery. */
+export function shouldUseLegacySurvivorRecovery(isEngineV2) {
+  return usesLegacyTerminalSurvivorRecovery(isEngineV2);
 }
 
 /**
@@ -4706,6 +4712,8 @@ export default function TerminalTTY({
   const scheduleWorkspaceShowRecovery = useCallback(
     (layoutReason = 'workspace-show-layout') => {
       if (isDisposingRef.current || !termRef.current) return;
+      // Phase 6 terminal-engine-v2: rehydration/graveyard owns show recovery.
+      if (!usesLegacyTerminalSurvivorRecovery(isEngineV2Ref.current)) return;
 
       const survivorRecover = isWorkspaceSurvivorRecoverLayoutReason(layoutReason);
       const gpuShowRecover =
@@ -6611,7 +6619,22 @@ export default function TerminalTTY({
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)) {
       restoreInitialCommandDispatchGuard();
-      if (shouldUseNativeRenderer && nativeVteOpened) {
+      // Phase 6 terminal-engine-v2: skip legacy GPU survivor recovery on show.
+      if (!usesLegacyTerminalSurvivorRecovery(isEngineV2Ref.current)) {
+        if (termRef.current && containerRef.current && fitRef.current) {
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
+        }
+        needsViewportSyncOnShowRef.current = false;
+        layoutChurnedWhileHiddenRef.current = false;
+        layoutHiddenGenerationRef.current = 0;
+      } else if (shouldUseNativeRenderer && nativeVteOpened) {
         void showAndResizeNativeLease();
       } else {
         const isWorkspaceTabReveal =
@@ -6784,6 +6807,7 @@ export default function TerminalTTY({
   }, [
     coalescedForceRepaint,
     coalescedSoftGpuVisibilityReveal,
+    fitTerminalViewport,
     isVisibleInLayout,
     isWorkspaceShellVisible,
     logViewportDiagnostic,
@@ -6799,8 +6823,12 @@ export default function TerminalTTY({
   ]);
 
   useEffect(() => {
+    if (!usesLegacyTerminalSurvivorRecovery(isEngineV2)) {
+      return undefined;
+    }
+
     const handleSurvivorRecover = (event) => {
-      if (isDisposingRef.current || isEngineV2Ref.current) return;
+      if (isDisposingRef.current) return;
       const panelIds = Array.isArray(event?.detail?.panelIds) ? event.detail.panelIds : null;
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id)) return;
       // survivorPanelIds spans every remaining workspace, so this can fire for
@@ -6948,6 +6976,7 @@ export default function TerminalTTY({
     disposeWebglAddonForContextLoss,
     fitTerminalViewport,
     initialCommand,
+    isEngineV2,
     isKimiTuiLive,
     logViewportDiagnostic,
     nudgeTerminalPtyResize,
@@ -7992,6 +8021,21 @@ export default function TerminalTTY({
       if (!termRef.current || !fitRef.current) return;
 
       const reason = event?.detail?.reason || 'layout-settled';
+
+      // Phase 6 terminal-engine-v2: only projection/initial-command hooks; no bursts.
+      if (!usesLegacyTerminalSurvivorRecovery(isEngineV2Ref.current)) {
+        const isProjectionReason =
+          String(reason).includes('workspace-created') ||
+          String(reason).includes('shared-surface-projection-ready') ||
+          String(reason).includes('shared-surface-host-resize');
+        if (isProjectionReason && isVisibleInLayoutRef.current) {
+          projectionReadyRef.current = true;
+          if (initialCommand && !hasSentInitialCommand.current) {
+            sendInitialCommandIfReady();
+          }
+        }
+        return;
+      }
       const panelIds = Array.isArray(event?.detail?.panelIds) ? event.detail.panelIds : null;
       // Closing a panel in one workspace can re-render the global workspace grid and
       // discard the GPU backing store of panels that are opacity-hidden in other
@@ -8445,6 +8489,8 @@ export default function TerminalTTY({
     };
   }, [
     id,
+    initialCommand,
+    sendInitialCommandIfReady,
     disposeWebglAddonForContextLoss,
     fitTerminalViewport,
     forceTerminalViewportRepaint,

@@ -218,10 +218,12 @@ import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
   dispatchTerminalLayoutSettled,
   dispatchTerminalWindowVisible,
+} from '@/components/terminal/nativeLayoutSync';
+import {
   filterLegacySurvivorPanelIds,
   scheduleSurvivorRecoverAfterClose,
   SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
-} from '@/components/terminal/nativeLayoutSync';
+} from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   LIFECYCLE_BURST_PHASES,
   PANEL_LIFECYCLE_REASONS,

@@ -45,8 +45,8 @@ Suggested split: 9 PRs, one per phase; PR1 and PR2 may be developed in parallel 
 
 ## Phase 6: Delete survivor recovery code
 
-- [x] 6.1 Guard survivor recovery in `TerminalWorkspacesManager.jsx` via `filterLegacySurvivorPanelIds`; v2 panels skip survivor bursts. (M)
-- [x] 6.2 Guard v2 paths in `TerminalTTY.jsx` (no bounded GPU recover, no panel bridge, no survivor listener); v1 retains legacy apparatus; `terminalPanelBridge.js` kept for v1. (L)
+- [x] 6.1 Move survivor orchestration to `legacyTerminalSurvivorRecovery.js`; remove from `nativeLayoutSync.js`. `TerminalWorkspacesManager.jsx` filters v2 panels via `filterLegacySurvivorPanelIds` before scheduling bursts. (M)
+- [x] 6.2 `TerminalTTY.jsx` v2: no survivor listener, no layout-settled bursts, no `scheduleWorkspaceShowRecovery`, lightweight layout-show only; v1 retains bounded GPU recover + panel bridge. (L)
 
 ## Phase 7: opencode durable sessions
 

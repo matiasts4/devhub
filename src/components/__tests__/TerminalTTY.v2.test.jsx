@@ -700,6 +700,64 @@ describe('TerminalTTY — v2 engine path', () => {
     expect(terminalPanelBridge.stashTerminalPanelBridge).not.toHaveBeenCalled();
   });
 
+  it('does not register a devhub:terminal-survivor-recover listener when isEngineV2 is true', async () => {
+    const addSpy = jest.spyOn(window, 'addEventListener');
+
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-no-survivor-listener',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const survivorRegistrations = addSpy.mock.calls.filter(
+      ([eventName]) => eventName === 'devhub:terminal-survivor-recover'
+    );
+    expect(survivorRegistrations).toHaveLength(0);
+
+    addSpy.mockRestore();
+  });
+
+  it('ignores devhub:terminal-layout-settled survivor bursts when isEngineV2 is true', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-v2-no-layout-burst',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const term = getLastTerminal();
+    term.refresh.mockClear();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:terminal-layout-settled', {
+        detail: {
+          panelIds: ['panel-v2-no-layout-burst'],
+          reason: 'workspace-removed',
+        },
+      })
+    );
+    await flushTerminalEffects();
+
+    expect(term.refresh).not.toHaveBeenCalled();
+  });
+
   it('ignores devhub:terminal-survivor-recover events when isEngineV2 is true', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {
