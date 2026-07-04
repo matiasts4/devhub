@@ -97,7 +97,6 @@
     "tauri": "node scripts/tauri-cli.cjs",
     "tauri:dev": "node scripts/tauri-dev.cjs",
     "tauri:build": "node scripts/generate-icon-if-needed.cjs && npm run build:sidecar && node scripts/tauri-cli.cjs build",
-    "native:vte-smoke": "node scripts/native-vte-smoke.cjs",
     "qa:multi-agent-desktop": "node scripts/qa/run-multi-agent-desktop.cjs",
     "generate-icon": "node scripts/generate-preview.js && node scripts/generate-icon.js && npx @tauri-apps/cli icon public/logo-square.png -o src-tauri/icons",
     "agenthub-test": "node bin/agenthub-test.js",

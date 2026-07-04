@@ -91,10 +91,6 @@ jest.mock('@/components/TerminalTTY', () => ({
   },
 }));
 
-jest.mock('@/lib/terminal/nativeVteBridge', () => ({
-  resizeNativeVtePanel: jest.fn(() => Promise.resolve()),
-}));
-
 describe('CanvasTerminal close button', () => {
   let container;
   let root;

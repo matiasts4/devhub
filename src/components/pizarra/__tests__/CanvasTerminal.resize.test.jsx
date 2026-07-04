@@ -101,10 +101,6 @@ jest.mock('@/components/TerminalTTY', () => {
   };
 });
 
-jest.mock('@/lib/terminal/nativeVteBridge', () => ({
-  resizeNativeVtePanel: jest.fn(() => Promise.resolve()),
-}));
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function installDom() {

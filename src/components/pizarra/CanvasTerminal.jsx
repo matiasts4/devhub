@@ -1,28 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
-import TerminalTTY from '@/components/TerminalTTY';
+import { X } from 'lucide-react'; // eslint-disable-line no-unused-vars
+import TerminalTTY from '@/components/TerminalTTY'; // eslint-disable-line no-unused-vars
 import {
+  // eslint-disable-next-line no-unused-vars
   SharedTerminalSurfacePortal,
   hasSharedTerminalSurfaceProps,
   mergeSharedTerminalSurfaceProps,
   setSharedTerminalSurfaceProps,
   useSharedTerminalSurfacesEnabled,
 } from '@/components/terminal/SharedTerminalSurface';
-import {
-  openNativeVtePanel,
-  raiseNativeVtePanel,
-  resizeNativeVtePanel,
-  setNativeVtePanelVisibility,
-} from '@/lib/terminal/nativeVteBridge';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
 import {
   ensureSurfaceMotionKeyframes,
   resolveFrameVisual,
   resolveHandleSizing,
   FRAME_TRANSITION,
-  SURFACE_ENTER_OPACITY_ONLY,
+  SURFACE_ENTER_OPACITY_ONLY, // eslint-disable-line no-unused-vars
   PIZARRA_SURFACE_FRAME_INSET,
   PIZARRA_SURFACE_HEADER_HEIGHT,
   PIZARRA_SURFACE_BORDER_RADIUS,
@@ -42,20 +37,19 @@ import {
 // xterm). We pass the requested mode through to TerminalTTY as-is and
 // let IT run the live WebGL probe in its own mount; TerminalTTY
 // already surfaces a visible demotion warning if the probe fails.
-import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect';
+import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect'; // eslint-disable-line no-unused-vars
 import { SHOW_RENDERER_SWITCH } from '@/components/terminal/terminalRendererPreferences';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
 // pointer travel that separates a click from a drag. Below this
-// threshold, the native VTE panel is NOT suspended on mousedown, so
-// a pure selection click no longer triggers the IPC hide/show
-// round-trip that causes the visible flicker.
+// threshold the web chrome drag state is NOT promoted on mousedown,
+// so a pure selection click no longer triggers a suspend/reattach
+// round-trip that causes visible flicker.
 //
 // Hypotenuse of (rawDeltaX, rawDeltaY) — the browser-reported
 // pre-zoom screen pixels of the pointer since drag start — is
 // compared against DRAG_THRESHOLD_PX. The first move that crosses
-// it promotes "pointerDown" to "isLiveDragging" and only then is
-// the native VTE panel suspended. See design §6.1.
+// it promotes "pointerDown" to "isLiveDragging". See design §6.1.
 const DRAG_THRESHOLD_PX = 3;
 
 export default function CanvasTerminal({
@@ -76,10 +70,7 @@ export default function CanvasTerminal({
   initialCommand,
   autoFocus = false,
   isActivePanel = false,
-  // pizarra: default renderer matches the terminals page (xterm-webgl). The
-  // native VTE path remains selectable per-shape via requestedRendererMode,
-  // but the out-of-the-box experience on the pizarra canvas is now the same
-  // xterm + WebGL renderer that TerminalWorkspacesManager exposes.
+  // pizarra: default renderer matches the terminals page (xterm-webgl).
   requestedRendererMode = 'xterm-webgl',
   onUpdateRendererMode,
   visibleTerminalPanelCount = 1,
@@ -89,28 +80,9 @@ export default function CanvasTerminal({
   skipEnterAnimation = false,
   isShown = true,
 }) {
-  // Siempre usamos la terminal nativa (VTE widget) para superficies de tipo terminal
-  // dentro de la pizarra. Posicionamos el widget exactamente sobre el rect de
-  // contenido de la card (inset por el header web). Fidelidad completa para TUIs,
-  // sin xterm, sin "canvas externo" para el contenido.
-  //
-  // Layering: los raises en select/drag/reorder de la surface llaman raiseNativeVtePanel
-  // (o raiseNativeBrowser para browsers). Cuando una browser card queda "arriba" en
-  // el z de pizarra, su raise debe dejar su webkit por encima del VTE de la terminal.
-  // Si hace falta, podemos sincronizar el orden global de todos los natives de pizarra
-  // surfaces según el stacking actual de las cards.
-  //
-  // Resolver parity (C3 of terminal-renderer-xterm-webgl): we honor the
-  // requested renderer selection. In practice pizarra only carries VTE
-  // (the legacy 'vte-experimental' value), but going through the resolver
-  // keeps the chrome label honest if a future shape requests xterm-webgl.
-  //
-  // We no longer call resolveRendererSelection here — see the import
-  // comment. The native-VTE branch checks below use `isVteExperimental`
-  // derived from the raw `requestedRendererMode`. Everything else
-  // (the chrome switcher, the TerminalTTY prop) sees the requested
-  // mode directly.
-  const isVteExperimental = requestedRendererMode === 'vte-experimental';
+  // Canvas terminal surfaces now use the web xterm renderer only.
+  // The native VTE path has been removed; requestedRendererMode is
+  // passed through to TerminalTTY, which performs the live WebGL probe.
   const sharedSurfacesEnabled = useSharedTerminalSurfacesEnabled();
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
@@ -130,13 +102,8 @@ export default function CanvasTerminal({
     (shapeId) => {
       onSelect?.(shapeId);
       onActivatePanel?.(terminalId);
-      // Raise the native VTE so this pizarra terminal card's content is above other
-      // native surfaces (e.g. browsers) when the card is top in pizarra stacking.
-      if (isVteExperimental) {
-        raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
-      }
     },
-    [onActivatePanel, onSelect, terminalId, requestedRendererMode]
+    [onActivatePanel, onSelect, terminalId]
   );
 
   // pizarra-motion: inject shared enter keyframes once.
@@ -144,78 +111,10 @@ export default function CanvasTerminal({
     ensureSurfaceMotionKeyframes();
   }, []);
 
-  // New surfaces should appear on top of existing ones (including different native types).
-  // For pizarra terminal cards we use the real native VTE widget (positioned over the
-  // content rect of the card). Raise it so this terminal is above other natives when
-  // its pizarra surface is top in the stacking order.
-  useEffect(() => {
-    if (isVteExperimental) {
-      raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
-    }
-  }, []); // run once on mount
-
-  // Ensure native VTE is open for this pizarra terminal card (newly added in pizarra,
-  // not only carried from workspace). Uses normal (non-offscreen) open so the real
-  // widget is created and can be positioned/raised over the card content rect.
-  const nativeOpenedRef = useRef(false);
-  useEffect(() => {
-    if (!isVteExperimental || !terminalId || nativeOpenedRef.current) return;
-    const b = resolvedBounds;
-    const contentW = Math.max(10, (b.width || 800) - PIZARRA_SURFACE_FRAME_INSET * 2);
-    const contentH = Math.max(
-      10,
-      (b.height || 600) - PIZARRA_SURFACE_FRAME_INSET * 2 - PIZARRA_SURFACE_HEADER_HEIGHT
-    );
-    nativeOpenedRef.current = true;
-    openNativeVtePanel({
-      panelId: terminalId,
-      cwd,
-      initialCommand,
-      bounds: {
-        x: (b.screenX ?? b.x ?? 0) + PIZARRA_SURFACE_FRAME_INSET,
-        y: (b.screenY ?? b.y ?? 0) + PIZARRA_SURFACE_FRAME_INSET + PIZARRA_SURFACE_HEADER_HEIGHT,
-        width: contentW,
-        height: contentH,
-      },
-      // no offscreen: we want the real widget for this card (user wants to utilize native)
-    }).catch(() => {
-      nativeOpenedRef.current = false; // allow retry
-    });
-  }, [isVteExperimental, terminalId, resolvedBounds, cwd, initialCommand]);
-
   // pizarra-motion: hover state drives the idle border/shadow highlight.
   const [isHovered, setIsHovered] = useState(false);
   const handleFrameMouseEnter = useCallback(() => setIsHovered(true), []);
   const handleFrameMouseLeave = useCallback(() => setIsHovered(false), []);
-
-  useEffect(() => {
-    // Para pizarra terminales: siempre native VTE. Posicionamos el widget exactamente
-    // sobre el área de contenido de la card (inset por el header web del frame).
-    if (isVteExperimental && resolvedBounds) {
-      const inset = PIZARRA_SURFACE_FRAME_INSET;
-      const headerH = PIZARRA_SURFACE_HEADER_HEIGHT;
-      resizeNativeVtePanel({
-        panelId: terminalId,
-        bounds: {
-          x: (resolvedBounds.screenX ?? resolvedBounds.x) + inset,
-          y: (resolvedBounds.screenY ?? resolvedBounds.y) + inset + headerH,
-          width: Math.max(resolvedBounds.width - inset * 2, 1),
-          height: Math.max(resolvedBounds.height - inset * 2 - headerH, 1),
-        },
-      }).catch(() => {});
-    }
-  }, [resolvedBounds, terminalId, isVteExperimental]);
-
-  // Usamos la terminal nativa VTE widget también para las cards de terminal en pizarra.
-  // No parqueamos ni usamos canvas "externo" para el contenido (el usuario pidió utilizar
-  // la nativa). El widget se posiciona vía los efectos de resize/raise/visibility abajo,
-  // que cubren el área de contenido de la card (debajo del header web).
-  // El chrome (header, bordes, handles) sigue siendo web para integrarse con el resto
-  // de la pizarra. El contenido real de la TUI viene del VTE nativo (fidelidad completa).
-  //
-  // Si al arrastrar un browser surface "por encima" de una terminal card sigue habiendo
-  // superposición visual, el fix es mejorar el orden de raises o agregar un sync global
-  // de z de pizarra → orden de widgets nativos en el overlay.
 
   const handleFrameMouseDown = useCallback(
     (event) => {
@@ -244,7 +143,7 @@ export default function CanvasTerminal({
   // See design §6.1.
   const [pointerDown, setPointerDown] = useState(false);
   const [isLiveDragging, setIsLiveDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
+  const [_isResizing, setIsResizing] = useState(false);
   const hasMovedRef = useRef(false);
   // pizarra-resize-fluidity: ref for direct style mutation on the container root
   // during resize (unifies with browser + drag pattern).
@@ -295,27 +194,6 @@ export default function CanvasTerminal({
     isShown,
   ]);
 
-  // pizarra-shared-view-state (Phase 1 — flicker fix): synchronous
-  // reattach. When isLiveDragging flips back to false, the next
-  // resolvedBounds effect run calls setNativeVtePanelVisibility with
-  // visible:true in the SAME effect tick (no setTimeout, no RAF). This
-  // closes the one-frame gap between wrapper repaint and native panel
-  // repaint that caused the post-drag flicker. See design §6.2.
-  const wasLiveDraggingRef = useRef(false);
-  useEffect(() => {
-    if (wasLiveDraggingRef.current && !isLiveDragging && isVteExperimental) {
-      // Just exited a real drag. Reattach the native panel right now,
-      // synchronously. The effect runs in the same React commit tick
-      // that processed the state flip.
-      setNativeVtePanelVisibility({
-        panelId: terminalId,
-        visible: true,
-        reason: 'reattach-after-drag',
-      }).catch(() => {});
-    }
-    wasLiveDraggingRef.current = isLiveDragging;
-  }, [isLiveDragging, terminalId]);
-
   // pizarra-drag-resize-polish: border-based resize. The Konva
   // Transformer is excluded for TERMINAL shapes (composite type), so
   // the user grabs any of the 8 edge/corner handles and drags to
@@ -350,7 +228,7 @@ export default function CanvasTerminal({
       };
       const startX = event.clientX;
       const startY = event.clientY;
-      let lastBounds = startBounds;
+      let _lastBounds = startBounds;
       const minW = 160;
       const minH = 120;
 
@@ -403,7 +281,7 @@ export default function CanvasTerminal({
           next.height = h;
           next.y = startBounds.y + (startBounds.height - h);
         }
-        lastBounds = next;
+        _lastBounds = next;
 
         // pizarra-resize-fluidity: direct mutate the root (and Live wrapper ancestor)
         // so the chrome frame resizes at pointer speed without waiting for React commit
@@ -433,41 +311,9 @@ export default function CanvasTerminal({
         }
 
         onResize?.(next);
-
-        // pizarra-resize-live-native: during the resize gesture, directly tell the native VTE the exact content area rect
-        // (full surface screen size minus chrome insets/header) using the current mutated position.
-        // This keeps the terminal content area perfectly matched to the header chrome at all times, even mid-drag.
-        // Prevents the prompt/path text from "leaking" or duplicating into the header area after repeated resizes,
-        // wrong section colors (bg leaking), or cut-off text. The React effect will reconcile on commit.
-        if (isVteExperimental && terminalId) {
-          const inset = PIZARRA_SURFACE_FRAME_INSET;
-          const headerH = PIZARRA_SURFACE_HEADER_HEIGHT;
-          const contentW = Math.max(1, screenW - inset * 2);
-          const contentH = Math.max(1, screenH - inset * 2 - headerH);
-          // use the just-mutated liveWrapper position if available, else fall back to current resolved
-          const surfScreenX = liveWrapper
-            ? parseFloat(liveWrapper.style.left) || 0
-            : (resolvedBounds.screenX ?? resolvedBounds.x ?? 0);
-          const surfScreenY = liveWrapper
-            ? parseFloat(liveWrapper.style.top) || 0
-            : (resolvedBounds.screenY ?? resolvedBounds.y ?? 0);
-          resizeNativeVtePanel({
-            panelId: terminalId,
-            bounds: {
-              x: surfScreenX + inset,
-              y: surfScreenY + inset + headerH,
-              width: contentW,
-              height: contentH,
-            },
-          }).catch(() => {});
-        }
       };
 
       const handleMouseUp = () => {
-        // Clear both refs and the isLiveDragging state. The
-        // synchronous reattach effect above will pick up the
-        // isLiveDragging flip and call setNativeVtePanelVisibility
-        // with visible:true in the same tick.
         hasMovedRef.current = false;
         setPointerDown(false);
         setIsLiveDragging(false);
@@ -496,12 +342,6 @@ export default function CanvasTerminal({
     onDragStart: () => {
       hasMovedRef.current = false;
       setPointerDown(true);
-      // Ensure raised at drag start (select may have done it, but for
-      // direct header drags we guarantee the native is topmost so its
-      // content wins over other natives while moving).
-      if (isVteExperimental) {
-        raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
-      }
     },
     onDragMove: (moveEvent, rawDeltas) => {
       if (!hasMovedRef.current) {
@@ -521,26 +361,17 @@ export default function CanvasTerminal({
       }
     },
     onDragEnd: (args) => {
-      // Clear both. The synchronous reattach effect above will pick
-      // up the isLiveDragging flip and call setNativeVtePanelVisibility
-      // with visible:true in the same React commit tick.
       setPointerDown(false);
       setIsLiveDragging(false);
-      // Re-raise on drop so the final position respects the surface being topmost.
-      if (isVteExperimental) {
-        raiseNativeVtePanel({ panelId: terminalId }).catch(() => {});
-      }
       onDragEnd?.(args);
     },
     moveMeta: { terminalId },
-    // pizarra-motion: NO per-tick native IPC during drag. The native VTE
-    // surface is suspended while a real drag is in progress
-    // (suspendNativeSurface={isLiveDragging}, NOT pointerDown), so a
-    // selection click never triggers the IPC hide/show round-trip. The
-    // surface is repositioned exactly ONCE on drop, by the
-    // resolvedBounds effect above, after the new x/y are committed to
-    // the reducer. The synchronous reattach effect restores
-    // visibility on the same tick the drag ends.
+    // pizarra-motion: NO per-tick native IPC during drag. The web
+    // surface stays visible during a real drag (suspendNativeSurface
+    // is driven by isLiveDragging, NOT pointerDown), so a selection
+    // click never triggers a hide/show round-trip. The surface is
+    // repositioned by the resolvedBounds effect after the new x/y are
+    // committed to the reducer.
   });
 
   // pizarra-fix-strictmode-unmount-2026-06-01: REMOVED the

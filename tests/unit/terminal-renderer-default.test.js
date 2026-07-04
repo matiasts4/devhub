@@ -28,11 +28,11 @@ describe('terminal-renderer-default — global default constant', () => {
     expect(readTerminalRendererDefaultModeSetting(storage)).toBe('xterm-webgl');
   });
 
-  test('readTerminalRendererDefaultModeSetting still respects stored vte-experimental (soft roll-out, TRD-3)', () => {
+  test('stored vte-experimental default is normalized to xterm-webgl (VTE removed)', () => {
     const storage = {
       getItem: (key) =>
         key === 'devhub_terminal_renderer_default_mode' ? 'vte-experimental' : null,
     };
-    expect(readTerminalRendererDefaultModeSetting(storage)).toBe('vte-experimental');
+    expect(readTerminalRendererDefaultModeSetting(storage)).toBe('xterm-webgl');
   });
 });

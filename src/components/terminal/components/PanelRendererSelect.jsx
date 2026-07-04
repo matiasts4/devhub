@@ -39,16 +39,13 @@
 // for any future caller that wants to render the same option list
 // elsewhere (e.g. a settings modal).
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Monitor, ChevronDown } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react'; // eslint-disable-line no-unused-vars
+import { Monitor, ChevronDown } from 'lucide-react'; // eslint-disable-line no-unused-vars
 
 export const RENDERER_SELECT_OPTIONS = Object.freeze([
   { value: 'inherit', label: 'Inherit (use workspace default)', selectable: true },
   { value: 'xterm-webgl', label: 'xterm + WebGL (active)', selectable: true },
-  // vte-experimental (GTK VTE) is disabled. Code remains in the repo but is
-  // not offered in any UI and never activated at runtime. The row is kept
-  // (selectable:false) purely for discoverability / future re-enable.
-  { value: 'vte-experimental', label: 'GTK VTE (disabled)', selectable: false },
+  { value: 'xterm', label: 'xterm (DOM fallback)', selectable: true },
   { value: 'canvas', label: 'canvas (Coming soon)', selectable: false },
 ]);
 
@@ -65,7 +62,7 @@ function isSelectable(value) {
 export default function PanelRendererSelect({
   panelId,
   currentMode = 'xterm',
-  availableModes = ['xterm-webgl'],
+  availableModes: _availableModes,
   onChange,
   disabled = false,
   disabledReason = null,
@@ -115,16 +112,7 @@ export default function PanelRendererSelect({
     [onChange]
   );
 
-  // VTE-experimental: the switcher is OPENABLE. Selecting a non-VTE
-  // option re-mounts the TerminalTTY under the new renderer (the
-  // requestedRendererMode effect closes the native VTE lease and
-  // boots the new backend). The title still surfaces that the panel
-  // is currently on VTE so the user knows a re-mount will happen.
-  const isVteActive = currentMode === 'vte-experimental';
-  const triggerTitle = isVteActive
-    ? disabledReason ||
-      'Estás sobre GTK VTE. Al cambiar se re-monta la terminal con el renderer elegido.'
-    : 'Cambiar renderer del panel';
+  const triggerTitle = disabledReason || 'Cambiar renderer del panel';
   const triggerAriaDisabled = Boolean(disabled);
 
   // Resolved current label for the trigger (shows the friendly name).
@@ -148,11 +136,7 @@ export default function PanelRendererSelect({
         title={triggerTitle}
         onClick={handleTriggerClick}
         onMouseDown={(e) => e.stopPropagation()}
-        className={`inline-flex items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors ${
-          isVteActive
-            ? 'text-[rgba(148,163,184,0.85)]'
-            : 'text-[var(--text-muted)] hover:border-white/10 hover:bg-white/10 hover:text-[var(--text-secondary)]'
-        }`}
+        className={`inline-flex items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors text-[var(--text-muted)] hover:border-white/10 hover:bg-white/10 hover:text-[var(--text-secondary)]`}
       >
         <Monitor className="h-3 w-3" aria-hidden="true" />
         <span className="max-w-[120px] truncate">{triggerLabel}</span>

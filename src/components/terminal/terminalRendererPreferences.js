@@ -26,31 +26,17 @@ function demoteWebglForRuntime(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) 
   return normalized;
 }
 
-// VTE (vte-experimental / GTK) is disabled as a selectable/usable renderer.
-// Code and packages remain in place for reference / future re-enable, but
-// no UI surfaces offer it and resolution never activates the VTE paths.
-export const LEGACY_VTE_ENABLED = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
-
-// Renderer switcher (the per-panel header control that lets users pick
-// xterm-webgl vs xterm etc.) is hidden/disabled per request.
-// The full component, logic, preferences, and resolution remain in the
-// codebase. We simply do not render the UI element.
+// VTE (vte-experimental / GTK) has been removed. Legacy stored values are
+// normalized to the xterm-webgl default (demoted to xterm on packaged Linux).
 export const SHOW_RENDERER_SWITCH = false;
 
-const ACTIVE_RENDERER_MODES = LEGACY_VTE_ENABLED
-  ? ['xterm', 'vte-experimental', 'xterm-webgl', 'canvas']
-  : ['xterm', 'xterm-webgl', 'canvas'];
-
-const VALID_RENDERER_MODES = new Set([...ACTIVE_RENDERER_MODES, 'vte-experimental']);
-const VALID_PANEL_MODES = new Set([
-  TERMINAL_RENDERER_INHERIT_MODE,
-  ...ACTIVE_RENDERER_MODES,
-  'vte-experimental',
-]);
+const ACTIVE_RENDERER_MODES = ['xterm', 'xterm-webgl', 'canvas'];
+const VALID_RENDERER_MODES = new Set(ACTIVE_RENDERER_MODES);
+const VALID_PANEL_MODES = new Set([TERMINAL_RENDERER_INHERIT_MODE, ...ACTIVE_RENDERER_MODES]);
 
 function normalizeRendererMode(mode, fallback = TERMINAL_RENDERER_DEFAULT_MODE) {
   if (mode === 'ghostty-experimental') return 'xterm';
-  if (mode === 'vte-experimental') return 'vte-experimental';
+  if (mode === 'vte-experimental') return TERMINAL_RENDERER_DEFAULT_MODE;
   return VALID_RENDERER_MODES.has(mode) ? mode : fallback;
 }
 

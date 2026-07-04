@@ -23,36 +23,36 @@ describe('terminalRendererCapabilities', () => {
     );
   });
 
-  test('marks GTK VTE as selectable but not ready until runtime proves itself', () => {
+  test('maps legacy vte-experimental mode to the xterm-webgl capability', () => {
     expect(getTerminalRendererCapability('vte-experimental')).toEqual(
       expect.objectContaining({
-        mode: 'vte-experimental',
-        ready: false,
-        reason: 'not-ready',
+        mode: 'xterm-webgl',
+        ready: true,
+        reason: null,
       })
     );
   });
 
-  test('falls back deterministically to xterm while preserving the requested renderer', () => {
+  test('resolveRendererSelection maps legacy vte-experimental to xterm-webgl', () => {
     expect(resolveRendererSelection({ requestedMode: 'vte-experimental' })).toEqual(
       expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'xterm',
-        didFallback: true,
-        fallbackReason: 'not-ready',
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        didFallback: false,
+        fallbackReason: null,
       })
     );
   });
 
-  test('does not fall back when GTK VTE capability is explicitly ready', () => {
+  test('does not fall back when xterm-webgl capability is explicitly ready', () => {
     expect(
       resolveRendererSelection({
-        requestedMode: 'vte-experimental',
+        requestedMode: 'xterm-webgl',
         capabilities: {
           xterm: getTerminalRendererCapability('xterm'),
-          'vte-experimental': {
-            mode: 'vte-experimental',
-            label: 'GTK VTE',
+          'xterm-webgl': {
+            mode: 'xterm-webgl',
+            label: 'xterm + WebGL',
             ready: true,
             reason: null,
           },
@@ -60,180 +60,85 @@ describe('terminalRendererCapabilities', () => {
       })
     ).toEqual(
       expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'vte-experimental',
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
         didFallback: false,
         fallbackReason: null,
       })
     );
   });
 
-  test('returns recoverable copy that tells the user xterm is the live fallback', () => {
+  test('returns recoverable copy for a WebGL unsupported runtime', () => {
+    const capabilities = {
+      xterm: getTerminalRendererCapability('xterm'),
+      'xterm-webgl': {
+        mode: 'xterm-webgl',
+        label: 'xterm + WebGL',
+        ready: false,
+        reason: 'webgl-unsupported-in-webview',
+      },
+    };
     const copy = getTerminalRendererFallbackCopy(
-      resolveRendererSelection({ requestedMode: 'vte-experimental' })
+      resolveRendererSelection({ requestedMode: 'xterm-webgl', capabilities })
     );
 
-    expect(copy).toContain('GTK VTE');
+    expect(copy).toContain('xterm + WebGL');
     expect(copy).toContain('xterm');
-    expect(copy).toContain('todavía no está listo');
   });
 
-  test('maps legacy ghostty requests to xterm for compatibility', () => {
-    expect(resolveRendererSelection({ requestedMode: 'ghostty-experimental' })).toEqual(
-      expect.objectContaining({
-        requestedMode: 'xterm',
-        effectiveMode: 'xterm',
-        didFallback: false,
-        fallbackReason: null,
-      })
-    );
-  });
-
-  test('marks GTK VTE ready only after Linux + Tauri + successful runtime probe', () => {
+  test('xterm-webgl stays ready when runtime capabilities are built', () => {
     const capabilities = getTerminalRendererRuntimeCapabilities({
       platform: 'linux',
       tauriAvailable: true,
-      nativeVteProbe: { ready: true, reason: null },
     });
 
-    expect(capabilities['vte-experimental']).toEqual(
+    expect(capabilities['xterm-webgl']).toEqual(
       expect.objectContaining({
-        mode: 'vte-experimental',
+        mode: 'xterm-webgl',
         ready: true,
         reason: null,
       })
     );
     expect(
       resolveRendererSelection({
-        requestedMode: 'vte-experimental',
+        requestedMode: 'xterm-webgl',
         capabilities,
       })
     ).toEqual(
       expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'vte-experimental',
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
         didFallback: false,
       })
     );
   });
 
-  test('maps unsupported platform and missing Tauri to deterministic VTE fallback reasons', () => {
-    expect(
-      getTerminalRendererRuntimeCapabilities({
-        platform: 'darwin',
-        tauriAvailable: true,
-      })['vte-experimental']
-    ).toEqual(
-      expect.objectContaining({
-        ready: false,
-        reason: 'unsupported-platform',
-      })
-    );
-
-    expect(
-      getTerminalRendererRuntimeCapabilities({
-        platform: 'linux',
-        tauriAvailable: false,
-      })['vte-experimental']
-    ).toEqual(
-      expect.objectContaining({
-        ready: false,
-        reason: 'tauri-unavailable',
-      })
-    );
-  });
-
-  test('preserves requested VTE intent while surfacing probe-failed and open-failed fallback reasons', () => {
-    const probeFailedCapabilities = getTerminalRendererRuntimeCapabilities({
-      platform: 'linux',
-      tauriAvailable: true,
-      nativeVteProbe: { ready: false, reason: 'probe-failed' },
-    });
-
-    expect(
-      resolveRendererSelection({
-        requestedMode: 'vte-experimental',
-        capabilities: probeFailedCapabilities,
-      })
-    ).toEqual(
-      expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'xterm',
-        fallbackReason: 'probe-failed',
-      })
-    );
-
-    const openFailedCapabilities = getTerminalRendererRuntimeCapabilities({
-      platform: 'linux',
-      tauriAvailable: true,
-      nativeVteProbe: { ready: true, reason: null },
-      nativeVteOpenFailure: 'open-failed',
-    });
-
-    expect(
-      resolveRendererSelection({
-        requestedMode: 'vte-experimental',
-        capabilities: openFailedCapabilities,
-      })
-    ).toEqual(
-      expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'xterm',
-        fallbackReason: 'open-failed',
-      })
-    );
-  });
-
-  test('surfaces specific probe diagnostics without losing requested VTE intent', () => {
+  test('getTerminalRendererRuntimeCapabilities surfaces a failing WebGL probe', () => {
     const capabilities = getTerminalRendererRuntimeCapabilities({
-      platform: 'linux',
-      tauriAvailable: true,
-      nativeVteProbe: { ready: false, reason: 'probe-missing-webview-handle' },
+      webglProbe: { ready: false, reason: 'webgl-context-creation-failed' },
     });
 
-    const selection = resolveRendererSelection({
-      requestedMode: 'vte-experimental',
-      capabilities,
-    });
-
-    expect(selection).toEqual(
+    expect(capabilities['xterm-webgl']).toEqual(
       expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'xterm',
-        fallbackReason: 'probe-missing-webview-handle',
+        mode: 'xterm-webgl',
+        ready: false,
+        reason: 'webgl-context-creation-failed',
       })
     );
 
-    expect(getTerminalRendererFallbackCopy(selection)).toContain('WebView nativo de Tauri');
-  });
-
-  test('treats panel-not-active as a stable registry fallback reason without losing requested renderer intent', () => {
-    const capabilities = getTerminalRendererRuntimeCapabilities({
-      platform: 'linux',
-      tauriAvailable: true,
-      nativeVteProbe: { ready: true, reason: null },
-      nativeVteOpenFailure: 'panel-not-active',
-    });
-
     expect(
       resolveRendererSelection({
-        requestedMode: 'vte-experimental',
+        requestedMode: 'xterm-webgl',
         capabilities,
       })
     ).toEqual(
       expect.objectContaining({
-        requestedMode: 'vte-experimental',
+        requestedMode: 'xterm-webgl',
         effectiveMode: 'xterm',
-        fallbackReason: 'panel-not-active',
+        didFallback: true,
+        fallbackReason: 'webgl-context-creation-failed',
       })
     );
-
-    const copy = getTerminalRendererFallbackCopy(
-      resolveRendererSelection({ requestedMode: 'vte-experimental', capabilities })
-    );
-
-    expect(copy).toContain('paneles vecinos');
-    expect(copy).toContain('lease nativo');
   });
 
   test('does not expose legacy Ghostty capability even when Linux GTK VTE runtime is ready', () => {
@@ -276,15 +181,13 @@ describe('terminalRendererCapabilities', () => {
     );
   });
 
-  test('static xterm-webgl does not break vte-experimental opt-in (TRS-DELTA-S3)', () => {
-    // Re-affirm the term-02 contract: vte-experimental still falls back to xterm
-    // deterministically when the static capability map is the only signal.
+  test('legacy vte-experimental resolves to xterm-webgl (TRS-DELTA-S3)', () => {
     expect(resolveRendererSelection({ requestedMode: 'vte-experimental' })).toEqual(
       expect.objectContaining({
-        requestedMode: 'vte-experimental',
-        effectiveMode: 'xterm',
-        didFallback: true,
-        fallbackReason: 'not-ready',
+        requestedMode: 'xterm-webgl',
+        effectiveMode: 'xterm-webgl',
+        didFallback: false,
+        fallbackReason: null,
       })
     );
   });

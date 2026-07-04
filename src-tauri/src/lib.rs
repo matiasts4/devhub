@@ -11,7 +11,6 @@ use tauri::{Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
 mod native_browser;
-mod native_vte;
 mod native_window_host;
 mod alacritty_terminal_host;
 mod system_clipboard;
@@ -23,10 +22,6 @@ use native_browser::{
     native_browser_open, native_browser_probe, native_browser_raise, native_browser_reload,
     native_browser_resize, native_browser_select_all, native_browser_selector_command,
     native_browser_set_visibility, NativeBrowserState,
-};
-use native_vte::{
-    native_vte_close, native_vte_focus, native_vte_open, native_vte_paste, native_vte_probe,
-    native_vte_raise, native_vte_resize, native_vte_set_visibility, NativeVteState,
 };
 use system_clipboard::{
     read_system_clipboard_image, read_system_clipboard_text, write_clipboard_image_to_temp_file,
@@ -884,7 +879,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(NativeVteState::default())
         .manage(NativeBrowserState::default())
         .manage(VoiceState::default())
         .invoke_handler(tauri::generate_handler![
@@ -900,14 +894,6 @@ pub fn run() {
             native_browser_select_all,
             native_browser_copy,
             native_browser_close,
-            native_vte_probe,
-            native_vte_open,
-            native_vte_focus,
-            native_vte_paste,
-            native_vte_raise,
-            native_vte_resize,
-            native_vte_set_visibility,
-            native_vte_close,
             read_system_clipboard_text,
             read_system_clipboard_image,
             write_clipboard_image_to_temp_file,

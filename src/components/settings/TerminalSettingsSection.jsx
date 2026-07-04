@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Minus, Plus, RotateCcw } from 'lucide-react';
-import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
+import { Minus, Plus, RotateCcw } from 'lucide-react'; // eslint-disable-line no-unused-vars
+import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface'; // eslint-disable-line no-unused-vars
 import {
   readTerminalRendererDefaultModeSetting,
   writeTerminalRendererDefaultModeSetting,
@@ -179,9 +179,6 @@ export default function TerminalSettingsSection() {
                 }}
               >
                 <option value="xterm-webgl">xterm-webgl (always active)</option>
-                <option value="vte-experimental">
-                  vte-experimental (legacy Linux/Tauri opt-in)
-                </option>
                 <option value="xterm">xterm (DOM fallback)</option>
               </select>
             </label>

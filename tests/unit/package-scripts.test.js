@@ -11,10 +11,6 @@ describe('package scripts', () => {
     expect(packageJson.scripts.test).toContain('--runInBand');
   });
 
-  test('exposes a standalone GTK VTE smoke harness command outside product renderer flow', () => {
-    expect(packageJson.scripts['native:vte-smoke']).toBe('node scripts/native-vte-smoke.cjs');
-  });
-
   test('exposes the multi-agent desktop QA harness as a Linux-first runner command', () => {
     expect(packageJson.scripts['qa:multi-agent-desktop']).toBe(
       'node scripts/qa/run-multi-agent-desktop.cjs'

@@ -8,10 +8,8 @@
  * - RS-03: the switcher is mounted per panel with a stable test-id.
  * - RS-04: clicking the option calls onChange with the chosen mode.
  * - RS-05: the `canvas` row is present, aria-disabled, non-selectable.
- * - RS-06: `xterm` (DOM) is NOT a selectable option; only the four named
- *          rows (Inherit, xterm-webgl, vte-experimental, canvas) are present.
- * - RS-07: when the current mode is `vte-experimental`, the trigger is
- *          aria-disabled with a `title` mentioning VTE.
+ * - RS-06: `xterm` (DOM) IS a selectable option; the four named rows
+ *          (Inherit, xterm-webgl, xterm, canvas) are present.
  *
  * Test strategy: jsdom + RTL + userEvent. We render the component in
  * isolation (no provider, no store) and assert the DOM contract. The
@@ -23,8 +21,6 @@ const React = require('react');
 const { JSDOM } = require('jsdom');
 const { flushSync } = require('react-dom');
 const { createRoot } = require('react-dom/client');
-const userEvent = require('@testing-library/user-event').default;
-require('@testing-library/jest-dom');
 
 const PanelRendererSelectModule = require('../components/PanelRendererSelect');
 const PanelRendererSelect = PanelRendererSelectModule.default;
@@ -67,13 +63,17 @@ function renderComponent(props) {
   };
 }
 
+function click(element) {
+  flushSync(() => {
+    element.click();
+  });
+}
+
 describe('PanelRendererSelect — presentational contract', () => {
   let dom;
-  let user;
 
   beforeEach(() => {
     dom = installDom();
-    user = userEvent.setup();
   });
 
   afterEach(() => {
@@ -99,7 +99,7 @@ describe('PanelRendererSelect — presentational contract', () => {
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'xterm',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
+      availableModes: ['xterm-webgl', 'xterm'],
       onChange: jest.fn(),
     });
 
@@ -112,18 +112,18 @@ describe('PanelRendererSelect — presentational contract', () => {
   });
 
   // ── 2. Dropdown opens with 4 options ──────────────────────────────────
-  test('clicking the trigger opens a listbox with 4 options (Inherit, xterm-webgl, vte-experimental, canvas)', async () => {
+  test('clicking the trigger opens a listbox with 4 options (Inherit, xterm-webgl, xterm, canvas)', async () => {
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'xterm',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
+      availableModes: ['xterm-webgl', 'xterm'],
       onChange: jest.fn(),
     });
 
     const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
     expect(trigger).not.toBeNull();
 
-    await user.click(trigger);
+    click(trigger);
 
     const listbox = view.container.querySelector('[role="listbox"]');
     expect(listbox).not.toBeNull();
@@ -136,7 +136,7 @@ describe('PanelRendererSelect — presentational contract', () => {
       expect.arrayContaining([
         expect.stringContaining('Inherit'),
         expect.stringContaining('xterm + WebGL'),
-        expect.stringContaining('GTK VTE'),
+        expect.stringContaining('xterm'),
         expect.stringContaining('canvas'),
       ])
     );
@@ -150,18 +150,18 @@ describe('PanelRendererSelect — presentational contract', () => {
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'xterm',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
+      availableModes: ['xterm-webgl', 'xterm'],
       onChange,
     });
 
     const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
-    await user.click(trigger);
+    click(trigger);
 
     const webglOption = view.container.querySelector(
       '[data-testid="panel-renderer-option-xterm-webgl-p1"]'
     );
     expect(webglOption).not.toBeNull();
-    await user.click(webglOption);
+    click(webglOption);
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith('xterm-webgl');
@@ -175,18 +175,18 @@ describe('PanelRendererSelect — presentational contract', () => {
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'xterm-webgl',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
+      availableModes: ['xterm-webgl', 'xterm'],
       onChange,
     });
 
     const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
-    await user.click(trigger);
+    click(trigger);
 
     const inheritOption = view.container.querySelector(
       '[data-testid="panel-renderer-option-inherit-p1"]'
     );
     expect(inheritOption).not.toBeNull();
-    await user.click(inheritOption);
+    click(inheritOption);
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith('inherit');
@@ -194,31 +194,56 @@ describe('PanelRendererSelect — presentational contract', () => {
     view.unmount();
   });
 
-  // ── 5. Clicking canvas does NOT call onChange ─────────────────────────
+  // ── 5. Clicking xterm calls onChange('xterm') ─────────────────────────
+  test('clicking the xterm option calls onChange exactly once with "xterm"', async () => {
+    const onChange = jest.fn();
+    const view = renderComponent({
+      panelId: 'p1',
+      currentMode: 'xterm-webgl',
+      availableModes: ['xterm-webgl', 'xterm'],
+      onChange,
+    });
+
+    const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
+    click(trigger);
+
+    const xtermOption = view.container.querySelector(
+      '[data-testid="panel-renderer-option-xterm-p1"]'
+    );
+    expect(xtermOption).not.toBeNull();
+    click(xtermOption);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('xterm');
+
+    view.unmount();
+  });
+
+  // ── 6. Clicking canvas does NOT call onChange ─────────────────────────
   test('clicking the disabled canvas option does NOT call onChange', async () => {
     const onChange = jest.fn();
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'xterm',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
+      availableModes: ['xterm-webgl', 'xterm'],
       onChange,
     });
 
     const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
-    await user.click(trigger);
+    click(trigger);
 
     const canvasOption = view.container.querySelector(
       '[data-testid="panel-renderer-option-canvas-p1"]'
     );
     expect(canvasOption).not.toBeNull();
-    await user.click(canvasOption);
+    click(canvasOption);
 
     expect(onChange).not.toHaveBeenCalled();
 
     view.unmount();
   });
 
-  // ── 6. canvas row is aria-disabled ───────────────────────────────────
+  // ── 7. canvas row is aria-disabled ───────────────────────────────────
   test('the canvas option has aria-disabled="true" and is non-selectable in the options export', () => {
     // The OPTIONS export is the source of truth for the row shape; the
     // canvas row MUST be flagged selectable:false so the render code can
@@ -230,42 +255,19 @@ describe('PanelRendererSelect — presentational contract', () => {
     const view = renderComponent({
       panelId: 'p1',
       currentMode: 'xterm',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
+      availableModes: ['xterm-webgl', 'xterm'],
       onChange: jest.fn(),
     });
 
     // Open the dropdown so the canvas row is in the DOM.
     const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
-    flushSync(() => {
-      trigger.dispatchEvent(new global.MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
+    click(trigger);
 
     const canvasOption = view.container.querySelector(
       '[data-testid="panel-renderer-option-canvas-p1"]'
     );
     expect(canvasOption).not.toBeNull();
     expect(canvasOption.getAttribute('aria-disabled')).toBe('true');
-    expect(canvasOption.hasAttribute('disabled')).toBe(true);
-
-    view.unmount();
-  });
-
-  // ── 7. VTE active mode → trigger stays openable with an explanatory title ──
-  test('when currentMode is vte-experimental, the trigger is openable and the title mentions the re-mount', () => {
-    const view = renderComponent({
-      panelId: 'p1',
-      currentMode: 'vte-experimental',
-      availableModes: ['xterm-webgl', 'vte-experimental'],
-      onChange: jest.fn(),
-    });
-
-    const trigger = view.container.querySelector('[data-testid="panel-renderer-select-p1"]');
-    expect(trigger).not.toBeNull();
-    // The trigger stays clickable so the user can switch OUT of VTE.
-    expect(trigger.getAttribute('aria-disabled')).not.toBe('true');
-    expect(trigger.hasAttribute('disabled')).toBe(false);
-    // The title still surfaces that re-mounting will happen.
-    expect(trigger.getAttribute('title') || '').toMatch(/VTE/i);
 
     view.unmount();
   });

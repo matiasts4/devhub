@@ -68,10 +68,6 @@ jest.mock('@/components/TerminalTTY', () => ({
   },
 }));
 
-jest.mock('@/lib/terminal/nativeVteBridge', () => ({
-  resizeNativeVtePanel: jest.fn(() => Promise.resolve()),
-}));
-
 // canvasViewport is a React context; we provide the bare minimum
 // (zoom=1, no pan, identity projectRect) so the live layer can
 // compute bounds = {x: shape.x, y: shape.y, ...}.
@@ -197,7 +193,9 @@ describe('PizarraLiveSurfaceLayer — double-count on second mousemove (pizarra-
     });
     // With direct-DOM dragging, onMoveElement is NOT called on mousemove.
     // Instead, the DOM style is modified. Let's assert the DOM position was updated.
-    const wrapper = container.querySelector('[data-testid="canvas-terminal-container"]').parentElement;
+    const wrapper = container.querySelector(
+      '[data-testid="canvas-terminal-container"]'
+    ).parentElement;
     expect(wrapper.style.left).toBe('150px');
     expect(wrapper.style.top).toBe('150px');
 

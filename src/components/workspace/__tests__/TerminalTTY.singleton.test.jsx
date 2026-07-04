@@ -92,25 +92,6 @@ global.WebSocket.CONNECTING = 0;
 global.WebSocket.CLOSING = 2;
 global.WebSocket.CLOSED = 3;
 
-const visibilitySink = [];
-const mockSetNativeVtePanelVisibility = jest.fn(async () => {});
-const mockOpenNativeVtePanel = jest.fn(async () => {});
-const mockCloseNativeVtePanel = jest.fn(async () => {});
-const mockResizeNativeVtePanel = jest.fn(async () => {});
-const mockFocusNativeVtePanel = jest.fn(async () => {});
-
-jest.mock('@/lib/terminal/nativeVteBridge', () => ({
-  setNativeVtePanelVisibility: (...args) => mockSetNativeVtePanelVisibility(...args),
-  resizeNativeVtePanel: (...args) => mockResizeNativeVtePanel(...args),
-  openNativeVtePanel: (...args) => mockOpenNativeVtePanel(...args),
-  closeNativeVtePanel: (...args) => mockCloseNativeVtePanel(...args),
-  focusNativeVtePanel: (...args) => mockFocusNativeVtePanel(...args),
-  isNativeVteRuntimeAvailable: () => false,
-  probeNativeVte: () => Promise.resolve({ ready: false, reason: 'mock' }),
-  pasteNativeVtePanel: jest.fn(async () => {}),
-  subscribeNativeVteEvents: () => () => {},
-}));
-
 jest.mock('framer-motion', () => ({
   motion: {
     div: (() => {
@@ -170,12 +151,6 @@ jest.mock(
 function clearSinks() {
   wsOpenSink.length = 0;
   wsCloseSink.length = 0;
-  visibilitySink.length = 0;
-  mockSetNativeVtePanelVisibility.mockClear();
-  mockOpenNativeVtePanel.mockClear();
-  mockCloseNativeVtePanel.mockClear();
-  mockResizeNativeVtePanel.mockClear();
-  mockFocusNativeVtePanel.mockClear();
 }
 
 function renderApp(element) {
@@ -415,43 +390,6 @@ describe('TerminalTTY — singleton lifecycle (Phase 4)', () => {
       });
       expect(wsCloseSink).toHaveLength(1);
       expect(onDestroy).toHaveBeenCalledWith('term-1');
-    });
-  });
-
-  test('mode switch does NOT call setNativeVtePanelVisibility(visible:false)', () => {
-    const onDestroy = jest.fn();
-    const { container, root } = renderApp(
-      React.createElement(App, {
-        surfaceId: 'term-1',
-        hostIds: ['workspace-dock'],
-        onUserClose: null,
-        onSurfaceDestroy: onDestroy,
-      })
-    );
-    return new Promise((resolve) => setTimeout(resolve, 10)).then(async () => {
-      // Switch hosts 3 times.
-      for (const hostId of ['pizarra-canvas', 'workspace-dock', 'pizarra-canvas']) {
-        act(() => {
-          root.render(
-            React.createElement(App, {
-              surfaceId: 'term-1',
-              hostIds: [hostId],
-              onUserClose: null,
-              onSurfaceDestroy: onDestroy,
-            })
-          );
-        });
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      // setNativeVtePanelVisibility should NOT be called with
-      // visible:false on a host switch. The bridge mock is
-      // called only by the real TerminalTTY; this minimal
-      // inner doesn't call it. We assert the mock was never
-      // invoked with visible:false.
-      const falseCalls = mockSetNativeVtePanelVisibility.mock.calls.filter(
-        (c) => c[0] && c[0].visible === false
-      );
-      expect(falseCalls).toHaveLength(0);
     });
   });
 });

@@ -21,7 +21,6 @@ import { useVoiceCapture } from '@/lib/voice/useVoiceCapture';
 import { useVoiceTts } from '@/lib/voice/useVoiceTts';
 import { isVoiceFeatureEnabled } from '@/lib/voice/voiceFeatureFlag';
 import { useZedVoiceShortcut } from '@/lib/voice/useZedVoiceShortcut';
-import { registerTerminalAvoidRect } from '@/components/terminal/nativeLayoutSync';
 
 const STATUS_VISIBLE_MS = 4000;
 const STATUS_EXIT_MS = 320;
@@ -614,44 +613,6 @@ export default function ZedAmbientOverlay({
       pillState: isLoading ? 'executing' : speaking ? 'speaking' : recording ? 'listening' : 'idle',
     };
   }, [phase, speaking, recording, isOpen, isLoading, statusLine, activityExpanded, currentStep]);
-
-  useEffect(() => {
-    if (!showPill || typeof window === 'undefined') return undefined;
-    const el = pillInnerRef.current;
-    if (!el) return undefined;
-
-    let unregister = () => {};
-    let rafId = null;
-
-    const register = () => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        unregister();
-        unregister = registerTerminalAvoidRect(rect, 'zed-pill');
-      }
-    };
-
-    register();
-
-    if (typeof window.ResizeObserver !== 'function') {
-      return () => {
-        if (rafId) cancelAnimationFrame(rafId);
-        unregister();
-      };
-    }
-
-    const observer = new window.ResizeObserver(() => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(register);
-    });
-    observer.observe(el);
-
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      observer.disconnect();
-      unregister();
-    };
-  }, [showPill]);
 
   const lastTurnTimestamp =
     displayAssistantMessage && typeof displayAssistantMessage.timestamp === 'string'

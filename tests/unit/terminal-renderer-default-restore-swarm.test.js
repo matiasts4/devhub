@@ -1,18 +1,12 @@
 /**
- * Session restore + swarm + soft-roll-out contract for
- * `terminal-renderer-default-xterm-webgl`.
+ * Session restore + swarm contract for `terminal-renderer-default-xterm-webgl`.
  *
- * Specs: openspec/changes/terminal-renderer-default-xterm-webgl/specs/terminal-renderer-fallback/spec.md
- *   - TRF-DELTA-1: Stored vte-experimental default is preserved on boot.
- *   - TRF-DELTA-2: No migration code overwrites the stored value on first load.
- *
- * Specs: openspec/changes/terminal-renderer-default-xterm-webgl/specs/terminal-renderer-default/spec.md
- *   - TRD-3: Session restore round-trips renderer preference.
+ * Specs: openspec/changes/terminal-engine-v2/specs/terminal-renderer-default/spec.md
+ *   - Legacy `vte-experimental` defaults are normalized to xterm-webgl (VTE removed).
  *
  * Swarm agent terminals inherit the new default via the INHERIT_MODE
  * plumbing — they call resolveRequestedRenderer which routes through
- * readTerminalRendererDefaultModeSetting, so the soft roll-out
- * (preserves stored vte-experimental) carries over.
+ * readTerminalRendererDefaultModeSetting, so legacy VTE values are normalized.
  */
 
 const path = require('path');
@@ -47,12 +41,12 @@ function createWorkspace(id, panelIds) {
 }
 
 describe('terminal-renderer-default — session restore + soft roll-out', () => {
-  test('TRF-DELTA-S1: stored vte-experimental is preserved when reading the default', () => {
+  test('TRF-DELTA-S1: stored vte-experimental is normalized to xterm-webgl when reading the default', () => {
     const storage = createStorage({
       devhub_terminal_renderer_default_mode: 'vte-experimental',
     });
 
-    expect(readTerminalRendererDefaultModeSetting(storage)).toBe('vte-experimental');
+    expect(readTerminalRendererDefaultModeSetting(storage)).toBe('xterm-webgl');
   });
 
   test('TRF-DELTA-S2: readTerminalRendererDefaultModeSetting is a pure read — no setItem call', () => {
@@ -80,7 +74,7 @@ describe('terminal-renderer-default — session restore + soft roll-out', () => 
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 
-  test('TRD-S6: readTerminalRendererPreferences returns stored vte-experimental default', () => {
+  test('TRD-S6: readTerminalRendererPreferences normalizes stored vte-experimental default to xterm-webgl', () => {
     const storage = createStorage({
       devhub_terminal_renderer_default_mode: 'vte-experimental',
     });
@@ -88,7 +82,7 @@ describe('terminal-renderer-default — session restore + soft roll-out', () => 
     const prefs = readTerminalRendererPreferences(storage, 'proj-1', [
       createWorkspace('ws-1', ['p1']),
     ]);
-    expect(prefs.defaultMode).toBe('vte-experimental');
+    expect(prefs.defaultMode).toBe('xterm-webgl');
   });
 
   test('TRD-S7: new panels during restore inherit xterm-webgl when no per-panel value is stored', () => {

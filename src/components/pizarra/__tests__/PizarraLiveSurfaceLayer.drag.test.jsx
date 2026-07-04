@@ -65,10 +65,6 @@ jest.mock('@/components/TerminalTTY', () => ({
   },
 }));
 
-jest.mock('@/lib/terminal/nativeVteBridge', () => ({
-  resizeNativeVtePanel: jest.fn(() => Promise.resolve()),
-}));
-
 // canvasViewport is a React context; we provide the bare minimum
 // (zoom=1, no pan, identity projectRect) so the live layer can
 // compute bounds = {x: shape.x, y: shape.y, ...}.
@@ -195,7 +191,9 @@ describe('PizarraLiveSurfaceLayer — drag stale closure (pizarra-drag-desync-v2
     flushSync(() => {
       fireMouseEvent(global.window, 'mousemove', { clientX: 50, clientY: 80 });
     });
-    const wrapper = container.querySelector('[data-testid="canvas-terminal-container"]').parentElement;
+    const wrapper = container.querySelector(
+      '[data-testid="canvas-terminal-container"]'
+    ).parentElement;
     expect(wrapper.style.left).toBe('50px');
     expect(wrapper.style.top).toBe('80px');
     expect(onMoveElement).not.toHaveBeenCalled();

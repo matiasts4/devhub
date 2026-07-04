@@ -10,17 +10,6 @@ import {
   getTerminalTitleBarStyle,
   getTerminalViewportFrameStyle,
 } from '@/components/terminal/terminalChromeStyles';
-import {
-  closeNativeVtePanel,
-  focusNativeVtePanel,
-  isNativeVteRuntimeAvailable,
-  openNativeVtePanel,
-  pasteNativeVtePanel,
-  probeNativeVte,
-  resizeNativeVtePanel,
-  setNativeVtePanelVisibility,
-  subscribeNativeVteEvents,
-} from '@/lib/terminal/nativeVteBridge';
 import WebglErrorSection from './terminal/components/WebglErrorSection';
 import {
   readClipboardImage,
@@ -85,14 +74,6 @@ import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
 } from '@/lib/terminal/terminalPanelBridge';
-import {
-  cancelNativeVteLayoutHide,
-  clearNativeVteLease,
-  consumeHiddenNativeVteLease,
-  deferNativeVteLayoutHide,
-  hasHiddenNativeVteLease,
-  markNativeVteLeaseHidden,
-} from '@/lib/terminal/nativeVteLayoutLifecycle';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 import {
   buildTerminalExitOverlayCopy,
@@ -1787,84 +1768,22 @@ export function shouldReleaseCanvasRendererOnLayoutHide({
   );
 }
 
-export function shouldOpenNativeVtePanel({
-  isActivePanel,
-  isVisibleInLayout = true,
-  suspendNativeSurface = false,
-  nativeVteOpenFailure,
-  nativeVteProbe,
-  requestedRendererMode,
-  runtimePlatform,
-  tauriAvailable,
-} = {}) {
-  return Boolean(
-    isVisibleInLayout &&
-    !suspendNativeSurface &&
-    requestedRendererMode === 'vte-experimental' &&
-    tauriAvailable &&
-    getTerminalRuntimePlatform(runtimePlatform).includes('linux') &&
-    nativeVteProbe?.ready &&
-    !nativeVteOpenFailure
-  );
+export function resolveTerminalRuntimePhase() {
+  return 'xterm';
 }
 
-export function resolveTerminalRuntimePhase({
-  isActivePanel,
-  isVisibleInLayout = true,
-  suspendNativeSurface = false,
-  nativeSurfacePolicy = 'live',
-  nativeVteOpenFailure,
-  nativeVteOpened,
-  nativeVteProbe,
-  requestedRendererMode,
-  runtimePlatform,
-  tauriAvailable,
-} = {}) {
-  const nativeCandidate = Boolean(
-    requestedRendererMode === 'vte-experimental' &&
-    tauriAvailable &&
-    getTerminalRuntimePlatform(runtimePlatform).includes('linux')
-  );
-
-  if (!nativeCandidate) return 'xterm';
-  if (!isVisibleInLayout) return nativeVteOpened ? 'native-hidden' : 'xterm';
-  if (suspendNativeSurface) return nativeVteOpened ? 'native-suspended' : 'xterm';
-  if (!isActivePanel)
-    return nativeVteOpened ? 'native-idle' : nativeVteProbe?.ready ? 'native-opening' : 'xterm';
-  if (nativeVteOpened) return 'native-opened';
-  if (nativeVteOpenFailure) return 'fallback-xterm';
-  if (nativeVteProbe?.ready) return 'native-opening';
-  if (!nativeVteProbe) return 'native-probing';
-  return 'fallback-xterm';
-}
-
-export function shouldBootXtermRuntime(input = {}) {
-  const runtimePhase = resolveTerminalRuntimePhase(input);
-  return runtimePhase === 'xterm' || runtimePhase === 'fallback-xterm';
+export function shouldBootXtermRuntime() {
+  return true;
 }
 
 export function resolveTerminalRendererViewModel({
   requestedRendererMode,
   rendererCapabilities,
-  nativeVteReady = false,
 } = {}) {
   const selection = resolveRendererSelection({
     requestedMode: requestedRendererMode || 'xterm',
     capabilities: rendererCapabilities,
   });
-
-  if (ENABLE_NATIVE_VTE && requestedRendererMode === 'vte-experimental' && nativeVteReady) {
-    return {
-      ...selection,
-      effectiveMode: 'vte-experimental',
-      didFallback: false,
-      fallbackReason: null,
-      capability: rendererCapabilities?.['vte-experimental'] || selection.capability,
-      requestedLabel: getTerminalRendererOptionLabel(selection.requestedMode),
-      effectiveLabel: getTerminalRendererOptionLabel('vte-experimental'),
-      showRecoveryBanner: false,
-    };
-  }
 
   return {
     ...selection,
@@ -2039,7 +1958,26 @@ export default function TerminalTTY({
   const webglFallbackRef = useRef(webglFallback);
   webglFallbackRef.current = webglFallback;
   const terminalBlurCleanupRef = useRef(null);
-  const tauriAvailable = isNativeVteRuntimeAvailable();
+  const tauriAvailable = false;
+
+  // Legacy native VTE helpers removed in Phase 0; keep stable no-op stubs so
+  // the remaining VTE-aware teardown/cleanup paths do not throw.
+  const setNativeVtePanelVisibility = async () => {};
+  const openNativeVtePanel = async () => ({ opened: false, reason: 'vte-removed' });
+  const closeNativeVtePanel = async () => {};
+  const resizeNativeVtePanel = async () => {};
+  const focusNativeVtePanel = async () => {};
+  const pasteNativeVtePanel = async () => ({ supported: false, reason: 'vte-removed' });
+  const subscribeNativeVteEvents = () => () => {};
+  const probeNativeVte = async () => ({ ready: false, reason: 'vte-removed' });
+  const shouldOpenNativeVtePanel = () => false;
+  const cancelNativeVteLayoutHide = () => {};
+  const deferNativeVteLayoutHide = () => {};
+  const hasHiddenNativeVteLease = () => false;
+  const consumeHiddenNativeVteLease = () => false;
+  const clearNativeVteLease = () => {};
+  const markNativeVteLeaseHidden = () => {};
+
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
   // Force the only supported active renderer. Any vte request (from stored
   // prefs or old callers) is redirected here so we never boot the native VTE surface.
@@ -3542,7 +3480,7 @@ export default function TerminalTTY({
     if (!term || canvasAddonRef.current) return false;
     if (
       !shouldMountCanvasAddon({
-        operationalRendererMode: effectiveRendererModeRef.current,
+        operationalRendererMode: operationalRendererModeRef.current,
         isActivePanel: isActivePanelRef.current,
         isVisibleInLayout: isVisibleInLayoutRef.current,
         visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
@@ -3551,7 +3489,8 @@ export default function TerminalTTY({
       return false;
     }
     // ponytail: empty RenderService slot fails isTerminalRendererReady but loadAddon still revives GPU
-    if (!term.element?.isConnected || term._core?._isDisposed) return false;
+    if (term.element && !term.element.isConnected) return false;
+    if (term._core?._isDisposed) return false;
 
     try {
       const { CanvasAddon: CanvasAddonCtor } = await import('xterm-addon-canvas');
@@ -3604,7 +3543,7 @@ export default function TerminalTTY({
       const term = termRef.current;
       if (!term || webglAddonRef.current) return false;
       if (
-        !shouldAttachWebglRenderer({ operationalRendererMode: effectiveRendererModeRef.current })
+        !shouldAttachWebglRenderer({ operationalRendererMode: operationalRendererModeRef.current })
       ) {
         return false;
       }
@@ -4792,24 +4731,6 @@ export default function TerminalTTY({
       scrollTerminalToBottom,
     ]
   );
-
-  useEffect(() => {
-    if (!isNativeVteRuntimeAvailable()) return undefined;
-
-    let cancelled = false;
-
-    Promise.resolve(subscribeNativeVteEvents())
-      .then((unsubscribe) => {
-        if (cancelled) {
-          unsubscribe?.();
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -8541,8 +8462,7 @@ export default function TerminalTTY({
             )}
 
             {shouldBlockTerminalViewportForWebglFallback(webglFallback) &&
-            requestedRendererMode === 'xterm-webgl' &&
-            operationalRendererMode === 'xterm-webgl' ? (
+            requestedRendererMode === 'xterm-webgl' ? (
               <WebglErrorSection
                 id={id}
                 reason={webglFallback.reason}

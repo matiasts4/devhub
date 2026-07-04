@@ -150,11 +150,6 @@ import {
   TERMINAL_RENDERER_INHERIT_MODE,
   writeTerminalRendererPreferences,
 } from './terminal/terminalRendererPreferences';
-import {
-  focusNativeVtePanel,
-  isNativeVteRuntimeAvailable,
-  subscribeNativeVteEvents,
-} from '@/lib/terminal/nativeVteBridge';
 import PanelRendererSelect from './terminal/components/PanelRendererSelect';
 import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
 import {
@@ -221,14 +216,11 @@ import {
 } from '@/lib/terminal/workspaceWindowRender';
 import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
-  dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
   dispatchTerminalSurvivorRecover,
   dispatchTerminalWindowVisible,
   scheduleSurvivorRecoverAfterClose,
   SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
-  computeCarvedBounds,
-  createNativeLayoutSyncQueue,
 } from '@/components/terminal/nativeLayoutSync';
 import {
   LIFECYCLE_BURST_PHASES,
@@ -1471,14 +1463,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [workspaceTerminalSetupOpen, setWorkspaceTerminalSetupOpen] = useState(false);
   const [swarmLaunchWizardOpen, setSwarmLaunchWizardOpen] = useState(false);
-
-  // overlayAvoidRects: list of {x,y,width,height, source} for transient popups/modals
-  // (Grillas Predefinidas, swarm wizard, etc). When present we compute *carved* bounds
-  // for affected terminal panels and pass reduced rects to native VTE (instead of
-  // full suspend/hide). This lets web UI paint "sobre la terminal" while keeping
-  // the VTE widget live (full pty size, no winch to child TUIs, visible in non-covered
-  // areas). Core fix for bad UX of "no se logra mostrar cosas sobre la terminal sin suspenderla".
-  const [overlayAvoidRects, setOverlayAvoidRects] = useState([]);
 
   const [terminalSettingsModal, setTerminalSettingsModal] = useState({
     open: false,
@@ -2725,130 +2709,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // fade in fast instead of sliding the whole screen from the right.
     isFullscreen: isFullscreenBrowser,
   });
-  // With carve/avoid rects we can show web popups (Grillas, swarm wizard, etc)
-  // over *live* (carved) terminals without full suspend for most cases.
-  // We still compute shouldSuspend for legacy/restore paths, but carve takes
-  // precedence for "mostrar cosas sobre la terminal" in active panels.
-  // See overlayAvoidRects + computeCarvedBounds + registration below.
-  const shouldSuspendNativeSurfaces =
-    /* isGridLauncherOpen || swarmLaunchWizardOpen || */ restoreSettingsModal.open;
+  // Suspension policy for transient overlays (e.g., restore settings modal).
+  // With native VTE removed this only feeds the legacy nativeSurfacePolicy prop
+  // that TerminalTTY receives; xterm renderers ignore it.
+  const shouldSuspendNativeSurfaces = restoreSettingsModal.open;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
-
-  // --- Carve / avoid rects registration for popups over live terminals ---
-  // When a popup (grillas dropdown, wizard, etc) opens that must sit above terminal
-  // areas, we measure its rect and add to overlayAvoidRects. The native sync then
-  // sends avoids to TTYs; TTYs compute carved bounds and pass reduced rects to
-  // setNativeVtePanelVisibility (visible=true + small bounds). VTE widget shrinks
-  // temporarily to the visible parts; web paints in the "hole". On close, full
-  // bounds restored. Terminal pty size stays full (child TUIs unaffected).
-  // This is the main path to fix "no se logra mostrar cosas sobre la terminal sin
-  // tener que suspenderla".
-  useEffect(() => {
-    if (!isGridLauncherOpen) {
-      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'grillas-launcher'));
-      return;
-    }
-    let rafId = 0;
-    const measure = () => {
-      const el = document.querySelector('[data-testid="workspace-grid-launcher-content"]');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        const rect = {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-          source: 'grillas-launcher',
-        };
-        setOverlayAvoidRects((prev) => {
-          const others = prev.filter((r) => r.source !== 'grillas-launcher');
-          return [...others, rect];
-        });
-      }
-    };
-    measure();
-    rafId = requestAnimationFrame(measure);
-    const t = setTimeout(measure, 60);
-    return () => {
-      cancelAnimationFrame(rafId);
-      clearTimeout(t);
-    };
-  }, [isGridLauncherOpen]);
-
-  // Measurement for swarm wizard (large modal) - carve instead of suspend while open
-  // so terminals under it stay live (partial view).
-  useEffect(() => {
-    if (!swarmLaunchWizardOpen) {
-      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'swarm-wizard'));
-      return;
-    }
-    const measure = () => {
-      // inner content card of the wizard
-      const el = document.querySelector('.max-w-6xl.flex-col.overflow-hidden.rounded-none.border');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        setOverlayAvoidRects((prev) => {
-          const others = prev.filter((r) => r.source !== 'swarm-wizard');
-          return [
-            ...others,
-            { x: r.x, y: r.y, width: r.width, height: r.height, source: 'swarm-wizard' },
-          ];
-        });
-      }
-    };
-    measure();
-    const t = setTimeout(measure, 120);
-    return () => clearTimeout(t);
-  }, [swarmLaunchWizardOpen]);
-
-  // Measurement for restore settings modal.
-  useEffect(() => {
-    if (!restoreSettingsModal.open) {
-      setOverlayAvoidRects((prev) => prev.filter((r) => r.source !== 'restore-settings'));
-      return;
-    }
-    const measure = () => {
-      const el = document.querySelector('[role="dialog"] .fixed.inset-0');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        setOverlayAvoidRects((prev) => {
-          const others = prev.filter((r) => r.source !== 'restore-settings');
-          return [
-            ...others,
-            { x: r.x, y: r.y, width: r.width, height: r.height, source: 'restore-settings' },
-          ];
-        });
-      }
-    };
-    measure();
-    const t = setTimeout(measure, 80);
-    return () => clearTimeout(t);
-  }, [restoreSettingsModal.open]);
-
-  // TODO for pizarra palette / overlapping canvas elements: register their rects
-  // when they overlap terminal surfaces (can use the register event below or direct).
-
-  // General registration for any component to carve terminals under it without
-  // full suspend. Components dispatch CustomEvent with {rect, source, action?}
-  // on open/mount and remove on close/unmount. Decoupled, works from pizarra etc.
-  useEffect(() => {
-    const handler = (ev) => {
-      const { rect, source, action = 'add' } = ev?.detail || {};
-      if (!source || !rect) return;
-      setOverlayAvoidRects((prev) => {
-        if (action === 'remove' || action === 'clear') {
-          return prev.filter((r) => r.source !== source);
-        }
-        const others = prev.filter((r) => r.source !== source);
-        return [
-          ...others,
-          { x: rect.x, y: rect.y, width: rect.width, height: rect.height, source },
-        ];
-      });
-    };
-    window.addEventListener('devhub:register-avoid-rect', handler);
-    return () => window.removeEventListener('devhub:register-avoid-rect', handler);
-  }, []);
 
   const rightDockLayerStyle = resolveRightDockLayerStyle({
     isFullscreenBrowser,
@@ -3151,7 +3016,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // Set the per-panel renderer preference (driven by the per-panel header
   // switcher in WorkspaceTerminalSurface / renderWorkspacePanel).
   // Mirrors handleResetPanelRendererToXterm but accepts an arbitrary mode
-  // (xterm-webgl | vte-experimental | inherit). See
+  // (xterm-webgl | xterm | inherit). See
   // openspec/changes/terminal-renderer-xterm-webgl/specs/terminal-renderer-selection/spec.md
   // RS-04.
   const handleSetPanelRenderer = useCallback((workspaceId, panelId, mode) => {
@@ -3411,124 +3276,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     return results;
   }, [inferProgramFromPanelCommand]);
 
-  const buildNativeWorkspaceSyncDetail = useCallback(
-    (reason = 'workspace-switch', { columnsOverride = null } = {}) => {
-      const activePanelIdsForNativeSurface = [];
-      const hiddenPanelIdsForNativeSurface = [];
-
-      workspaces.forEach((workspace) => {
-        const focusedPanelId = focusedPanelByWorkspace[workspace.id];
-        const windows = workspaceWindows[workspace.id] || [];
-
-        if (workspace.id === activeWsId) {
-          const activeWindowId = resolveActiveWorkspaceWindowId(
-            workspace.id,
-            workspaceWindows,
-            activeWindowIds
-          );
-          const windowsToSync =
-            windows.length > 0
-              ? windows
-              : [
-                  {
-                    id: activeWindowId || `${workspace.id}-default`,
-                    columns:
-                      (columnsOverride && columnsOverride[workspace.id]) || workspace.columns || [],
-                  },
-                ];
-
-          windowsToSync.forEach((window) => {
-            const isActiveWindow = window.id === activeWindowId;
-            const columns =
-              isActiveWindow && columnsOverride?.[workspace.id]
-                ? columnsOverride[workspace.id]
-                : window.columns || [];
-            const panelIds = getAllPanelIds(columns);
-
-            if (!isActiveWindow) {
-              hiddenPanelIdsForNativeSurface.push(...panelIds);
-              return;
-            }
-
-            if (focusedPanelId) {
-              activePanelIdsForNativeSurface.push(focusedPanelId);
-              panelIds.forEach((id) => {
-                if (id !== focusedPanelId) hiddenPanelIdsForNativeSurface.push(id);
-              });
-              return;
-            }
-
-            activePanelIdsForNativeSurface.push(...panelIds);
-          });
-        } else {
-          if (windows.length > 0) {
-            windows.forEach((window) => {
-              hiddenPanelIdsForNativeSurface.push(...getAllPanelIds(window.columns || []));
-            });
-          } else {
-            hiddenPanelIdsForNativeSurface.push(...getAllPanelIds(workspace.columns || []));
-          }
-        }
-      });
-
-      return {
-        activeWorkspaceId: activeWsId,
-        workspaceId: activeWsId,
-        activePanelIds: isVisible ? activePanelIdsForNativeSurface : [],
-        hiddenPanelIds: isVisible
-          ? hiddenPanelIdsForNativeSurface
-          : [...activePanelIdsForNativeSurface, ...hiddenPanelIdsForNativeSurface],
-        reason: isVisible ? reason : 'terminal-manager-hidden',
-        avoidRects: overlayAvoidRects,
-      };
-    },
-    [
-      activeWindowIds,
-      activeWsId,
-      focusedPanelByWorkspace,
-      getAllPanelIds,
-      isVisible,
-      workspaceWindows,
-      workspaces,
-      overlayAvoidRects,
-    ]
-  );
-
-  // A.3 — serialized native-IPC sync queue. While a workspace↔pizarra
-  // transition animates, frame-by-frame panel-group-layout syncs are buffered
-  // and the native VTE reattach is deferred to a single pass against the final
-  // layout (see nativeLayoutSync.createNativeLayoutSyncQueue).
-  const nativeSyncQueueRef = useRef(null);
-  if (nativeSyncQueueRef.current === null) {
-    nativeSyncQueueRef.current = createNativeLayoutSyncQueue();
-  }
-  const nativeSyncIdleTimerRef = useRef(null);
-
-  const notifyNativeLayoutSettled = useCallback(
-    (reason, options = {}) => {
-      if (typeof window === 'undefined') return;
-
-      nativeSyncQueueRef.current?.enqueue(reason, {
-        workspaceDetail: buildNativeWorkspaceSyncDetail(reason, options),
-        includeFollowUpPasses: true,
-      });
-    },
-    [buildNativeWorkspaceSyncDetail]
-  );
-
-  /**
-   * Sync native VTE surface visibility without dispatching a browser-side
-   * `terminal-layout-settled` event. Workspace/window switches should behave
-   * like route switches: each TerminalTTY reacts to its own `isVisibleInLayout`
-   * change through the layout-show useLayoutEffect, not through a global burst.
-   */
-  const notifyNativeWorkspaceSurfaceSync = useCallback(
-    (reason, options = {}) => {
-      if (typeof window === 'undefined') return;
-      dispatchNativeVteWorkspaceSync(buildNativeWorkspaceSyncDetail(reason, options));
-    },
-    [buildNativeWorkspaceSyncDetail]
-  );
+  const notifyNativeLayoutSettled = useCallback((reason) => {
+    if (typeof window === 'undefined') return;
+    dispatchTerminalLayoutSettled({ reason });
+  }, []);
 
   const markPanelsClosing = useCallback((panelIds = [], clearAfterMs = 2000) => {
     const ids = Array.isArray(panelIds) ? panelIds.filter(Boolean) : [];
@@ -3551,17 +3302,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       });
     },
     [notifyNativeLayoutSettled]
-  );
-
-  useEffect(
-    () => () => {
-      if (nativeSyncIdleTimerRef.current) {
-        clearTimeout(nativeSyncIdleTimerRef.current);
-        nativeSyncIdleTimerRef.current = null;
-      }
-      nativeSyncQueueRef.current?.reset();
-    },
-    []
   );
 
   const resolveActiveWindowPanelIds = useCallback(
@@ -3605,10 +3345,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     }
 
-    const emitWorkspaceSwitchSync = () => {
-      notifyNativeWorkspaceSurfaceSync('workspace-switch');
-    };
-
     const panelIds = resolveActiveWindowPanelIds(wsId);
     const cleanupSplitSync =
       panelIds.length > 1
@@ -3618,27 +3354,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           })
         : undefined;
 
-    if (pizarraOwnsLiveSurfaces) {
-      const timer = setTimeout(emitWorkspaceSwitchSync, 320);
-      return () => {
-        clearTimeout(timer);
-        cleanupSplitSync?.();
-      };
-    }
-
-    emitWorkspaceSwitchSync();
     return () => {
       cleanupSplitSync?.();
     };
-  }, [
-    activeWindowIds,
-    activeWsId,
-    isClientLoaded,
-    notifyNativeWorkspaceSurfaceSync,
-    pizarraOwnsLiveSurfaces,
-    resolveActiveWindowPanelIds,
-    workspaceWindows,
-  ]);
+  }, [activeWindowIds, activeWsId, isClientLoaded, resolveActiveWindowPanelIds, workspaceWindows]);
 
   const prevActiveWorkspaceWindowIdRef = useRef(undefined);
   const isFirstActiveWindowIdsRunRef = useRef(true);
@@ -3656,8 +3375,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     // currently active workspace's own window selection changing warrants a
     // window-switch recovery here.
     if (!activeWorkspaceWindowIdChanged) return undefined;
-
-    notifyNativeWorkspaceSurfaceSync('workspace-window-switch');
 
     const wsId = activeWsId;
     const panelIds = wsId ? resolveActiveWindowPanelIds(wsId) : [];
@@ -3693,60 +3410,16 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     activeWindowIds,
     activeWsId,
     isClientLoaded,
-    notifyNativeWorkspaceSurfaceSync,
     resolveActiveWindowPanelIds,
     syncPanelLifecycleLayout,
   ]);
 
-  const prevPizarraOwnsLiveSurfacesRef = useRef(pizarraOwnsLiveSurfaces);
   useEffect(() => {
     if (typeof window === 'undefined' || !isClientLoaded) return undefined;
-    const prev = prevPizarraOwnsLiveSurfacesRef.current;
-    prevPizarraOwnsLiveSurfacesRef.current = pizarraOwnsLiveSurfaces;
-    if (prev === pizarraOwnsLiveSurfaces) return undefined;
-
     const reason = pizarraOwnsLiveSurfaces ? 'pizarra-mode-enter' : 'pizarra-mode-exit';
-    const queue = nativeSyncQueueRef.current;
-    if (!queue) {
-      notifyNativeLayoutSettled(reason);
-      return undefined;
-    }
-
-    // A.3 — enter the animating window: buffer mid-transition layout syncs and
-    // emit the reattach once, at idle, against the settled layout. The settle
-    // delay is sized above the transition durations (enter 220ms / exit 110ms;
-    // see useModeTransition) and doubles as the safety timeout if the
-    // transition is cancelled.
-    queue.setAnimating(true);
-    queue.enqueue(reason, {
-      workspaceDetail: buildNativeWorkspaceSyncDetail(reason),
-      includeFollowUpPasses: false,
-    });
-
-    if (nativeSyncIdleTimerRef.current) {
-      clearTimeout(nativeSyncIdleTimerRef.current);
-    }
-    const settleMs = pizarraOwnsLiveSurfaces ? 50 : 80;
-    nativeSyncIdleTimerRef.current = setTimeout(() => {
-      nativeSyncIdleTimerRef.current = null;
-      queue.flushOnIdle();
-    }, settleMs);
-
+    notifyNativeLayoutSettled(reason);
     return undefined;
-  }, [
-    isClientLoaded,
-    notifyNativeLayoutSettled,
-    pizarraOwnsLiveSurfaces,
-    buildNativeWorkspaceSyncDetail,
-  ]);
-
-  // When avoid rects change (popup opened/closed/resized), immediately tell active
-  // terminals so they carve (or restore full) without waiting for a layout event.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const detail = buildNativeWorkspaceSyncDetail('popup-avoid-rects');
-    dispatchNativeVteWorkspaceSync(detail);
-  }, [overlayAvoidRects, buildNativeWorkspaceSyncDetail]);
+  }, [isClientLoaded, notifyNativeLayoutSettled, pizarraOwnsLiveSurfaces]);
 
   const panelLayoutDebounceRef = useRef(null);
 
@@ -3970,11 +3643,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [schedulePanelFocusLayoutSync, workspaces]
   );
 
-  const scheduleNativePanelFocus = useCallback((panelId) => {
-    if (!panelId || !isNativeVteRuntimeAvailable()) return;
-    Promise.resolve(focusNativeVtePanel({ panelId })).catch(() => {});
-  }, []);
-
   const applyTerminalNavigationAction = useCallback(
     (navAction) => {
       if (!navAction || !isVisible) return false;
@@ -4009,9 +3677,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
           activePanelIdsRef.current[nextWorkspaceId]
         );
         switchWorkspace(nextWorkspaceId);
-        if (nextPanelId) {
-          scheduleNativePanelFocus(nextPanelId);
-        }
         return true;
       }
 
@@ -4042,7 +3707,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (navigationTarget.type === 'panel') {
         if (!navigationTarget.panelId || navigationTarget.panelId === currentPanelId) return false;
         navigateToPanel(currentWorkspaceId, navigationTarget.panelId);
-        scheduleNativePanelFocus(navigationTarget.panelId);
         return true;
       }
 
@@ -4056,35 +3720,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
         activePanelIdsRef.current[nextWorkspaceId]
       );
       switchWorkspace(nextWorkspaceId);
-      if (nextPanelId) {
-        scheduleNativePanelFocus(nextPanelId);
-      }
       return true;
     },
-    [isVisible, navigateToPanel, scheduleNativePanelFocus, switchWorkspace, togglePanelFocus]
+    [isVisible, navigateToPanel, switchWorkspace, togglePanelFocus]
   );
-
-  useEffect(() => {
-    if (!isNativeVteRuntimeAvailable()) return undefined;
-
-    let unsubscribe = () => {};
-    let cancelled = false;
-
-    Promise.resolve(subscribeNativeVteEvents())
-      .then((unsub) => {
-        if (cancelled) {
-          unsub?.();
-          return;
-        }
-        unsubscribe = typeof unsub === 'function' ? unsub : () => {};
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
 
   const syncActiveWindowSnapshot = useMemo(
     () =>
@@ -4230,18 +3869,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (targetWindow?.columns?.length) {
         const panelIds = getAllPanelIds(targetWindow.columns);
         await closeTerminalSessions(panelIds);
-        // Also close any native VTE visuals for the panels in the removed window
-        // to avoid ghosts when closing sub-windows/tabs of terminals.
-        try {
-          const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
-          for (const pid of panelIds) {
-            await closeNativeVtePanel({ panelId: pid, reason: 'workspace-window-removed' }).catch(
-              () => {}
-            );
-          }
-        } catch {
-          /* ignore close error for native panel */
-        }
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);
@@ -4424,16 +4051,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     }
 
     await closeTerminalSessions(panelIdsToClean);
-    // Close native VTEs for all panels of the removed workspace so no
-    // "terminal fantasma" can remain and paint over browser or other workspaces.
-    try {
-      const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
-      for (const pid of panelIdsToClean) {
-        await closeNativeVtePanel({ panelId: pid, reason: 'workspace-removed' }).catch(() => {});
-      }
-    } catch {
-      /* ignore native close during ws remove */
-    }
     await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
 
@@ -4483,17 +4100,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       // landing IS a workspace switch, so reuse the same WORKSPACE_SWITCH lifecycle
       // burst a normal tab switch uses (handleLayoutSettled isWorkspaceSwitch branch
       // → syncTerminalViewportOnWorkspaceShow + scheduleBoundedForceRepaint retry).
-      // The activeWsId post-commit effect only emits a NATIVE VTE workspace-switch
-      // sync (notifyNativeWorkspaceSurfaceSync intentionally does NOT dispatch a
-      // browser terminal-layout-settled for xterm), so without this dispatch xterm
-      // destination panels relied solely on the layout-show useLayoutEffect's
-      // false→true repaint, which races the async GPU renderer reattach and leaves
-      // the destination black until a manual resize. The burst's raf/delay phases
-      // fire after re-render (once isVisibleInLayout is true) and retry the repaint
-      // until the renderer is ready. fitTerminalViewport is a no-op on parked
-      // (unchanged) containers, so there is no refit/flash/SIGWINCH on survivors.
-      // ponytail: notifyNative=false on close-active because the activeWsId effect
-      // already emits the native VTE sync; a second native notify would double-sync.
+      // Without this dispatch xterm destination panels relied solely on the
+      // layout-show useLayoutEffect's false→true repaint, which races the async GPU
+      // renderer reattach and leaves the destination black until a manual resize.
+      // The burst's raf/delay phases fire after re-render (once isVisibleInLayout is
+      // true) and retry the repaint until the renderer is ready. fitTerminalViewport
+      // is a no-op on parked (unchanged) containers, so there is no refit/flash/SIGWINCH
+      // on survivors. notifyNative=false on close-active because the activeWsId effect
+      // already dispatches terminal-layout-settled; a second dispatch would double-sync.
       const lifecycleReason = activeWsWillChange
         ? PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH
         : PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED;
@@ -5329,15 +4943,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
       await closeTerminalSessions([targetId]);
 
-      try {
-        const { closeNativeVtePanel } = await import('@/lib/terminal/nativeVteBridge');
-        await closeNativeVtePanel({ panelId: targetId, reason: 'workspace-panel-closed' }).catch(
-          () => {}
-        );
-      } catch {
-        // Non-fatal
-      }
-
       const nextColumnsSnapshot = activeWorkspace.columns
         .map((col) => ({
           ...col,
@@ -5556,43 +5161,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     },
     [closeRightDock, handleRightDockTabSelect, isVisible, tryClosePanelWithDoubleShortcut]
   );
-
-  useEffect(() => {
-    const handleNativeVteRuntimeEvent = (event) => {
-      const detail = event.detail || {};
-
-      if (detail.type === 'navigation-shortcut') {
-        const action = typeof detail.action === 'string' ? detail.action.trim() : '';
-        if (!action) return;
-        if (isTerminalWorkspaceUiAction(action)) {
-          applyTerminalWorkspaceAction(action);
-        } else {
-          applyTerminalNavigationAction(action);
-        }
-        return;
-      }
-
-      if (detail.type !== 'panel-activated') return;
-
-      const panelId = typeof detail.panelId === 'string' ? detail.panelId.trim() : '';
-      if (!panelId) return;
-
-      const workspaceId =
-        workspacesRef.current.find((workspace) =>
-          workspace?.columns?.some((column) =>
-            (column.panels || []).some((panel) => panel.id === panelId)
-          )
-        )?.id || null;
-
-      if (!workspaceId) return;
-      activateWorkspacePanel(workspaceId, panelId);
-    };
-
-    window.addEventListener('devhub:terminal-native-vte-event', handleNativeVteRuntimeEvent);
-    return () => {
-      window.removeEventListener('devhub:terminal-native-vte-event', handleNativeVteRuntimeEvent);
-    };
-  }, [activateWorkspacePanel, applyTerminalNavigationAction, applyTerminalWorkspaceAction]);
 
   // ─── Shared Live Surface Registry Hook & Interceptors ───────────────────
   const registry = useWorkspaceSurfaceRegistry(projectId, activeWorkspace?.id);

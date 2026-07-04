@@ -15,8 +15,8 @@ Suggested split: 9 PRs, one per phase; PR1 and PR2 may be developed in parallel 
 
 ## Phase 0: VTE removal
 
-- [ ] 0.1 Delete `src-tauri/src/native_vte.rs`, `src-tauri/linux-bin/gtk_vte_smoke.rs`, `src/lib/terminal/nativeVteBridge.js`, `src/lib/terminal/nativeVteLayoutLifecycle.js`; drop `native:vte-smoke`; remove `zoha-vte`/`cairo-rs`/`glib` from `Cargo.toml` and `native_vte_*` commands from `src-tauri/src/lib.rs` (keep `gtk`/`webkit2gtk`/`javascriptcore`). (L)
-- [ ] 0.2 Remove `vte-experimental` branches from `terminalRendererPreferences.js`, `TerminalTTY.jsx`, and `CanvasTerminal.jsx`; remove VTE native-sync helpers from `nativeLayoutSync.js` and `TerminalWorkspacesManager.jsx`; delete VTE tests. (L)
+- [x] 0.1 Delete `src-tauri/src/native_vte.rs`, `src-tauri/linux-bin/gtk_vte_smoke.rs`, `src/lib/terminal/nativeVteBridge.js`, `src/lib/terminal/nativeVteLayoutLifecycle.js`; drop `native:vte-smoke`; remove `zoha-vte`/`native_vte_*` commands from `Cargo.toml` and `src-tauri/src/lib.rs` (keep `gtk`/`webkit2gtk`/`javascriptcore`). Kept `cairo-rs`/`glib` because `native_browser.rs`/`native_window_host.rs` still need them. (L)
+- [x] 0.2 Remove `vte-experimental` branches from `terminalRendererPreferences.js`, `TerminalTTY.jsx`, and `CanvasTerminal.jsx`; remove VTE native-sync helpers from `nativeLayoutSync.js` and `TerminalWorkspacesManager.jsx`; delete VTE tests. (L)
 
 ## Phase 1: Ring buffer + pub/sub
 
