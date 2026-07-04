@@ -223,6 +223,7 @@ import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
 import {
   dispatchNativeVteWorkspaceSync,
   dispatchTerminalLayoutSettled,
+  dispatchTerminalSurvivorRecover,
   scheduleSurvivorRecoverAfterClose,
   computeCarvedBounds,
   createNativeLayoutSyncQueue,
@@ -3668,6 +3669,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
       onLifecycleSync: () =>
         syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
+      immediate: true,
     });
   }, [
     activeWindowIds,

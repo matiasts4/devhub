@@ -51,6 +51,7 @@ export function scheduleSurvivorRecoverAfterClose({
   reason = 'workspace-removed',
   onLifecycleSync,
   dispatchSurvivorRecover = dispatchTerminalSurvivorRecover,
+  immediate = false,
 } = {}) {
   const ids = panelIds.filter(Boolean);
   if (ids.length === 0 || typeof window === 'undefined') return () => {};
@@ -58,12 +59,24 @@ export function scheduleSurvivorRecoverAfterClose({
   let cancelled = false;
   let burstCleanup = null;
   const timerIds = [];
+
+  // Fast path for window/workspace switches where the layout is already
+  // settled: fire the first recovery immediately instead of waiting for the
+  // double-rAF bootstrap. Follow-up timers still cover delayed context loss.
+  if (immediate) {
+    dispatchSurvivorRecover({ panelIds: ids, workspaceId, reason });
+    burstCleanup = typeof onLifecycleSync === 'function' ? onLifecycleSync() : null;
+  }
+
   let raf2 = 0;
   const raf1 = window.requestAnimationFrame(() => {
     raf2 = window.requestAnimationFrame(() => {
       if (cancelled) return;
-      burstCleanup = typeof onLifecycleSync === 'function' ? onLifecycleSync() : null;
-      for (const delayMs of SURVIVOR_RECOVER_DELAYS_MS) {
+      if (!immediate) {
+        burstCleanup = typeof onLifecycleSync === 'function' ? onLifecycleSync() : null;
+      }
+      const delays = immediate ? SURVIVOR_RECOVER_DELAYS_MS.slice(1) : SURVIVOR_RECOVER_DELAYS_MS;
+      for (const delayMs of delays) {
         timerIds.push(
           window.setTimeout(() => {
             if (cancelled) return;
