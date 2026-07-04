@@ -1071,8 +1071,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const [reopenActionError, setReopenActionError] = useState(null);
   const [workspaces, setWorkspaces] = useState(() => createDefaultWorkspaceState().workspaces);
   const pendingReopenPanelsRef = useRef(new Map());
-  const pendingSwarmLaunchRequestsRef = useRef([]);
-  const swarmLaunchFlushTimerRef = useRef(null);
   const swarmLaunchScheduledTimersRef = useRef(new Map());
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
   const materializedSwarmLaunchIdsRef = useRef(new Set());
@@ -1747,7 +1745,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       activeWsId: activeWsIdRef.current || activeWsId,
     });
 
-    const cancelled = false;
     const restorePrefs = readWorkspaceRestorePreferences(storage);
 
     const { suspendedSeed } = seedSuspendedOpenCodePanels({
