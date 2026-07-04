@@ -11,6 +11,9 @@ import {
   getTerminalViewportFrameStyle,
 } from '@/components/terminal/terminalChromeStyles';
 import WebglErrorSection from './terminal/components/WebglErrorSection';
+import useTerminalOutputQueue from './terminal/hooks/useTerminalOutputQueue';
+import useTerminalClipboard from './terminal/hooks/useTerminalClipboard';
+import useTerminalWheelRouter from './terminal/hooks/useTerminalWheelRouter';
 import {
   readClipboardImage,
   readClipboardText,
@@ -372,8 +375,6 @@ export default function TerminalTTY({
     externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
   const setConnectionState =
     externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
-  const [copied, setCopied] = useState(false);
-  const [contextMenu, setContextMenu] = useState(null);
   const [restoredToast, setRestoredToast] = useState(false);
   const [nativeVteProbeResult, setNativeVteProbeResult] = useState(null);
   const [nativeVteOpenFailure, setNativeVteOpenFailure] = useState(null);
@@ -524,6 +525,42 @@ export default function TerminalTTY({
   const syncOutputActiveRef = useRef(false);
   const syncOutputBufferRef = useRef('');
   const syncOutputTimeoutRef = useRef(null);
+  const outputRefs = useRef({
+    outputPendingRef,
+    hiddenOutputBufferRef,
+    hiddenOutputCatchupPendingRef,
+    terminalOutputQueueRef,
+    terminalOutputFlushRafRef,
+    syncOutputActiveRef,
+    syncOutputBufferRef,
+    syncOutputTimeoutRef,
+  });
+  const lifecycleRefs = useRef({
+    isDisposingRef,
+    isActivePanelRef,
+    isVisibleInLayoutRef,
+    tuiSessionActiveRef,
+    isGrokSessionRef,
+    kimiReadyNotifiedRef,
+    grokTuiReadyRef,
+    tuiSessionFooterConfirmedRef,
+    lastPointerZoneRef,
+  });
+  const rendererRefsBag = useRef({
+    termRef,
+    webglAddonRef,
+    canvasAddonRef,
+  });
+  const sessionRefs = useRef({
+    wsRef,
+    transportRef,
+  });
+  const viewportRefs = useRef({
+    terminalRootRef,
+    containerRef,
+    viewportShellRef,
+  });
+  const onFlushWriteRef = useRef(null);
   const surfaceHostRef = useRef(surfaceHost);
   const connectPendingUntilFitRef = useRef(false);
   const connectDeferTimerRef = useRef(null);
@@ -544,6 +581,23 @@ export default function TerminalTTY({
   const snapshotIntervalRef = useRef(null);
   const rehydrationRef = useRef({ loaded: false, heldData: [] });
   const currentPtyOffsetRef = useRef(0);
+
+  const {
+    enqueueOutput,
+    flushOutput,
+    clearOutputQueue,
+    clearSyncOutputTimeout,
+    writeTerminalOutput,
+  } = useTerminalOutputQueue({
+    outputRefs,
+    lifecycleRefs,
+    rendererRefs: rendererRefsBag,
+    panelId: id,
+    onFlushWriteRef,
+    isActivePanelRef,
+    isVisibleInLayoutRef,
+    operationalRendererModeRef,
+  });
 
   const runtimePhase = resolveTerminalRuntimePhase({
     isActivePanel,
@@ -713,14 +767,7 @@ export default function TerminalTTY({
         //    and trigger the WebGL addon's stale-renderer crash on Linux.
         clearTimers();
         clearConnectDeferTimer();
-        if (terminalOutputFlushRafRef.current) {
-          cancelAnimationFrame(terminalOutputFlushRafRef.current);
-          terminalOutputFlushRafRef.current = null;
-        }
-        if (syncOutputTimeoutRef.current) {
-          clearTimeout(syncOutputTimeoutRef.current);
-          syncOutputTimeoutRef.current = null;
-        }
+        clearOutputQueue();
 
         // 3. Silence and close the websocket. Closing it first means the
         //    onmessage/onclose can't push more output into a disposed terminal.
@@ -1364,6 +1411,38 @@ export default function TerminalTTY({
     },
     [clearNativeVteProbeRetryTimer]
   );
+
+  const {
+    copied,
+    contextMenu,
+    setContextMenu,
+    handleCopySelection,
+    handlePasteIntoTerminal,
+    handleContextMenu,
+    handleCopyFromMenu,
+    handlePasteFromMenu,
+    handleViewportPaste,
+  } = useTerminalClipboard({
+    rendererRefs: rendererRefsBag,
+    sessionRefs,
+    lifecycleRefs,
+    viewportRefs,
+    panelId: id,
+    isActivePanel,
+    shouldUseNativeRenderer,
+    focusNativeVtePanel,
+    pasteNativeVtePanel,
+    handleNativeLeaseCommandError,
+  });
+
+  useTerminalWheelRouter({
+    lifecycleRefs,
+    rendererRefs: rendererRefsBag,
+    sessionRefs,
+    viewportRefs,
+    initialCommand,
+    shouldUseNativeRenderer,
+  });
 
   const showNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current) return;
@@ -4456,146 +4535,10 @@ export default function TerminalTTY({
         prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
       };
 
-      const clearSyncOutputTimeout = () => {
-        if (syncOutputTimeoutRef.current) {
-          clearTimeout(syncOutputTimeoutRef.current);
-          syncOutputTimeoutRef.current = null;
-        }
-      };
-
-      const flushTerminalOutputQueue = () => {
-        terminalOutputFlushRafRef.current = null;
-        if (isDisposingRef.current) {
-          terminalOutputQueueRef.current = [];
-          syncOutputBufferRef.current = '';
-          syncOutputActiveRef.current = false;
-          clearSyncOutputTimeout();
-          return;
-        }
-
-        let combined = terminalOutputQueueRef.current.join('');
-        terminalOutputQueueRef.current = [];
-
-        // Backlog detection: if the PTY is flooding faster than xterm.js can
-        // paint, drop the middle of the burst and keep the tail so the user
-        // still sees the most recent state instead of a frozen/black terminal.
-        const pendingBytes = combined.length + syncOutputBufferRef.current.length;
-        if (pendingBytes > TERMINAL_OUTPUT_BACKLOG_THRESHOLD) {
-          cliLog(`RENDER:${id}`, 'output-throttle-backlog', {
-            pendingBytes,
-            droppedBytes: Math.max(0, pendingBytes - TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME),
-            isActivePanel: isActivePanelRef.current,
-          });
-          combined = combined.slice(-TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME);
-          syncOutputBufferRef.current = '';
-          syncOutputActiveRef.current = false;
-          clearSyncOutputTimeout();
-        }
-
-        if (!combined) return;
-
-        // Respect synchronized output (DEC mode 2026) so TUIs don't flicker
-        // during bulk repaints. Buffer everything between ?2026h and ?2026l.
-        if (syncOutputActiveRef.current) {
-          syncOutputBufferRef.current += combined;
-          if (syncOutputBufferRef.current.includes(TERMINAL_SYNC_OUTPUT_END_SEQ)) {
-            clearSyncOutputTimeout();
-            combined = syncOutputBufferRef.current;
-            syncOutputBufferRef.current = '';
-            syncOutputActiveRef.current = false;
-          } else {
-            return;
-          }
-        } else {
-          const startIdx = combined.indexOf(TERMINAL_SYNC_OUTPUT_START_SEQ);
-          if (startIdx !== -1) {
-            const before = combined.slice(0, startIdx);
-            if (before) {
-              termRef.current?.write(before);
-              handleTuiReadyFromOutput(before);
-            }
-            syncOutputActiveRef.current = true;
-            syncOutputBufferRef.current = combined.slice(startIdx);
-            if (syncOutputBufferRef.current.includes(TERMINAL_SYNC_OUTPUT_END_SEQ)) {
-              clearSyncOutputTimeout();
-              combined = syncOutputBufferRef.current;
-              syncOutputBufferRef.current = '';
-              syncOutputActiveRef.current = false;
-            } else {
-              syncOutputTimeoutRef.current = setTimeout(() => {
-                if (!syncOutputActiveRef.current) return;
-                const forced = syncOutputBufferRef.current;
-                syncOutputBufferRef.current = '';
-                syncOutputActiveRef.current = false;
-                if (forced && termRef.current && !isDisposingRef.current) {
-                  termRef.current.write(forced);
-                  handleTuiReadyFromOutput(forced);
-                  scrollIfActivePanel();
-                }
-              }, TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS);
-              return;
-            }
-          }
-        }
-
-        // Per-frame byte cap: never write more than MAX_BYTES_PER_FRAME in a
-        // single animation frame. Queue the rest for the next frame so the main
-        // thread no se congela.
-        if (combined.length > TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME) {
-          const now = combined.slice(0, TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME);
-          const rest = combined.slice(TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME);
-          terminalOutputQueueRef.current.unshift(rest);
-          combined = now;
-          if (!terminalOutputFlushRafRef.current) {
-            terminalOutputFlushRafRef.current = requestAnimationFrame(flushTerminalOutputQueue);
-          }
-        }
-
+      onFlushWriteRef.current = (combined) => {
         termRef.current?.write(combined);
         handleTuiReadyFromOutput(combined);
         scrollIfActivePanel();
-      };
-
-      const scheduleTerminalOutputWrite = (chunk) => {
-        terminalOutputQueueRef.current.push(chunk);
-        if (!terminalOutputFlushRafRef.current) {
-          terminalOutputFlushRafRef.current = requestAnimationFrame(flushTerminalOutputQueue);
-        }
-      };
-
-      const writeTerminalOutput = (chunk) => {
-        if (containsTerminalResponseNoise(chunk)) {
-          cliLog(`RENDER:${id}`, 'output-noise-filtered', {
-            bytes: chunk.length,
-            isActivePanel: isActivePanelRef.current,
-            webglAttached: Boolean(webglAddonRef.current),
-          });
-        }
-        const filtered = filterTerminalOutputForSession(null, chunk, outputPendingRef.current);
-        if (
-          shouldSkipTerminalOutputWhileLayoutHidden({
-            isVisibleInLayout: isVisibleInLayoutRef.current,
-            isActivePanel: isActivePanelRef.current,
-            operationalRendererMode: operationalRendererModeRef.current,
-            canvasAttached: Boolean(canvasAddonRef.current),
-          })
-        ) {
-          if (typeof filtered === 'string' && filtered.length > 0) {
-            appendHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current, filtered);
-            hiddenOutputCatchupPendingRef.current = true;
-          }
-          return;
-        }
-        if (typeof filtered !== 'string' || filtered.length === 0) return;
-
-        // Projection can flip visible before catchup runs — keep buffering until
-        // syncTerminalViewportOnWorkspaceShow flushes once (avoids double PS1/echo).
-        if (hiddenOutputCatchupPendingRef.current) {
-          appendHiddenTerminalOutputBuffer(hiddenOutputBufferRef.current, filtered);
-          return;
-        }
-
-        scheduleTerminalOutputWrite(filtered);
       };
 
       socket.onmessage = (event) => {
@@ -5440,123 +5383,6 @@ export default function TerminalTTY({
     clearPanelInitialCommandLifecycle(id);
     reconnect();
   }, [id, initialCommand, reconnect]);
-
-  const copyTextToClipboard = useCallback(async (text) => {
-    if (!text) return false;
-
-    try {
-      const clipboardApi = getClipboardApi();
-      if (!clipboardApi?.writeText) {
-        throw new Error('clipboard-unavailable');
-      }
-      await clipboardApi.writeText(text);
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    }
-
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-    return true;
-  }, []);
-
-  const handleCopySelection = useCallback(async () => {
-    const text = termRef.current?.getSelection?.() || contextMenu?.text || '';
-    return copyTextToClipboard(text);
-  }, [contextMenu?.text, copyTextToClipboard]);
-
-  const handlePasteIntoTerminal = useCallback(
-    async ({ clipboardEvent, image: providedImage } = {}) => {
-      cliLog('[paste]', 'handlePasteIntoTerminal called');
-
-      const image = providedImage || (await readClipboardImage({ clipboardEvent }));
-      if (image?.data) {
-        cliLog(
-          '[paste]',
-          `clipboard image detected mime=${image.mimeType} len=${image.data.length}`
-        );
-        const tempPath = await saveClipboardImageToTempFile(image);
-        if (!tempPath) {
-          cliLog('[paste]', 'failed to save clipboard image to temp file');
-          return false;
-        }
-        cliLog('[paste]', `saved clipboard image to temp path=${tempPath}`);
-        // For raw PTY / native VTE we quote the path so the shell treats it as
-        // one argument. For xterm.js bracketed-paste we send the bare path;
-        // bracketed paste is atomic and Kimi Code parses it as an attachment.
-        const quotedPath = `"${tempPath.replace(/"/g, '\\"')}"`;
-
-        if (shouldUseNativeRenderer) {
-          cliLog('[paste]', `shouldUseNativeRenderer=true, image temp path=${tempPath}`);
-          await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-            handleNativeLeaseCommandError
-          );
-          const result = await pasteNativeVtePanel({ panelId: id, text: quotedPath });
-          cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
-          return Boolean(result?.supported);
-        }
-
-        // For images we force a bracketed-paste sequence so Kimi Code treats
-        // the temp path as a clipboard attachment instead of raw user text.
-        // xterm.js only wraps term.paste() in bracketed paste when the PTY has
-        // already enabled the mode, so we inject the wrappers ourselves.
-        const bracketedPath = `\x1b[200~${tempPath}\x1b[201~`;
-        cliLog('[paste]', `pasting image path via forced bracketed paste`);
-        if (
-          sendTerminalPasteInput({
-            socket: wsRef.current,
-            transport: transportRef.current,
-            text: bracketedPath,
-          })
-        ) {
-          return true;
-        }
-
-        if (typeof termRef.current?.paste === 'function') {
-          cliLog('[paste]', `falling back to term.paste for image path`);
-          termRef.current.paste(tempPath);
-          return true;
-        }
-
-        return false;
-      }
-
-      const text = await readClipboardText({ clipboardEvent });
-      if (!text) return false;
-
-      if (shouldUseNativeRenderer) {
-        cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text.length}`);
-        await Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-          handleNativeLeaseCommandError
-        );
-        const result = await pasteNativeVtePanel({ panelId: id, text });
-        cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
-        return Boolean(result?.supported);
-      }
-
-      if (
-        sendTerminalPasteInput({
-          socket: wsRef.current,
-          transport: transportRef.current,
-          text,
-        })
-      ) {
-        return true;
-      }
-
-      if (typeof termRef.current?.paste === 'function') {
-        termRef.current.paste(text);
-        return true;
-      }
-
-      return false;
-    },
-    [handleNativeLeaseCommandError, id, shouldUseNativeRenderer]
-  );
 
   useEffect(() => {
     let mounted = true;
@@ -6938,14 +6764,6 @@ export default function TerminalTTY({
     }
   }, [initialCommand, isVisibleInLayout, isActivePanel, scrollTerminalToBottom]);
 
-  // ── Custom context menu for terminal ────────────────────────────────────────
-  const handleContextMenu = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const text = termRef.current?.getSelection?.() || '';
-    setContextMenu({ x: e.clientX, y: e.clientY, text, canCopy: Boolean(text) });
-  }, []);
-
   const handleViewportMouseDown = useCallback(
     (event) => {
       if (shouldUseNativeRenderer) {
@@ -7008,272 +6826,6 @@ export default function TerminalTTY({
       shouldUseNativeRenderer,
     ]
   );
-
-  const handleCopyFromMenu = useCallback(async () => {
-    await handleCopySelection();
-    setContextMenu(null);
-  }, [handleCopySelection]);
-
-  const handlePasteFromMenu = useCallback(async () => {
-    await handlePasteIntoTerminal().catch(() => false);
-    setContextMenu(null);
-  }, [handlePasteIntoTerminal]);
-
-  const handleViewportPaste = useCallback(
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      void handlePasteIntoTerminal({ clipboardEvent: e }).catch(() => false);
-    },
-    [handlePasteIntoTerminal]
-  );
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (isDisposingRef.current) return;
-      const rootElement = terminalRootRef.current;
-      const activeElement = document?.activeElement || null;
-      const eventTarget = e.target instanceof Node ? e.target : null;
-      const belongsToTerminal = terminalClipboardEventBelongsToPanel({
-        rootElement,
-        activeElement,
-        eventTarget,
-        isActivePanel,
-      });
-      if (!belongsToTerminal) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      void handlePasteIntoTerminal({ clipboardEvent: e }).catch(() => false);
-    };
-
-    document.addEventListener('paste', handler, true);
-    return () => document.removeEventListener('paste', handler, true);
-  }, [handlePasteIntoTerminal, isActivePanel]);
-
-  // Close context menu on click outside
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = () => setContextMenu(null);
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [contextMenu]);
-
-  // Wheel: synthetic routing for shell/TUI bootstrap; live OpenCode uses xterm native SGR directly.
-  useEffect(() => {
-    if (shouldUseNativeRenderer) return undefined;
-
-    const shell = viewportShellRef.current;
-    if (!shell) return undefined;
-
-    const handleWheel = (event) => {
-      if (isForwardedTerminalWheelEvent(event)) return;
-
-      const term = termRef.current;
-      if (!term) return;
-
-      if (shouldUseTerminalScrollbackWheel(event)) {
-        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
-        if (!direction) return;
-        const lines = resolveTerminalWheelPageSteps(event.deltaY) * 3;
-        term.scrollLines(direction === 'up' ? -lines : lines);
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      const isGrokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-      const isKimiSession = kimiReadyNotifiedRef.current || isKimiLaunchCommand(initialCommand);
-      const isTuiSession = tuiSessionActiveRef.current || isGrokSession;
-
-      // Kimi behaves like a normal scrolling terminal — output flows and the input is
-      // inline, not a fixed-bottom pane like grok/OpenCode. So scroll the xterm
-      // scrollback locally (term.scrollLines) and never inject wheel bytes into the
-      // PTY: SGR/PageUp/PageDown either get ignored or captured by Kimi's prompt and
-      // the conversation never moves. The near-bottom guard in scrollIfActivePanel
-      // already prevents snap-back while scrolled up.
-      if (shouldScrollKimiWheelLocally(isKimiSession)) {
-        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
-        if (!direction) return;
-        // Fine, shell-like scroll: ~1-2 lines per notch, capped so a fast swipe or a
-        // short conversation doesn't overshoot to the top/bottom extreme.
-        if (
-          scrollTerminalViewport(term, direction, event.deltaY, {
-            linesPerStep: 1,
-            lineHeight: 60,
-            maxSteps: 4,
-          })
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        return;
-      }
-
-      // Plain shells: scroll xterm scrollback locally — Page/arrow/SGR leaks as visible garbage.
-      if (!shouldInjectTerminalWheelIntoPty(isTuiSession)) {
-        const direction = resolveTerminalWheelScrollDirection(event.deltaY);
-        if (!direction) return;
-        if (scrollTerminalViewport(term, direction, event.deltaY)) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        return;
-      }
-
-      // Live grok/OpenCode: xterm forwards wheel as native SGR at the pointer row.
-      // In split grids the inactive panel is blurred — inject scroll instead so small
-      // worker panes can scroll without requiring maximize/focus (G-01 scroll fix).
-      if (
-        shouldPassthroughNativeTuiWheel({
-          isGrokSession,
-          isKimiSession,
-          grokTuiReady: grokTuiReadyRef.current,
-          kimiTuiReady: kimiReadyNotifiedRef.current,
-          opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current,
-        }) &&
-        isActivePanelRef.current
-      ) {
-        forwardTerminalWheelToXterm(term, event);
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession, isKimiSession });
-
-      const pointerEl = resolveTerminalPointerElement(term, containerRef.current, shell);
-      const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
-      if (cell) {
-        lastPointerZoneRef.current = isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
-          ? 'transcript'
-          : 'input';
-      }
-
-      const inTranscript = shouldRouteWheelToTranscript({
-        cell,
-        rows: term.rows,
-        lastPointerZone: lastPointerZoneRef.current,
-        inputZoneRows,
-      });
-      if (!inTranscript) {
-        if (isTuiSession) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        return;
-      }
-
-      const direction = resolveTerminalWheelScrollDirection(event.deltaY);
-      if (!direction) return;
-
-      const TERMINAL_WHEEL_MAX_PAGE_STEPS = 2;
-      const rawSteps = resolveTerminalWheelPageSteps(event.deltaY);
-      const steps = Math.max(1, Math.min(TERMINAL_WHEEL_MAX_PAGE_STEPS, rawSteps));
-      let wheelCol = cell?.col ?? Math.max(0, Math.floor((term.cols || 80) / 2));
-      let wheelRow = cell?.row ?? Math.max(0, Math.floor((term.rows || 24) * 0.35));
-
-      if (isTuiSession) {
-        const coords = resolveGrokWheelSgrCoords(cell, term, inputZoneRows);
-        wheelCol = coords.col;
-        wheelRow = coords.row;
-      }
-
-      const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, {
-        isGrokSession,
-        isKimiSession,
-        tuiActive: tuiSessionActiveRef.current,
-      });
-      const payload = isGrokSession
-        ? buildGrokWheelScrollPayload(direction, wheelCol, wheelRow, steps)
-        : scrollPrefer === 'sgr'
-          ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
-          : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
-
-      const sent = sendTerminalPasteInput({
-        socket: wsRef.current,
-        transport: transportRef.current,
-        text: payload,
-      });
-      if (!sent) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    shell.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-    return () => shell.removeEventListener('wheel', handleWheel, { capture: true });
-  }, [initialCommand, nativeWheelPassthrough, shouldUseNativeRenderer]);
-
-  // ── Keyboard shortcuts: copy/paste ───────────────────────────────────────────
-  useEffect(() => {
-    const handler = async (e) => {
-      const key = e.key || '';
-      const ctrl = e.ctrlKey || false;
-      const shift = e.shiftKey || false;
-      const alt = e.altKey || false;
-
-      // Log immediately to server
-      cliLog('[keydown]', `key=${key} ctrl=${ctrl} shift=${shift} alt=${alt} code=${e.code}`);
-
-      // Check if event belongs to terminal before deciding action.
-      const rootElement = terminalRootRef.current;
-      const activeElement = document?.activeElement || null;
-      const eventTarget = e.target instanceof Node ? e.target : null;
-      const belongsToTerminal = terminalClipboardEventBelongsToPanel({
-        rootElement,
-        activeElement,
-        eventTarget,
-        isActivePanel,
-      });
-
-      // Kimi Code uses Alt+V for paste. We only intercept it when the clipboard
-      // actually contains an image; otherwise we let the TUI handle its native
-      // shortcut for text paste/history.
-      if (alt && !ctrl && !shift && key.toLowerCase() === 'v') {
-        const image = await readClipboardImage();
-        if (image?.data) {
-          cliLog('[keydown]', 'Alt+V clipboard image detected');
-          if (!belongsToTerminal) return;
-          e.preventDefault();
-          e.stopPropagation();
-          await handlePasteIntoTerminal({ image }).catch(() => false);
-          return;
-        }
-      }
-
-      // Determine action
-      const action = resolveTerminalClipboardShortcut(e);
-
-      // If we use the native VTE renderer, copy is handled natively by VTE/GTK, not JavaScript.
-      if (action === 'copy' && shouldUseNativeRenderer) {
-        if (belongsToTerminal) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        return;
-      }
-
-      if (!action) return;
-
-      cliLog('[keydown]', `action=${action} belongs=${belongsToTerminal}`);
-
-      if (!belongsToTerminal) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (action === 'paste') {
-        cliLog('[keydown]', 'calling handlePasteIntoTerminal');
-        await handlePasteIntoTerminal().catch(() => false);
-      } else if (action === 'copy') {
-        await handleCopySelection();
-      }
-    };
-
-    document.addEventListener('keydown', handler, true);
-    return () => document.removeEventListener('keydown', handler, true);
-  }, [handleCopySelection, handlePasteIntoTerminal, isActivePanel, shouldUseNativeRenderer]);
 
   const isConnected = connectionState === 'connected';
   const showTerminalViewport =
