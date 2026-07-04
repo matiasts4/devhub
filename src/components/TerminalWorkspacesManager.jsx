@@ -171,11 +171,13 @@ import {
   shouldShowSwarmStandbyOverlay,
 } from '@/lib/operations/swarmDelegatedRoles';
 import {
-  RESTORE_ACTION,
   buildRestoreManifestFromWorkspaceState,
-  buildStartupRestorePlan,
   collectWorkspacePanelIds,
 } from '@/lib/terminal/startupRestoreCoordinator';
+import {
+  createWorkspaceRestoreCoordinator,
+  seedSuspendedOpenCodePanels,
+} from '@/components/workspace/WorkspaceRestoreCoordinator';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import {
   readWorkspaceRestorePreferences,
@@ -1745,215 +1747,43 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       activeWsId: activeWsIdRef.current || activeWsId,
     });
 
-    let cancelled = false;
+    const cancelled = false;
     const restorePrefs = readWorkspaceRestorePreferences(storage);
 
-    const hasOpenCodePanels = snapshotWorkspaces.some((ws) =>
-      (ws.columns || []).some((col) =>
-        (col.panels || []).some((panel) => isOpenCodePanel(panel, agentRunsByPanel[panel.id]))
-      )
-    );
-
-    if (hasOpenCodePanels) {
-      const suspendedSeed = {};
-      snapshotWorkspaces.forEach((ws) => {
-        ws.columns?.forEach((col) => {
-          col.panels?.forEach((panel) => {
-            const agentRun = agentRunsByPanel[panel.id];
-            if (!isOpenCodePanel(panel, agentRun)) return;
-
-            const policy = resolveEffectiveRestorePolicy({
-              sessionKind: 'opencode',
-              perSessionPolicy: agentRun?.restorePolicy || null,
-              preferences: restorePrefs,
-            });
-
-            // Manual/off stay suspended until the user continues; auto relaunches via queue.
-            if (policy === 'manual' || policy === 'off') {
-              suspendedSeed[panel.id] = 'suspended';
-            }
-          });
-        });
-      });
-      if (Object.keys(suspendedSeed).length > 0) {
-        setPanelRestoreModes(suspendedSeed);
-      }
+    const { suspendedSeed } = seedSuspendedOpenCodePanels({
+      snapshotWorkspaces,
+      agentRunsByPanel,
+      restorePrefs,
+    });
+    if (Object.keys(suspendedSeed).length > 0) {
+      setPanelRestoreModes(suspendedSeed);
     }
 
-    const runStartupRestore = async () => {
-      try {
-        await runOpenCodeStartupRestoreMutex(storage, async () => {
-          const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', {
-            cache: 'no-store',
-          });
-          const runtimeSnapshot = runtimeResponse.ok ? await runtimeResponse.json() : null;
-
-          if (cancelled) return;
-
-          const latestAgentRuns = readAgentRunsByPanel(storage);
-          let restoreWorkspaces = snapshotWorkspaces;
-          let restoreAgentRuns = latestAgentRuns;
-
-          const needsDiscovery = collectOpenCodePanelsNeedingDiscovery(
-            snapshotWorkspaces,
-            latestAgentRuns
-          );
-
-          if (needsDiscovery.length > 0) {
-            const catalog = await fetchOpenCodeSessionCatalog({ fetchImpl: fetch });
-            if (!cancelled && catalog.sessions.length > 0) {
-              const enriched = enrichOpenCodeRestoreContext({
-                workspaces: snapshotWorkspaces,
-                agentRunsByPanel: latestAgentRuns,
-                catalogSessions: catalog.sessions,
-              });
-
-              if (enriched.hasDiscoveries) {
-                restoreWorkspaces = enriched.workspaces;
-                restoreAgentRuns = enriched.agentRunsByPanel;
-
-                try {
-                  const fullRuns = readAgentRuns(storage);
-                  const mergedRuns = mergeDiscoveryIntoAgentRunsRecord(
-                    fullRuns,
-                    enriched.discoveries
-                  );
-                  storage?.setItem('devhub_agent_runs', JSON.stringify(mergedRuns));
-                  patchTerminalStateWithDiscoveredCommands(
-                    storage,
-                    terminalStateStorageKey,
-                    restoreWorkspaces
-                  );
-                  setWorkspaces((prev) => {
-                    if (!Array.isArray(prev) || prev.length === 0) return restoreWorkspaces;
-                    return restoreWorkspaces;
-                  });
-                } catch {
-                  // Discovery persistence must not block restore.
-                }
-              }
-            }
-          }
-
-          const manifest = buildRestoreManifestFromWorkspaceState({
-            workspaces: restoreWorkspaces,
-            activeWorkspaceId: activeWsIdRef.current || activeWsId,
-            projectId,
-            appSessionId: `startup-${Date.now()}`,
-            agentRunsByPanel: restoreAgentRuns,
-            restorePreferences: restorePrefs,
-          });
-
-          const plan = buildStartupRestorePlan({ manifest, runtimeSnapshot });
-
-          logTerminalSession('startup-restore-plan', {
-            actionCount: plan.actions.length,
-            actions: plan.actions.map((action) => ({
-              action: action.action,
-              terminalId: action.terminalId,
-              reason: action.reason,
-              sessionKind: action.sessionKind,
-            })),
-          });
-
-          if (plan.actions.some((action) => action.action === RESTORE_ACTION.QUOTA_BLOCKED)) {
-            setReopenActionError(
-              'OpenCode appears quota-blocked (429). Review runtime diagnostics before relaunching sessions.'
-            );
-          }
-
-          const panelMap = new Map(
-            restoreWorkspaces.flatMap((workspace) =>
-              (workspace?.columns || []).flatMap((column) =>
-                (column?.panels || []).map((panel) => [panel.id, panel])
-              )
-            )
-          );
-
-          const queueResult = await dispatchStartupRestoreQueue({
-            actions: plan.actions,
-            getPanel: (panelId) => panelMap.get(panelId),
-            shouldSkipAction: (action) => {
-              const panelId = action?.terminalId;
-              if (!panelId) return false;
-              const bootIds = bootPanelIdsRef.current;
-              if (bootIds.size > 0 && !bootIds.has(panelId)) {
-                logTerminalSession('startup-restore-skip', {
-                  panelId,
-                  reason: 'panel-not-in-boot-baseline',
-                  action: action.action,
-                });
-                return true;
-              }
-              return false;
-            },
-            onRelaunch: async (action, panel, command) => {
-              if (cancelled) return;
-              logTerminalSession('startup-restore-relaunch', {
-                panelId: action.terminalId,
-                command,
-                reason: action.reason,
-                action: action.action,
-              });
-              applyPanelRelaunchCommand(action.terminalId, command, panel?.cwd || null, {
-                emitEvent: true,
-              });
-            },
-            onPanelLive: (panelId) => {
-              if (cancelled) return;
-              setPanelRestoreModes((prev) => {
-                const next = { ...prev };
-                delete next[panelId];
-                return next;
-              });
-            },
-          });
-
-          if (cancelled) return;
-
-          setPanelRestoreModes((prev) => {
-            const next = { ...prev };
-            queueResult.manualPanelIds.forEach((panelId) => {
-              next[panelId] = 'suspended';
-            });
-            manifest.terminalSessions.forEach((session) => {
-              if (session.restorePolicy === 'off' && session.sessionKind === 'opencode') {
-                next[session.terminalId] = 'suspended';
-              }
-            });
-            queueResult.livePanelIds.forEach((panelId) => {
-              delete next[panelId];
-            });
-            Object.keys(next).forEach((panelId) => {
-              if (
-                !queueResult.manualPanelIds.includes(panelId) &&
-                !manifest.terminalSessions.some(
-                  (session) =>
-                    session.terminalId === panelId &&
-                    session.restorePolicy === 'off' &&
-                    session.sessionKind === 'opencode'
-                )
-              ) {
-                delete next[panelId];
-              }
-            });
-            return next;
-          });
-        });
-      } catch {
-        // Startup restore must not block workspace boot.
-      } finally {
-        if (!cancelled) {
-          startupRestoreCompletedRef.current = true;
-          markStartupRestoreCompletedForSession(sessionStorage);
-        }
-      }
-    };
+    const { runStartupRestore, abortStartupRestore } = createWorkspaceRestoreCoordinator({
+      storage,
+      terminalStateStorageKey,
+      projectId,
+      snapshotWorkspaces,
+      workspacesRef,
+      activeWsIdRef,
+      activeWsId,
+      bootPanelIdsRef,
+      agentRunsByPanel,
+      restorePrefs,
+      applyPanelRelaunchCommand,
+      setWorkspaces,
+      setPanelRestoreModes,
+      setReopenActionError,
+      markStartupRestoreCompleted: () => {
+        startupRestoreCompletedRef.current = true;
+        markStartupRestoreCompletedForSession(sessionStorage);
+      },
+    });
 
     runStartupRestore();
 
     return () => {
-      cancelled = true;
+      abortStartupRestore();
     };
   }, [
     activeWsId,
