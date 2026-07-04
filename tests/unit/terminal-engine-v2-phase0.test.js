@@ -81,8 +81,11 @@ describe('terminal-engine-v2 Phase 0 — VTE removal', () => {
     expect(fileExists('src/lib/terminal/nativeVteBridge.js')).toBe(false);
   });
 
-  test('VTE layout lifecycle helper is removed', () => {
-    expect(fileExists('src/lib/terminal/nativeVteLayoutLifecycle.js')).toBe(false);
+  test('layout lifecycle helper remains JS-only without GTK VTE bridge', () => {
+    expect(fileExists('src/lib/terminal/nativeVteLayoutLifecycle.js')).toBe(true);
+    const lifecycle = sourceOf('src/lib/terminal/nativeVteLayoutLifecycle.js');
+    expect(lifecycle).not.toMatch(/nativeVteBridge/);
+    expect(lifecycle).not.toMatch(/@tauri-apps/);
   });
 
   test('Cargo.toml no longer depends on zoha-vte', () => {

@@ -79,6 +79,14 @@ import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
 import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
+  cancelNativeVteLayoutHide,
+  clearNativeVteLease,
+  consumeHiddenNativeVteLease,
+  deferNativeVteLayoutHide,
+  hasHiddenNativeVteLease,
+  markNativeVteLeaseHidden,
+} from '@/lib/terminal/nativeVteLayoutLifecycle';
+import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
 } from '@/lib/terminal/terminalPanelBridge';
@@ -268,12 +276,6 @@ const NATIVE_VTE_STUBS = Object.freeze({
   subscribeNativeVteEvents: () => () => {},
   probeNativeVte: async () => ({ ready: false, reason: 'vte-removed' }),
   shouldOpenNativeVtePanel: () => false,
-  cancelNativeVteLayoutHide: () => {},
-  deferNativeVteLayoutHide: () => {},
-  hasHiddenNativeVteLease: () => false,
-  consumeHiddenNativeVteLease: () => false,
-  clearNativeVteLease: () => {},
-  markNativeVteLeaseHidden: () => {},
 });
 
 // Master switch for the legacy native VTE (GTK) backend.
@@ -406,12 +408,6 @@ export default function TerminalTTY({
     subscribeNativeVteEvents,
     probeNativeVte,
     shouldOpenNativeVtePanel,
-    cancelNativeVteLayoutHide,
-    deferNativeVteLayoutHide,
-    hasHiddenNativeVteLease,
-    consumeHiddenNativeVteLease,
-    clearNativeVteLease,
-    markNativeVteLeaseHidden,
   } = NATIVE_VTE_STUBS;
 
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
