@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
 import { resolveSwarmDelegatedRoleKeys } from '@/lib/operations/swarmDelegatedRoles';
 import { readWorkspaceSwarmLaunchSummary } from '@/components/terminal/models/swarmRoleModel';
-import {
-  applyRightDockLayerBounds,
-  resolveMeasuredRightDockBounds,
-} from '@/components/terminal/rightDockLayerSync';
+import { applyRightDockLayerBounds } from '@/components/terminal/rightDockLayerSync';
 import { getRightDockAnimProps } from '@/components/terminal/workspaceAnimProps';
-import { resolveRightDockLayerStyle } from '@/components/terminal/hooks/useRightDockController';
+import {
+  resolveMeasuredRightDockBounds,
+  resolveRightDockLayerStyle,
+} from '@/components/terminal/hooks/useRightDockController';
 import { DEFAULT_RIGHT_DOCK_STATE } from '@/components/workspace/rightDockState';
 
 export default function useWorkspaceRightDockSync({

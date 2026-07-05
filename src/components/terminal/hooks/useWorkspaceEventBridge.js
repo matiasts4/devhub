@@ -1,11 +1,9 @@
 import { useEffect } from 'react';
 import { markSwarmLaunchWrapperDispatched } from '@/lib/terminal/swarmLaunchWrapperLifecycle';
-import {
-  readAgentRunsByPanel,
-  readWorkspaceRestorePreferences,
-} from '@/components/terminal/models/swarmRoleModel';
+import { readAgentRunsByPanel } from '@/components/terminal/models/swarmRoleModel';
 import {
   inferPanelSessionKind,
+  readWorkspaceRestorePreferences,
   resolveEffectiveRestorePolicy,
   resolveOpenCodeSessionIdForPanel,
   shouldPersistOpenCodeSessionForPanel,

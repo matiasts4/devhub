@@ -2,16 +2,17 @@
  * useTerminalViewportPointer — mouse-down zone detection + TUI mouse injection.
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 1).
  */
-/* eslint-disable no-unused-vars -- ctxRef bag destructure */
+
 import { useCallback } from 'react';
-import { isGrokTuiInitialCommand, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
-import { sendTerminalPasteInput } from '@/components/terminal/TerminalTTY.helpers';
+import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
+  sendTerminalPasteInput,
   resolveTerminalCellFromPointer,
   isTerminalTranscriptCell,
   buildTerminalMousePressSequence,
   resolveTerminalWheelInputZoneRows,
   prepareActiveTuiTerminalFocus,
+  isGrokTuiInitialCommand,
 } from '@/components/terminal/TerminalTTY.helpers';
 
 export default function useTerminalViewportPointer({ ctxRef }) {
@@ -42,7 +43,9 @@ export default function useTerminalViewportPointer({ ctxRef }) {
       if (shouldUseNativeRenderer) {
         onActivatePanel?.(id);
         if (nativeVteOpened) {
-          Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
+          Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
+            handleNativeLeaseCommandError
+          );
         }
         return;
       }

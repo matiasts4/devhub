@@ -19,7 +19,6 @@ import {
   shouldMountCanvasAddon,
   shouldRefitVisibleInactiveSplitPanel,
   needsGpuRendererReattach,
-  coalescedSoftGpuVisibilityReveal,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 import { getTerminalTheme, getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
