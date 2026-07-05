@@ -20,6 +20,12 @@ import useTerminalViewportSync from './terminal/hooks/useTerminalViewportSync';
 import useTerminalWorkspaceShowRecovery from './terminal/hooks/useTerminalWorkspaceShowRecovery';
 import useTerminalLayoutChurnRecovery from './terminal/hooks/useTerminalLayoutChurnRecovery';
 import useTerminalEngine from './terminal/hooks/useTerminalEngine';
+import useTerminalRendererState from './terminal/hooks/useTerminalRendererState';
+import useTerminalStatusState from './terminal/hooks/useTerminalStatusState';
+import useTerminalFontSize from './terminal/hooks/useTerminalFontSize';
+import useTerminalViewportPointer from './terminal/hooks/useTerminalViewportPointer';
+import useTerminalScrollPreserve from './terminal/hooks/useTerminalScrollPreserve';
+import useTerminalSearchAndZedInput from './terminal/hooks/useTerminalSearchAndZedInput';
 import {
   readClipboardImage,
   readClipboardText,
@@ -29,14 +35,9 @@ import {
 import {
   getTerminalRendererFallbackCopy,
   getTerminalRendererOptionLabel,
-  getTerminalRendererRuntimeCapabilities,
   getTerminalRendererWebglFallbackCopy,
-  probeWebglSupport,
-  resolveOperationalRendererMode,
   resolveRendererSelection,
-  TERMINAL_OPERATIONAL_CANVAS_MODE,
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
-  TERMINAL_WEBGL_FALLBACK_REASONS,
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
 import {
@@ -112,12 +113,8 @@ import {
   cliLog,
   attachTerminalRendererAddons,
   neutralizeWebglAddonForDisposal,
-  isStaleXtermRendererError,
   getXtermContainerAnimProps,
-  shouldShowTerminalViewport,
   resolveColdMountStaggerMs,
-  shouldShowTerminalLoadingOverlay,
-  shouldShowTerminalStatusOverlay,
   disableTerminalFocusReporting,
   prepareActiveTuiTerminalFocus,
   resetTerminalModesForReattach,
@@ -133,7 +130,6 @@ import {
   shouldScrollKimiWheelLocally,
   resolveGrokWheelSgrCoords,
   buildGrokWheelScrollPayload,
-  resolveTerminalWheelInputZoneRows,
   buildTerminalWheelArrowSequence,
   buildTerminalWheelScrollPayload,
   buildTerminalWheelSgrSequence,
@@ -156,7 +152,6 @@ import {
   getClipboardApi,
   sendTerminalPasteInput,
   getTerminalRuntimePlatform,
-  getTerminalViewportScrollOffset,
   isTerminalViewportNearBottom,
   shouldUseTerminalScrollbackWheel,
   shouldInjectTerminalWheelIntoPty,
@@ -165,11 +160,7 @@ import {
   resolveTerminalWheelPageSteps,
   buildTerminalWheelPageSequence,
   resolveTerminalScreenElement,
-  resolveTerminalCellFromPointer,
-  isTerminalTranscriptCell,
-  buildTerminalMousePressSequence,
   shouldRouteWheelToTranscript,
-  restoreTerminalViewportScroll,
   getNativeTerminalBounds,
   shouldRunTerminalViewportReactivation,
   shouldRunPanelClickViewportRecovery,
@@ -210,7 +201,6 @@ import {
   shouldReleaseCanvasRendererOnLayoutHide,
   resolveTerminalRuntimePhase,
   shouldBootXtermRuntime,
-  resolveTerminalRendererViewModel,
   getTerminalRendererStatusCopy,
   getTerminalRendererRecoveryActionLabel,
   shouldReinitializeTerminalForRenderer,
@@ -374,13 +364,9 @@ export default function TerminalTTY({
   const [sessionExitReason, setSessionExitReason] = useState(null);
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
-  const [webglProbeResult, setWebglProbeResult] = useState(() => probeWebglSupport());
-  const [webglFallback, setWebglFallback] = useState(null);
   const [xtermBootNonce, setXtermBootNonce] = useState(0);
   const webglAddonRef = useRef(null);
   const canvasAddonRef = useRef(null);
-  const webglFallbackRef = useRef(webglFallback);
-  webglFallbackRef.current = webglFallback;
   const terminalBlurCleanupRef = useRef(null);
   const tauriAvailable = false;
 
@@ -397,31 +383,30 @@ export default function TerminalTTY({
   } = NATIVE_VTE_STUBS;
 
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
-  // Force the only supported active renderer. Any vte request (from stored
-  // prefs or old callers) is redirected here so we never boot the native VTE surface.
-  const effectiveRequestedMode =
-    !ENABLE_NATIVE_VTE && requestedRendererMode === 'vte-experimental'
-      ? 'xterm-webgl'
-      : requestedRendererMode;
 
-  const rendererCapabilities = getTerminalRendererRuntimeCapabilities({
-    platform: resolvedRuntimePlatform,
-    tauriAvailable,
-    nativeVteProbe: nativeVteProbeResult,
-    nativeVteOpenFailure,
-    webglProbe: webglProbeResult,
-  });
-  const rendererViewModel = resolveTerminalRendererViewModel({
-    requestedRendererMode: effectiveRequestedMode,
+  const {
+    operationalRendererMode,
+    rendererViewModel,
     rendererCapabilities,
-    nativeVteReady:
-      ENABLE_NATIVE_VTE && effectiveRequestedMode === 'vte-experimental' && nativeVteOpened,
-  });
-  const operationalRendererMode = resolveOperationalRendererMode({
-    requestedMode: effectiveRequestedMode,
-    effectiveMode: rendererViewModel.effectiveMode,
+    webglFallback,
+    webglProbeResult,
+    handleSwitchToXterm,
+    handleRetryProbe,
+    effectiveRendererModeRef,
+    operationalRendererModeRef,
+    webglFallbackRef,
+    setWebglFallback,
+  } = useTerminalRendererState({
+    requestedRendererMode,
     visibleTerminalPanelCount,
+    resolvedRuntimePlatform,
+    nativeVteProbeResult,
+    nativeVteOpenFailure,
+    nativeVteOpened,
+    onResetRendererToXterm,
+    setXtermBootNonce,
   });
+
   const hasSentInitialCommand = useRef(false);
   const sessionReattachedRef = useRef(false);
   // True once the server's `ready` message arrives. Initial commands must never be
@@ -556,8 +541,6 @@ export default function TerminalTTY({
   const initTimeoutRef = useRef(null);
   const autoScrollRafRef = useRef(null);
   const tuiResizeDebounceTimerRef = useRef(null);
-  const effectiveRendererModeRef = useRef(operationalRendererMode);
-  const operationalRendererModeRef = useRef(operationalRendererMode);
   const visibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
   const prevVisibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);
 
@@ -612,6 +595,29 @@ export default function TerminalTTY({
       runtimePlatform: resolvedRuntimePlatform,
       tauriAvailable,
     }) && connectionState !== 'suspended';
+
+  const slice1CtxRef = useRef(null);
+  const { adjustFontSize } = useTerminalFontSize({ ctxRef: slice1CtxRef });
+  const { handleViewportMouseDown } = useTerminalViewportPointer({ ctxRef: slice1CtxRef });
+  useTerminalSearchAndZedInput({ ctxRef: slice1CtxRef });
+  const {
+    isConnected,
+    showTerminalViewport,
+    showTerminalLoadingOverlay,
+    showTerminalStatusOverlay,
+    exitOverlayCopy,
+    statusLabel,
+  } = useTerminalStatusState({
+    isInitializing,
+    initError,
+    connectionState,
+    hasConnectedOnce,
+    sessionExitReason,
+    initialCommand,
+    webglFallback,
+    requestedRendererMode,
+    shouldUseNativeRenderer,
+  });
 
   const clearTimers = useCallback(() => {
     if (rafRef.current) {
@@ -814,94 +820,8 @@ export default function TerminalTTY({
   }, [isEngineV2]);
 
   useLayoutEffect(() => {
-    effectiveRendererModeRef.current = operationalRendererMode;
-    operationalRendererModeRef.current = operationalRendererMode;
-  }, [operationalRendererMode]);
-
-  useLayoutEffect(() => {
     visibleTerminalPanelCountRef.current = visibleTerminalPanelCount;
   }, [visibleTerminalPanelCount]);
-
-  // Real WebGL capability probe (runs once per mount, cheap detached canvas test).
-  // Populates webglProbeResult so the runtime capabilities and switcher labels are honest.
-  useEffect(() => {
-    try {
-      const result = probeWebglSupport();
-      setWebglProbeResult((prev) => {
-        if (prev && prev.ready === result.ready && prev.reason === result.reason) {
-          return prev;
-        }
-        return result;
-      });
-    } catch {
-      setWebglProbeResult((prev) => {
-        const result = {
-          ready: false,
-          reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED,
-        };
-        if (prev && prev.ready === result.ready && prev.reason === result.reason) {
-          return prev;
-        }
-        return result;
-      });
-    }
-  }, []);
-
-  // Surface xterm-webgl demotion as a visible warning when the user asked for WebGL
-  // but the resolver (or probe) forced fallback to plain xterm. Clears only demotion-shaped
-  // reasons when the user picks a different renderer.
-  useEffect(() => {
-    if (operationalRendererMode === TERMINAL_OPERATIONAL_CANVAS_MODE) {
-      if (
-        webglFallback &&
-        (webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW ||
-          webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED ||
-          webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED)
-      ) {
-        setWebglFallback(null);
-      }
-      return;
-    }
-
-    if (
-      requestedRendererMode === 'xterm-webgl' &&
-      rendererViewModel.effectiveMode !== 'xterm-webgl'
-    ) {
-      setWebglFallback({
-        active: true,
-        reason:
-          webglProbeResult?.reason || TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW,
-      });
-    } else if (
-      webglFallback &&
-      (webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_UNSUPPORTED_IN_WEBVIEW ||
-        webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_CONTEXT_CREATION_FAILED ||
-        webglFallback.reason === TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_IMPORT_FAILED)
-    ) {
-      // user moved away from the demoted choice — clear the demotion banner
-      setWebglFallback(null);
-    }
-  }, [
-    operationalRendererMode,
-    requestedRendererMode,
-    rendererViewModel.effectiveMode,
-    webglProbeResult,
-    webglFallback,
-  ]);
-
-  const handleSwitchToXterm = useCallback(() => {
-    if (typeof onResetRendererToXterm === 'function') {
-      onResetRendererToXterm();
-      return;
-    }
-    setWebglFallback(null);
-    setWebglProbeResult(probeWebglSupport());
-  }, [onResetRendererToXterm]);
-
-  const handleRetryProbe = useCallback(() => {
-    setWebglProbeResult(probeWebglSupport());
-    setXtermBootNonce((n) => n + 1);
-  }, []);
 
   const buildViewportSnapshot = useCallback(
     (reason) =>
@@ -1548,6 +1468,14 @@ export default function TerminalTTY({
       termRef.current?.scrollToBottom?.();
     });
   }, []);
+
+  useTerminalScrollPreserve({
+    ctxRef: slice1CtxRef,
+    initialCommand,
+    isVisibleInLayout,
+    isActivePanel,
+    scrollTerminalToBottom,
+  });
 
   const viewportCtxRef = useRef(null);
   const {
@@ -2668,35 +2596,6 @@ export default function TerminalTTY({
   connectRef.current = connect;
   sendResizeRef.current = sendResize;
 
-  const adjustFontSize = useCallback((delta) => {
-    setFontSize((prev) => {
-      const next = Math.min(24, Math.max(8, prev + delta));
-      try {
-        window.localStorage.setItem(FONT_SIZE_KEY, String(next));
-        // Size fine-tuning stays local per panel (the A-/A+ buttons).
-        // The base font family + weight + line/letter come from CSS vars (see getTerminalFontOptions).
-      } catch {
-        /* ignore */
-      }
-      if (termRef.current && !isDisposingRef.current) {
-        termRef.current.options.fontSize = next;
-        try {
-          fitRef.current?.fit();
-          // Keep WebGL atlas happy when metrics change.
-          if (typeof termRef.current.clearTextureAtlas === 'function') {
-            termRef.current.clearTextureAtlas();
-          }
-          termRef.current.refresh(0, termRef.current.rows - 1);
-        } catch (err) {
-          // Same teardown race as the ResizeObserver path: a font-size click
-          // landing during dispose can hit the WebGL addon's stale renderer.
-          if (!isStaleXtermRendererError(err)) throw err;
-        }
-      }
-      return next;
-    });
-  }, []);
-
   // When the user switches away from this panel (isActivePanel becomes false),
   // disable "reporting" modes (focus events, mouse tracking) that many TUIs (like opencode)
   // use to "wake up" and re-query the terminal (sending DA1/DA2 queries like ^[[c ^[[>c).
@@ -3130,42 +3029,6 @@ export default function TerminalTTY({
   };
 
   useEffect(() => {
-    const handleSearch = (event) => {
-      const detail = event.detail || {};
-      const targetId = detail.targetId;
-      const query = detail.query;
-      const direction = detail.direction || 'next';
-
-      if (!targetId || targetId !== id || !query || !searchRef.current) return;
-
-      if (direction === 'prev') {
-        searchRef.current.findPrevious(query, { caseSensitive: false, incremental: true });
-        return;
-      }
-
-      searchRef.current.findNext(query, { caseSensitive: false, incremental: true });
-    };
-
-    window.addEventListener('devhub:terminal-search', handleSearch);
-    return () => window.removeEventListener('devhub:terminal-search', handleSearch);
-  }, [id]);
-
-  useEffect(() => {
-    const handleZedInput = (event) => {
-      const detail = event?.detail;
-      const target = detail?.terminalId || detail?.session_id || detail?.panelId;
-      if (!detail || target !== id) return;
-      sendTerminalPasteInput({
-        socket: wsRef.current,
-        transport: transportRef.current,
-        text: detail.input,
-      });
-    };
-    window.addEventListener('devhub:zed-terminal-input', handleZedInput);
-    return () => window.removeEventListener('devhub:zed-terminal-input', handleZedInput);
-  }, [id]);
-
-  useEffect(() => {
     reactivateTerminalViewportRef.current = reactivateTerminalViewport;
   }, [reactivateTerminalViewport]);
 
@@ -3460,107 +3323,6 @@ export default function TerminalTTY({
     disposeWebglAddonForContextLoss,
   ]);
 
-  // --- Scroll fix: preserve/restore scroll position when panel visibility changes ---
-  useEffect(() => {
-    if (!termRef.current) return;
-    // Kimi behaves like a normal scrolling terminal (xterm viewportY moves with the
-    // buffer), so it goes through the same save/restore path as shells — preserving the
-    // scroll position across panel/workspace switches instead of jumping.
-    if (isVisibleInLayout) {
-      const saved = lastViewportYRef.current;
-      if (saved != null) {
-        restoreTerminalViewportScroll(termRef.current, saved);
-      } else if (isActivePanel) {
-        scrollTerminalToBottom(true);
-      }
-    } else {
-      lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
-    }
-  }, [initialCommand, isVisibleInLayout, isActivePanel, scrollTerminalToBottom]);
-
-  const handleViewportMouseDown = useCallback(
-    (event) => {
-      if (shouldUseNativeRenderer) {
-        onActivatePanel?.(id);
-        if (nativeVteOpened) {
-          Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(
-            handleNativeLeaseCommandError
-          );
-        }
-        return;
-      }
-
-      const term = termRef.current;
-      const shell = viewportShellRef.current;
-      const cell =
-        event && shell && term
-          ? resolveTerminalCellFromPointer(term, shell, event.clientX, event.clientY)
-          : null;
-      const grokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
-      const isKimiSession = kimiReadyNotifiedRef.current || isKimiLaunchCommand(initialCommand);
-      const inputZoneRows = resolveTerminalWheelInputZoneRows({
-        isGrokSession: grokSession,
-        isKimiSession,
-      });
-      const inTranscript = cell
-        ? isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
-        : lastPointerZoneRef.current !== 'input';
-
-      if (inTranscript) {
-        lastPointerZoneRef.current = 'transcript';
-      } else {
-        lastPointerZoneRef.current = 'input';
-      }
-
-      // Activation is handled by the parent panel shell (onMouseDown bubbles up).
-      prepareActiveTuiTerminalFocus(term, {
-        tuiSessionActive: tuiSessionActiveRef.current,
-      });
-      term?.focus?.();
-
-      const tuiReady = grokSession
-        ? grokTuiReadyRef.current === true
-        : tuiSessionFooterConfirmedRef.current === true;
-      const tuiActive = tuiSessionActiveRef.current || grokSession;
-      if (inTranscript && cell && tuiActive && tuiReady && isVisibleInLayoutRef.current === true) {
-        const payload = buildTerminalMousePressSequence(cell.col, cell.row);
-        sendTerminalPasteInput({
-          socket: wsRef.current,
-          transport: transportRef.current,
-          text: payload,
-        });
-      }
-    },
-    [
-      handleNativeLeaseCommandError,
-      id,
-      initialCommand,
-      nativeVteOpened,
-      onActivatePanel,
-      shouldUseNativeRenderer,
-    ]
-  );
-
-  const isConnected = connectionState === 'connected';
-  const showTerminalViewport =
-    shouldShowTerminalViewport(isInitializing, initError) && !shouldUseNativeRenderer;
-  const showTerminalLoadingOverlay = shouldShowTerminalLoadingOverlay(
-    isInitializing,
-    connectionState,
-    hasConnectedOnce
-  );
-  const showTerminalStatusOverlay = shouldShowTerminalStatusOverlay(
-    isInitializing,
-    initError,
-    connectionState
-  );
-  const exitOverlayCopy = buildTerminalExitOverlayCopy({
-    initialCommand,
-    reason: sessionExitReason,
-    initError,
-    connectionState,
-  });
-
   const handleSessionRecoveryClick = useCallback(() => {
     if (connectionState === 'agent-exited' || isAgentTuiCommand(initialCommand)) {
       clearPanelSessionExit(id);
@@ -3576,17 +3338,32 @@ export default function TerminalTTY({
     reconnect();
   }, [connectionState, id, initialCommand, reconnect]);
 
-  const statusLabel = isConnected
-    ? 'Conectado'
-    : connectionState === 'suspended'
-      ? 'Suspendida'
-      : connectionState === 'agent-exited'
-        ? 'Agente finalizado'
-        : connectionState === 'connecting'
-          ? 'Conectando...'
-          : connectionState === 'terminated'
-            ? 'Finalizada'
-            : 'Desconectado';
+  slice1CtxRef.current = {
+    FONT_SIZE_KEY,
+    setFontSize,
+    termRef,
+    fitRef,
+    isDisposingRef,
+    id,
+    initialCommand,
+    shouldUseNativeRenderer,
+    nativeVteOpened,
+    onActivatePanel,
+    viewportShellRef,
+    isGrokSessionRef,
+    grokTuiReadyRef,
+    kimiReadyNotifiedRef,
+    tuiSessionActiveRef,
+    tuiSessionFooterConfirmedRef,
+    lastPointerZoneRef,
+    wsRef,
+    transportRef,
+    isVisibleInLayoutRef,
+    focusNativeVtePanel,
+    handleNativeLeaseCommandError,
+    searchRef,
+    lastViewportYRef,
+  };
 
   return (
     <div
