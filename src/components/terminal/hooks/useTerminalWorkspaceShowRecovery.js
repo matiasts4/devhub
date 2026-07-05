@@ -1051,9 +1051,6 @@ export default function useTerminalWorkspaceShowRecovery({
       }
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
-      if (prevVisible) {
-        layoutChurnedWhileHiddenRef.current = true;
-      }
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
       syncTerminalViewportOnWorkspaceShow('workspace-show-pending', { clearAtlas: true });
     }

@@ -212,23 +212,18 @@ export default function useWorkspacePanelLifecycle({
       return undefined;
     }
 
-    // Every panel in the destination window needs the layout-show golden path
-    // (not only the focused panel), otherwise split windows stay black.
+    const activeWindowPanelId = panelIds.includes(activePanelId) ? activePanelId : panelIds[0];
+
     requestAnimationFrame(() => {
       dispatchTerminalWindowVisible({
-        panelIds,
+        panelIds: [activeWindowPanelId],
         workspaceId: wsId,
         reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
       });
     });
 
-    const allWorkspacePanelIds = [
-      ...new Set(
-        (workspaceWindows?.[wsId] || []).flatMap((win) => getPanelIdsFromColumns(win.columns || []))
-      ),
-    ];
     const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
-      allWorkspacePanelIds.length > 0 ? allWorkspacePanelIds : panelIds,
+      panelIds,
       collectEngineV2PanelIds(workspaces, workspaceWindows, activeWindowIds)
     );
     if (legacySurvivorPanelIds.length === 0) {
@@ -236,8 +231,6 @@ export default function useWorkspacePanelLifecycle({
       return undefined;
     }
 
-    // Option B keep-alive: panels stay mounted; staggered survivor passes repaint
-    // WebGL bitmaps discarded while a sibling window had opacity:0 (same as pre-instant path).
     return scheduleSurvivorRecoverAfterClose({
       panelIds: legacySurvivorPanelIds,
       workspaceId: wsId,

@@ -302,7 +302,6 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       // workspaces. Those panels never receive the filtered layout-settled event, so
       // allow panel-closed events to reach every mounted TerminalTTY.
       const isPanelClosedReason = String(reason).includes('panel-closed');
-      const isWorkspaceWindowSwitchReason = String(reason).includes('workspace-window-switch');
       if (panelIds && panelIds.length > 0 && !panelIds.includes(id) && !isPanelClosedReason) {
         return;
       }
@@ -384,7 +383,7 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       if (!isVisibleInLayoutRef.current) {
         needsViewportSyncOnShowRef.current = true;
         layoutChurnedWhileHiddenRef.current = true;
-        if (isPanelClosedReason || isWorkspaceWindowSwitchReason) {
+        if (isPanelClosedReason) {
           recoverHiddenPanelForChurn(reason);
         }
         return;
