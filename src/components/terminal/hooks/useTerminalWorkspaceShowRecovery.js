@@ -4,7 +4,7 @@
  * Viewport sync pass: useTerminalWorkspaceShowRecoveryViewportSync.js.
  */
 /* eslint-disable no-unused-vars -- ctxRef bag destructure */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useLayoutEffect } from 'react';
 import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   fitTerminalViewport,
@@ -23,13 +23,25 @@ import {
   shouldBlockV2WebglRecovery,
   needsGpuRendererReattach,
   isWorkspaceSurvivorRecoverLayoutReason,
+  coalescedSoftGpuVisibilityReveal,
+  shouldSyncTerminalViewportOnLayoutShow,
+  shouldSoftGpuWorkspaceReveal,
+  resolveWorkspaceLayoutShowRevealMode,
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { shouldSkipKimiTuiPtyResize } from '@/lib/terminal/kimiReadyMarker';
+import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
 import useTerminalWorkspaceShowRecoveryViewportSync from './useTerminalWorkspaceShowRecoveryViewportSync';
 
-export default function useTerminalWorkspaceShowRecovery({ ctxRef }) {
+export default function useTerminalWorkspaceShowRecovery({
+  ctxRef,
+  isVisibleInLayout,
+  isWorkspaceShellVisible,
+  operationalRendererMode,
+  shouldUseNativeRenderer,
+  nativeVteOpened,
+}) {
   const { syncTerminalViewportOnWorkspaceShow } = useTerminalWorkspaceShowRecoveryViewportSync({
     ctxRef,
   });
@@ -805,6 +817,269 @@ export default function useTerminalWorkspaceShowRecovery({ ctxRef }) {
     scheduleBoundedGpuRecover,
     syncTerminalViewportOnWorkspaceShow,
     scheduleWorkspaceShowRecovery,
+  ]);
+
+  // Layout-show dispatch effect: false→true recovery for route / workspace / window switches.
+  useLayoutEffect(() => {
+    const c = ctxRef.current;
+    const {
+      termRef,
+      containerRef,
+      fitRef,
+      wsRef,
+      lastPtySizeRef,
+      webglAddonRef,
+      canvasAddonRef,
+      isDisposingRef,
+      isEngineV2Ref,
+      isVisibleInLayoutRef,
+      operationalRendererModeRef,
+      visibleTerminalPanelCountRef,
+      tuiSessionActiveRef,
+      hiddenOutputBufferRef,
+      hiddenOutputCatchupPendingRef,
+      pendingWebglRecoveryRef,
+      webglReleasedOnLayoutHideRef,
+      canvasReleasedOnLayoutHideRef,
+      layoutChurnedWhileHiddenRef,
+      layoutHiddenGenerationRef,
+      needsViewportSyncOnShowRef,
+      workspaceShowSyncTimerRef,
+      workspaceShowRecoverTimerRef,
+      workspaceShowZeroSizeObserverRef,
+      prevVisibleInLayoutRef,
+      prevWorkspaceShellVisibleRef,
+      tryReattachWebglAddonRef,
+      tryReattachCanvasAddonRef,
+      showAndResizeNativeLease,
+      restoreInitialCommandDispatchGuard,
+      logViewportDiagnostic,
+      coalescedForceRepaint,
+      scheduleBoundedGpuRecover,
+    } = c;
+
+    const prevVisible = prevVisibleInLayoutRef.current;
+    const nextVisible = isVisibleInLayout;
+
+    // Snapshot the global layout-settled generation when this panel becomes hidden.
+    // On reveal we compare it against the live generation to detect churn that
+    // happened in other workspaces; those events carry panelIds of the active
+    // workspace, so they never reach this hidden panel via the normal listener.
+    if (!nextVisible && layoutHiddenGenerationRef.current === 0) {
+      layoutHiddenGenerationRef.current = getTerminalLayoutSettledGeneration();
+    }
+
+    if (workspaceShowSyncTimerRef.current) {
+      clearTimeout(workspaceShowSyncTimerRef.current);
+      workspaceShowSyncTimerRef.current = null;
+    }
+    if (workspaceShowRecoverTimerRef.current) {
+      clearTimeout(workspaceShowRecoverTimerRef.current);
+      workspaceShowRecoverTimerRef.current = null;
+    }
+
+    // NOTE: we intentionally do NOT release WebGL/Canvas when the panel becomes
+    // hidden. Workspaces are kept mounted with visibility:hidden, so the addon
+    // must stay attached for instant reactivation. Real GPU disposal happens on
+    // unmount via disposeXtermRuntime().
+
+    if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)) {
+      restoreInitialCommandDispatchGuard();
+      // Phase 6 terminal-engine-v2: skip legacy GPU survivor recovery on show.
+      if (!usesLegacyTerminalSurvivorRecovery(isEngineV2Ref.current)) {
+        if (termRef.current && containerRef.current && fitRef.current) {
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
+        }
+        needsViewportSyncOnShowRef.current = false;
+        layoutChurnedWhileHiddenRef.current = false;
+        layoutHiddenGenerationRef.current = 0;
+      } else if (shouldUseNativeRenderer && nativeVteOpened) {
+        void showAndResizeNativeLease();
+      } else {
+        const isWorkspaceTabReveal =
+          isWorkspaceShellVisible && !prevWorkspaceShellVisibleRef.current;
+        const softGpuEligible = shouldSoftGpuWorkspaceReveal({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+          visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
+          pendingWebglRecovery: pendingWebglRecoveryRef.current,
+          webglReleasedOnLayoutHide: webglReleasedOnLayoutHideRef.current,
+          canvasReleasedOnLayoutHide: canvasReleasedOnLayoutHideRef.current,
+        });
+        const revealMode = resolveWorkspaceLayoutShowRevealMode({
+          isWorkspaceTabReveal,
+          softGpuEligible,
+          hiddenOutputCatchupPending: hiddenOutputCatchupPendingRef.current,
+          tuiSessionActive: tuiSessionActiveRef.current,
+        });
+
+        // If layout churn happened while this panel was hidden, the GPU framebuffer
+        // may be stale even though the addon is still attached. Skip the soft/no-op
+        // paths and run a real fit + clear + repaint, with bounded retries.
+        const hadLocalChurn = layoutChurnedWhileHiddenRef.current;
+        const hiddenGeneration = layoutHiddenGenerationRef.current;
+        const currentGeneration = getTerminalLayoutSettledGeneration();
+        const hadGlobalChurn = hiddenGeneration > 0 && currentGeneration > hiddenGeneration;
+        const hadLayoutChurn = hadLocalChurn || hadGlobalChurn;
+        layoutChurnedWhileHiddenRef.current = false;
+        layoutHiddenGenerationRef.current = 0;
+
+        if (revealMode === 'soft' && !hadLayoutChurn) {
+          needsViewportSyncOnShowRef.current = false;
+          coalescedSoftGpuVisibilityReveal(
+            termRef.current,
+            hiddenOutputBufferRef.current,
+            hiddenOutputCatchupPendingRef,
+            { reason: 'workspace-show-soft-reveal' }
+          );
+          logViewportDiagnostic('workspace-show-visible-soft-gpu-reveal');
+          if (!isWorkspaceTabReveal) {
+            // Parked windows were visibility:hidden — one deferred refresh after the
+            // shell becomes visible so WebGL composites the live bitmap (no clear()).
+            requestAnimationFrame(() => {
+              if (!isVisibleInLayoutRef.current || !termRef.current) return;
+              coalescedSoftGpuVisibilityReveal(
+                termRef.current,
+                hiddenOutputBufferRef.current,
+                hiddenOutputCatchupPendingRef,
+                { reason: 'workspace-show-soft-reveal-deferred' }
+              );
+            });
+          }
+        } else {
+          const rendererReadyNow = Boolean(
+            termRef.current && isTerminalRendererReady(termRef.current)
+          );
+          if (!rendererReadyNow) {
+            needsViewportSyncOnShowRef.current = true;
+            scheduleBoundedGpuRecover(48);
+          }
+          void (async () => {
+            if (
+              needsGpuRendererReattach({
+                operationalRendererMode: operationalRendererModeRef.current,
+                webglAddon: webglAddonRef.current,
+                canvasAddon: canvasAddonRef.current,
+              })
+            ) {
+              if (
+                shouldAttachWebglRenderer({
+                  operationalRendererMode: operationalRendererModeRef.current,
+                })
+              ) {
+                await tryReattachWebglAddonRef.current?.({
+                  clearAtlas: false,
+                  skipFitWhenUnchanged: true,
+                });
+              } else if (
+                shouldAttachCanvasRenderer({
+                  operationalRendererMode: operationalRendererModeRef.current,
+                })
+              ) {
+                await tryReattachCanvasAddonRef.current?.();
+              }
+            }
+            const stillNeedsGpu = needsGpuRendererReattach({
+              operationalRendererMode: operationalRendererModeRef.current,
+              webglAddon: webglAddonRef.current,
+              canvasAddon: canvasAddonRef.current,
+            });
+            if (stillNeedsGpu || !isTerminalRendererReady(termRef.current)) {
+              needsViewportSyncOnShowRef.current = true;
+              scheduleBoundedGpuRecover(48);
+            } else if (isVisibleInLayoutRef.current && termRef.current) {
+              if (hadLayoutChurn) {
+                // The GPU framebuffer may have been discarded while the panel was
+                // opacity-hidden. For plain shells a real clear+repaint is safe.
+                // For live TUIs (OpenCode/Grok/etc.) a clearAtlas wipes the canvas
+                // and the TUI does not repaint until it receives SIGWINCH/input, so
+                // we use a TUI-safe path: fit without PTY notify, refresh+force
+                // repaint, then nudge the PTY with an unchanged-dimension SIGWINCH
+                // to make the TUI redraw without altering its layout.
+                if (tuiSessionActiveRef.current && containerRef.current && fitRef.current) {
+                  fitTerminalViewport({
+                    container: containerRef.current,
+                    fitAddon: fitRef.current,
+                    term: termRef.current,
+                    socket: wsRef.current,
+                    clearAtlas: false,
+                    lastPtySizeRef: lastPtySizeRef.current,
+                    skipPtyNotify: true,
+                  });
+                  stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+                  refreshTerminalViewport(termRef.current);
+                  if (isTerminalRendererReady(termRef.current)) {
+                    coalescedForceRepaint(termRef.current, {
+                      reason: 'workspace-show-layout-churn-recover-tui',
+                    });
+                  }
+                  nudgeTerminalPtyResize({
+                    term: termRef.current,
+                    socket: wsRef.current,
+                    lastPtySizeRef: lastPtySizeRef.current,
+                    force: true,
+                  });
+                  logViewportDiagnostic('workspace-show-layout-churn-recover-tui');
+                } else {
+                  void syncTerminalViewportOnWorkspaceShow('workspace-show-layout-churn-recover', {
+                    clearAtlas: true,
+                  });
+                }
+                scheduleBoundedGpuRecover(24);
+              } else {
+                coalescedSoftGpuVisibilityReveal(
+                  termRef.current,
+                  hiddenOutputBufferRef.current,
+                  hiddenOutputCatchupPendingRef,
+                  { reason: 'workspace-show-soft-reveal-fallback' }
+                );
+              }
+            }
+            scheduleWorkspaceShowRecovery(
+              hadLayoutChurn ? 'workspace-show-layout-churn-recover' : 'workspace-show-visible'
+            );
+          })();
+        }
+      }
+    } else if (!isVisibleInLayout) {
+      needsViewportSyncOnShowRef.current = true;
+    } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
+      syncTerminalViewportOnWorkspaceShow('workspace-show-pending', { clearAtlas: true });
+    }
+
+    prevVisibleInLayoutRef.current = isVisibleInLayout;
+    prevWorkspaceShellVisibleRef.current = isWorkspaceShellVisible;
+
+    return () => {
+      if (workspaceShowSyncTimerRef.current) {
+        clearTimeout(workspaceShowSyncTimerRef.current);
+        workspaceShowSyncTimerRef.current = null;
+      }
+      if (workspaceShowRecoverTimerRef.current) {
+        clearTimeout(workspaceShowRecoverTimerRef.current);
+        workspaceShowRecoverTimerRef.current = null;
+      }
+      workspaceShowZeroSizeObserverRef.current?.disconnect();
+      workspaceShowZeroSizeObserverRef.current = null;
+    };
+  }, [
+    ctxRef,
+    isVisibleInLayout,
+    isWorkspaceShellVisible,
+    operationalRendererMode,
+    shouldUseNativeRenderer,
+    nativeVteOpened,
+    syncTerminalViewportOnWorkspaceShow,
+    scheduleWorkspaceShowRecovery,
+    scheduleBoundedGpuRecover,
   ]);
 
   return {
