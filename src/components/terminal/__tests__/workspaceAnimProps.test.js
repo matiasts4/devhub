@@ -64,16 +64,15 @@ describe('resolveWorkspaceShellVisibilityStyle', () => {
 describe('resolveWorkspaceWindowVisibilityStyle', () => {
   const { resolveWorkspaceWindowVisibilityStyle } = require('../workspaceAnimProps.js');
 
-  test('parks inactive windows with visibility:hidden (WebGL needs soft refresh on return)', () => {
+  test('parks inactive windows with opacity-only keep-alive (Option B)', () => {
     expect(
       resolveWorkspaceWindowVisibilityStyle({
         isActiveWindow: false,
       })
     ).toMatchObject({
       opacity: 0,
-      visibility: 'hidden',
       pointerEvents: 'none',
-      contain: 'strict',
+      contain: 'layout paint',
     });
   });
 
@@ -84,7 +83,6 @@ describe('resolveWorkspaceWindowVisibilityStyle', () => {
       })
     ).toMatchObject({
       opacity: 1,
-      visibility: 'visible',
       pointerEvents: 'auto',
       backgroundColor: 'var(--surface-app)',
     });
@@ -98,7 +96,6 @@ describe('resolveWorkspaceWindowVisibilityStyle', () => {
       })
     ).toMatchObject({
       opacity: 0,
-      visibility: 'hidden',
       pointerEvents: 'none',
     });
   });

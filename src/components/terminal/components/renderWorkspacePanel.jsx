@@ -103,10 +103,11 @@ export function renderWorkspacePanel(
   };
 
   const panelIsEngineV2 = Boolean(panel?.terminalEngineV2);
-  // Phase 4 terminal-engine-v2: hidden v2 panels unmount so TerminalTTY can
-  // stash the live xterm surface in the graveyard. Legacy v1 panels stay
-  // mounted and rely on the existing survivor-recovery paths.
-  const shouldMountTerminal = !panelIsEngineV2 || Boolean(isVisibleInLayout);
+  // Window/workspace parity: keep TTY mounted whenever the workspace shell is
+  // visible (parked V1/V2/V3 use isVisibleInLayout=false only). Unmount v2 only
+  // when the whole workspace tab is hidden (graveyard on workspace switch away).
+  const shouldMountTerminal =
+    !panelIsEngineV2 || Boolean(isWorkspaceShellVisible) || Boolean(isVisibleInLayout);
 
   return (
     <div

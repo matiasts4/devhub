@@ -762,22 +762,8 @@ function PizarraInner({
       setPendingViewId(null);
       onWorkspaceWindowSelect?.(viewId);
       skipViewAutoFitRef.current = true;
-      const panelIds = (mergedElements || [])
-        .filter(
-          (el) =>
-            (el.type === SHAPE_TYPES.TERMINAL || el.type === 'terminal') &&
-            // Use the destination viewId as fallback so surfaces that haven't
-            // been assigned a pizarra.viewId yet are still included in the
-            // layout-settled notification. Otherwise they never recover when
-            // switching back to this view.
-            surfaceBelongsToView(el, viewId, views, viewId)
-        )
-        .map((el) => el.panelId || String(el.id || '').replace(/^shape-term-/, ''))
-        .filter(Boolean);
-      dispatchTerminalLayoutSettled({
-        reason: 'pizarra-view-switch',
-        panelIds,
-      });
+      // Window/view parity: dock terminals stay mounted; visibility follows
+      // activeWindowIds — no layout-settled burst (same as workspace tab switch).
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('devhub:pizarra-view-switch-complete', {

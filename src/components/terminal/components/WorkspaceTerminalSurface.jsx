@@ -13,6 +13,7 @@ import {
   resolvePanelVisibleInLayout,
   resolveWorkspaceWindowsForRender,
 } from '@/lib/terminal/workspaceWindowRender';
+import { getPanelIdsFromColumns } from '@/components/terminal/models/workspaceStateModel';
 import { MIN_RIGHT_DOCK_SIZE } from '../../workspace/rightDockState';
 
 function columnContainsFocusedPanel(column, focusedPanelId) {
@@ -149,29 +150,20 @@ function WorkspaceTerminalSurface({
                 );
                 const isActiveWindow = window.id === activeWindowIdForWs;
                 const windowColumns = window.columns?.length > 0 ? window.columns : ws.columns;
-
-                if (!isActiveWindow) {
-                  return (
-                    <div
-                      key={`${ws.id}-view-${window.id}`}
-                      className="absolute inset-0 min-h-0 min-w-0 pointer-events-none"
-                      aria-hidden
-                      data-testid={`workspace-window-parked-${window.id}`}
-                      style={{
-                        zIndex: 1,
-                        ...resolveWorkspaceWindowVisibilityStyle({
-                          isActiveWindow: false,
-                          isFullscreenTakeover: isFullscreenBrowser,
-                        }),
-                      }}
-                    />
-                  );
-                }
+                const activeWindowPanelIds = getPanelIdsFromColumns(windowColumns);
+                const resolveWindowPanelVisibleInLayout = (panelId) =>
+                  isActiveWindow &&
+                  (resolvePanelVisibleInLayoutProp || resolvePanelVisibleInLayout)({
+                    isWorkspaceVisibleInLayout,
+                    focusedPanelId,
+                    panelId,
+                    activeWindowPanelIds,
+                  });
 
                 return (
                   <div
                     key={`${ws.id}-view-${window.id}`}
-                    className="absolute inset-0 min-h-0 min-w-0"
+                    className={`absolute inset-0 min-h-0 min-w-0 ${isActiveWindow ? '' : 'pointer-events-none'}`}
                     aria-hidden={!isActiveWindow}
                     data-testid={
                       isActiveWindow
@@ -226,16 +218,9 @@ function WorkspaceTerminalSurface({
                                           })}
                                         >
                                           {renderWorkspacePanelSlot(panel, {
-                                            isVisibleInLayout:
-                                              isActiveWindow &&
-                                              (
-                                                resolvePanelVisibleInLayoutProp ||
-                                                resolvePanelVisibleInLayout
-                                              )({
-                                                isWorkspaceVisibleInLayout,
-                                                focusedPanelId,
-                                                panelId: panel.id,
-                                              }),
+                                            isVisibleInLayout: resolveWindowPanelVisibleInLayout(
+                                              panel.id
+                                            ),
                                             isWorkspaceShellVisible: isWorkspaceVisibleInLayout,
                                             visibleTerminalPanelCount: focusedPanelId
                                               ? 1
@@ -243,7 +228,9 @@ function WorkspaceTerminalSurface({
                                           })}
                                         </div>
                                       </Panel>
-                                      {!focusedPanelId && panelIndex < column.panels.length - 1 ? (
+                                      {isActiveWindow &&
+                                      !focusedPanelId &&
+                                      panelIndex < column.panels.length - 1 ? (
                                         <TerminalRowSplitHandle
                                           testId={`workspace-row-resize-handle-${column.id}-${panel.id}`}
                                           onDragging={handleInternalSplitDragging}
@@ -264,16 +251,9 @@ function WorkspaceTerminalSurface({
                                     })}
                                   >
                                     {renderWorkspacePanelSlot(column.panels[0], {
-                                      isVisibleInLayout:
-                                        isActiveWindow &&
-                                        (
-                                          resolvePanelVisibleInLayoutProp ||
-                                          resolvePanelVisibleInLayout
-                                        )({
-                                          isWorkspaceVisibleInLayout,
-                                          focusedPanelId,
-                                          panelId: column.panels[0].id,
-                                        }),
+                                      isVisibleInLayout: resolveWindowPanelVisibleInLayout(
+                                        column.panels[0].id
+                                      ),
                                       isWorkspaceShellVisible: isWorkspaceVisibleInLayout,
                                       visibleTerminalPanelCount: focusedPanelId
                                         ? 1
@@ -283,7 +263,9 @@ function WorkspaceTerminalSurface({
                                 </div>
                               )}
                             </Panel>
-                            {!focusedPanelId && columnIndex < windowColumns.length - 1 ? (
+                            {isActiveWindow &&
+                            !focusedPanelId &&
+                            columnIndex < windowColumns.length - 1 ? (
                               <TerminalColSplitHandle
                                 testId={`split-column-resize-handle-${ws.id}-${column.id}`}
                                 onDragging={handleInternalSplitDragging}

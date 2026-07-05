@@ -69,6 +69,21 @@ function resolveWorkspaceVisibleTerminalPanelCount(columns = []) {
   return getPanelIdsFromColumns(columns).length;
 }
 
+/** Count unique panels across all stacked windows (V1/V2/V3) for GPU/layout hints. */
+function resolveWorkspaceAllWindowsTerminalPanelCount(ws, workspaceWindows = {}) {
+  const windows = workspaceWindows?.[ws?.id] || [];
+  if (windows.length > 0) {
+    const uniquePanelIds = new Set();
+    for (const win of windows) {
+      for (const panelId of getPanelIdsFromColumns(win.columns || [])) {
+        if (panelId) uniquePanelIds.add(panelId);
+      }
+    }
+    return uniquePanelIds.size;
+  }
+  return resolveWorkspaceVisibleTerminalPanelCount(ws?.columns || []);
+}
+
 function columnContainsFocusedPanel(column, focusedPanelId) {
   if (!focusedPanelId) return true;
   return (column?.panels || []).some((panel) => panel.id === focusedPanelId);
@@ -354,6 +369,7 @@ export {
   createWindow,
   getPanelIdsFromColumns,
   resolveWorkspaceVisibleTerminalPanelCount,
+  resolveWorkspaceAllWindowsTerminalPanelCount,
   columnContainsFocusedPanel,
   resolveFocusPanelSlotClassName,
   getPanelsFromColumns,

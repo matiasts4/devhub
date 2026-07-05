@@ -9,22 +9,17 @@ import {
   spawnFirstTerminalPanelColumns,
 } from '@/components/terminal/utils/panelHelpers';
 import {
-  collectEngineV2PanelIds,
   createPanelWithDisplayNameFactory,
   getPanelIdsFromColumns,
   resolveWorkspacePanelId,
 } from '@/components/terminal/models/workspaceStateModel';
-import {
-  filterLegacySurvivorPanelIds,
-  scheduleSurvivorRecoverAfterClose,
-  SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
-} from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   LIFECYCLE_BURST_PHASES,
   PANEL_LIFECYCLE_REASONS,
   schedulePostSplitLayoutViewportSync,
   scheduleTerminalLifecycleSync,
 } from '@/lib/terminal/terminalLifecycleSync';
+
 import { dispatchTerminalWindowVisible } from '@/components/terminal/nativeLayoutSync';
 import { resolveActiveWorkspaceWindowId } from '@/lib/terminal/workspaceWindowRender';
 import { resolveWorkspaceWindowAfterPanelClose } from '@/lib/terminal/swarmLaunchWorkspace';
@@ -204,52 +199,59 @@ export default function useWorkspacePanelLifecycle({
     // window-switch recovery here.
     if (!activeWorkspaceWindowIdChanged) return undefined;
 
+    const wsId = activeWsId;
+    if (!wsId) return undefined;
+
+    const focusedPanelId = focusedPanelByWorkspaceRef.current?.[wsId];
+    if (focusedPanelId) {
+      const windowId = resolveActiveWorkspaceWindowId(wsId, workspaceWindows, activeWindowIds);
+      const windows = workspaceWindows?.[wsId] || [];
+      const activeWindow = windows.find((win) => win.id === windowId);
+      const activeWindowPanelIds = getPanelIdsFromColumns(activeWindow?.columns || []);
+      if (!activeWindowPanelIds.includes(focusedPanelId)) {
+        setFocusedPanelByWorkspace((prev) => {
+          if (!prev[wsId]) return prev;
+          const next = { ...prev };
+          delete next[wsId];
+          return next;
+        });
+      }
+    }
+
+    const panelIds = resolveActiveWindowPanelIds(wsId);
+    const cleanupSplitSync =
+      panelIds.length > 1
+        ? schedulePostSplitLayoutViewportSync({
+            workspaceId: wsId,
+            panelIds,
+          })
+        : undefined;
+
     notifyNativeWorkspaceSurfaceSync('workspace-window-switch');
 
-    const wsId = activeWsId;
-    const panelIds = wsId ? resolveActiveWindowPanelIds(wsId) : [];
-    if (typeof window === 'undefined' || !wsId || panelIds.length === 0) {
-      return undefined;
-    }
-
-    const activeWindowPanelId = panelIds.includes(activePanelId) ? activePanelId : panelIds[0];
-
-    requestAnimationFrame(() => {
-      dispatchTerminalWindowVisible({
-        panelIds: [activeWindowPanelId],
-        workspaceId: wsId,
-        reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
+    // Soft reveal for panels that just became layout-visible (same golden path as
+    // pre-mount parity); does not replace layout-show on isVisibleInLayout flip.
+    if (typeof window !== 'undefined' && panelIds.length > 0) {
+      requestAnimationFrame(() => {
+        dispatchTerminalWindowVisible({
+          panelIds,
+          workspaceId: wsId,
+          reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
+        });
       });
-    });
-
-    const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
-      panelIds,
-      collectEngineV2PanelIds(workspaces, workspaceWindows, activeWindowIds)
-    );
-    if (legacySurvivorPanelIds.length === 0) {
-      syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds);
-      return undefined;
     }
 
-    return scheduleSurvivorRecoverAfterClose({
-      panelIds: legacySurvivorPanelIds,
-      workspaceId: wsId,
-      reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
-      onLifecycleSync: () =>
-        syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
-      immediate: true,
-      delays: SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
-    });
+    return () => {
+      cleanupSplitSync?.();
+    };
   }, [
-    activePanelId,
     activeWindowIds,
     activeWsId,
     isClientLoaded,
     notifyNativeWorkspaceSurfaceSync,
     resolveActiveWindowPanelIds,
-    syncPanelLifecycleLayout,
+    setFocusedPanelByWorkspace,
     workspaceWindows,
-    workspaces,
   ]);
 
   useEffect(() => {

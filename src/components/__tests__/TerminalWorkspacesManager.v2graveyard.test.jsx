@@ -313,10 +313,10 @@ describe('renderWorkspacePanel — v2 graveyard flag and mount logic', () => {
     expect(view.container.querySelector('[data-testid="panel-body-v2-stash-p-test"]')).toBeNull();
   });
 
-  it('renders a stash placeholder instead of TerminalTTY for a hidden v2 panel', async () => {
+  it('renders a stash placeholder when v2 is hidden and workspace shell is inactive', async () => {
     const element = renderWorkspacePanel(
       makePanel({ terminalEngineV2: true }),
-      makeProps({ isVisibleInLayout: false })
+      makeProps({ isVisibleInLayout: false, isWorkspaceShellVisible: false })
     );
     const view = await renderIntoDom(element, mountedRoots);
     await flushEffects();
@@ -325,6 +325,18 @@ describe('renderWorkspacePanel — v2 graveyard flag and mount logic', () => {
     expect(
       view.container.querySelector('[data-testid="panel-body-v2-stash-p-test"]')
     ).not.toBeNull();
+  });
+
+  it('keeps TerminalTTY mounted for a parked-window v2 panel when workspace shell is visible', async () => {
+    const element = renderWorkspacePanel(
+      makePanel({ terminalEngineV2: true }),
+      makeProps({ isVisibleInLayout: false, isWorkspaceShellVisible: true })
+    );
+    const view = await renderIntoDom(element, mountedRoots);
+    await flushEffects();
+
+    expect(view.container.querySelector('[data-testid="terminal-p-test"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="panel-body-v2-stash-p-test"]')).toBeNull();
   });
 
   it('keeps a legacy panel mounted even when hidden', async () => {

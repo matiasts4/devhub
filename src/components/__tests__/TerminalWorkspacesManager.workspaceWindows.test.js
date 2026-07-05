@@ -416,9 +416,11 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
       visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
     ).toEqual(['terminal-p2', 'terminal-p3']);
 
-    // Parked window unmounts terminal slots; switch-back remounts via survivor recovery.
+    // Parked window keeps terminals mounted (workspace parity); visibility only toggles.
     const parkedP1 = container.querySelector('[data-testid="workspace-window-parked-v1"]');
-    expect(parkedP1?.querySelector('[data-testid="terminal-p1"]')).toBeNull();
+    const parkedTerminal = parkedP1?.querySelector('[data-testid="terminal-p1"]');
+    expect(parkedTerminal).not.toBeNull();
+    expect(parkedTerminal.getAttribute('data-visible')).toBe('false');
   });
 
   test('switching to a window that contains the focused panel keeps focus mode (TWS-S2)', async () => {

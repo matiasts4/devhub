@@ -56,6 +56,7 @@ import {
   createDefaultWorkspaceState,
   getPanelIdsFromColumns,
   resolveWorkspaceVisibleTerminalPanelCount,
+  resolveWorkspaceAllWindowsTerminalPanelCount,
   buildStableWorkspaceShellKey,
   resolveWorkspacePanelId,
 } from './terminal/models/workspaceStateModel';
@@ -792,9 +793,14 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     const ordinals = {};
     let ordinal = 0;
     for (const workspace of workspaces) {
-      for (const column of workspace.columns || []) {
+      const windows = workspaceWindows?.[workspace.id] || [];
+      const columnSources =
+        windows.length > 0
+          ? windows.flatMap((win) => win.columns || [])
+          : workspace.columns || [];
+      for (const column of columnSources) {
         for (const panel of column.panels || []) {
-          if (panel?.id) {
+          if (panel?.id && ordinals[panel.id] === undefined) {
             ordinals[panel.id] = ordinal;
             ordinal += 1;
           }
@@ -802,7 +808,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       }
     }
     return ordinals;
-  }, [workspaces]);
+  }, [workspaces, workspaceWindows]);
   const requestedRendererMode = resolveRequestedRenderer({
     workspaceId: activeWsId,
     panelId: activePanelId,

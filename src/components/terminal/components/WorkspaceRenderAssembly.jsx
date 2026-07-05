@@ -26,7 +26,7 @@ import { getWorkspaceShellChromeStyle, getWorkspaceTopBarStyle } from '../termin
 import {
   buildStableWorkspaceShellKey,
   getPanelIdsFromColumns,
-  resolveWorkspaceVisibleTerminalPanelCount,
+  resolveWorkspaceAllWindowsTerminalPanelCount,
 } from '../models/workspaceStateModel';
 import {
   inferSwarmRoleKey,
@@ -854,8 +854,9 @@ export default function WorkspaceRenderAssembly(props) {
                   !isFullscreenBrowser && activeWsId === ws.id && isVisible;
                 const shouldSuspendWorkspaceNativeSurfaces =
                   isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
-                const totalTerminalPanelCount = resolveWorkspaceVisibleTerminalPanelCount(
-                  ws.columns
+                const totalTerminalPanelCount = resolveWorkspaceAllWindowsTerminalPanelCount(
+                  ws,
+                  workspaceWindows
                 );
                 const visibleTerminalPanelCount = focusedPanelId ? 1 : totalTerminalPanelCount;
                 const activeWindowIdForLayout = resolveActiveWorkspaceWindowId(
