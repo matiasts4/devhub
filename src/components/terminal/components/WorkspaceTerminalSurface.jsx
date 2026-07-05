@@ -28,6 +28,37 @@ function resolveFocusPanelSlotClassName({ focusedPanelId, panelId }) {
   return 'hidden';
 }
 
+/** Split between stacked terminals only — minimal thickness, elongated grip (not dock splits). */
+function TerminalRowSplitHandle({ testId, onDragging }) {
+  return (
+    <PanelResizeHandle
+      className="relative z-30 h-[3px] shrink-0 flex items-center justify-center cursor-row-resize group"
+      data-testid={testId}
+      onDragging={onDragging}
+    >
+      <div
+        className="h-px w-[min(100%,18rem)] rounded-full bg-[#3a4e70]/85 group-hover:bg-[var(--accent-primary)] transition-colors"
+        aria-hidden
+      />
+    </PanelResizeHandle>
+  );
+}
+
+function TerminalColSplitHandle({ testId, onDragging }) {
+  return (
+    <PanelResizeHandle
+      className="relative z-30 w-[3px] shrink-0 flex items-center justify-center cursor-col-resize group"
+      data-testid={testId}
+      onDragging={onDragging}
+    >
+      <div
+        className="w-px h-[min(100%,18rem)] rounded-full bg-[#3a4e70]/85 group-hover:bg-[var(--accent-primary)] transition-colors"
+        aria-hidden
+      />
+    </PanelResizeHandle>
+  );
+}
+
 function WorkspaceTerminalSurface({
   ws,
   workspaceGridKey,
@@ -117,30 +148,18 @@ function WorkspaceTerminalSurface({
                   activeWindowIds
                 );
                 const isActiveWindow = window.id === activeWindowIdForWs;
-                const windowColumns = window.columns?.length > 0 ? window.columns : ws.columns;
-
-                if (!isActiveWindow) {
-                  return (
-                    <div
-                      key={`${ws.id}-view-${window.id}`}
-                      className="absolute inset-0 min-h-0 min-w-0 pointer-events-none"
-                      aria-hidden
-                      data-testid={`workspace-window-parked-${window.id}`}
-                      style={{
-                        zIndex: 1,
-                        ...resolveWorkspaceWindowVisibilityStyle({
-                          isActiveWindow: false,
-                          isFullscreenTakeover: isFullscreenBrowser,
-                        }),
-                      }}
-                    />
-                  );
-                }
+                const windowColumns = isActiveWindow
+                  ? ws.columns?.length > 0
+                    ? ws.columns
+                    : window.columns || []
+                  : window.columns?.length > 0
+                    ? window.columns
+                    : [];
 
                 return (
                   <div
                     key={`${ws.id}-view-${window.id}`}
-                    className="absolute inset-0 min-h-0 min-w-0"
+                    className={`absolute inset-0 min-h-0 min-w-0 ${isActiveWindow ? '' : 'pointer-events-none'}`}
                     aria-hidden={!isActiveWindow}
                     data-testid={
                       isActiveWindow
@@ -213,9 +232,8 @@ function WorkspaceTerminalSurface({
                                         </div>
                                       </Panel>
                                       {!focusedPanelId && panelIndex < column.panels.length - 1 ? (
-                                        <PanelResizeHandle
-                                          className="relative z-30 h-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-t border-b border-[#2a344a] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                          data-testid={`workspace-row-resize-handle-${column.id}-${panel.id}`}
+                                        <TerminalRowSplitHandle
+                                          testId={`workspace-row-resize-handle-${column.id}-${panel.id}`}
                                           onDragging={handleInternalSplitDragging}
                                         />
                                       ) : null}
@@ -254,9 +272,8 @@ function WorkspaceTerminalSurface({
                               )}
                             </Panel>
                             {!focusedPanelId && columnIndex < windowColumns.length - 1 ? (
-                              <PanelResizeHandle
-                                className="relative z-30 w-3 shrink-0 flex items-center justify-center bg-[#0f1724] border-l border-r border-[#2a344a] hover:bg-[rgba(var(--accent-rgb,88,166,255),0.08)] transition-colors"
-                                data-testid={`split-column-resize-handle-${ws.id}-${column.id}`}
+                              <TerminalColSplitHandle
+                                testId={`split-column-resize-handle-${ws.id}-${column.id}`}
                                 onDragging={handleInternalSplitDragging}
                               />
                             ) : null}

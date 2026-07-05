@@ -146,10 +146,19 @@ export function applyTerminalTypographyToDocument(typography) {
     resolveTerminalTypography(typeof window !== 'undefined' ? window.localStorage : null);
   try {
     document.documentElement.style.setProperty('--font-family-mono', t.fontFamily);
-    // Keep the feature-settings in sync (ligatures etc). We default to normal
-    // but advanced users can include it in a custom family string.
     const feat = t.fontFeatureSettings || 'normal';
     document.documentElement.style.setProperty('--font-family-mono--font-feature-settings', feat);
+    document.documentElement.style.setProperty('--terminal-font-size', String(t.fontSize));
+    document.documentElement.style.setProperty('--terminal-font-weight', String(t.fontWeight));
+    document.documentElement.style.setProperty(
+      '--terminal-font-weight-bold',
+      String(t.fontWeightBold)
+    );
+    document.documentElement.style.setProperty('--terminal-line-height', String(t.lineHeight));
+    document.documentElement.style.setProperty(
+      '--terminal-letter-spacing',
+      String(t.letterSpacing)
+    );
   } catch {
     // ignore
   }

@@ -11,14 +11,8 @@ import {
 import {
   createPanelWithDisplayNameFactory,
   getPanelIdsFromColumns,
-  collectEngineV2PanelIds,
   resolveWorkspacePanelId,
 } from '@/components/terminal/models/workspaceStateModel';
-import {
-  filterLegacySurvivorPanelIds,
-  scheduleSurvivorRecoverAfterClose,
-  SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
-} from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   LIFECYCLE_BURST_PHASES,
   PANEL_LIFECYCLE_REASONS,
@@ -226,24 +220,11 @@ export default function useWorkspacePanelLifecycle({
       });
     });
 
-    const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
-      panelIds,
-      collectEngineV2PanelIds(workspaces, workspaceWindows, activeWindowIds)
-    );
-    if (legacySurvivorPanelIds.length === 0) {
-      syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds);
-      return undefined;
-    }
-
-    return scheduleSurvivorRecoverAfterClose({
-      panelIds: legacySurvivorPanelIds,
-      workspaceId: wsId,
-      reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
-      onLifecycleSync: () =>
-        syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
-      immediate: true,
-      delays: SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
-    });
+    // Window views stay mounted (opacity keep-alive like workspace tabs). Avoid the
+    // heavy survivor burst used when panels were unmounted; layout sync + window-visible
+    // is enough for instant V1/V2/V3 switches.
+    syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds);
+    return undefined;
   }, [
     activePanelId,
     activeWindowIds,

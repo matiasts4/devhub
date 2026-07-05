@@ -416,10 +416,11 @@ describe('TerminalWorkspacesManager workspace window switching', () => {
       visibleTerminalsInActiveWindow(container).map((el) => el.getAttribute('data-testid'))
     ).toEqual(['terminal-p2', 'terminal-p3']);
 
-    // Parked window mirrors workspace tab switch: its panels go isVisibleInLayout=false
-    // (the false→true toggle on switch-back is what drives viewport recovery).
+    // Parked window mirrors workspace tab switch: panels stay mounted, isVisibleInLayout=false.
     const parkedP1 = container.querySelector('[data-testid="workspace-window-parked-v1"]');
-    expect(parkedP1?.querySelector('[data-testid="terminal-p1"]')).toBeNull();
+    const parkedTerminal = parkedP1?.querySelector('[data-testid="terminal-p1"]');
+    expect(parkedTerminal).not.toBeNull();
+    expect(parkedTerminal?.getAttribute('data-visible')).toBe('false');
   });
 
   test('switching to a window that contains the focused panel keeps focus mode (TWS-S2)', async () => {

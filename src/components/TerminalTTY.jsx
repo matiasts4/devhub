@@ -23,6 +23,8 @@ import useTerminalEngine from './terminal/hooks/useTerminalEngine';
 import useTerminalRendererState from './terminal/hooks/useTerminalRendererState';
 import useTerminalStatusState from './terminal/hooks/useTerminalStatusState';
 import useTerminalFontSize from './terminal/hooks/useTerminalFontSize';
+import useTerminalTypographySync from './terminal/hooks/useTerminalTypographySync';
+import { resolveTerminalTypography } from './terminal/terminalTypographyPreferences';
 import useTerminalViewportPointer from './terminal/hooks/useTerminalViewportPointer';
 import useTerminalScrollPreserve from './terminal/hooks/useTerminalScrollPreserve';
 import useTerminalSearchAndZedInput from './terminal/hooks/useTerminalSearchAndZedInput';
@@ -307,14 +309,18 @@ export default function TerminalTTY({
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
   const [fontSize, setFontSize] = useState(() => {
     try {
-      // Simple local per-device size (persisted via the +/- buttons).
-      // Base default (14) balances density in multi-panel grids with legibility.
-      const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);
-      const parsed = stored ? parseInt(stored, 10) : NaN;
-      if (Number.isFinite(parsed) && parsed >= 8 && parsed <= 24) return parsed;
-      return 14;
+      if (typeof window !== 'undefined') {
+        const fromTypography = resolveTerminalTypography(window.localStorage)?.fontSize;
+        if (Number.isFinite(fromTypography) && fromTypography >= 8 && fromTypography <= 24) {
+          return fromTypography;
+        }
+        const stored = window.localStorage.getItem(FONT_SIZE_KEY);
+        const parsed = stored ? parseInt(stored, 10) : NaN;
+        if (Number.isFinite(parsed) && parsed >= 8 && parsed <= 24) return parsed;
+      }
+      return resolveTerminalTypography(null).fontSize;
     } catch {
-      return 14;
+      return 13;
     }
   });
 
@@ -1532,6 +1538,8 @@ export default function TerminalTTY({
     hasSentInitialCommand,
     disposeXtermRuntime: disposeXtermRuntimeImpl,
   };
+
+  useTerminalTypographySync({ ctxRef: engineCtxRef, setFontSize, setXtermBootNonce });
 
   useEffect(() => {
     reactivateTerminalViewportRef.current = reactivateTerminalViewport;

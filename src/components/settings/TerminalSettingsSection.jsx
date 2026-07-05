@@ -293,10 +293,11 @@ export default function TerminalSettingsSection() {
               className="font-mono text-sm font-semibold"
               style={{ color: 'var(--text-primary)' }}
             >
-              Zoom Level
+              Zoom de interfaz
             </h4>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-              Adjust the overall size of the interface (Ctrl +/-).
+              Escala toda la aplicación (no solo el texto del xterm). Para densidad del terminal usa
+              Tipografía → Tamaño abajo.
             </p>
             <div className="flex items-center gap-3 mt-3">
               <button
