@@ -138,6 +138,7 @@ import useZedWorkspaceEvents from './terminal/hooks/useZedWorkspaceEvents';
 import useTerminalWorkspaceShortcuts from './terminal/hooks/useTerminalWorkspaceShortcuts';
 import useWorkspaceLayoutState from './terminal/hooks/useWorkspaceLayoutState';
 import useWorkspaceNativeSync from './terminal/hooks/useWorkspaceNativeSync';
+import useWorkspaceRightDockSync from './terminal/hooks/useWorkspaceRightDockSync';
 import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
 import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
@@ -1121,73 +1122,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [browserWindowStates, isClientLoaded, projectId, storage]);
 
   useEffect(() => {
-    if (!isDraggingDock) return undefined;
-
-    const stopDockDrag = () => setIsDraggingDock(false);
-
-    window.addEventListener('mouseup', stopDockDrag);
-    window.addEventListener('pointerup', stopDockDrag);
-    window.addEventListener('dragend', stopDockDrag);
-    window.addEventListener('blur', stopDockDrag);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') {
-        stopDockDrag();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Continuous rAF sync while dragging: read placeholder geometry and write
-    // left/width directly on the dock layer so resize tracks at display refresh
-    // without waiting for React commits or localStorage persistence.
-    let raf = null;
-    const tick = () => {
-      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
-        applyLiveRightDockBoundsRef.current?.();
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
-    return () => {
-      window.removeEventListener('mouseup', stopDockDrag);
-      window.removeEventListener('pointerup', stopDockDrag);
-      window.removeEventListener('dragend', stopDockDrag);
-      window.removeEventListener('blur', stopDockDrag);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (raf != null) cancelAnimationFrame(raf);
-    };
-  }, [isDraggingDock]);
-
-  useEffect(() => {
-    if (!isDraggingInternalSplit) return undefined;
-
-    const stopSplitDrag = () => setIsDraggingInternalSplit(false);
-
-    window.addEventListener('mouseup', stopSplitDrag);
-    window.addEventListener('pointerup', stopSplitDrag);
-    window.addEventListener('dragend', stopSplitDrag);
-    window.addEventListener('blur', stopSplitDrag);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') {
-        stopSplitDrag();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('mouseup', stopSplitDrag);
-      window.removeEventListener('pointerup', stopSplitDrag);
-      window.removeEventListener('dragend', stopSplitDrag);
-      window.removeEventListener('blur', stopSplitDrag);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isDraggingInternalSplit]);
-
-  useEffect(() => {
     if (!workspaces.length) return;
 
     const nextCounters = syncWorkspaceCountersMonotonic(workspaces, {
@@ -1232,125 +1166,42 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   }, [activeWsId, rightDockState.maximized, rightDockState.visible, workspaceWindows]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
-  const activeSwarmLaunchSummary = readWorkspaceSwarmLaunchSummary(
-    storage,
+  const {
+    activeSwarmLaunchSummary,
+    swarmBusSnapshot,
+    swarmInboxPendingByRole,
+    swarmDelegatedRoleKeys,
+    effectiveRightDockState,
+    isFullscreenBrowser,
+    pizarraOwnsLiveSurfaces,
+    hideRightDockPanel,
+    dockLayerVisible,
+    rightDockAnimProps,
+    rightDockLayerStyle,
+    rightDockLayerChromeStyle,
+  } = useWorkspaceRightDockSync({
     activeWorkspace,
-    projectId,
-    swarmControlSnapshot
-  );
-  const { snapshot: swarmBusSnapshot, pendingCountByRole: swarmInboxPendingByRole } =
-    useSwarmBusSnapshot(activeSwarmLaunchSummary?.launchId || null, {
-      enabled: Boolean(activeSwarmLaunchSummary?.launchId),
-    });
-  const swarmDelegatedRoleKeys = useMemo(
-    () => resolveSwarmDelegatedRoleKeys(swarmBusSnapshot),
-    [swarmBusSnapshot]
-  );
-  const activeWorkspaceOwnsDockState = activeWorkspace?.id === dockWorkspaceId;
-  const effectiveRightDockState = activeWorkspaceOwnsDockState
-    ? rightDockState
-    : { ...DEFAULT_RIGHT_DOCK_STATE };
-
-  // pizarra-sidebar-toggle-sync: notify App.js when Pizarra canvas mode is active
-  // so the main workspace sidebar can be autohidden or collapsed.
-  useEffect(() => {
-    const isPizarraActive = !!(
-      effectiveRightDockState?.visible &&
-      effectiveRightDockState?.maximized &&
-      effectiveRightDockState?.maximizedView === 'pizarra'
-    );
-    window.dispatchEvent(
-      new CustomEvent('devhub:pizarra-active', {
-        detail: { active: isPizarraActive },
-      })
-    );
-  }, [
-    effectiveRightDockState?.visible,
-    effectiveRightDockState?.maximized,
-    effectiveRightDockState?.maximizedView,
-  ]);
-
-  // Live direct nudge for the (native gtk) browser surface during dock drag.
-  // Mirrors the strong-sync pattern in PizarraBrowserSurface (direct DOM + direct
-  // resizeNativeBrowser in mousemove tick + force reflow + query shell rect).
-  // This makes the embedded browser content follow the dock resize handle with
-  // minimal latency instead of waiting for React state + motion + RO roundtrip.
-  // Only active while isDraggingDock to avoid unnecessary work.
-  const nudgeBrowserNativeLive = useCallback(() => {
-    if (!isDraggingDock) return;
-    if (typeof document === 'undefined') return;
-    // Only worth it if the right dock is showing browser content.
-    const showingBrowser =
-      effectiveRightDockState.visible &&
-      !effectiveRightDockState.maximized &&
-      (effectiveRightDockState.activeTab === 'browser' || !effectiveRightDockState.activeTab);
-    if (!showingBrowser) return;
-
-    try {
-      // Query the actual viewport shell that the browser pane uses for native bounds.
-      // Scoped to the current dock layer if possible.
-      const dockLayer = document.querySelector('[data-testid="workspace-right-dock-layer"]');
-      const shell =
-        (dockLayer && dockLayer.querySelector('[data-testid="browser-viewport-shell"]')) ||
-        document.querySelector('[data-testid="browser-viewport-shell"]');
-      if (!shell) return;
-
-      const r = shell.getBoundingClientRect();
-      if (r.width < 10 || r.height < 10) return;
-
-      const wsId = activeWsIdRef.current;
-      if (!projectId || !wsId) return;
-
-      const panelId = `browser-${projectId}-${wsId}`;
-
-      // Dynamic so we don't pull the bridge into the main bundle unconditionally.
-      import('@/lib/browser/nativeBrowserBridge')
-        .then(({ resizeNativeBrowser }) => {
-          resizeNativeBrowser({
-            panelId,
-            bounds: {
-              x: Math.round(r.left),
-              y: Math.round(r.top),
-              width: Math.round(r.width),
-              height: Math.round(r.height),
-            },
-          }).catch(() => {});
-        })
-        .catch(() => {});
-    } catch {
-      /* best effort during gesture */
-    }
-  }, [
+    activeWsIdRef,
+    applyLiveRightDockBoundsRef,
+    dockWorkspaceId,
+    heavySurfacesReady,
     isDraggingDock,
-    effectiveRightDockState.visible,
-    effectiveRightDockState.maximized,
-    effectiveRightDockState.activeTab,
+    isDraggingDockRef,
+    isDraggingInternalSplit,
+    nudgeBrowserNativeLiveRef,
     projectId,
-  ]);
-
-  nudgeBrowserNativeLiveRef.current = nudgeBrowserNativeLive;
-
-  const applyLiveRightDockBounds = useCallback(() => {
-    if (!isDraggingDockRef.current) return false;
-
-    const containerElement = workspaceGridAreaRef.current;
-    const placeholderElement = rightDockPlaceholderRef.current;
-    const dockLayer = rightDockLayerRef.current;
-    if (!containerElement || !placeholderElement || !dockLayer) return false;
-
-    const nextBounds = resolveMeasuredRightDockBounds(
-      containerElement.getBoundingClientRect?.(),
-      placeholderElement.getBoundingClientRect?.()
-    );
-    if (!nextBounds) return false;
-
-    const changed = applyRightDockLayerBounds(dockLayer, nextBounds);
-    if (changed) {
-      nudgeBrowserNativeLiveRef.current?.();
-    }
-    return changed;
-  }, []);
-  applyLiveRightDockBoundsRef.current = applyLiveRightDockBounds;
+    rightDockLayerRef,
+    rightDockMeasuredBounds,
+    rightDockPlaceholderRef,
+    rightDockState,
+    setIsDraggingDock,
+    setIsDraggingInternalSplit,
+    storage,
+    swarmControlSnapshot,
+    syncRightDockMeasuredBounds,
+    syncRightDockMeasuredBoundsRef,
+    workspaceGridAreaRef,
+  });
 
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
   const coldMountOrdinalByPanelId = useMemo(() => {
@@ -1374,95 +1225,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     prefs: terminalRendererPreferences,
   });
   const activeBrowserWindowState = browserWindowStates?.[activeWsId] || null;
-  const isFullscreenBrowser =
-    effectiveRightDockState.visible &&
-    effectiveRightDockState.maximized &&
-    (effectiveRightDockState.maximizedView === 'browser' ||
-      effectiveRightDockState.maximizedView === 'swarm' ||
-      effectiveRightDockState.maximizedView === 'pizarra');
-  const pizarraOwnsLiveSurfaces =
-    effectiveRightDockState.visible &&
-    effectiveRightDockState.maximized &&
-    effectiveRightDockState.maximizedView === 'pizarra';
-  const hideRightDockPanel =
-    effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
-  const dockLayerVisible = effectiveRightDockState.visible && !hideRightDockPanel;
-  const rightDockAnimProps = getRightDockAnimProps({
-    isVisible: dockLayerVisible,
-    isDragging: isDraggingDock,
-    // pizarra-fluidity: fullscreen takeovers (pizarra/browser/swarm maximized)
-    // fade in fast instead of sliding the whole screen from the right.
-    isFullscreen: isFullscreenBrowser,
-  });
   // Suspension policy for transient overlays (e.g., restore settings modal).
   // With native VTE removed this only feeds the legacy nativeSurfacePolicy prop
   // that TerminalTTY receives; xterm renderers ignore it.
   const shouldSuspendNativeSurfaces = restoreSettingsModal.open;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
-
-  const rightDockLayerStyle = resolveRightDockLayerStyle({
-    isFullscreenBrowser,
-    size: effectiveRightDockState.size,
-    measuredBounds: rightDockMeasuredBounds,
-  });
-  const rightDockLayerChromeStyle = isDraggingDock
-    ? { top: 0, right: 'auto', bottom: 0 }
-    : rightDockLayerStyle;
-
-  syncRightDockMeasuredBoundsRef.current = syncRightDockMeasuredBounds;
-
-  useEffect(() => {
-    if (!heavySurfacesReady) return undefined;
-    syncRightDockMeasuredBounds();
-    return undefined;
-  }, [heavySurfacesReady, syncRightDockMeasuredBounds]);
-
-  // Initial / visibility-change eager measurement for the right dock layer.
-  // On default open of the browser (or dock), the first measuredBounds (pixel-accurate
-  // from placeholder) may arrive after the motion layer has already rendered with the
-  // % fallback. That causes the initial "dimensiones bastante alejados".
-  // We force a few syncs (layout + microtasks + rAFs) so the first style passed to the
-  // motion is already the correct rect, and the inner browser shell + native get good
-  // bounds immediately. Also helps when switching tabs to browser.
-  useEffect(() => {
-    if (
-      isFullscreenBrowser ||
-      !effectiveRightDockState.visible ||
-      effectiveRightDockState.maximized ||
-      hideRightDockPanel
-    ) {
-      return undefined;
-    }
-
-    // Run immediately (useLayout already does one), then a few more beats to let
-    // inner content (toolbar heights etc) and any pending panel lib measurements settle.
-    // In tests we only do the immediate one to avoid async setState after flushEffects
-    // that would make subsequent queries/clicks see a different tree (elements become null).
-    syncRightDockMeasuredBounds();
-    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
-      return undefined;
-    }
-    const t0 = setTimeout(() => syncRightDockMeasuredBounds(), 0);
-    const t1 = setTimeout(() => syncRightDockMeasuredBounds(), 16);
-    const r1 = requestAnimationFrame(() => syncRightDockMeasuredBounds());
-    const r2 = requestAnimationFrame(() =>
-      requestAnimationFrame(() => syncRightDockMeasuredBounds())
-    );
-
-    return () => {
-      clearTimeout(t0);
-      clearTimeout(t1);
-      cancelAnimationFrame(r1);
-      cancelAnimationFrame(r2);
-    };
-  }, [
-    effectiveRightDockState.visible,
-    effectiveRightDockState.maximized,
-    effectiveRightDockState.activeTab, // when user or code switches to browser tab
-    hideRightDockPanel,
-    isFullscreenBrowser,
-    syncRightDockMeasuredBounds,
-  ]);
 
   workspacesRef.current = workspaces;
   activeWsIdRef.current = activeWsId;
