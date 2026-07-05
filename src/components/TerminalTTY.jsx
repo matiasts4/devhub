@@ -31,6 +31,7 @@ import useTerminalAutoReconnect from './terminal/hooks/useTerminalAutoReconnect'
 import useTerminalWindowEventRouter from './terminal/hooks/useTerminalWindowEventRouter';
 import useTerminalSessionExit from './terminal/hooks/useTerminalSessionExit';
 import useTerminalInitialCommandLifecycle from './terminal/hooks/useTerminalInitialCommandLifecycle';
+import useTerminalNativeVteLifecycle from './terminal/hooks/useTerminalNativeVteLifecycle';
 import {
   readClipboardImage,
   readClipboardText,
@@ -74,10 +75,6 @@ import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTermina
 import {
   cancelNativeVteLayoutHide,
   clearNativeVteLease,
-  consumeHiddenNativeVteLease,
-  deferNativeVteLayoutHide,
-  hasHiddenNativeVteLease,
-  markNativeVteLeaseHidden,
 } from '@/lib/terminal/nativeVteLayoutLifecycle';
 import { NATIVE_VTE_STUBS } from '@/lib/terminal/nativeVteNoopStubs';
 import {
@@ -142,7 +139,6 @@ import {
   buildTerminalWheelPageSequence,
   resolveTerminalScreenElement,
   shouldRouteWheelToTranscript,
-  getNativeTerminalBounds,
   shouldRunPanelClickViewportRecovery,
   shouldClearWebglAtlasOnPanelActivation,
   shouldSkipReactivateViewportOnPanelActivation,
@@ -231,13 +227,6 @@ if (typeof window !== 'undefined') {
     cliLog('BUILD', `TerminalTTY.jsx loaded — marker=${TERMINAL_TTY_BUILD_MARKER}`);
   }
 }
-const MAX_NATIVE_VTE_PROBE_RETRIES = 4;
-
-// Master switch for the legacy native VTE (GTK) backend.
-// We keep the entire implementation (nativeVteBridge, probes, lease logic, etc.)
-// in the tree exactly as-is so it can be re-enabled later if needed.
-const ENABLE_NATIVE_VTE = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
-
 export default function TerminalTTY({
   id,
   onClose,
@@ -348,17 +337,7 @@ export default function TerminalTTY({
   const terminalBlurCleanupRef = useRef(null);
   const tauriAvailable = false;
 
-  const {
-    setNativeVtePanelVisibility,
-    openNativeVtePanel,
-    closeNativeVtePanel,
-    resizeNativeVtePanel,
-    focusNativeVtePanel,
-    pasteNativeVtePanel,
-    subscribeNativeVteEvents,
-    probeNativeVte,
-    shouldOpenNativeVtePanel,
-  } = NATIVE_VTE_STUBS;
+  const { focusNativeVtePanel, pasteNativeVtePanel } = NATIVE_VTE_STUBS;
 
   const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);
 
@@ -716,65 +695,9 @@ export default function TerminalTTY({
     }, TERMINAL_CONNECT_DEFER_MAX_MS);
   }, [id]);
 
-  const clearNativeVteProbeRetryTimer = useCallback(() => {
-    if (!nativeVteProbeRetryTimerRef.current) return;
-
-    clearTimeout(nativeVteProbeRetryTimerRef.current);
-    nativeVteProbeRetryTimerRef.current = null;
-    nativeVteProbeRetryDelayRef.current = null;
-  }, []);
-
   const engineCtxRef = useRef(null);
   const disposeXtermRuntimeRef = useRef(() => {});
   const disposeXtermRuntime = useCallback((opts) => disposeXtermRuntimeRef.current?.(opts), []);
-
-  const shouldRetryNativeVteProbe =
-    ENABLE_NATIVE_VTE &&
-    isActivePanel &&
-    requestedRendererMode === 'vte-experimental' &&
-    !nativeVteOpened &&
-    !nativeVteOpenFailure &&
-    nativeVteProbeResult?.ready === false &&
-    nativeVteProbeResult?.reason === 'probe-failed';
-
-  useEffect(() => {
-    shouldRetryNativeVteProbeRef.current = shouldRetryNativeVteProbe;
-  }, [shouldRetryNativeVteProbe]);
-
-  const queueNativeVteProbeRetry = useCallback(
-    (delayMs = 80) => {
-      if (!shouldRetryNativeVteProbeRef.current) return;
-      if (nativeVteProbeRetryCountRef.current >= MAX_NATIVE_VTE_PROBE_RETRIES) return;
-
-      if (delayMs <= 0) {
-        clearNativeVteProbeRetryTimer();
-        nativeVteProbeRetryCountRef.current += 1;
-        setNativeVteProbeAttempt((attempt) => attempt + 1);
-        return;
-      }
-
-      if (nativeVteProbeRetryTimerRef.current) {
-        const pendingDelay = nativeVteProbeRetryDelayRef.current ?? Number.POSITIVE_INFINITY;
-        if (delayMs >= pendingDelay) return;
-
-        clearTimeout(nativeVteProbeRetryTimerRef.current);
-        nativeVteProbeRetryTimerRef.current = null;
-      }
-
-      nativeVteProbeRetryDelayRef.current = delayMs;
-
-      nativeVteProbeRetryTimerRef.current = setTimeout(() => {
-        nativeVteProbeRetryTimerRef.current = null;
-        nativeVteProbeRetryDelayRef.current = null;
-
-        if (!shouldRetryNativeVteProbeRef.current) return;
-
-        nativeVteProbeRetryCountRef.current += 1;
-        setNativeVteProbeAttempt((attempt) => attempt + 1);
-      }, delayMs);
-    },
-    [clearNativeVteProbeRetryTimer]
-  );
 
   useLayoutEffect(() => {
     isVisibleInLayoutRef.current = isVisibleInLayout;
@@ -873,26 +796,6 @@ export default function TerminalTTY({
     [buildViewportSnapshot, id]
   );
 
-  const closeNativeLease = useCallback(
-    async (reason = 'deactivate') => {
-      if (reason === 'renderer-disabled' && restoredHiddenLeaseThisMountRef.current) {
-        restoredHiddenLeaseThisMountRef.current = false;
-        if (requestedRendererModeRef.current === 'vte-experimental') {
-          return;
-        }
-      }
-      if (!nativeLeaseRef.current) {
-        clearNativeVteLease(id);
-        return;
-      }
-      nativeLeaseRef.current = false;
-      setNativeVteOpened(false);
-      clearNativeVteLease(id);
-      await Promise.resolve(closeNativeVtePanel({ panelId: id, reason })).catch(() => {});
-    },
-    [id]
-  );
-
   const tearDownClientSession = useCallback(
     (reason = 'session-close') => {
       sessionClosingRef.current = true;
@@ -919,68 +822,29 @@ export default function TerminalTTY({
     [clearTimers, disposeXtermRuntime, id]
   );
 
-  const hideNativeLease = useCallback(
-    async (reason = 'inactive') => {
-      if (!nativeLeaseRef.current) return;
-      cliLog(`CLIENT:${id}`, 'native VTE hide requested', { reason });
-      await Promise.resolve(
-        setNativeVtePanelVisibility({
-          panelId: id,
-          visible: false,
-          reason,
-        })
-      ).catch(() => {});
-      if (reason === 'layout-unmount') {
-        markNativeVteLeaseHidden(id);
-      }
-    },
-    [id]
-  );
-
-  useEffect(() => {
-    return () => {
-      if (hideTimerRef.current) {
-        clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = null;
-      }
-
-      // Phase 1 terminal-engine-v2: explicitly unsubscribe before React unmount
-      // so the sidecar keeps the PTY alive for hidden panels.
-      if (isEngineV2Ref.current && wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({ type: 'unsubscribe' }));
-        } catch {
-          // ignore unsubscribe send errors during unmount
-        }
-      }
-
-      // Window/view switches unmount React but must keep the GTK lease + PTY alive.
-      // Permanent teardown runs via tearDownClientSession / handleClosePanel first.
-      if (sessionClosingRef.current) {
-        cancelNativeVteLayoutHide(id);
-        clearNativeVteLease(id);
-        return;
-      }
-      deferNativeVteLayoutHide(id, () => {
-        hideNativeLease('layout-unmount');
-      });
-    };
-  }, [closeNativeLease, hideNativeLease, id]);
-
-  const handleNativeLeaseCommandError = useCallback(
-    (error) => {
-      const reason = String(error?.message || error || '');
-      if (!reason.includes('panel-not-active')) return;
-
-      nativeLeaseRef.current = false;
-      setNativeVteOpened(false);
-      setNativeVteOpenFailure(null);
-      nativeVteProbeRetryCountRef.current = 0;
-      clearNativeVteProbeRetryTimer();
-      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-    },
-    [clearNativeVteProbeRetryTimer]
-  );
+  const nativeVteApi = useTerminalNativeVteLifecycle({
+    ctxRef: slice3CtxRef,
+    isActivePanel,
+    isVisibleInLayout,
+    requestedRendererMode,
+    suspendNativeSurface,
+    nativeSurfacePolicy,
+    resolvedRuntimePlatform,
+    autoFocus,
+    nativeVteOpened,
+    nativeVteOpenFailure,
+    nativeVteProbeResult,
+    nativeVteProbeAttempt,
+    nativeVteRecoveryAttempt,
+  });
+  const {
+    closeNativeLease,
+    hideNativeLease,
+    showAndResizeNativeLease,
+    handleNativeLeaseCommandError,
+    queueNativeVteProbeRetry,
+    clearNativeVteProbeRetryTimer,
+  } = nativeVteApi;
 
   const {
     copied,
@@ -1013,44 +877,6 @@ export default function TerminalTTY({
     initialCommand,
     shouldUseNativeRenderer,
   });
-
-  const showNativeLease = useCallback(async () => {
-    if (!nativeLeaseRef.current) return;
-    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!bounds) {
-      cliLog(`CLIENT:${id}`, 'native VTE show skipped — invalid bounds');
-      return;
-    }
-    cliLog(`CLIENT:${id}`, 'native VTE show requested', { bounds });
-    await Promise.resolve(
-      setNativeVtePanelVisibility({
-        panelId: id,
-        visible: true,
-        bounds,
-      })
-    ).catch(handleNativeLeaseCommandError);
-  }, [handleNativeLeaseCommandError, id]);
-
-  const resizeNativeLease = useCallback(async () => {
-    if (!nativeLeaseRef.current) return;
-    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!bounds) {
-      cliLog(`CLIENT:${id}`, 'native VTE resize skipped — invalid bounds');
-      return;
-    }
-    cliLog(`CLIENT:${id}`, 'native VTE resize requested', { bounds });
-    await Promise.resolve(
-      resizeNativeVtePanel({
-        panelId: id,
-        bounds,
-      })
-    ).catch(handleNativeLeaseCommandError);
-  }, [handleNativeLeaseCommandError, id]);
-
-  const showAndResizeNativeLease = useCallback(async () => {
-    await showNativeLease();
-    await resizeNativeLease();
-  }, [resizeNativeLease, showNativeLease]);
 
   const scrollTerminalToBottom = useCallback((force = false) => {
     if (!termRef.current) return;
@@ -1196,357 +1022,6 @@ export default function TerminalTTY({
 
   useTerminalLayoutChurnRecovery({ ctxRef: viewportCtxRef, isEngineV2 });
 
-  useEffect(() => {
-    let cancelled = false;
-    const prevMode = prevRequestedRendererModeRef.current;
-    prevRequestedRendererModeRef.current = requestedRendererMode;
-
-    if (!ENABLE_NATIVE_VTE || requestedRendererMode !== 'vte-experimental') {
-      setNativeVteProbeResult(null);
-      setNativeVteOpenFailure(null);
-      setNativeVteOpened(false);
-      nativeVteProbeRetryCountRef.current = 0;
-      clearNativeVteProbeRetryTimer();
-      // Only close when actually leaving native mode, not on every remount/probe cycle.
-      if (prevMode === 'vte-experimental' || nativeLeaseRef.current) {
-        closeNativeLease('renderer-disabled');
-      }
-      return undefined;
-    }
-
-    if (!isVisibleInLayout) {
-      clearNativeVteProbeRetryTimer();
-      return undefined;
-    }
-
-    probeNativeVte({
-      panelId: id,
-      requestedMode: requestedRendererMode,
-      tauriAvailable,
-    })
-      .then((result) => {
-        if (cancelled) return;
-        cliLog(`CLIENT:${id}`, 'native VTE probe result', {
-          result,
-          requestedRendererMode,
-          tauriAvailable,
-        });
-        setNativeVteProbeResult(result);
-        if (result?.ready) {
-          nativeVteProbeRetryCountRef.current = 0;
-          clearNativeVteProbeRetryTimer();
-        } else {
-          setNativeVteOpenFailure(null);
-          setNativeVteOpened(false);
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        cliLog(`CLIENT:${id}`, 'native VTE probe failed', {
-          error: error?.message,
-          requestedRendererMode,
-          tauriAvailable,
-        });
-        setNativeVteProbeResult({ ready: false, reason: error?.message || 'probe-failed' });
-        setNativeVteOpened(false);
-        setNativeVteOpenFailure(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    clearNativeVteProbeRetryTimer,
-    closeNativeLease,
-    id,
-    isActivePanel,
-    nativeVteProbeAttempt,
-    requestedRendererMode,
-    tauriAvailable,
-  ]);
-
-  useEffect(() => {
-    if (!shouldRetryNativeVteProbe) return undefined;
-
-    queueNativeVteProbeRetry(160);
-    return undefined;
-  }, [queueNativeVteProbeRetry, shouldRetryNativeVteProbe]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (
-      !shouldOpenNativeVtePanel({
-        isActivePanel,
-        isVisibleInLayout,
-        suspendNativeSurface,
-        nativeVteOpenFailure,
-        nativeVteProbe: nativeVteProbeResult,
-        requestedRendererMode,
-        runtimePlatform: resolvedRuntimePlatform,
-        tauriAvailable,
-      })
-    ) {
-      if (requestedRendererMode !== 'vte-experimental') {
-        closeNativeLease('renderer-disabled');
-      }
-      return undefined;
-    }
-
-    const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-    if (!bounds) return undefined;
-
-    const nativeOpenRequest = {
-      panelId: id,
-      bounds,
-      cwd: cwd || null,
-      initialCommand: initialCommand || null,
-      sessionId: id,
-    };
-
-    const applyNativeOpenResult = (result) => {
-      cliLog(`CLIENT:${id}`, 'native VTE open result', {
-        opened: Boolean(result?.opened),
-        reason: result?.reason || null,
-      });
-      if (result?.opened) {
-        nativeLeaseRef.current = true;
-        setNativeVteOpenFailure(null);
-        setNativeVteOpened(true);
-        setConnectionState('connected');
-        setSessionExitReason(null);
-        processExitedRef.current = false;
-        setIsInitializing(false);
-        clearNativeVteProbeRetryTimer();
-        void showAndResizeNativeLease();
-        return true;
-      }
-
-      nativeLeaseRef.current = false;
-      setNativeVteOpened(false);
-      setNativeVteOpenFailure(result?.reason || 'open-failed');
-      nativeVteProbeRetryCountRef.current = 0;
-      clearNativeVteProbeRetryTimer();
-      return false;
-    };
-
-    if (nativeLeaseRef.current && nativeVteOpened) {
-      (async () => {
-        try {
-          await showAndResizeNativeLease();
-        } catch (error) {
-          if (cancelled) return;
-          const reason = String(error?.message || error || '');
-          handleNativeLeaseCommandError(error);
-
-          if (!reason.includes('panel-not-active')) return;
-
-          try {
-            const reopenResult = await openNativeVtePanel(nativeOpenRequest);
-            if (cancelled) return;
-            applyNativeOpenResult(reopenResult);
-          } catch (reopenError) {
-            if (cancelled) return;
-            applyNativeOpenResult({ opened: false, reason: reopenError?.message || 'open-failed' });
-          }
-        }
-      })();
-      return undefined;
-    }
-
-    cliLog(`CLIENT:${id}`, 'native VTE open requested', {
-      bounds,
-      cwd: cwd || null,
-      hasInitialCommand: Boolean(initialCommand),
-    });
-
-    openNativeVtePanel(nativeOpenRequest)
-      .then((result) => {
-        if (cancelled) {
-          if (result?.opened) {
-            Promise.resolve(
-              setNativeVtePanelVisibility({
-                panelId: id,
-                visible: false,
-                reason: 'layout-hidden',
-              })
-            ).catch(handleNativeLeaseCommandError);
-          }
-          return;
-        }
-        applyNativeOpenResult(result);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        applyNativeOpenResult({ opened: false, reason: error?.message || 'open-failed' });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    closeNativeLease,
-    clearNativeVteProbeRetryTimer,
-    cwd,
-    handleNativeLeaseCommandError,
-    id,
-    initialCommand,
-    isActivePanel,
-    isVisibleInLayout,
-    nativeVteOpenFailure,
-    nativeVteOpened,
-    nativeVteRecoveryAttempt,
-    nativeVteProbeResult,
-    requestedRendererMode,
-    resolvedRuntimePlatform,
-    showNativeLease,
-    showAndResizeNativeLease,
-    suspendNativeSurface,
-    tauriAvailable,
-  ]);
-
-  useEffect(() => {
-    if (
-      nativeVteOpened ||
-      !shouldOpenNativeVtePanel({
-        isActivePanel,
-        isVisibleInLayout,
-        suspendNativeSurface,
-        nativeVteOpenFailure,
-        nativeVteProbe: nativeVteProbeResult,
-        requestedRendererMode,
-        runtimePlatform: resolvedRuntimePlatform,
-        tauriAvailable,
-      })
-    ) {
-      return undefined;
-    }
-
-    if (getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current)) {
-      return undefined;
-    }
-
-    let retryQueued = false;
-    let rafId = null;
-
-    const retryNativeOpenWhenBoundsRecover = () => {
-      if (retryQueued) return;
-
-      const recoveredBounds = getNativeTerminalBounds(
-        containerRef.current || nativePlaceholderRef.current
-      );
-      if (!recoveredBounds) return;
-
-      retryQueued = true;
-      cliLog(`CLIENT:${id}`, 'native VTE bounds recovered — retry open', {
-        bounds: recoveredBounds,
-      });
-      setNativeVteRecoveryAttempt((attempt) => attempt + 1);
-    };
-
-    rafId = requestAnimationFrame(() => {
-      rafId = null;
-      retryNativeOpenWhenBoundsRecover();
-    });
-
-    const intervalId = setInterval(retryNativeOpenWhenBoundsRecover, 250);
-    window.addEventListener('resize', retryNativeOpenWhenBoundsRecover);
-
-    return () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-      clearInterval(intervalId);
-      window.removeEventListener('resize', retryNativeOpenWhenBoundsRecover);
-    };
-  }, [
-    id,
-    isActivePanel,
-    isVisibleInLayout,
-    nativeVteOpenFailure,
-    nativeVteOpened,
-    nativeVteProbeResult,
-    requestedRendererMode,
-    resolvedRuntimePlatform,
-    suspendNativeSurface,
-    tauriAvailable,
-  ]);
-
-  useEffect(() => {
-    if (!nativeVteOpened || requestedRendererMode !== 'vte-experimental') return undefined;
-    // dock-side-by-side: VTE coexists with the browser dock, but still hide when not visible.
-    if (nativeSurfacePolicy === 'dock-side-by-side') {
-      if (isVisibleInLayout && !suspendNativeSurface) return undefined;
-      // Component lost visibility — hide the native panel even in dock-side-by-side mode.
-      (async () => {
-        try {
-          await setNativeVtePanelVisibility({
-            panelId: id,
-            visible: false,
-            reason: suspendNativeSurface ? 'dock-side-by-side' : 'layout-hidden',
-          });
-        } catch (error) {
-          handleNativeLeaseCommandError(error);
-        }
-      })();
-      return undefined;
-    }
-    if (isVisibleInLayout && !suspendNativeSurface) return undefined;
-
-    (async () => {
-      try {
-        await setNativeVtePanelVisibility({
-          panelId: id,
-          visible: false,
-          reason: suspendNativeSurface ? 'suspended' : undefined,
-        });
-      } catch (error) {
-        handleNativeLeaseCommandError(error);
-      }
-    })();
-
-    return undefined;
-  }, [
-    handleNativeLeaseCommandError,
-    id,
-    isVisibleInLayout,
-    nativeSurfacePolicy,
-    nativeVteOpened,
-    requestedRendererMode,
-    suspendNativeSurface,
-  ]);
-
-  // When the user explicitly changes the renderer away from native VTE on a *visible* panel,
-  // we must proactively close the native lease. The existing hide effects are mostly gated
-  // behind "still vte but temporarily suspended/not visible". Without this, the GTK widget
-  // can stay on top even after requestedRendererMode becomes xterm / xterm-webgl.
-  useEffect(() => {
-    if (requestedRendererMode === 'vte-experimental' || !nativeVteOpened) return undefined;
-
-    (async () => {
-      try {
-        await setNativeVtePanelVisibility({
-          panelId: id,
-          visible: false,
-          reason: 'renderer-changed',
-        });
-        cliLog(`CLIENT:${id}`, 'native VTE lease hidden due to renderer mode change', {
-          requestedRendererMode,
-        });
-      } catch (error) {
-        handleNativeLeaseCommandError(error);
-      }
-    })();
-
-    return undefined;
-  }, [
-    handleNativeLeaseCommandError,
-    id,
-    nativeVteOpened,
-    requestedRendererMode,
-    setNativeVtePanelVisibility,
-  ]);
-
   // When we leave vte-experimental, also make sure any partial xterm runtime is cleaned
   // and we (re)boot the web layer for the new requested mode. This complements the
   // existing initialize effect (which may not always re-fire on prop change alone).
@@ -1570,13 +1045,10 @@ export default function TerminalTTY({
     }
 
     if (requestedRendererMode === 'vte-experimental') {
-      // If we switched back to vte, dispose any web runtime so it doesn't fight the native.
       disposeXtermRuntime();
       return undefined;
     }
 
-    // For xterm / xterm-webgl: dispose whatever was there and force the main boot effect
-    // to re-run (via nonce) so the web terminal layer actually initializes.
     disposeXtermRuntime();
     setXtermBootNonce((n) => n + 1);
 
@@ -1708,224 +1180,6 @@ export default function TerminalTTY({
 
     return () => window.clearTimeout(timer);
   }, [fitAndResize, isVisibleInLayout, operationalRendererMode, shouldUseNativeRenderer]);
-
-  useEffect(() => {
-    if (requestedRendererMode !== 'vte-experimental') return undefined;
-
-    const settleTimers = [];
-    let rafId = null;
-
-    const clearScheduledSync = () => {
-      settleTimers.forEach((timerId) => clearTimeout(timerId));
-      settleTimers.length = 0;
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-    };
-
-    const scheduleShowAndResize = () => {
-      clearScheduledSync();
-      const sync = () => {
-        if (!isVisibleInLayout) return;
-        if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return;
-        showAndResizeNativeLease();
-      };
-
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        sync();
-      });
-
-      [80, 180, 400].forEach((delayMs) => {
-        settleTimers.push(
-          setTimeout(() => {
-            sync();
-          }, delayMs)
-        );
-      });
-    };
-
-    const handleWorkspaceNativeSurfaceSync = (event) => {
-      const detail = event.detail || {};
-      const activePanelIds = new Set(
-        Array.isArray(detail.activePanelIds) ? detail.activePanelIds.filter(Boolean) : []
-      );
-      const hiddenPanelIds = new Set(
-        Array.isArray(detail.hiddenPanelIds) ? detail.hiddenPanelIds.filter(Boolean) : []
-      );
-
-      if (hiddenPanelIds.has(id)) {
-        clearScheduledSync();
-        if (hideTimerRef.current) {
-          clearTimeout(hideTimerRef.current);
-        }
-        const delay = process.env.NODE_ENV === 'test' ? 0 : 100;
-        hideTimerRef.current = setTimeout(() => {
-          hideTimerRef.current = null;
-          hideNativeLease(detail.reason || 'workspace-hidden');
-        }, delay);
-        return;
-      }
-
-      if (activePanelIds.has(id)) {
-        if (hideTimerRef.current) {
-          clearTimeout(hideTimerRef.current);
-          hideTimerRef.current = null;
-        }
-        scheduleShowAndResize();
-      }
-    };
-
-    window.addEventListener('devhub:native-vte-workspace-sync', handleWorkspaceNativeSurfaceSync);
-
-    return () => {
-      clearScheduledSync();
-      window.removeEventListener(
-        'devhub:native-vte-workspace-sync',
-        handleWorkspaceNativeSurfaceSync
-      );
-    };
-  }, [
-    hideNativeLease,
-    id,
-    isVisibleInLayout,
-    nativeSurfacePolicy,
-    requestedRendererMode,
-    showAndResizeNativeLease,
-    suspendNativeSurface,
-  ]);
-
-  useEffect(() => {
-    if (requestedRendererMode !== 'vte-experimental' || isVisibleInLayout) return undefined;
-
-    Promise.resolve(
-      setNativeVtePanelVisibility({
-        panelId: id,
-        visible: false,
-        reason: 'layout-hidden',
-      })
-    ).catch(handleNativeLeaseCommandError);
-
-    return undefined;
-  }, [handleNativeLeaseCommandError, id, isVisibleInLayout, requestedRendererMode]);
-
-  // Re-show native VTE after layout becomes visible again (window switch, focus exit, etc.).
-  useEffect(() => {
-    if (requestedRendererMode !== 'vte-experimental' || !isVisibleInLayout) return undefined;
-    if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
-
-    const shouldRestore =
-      nativeLeaseRef.current ||
-      nativeVteOpened ||
-      hasHiddenNativeVteLease(id) ||
-      readPanelSessionExit(id);
-    if (!shouldRestore) return undefined;
-
-    if (hasHiddenNativeVteLease(id)) {
-      nativeLeaseRef.current = true;
-      consumeHiddenNativeVteLease(id);
-      setNativeVteOpened(true);
-    }
-
-    const timers = [0, 80, 180, 400, 800].map((delayMs) =>
-      setTimeout(() => {
-        if (!isVisibleInLayoutRef.current) return;
-        showAndResizeNativeLease();
-      }, delayMs)
-    );
-
-    return () => {
-      timers.forEach((timerId) => clearTimeout(timerId));
-    };
-  }, [
-    id,
-    isVisibleInLayout,
-    nativeSurfacePolicy,
-    nativeVteOpened,
-    requestedRendererMode,
-    showAndResizeNativeLease,
-    suspendNativeSurface,
-  ]);
-
-  useEffect(() => {
-    if (!nativeVteOpened || suspendNativeSurface || !autoFocus || !isActivePanel) return undefined;
-
-    Promise.resolve(focusNativeVtePanel({ panelId: id })).catch(handleNativeLeaseCommandError);
-    return undefined;
-  }, [
-    autoFocus,
-    handleNativeLeaseCommandError,
-    id,
-    isActivePanel,
-    nativeVteOpened,
-    suspendNativeSurface,
-  ]);
-
-  useEffect(() => {
-    if (!nativeVteOpened || !isVisibleInLayout) return undefined;
-    // dock-side-by-side: VTE coexists with dock — still resize, just skip hide.
-    if (suspendNativeSurface && nativeSurfacePolicy !== 'dock-side-by-side') return undefined;
-
-    const sendNativeResize = () => {
-      const bounds = getNativeTerminalBounds(containerRef.current || nativePlaceholderRef.current);
-      if (!bounds) return;
-      Promise.resolve(resizeNativeVtePanel({ panelId: id, bounds })).catch(
-        handleNativeLeaseCommandError
-      );
-    };
-    const clearNativeResizeSettleTimers = () => {
-      nativeResizeSettleTimersRef.current.forEach((timerId) => clearTimeout(timerId));
-      nativeResizeSettleTimersRef.current = [];
-    };
-    const scheduleNativeResize = () => {
-      if (nativeResizeRafRef.current) return;
-      nativeResizeRafRef.current = requestAnimationFrame(() => {
-        nativeResizeRafRef.current = null;
-        sendNativeResize();
-      });
-    };
-    const scheduleNativeResizeAfterLayoutSettles = () => {
-      clearNativeResizeSettleTimers();
-      scheduleNativeResize();
-      nativeResizeSettleTimersRef.current = [80, 180].map((delayMs) =>
-        setTimeout(() => {
-          sendNativeResize();
-        }, delayMs)
-      );
-    };
-
-    sendNativeResize();
-    scheduleNativeResizeAfterLayoutSettles();
-    window.addEventListener('resize', sendNativeResize);
-    const observedElement = containerRef.current || nativePlaceholderRef.current;
-    if (typeof ResizeObserver !== 'undefined' && observedElement) {
-      nativeResizeObserverRef.current?.disconnect();
-      nativeResizeObserverRef.current = new ResizeObserver(() => {
-        if (isDisposingRef.current) return;
-        scheduleNativeResize();
-      });
-      nativeResizeObserverRef.current.observe(observedElement);
-    }
-
-    return () => {
-      window.removeEventListener('resize', sendNativeResize);
-      clearNativeResizeSettleTimers();
-      nativeResizeObserverRef.current?.disconnect();
-      nativeResizeObserverRef.current = null;
-      if (nativeResizeRafRef.current) {
-        cancelAnimationFrame(nativeResizeRafRef.current);
-        nativeResizeRafRef.current = null;
-      }
-    };
-  }, [
-    handleNativeLeaseCommandError,
-    id,
-    isVisibleInLayout,
-    nativeSurfacePolicy,
-    nativeVteOpened,
-    suspendNativeSurface,
-  ]);
 
   useEffect(() => {
     const handleSessionClosing = (event) => {
@@ -2682,6 +1936,7 @@ export default function TerminalTTY({
 
   slice3CtxRef.current = {
     id,
+    cwd,
     initialCommand,
     connectionState,
     reconnect,
@@ -2694,22 +1949,34 @@ export default function TerminalTTY({
     tuiSessionFooterConfirmedRef,
     termRef,
     requestedRendererModeRef,
+    prevRequestedRendererModeRef,
     nativeLeaseRef,
     containerRef,
     nativePlaceholderRef,
     setNativeVteOpened,
     setNativeVteProbeResult,
+    setNativeVteProbeAttempt,
+    setNativeVteOpenFailure,
+    setNativeVteRecoveryAttempt,
+    setSessionExitReason,
+    setIsInitializing,
     restoredHiddenLeaseThisMountRef,
     isEngineV2Ref,
     wsRef,
     hideTimerRef,
     sessionClosingRef,
     hideNativeLease,
+    isVisibleInLayoutRef,
+    isDisposingRef,
     onActivatePanel,
-    setNativeVteOpenFailure,
-    setNativeVteRecoveryAttempt,
     nativeVteProbeRetryCountRef,
+    nativeVteProbeRetryTimerRef,
+    nativeVteProbeRetryDelayRef,
+    shouldRetryNativeVteProbeRef,
     clearNativeVteProbeRetryTimer,
+    nativeResizeObserverRef,
+    nativeResizeRafRef,
+    nativeResizeSettleTimersRef,
     opencodeReadyNotifiedRef,
     kimiReadyNotifiedRef,
     lastViewportReadyPostedRef,
