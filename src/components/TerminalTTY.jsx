@@ -29,6 +29,8 @@ import useTerminalSearchAndZedInput from './terminal/hooks/useTerminalSearchAndZ
 import useTerminalPanelActivationRecovery from './terminal/hooks/useTerminalPanelActivationRecovery';
 import useTerminalAutoReconnect from './terminal/hooks/useTerminalAutoReconnect';
 import useTerminalWindowEventRouter from './terminal/hooks/useTerminalWindowEventRouter';
+import useTerminalSessionExit from './terminal/hooks/useTerminalSessionExit';
+import useTerminalInitialCommandLifecycle from './terminal/hooks/useTerminalInitialCommandLifecycle';
 import {
   readClipboardImage,
   readClipboardText,
@@ -43,19 +45,13 @@ import {
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
 } from '@/components/terminal/terminalRendererCapabilities';
 import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
-import {
-  extractOpenCodeSessionId,
-  isSwarmLaunchWrapperCommand,
-  readAgentRunForPanel,
-  resolveTerminalInjectCommand,
-} from '@/lib/terminal/restorePolicyResolver';
+import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
 import {
   containsTerminalResponseNoise,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
 } from '@/lib/terminal/terminalNoiseFilter';
 import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
-import { buildSwarmTmuxSessionName } from '@/lib/terminal/viewportReadyMarker';
 import {
   detectOpenCodeTuiReady,
   shouldDiscardOpenCodeCatchupReplay,
@@ -71,16 +67,7 @@ import {
 import { detectAgentTypeFromCommand } from '@/lib/terminal/agentTuiMetadata';
 import { createPanelActivityTracker } from '@/components/terminal/utils/panelActivityTracker';
 import { clearPanelActivity } from '@/components/terminal/utils/panelActivityStore';
-import {
-  isSwarmLaunchWrapperDispatched,
-  markSwarmLaunchWrapperDispatched,
-} from '@/lib/terminal/swarmLaunchWrapperLifecycle';
-import {
-  clearPanelInitialCommandLifecycle,
-  getPanelInitialCommandDispatch,
-  markPanelInitialCommandDispatched,
-  shouldSkipRedundantInitialCommandSend,
-} from '@/lib/terminal/panelInitialCommandLifecycle';
+import { clearPanelInitialCommandLifecycle } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
 import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
@@ -103,14 +90,7 @@ import {
   stashSurface as graveyardStashSurface,
 } from '@/lib/terminal/v2Graveyard';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
-import {
-  buildTerminalExitOverlayCopy,
-  clearPanelSessionExit,
-  isAgentTuiCommand,
-  parseTerminalExitReason,
-  persistPanelSessionExit,
-  readPanelSessionExit,
-} from '@/lib/terminal/agentSessionExit';
+import { clearPanelSessionExit, readPanelSessionExit } from '@/lib/terminal/agentSessionExit';
 
 import {
   cliLog,
@@ -124,7 +104,6 @@ import {
   normalizeTuiInitialCommand,
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
-  shouldBlockLateInitialCommandSend,
   detectGrokTuiReady,
   detectGrokSessionFromOutput,
   shouldPassthroughNativeTuiWheel,
@@ -361,7 +340,6 @@ export default function TerminalTTY({
   const [nativeVteProbeResult, setNativeVteProbeResult] = useState(null);
   const [nativeVteOpenFailure, setNativeVteOpenFailure] = useState(null);
   const [nativeVteOpened, setNativeVteOpened] = useState(false);
-  const [sessionExitReason, setSessionExitReason] = useState(null);
   const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);
   const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);
   const [xtermBootNonce, setXtermBootNonce] = useState(0);
@@ -598,6 +576,35 @@ export default function TerminalTTY({
 
   const slice1CtxRef = useRef(null);
   const slice2CtxRef = useRef(null);
+  const slice3CtxRef = useRef(null);
+
+  const {
+    sessionExitReason,
+    setSessionExitReason,
+    applyTerminalSessionExit,
+    handleSessionRecoveryClick,
+  } = useTerminalSessionExit({
+    ctxRef: slice3CtxRef,
+    shouldUseNativeRenderer,
+  });
+
+  const {
+    resolveSwarmTmuxSessionName,
+    notifyAgentReady,
+    notifyOpencodeReady,
+    notifyViewportReady,
+    skipRedundantInitialCommandSend,
+    restoreInitialCommandDispatchGuard,
+    resolveInjectCommand,
+    sendInitialCommandIfReady,
+    scheduleInitialCommandAfterViewport,
+  } = useTerminalInitialCommandLifecycle({
+    ctxRef: slice3CtxRef,
+    id,
+    initialCommand,
+    swarmContext,
+  });
+
   const { adjustFontSize } = useTerminalFontSize({ ctxRef: slice1CtxRef });
   const { handleViewportMouseDown } = useTerminalViewportPointer({ ctxRef: slice1CtxRef });
   useTerminalSearchAndZedInput({ ctxRef: slice1CtxRef });
@@ -930,92 +937,6 @@ export default function TerminalTTY({
     [id]
   );
 
-  const applyTerminalSessionExit = useCallback(
-    (detail = {}, { emitBrowserEvent = false } = {}) => {
-      const panelId = detail?.id || detail?.panelId;
-      if (panelId && panelId !== id) return;
-
-      const reason = detail?.reason || null;
-      const command = detail?.initialCommand || initialCommand;
-      const parsed = parseTerminalExitReason(reason);
-      const agentSession = parsed.kind === 'agent' || isAgentTuiCommand(command);
-
-      processExitedRef.current = true;
-      tuiSessionActiveRef.current = false;
-      isGrokSessionRef.current = false;
-      grokTuiReadyRef.current = false;
-      tuiSessionFooterConfirmedRef.current = false;
-      setNativeWheelPassthrough(false);
-      setSessionExitReason(reason);
-      disableTerminalFocusReporting(termRef.current, { disableMouse: true });
-
-      if (agentSession && parsed.kind === 'agent') {
-        setConnectionState('agent-exited');
-        persistPanelSessionExit(id, { reason, connectionState: 'agent-exited' });
-      } else if (agentSession && parsed.abnormal) {
-        setConnectionState('terminated');
-        clearPanelSessionExit(id);
-      } else {
-        setConnectionState('terminated');
-        clearPanelSessionExit(id);
-      }
-
-      if (requestedRendererModeRef.current === 'vte-experimental' && nativeLeaseRef.current) {
-        const bounds = getNativeTerminalBounds(
-          containerRef.current || nativePlaceholderRef.current
-        );
-        if (bounds) {
-          void Promise.resolve(
-            setNativeVtePanelVisibility({
-              panelId: id,
-              visible: true,
-              bounds,
-            })
-          ).catch(() => {});
-        }
-      }
-
-      if (requestedRendererModeRef.current !== 'vte-experimental' && termRef.current) {
-        const overlayCopy = buildTerminalExitOverlayCopy({
-          initialCommand: command,
-          reason,
-          connectionState: agentSession && parsed.kind === 'agent' ? 'agent-exited' : 'terminated',
-        });
-        termRef.current?.writeln(`\r\n\x1b[33m[${overlayCopy.title}]\x1b[0m`);
-      }
-
-      if (emitBrowserEvent) {
-        window.dispatchEvent(
-          new CustomEvent('devhub:terminal-exit', {
-            detail: { id, initialCommand: command, reason },
-          })
-        );
-      }
-    },
-    [id, initialCommand, setConnectionState]
-  );
-
-  useLayoutEffect(() => {
-    cancelNativeVteLayoutHide(id);
-    const persistedExit = readPanelSessionExit(id);
-    const restoredLease = consumeHiddenNativeVteLease(id);
-    if (!restoredLease && !persistedExit) return;
-
-    nativeLeaseRef.current = true;
-    restoredHiddenLeaseThisMountRef.current = Boolean(restoredLease);
-    setNativeVteOpened(true);
-    setNativeVteProbeResult((prev) => prev ?? { ready: true, reason: null });
-
-    if (persistedExit) {
-      processExitedRef.current = true;
-      setSessionExitReason(persistedExit.reason);
-      setConnectionState(persistedExit.connectionState);
-      return;
-    }
-
-    setConnectionState('connected');
-  }, [id]);
-
   useEffect(() => {
     return () => {
       if (hideTimerRef.current) {
@@ -1130,331 +1051,6 @@ export default function TerminalTTY({
     await showNativeLease();
     await resizeNativeLease();
   }, [resizeNativeLease, showNativeLease]);
-
-  const resolveSwarmTmuxSessionName = useCallback(() => {
-    if (!swarmContext?.isSwarmRole) return null;
-    return buildSwarmTmuxSessionName(swarmContext.launchId, swarmContext.roleKey);
-  }, [swarmContext]);
-
-  const notifyAgentReady = useCallback(
-    async (program = 'opencode', opencodeSessionId, reason = 'client-tui-footer') => {
-      const normalizedProgram = String(program || 'opencode').trim() || 'opencode';
-      const notifiedRef =
-        normalizedProgram === 'kimi' ? kimiReadyNotifiedRef : opencodeReadyNotifiedRef;
-      if (notifiedRef.current) return;
-      const tmuxSession = resolveSwarmTmuxSessionName();
-      if (!tmuxSession) return;
-
-      const storageKey = `devhub:agent-ready-posted:${normalizedProgram}:${tmuxSession}`;
-      try {
-        if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(storageKey)) {
-          notifiedRef.current = true;
-          return;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      notifiedRef.current = true;
-      try {
-        await fetch('/api/terminal/opencode-ready', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: id,
-            tmuxSession,
-            program: normalizedProgram,
-            opencodeSessionId: opencodeSessionId || null,
-            reason,
-          }),
-        });
-        cliLog(`CLIENT:${id}`, 'agent-ready-notified', {
-          tmuxSession,
-          program: normalizedProgram,
-          opencodeSessionId,
-          reason,
-        });
-        try {
-          sessionStorage?.setItem(storageKey, String(Date.now()));
-        } catch {
-          /* ignore */
-        }
-      } catch (error) {
-        notifiedRef.current = false;
-        cliLog(`CLIENT:${id}`, 'agent-ready-failed', {
-          program: normalizedProgram,
-          error: error?.message,
-        });
-      }
-    },
-    [id, resolveSwarmTmuxSessionName]
-  );
-
-  const notifyOpencodeReady = useCallback(
-    (opencodeSessionId, reason = 'client-tui-footer') =>
-      notifyAgentReady('opencode', opencodeSessionId, reason),
-    [notifyAgentReady]
-  );
-
-  const notifyViewportReady = useCallback(
-    (cols, rows) => {
-      const tmuxSession = resolveSwarmTmuxSessionName();
-      if (!tmuxSession) return;
-
-      const lastPosted = lastViewportReadyPostedRef.current;
-      if (lastPosted.cols === cols && lastPosted.rows === rows) return;
-
-      if (viewportReadyNotifyTimerRef.current) {
-        clearTimeout(viewportReadyNotifyTimerRef.current);
-      }
-
-      viewportReadyNotifyTimerRef.current = setTimeout(() => {
-        viewportReadyNotifyTimerRef.current = null;
-        lastViewportReadyPostedRef.current = { cols, rows };
-
-        void (async () => {
-          try {
-            await fetch('/api/terminal/viewport-ready', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                sessionId: id,
-                tmuxSession,
-                cols,
-                rows,
-              }),
-            });
-            cliLog(`CLIENT:${id}`, 'viewport-ready-notified', { tmuxSession, cols, rows });
-            // Bootstrap waits for client-tui-footer (OpenCode MCP /status row), not
-            // viewport attach — posting opencode-ready here caused premature paste and
-            // ANSI garbage while OpenCode was still starting.
-          } catch (error) {
-            cliLog(`CLIENT:${id}`, 'viewport-ready-failed', { error: error?.message });
-          }
-        })();
-      }, 200);
-    },
-    [id, resolveSwarmTmuxSessionName]
-  );
-
-  const skipRedundantInitialCommandSend = useCallback(
-    (commandToSend, isRecoveryRelaunch = false) =>
-      shouldSkipRedundantInitialCommandSend({
-        panelId: id,
-        command: commandToSend,
-        isRecoveryRelaunch,
-        sessionReattached: sessionReattachedRef.current,
-      }),
-    [id]
-  );
-
-  const restoreInitialCommandDispatchGuard = useCallback(() => {
-    if (hasSentInitialCommand.current) return;
-    const record = getPanelInitialCommandDispatch(id);
-    if (record?.command) {
-      hasSentInitialCommand.current = true;
-      sessionReattachedRef.current = true;
-      return;
-    }
-    // Only suppress a fresh initialCommand when the server has already declared the
-    // session reattached (live tmux pane). The first connection of a fresh panel has
-    // hasConnectedOnceRef === true but is NOT a reattach, so relying on that flag alone
-    // prevented workspace-modal panels from ever injecting their launch command.
-    if (sessionReattachedRef.current && hasConnectedOnceRef.current && initialCommand) {
-      sessionReattachedRef.current = true;
-      hasSentInitialCommand.current = true;
-    }
-  }, [id, initialCommand]);
-
-  const resolveInjectCommand = useCallback(() => {
-    const storage = typeof window !== 'undefined' ? window.localStorage : null;
-    const agentRun = readAgentRunForPanel(storage, id);
-    return resolveTerminalInjectCommand(initialCommand, agentRun);
-  }, [id, initialCommand]);
-
-  const sendInitialCommandIfReady = useCallback(() => {
-    if (!initialCommand || hasSentInitialCommand.current) return;
-    // Extra guard against re-injection when the local ref was reset (e.g. a reconnect
-    // race or a remount that kept the panel ID). The lifecycle store survives remounts.
-    if (
-      shouldSkipRedundantInitialCommandSend({
-        panelId: id,
-        command: initialCommand,
-        sessionReattached: sessionReattachedRef.current,
-      })
-    ) {
-      logTerminalSession('initial-command-skipped', {
-        panelId: id,
-        reason: 'redundant-lifecycle-early',
-        command: initialCommand,
-        sessionReattached: sessionReattachedRef.current,
-      });
-      hasSentInitialCommand.current = true;
-      return;
-    }
-    // Never send the launch/resume command before the server's `ready` message, and
-    // never on reattach — a reattach means the tmux pane already has a live TUI, so
-    // typing `opencode --session …` / `grok` into it would echo as visible text in the
-    // conversation (Bug B). Only a fresh (reattached: false) session should be launched.
-    if (!serverReadyReceivedRef.current) return;
-    if (sessionReattachedRef.current) {
-      hasSentInitialCommand.current = true;
-      markPanelInitialCommandDispatched(id, initialCommand);
-      return;
-    }
-    if (!viewportFitConfirmedRef.current) return;
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-
-    // Fresh panels created from the workspace modal must wait for the host surface
-    // projection before injecting the launch command. Sending too early can leave the
-    // terminal blank because xterm has not rendered the viewport yet.
-    const projectionElapsedMs = Date.now() - panelCreatedAtRef.current;
-    console.log(
-      `[DEBUG TTY:${id}] sendInitialCommandIfReady called. cmd=${initialCommand}, projectionReady=${projectionReadyRef.current}, elapsed=${projectionElapsedMs}ms, viewportFit=${viewportFitConfirmedRef.current}, wsOpen=${wsRef.current?.readyState === WebSocket.OPEN}`
-    );
-    if (!projectionReadyRef.current && projectionElapsedMs < TERMINAL_PROJECTION_READY_TIMEOUT_MS) {
-      if (initialCommandProjectionRetryTimerRef.current) {
-        window.clearTimeout(initialCommandProjectionRetryTimerRef.current);
-      }
-      console.log(`[DEBUG TTY:${id}] projection not ready, scheduling retry in 50ms`);
-      initialCommandProjectionRetryTimerRef.current = window.setTimeout(() => {
-        initialCommandProjectionRetryTimerRef.current = null;
-        sendInitialCommandIfReady();
-      }, 50);
-      return;
-    }
-
-    const isRecoveryRelaunch = /#recovery-\d+\s*$/i.test(initialCommand);
-    let commandToSend = null;
-
-    if (swarmContext?.isSwarmRole) {
-      const wrapperAlreadyDispatched = isSwarmLaunchWrapperDispatched(
-        {
-          launchId: swarmContext.launchId,
-          roleKey: swarmContext.roleKey,
-        },
-        typeof window !== 'undefined' ? window.localStorage : null
-      );
-      if (wrapperAlreadyDispatched || swarmContext?.needsLaunchWrapper !== true) {
-        logTerminalSession('initial-command-skipped', {
-          panelId: id,
-          reason: wrapperAlreadyDispatched
-            ? 'swarm-wrapper-already-dispatched'
-            : 'swarm-tmux-reattach',
-          command: initialCommand,
-        });
-        hasSentInitialCommand.current = true;
-        markPanelInitialCommandDispatched(id, initialCommand);
-        return;
-      }
-
-      // Fresh swarm launch: inject materialized bash wrapper directly.
-      // resolveTerminalInjectCommand intentionally returns null for wrappers (reconnect safety).
-      commandToSend = String(initialCommand || '')
-        .replace(/\s*#recovery-\d+\s*$/i, '')
-        .trim();
-      if (!commandToSend || !isSwarmLaunchWrapperCommand(commandToSend)) {
-        logTerminalSession('initial-command-skipped', {
-          panelId: id,
-          reason: 'swarm-wrapper-command-missing',
-          command: initialCommand,
-        });
-        hasSentInitialCommand.current = true;
-        return;
-      }
-    } else {
-      commandToSend = resolveInjectCommand();
-      if (!commandToSend) {
-        logTerminalSession('initial-command-skipped', {
-          panelId: id,
-          reason: 'no-resolved-inject-command',
-          command: initialCommand,
-          isRecoveryRelaunch,
-        });
-        hasSentInitialCommand.current = true;
-        return;
-      }
-    }
-
-    if (skipRedundantInitialCommandSend(commandToSend, isRecoveryRelaunch)) {
-      logTerminalSession('initial-command-skipped', {
-        panelId: id,
-        reason: 'redundant-lifecycle',
-        command: initialCommand,
-        isRecoveryRelaunch,
-      });
-      hasSentInitialCommand.current = true;
-      markPanelInitialCommandDispatched(id, initialCommand);
-      return;
-    }
-    if (
-      shouldBlockLateInitialCommandSend({
-        hasConnectedOnce: hasConnectedOnceRef.current,
-        isRecoveryRelaunch,
-        snapshotCommand: initialCommandConnectSnapshotRef.current,
-        currentCommand: initialCommand,
-      })
-    ) {
-      logTerminalSession('initial-command-blocked', {
-        panelId: id,
-        reason: 'late-command-change',
-        snapshotCommand: initialCommandConnectSnapshotRef.current,
-        currentCommand: initialCommand,
-      });
-      hasSentInitialCommand.current = true;
-      markPanelInitialCommandDispatched(id, initialCommand);
-      return;
-    }
-
-    const cleanCommand = commandToSend.replace(/\s*#recovery-\d+\s*$/, '');
-    logTerminalSession('initial-command-sent', {
-      panelId: id,
-      command: cleanCommand,
-      sourceCommand: initialCommand,
-      isRecoveryRelaunch,
-      transport: transportRef.current,
-    });
-    console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
-    if (transportRef.current === 'raw') {
-      wsRef.current.send(cleanCommand + '\r');
-    } else {
-      wsRef.current.send(JSON.stringify({ type: 'input', data: cleanCommand + '\r' }));
-    }
-    hasSentInitialCommand.current = true;
-    markPanelInitialCommandDispatched(id, commandToSend);
-    if (swarmContext?.isSwarmRole && swarmContext?.needsLaunchWrapper === true) {
-      markSwarmLaunchWrapperDispatched(
-        {
-          launchId: swarmContext.launchId,
-          roleKey: swarmContext.roleKey,
-          panelId: id,
-        },
-        typeof window !== 'undefined' ? window.localStorage : null
-      );
-      window.dispatchEvent(
-        new CustomEvent('devhub:swarm-launch-wrapper-sent', { detail: { panelId: id } })
-      );
-    }
-  }, [id, initialCommand, resolveInjectCommand, skipRedundantInitialCommandSend, swarmContext]);
-
-  const scheduleInitialCommandAfterViewport = useCallback(() => {
-    if (initialCommandDelayScheduledRef.current) return;
-    initialCommandDelayScheduledRef.current = true;
-
-    const delayMs = Math.max(0, Number(swarmContext?.startAfterMs) || 0);
-    if (initialCommandDelayTimerRef.current) {
-      window.clearTimeout(initialCommandDelayTimerRef.current);
-      initialCommandDelayTimerRef.current = null;
-    }
-    if (delayMs > 0) {
-      initialCommandDelayTimerRef.current = window.setTimeout(() => {
-        initialCommandDelayTimerRef.current = null;
-        sendInitialCommandIfReady();
-      }, delayMs);
-      return;
-    }
-    sendInitialCommandIfReady();
-  }, [sendInitialCommandIfReady, swarmContext?.startAfterMs]);
 
   const scrollTerminalToBottom = useCallback((force = false) => {
     if (!termRef.current) return;
@@ -2379,45 +1975,6 @@ export default function TerminalTTY({
     }
   }, [id, isEngineV2, surfaceHost]);
 
-  useEffect(() => {
-    if (!shouldUseNativeRenderer) return undefined;
-
-    const handleNativeTerminalExit = (event) => {
-      applyTerminalSessionExit(event.detail || {}, { emitBrowserEvent: false });
-    };
-
-    window.addEventListener('devhub:terminal-exit', handleNativeTerminalExit);
-    return () => {
-      window.removeEventListener('devhub:terminal-exit', handleNativeTerminalExit);
-    };
-  }, [applyTerminalSessionExit, shouldUseNativeRenderer]);
-
-  useEffect(() => {
-    if (!shouldUseNativeRenderer) return undefined;
-
-    const handleNativeRuntimeEvent = (event) => {
-      const detail = event.detail || {};
-      if (detail.panelId !== id) return;
-      if (detail.type === 'panel-activated') {
-        onActivatePanel?.(id);
-        return;
-      }
-      if (detail.type !== 'runtime-error') return;
-
-      nativeLeaseRef.current = false;
-      setNativeVteOpened(false);
-      setNativeVteOpenFailure(detail.reason || 'open-failed');
-      setConnectionState('error');
-      nativeVteProbeRetryCountRef.current = 0;
-      clearNativeVteProbeRetryTimer();
-    };
-
-    window.addEventListener('devhub:terminal-native-vte-event', handleNativeRuntimeEvent);
-    return () => {
-      window.removeEventListener('devhub:terminal-native-vte-event', handleNativeRuntimeEvent);
-    };
-  }, [clearNativeVteProbeRetryTimer, id, onActivatePanel, shouldUseNativeRenderer]);
-
   viewportCtxRef.current = {
     id,
     cwd,
@@ -3066,21 +2623,6 @@ export default function TerminalTTY({
     tryReattachCanvasAddonRef.current = tryReattachCanvasAddon;
   }, [tryReattachCanvasAddon]);
 
-  const handleSessionRecoveryClick = useCallback(() => {
-    if (connectionState === 'agent-exited' || isAgentTuiCommand(initialCommand)) {
-      clearPanelSessionExit(id);
-      setSessionExitReason(null);
-      processExitedRef.current = false;
-      window.dispatchEvent(
-        new CustomEvent('devhub:manual-revive-requested', {
-          detail: { panelId: id, sessionId: extractOpenCodeSessionId(initialCommand) || id },
-        })
-      );
-      return;
-    }
-    reconnect();
-  }, [connectionState, id, initialCommand, reconnect]);
-
   slice1CtxRef.current = {
     FONT_SIZE_KEY,
     setFontSize,
@@ -3136,6 +2678,54 @@ export default function TerminalTTY({
     fitAndResize,
     reactivateCoalesceTimerRef,
     logViewportDiagnostic,
+  };
+
+  slice3CtxRef.current = {
+    id,
+    initialCommand,
+    connectionState,
+    reconnect,
+    setConnectionState,
+    setNativeWheelPassthrough,
+    processExitedRef,
+    tuiSessionActiveRef,
+    isGrokSessionRef,
+    grokTuiReadyRef,
+    tuiSessionFooterConfirmedRef,
+    termRef,
+    requestedRendererModeRef,
+    nativeLeaseRef,
+    containerRef,
+    nativePlaceholderRef,
+    setNativeVteOpened,
+    setNativeVteProbeResult,
+    restoredHiddenLeaseThisMountRef,
+    isEngineV2Ref,
+    wsRef,
+    hideTimerRef,
+    sessionClosingRef,
+    hideNativeLease,
+    onActivatePanel,
+    setNativeVteOpenFailure,
+    setNativeVteRecoveryAttempt,
+    nativeVteProbeRetryCountRef,
+    clearNativeVteProbeRetryTimer,
+    opencodeReadyNotifiedRef,
+    kimiReadyNotifiedRef,
+    lastViewportReadyPostedRef,
+    viewportReadyNotifyTimerRef,
+    sessionReattachedRef,
+    hasConnectedOnceRef,
+    serverReadyReceivedRef,
+    viewportFitConfirmedRef,
+    panelCreatedAtRef,
+    projectionReadyRef,
+    initialCommandProjectionRetryTimerRef,
+    transportRef,
+    initialCommandConnectSnapshotRef,
+    hasSentInitialCommand,
+    initialCommandDelayScheduledRef,
+    initialCommandDelayTimerRef,
   };
 
   return (
