@@ -119,6 +119,24 @@ function WorkspaceTerminalSurface({
                 const isActiveWindow = window.id === activeWindowIdForWs;
                 const windowColumns = window.columns?.length > 0 ? window.columns : ws.columns;
 
+                if (!isActiveWindow) {
+                  return (
+                    <div
+                      key={`${ws.id}-view-${window.id}`}
+                      className="absolute inset-0 min-h-0 min-w-0 pointer-events-none"
+                      aria-hidden
+                      data-testid={`workspace-window-parked-${window.id}`}
+                      style={{
+                        zIndex: 1,
+                        ...resolveWorkspaceWindowVisibilityStyle({
+                          isActiveWindow: false,
+                          isFullscreenTakeover: isFullscreenBrowser,
+                        }),
+                      }}
+                    />
+                  );
+                }
+
                 return (
                   <div
                     key={`${ws.id}-view-${window.id}`}

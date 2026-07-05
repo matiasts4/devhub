@@ -52,6 +52,9 @@ export default function useWorkspaceLifecycle({
   windowCounterRef,
   colCounterRef,
   panelCounterRef,
+  counterRandomizedRef,
+  legacyCounterRandomizeEligibleRef,
+  terminalStateStorageKey,
   workspacesRef,
   panelsClosingRef,
   workspaceCloseRecoverCleanupRef,
@@ -84,8 +87,40 @@ export default function useWorkspaceLifecycle({
 }) {
   const consumedUiProvisionKeysRef = useRef(new Set());
 
+  const maybeRandomizeCountersForFreshWorkspace = useCallback(() => {
+    if (counterRandomizedRef?.current) return;
+    if (!legacyCounterRandomizeEligibleRef?.current) return;
+    try {
+      const savedState =
+        storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
+      if (!savedState) return;
+      if (panelCounterRef.current > 100) {
+        counterRandomizedRef.current = true;
+        return;
+      }
+      const randomizeToHigh = () => Math.floor(Math.random() * 9001) + 1000;
+      panelCounterRef.current = randomizeToHigh();
+      colCounterRef.current = randomizeToHigh();
+      wsCounterRef.current = randomizeToHigh();
+      counterRandomizedRef.current = true;
+      legacyCounterRandomizeEligibleRef.current = false;
+    } catch {
+      // Counter randomization is best-effort (TIC-2).
+    }
+  }, [
+    colCounterRef,
+    counterRandomizedRef,
+    legacyCounterRandomizeEligibleRef,
+    panelCounterRef,
+    storage,
+    terminalStateStorageKey,
+    wsCounterRef,
+  ]);
+
   const createWorkspaceWithTerminalCount = useCallback(
     (setup = {}) => {
+      maybeRandomizeCountersForFreshWorkspace();
+
       const setupObject = typeof setup === 'number' ? { terminalCount: setup } : setup || {};
       const safeCount = Math.max(0, Math.min(6, Number(setupObject.terminalCount) || 0));
       const rawInitialCommand = setupObject.initialCommand;
@@ -166,6 +201,7 @@ export default function useWorkspaceLifecycle({
     [
       collectSiblingPanelNames,
       cwd,
+      maybeRandomizeCountersForFreshWorkspace,
       syncPanelLifecycleLayout,
       colCounterRef,
       panelCounterRef,

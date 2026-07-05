@@ -67,7 +67,11 @@ export function renderWorkspacePanel(
   // Shared-surface singleton only when pizarra owns projection — workspace docks mount
   // TerminalTTY directly to avoid hidden→portal remount (double xterm / double echo).
   const sharedViewEnabled = isPizarraSharedViewEnabled() && pizarraOwnsLiveSurfaces;
-  const panelChromeSafeZoneMinTop = 30;
+  const panelChromeSafeZoneMinTop =
+    typeof document !== 'undefined' &&
+    document.documentElement?.dataset?.morphology === 'brutalist-stage'
+      ? 34
+      : 30;
   const semanticMetadata = buildPanelHeaderDisplay(
     panelLabel,
     panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
@@ -359,7 +363,7 @@ export function renderWorkspacePanel(
                 className="h-full w-full"
               />
             )
-          ) : deferLiveSurfaceToPizarra ? (
+          ) : deferLiveSurfaceToPizarra && sharedViewEnabled ? (
             <div
               data-testid={`panel-body-deferred-pizarra-${panel.id}`}
               className="h-full w-full"

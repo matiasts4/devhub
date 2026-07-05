@@ -635,6 +635,9 @@ describe('TerminalWorkspacesManager reopen menu', () => {
         if (url === '/api/swarm/runtime-diagnostics') {
           return { ok: true, json: async () => ({ terminals: [], processes: [], anomalies: {} }) };
         }
+        if (String(url).includes('/api/agenthub/operations/health')) {
+          return { ok: true, json: async () => ({}) };
+        }
         if (url === '/api/agenthub/sessions/launch-session-1/binding') {
           return {
             ok: true,
@@ -665,6 +668,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
           },
         })
       );
+      await flushEffects();
       await flushEffects();
 
       const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');

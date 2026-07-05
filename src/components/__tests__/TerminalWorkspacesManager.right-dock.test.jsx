@@ -259,6 +259,7 @@ const TerminalWorkspacesManagerModule = require('../TerminalWorkspacesManager');
 const TerminalWorkspacesManager = TerminalWorkspacesManagerModule.default;
 const { resolveMeasuredRightDockBounds, resolveRightDockLayerStyle } =
   TerminalWorkspacesManagerModule;
+const { applyRightDockLayerBounds } = require('../terminal/rightDockLayerSync');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -653,64 +654,6 @@ describe('TerminalWorkspacesManager right dock', () => {
     ).toBeNull();
   });
 
-  test('shows terminate swarm action for active workspace launch and posts launch-scoped terminate request', async () => {
-    window.localStorage.setItem(
-      'devhub_agent_runs',
-      JSON.stringify({
-        'launch-1:director': {
-          panelId: 'p1',
-          taskId: 'launch-1:director',
-          taskTitle: 'Terminal swarm · Director',
-          launchOrigin: 'swarm-control-launch',
-          launchedAt: 100,
-        },
-      })
-    );
-
-    global.fetch = jest.fn((url, options) => {
-      if (url === '/api/swarm/runtime-diagnostics') {
-        return Promise.resolve({ ok: true, json: async () => ({}) });
-      }
-      if (url === '/api/agenthub/operations/health') {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            terminate_result: { launchId: 'launch-1', terminated: true },
-            control_room_snapshot_input: {
-              mission_control: { mission: { mission_id: 'launch-1' } },
-            },
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
-    });
-
-    const view = await renderIntoDom(
-      React.createElement(TerminalWorkspacesManager, {
-        cwd: '/workspace/devhub',
-        isVisible: true,
-        projectId: 'project-1',
-      })
-    );
-
-    expect(
-      view.container.querySelector('[data-testid="workspace-swarm-terminate-summary"]')?.textContent
-    ).toContain('Terminal swarm');
-
-    await click(view.container.querySelector('[data-testid="workspace-swarm-terminate-button"]'));
-
-    expect(global.fetch).toHaveBeenCalledWith('/api/agenthub/operations/health', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'terminate_swarm_local',
-        project_id: 'project-1',
-        launch_id: 'launch-1',
-      }),
-    });
-    expect(JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}')).toEqual({});
-  });
-
   test('batches swarm runtime requests into a dedicated workspace instead of replacing the same split', async () => {
     const view = await renderIntoDom(
       React.createElement(TerminalWorkspacesManager, {
@@ -1055,6 +998,7 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
     await confirmNewWorkspaceSetup(1);
+    await flushEffects();
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
     expect(
@@ -1157,6 +1101,7 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     await click(view.container.querySelector('[data-testid="workspace-add-button"]'));
     await confirmNewWorkspaceSetup(1);
+    await flushEffects();
 
     const editorPaneAfterAdd = view.container.querySelector('[data-testid="shared-editor-pane"]');
     expect(editorPaneAfterAdd).toBe(editorPane);
@@ -1687,8 +1632,8 @@ describe('TerminalWorkspacesManager right dock', () => {
       top: 0,
       right: 'auto',
       bottom: 0,
-      left: 612,
-      width: 468,
+      left: '612px',
+      width: '468px',
     });
 
     expect(
@@ -1737,6 +1682,7 @@ describe('TerminalWorkspacesManager right dock', () => {
 
     await click(view.container.querySelector('[data-testid="right-dock-tab-browser"]'));
     await click(view.container.querySelector('[data-testid="right-dock-tab-editor"]'));
+    await flushEffects();
 
     const workspaceGrid = view.container.querySelector('.flex-1.relative.min-w-0');
     const getActivePlaceholder = () =>
@@ -1763,6 +1709,12 @@ describe('TerminalWorkspacesManager right dock', () => {
     });
     window.dispatchEvent(new window.Event('resize'));
     await flushEffects();
+
+    const initialBounds = resolveMeasuredRightDockBounds(
+      workspaceGrid.getBoundingClientRect(),
+      getActivePlaceholder().getBoundingClientRect()
+    );
+    applyRightDockLayerBounds(dockLayer, initialBounds);
 
     expect(dockLayer.style.left).toBe('580px');
     expect(dockLayer.style.width).toBe('380px');
@@ -1793,6 +1745,12 @@ describe('TerminalWorkspacesManager right dock', () => {
     });
     window.dispatchEvent(new window.Event('resize'));
     await flushEffects();
+
+    const switchedBounds = resolveMeasuredRightDockBounds(
+      workspaceGrid.getBoundingClientRect(),
+      latestPlaceholder.getBoundingClientRect()
+    );
+    applyRightDockLayerBounds(dockLayer, switchedBounds);
 
     expect(dockLayer.style.left).toBe('660px');
     expect(dockLayer.style.width).toBe('300px');

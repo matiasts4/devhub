@@ -65,10 +65,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests to write first:** none required; covered by existing suites after behavior-first reconciliation.
 - **Dependencies:** none (first PR).
 - **Acceptance criteria:**
-  - [ ] `TerminalWorkspacesManager.jsx` imports and calls all six orphaned modules.
-  - [ ] Inline duplicate blocks removed; `TerminalWorkspacesManager.jsx` line count drops.
-  - [ ] `npm test -- TerminalWorkspacesManager` green; zero new failures.
-  - [ ] No v1/v2 behavior change.
+  - [x] `TerminalWorkspacesManager.jsx` imports and calls all six orphaned modules.
+  - [x] Inline duplicate blocks removed; `TerminalWorkspacesManager.jsx` line count drops.
+  - [x] `npm test -- TerminalWorkspacesManager` green; zero new failures.
+  - [x] No v1/v2 behavior change.
 - **Estimated changed lines:** M (≈400–700; large deletion + import wiring + orphan patches).
 
 ---
@@ -86,9 +86,9 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** none.
 - **Dependencies:** TWM-1 (chain predecessor).
 - **Acceptance criteria:**
-  - [ ] VTE stub code removed or collapsed.
-  - [ ] `TerminalTTY.jsx` ≤1000 lines target remains tracked.
-  - [ ] `npm test -- TerminalTTY` green.
+  - [x] VTE stub code removed or collapsed.
+  - [x] `TerminalTTY.jsx` ≤1000 lines target remains tracked.
+  - [x] `npm test -- TerminalTTY` green.
 - **Estimated changed lines:** S (≈20–40).
 
 ---
@@ -106,10 +106,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** none; existing helper tests move with the code.
 - **Dependencies:** TTY-1.
 - **Acceptance criteria:**
-  - [ ] All relocated helpers re-exported from new module(s).
-  - [ ] `TerminalTTY.jsx` imports helpers; no inline duplicate logic.
-  - [ ] Helper tests pass unchanged.
-  - [ ] `npm test -- TerminalTTY` green.
+  - [x] All relocated helpers re-exported from new module(s).
+  - [x] `TerminalTTY.jsx` imports helpers; no inline duplicate logic.
+  - [x] Helper tests pass unchanged.
+  - [x] `npm test -- TerminalTTY` green.
 - **Estimated changed lines:** M (≈300–600; many small moves).
 
 ---
@@ -127,10 +127,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests to write first:** `src/components/terminal/hooks/__tests__/useTerminalOutputQueue.test.js` — assert backlog coalescing and DEC 2026 sync-output boundaries.
 - **Dependencies:** TTY-2.
 - **Acceptance criteria:**
-  - [ ] Hook ≤1000 lines.
-  - [ ] `TerminalTTY.jsx` shrinks and delegates to `enqueueOutput`/`flushOutput`/`clearOutputQueue`.
-  - [ ] New guard tests pass before inline code is deleted.
-  - [ ] `npm test -- TerminalTTY` green.
+  - [x] Hook ≤1000 lines.
+  - [x] `TerminalTTY.jsx` shrinks and delegates to `enqueueOutput`/`flushOutput`/`clearOutputQueue`.
+  - [x] New guard tests pass before inline code is deleted.
+  - [x] `npm test -- TerminalTTY` green.
 - **Estimated changed lines:** M (≈300–500).
 
 ---
@@ -148,9 +148,9 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** none required; if no existing clipboard test, add `src/components/terminal/hooks/__tests__/useTerminalClipboard.test.js` with mocked clipboard.
 - **Dependencies:** TTY-3.
 - **Acceptance criteria:**
-  - [ ] Hook ≤1000 lines.
-  - [ ] Paste/copy/context-menu behavior identical for v1 and v2.
-  - [ ] `npm test -- TerminalTTY` green.
+  - [x] Hook ≤1000 lines.
+  - [x] Paste/copy/context-menu behavior identical for v1 and v2.
+  - [x] `npm test -- TerminalTTY` green.
 - **Estimated changed lines:** S–M (≈200–400).
 
 ---
@@ -168,10 +168,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests to write first:** `src/components/terminal/hooks/__tests__/useTerminalWheelRouter.test.js` — assert wheel routes to shell vs TUI based on `tuiSessionActiveRef.current`.
 - **Dependencies:** TTY-4.
 - **Acceptance criteria:**
-  - [ ] Hook ≤1000 lines.
-  - [ ] Wheel behavior preserved for both TUI-active and shell-only modes.
-  - [ ] New guard tests pass before inline deletion.
-  - [ ] `npm test -- TerminalTTY` green.
+  - [x] Hook ≤1000 lines.
+  - [x] Wheel behavior preserved for both TUI-active and shell-only modes.
+  - [x] New guard tests pass before inline deletion.
+  - [x] `npm test -- TerminalTTY` green.
 - **Estimated changed lines:** S (≈100–200).
 
 ---
@@ -192,10 +192,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests to write first:** `src/components/workspace/__tests__/WorkspaceRestoreCoordinator.test.js` — assert restore plan execution order and abort on unmount.
 - **Dependencies:** TTY-5.
 - **Acceptance criteria:**
-  - [ ] Coordinator ≤1000 lines (≤1200 justified for async orchestration).
-  - [ ] `TerminalWorkspacesManager.jsx` restore block removed.
-  - [ ] New guard tests pass; existing restore tests green.
-  - [ ] `npm test -- TerminalWorkspacesManager startupRestore` green.
+  - [x] Coordinator ≤1000 lines (≤1200 justified for async orchestration).
+  - [x] `TerminalWorkspacesManager.jsx` restore block removed.
+  - [x] New guard tests pass; existing restore tests green.
+  - [x] `npm test -- TerminalWorkspacesManager startupRestore` green.
 - **Estimated changed lines:** M (≈300–500).
 
 ---
@@ -217,9 +217,9 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** none required if existing coverage is direct.
 - **Dependencies:** TWM-2.
 - **Acceptance criteria:**
-  - [ ] Inline swarm launch code removed.
-  - [ ] `useSwarmLaunchController` integrated with matching signatures.
-  - [ ] `npm test -- TerminalWorkspacesManager.split-layout` and swarm tests green.
+  - [x] Inline swarm launch code removed.
+  - [x] `useSwarmLaunchController` integrated with matching signatures.
+  - [x] `npm test -- TerminalWorkspacesManager.split-layout` and swarm tests green.
 - **Estimated changed lines:** M (≈300–500).
 
 ---
@@ -237,9 +237,9 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** add `src/components/terminal/hooks/__tests__/useZedWorkspaceEvents.test.js` if no direct coverage exists.
 - **Dependencies:** TWM-3.
 - **Acceptance criteria:**
-  - [ ] Hook ≤1000 lines.
-  - [ ] All Zed actions dispatch identical layout/workspace mutations.
-  - [ ] `npm test -- TerminalWorkspacesManager` green.
+  - [x] Hook ≤1000 lines.
+  - [x] All Zed actions dispatch identical layout/workspace mutations.
+  - [x] `npm test -- TerminalWorkspacesManager` green.
 - **Estimated changed lines:** M (≈250–450).
 
 ---
@@ -257,9 +257,9 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** add `src/components/terminal/hooks/__tests__/useTerminalWorkspaceShortcuts.test.js` if no direct coverage.
 - **Dependencies:** TWM-4.
 - **Acceptance criteria:**
-  - [ ] Hook ≤1000 lines.
-  - [ ] Shortcuts behave identically.
-  - [ ] `npm test -- TerminalWorkspacesManager.shortcuts` green.
+  - [x] Hook ≤1000 lines.
+  - [x] Shortcuts behave identically.
+  - [x] `npm test -- TerminalWorkspacesManager.shortcuts` green.
 - **Estimated changed lines:** S–M (≈150–300).
 
 ---
@@ -281,10 +281,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** add `src/components/terminal/hooks/__tests__/useWorkspaceLayoutState.test.js` covering each action.
 - **Dependencies:** TWM-5.
 - **Acceptance criteria:**
-  - [ ] Reducer ≤1000 lines (≤1200 justified).
-  - [ ] All previously-scattered workspace/window/panel state managed through reducer.
-  - [ ] `TerminalWorkspacesManager.jsx` shrinks significantly.
-  - [ ] `npm test -- TerminalWorkspacesManager` green.
+  - [x] Reducer ≤1000 lines (≤1200 justified).
+  - [x] All previously-scattered workspace/window/panel state managed through reducer.
+  - [x] `TerminalWorkspacesManager.jsx` shrinks significantly.
+  - [x] `npm test -- TerminalWorkspacesManager` green.
 - **Estimated changed lines:** L (≈600–1000).
 
 ---
@@ -305,10 +305,10 @@ Dependency rule: each PR depends on its immediate predecessor in the table. TTY 
 - **New tests:** add `src/components/terminal/hooks/__tests__/useTerminalV2Session.test.js` if no direct unit coverage.
 - **Dependencies:** TWM-6.
 - **Acceptance criteria:**
-  - [ ] Hook ≤1000 lines.
-  - [ ] v2 connect/subscribe/frame decode/rehydration behavior unchanged.
-  - [ ] `isEngineV2` branches preserved.
-  - [ ] `npm test -- TerminalTTY.v2 TerminalTTY.rehydration` green.
+  - [x] Hook ≤1000 lines.
+  - [x] v2 connect/subscribe/frame decode/rehydration behavior unchanged.
+  - [x] `isEngineV2` branches preserved.
+  - [x] `npm test -- TerminalTTY.v2 TerminalTTY.rehydration` green.
 - **Estimated changed lines:** M–L (≈400–700).
 
 ---

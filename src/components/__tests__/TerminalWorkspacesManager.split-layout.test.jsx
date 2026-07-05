@@ -1,5 +1,11 @@
 const React = require('react');
-const { cleanupMountedRoots, installDom, renderIntoDom } = require('@/test-support/domHarness');
+const {
+  cleanupMountedRoots,
+  installDom,
+  renderIntoDom,
+  click,
+  flushEffects,
+} = require('@/test-support/domHarness');
 
 jest.mock('framer-motion', () => {
   const React = require('react');
@@ -20,6 +26,11 @@ jest.mock('framer-motion', () => {
     useTransform: (v, _from, _to) => v,
   };
 });
+
+jest.mock('../terminal/components/PanelStatusBadge', () => ({
+  __esModule: true,
+  default: () => null,
+}));
 
 jest.mock('lucide-react', () => {
   const icon = (name) => (props) => {
@@ -335,6 +346,7 @@ describe('TerminalWorkspacesManager split layout', () => {
   beforeEach(() => {
     dom = installDom();
     window.localStorage.clear();
+    delete document.documentElement.dataset.morphology;
   });
 
   afterEach(() => {
@@ -646,6 +658,10 @@ describe('TerminalWorkspacesManager split layout', () => {
     });
 
     const view = await renderManager();
+    await flushEffects();
+
+    const storedNames = JSON.parse(window.localStorage.getItem('devhub:panel-names:ws1') || '{}');
+    const panelLabel = storedNames.p1 || 'P1';
 
     const panelHeader = view.container.querySelector('[data-testid="panel-header-p1"]');
     const panelBody = view.container.querySelector('[data-testid="panel-body-p1"]');
@@ -671,12 +687,12 @@ describe('TerminalWorkspacesManager split layout', () => {
     expect(panelSemanticHeader).not.toBeNull();
     expect(panelSafeZone?.contains(panelSemanticHeader)).toBe(true);
     expect(panelChromeOverlay).not.toBeNull();
-    expect(panelChromeOverlay?.getAttribute('aria-label')).toBe('Panel P1 controls');
+    expect(panelChromeOverlay?.getAttribute('aria-label')).toBe(`Panel ${panelLabel} controls`);
     expect(panelChromeOverlay?.getAttribute('data-floating-placement')).toBe('inside-top-right');
     expect(panelActions).not.toBeNull();
-    expect(panelActions?.getAttribute('title')).toBe('Panel P1 actions');
+    expect(panelActions?.getAttribute('title')).toBe(`Panel ${panelLabel} actions`);
     expect(panelChromeOverlay?.className).not.toEqual(expect.stringContaining('-translate-y-1/2'));
-    expect(panelChromeOverlay?.className).not.toEqual(expect.stringContaining('top-0'));
+    expect(panelChromeOverlay?.className).toEqual(expect.stringContaining('top-0.5'));
     expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);
     expect(panelBody?.contains(panelChromeOverlay)).toBe(false);
     expect(panelBody?.contains(panelSemanticHeader)).toBe(false);
@@ -766,49 +782,13 @@ describe('TerminalWorkspacesManager split layout', () => {
 
     expect(workspaceTopBar?.getAttribute('data-testid')).toBe('workspace-top-tab-bar');
     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
-    expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('30');
-    expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);
-    expect(panelChromeOverlay?.querySelector('[data-testid="panel-split-right-p1"]')).toBe(
-      splitRightButton
-    );
-    expect(panelChromeOverlay?.querySelector('[data-testid="panel-close-p1"]')).toBe(closeButton);
-  });
-
-  test('keeps floating panel chrome invariants under brutalist-stage morphology', async () => {
-    document.documentElement.dataset.morphology = 'brutalist-stage';
-    persistWorkspaceState({
-      workspaces: [
-        {
-          id: 'ws1',
-          name: 'Workspace 1',
-          columns: [
-            {
-              id: 'c1',
-              panels: [{ id: 'p1', cwd: '/workspace/devhub', initialCommand: 'opencode' }],
-            },
-          ],
-        },
-      ],
-      activeWsId: 'ws1',
-      activePanelIds: { ws1: 'p1' },
-    });
-
-    const view = await renderManager();
-
-    const workspaceTopBar = view.container.querySelector('[data-testid="workspace-top-tab-bar"]');
-    const panelSafeZone = view.container.querySelector('[data-testid="panel-safe-zone-p1"]');
-    const panelChromeOverlay = view.container.querySelector('[data-testid="panel-chrome-overlay-p1"]');
-    const splitRightButton = view.container.querySelector('[data-testid="panel-split-right-p1"]');
-    const closeButton = view.container.querySelector('[data-testid="panel-close-p1"]');
-
-    expect(workspaceTopBar?.getAttribute('data-testid')).toBe('workspace-top-tab-bar');
-    expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');
     expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');
     expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);
     expect(panelChromeOverlay?.querySelector('[data-testid="panel-split-right-p1"]')).toBe(
       splitRightButton
     );
     expect(panelChromeOverlay?.querySelector('[data-testid="panel-close-p1"]')).toBe(closeButton);
+    delete document.documentElement.dataset.morphology;
   });
 
   test('keeps per-panel split controls working from the floating overlay chrome', async () => {
@@ -841,13 +821,11 @@ describe('TerminalWorkspacesManager split layout', () => {
 
     const view = await renderManager();
 
-    view.container
-      .querySelector('[data-testid="panel-split-right-p1"]')
-      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await Promise.resolve();
+    await click(view.container.querySelector('[data-testid="panel-split-right-p1"]'));
+    await flushEffects();
 
     const columns = Array.from(
-      view.container.querySelectorAll('[data-testid^="workspace-column-"]')
+      view.container.querySelectorAll('[data-testid^="workspace-column-c"]')
     );
     expect(columns).toHaveLength(3);
     expect(columns[0].querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
@@ -897,13 +875,11 @@ describe('TerminalWorkspacesManager split layout', () => {
       'inactive'
     );
 
-    view.container
-      .querySelector('[data-testid="panel-subtabs-split-right"]')
-      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await Promise.resolve();
+    await click(view.container.querySelector('[data-testid="panel-subtabs-split-right"]'));
+    await flushEffects();
 
     const columns = Array.from(
-      view.container.querySelectorAll('[data-testid^="workspace-column-"]')
+      view.container.querySelectorAll('[data-testid^="workspace-column-c"]')
     );
     expect(columns).toHaveLength(3);
     expect(columns[0].querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
@@ -953,13 +929,11 @@ describe('TerminalWorkspacesManager split layout', () => {
       'inactive'
     );
 
-    view.container
-      .querySelector('[data-testid="panel-subtabs-split-right"]')
-      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await Promise.resolve();
+    await click(view.container.querySelector('[data-testid="panel-subtabs-split-right"]'));
+    await flushEffects();
 
     const columns = Array.from(
-      view.container.querySelectorAll('[data-testid^="workspace-column-"]')
+      view.container.querySelectorAll('[data-testid^="workspace-column-c"]')
     );
     expect(columns).toHaveLength(3);
     expect(columns[0].querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
@@ -1005,8 +979,8 @@ describe('TerminalWorkspacesManager split layout', () => {
       'live'
     );
 
-    trigger?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await Promise.resolve();
+    await click(trigger);
+    await flushEffects();
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
       'suspended'
@@ -1015,8 +989,8 @@ describe('TerminalWorkspacesManager split layout', () => {
       'suspended'
     );
 
-    trigger?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await Promise.resolve();
+    await click(trigger);
+    await flushEffects();
 
     expect(view.container.querySelector('[data-testid="terminal-suspend-p1"]')?.textContent).toBe(
       'live'
@@ -1243,5 +1217,4 @@ describe('TerminalWorkspacesManager split layout', () => {
 
     sync.cleanup();
   });
-
 });

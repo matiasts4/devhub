@@ -86,6 +86,7 @@ export default function useWorkspaceBootstrapEffect({
     windowCounterRef,
     terminalHydrationReadyRef,
     bootPanelIdsRef,
+    legacyCounterRandomizeEligibleRef,
     activeWsIdRef,
     activePanelIdsRef,
     workspaceWindowsRef,
@@ -94,25 +95,6 @@ export default function useWorkspaceBootstrapEffect({
     hasRunStartupRestoreRef,
     startupRestoreCompletedRef,
   } = refBag;
-
-  // TIC-2: Randomize panel/col/ws counters to HIGH range [1000,10000] on first mount
-  // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
-  // entries with low IDs (p1, p2) from colliding with fresh panel IDs.
-  useEffect(() => {
-    const savedState =
-      storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
-    if (!savedState) return;
-
-    if (workspaces.length === 0) return;
-    // Only randomize once when counters are still in low range (initial state)
-    if (panelCounterRef.current <= 100) {
-      const RANDOMIZE_TO_HIGH = () => Math.floor(Math.random() * 9001) + 1000;
-      panelCounterRef.current = RANDOMIZE_TO_HIGH();
-      colCounterRef.current = RANDOMIZE_TO_HIGH();
-      wsCounterRef.current = RANDOMIZE_TO_HIGH();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount
 
   useEffect(() => {
     if (!deferHeavySurfacesUntilPaint || !isVisible || heavySurfacesReady) return undefined;
@@ -219,6 +201,9 @@ export default function useWorkspaceBootstrapEffect({
           colCounterRef.current = nextCounters.column;
           panelCounterRef.current = nextCounters.panel;
           terminalHydrationReadyRef.current = true;
+          if (legacyCounterRandomizeEligibleRef) {
+            legacyCounterRandomizeEligibleRef.current = true;
+          }
           bootPanelIdsRef.current = new Set(collectWorkspacePanelIds(hydratedWorkspaces));
           logTerminalSession('boot-hydration-complete', {
             panelIds: Array.from(bootPanelIdsRef.current),
@@ -400,6 +385,14 @@ export default function useWorkspaceBootstrapEffect({
         expectsHydratedWorkspaces,
       });
       return;
+    }
+
+    // Fresh default workspaces (no persisted terminal state) must not run reboot
+    // restore — it would terminate panels with no boot baseline (tests + first paint).
+    if (!expectsHydratedWorkspaces) {
+      hasRunStartupRestoreRef.current = true;
+      markStartupRestoreCompletedForSession(sessionStorage);
+      return undefined;
     }
 
     hasRunStartupRestoreRef.current = true;

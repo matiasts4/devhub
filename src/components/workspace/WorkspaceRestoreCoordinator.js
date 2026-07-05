@@ -147,6 +147,14 @@ export function createWorkspaceRestoreCoordinator({
             const panelId = action?.terminalId;
             if (!panelId) return false;
             const bootIds = bootPanelIdsRef.current;
+            if (bootIds.size === 0) {
+              logTerminalSession('startup-restore-skip', {
+                panelId,
+                reason: 'no-boot-baseline',
+                action: action.action,
+              });
+              return true;
+            }
             if (bootIds.size > 0 && !bootIds.has(panelId)) {
               logTerminalSession('startup-restore-skip', {
                 panelId,

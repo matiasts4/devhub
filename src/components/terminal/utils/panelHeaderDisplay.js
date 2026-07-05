@@ -8,6 +8,10 @@ export function buildPanelHeaderDisplay(panelLabel, semanticMetadata) {
   const label = typeof panelLabel === 'string' ? panelLabel.trim() : '';
   const looksLikePoolName = label.length > 0 && !/^p\d+$/i.test(label);
 
+  if (meta?.source && meta.source !== 'fallback' && meta.source !== 'display-name') {
+    return meta;
+  }
+
   if (looksLikePoolName) {
     const agentHint =
       meta.primary && meta.primary !== 'Terminal' && meta.primary !== label ? meta.primary : null;

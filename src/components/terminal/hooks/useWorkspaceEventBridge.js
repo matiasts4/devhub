@@ -39,16 +39,6 @@ export default function useWorkspaceEventBridge({
       if (!panelId || !sessionId) return;
       if (panelsClosingRef.current.has(panelId)) return;
 
-      const panelEntry = workspacesRef.current
-        .flatMap((ws) => ws.columns || [])
-        .flatMap((col) => col.panels || [])
-        .find((entry) => entry.id === panelId);
-
-      if (!panelEntry) return;
-
-      const panelAgentRun = readAgentRunsByPanel(storage)[panelId] || null;
-      if (!shouldPersistOpenCodeSessionForPanel(panelEntry, panelAgentRun)) return;
-
       let runMetadata = null;
       try {
         const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
@@ -56,6 +46,23 @@ export default function useWorkspaceEventBridge({
           ([, value]) => value?.panelId === panelId
         );
         runMetadata = taskEntry?.[1] || null;
+
+        if (
+          runMetadata?.launchOrigin === 'swarm-control-launch' &&
+          runMetadata?.sessionId &&
+          runMetadata?.workspaceId &&
+          runMetadata?.runId
+        ) {
+          fetch(`/api/agenthub/sessions/${runMetadata.sessionId}/binding`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workspace_id: runMetadata.workspaceId,
+              run_id: runMetadata.runId,
+              opencode_session_id: sessionId,
+            }),
+          }).catch(() => {});
+        }
 
         if (taskEntry?.[0]) {
           const restorePrefs = readWorkspaceRestorePreferences(storage);
@@ -75,26 +82,21 @@ export default function useWorkspaceEventBridge({
           };
           localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
         }
-
-        if (
-          runMetadata?.launchOrigin === 'swarm-control-launch' &&
-          runMetadata?.sessionId &&
-          runMetadata?.workspaceId &&
-          runMetadata?.runId
-        ) {
-          fetch(`/api/agenthub/sessions/${runMetadata.sessionId}/binding`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              workspace_id: runMetadata.workspaceId,
-              run_id: runMetadata.runId,
-              opencode_session_id: sessionId,
-            }),
-          }).catch(() => {});
-        }
       } catch {
         // Ignore best-effort canonical reconciliation failures in UI layer.
       }
+
+      const panelEntry = workspacesRef.current
+        .flatMap((ws) => ws.columns || [])
+        .flatMap((col) => col.panels || [])
+        .find((entry) => entry.id === panelId);
+
+      if (!panelEntry) return;
+
+      const panelAgentRun = readAgentRunsByPanel(storage)[panelId] || null;
+      const shouldPersistSession = shouldPersistOpenCodeSessionForPanel(panelEntry, panelAgentRun);
+
+      if (!shouldPersistSession) return;
 
       const pending = pendingReopenPanelsRef.current.get(panelId);
       if (pending) {

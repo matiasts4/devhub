@@ -493,6 +493,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const wsCounterRef = useRef(1);
   const panelCounterRef = useRef(1);
   const colCounterRef = useRef(1);
+  const counterRandomizedRef = useRef(false);
+  const legacyCounterRandomizeEligibleRef = useRef(false);
   const hasRunStartupRestoreRef = useRef(false);
   const startupRestoreCompletedRef = useRef(false);
   const terminalHydrationReadyRef = useRef(false);
@@ -525,6 +527,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     isClientLoaded,
     workspaceGridAreaRef,
     rightDockPlaceholderRef,
+    rightDockLayerRef,
     isDraggingDockRef,
     applyLiveRightDockBoundsRef,
     heavySurfacesReady,
@@ -705,6 +708,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       windowCounterRef,
       terminalHydrationReadyRef,
       bootPanelIdsRef,
+      legacyCounterRandomizeEligibleRef,
       activeWsIdRef,
       activePanelIdsRef,
       workspaceWindowsRef,
@@ -808,8 +812,13 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   // Suspension policy for transient overlays (e.g., restore settings modal).
   // With native VTE removed this only feeds the legacy nativeSurfacePolicy prop
   // that TerminalTTY receives; xterm renderers ignore it.
-  const shouldSuspendNativeSurfaces = restoreSettingsModal.open;
+  const shouldSuspendNativeSurfaces = restoreSettingsModal.open || isGridLauncherOpen;
   const nativeSurfacePolicy = shouldSuspendNativeSurfaces ? 'transient-overlay' : 'live';
+
+  useLayoutEffect(() => {
+    if (isDraggingDock || !rightDockMeasuredBounds || !rightDockLayerRef.current) return;
+    applyRightDockLayerBounds(rightDockLayerRef.current, rightDockMeasuredBounds);
+  }, [isDraggingDock, rightDockMeasuredBounds]);
 
   workspacesRef.current = workspaces;
   activeWsIdRef.current = activeWsId;
@@ -1065,6 +1074,9 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     windowCounterRef,
     colCounterRef,
     panelCounterRef,
+    counterRandomizedRef,
+    legacyCounterRandomizeEligibleRef,
+    terminalStateStorageKey,
     workspacesRef,
     panelsClosingRef,
     workspaceCloseRecoverCleanupRef,
@@ -1148,6 +1160,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     materializedSwarmLaunchIdsRef,
     pendingSwarmLaunchByLaunchIdRef,
     persistAgentRunMetadata,
+    workspacesRef,
     buildPanel: (request, panelId, panelCwd) =>
       createPanel(panelId, request.commandToRun, panelCwd, {
         swarmRole: request.swarmRole,
@@ -1468,8 +1481,34 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
             prev[pending.workspaceId] === panelId ? replacementPanelId : prev[pending.workspaceId],
         }));
       }
+
+      setWorkspaceWindows((prev) => {
+        const wsId = pending.workspaceId;
+        const windows = prev[wsId] || [];
+        const activeWindowId = activeWindowIdsRef.current?.[wsId];
+        if (!activeWindowId || windows.length === 0) return prev;
+
+        const workspace = workspacesRef.current.find((entry) => entry.id === wsId);
+        const nextColumns =
+          workspace?.columns
+            ?.map((column) => ({
+              ...column,
+              panels: (column.panels || []).filter((panel) => panel.id !== panelId),
+            }))
+            .filter((column) => (column.panels || []).length > 0) || [];
+
+        return {
+          ...prev,
+          [wsId]: applyActiveWindowColumnSnapshot(
+            windows,
+            activeWindowId,
+            nextColumns,
+            replacementPanelId
+          ),
+        };
+      });
     },
-    [removeReopenRun]
+    [removeReopenRun, setWorkspaceWindows]
   );
 
   useEffect(() => {

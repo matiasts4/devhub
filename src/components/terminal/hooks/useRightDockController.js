@@ -1,7 +1,8 @@
 // useRightDockController — manages right dock state, persistence, measured bounds, and drag.
 // Extracted from TerminalWorkspacesManager.jsx.
 
-import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+
 import {
   DEFAULT_RIGHT_DOCK_STATE,
   readRightDockState,
@@ -9,6 +10,7 @@ import {
   sanitizeRightDockState,
   writeRightDockState,
 } from '../../workspace/rightDockState';
+import { applyRightDockLayerBounds } from '@/components/terminal/rightDockLayerSync';
 
 export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measuredBounds }) {
   if (isFullscreenBrowser) {
@@ -20,8 +22,8 @@ export function resolveRightDockLayerStyle({ isFullscreenBrowser, size, measured
       top: 0,
       right: 'auto',
       bottom: 0,
-      left: measuredBounds.left,
-      width: measuredBounds.width,
+      left: `${measuredBounds.left}px`,
+      width: `${measuredBounds.width}px`,
     };
   }
 
@@ -52,6 +54,7 @@ export default function useRightDockController({
   isClientLoaded,
   workspaceGridAreaRef,
   rightDockPlaceholderRef,
+  rightDockLayerRef = null,
   isDraggingDockRef = null,
   applyLiveRightDockBoundsRef = null,
   heavySurfacesReady = true,
@@ -60,6 +63,23 @@ export default function useRightDockController({
   const [rightDockMeasuredBounds, setRightDockMeasuredBounds] = useState(null);
   const [hasMountedRightDock, setHasMountedRightDock] = useState(false);
   const [isDraggingDock, setIsDraggingDock] = useState(false);
+  const prevActiveWsForBrowserHideRef = useRef(activeWsId);
+
+  // Hide the previous workspace native browser when switching tabs (dock host is shared).
+  useEffect(() => {
+    if (!isClientLoaded || !projectId) return undefined;
+    const prevWsId = prevActiveWsForBrowserHideRef.current;
+    if (prevWsId && activeWsId && prevWsId !== activeWsId) {
+      const panelId = `browser-${projectId}-${prevWsId}`;
+      import('@/lib/browser/nativeBrowserBridge')
+        .then(({ setNativeBrowserVisibility }) =>
+          setNativeBrowserVisibility({ panelId, visible: false })
+        )
+        .catch(() => {});
+    }
+    prevActiveWsForBrowserHideRef.current = activeWsId;
+    return undefined;
+  }, [activeWsId, isClientLoaded, projectId]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -107,12 +127,7 @@ export default function useRightDockController({
   const syncRightDockMeasuredBounds = useCallback(() => {
     const { isFullscreenBrowser, hideRightDockPanel } = resolveDockLayoutFlags();
 
-    if (
-      isFullscreenBrowser ||
-      !rightDockState.visible ||
-      rightDockState.maximized ||
-      hideRightDockPanel
-    ) {
+    if (isFullscreenBrowser || rightDockState.maximized || hideRightDockPanel) {
       setRightDockMeasuredBounds(null);
       return;
     }
@@ -151,10 +166,18 @@ export default function useRightDockController({
       }
       return nextBounds;
     });
+
+    if (!isDraggingDockRef?.current && rightDockLayerRef?.current) {
+      applyRightDockLayerBounds(rightDockLayerRef.current, nextBounds);
+    }
   }, [
     resolveDockLayoutFlags,
+    rightDockState.visible,
+    rightDockState.maximized,
+    rightDockState.maximizedView,
     workspaceGridAreaRef,
     rightDockPlaceholderRef,
+    rightDockLayerRef,
     isDraggingDockRef,
     applyLiveRightDockBoundsRef,
   ]);
@@ -163,15 +186,22 @@ export default function useRightDockController({
     syncRightDockMeasuredBounds();
   }, [syncRightDockMeasuredBounds, rightDockState.size, activeWsId, isVisible]);
 
+  useLayoutEffect(() => {
+    if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') return undefined;
+    syncRightDockMeasuredBounds();
+    return undefined;
+  }, [
+    syncRightDockMeasuredBounds,
+    rightDockState.visible,
+    rightDockState.maximized,
+    rightDockState.activeTab,
+    heavySurfacesReady,
+  ]);
+
   useEffect(() => {
     const { isFullscreenBrowser, hideRightDockPanel } = resolveDockLayoutFlags();
 
-    if (
-      isFullscreenBrowser ||
-      !rightDockState.visible ||
-      rightDockState.maximized ||
-      hideRightDockPanel
-    ) {
+    if (isFullscreenBrowser || rightDockState.maximized || hideRightDockPanel) {
       return undefined;
     }
 
@@ -203,18 +233,17 @@ export default function useRightDockController({
     workspaceGridAreaRef,
     rightDockPlaceholderRef,
     heavySurfacesReady,
+    rightDockState.visible,
+    rightDockState.maximized,
+    rightDockState.maximizedView,
+    rightDockState.activeTab,
   ]);
 
   // Eager measurement on visibility/tab changes so the dock layer gets pixel bounds early.
   useEffect(() => {
     const { isFullscreenBrowser, hideRightDockPanel } = resolveDockLayoutFlags();
 
-    if (
-      isFullscreenBrowser ||
-      !rightDockState.visible ||
-      rightDockState.maximized ||
-      hideRightDockPanel
-    ) {
+    if (isFullscreenBrowser || rightDockState.maximized || hideRightDockPanel) {
       return undefined;
     }
 

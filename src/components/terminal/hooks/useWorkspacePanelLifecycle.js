@@ -652,7 +652,17 @@ export default function useWorkspacePanelLifecycle({
       if (!targetWorkspaceId) return null;
 
       const targetWorkspace = workspacesRef.current.find((ws) => ws.id === targetWorkspaceId);
-      const currentPanelCount = countPanelsInColumns(targetWorkspace?.columns || []);
+      const activeWindowId = resolveActiveWorkspaceWindowId(
+        targetWorkspaceId,
+        workspaceWindowsRef.current,
+        activeWindowIdsRef.current
+      );
+      const activeWindow = (workspaceWindowsRef.current?.[targetWorkspaceId] || []).find(
+        (win) => win.id === activeWindowId
+      );
+      const columnsForLayout =
+        activeWindow?.columns?.length > 0 ? activeWindow.columns : targetWorkspace?.columns || [];
+      const currentPanelCount = countPanelsInColumns(columnsForLayout);
       if (isWorkspaceTerminalPanelLimitReached(currentPanelCount)) {
         console.warn(
           `[DevHub] Terminal panel limit reached (${currentPanelCount}/${MAX_WORKSPACE_TERMINAL_PANELS})`
@@ -738,7 +748,18 @@ export default function useWorkspacePanelLifecycle({
         prev.map((ws) => {
           if (ws.id !== targetWorkspaceId) return ws;
 
-          const nextColumnsSnapshot = ws.columns.map((col) => ({
+          const windowId = resolveActiveWorkspaceWindowId(
+            targetWorkspaceId,
+            workspaceWindowsRef.current,
+            activeWindowIdsRef.current
+          );
+          const windowEntry = (workspaceWindowsRef.current?.[targetWorkspaceId] || []).find(
+            (win) => win.id === windowId
+          );
+          const sourceColumns =
+            windowEntry?.columns?.length > 0 ? windowEntry.columns : ws.columns || [];
+
+          const nextColumnsSnapshot = sourceColumns.map((col) => ({
             ...col,
             panels: [...(col.panels || [])],
           }));

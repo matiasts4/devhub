@@ -204,6 +204,7 @@ export function createWorkspaceForSwarmLaunchRequestsFn({
   applyRendererPreference,
   syncActiveWindowSnapshot,
   persistAgentRunMetadata,
+  workspacesRef = null,
   onAfterMaterialize = null,
   onMarkPanelsClosing = null,
   onClearLaunchWrapperDispatch = null,
@@ -252,7 +253,11 @@ export function createWorkspaceForSwarmLaunchRequestsFn({
         const panelIds = getAllPanelIds(workspace.columns || []);
         return !panelIds.some((panelId) => oldSwarmPanelIds.has(panelId));
       });
-      return [...retained, plan.nextWorkspace];
+      const nextWorkspaces = [...retained, plan.nextWorkspace];
+      if (workspacesRef) {
+        workspacesRef.current = nextWorkspaces;
+      }
+      return nextWorkspaces;
     });
     setActiveWsId(plan.newWsId);
     setActivePanelIds((prev) => ({ ...prev, [plan.newWsId]: plan.activePanelForLaunch }));

@@ -30,6 +30,7 @@ export default function useSwarmLaunchController({
   materializedSwarmLaunchIdsRef = null,
   pendingSwarmLaunchByLaunchIdRef: externalPendingByLaunchIdRef = null,
   persistAgentRunMetadata,
+  workspacesRef = null,
   buildPanel,
   onMarkPanelsClosing = null,
   onClearLaunchWrapperDispatch = null,
@@ -227,6 +228,7 @@ export default function useSwarmLaunchController({
           ((acc, wsId, panelId) => setPanelRendererPreference(acc, wsId, panelId, 'xterm-webgl')),
         syncActiveWindowSnapshot,
         persistAgentRunMetadata,
+        workspacesRef,
         onMarkPanelsClosing,
         onClearLaunchWrapperDispatch,
         onAfterMaterialize:

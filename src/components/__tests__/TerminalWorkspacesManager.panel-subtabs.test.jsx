@@ -596,7 +596,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
 
     await click(getAddButton(container));
     expect(container.querySelector('[data-testid="terminal-renderer-p2"]')?.textContent).toBe(
-      'vte-experimental'
+      'xterm-webgl'
     );
 
     await click(getPanelTab(container, 'p1'));
