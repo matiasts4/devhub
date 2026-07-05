@@ -53,6 +53,22 @@ function copySqliteFamily(sourceDbPath, targetDbPath) {
   }
 }
 
+const PRODUCTION_SIDECAR_PORT = 4000;
+const DEVELOPMENT_SIDECAR_PORT = 4001;
+
+function isDevhubDevelopmentHome(dirPath) {
+  if (!dirPath) return false;
+  const normalized = path.resolve(dirPath).replace(/\\/g, '/');
+  return normalized.endsWith('/.devhub-dev') || normalized.endsWith('\\.devhub-dev');
+}
+
+function readSidecarPortMarker(dirPath) {
+  const portFile = path.join(dirPath, 'sidecar-port.txt');
+  if (!fs.existsSync(/*turbopackIgnore: true*/ portFile)) return null;
+  const port = Number(fs.readFileSync(/*turbopackIgnore: true*/ portFile, 'utf8').trim());
+  return Number.isInteger(port) && port > 0 ? port : null;
+}
+
 function getCanonicalDevhubDir({ env = process.env, homeDir = os.homedir() } = {}) {
   if (env.DEVHUB_HOME) {
     return ensureDirectory(path.resolve(env.DEVHUB_HOME));
@@ -192,6 +208,10 @@ function resolveDbPath(options = {}) {
 }
 
 module.exports = {
+  DEVELOPMENT_SIDECAR_PORT,
+  PRODUCTION_SIDECAR_PORT,
+  isDevhubDevelopmentHome,
+  readSidecarPortMarker,
   copySqliteFamily,
   findExistingPath,
   getCanonicalDataDir,

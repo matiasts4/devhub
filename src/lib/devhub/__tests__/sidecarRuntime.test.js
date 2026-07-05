@@ -34,8 +34,9 @@ describe('sidecarRuntime', () => {
     expect(getSidecarPortFilePath()).toBe(path.join(home, 'sidecar-port.txt'));
   });
 
-  test('readProductionSidecarPort returns the port from sidecar-port.txt when healthy', async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-sidecar-home-'));
+  test('readProductionSidecarPort trusts dev port marker only in dev home', async () => {
+    const home = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-sidecar-home-')), '.devhub-dev');
+    fs.mkdirSync(home, { recursive: true });
     process.env.DEVHUB_HOME = home;
     fs.writeFileSync(path.join(home, 'sidecar-port.txt'), '4001', 'utf8');
     global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '{"status":"ok"}' });
@@ -43,6 +44,20 @@ describe('sidecarRuntime', () => {
     await expect(readProductionSidecarPort()).resolves.toBe(4001);
     expect(global.fetch).toHaveBeenCalledWith(
       'http://127.0.0.1:4001/health',
+      expect.objectContaining({ cache: 'no-store' })
+    );
+  });
+
+  test('readProductionSidecarPort ignores polluted dev port marker in production home', async () => {
+    const home = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-sidecar-home-')), '.devhub');
+    fs.mkdirSync(home, { recursive: true });
+    process.env.DEVHUB_HOME = home;
+    fs.writeFileSync(path.join(home, 'sidecar-port.txt'), '4001', 'utf8');
+    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '{"status":"ok"}' });
+
+    await expect(readProductionSidecarPort()).resolves.toBe(4000);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:4000/health',
       expect.objectContaining({ cache: 'no-store' })
     );
   });

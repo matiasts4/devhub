@@ -1,8 +1,30 @@
 const fs = require('fs');
 const path = require('path');
-const { getCanonicalDevhubDir } = require('../db/pathResolver');
+const {
+  DEVELOPMENT_SIDECAR_PORT,
+  PRODUCTION_SIDECAR_PORT,
+  getCanonicalDevhubDir,
+  isDevhubDevelopmentHome,
+  readSidecarPortMarker,
+} = require('../db/pathResolver');
 
-const DEFAULT_SIDECAR_PORTS = [4000, 4001];
+const DEFAULT_SIDECAR_PORTS = [PRODUCTION_SIDECAR_PORT, DEVELOPMENT_SIDECAR_PORT];
+
+function resolveSidecarProbeOrder(homeDir) {
+  return isDevhubDevelopmentHome(homeDir)
+    ? [DEVELOPMENT_SIDECAR_PORT, PRODUCTION_SIDECAR_PORT]
+    : [PRODUCTION_SIDECAR_PORT, DEVELOPMENT_SIDECAR_PORT];
+}
+
+function resolveTrustedSidecarPortFromFile(homeDir) {
+  const port = readSidecarPortMarker(homeDir);
+  if (!port) return null;
+  if (isDevhubDevelopmentHome(homeDir)) {
+    return port === DEVELOPMENT_SIDECAR_PORT ? port : null;
+  }
+  // Installed runtime must never trust a dev sidecar port written into ~/.devhub.
+  return port === PRODUCTION_SIDECAR_PORT ? port : null;
+}
 
 function getSidecarPortFilePath(options = {}) {
   return path.join(getCanonicalDevhubDir(options), 'sidecar-port.txt');
@@ -51,30 +73,25 @@ async function readProductionSidecarPort({
   env = process.env,
   homeDir,
 } = {}) {
-  const portFile = getSidecarPortFilePath({ env, homeDir });
-  if (!fs.existsSync(portFile)) {
-    return probeSidecarPorts(DEFAULT_SIDECAR_PORTS, { fetchImpl, timeoutMs });
+  const home = getCanonicalDevhubDir({ env, homeDir });
+  const probeOrder = resolveSidecarProbeOrder(home);
+  const trustedPort = resolveTrustedSidecarPortFromFile(home);
+
+  if (trustedPort && (await fetchSidecarHealth(trustedPort, { fetchImpl, timeoutMs }))) {
+    return trustedPort;
   }
 
-  const port = Number(fs.readFileSync(portFile, 'utf8').trim());
-  if (!Number.isInteger(port) || port <= 0) {
-    return probeSidecarPorts(DEFAULT_SIDECAR_PORTS, { fetchImpl, timeoutMs });
-  }
-
-  if (await fetchSidecarHealth(port, { fetchImpl, timeoutMs })) {
-    return port;
-  }
-
-  return probeSidecarPorts(
-    DEFAULT_SIDECAR_PORTS.filter((candidate) => candidate !== port),
-    { fetchImpl, timeoutMs }
-  );
+  return probeSidecarPorts(probeOrder, { fetchImpl, timeoutMs });
 }
 
 module.exports = {
   DEFAULT_SIDECAR_PORTS,
+  DEVELOPMENT_SIDECAR_PORT,
+  PRODUCTION_SIDECAR_PORT,
   fetchSidecarHealth,
   getSidecarPortFilePath,
   probeSidecarPorts,
   readProductionSidecarPort,
+  resolveSidecarProbeOrder,
+  resolveTrustedSidecarPortFromFile,
 };

@@ -347,6 +347,21 @@ function detectLayout() {
       devhubDir = path.join(os.homedir(), '.devhub');
       ensureDir(devhubDir);
 
+      const productionPortFile = path.join(devhubDir, 'sidecar-port.txt');
+      try {
+        if (fs.existsSync(productionPortFile)) {
+          const existingPort = Number(fs.readFileSync(productionPortFile, 'utf8').trim());
+          if (existingPort === 4001) {
+            fs.unlinkSync(productionPortFile);
+            logStep(
+              'Removed stale dev sidecar port marker from production DEVHUB_HOME (~/.devhub)'
+            );
+          }
+        }
+      } catch (_error) {
+        /* non-fatal */
+      }
+
       if (zipPath) {
         if (shouldReextractStandalone(zipPath, devhubDir)) {
           reextractStandaloneRuntime(zipPath, 'installed package', devhubDir) || process.exit(1);
@@ -369,6 +384,11 @@ function detectLayout() {
     const root = findProjectRoot(scriptDir) || findProjectRoot(process.cwd()) || process.cwd();
     devhubDir = devhubDirFromEnv || path.join(os.homedir(), '.devhub-dev');
     ensureDir(devhubDir);
+    if (!devhubDirFromEnv && devhubDir.replace(/\\/g, '/').endsWith('/.devhub')) {
+      logStep(
+        'Warning: dev sidecar resolved to ~/.devhub — set DEVHUB_HOME=~/.devhub-dev for tauri dev'
+      );
+    }
     logStep('Dev mode detected: Next is managed by tauri dev on 3100');
     nextPath = '';
     ptyPath = path.join(root, 'sidecar-backend', 'server.js');

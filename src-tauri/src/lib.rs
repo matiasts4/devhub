@@ -250,6 +250,67 @@ fn schedule_main_window_recovery(app: tauri::AppHandle, reason: &str) {
     });
 }
 
+fn listener_pids_on_port(port: u16) -> Vec<u32> {
+    #[cfg(target_os = "windows")]
+    {
+        let cmd = format!(
+            "netstat -ano -p tcp | findstr :{} | findstr LISTENING",
+            port
+        );
+        let output = match std::process::Command::new("cmd").args(["/C", &cmd]).output() {
+            Ok(out) => out,
+            Err(_) => return Vec::new(),
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut pids = Vec::new();
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 5 {
+                continue;
+            }
+            if let Some(pid) = parts.last().and_then(|s| s.parse::<u32>().ok()) {
+                if pid > 0 {
+                    pids.push(pid);
+                }
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        return pids;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let output = match std::process::Command::new("ss")
+            .args(["-tlnp", &format!("sport = :{}", port)])
+            .output()
+        {
+            Ok(out) => out,
+            Err(_) => return Vec::new(),
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.is_empty() {
+            return Vec::new();
+        }
+
+        let mut pids = Vec::new();
+        for pid_str in stdout.split("pid=") {
+            let Some(pid_part) = pid_str.split(',').next() else {
+                continue;
+            };
+            let Ok(pid) = pid_part.parse::<u32>() else {
+                continue;
+            };
+            if pid > 0 {
+                pids.push(pid);
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+}
+
 /// Matar procesos zombie que ocupan los puertos del sidecar/PTY y (solo en prod) Next.js.
 /// En dev NO tocamos el puerto de Next porque lo maneja el beforeDevCommand de `tauri dev`.
 /// Esto pasa cuando `tauri dev` se cierra con Ctrl+C y los procesos hijos no mueren.
@@ -267,44 +328,23 @@ fn cleanup_zombie_ports() {
     sys.refresh_all();
 
     for port in zombie_ports {
-        // Buscar procesos que escuchen en este puerto
-        let output = std::process::Command::new("ss")
-            .args(["-tlnp", &format!("sport = :{}", port)])
-            .output();
-
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if stdout.is_empty() {
-                continue; // Puerto libre
-            }
-
-            // Extraer PIDs del output de ss (formato: "pid=12345")
-            for pid_str in stdout.split("pid=") {
-                if let Some(pid_part) = pid_str.split(',').next() {
-                    if let Ok(pid) = pid_part.parse::<u32>() {
-                        if pid == 0 {
-                            continue;
-                        }
-                        // Verificar si es un proceso de DevHub (node con devhub o next)
-                        if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
-                            let name = process.name().to_string_lossy().to_lowercase();
-                            let cmdline: String = process
-                                .cmd()
-                                .iter()
-                                .map(|s| s.to_string_lossy().to_lowercase())
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            if is_devhub_runtime_process(&name, &cmdline) {
-                                log::info!(
-                                    "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
-                                    pid,
-                                    port,
-                                    name
-                                );
-                                process.kill();
-                            }
-                        }
-                    }
+        for pid in listener_pids_on_port(port) {
+            if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
+                let name = process.name().to_string_lossy().to_lowercase();
+                let cmdline: String = process
+                    .cmd()
+                    .iter()
+                    .map(|s| s.to_string_lossy().to_lowercase())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if is_devhub_runtime_process(&name, &cmdline) {
+                    log::info!(
+                        "[DevHub] Matando proceso zombie PID {} en puerto {} ({}).",
+                        pid,
+                        port,
+                        name
+                    );
+                    process.kill();
                 }
             }
         }
@@ -318,27 +358,7 @@ fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    let output = std::process::Command::new("ss")
-        .args(["-tlnp", &format!("sport = :{}", port)])
-        .output()
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if stdout.is_empty() {
-        return None;
-    }
-
-    for pid_str in stdout.split("pid=") {
-        let Some(pid_part) = pid_str.split(',').next() else {
-            continue;
-        };
-        let Ok(pid) = pid_part.parse::<u32>() else {
-            continue;
-        };
-        if pid == 0 {
-            continue;
-        }
-
+    for pid in listener_pids_on_port(port) {
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             let name = process.name().to_string_lossy().to_lowercase();
             let cmdline: String = process
@@ -348,9 +368,7 @@ fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            let is_devhub_process = is_devhub_runtime_process(&name, &cmdline);
-
-            if is_devhub_process {
+            if is_devhub_runtime_process(&name, &cmdline) {
                 return Some(pid);
             }
         }
