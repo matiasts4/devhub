@@ -25,6 +25,7 @@ import {
   chunkTerminalOutputForCatchup,
   shouldDiscardHiddenOutputCatchup,
   terminalBufferHasRenderableContent,
+  reconcileOpenCodeTuiWheelReadiness,
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
 } from '@/components/terminal/TerminalTTY.helpers';
 import {
@@ -34,7 +35,6 @@ import {
   shouldFreezeKimiTuiViewportOnWorkspaceShow,
   shouldSkipKimiTuiPtyResize,
 } from '@/lib/terminal/kimiReadyMarker';
-
 export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef }) {
   const syncTerminalViewportOnWorkspaceShow = useCallback(
     async (reason = 'workspace-show', { clearAtlas, forceScroll = true } = {}) => {
@@ -77,7 +77,9 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         hiddenOutputCatchupPendingRef,
         sessionReattachedRef,
         tuiSessionActiveRef,
+        tuiSessionFooterConfirmedRef,
         kimiReadyNotifiedRef,
+        setNativeWheelPassthrough,
         isEngineV2Ref,
         webglFallbackRef,
         webglAddonRef,
@@ -275,6 +277,16 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         if (isKimiLaunch || detectKimiReadyFromTerminalBuffer(termRef.current)) {
           kimiReadyNotifiedRef.current = true;
         }
+      }
+
+      if (!tuiSessionFooterConfirmedRef?.current && termRef.current) {
+        reconcileOpenCodeTuiWheelReadiness({
+          term: termRef.current,
+          initialCommand,
+          tuiSessionActiveRef,
+          tuiSessionFooterConfirmedRef,
+          setNativeWheelPassthrough,
+        });
       }
 
       if (

@@ -28,6 +28,29 @@ export function resolveOpencodeReadyMarkerPath(tmuxSession) {
   return `/tmp/devhub-opencode-ready-${safe}`;
 }
 
+export function isOpenCodeLaunchCommand(initialCommand) {
+  if (!initialCommand || typeof initialCommand !== 'string') return false;
+  return /\bopencode\b/i.test(initialCommand.replace(/\s*#recovery-\d+\s*$/, '').trim());
+}
+
+/** Scan xterm scrollback for OpenCode footer after reattach/reload before fresh PTY output. */
+export function detectOpenCodeReadyFromTerminalBuffer(term) {
+  const buffer = term?.buffer?.active;
+  if (!buffer || buffer.length === 0) return false;
+
+  try {
+    const lines = [];
+    const start = Math.max(0, buffer.length - 48);
+    for (let lineIndex = start; lineIndex < buffer.length; lineIndex += 1) {
+      const line = buffer.getLine(lineIndex);
+      if (line) lines.push(line.translateToString(true));
+    }
+    return detectOpenCodeTuiReady(lines.join('\n'));
+  } catch {
+    return false;
+  }
+}
+
 /** OpenCode interactive TUI footer — input area is ready for paste. */
 export function detectOpenCodeTuiReady(text) {
   if (!text || typeof text !== 'string') return false;

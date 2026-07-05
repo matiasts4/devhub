@@ -20,7 +20,11 @@ import {
   markPanelInitialCommandDispatched,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { createPanelActivityTracker } from '@/components/terminal/utils/panelActivityTracker';
-import { detectOpenCodeTuiReady } from '@/lib/terminal/opencodeReadyMarker';
+import {
+  detectOpenCodeTuiReady,
+  isOpenCodeLaunchCommand,
+} from '@/lib/terminal/opencodeReadyMarker';
+import { reconcileOpenCodeTuiWheelReadiness } from '@/components/terminal/TerminalTTY.helpers';
 import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import { detectGrokSessionFromOutput } from '@/components/terminal/TerminalTTY.helpers';
 
@@ -435,6 +439,15 @@ export default function useTerminalV2Session({ ctxRef }) {
                 tuiSessionActiveRef.current = true;
                 if (isKimiLaunchCommand(initialCommand)) {
                   kimiReadyNotifiedRef.current = true;
+                } else if (isOpenCodeLaunchCommand(initialCommand)) {
+                  reconcileOpenCodeTuiWheelReadiness({
+                    term: termRef.current,
+                    initialCommand,
+                    tuiSessionActiveRef,
+                    tuiSessionFooterConfirmedRef,
+                    setNativeWheelPassthrough,
+                    assumeTuiIfReattached: true,
+                  });
                 }
               } else {
                 tuiSessionActiveRef.current = false;
@@ -477,6 +490,13 @@ export default function useTerminalV2Session({ ctxRef }) {
               }
               if (termRef.current && typeof termRef.current.write === 'function') {
                 termRef.current.write(payload.serialized);
+                reconcileOpenCodeTuiWheelReadiness({
+                  term: termRef.current,
+                  initialCommand,
+                  tuiSessionActiveRef,
+                  tuiSessionFooterConfirmedRef,
+                  setNativeWheelPassthrough,
+                });
               }
               try {
                 socket.send(
@@ -508,6 +528,13 @@ export default function useTerminalV2Session({ ctxRef }) {
             if (isEngineV2Ref.current && !rehydrationRef.current.loaded && payload.replayComplete) {
               rehydrationRef.current.loaded = true;
               flushHeldData();
+              reconcileOpenCodeTuiWheelReadiness({
+                term: termRef.current,
+                initialCommand,
+                tuiSessionActiveRef,
+                tuiSessionFooterConfirmedRef,
+                setNativeWheelPassthrough,
+              });
               sendResizeRef.current?.();
               return;
             }

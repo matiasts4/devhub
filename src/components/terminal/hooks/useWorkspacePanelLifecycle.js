@@ -9,10 +9,16 @@ import {
   spawnFirstTerminalPanelColumns,
 } from '@/components/terminal/utils/panelHelpers';
 import {
+  collectEngineV2PanelIds,
   createPanelWithDisplayNameFactory,
   getPanelIdsFromColumns,
   resolveWorkspacePanelId,
 } from '@/components/terminal/models/workspaceStateModel';
+import {
+  filterLegacySurvivorPanelIds,
+  scheduleSurvivorRecoverAfterClose,
+  SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
+} from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   LIFECYCLE_BURST_PHASES,
   PANEL_LIFECYCLE_REASONS,
@@ -206,25 +212,41 @@ export default function useWorkspacePanelLifecycle({
       return undefined;
     }
 
-    const activeWindowPanelId = panelIds.includes(activePanelId) ? activePanelId : panelIds[0];
-
-    // Dispatch a single-shot window-visible event so the destination panel runs
-    // the same layout-show recovery path used by workspace tab switches. This is
-    // the missing piece that made window-switch recovery weaker than workspace
-    // switch recovery.
+    // Every panel in the destination window needs the layout-show golden path
+    // (not only the focused panel), otherwise split windows stay black.
     requestAnimationFrame(() => {
       dispatchTerminalWindowVisible({
-        panelIds: [activeWindowPanelId],
+        panelIds,
         workspaceId: wsId,
         reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
       });
     });
 
-    // Window views stay mounted (opacity keep-alive like workspace tabs). Avoid the
-    // heavy survivor burst used when panels were unmounted; layout sync + window-visible
-    // is enough for instant V1/V2/V3 switches.
-    syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds);
-    return undefined;
+    const allWorkspacePanelIds = [
+      ...new Set(
+        (workspaceWindows?.[wsId] || []).flatMap((win) => getPanelIdsFromColumns(win.columns || []))
+      ),
+    ];
+    const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
+      allWorkspacePanelIds.length > 0 ? allWorkspacePanelIds : panelIds,
+      collectEngineV2PanelIds(workspaces, workspaceWindows, activeWindowIds)
+    );
+    if (legacySurvivorPanelIds.length === 0) {
+      syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds);
+      return undefined;
+    }
+
+    // Option B keep-alive: panels stay mounted; staggered survivor passes repaint
+    // WebGL bitmaps discarded while a sibling window had opacity:0 (same as pre-instant path).
+    return scheduleSurvivorRecoverAfterClose({
+      panelIds: legacySurvivorPanelIds,
+      workspaceId: wsId,
+      reason: PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH,
+      onLifecycleSync: () =>
+        syncPanelLifecycleLayout(PANEL_LIFECYCLE_REASONS.WORKSPACE_WINDOW_SWITCH, wsId, panelIds),
+      immediate: true,
+      delays: SWITCH_SURVIVOR_RECOVER_DELAYS_MS,
+    });
   }, [
     activePanelId,
     activeWindowIds,

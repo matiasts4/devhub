@@ -23,7 +23,6 @@ import {
   shouldBlockV2WebglRecovery,
   needsGpuRendererReattach,
   isWorkspaceSurvivorRecoverLayoutReason,
-  coalescedSoftGpuVisibilityReveal,
   shouldSyncTerminalViewportOnLayoutShow,
   shouldSoftGpuWorkspaceReveal,
   resolveWorkspaceLayoutShowRevealMode,
@@ -855,6 +854,7 @@ export default function useTerminalWorkspaceShowRecovery({
       restoreInitialCommandDispatchGuard,
       logViewportDiagnostic,
       coalescedForceRepaint,
+      coalescedSoftGpuVisibilityReveal,
       scheduleBoundedGpuRecover,
     } = c;
 
@@ -1051,6 +1051,9 @@ export default function useTerminalWorkspaceShowRecovery({
       }
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
+      if (prevVisible) {
+        layoutChurnedWhileHiddenRef.current = true;
+      }
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {
       syncTerminalViewportOnWorkspaceShow('workspace-show-pending', { clearAtlas: true });
     }

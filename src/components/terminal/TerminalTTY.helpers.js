@@ -13,7 +13,11 @@ import {
 import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import { isAgentTuiCommand } from '@/lib/terminal/agentSessionExit';
 import { detectAgentTypeFromCommand } from '@/lib/terminal/agentTuiMetadata';
-import { shouldDiscardOpenCodeCatchupReplay } from '@/lib/terminal/opencodeReadyMarker';
+import {
+  detectOpenCodeReadyFromTerminalBuffer,
+  isOpenCodeLaunchCommand,
+  shouldDiscardOpenCodeCatchupReplay,
+} from '@/lib/terminal/opencodeReadyMarker';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import { getPanelInitialCommandDispatch } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
@@ -217,6 +221,32 @@ export function detectGrokTuiReady(text) {
 export function detectGrokSessionFromOutput(text) {
   if (!text || typeof text !== 'string') return false;
   return /\]0;grok\b/i.test(text) || detectGrokTuiReady(text);
+}
+
+/**
+ * After reload/reattach, OpenCode scroll needs footer-confirmed + wheel passthrough.
+ * Scans scrollback when live PTY output has not re-fired detectOpenCodeTuiReady.
+ */
+export function reconcileOpenCodeTuiWheelReadiness({
+  term,
+  initialCommand = '',
+  tuiSessionActiveRef,
+  tuiSessionFooterConfirmedRef,
+  setNativeWheelPassthrough,
+  assumeTuiIfReattached = false,
+} = {}) {
+  if (!isOpenCodeLaunchCommand(initialCommand)) return false;
+  const footerInBuffer = term ? detectOpenCodeReadyFromTerminalBuffer(term) : false;
+  if (!footerInBuffer && !assumeTuiIfReattached) return false;
+  if (tuiSessionActiveRef) tuiSessionActiveRef.current = true;
+  if (tuiSessionFooterConfirmedRef) tuiSessionFooterConfirmedRef.current = true;
+  if (typeof setNativeWheelPassthrough === 'function') {
+    setNativeWheelPassthrough(true);
+  }
+  if (term) {
+    prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
+  }
+  return true;
 }
 
 /** Live grok/OpenCode TUIs scroll via xterm native SGR wheel passthrough once chrome is ready. */
@@ -1770,4 +1800,5 @@ export {
   attachTerminalRendererAddons,
   neutralizeWebglAddonForDisposal,
   isStaleXtermRendererError,
+  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
 };

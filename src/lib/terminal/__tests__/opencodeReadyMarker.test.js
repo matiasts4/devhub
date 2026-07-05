@@ -4,6 +4,8 @@ const {
 } = require('../viewportReadyMarker.js');
 const {
   detectOpenCodeTuiReady,
+  detectOpenCodeReadyFromTerminalBuffer,
+  isOpenCodeLaunchCommand,
   resolveOpencodeReadyMarkerPath,
   resolveAgentReadyMarkerPath,
 } = require('../opencodeReadyMarker.js');
@@ -17,6 +19,27 @@ describe('opencodeReadyMarker', () => {
     expect(resolveOpencodeReadyMarkerPath('devhub-swarm-launch-1-coder')).toBe(
       '/tmp/devhub-opencode-ready-devhub-swarm-launch-1-coder'
     );
+  });
+
+  test('isOpenCodeLaunchCommand matches opencode invocations', () => {
+    expect(isOpenCodeLaunchCommand('opencode --agent coder')).toBe(true);
+    expect(isOpenCodeLaunchCommand('npm run dev')).toBe(false);
+  });
+
+  test('detectOpenCodeReadyFromTerminalBuffer scans scrollback tail', () => {
+    const term = {
+      buffer: {
+        active: {
+          length: 2,
+          getLine: (index) =>
+            index === 1
+              ? { translateToString: () => '⊙ 6 MCP /status    1.16.2' }
+              : { translateToString: () => '' },
+        },
+      },
+    };
+    expect(detectOpenCodeReadyFromTerminalBuffer(term)).toBe(true);
+    expect(detectOpenCodeReadyFromTerminalBuffer(null)).toBe(false);
   });
 
   test('detectOpenCodeTuiReady matches interactive footer hints', () => {
