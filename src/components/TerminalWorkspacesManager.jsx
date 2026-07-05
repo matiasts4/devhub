@@ -52,23 +52,17 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { createClient } from '@/lib/db/localClient';
-import {
-  closeTerminalSessions,
-  syncWorkspaceCountersMonotonic,
-} from './terminal/workspaceStateHelpers';
+import { closeTerminalSessions } from './terminal/workspaceStateHelpers';
 import {
   buildWorkspaceColumnsForTerminalCount,
   resolveSplitCreatedPanelProps,
   spawnFirstTerminalPanelColumns,
 } from './terminal/utils/panelHelpers';
 import {
-  NEXT_DEV_OVERLAY_HIDE_STYLE_ID,
   createPanel,
   createPanelWithDisplayNameFactory,
   createWindow,
   createDefaultWorkspaceState,
-  normalizeWorkspaceState,
-  normalizeWorkspaceWindows,
   getPanelIdsFromColumns,
   resolveWorkspaceVisibleTerminalPanelCount,
   collectEngineV2PanelIds,
@@ -89,8 +83,6 @@ import {
 import {
   getDisplayName as getPanelDisplayNameFromStore,
   setDisplayName as setPanelDisplayNameInStore,
-  nextDisplayNameForPanel as nextPoolNameForWorkspace,
-  resolvePanelSurfaceLabel,
 } from '@/lib/terminal/panelDisplayName';
 import { buildPanelHeaderDisplay } from './terminal/utils/panelHeaderDisplay';
 import { nameFromId } from '@/lib/asistente/zedTerminalResolver';
@@ -141,6 +133,7 @@ import useWorkspaceNativeSync from './terminal/hooks/useWorkspaceNativeSync';
 import useWorkspaceRightDockSync from './terminal/hooks/useWorkspaceRightDockSync';
 import useWorkspaceSurfaceRegistry from './terminal/hooks/useWorkspaceSurfaceRegistry';
 import useWorkspaceEventBridge from './terminal/hooks/useWorkspaceEventBridge';
+import useWorkspaceBootstrapEffect from './terminal/hooks/useWorkspaceBootstrapEffect';
 import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
 import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
@@ -149,7 +142,6 @@ import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
 import {
   DEFAULT_RIGHT_DOCK_STATE,
   MIN_RIGHT_DOCK_SIZE,
-  readRightDockState,
   rightDockStatesEqual,
   sanitizeRightDockState,
   writeRightDockState,
@@ -160,11 +152,7 @@ import {
   applyZedOpenUrlDockUpdate,
 } from './workspace/rightDockLayout';
 import { coerceZedOpenUrlFocus, isValidZedOpenUrlEvent } from './zedOpenUrlEvent';
-import {
-  buildBrowserWindowLabel,
-  readBrowserWindowStates,
-  writeBrowserWindowStates,
-} from './workspace/browserWindowState';
+import { buildBrowserWindowLabel } from './workspace/browserWindowState';
 import {
   getAdjacentPanelId,
   getAdjacentWorkspaceId,
@@ -185,11 +173,9 @@ import {
 } from './terminal/workspaceShortcuts';
 import {
   createDefaultTerminalRendererPreferences,
-  readTerminalRendererPreferences,
   resolveRequestedRenderer,
   setPanelRendererPreference,
   TERMINAL_RENDERER_INHERIT_MODE,
-  writeTerminalRendererPreferences,
 } from './terminal/terminalRendererPreferences';
 import PanelRendererSelect from './terminal/components/PanelRendererSelect';
 import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
@@ -202,18 +188,11 @@ import {
   resolveSwarmDelegatedRoleKeys,
   shouldShowSwarmStandbyOverlay,
 } from '@/lib/operations/swarmDelegatedRoles';
-import {
-  buildRestoreManifestFromWorkspaceState,
-  collectWorkspacePanelIds,
-} from '@/lib/terminal/startupRestoreCoordinator';
-import {
-  createWorkspaceRestoreCoordinator,
-  seedSuspendedOpenCodePanels,
-} from '@/components/workspace/WorkspaceRestoreCoordinator';
+import { collectWorkspacePanelIds } from '@/lib/terminal/startupRestoreCoordinator';
+
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import {
   readWorkspaceRestorePreferences,
-  normalizeWorkspacesOpenCodeCommands,
   isOpenCodePanel,
   extractOpenCodeSessionId,
   inferPanelSessionKind,
@@ -223,10 +202,8 @@ import {
 } from '@/lib/terminal/restorePolicyResolver';
 import {
   dispatchStartupRestoreQueue,
-  markStartupRestoreCompletedForSession,
   runOpenCodeStartupRestoreMutex,
   shouldBumpRelaunchCommand,
-  shouldRunStartupRestoreThisPageLoad,
 } from '@/lib/terminal/startupRestoreRunner';
 import {
   enrichOpenCodeRestoreContext,
@@ -235,10 +212,7 @@ import {
   patchTerminalStateWithDiscoveredCommands,
   collectOpenCodePanelsNeedingDiscovery,
 } from '@/lib/terminal/opencodeSessionDiscovery';
-import {
-  buildCleanTerminalStatePayload,
-  flushTerminalSessionPersistence,
-} from '@/lib/terminal/terminalSessionFlush';
+
 import {
   dispatchSwarmLaunchMaterialized,
   SWARM_LAUNCH_MATERIALIZED_EVENT,
@@ -283,7 +257,6 @@ import {
   terminateSwarmLaunchesForWorkspace,
 } from '@/lib/terminal/swarmWorkspaceLifecycle';
 import {
-  hydrateSwarmLaunchWrapperFlags,
   clearSwarmLaunchWrapperDispatchForLaunch,
   markSwarmLaunchWrapperDispatched,
 } from '@/lib/terminal/swarmLaunchWrapperLifecycle';
@@ -636,256 +609,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     getPanelIdsFromColumns,
   });
 
-  // TIC-2: Randomize panel/col/ws counters to HIGH range [1000,10000] on first mount
-  // when workspaces exist (hydrated from localStorage). This prevents stale devhub_agent_runs
-  // entries with low IDs (p1, p2) from colliding with fresh panel IDs.
-  useEffect(() => {
-    const savedState =
-      storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
-    if (!savedState) return;
-
-    if (workspaces.length === 0) return;
-    // Only randomize once when counters are still in low range (initial state)
-    if (panelCounterRef.current <= 100) {
-      const RANDOMIZE_TO_HIGH = () => Math.floor(Math.random() * 9001) + 1000;
-      panelCounterRef.current = RANDOMIZE_TO_HIGH();
-      colCounterRef.current = RANDOMIZE_TO_HIGH();
-      wsCounterRef.current = RANDOMIZE_TO_HIGH();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount
-
-  useEffect(() => {
-    if (!deferHeavySurfacesUntilPaint || !isVisible || heavySurfacesReady) return undefined;
-
-    let cancelled = false;
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        if (!cancelled) setHeavySurfacesReady(true);
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf1);
-      if (raf2) cancelAnimationFrame(raf2);
-    };
-  }, [deferHeavySurfacesUntilPaint, heavySurfacesReady, isVisible]);
-
-  useEffect(() => {
-    if (!isVisible || typeof document === 'undefined') return undefined;
-
-    const style = document.createElement('style');
-    style.id = NEXT_DEV_OVERLAY_HIDE_STYLE_ID;
-    style.textContent = `
-      nextjs-portal,
-      [data-nextjs-toast],
-      [data-nextjs-dialog-overlay],
-      [data-nextjs-dialog],
-      [data-nextjs-errors-dialog-overlay] {
-        display: none !important;
-        pointer-events: none !important;
-      }
-    `;
-    document.head.appendChild(style);
-
-    return () => {
-      document.getElementById(NEXT_DEV_OVERLAY_HIDE_STYLE_ID)?.remove();
-    };
-  }, [isVisible]);
-
-  // Persist maximize state
-  useEffect(() => {
-    try {
-      storage?.setItem('devhub_terminal_maximized', String(isMaximized));
-    } catch {
-      /* ignore */
-    }
-  }, [isMaximized, storage]);
-
-  // Dispatch maximize toggle event for App.js to react
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('devhub:toggle-maximize', { detail: { isMaximized } }));
-  }, [isMaximized]);
-
-  // --- LocalStorage Persistence ---
-  useEffect(() => {
-    try {
-      const savedState =
-        storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
-      if (savedState) {
-        const parsed = JSON.parse(savedState);
-        if (parsed.workspaces && parsed.workspaces.length > 0) {
-          const normalizedState = normalizeWorkspaceState(
-            parsed.workspaces,
-            parsed.activeWsId,
-            parsed.activePanelIds
-          );
-
-          const hydratedAgentRuns = readAgentRunsByPanel(storage);
-          const hydratedWorkspaces = hydrateSwarmLaunchWrapperFlags(
-            normalizeWorkspacesOpenCodeCommands(normalizedState.workspaces, hydratedAgentRuns),
-            storage
-          );
-
-          setWorkspaces(hydratedWorkspaces);
-          setActiveWsId(normalizedState.activeWsId);
-          setActivePanelIds(normalizedState.activePanelIds);
-
-          const normalizedWindows = normalizeWorkspaceWindows(
-            parsed.workspaceWindows || {},
-            parsed.activeWindowIds || {},
-            hydratedWorkspaces,
-            normalizedState.activePanelIds
-          );
-
-          setWorkspaceWindows(normalizedWindows.workspaceWindows);
-          setActiveWindowIds(normalizedWindows.activeWindowIds);
-          setTerminalRendererPreferences(
-            readTerminalRendererPreferences(storage, projectId, hydratedWorkspaces)
-          );
-          windowCounterRef.current = Math.max(
-            windowCounterRef.current,
-            normalizedWindows.windowCounter
-          );
-
-          const nextCounters = syncWorkspaceCountersMonotonic(hydratedWorkspaces, {
-            workspace: wsCounterRef.current,
-            column: colCounterRef.current,
-            panel: panelCounterRef.current,
-          });
-
-          wsCounterRef.current = nextCounters.workspace;
-          colCounterRef.current = nextCounters.column;
-          panelCounterRef.current = nextCounters.panel;
-          terminalHydrationReadyRef.current = true;
-          bootPanelIdsRef.current = new Set(collectWorkspacePanelIds(hydratedWorkspaces));
-          logTerminalSession('boot-hydration-complete', {
-            panelIds: Array.from(bootPanelIdsRef.current),
-            workspaceCount: hydratedWorkspaces.length,
-          });
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load terminal state:', e);
-    }
-    if (!terminalHydrationReadyRef.current) {
-      terminalHydrationReadyRef.current = true;
-      bootPanelIdsRef.current = new Set();
-      logTerminalSession('boot-hydration-empty', { panelIds: [] });
-    }
-    const initialDockWorkspaceId =
-      (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
-      createDefaultWorkspaceState().activeWsId;
-    setDockWorkspaceId(initialDockWorkspaceId);
-    setRightDockState(readRightDockState(storage, projectId, initialDockWorkspaceId));
-    setBrowserWindowStates(readBrowserWindowStates(storage, projectId));
-    setTerminalRendererPreferences((prev) =>
-      readTerminalRendererPreferences(
-        storage,
-        projectId,
-        workspacesRef.current.length
-          ? workspacesRef.current
-          : createDefaultWorkspaceState().workspaces
-      )
-    );
-    setIsClientLoaded(true);
-  }, [projectId, storage, terminalStateStorageKey]);
-
-  // T5 migration: stamp a pool name on any panel that does not have one.
-  // Idempotent — re-running on a panel that already has a displayName is a
-  // no-op because the per-panel localStorage entry is already written.
-  useEffect(() => {
-    if (!isClientLoaded) return;
-    if (!workspaces || workspaces.length === 0) return;
-    let mutated = false;
-    const next = workspaces.map((ws) => {
-      const columns = (ws.columns || []).map((col) => {
-        const panels = (col.panels || []).map((panel) => {
-          if (panel.displayName) return panel;
-          const stored = getPanelDisplayNameFromStore(panel.id, ws.id);
-          if (stored) {
-            // Mirror the cached name into localStorage so a stale Map cannot
-            // hide the entry from a fresh hydrate. Re-write is cheap.
-            setPanelDisplayNameInStore(panel.id, ws.id, stored);
-            mutated = true;
-            return { ...panel, displayName: stored };
-          }
-          const assigned = nextPoolNameForWorkspace(ws.id);
-          setPanelDisplayNameInStore(panel.id, ws.id, assigned);
-          mutated = true;
-          return { ...panel, displayName: assigned };
-        });
-        return { ...col, panels };
-      });
-      return { ...ws, columns };
-    });
-    if (mutated) {
-      setWorkspaces(next);
-    }
-  }, [isClientLoaded, workspaces]);
-
-  const flushTerminalPersistenceNow = useCallback(() => {
-    if (!storage || !isClientLoaded) return false;
-
-    return flushTerminalSessionPersistence(storage, {
-      workspaces: workspacesRef.current,
-      activeWsId: activeWsIdRef.current,
-      activePanelIds: activePanelIdsRef.current,
-      workspaceWindows: workspaceWindowsRef.current,
-      activeWindowIds: activeWindowIdsRef.current,
-      projectId,
-      appSessionId: `shutdown-${Date.now()}`,
-      agentRunsByPanel: readAgentRunsByPanel(storage),
-    });
-  }, [isClientLoaded, projectId, storage]);
-
-  useEffect(() => {
-    if (isClientLoaded) {
-      const payload = buildCleanTerminalStatePayload({
-        workspaces,
-        activeWsId,
-        activePanelIds,
-        workspaceWindows,
-        activeWindowIds,
-      });
-      storage?.setItem(terminalStateStorageKey, JSON.stringify(payload));
-    }
-  }, [
-    workspaces,
-    activeWsId,
-    activePanelIds,
-    workspaceWindows,
-    activeWindowIds,
-    isClientLoaded,
-    storage,
-    terminalStateStorageKey,
-  ]);
-
-  useEffect(() => {
-    if (!isClientLoaded) return;
-    writeTerminalRendererPreferences(storage, projectId, terminalRendererPreferences, workspaces);
-  }, [isClientLoaded, projectId, storage, terminalRendererPreferences, workspaces]);
-
-  useEffect(() => {
-    if (!isClientLoaded || !storage) return;
-
-    try {
-      const manifest = buildRestoreManifestFromWorkspaceState({
-        workspaces,
-        activeWorkspaceId: activeWsId,
-        projectId,
-        appSessionId: `live-${Date.now()}`,
-        agentRunsByPanel: readAgentRunsByPanel(storage),
-        restorePreferences: readWorkspaceRestorePreferences(storage),
-      });
-      storage.setItem(restoreManifestStorageKey, JSON.stringify(manifest));
-    } catch {
-      // Restore manifest persistence is best-effort only.
-    }
-  }, [activeWsId, isClientLoaded, projectId, restoreManifestStorageKey, storage, workspaces]);
-
   const applyPanelRelaunchCommand = useCallback(
     (
       panelId,
@@ -989,152 +712,54 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     [storage, terminalStateStorageKey]
   );
 
-  // --- Startup restore: global prefs + queued OpenCode resume (reboot-safe via --session) ---
-  useEffect(() => {
-    if (!isVisible || !isClientLoaded || !storage || hasRunStartupRestoreRef.current) return;
-
-    const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
-
-    if (!shouldRunStartupRestoreThisPageLoad(sessionStorage)) {
-      hasRunStartupRestoreRef.current = true;
-      return undefined;
-    }
-
-    const snapshotWorkspaces =
-      workspacesRef.current.length > 0 ? workspacesRef.current : workspaces;
-
-    let expectsHydratedWorkspaces = false;
-    try {
-      const savedRaw =
-        storage.getItem(terminalStateStorageKey) || storage.getItem('devhub_terminal_state');
-      if (savedRaw) {
-        const parsed = JSON.parse(savedRaw);
-        expectsHydratedWorkspaces =
-          Array.isArray(parsed?.workspaces) && parsed.workspaces.length > 0;
-      }
-    } catch {
-      expectsHydratedWorkspaces = false;
-    }
-
-    const hasHydratedPanels = snapshotWorkspaces.some((ws) =>
-      (ws?.columns || []).some((col) => (col?.panels || []).length > 0)
-    );
-
-    if (expectsHydratedWorkspaces && !terminalHydrationReadyRef.current) {
-      logTerminalSession('startup-restore-deferred', {
-        reason: 'awaiting-hydration',
-        expectsHydratedWorkspaces,
-      });
-      return;
-    }
-
-    if (expectsHydratedWorkspaces && !hasHydratedPanels) {
-      logTerminalSession('startup-restore-deferred', {
-        reason: 'awaiting-panels',
-        expectsHydratedWorkspaces,
-      });
-      return;
-    }
-
-    hasRunStartupRestoreRef.current = true;
-    logTerminalSession('startup-restore-begin', {
-      bootPanelIds: Array.from(bootPanelIdsRef.current),
-      snapshotPanelIds: collectWorkspacePanelIds(snapshotWorkspaces),
-      activeWsId: activeWsIdRef.current || activeWsId,
-    });
-
-    const restorePrefs = readWorkspaceRestorePreferences(storage);
-
-    const { suspendedSeed } = seedSuspendedOpenCodePanels({
-      snapshotWorkspaces,
-      agentRunsByPanel,
-      restorePrefs,
-    });
-    if (Object.keys(suspendedSeed).length > 0) {
-      setPanelRestoreModes(suspendedSeed);
-    }
-
-    const { runStartupRestore, abortStartupRestore } = createWorkspaceRestoreCoordinator({
-      storage,
-      terminalStateStorageKey,
-      projectId,
-      snapshotWorkspaces,
-      workspacesRef,
-      activeWsIdRef,
-      activeWsId,
-      bootPanelIdsRef,
-      agentRunsByPanel,
-      restorePrefs,
-      applyPanelRelaunchCommand,
-      setWorkspaces,
-      setPanelRestoreModes,
-      setReopenActionError,
-      markStartupRestoreCompleted: () => {
-        startupRestoreCompletedRef.current = true;
-        markStartupRestoreCompletedForSession(sessionStorage);
-      },
-    });
-
-    runStartupRestore();
-
-    return () => {
-      abortStartupRestore();
-    };
-  }, [
-    activeWsId,
-    applyPanelRelaunchCommand,
-    isClientLoaded,
-    isVisible,
+  const { flushTerminalPersistenceNow } = useWorkspaceBootstrapEffect({
     projectId,
     storage,
+    isVisible,
     terminalStateStorageKey,
-  ]);
-
-  // Synchronous flush before app/window close so opencode --session survives reboot.
-  useEffect(() => {
-    if (!isClientLoaded || typeof window === 'undefined') return undefined;
-
-    const runFlush = () => {
-      flushTerminalPersistenceNow();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        runFlush();
-      }
-    };
-
-    window.addEventListener('beforeunload', runFlush);
-    window.addEventListener('pagehide', runFlush);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('devhub:flush-terminal-persistence', runFlush);
-
-    return () => {
-      window.removeEventListener('beforeunload', runFlush);
-      window.removeEventListener('pagehide', runFlush);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('devhub:flush-terminal-persistence', runFlush);
-    };
-  }, [flushTerminalPersistenceNow, isClientLoaded]);
-
-  useEffect(() => {
-    if (!isClientLoaded) return;
-    writeBrowserWindowStates(storage, projectId, browserWindowStates);
-  }, [browserWindowStates, isClientLoaded, projectId, storage]);
-
-  useEffect(() => {
-    if (!workspaces.length) return;
-
-    const nextCounters = syncWorkspaceCountersMonotonic(workspaces, {
-      workspace: wsCounterRef.current,
-      column: colCounterRef.current,
-      panel: panelCounterRef.current,
-    });
-
-    wsCounterRef.current = nextCounters.workspace;
-    colCounterRef.current = nextCounters.column;
-    panelCounterRef.current = nextCounters.panel;
-  }, [workspaces]);
+    restoreManifestStorageKey,
+    isClientLoaded,
+    setIsClientLoaded,
+    isMaximized,
+    deferHeavySurfacesUntilPaint,
+    heavySurfacesReady,
+    setHeavySurfacesReady,
+    workspaces,
+    setWorkspaces,
+    activeWsId,
+    setActiveWsId,
+    activePanelIds,
+    setActivePanelIds,
+    workspaceWindows,
+    setWorkspaceWindows,
+    activeWindowIds,
+    setActiveWindowIds,
+    terminalRendererPreferences,
+    setTerminalRendererPreferences,
+    setBrowserWindowStates,
+    setDockWorkspaceId,
+    setRightDockState,
+    browserWindowStates,
+    agentRunsByPanel,
+    applyPanelRelaunchCommand,
+    setPanelRestoreModes,
+    setReopenActionError,
+    refBag: {
+      wsCounterRef,
+      colCounterRef,
+      panelCounterRef,
+      windowCounterRef,
+      terminalHydrationReadyRef,
+      bootPanelIdsRef,
+      activeWsIdRef,
+      activePanelIdsRef,
+      workspaceWindowsRef,
+      activeWindowIdsRef,
+      workspacesRef,
+      hasRunStartupRestoreRef,
+      startupRestoreCompletedRef,
+    },
+  });
 
   useEffect(() => {
     const barElement = panelSubtabsBarRef.current;
