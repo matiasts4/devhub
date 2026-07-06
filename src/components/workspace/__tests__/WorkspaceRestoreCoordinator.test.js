@@ -28,6 +28,19 @@ describe('WorkspaceRestoreCoordinator', () => {
     expect(suspendedSeed).toEqual({ p1: 'suspended' });
   });
 
+  it('seeds suspended for grok panel when generic policy is manual', () => {
+    const { suspendedSeed } = seedSuspendedOpenCodePanels({
+      snapshotWorkspaces: [
+        {
+          columns: [{ panels: [{ id: 'g1', initialCommand: 'grok' }] }],
+        },
+      ],
+      agentRunsByPanel: {},
+      restorePrefs: { opencode: 'auto', generic: 'manual', swarm: 'auto' },
+    });
+    expect(suspendedSeed).toEqual({ g1: 'suspended' });
+  });
+
   it('aborts restore callbacks when abortStartupRestore is called', async () => {
     const setPanelRestoreModes = jest.fn();
     const applyPanelRelaunchCommand = jest.fn();

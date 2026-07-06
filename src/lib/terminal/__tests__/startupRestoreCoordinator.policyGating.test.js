@@ -361,9 +361,7 @@ describe('startupRestoreCoordinator — policy gating', () => {
         runtimeSnapshot: makeMinimalRuntime(),
       });
 
-      const terminatedActions = plan.actions.filter(
-        (a) => a.action === RESTORE_ACTION.TERMINATED
-      );
+      const terminatedActions = plan.actions.filter((a) => a.action === RESTORE_ACTION.TERMINATED);
       expect(terminatedActions).toHaveLength(0);
     });
   });
@@ -616,6 +614,34 @@ describe('startupRestoreCoordinator — policy gating', () => {
 
       // deduplication keeps first matching key
       expect(plan.actions).toHaveLength(1);
+    });
+  });
+
+  describe('TUI launch commands', () => {
+    it('kimi panel does not emit RESTORE_SHELL_EMERGENT', () => {
+      const manifest = makeManifest({
+        terminalSessions: [
+          {
+            terminalId: 'k1',
+            panelId: 'k1',
+            workspaceId: 'ws1',
+            opencodeSessionId: null,
+            cwd: '/home/user',
+            initialCommand: 'kimi',
+            sessionKind: 'generic',
+            restorePolicy: 'auto',
+          },
+        ],
+      });
+
+      const plan = buildStartupRestorePlan({
+        manifest,
+        runtimeSnapshot: makeMinimalRuntime(),
+      });
+
+      expect(plan.actions.some((a) => a.action === RESTORE_ACTION.RESTORE_SHELL_EMERGENT)).toBe(
+        false
+      );
     });
   });
 

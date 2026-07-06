@@ -140,9 +140,23 @@ export function createWorkspaceRestoreCoordinator({
           )
         );
 
+        const runtimeTerminalById = new Map(
+          (runtimeSnapshot?.terminals || [])
+            .filter((t) => t?.terminalId)
+            .map((t) => [t.terminalId, t])
+        );
+
+        const restorePolicyByPanelId = new Map(
+          (manifest.terminalSessions || [])
+            .filter((s) => s?.terminalId)
+            .map((s) => [s.terminalId, s.restorePolicy || 'auto'])
+        );
+
         const queueResult = await dispatchStartupRestoreQueue({
           actions: plan.actions,
           getPanel: (panelId) => panelMap.get(panelId),
+          getRuntimeTerminal: (panelId) => runtimeTerminalById.get(panelId) || null,
+          getRestorePolicy: (panelId) => restorePolicyByPanelId.get(panelId) || 'auto',
           shouldSkipAction: (action) => {
             const panelId = action?.terminalId;
             if (!panelId) return false;
@@ -174,11 +188,20 @@ export function createWorkspaceRestoreCoordinator({
               action: action.action,
             });
             applyPanelRelaunchCommand(action.terminalId, command, panel?.cwd || null, {
+              bumpCommand: false,
               emitEvent: true,
             });
           },
           onPanelLive: (panelId) => {
             if (cancelled) return;
+            const panel = panelMap.get(panelId);
+            if (panel?.initialCommand && typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('devhub:panel-startup-reattach', {
+                  detail: { panelId, initialCommand: panel.initialCommand },
+                })
+              );
+            }
             setPanelRestoreModes((prev) => {
               const next = { ...prev };
               delete next[panelId];
@@ -230,30 +253,39 @@ export function createWorkspaceRestoreCoordinator({
   return { runStartupRestore, abortStartupRestore };
 }
 
-export function seedSuspendedOpenCodePanels({
+function isTuiPanelForGenericPolicy(panel, agentRun) {
+  const cmd = String(panel?.initialCommand || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
+  if (/^(grok|groc|kimi)\b/i.test(cmd)) return true;
+  return false;
+}
+
+export function seedSuspendedPanelsByPolicy({
   snapshotWorkspaces,
   agentRunsByPanel,
   restorePrefs,
 }) {
   const suspendedSeed = {};
-  const hasOpenCodePanels = snapshotWorkspaces.some((ws) =>
-    (ws.columns || []).some((col) =>
-      (col.panels || []).some((panel) => isOpenCodePanel(panel, agentRunsByPanel[panel.id]))
-    )
-  );
-
-  if (!hasOpenCodePanels) {
-    return { hasOpenCodePanels: false, suspendedSeed };
-  }
+  let hasGovernedPanels = false;
 
   snapshotWorkspaces.forEach((ws) => {
     ws.columns?.forEach((col) => {
       col.panels?.forEach((panel) => {
         const agentRun = agentRunsByPanel[panel.id];
-        if (!isOpenCodePanel(panel, agentRun)) return;
+        let sessionKind = 'generic';
+        if (isOpenCodePanel(panel, agentRun)) {
+          sessionKind = 'opencode';
+          hasGovernedPanels = true;
+        } else if (isTuiPanelForGenericPolicy(panel, agentRun)) {
+          sessionKind = 'generic';
+          hasGovernedPanels = true;
+        } else {
+          return;
+        }
 
         const policy = resolveEffectiveRestorePolicy({
-          sessionKind: 'opencode',
+          sessionKind,
           perSessionPolicy: agentRun?.restorePolicy || null,
           preferences: restorePrefs,
         });
@@ -265,7 +297,12 @@ export function seedSuspendedOpenCodePanels({
     });
   });
 
-  return { hasOpenCodePanels, suspendedSeed };
+  return { hasOpenCodePanels: hasGovernedPanels, suspendedSeed };
+}
+
+/** @deprecated name — use seedSuspendedPanelsByPolicy */
+export function seedSuspendedOpenCodePanels(args) {
+  return seedSuspendedPanelsByPolicy(args);
 }
 
 function readAgentRunsByPanel(storage) {

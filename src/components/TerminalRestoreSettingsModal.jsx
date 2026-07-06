@@ -88,7 +88,9 @@ function RestoreSection() {
           Políticas de restauración
         </h4>
         <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-          Elegí cómo se restauran las terminales al iniciar DevHub.
+          Los paneles y layouts siempre se restauran desde el estado guardado. Estas políticas
+          controlan el relanzamiento automático del proceso/TUI al iniciar (OpenCode con sesión,
+          Grok/Kimi relanzan el binario; Swarm reattach tmux).
         </p>
       </div>
 
@@ -197,7 +199,7 @@ function SectionContent({ section }) {
     case 'restore':
       return <RestoreSection />;
     case 'terminal':
-      return <TerminalSettingsSection />;
+      return <TerminalSettingsSection includeRestorePolicies={false} />;
     case 'pizarra':
       return <PizarraSettings />;
     case 'voice':

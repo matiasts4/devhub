@@ -1,30 +1,63 @@
 # Tasks: Terminal Session Restore Post Reboot
 
-## Phase 1: Infrastructure
+> **Branch:** `feature/terminal-decompose`  
+> **Apply:** Phases 4–6 implemented 2026-07-05 — see `verify-report.md`. Phase 7 e2e pending Chromium.
 
-- [x] 1.1 RED: Create `src/app/api/opencode/sessions/route.test.js` for success, timeout, malformed JSON, bounded results, cwd filtering, and `{ provider,status,sessions,error }` envelope cases.
-- [x] 1.2 GREEN: Update `src/app/api/opencode/sessions/route.js` to add a 10s `execFile` timeout, parse/normalize/dedupe newest-first sessions, cap results, enrich `isActive/activePanelId`, and return deterministic `success|empty|error` responses.
-- [x] 1.3 RED: Create `src/lib/agentSessions/resumableSessionAdapters.test.js` for `ResumableSession` normalization, provider capability gating, dedupe keys, and Hermes unsupported behavior.
-- [x] 1.4 GREEN: Create `src/lib/agentSessions/resumableSessionAdapters.js` with the shared model, OpenCode adapter, `supportsDurableResume()` contract, and Hermes runtime-only/optional adapter scaffolding without fake durable resume.
-- [x] 1.5 RED: Create `src/hooks/useResumableSessionCatalog.test.js` for abortable refresh, retry, stale-response ignore, and explicit `loading|success|empty|error` state transitions.
-- [x] 1.6 GREEN: Create `src/hooks/useResumableSessionCatalog.js` to fetch provider catalogs, normalize results, merge durable sessions, and expose retry/refresh selectors for UI consumers.
+## Review Workload Forecast
 
-## Phase 2: Implementation
+| Field                                | Value                                     |
+| ------------------------------------ | ----------------------------------------- |
+| Estimated changed lines (Phases 4–6) | ~600–900                                  |
+| Delivery                             | Committed on `feature/terminal-decompose` |
 
-- [x] 2.1 RED: Add component tests in `src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx` for topbar Reopen loading, error, empty, retry, and single-panel `opencode --session <id>` launch behavior.
-- [x] 2.2 GREEN: Update `src/components/TerminalWorkspacesManager.jsx` to replace local OpenCode/Hermes reopen state with the shared resumable catalog and reboot-safe OpenCode resume UX.
-- [x] 2.3 RED: Expand `src/components/__tests__/AgentRoomSidebar.test.js` and create `src/hooks/useAgentRegistryPolling.test.js` for shared history props, no stale history, and verified-provider-only rendering.
-- [x] 2.4 GREEN: Update `src/components/AgentRoomSidebar.jsx` and `src/hooks/useAgentRegistryPolling.js` so History consumes shared resumable sessions while polling stays focused on active/live agent state.
-- [x] 2.5 GREEN: Add deterministic reopen failure handling in `src/components/TerminalWorkspacesManager.jsx` and related helpers so invalidated sessions surface actionable errors instead of blank substitute tabs.
+---
 
-## Phase 3: Testing
+## Phase 1: Infrastructure (complete)
 
-- [x] 3.1 REFACTOR: Extract reusable fixtures/helpers for OpenCode session payloads and resumable-session view models across route, adapter, hook, and component tests.
-- [x] 3.2 Add integration coverage proving topbar Reopen and Agent Room History render the same OpenCode resumable entries and recover from timeout/error retry flows.
-- [ ] 3.3 RED: Sharpen `tests/e2e/terminal-session-restore-post-reboot.spec.ts` to drive real startup auto-resume after app open/reboot-style reload, assert exactly one resumed `opencode --session <id>` launch, and prove Hermes stays absent/unsupported in durable reopen UI.
-- [ ] 3.4 GREEN: Apply the smallest product/test-helper fixes in `src/components/TerminalWorkspacesManager.jsx`, `src/components/AgentRoomSidebar.jsx`, and related reopen helpers so startup auto-resume stays single-launch and unsupported Hermes behavior matches the sharpened browser flow.
-- [ ] 3.5 VERIFY: Run targeted Jest coverage plus `npx playwright test tests/e2e/terminal-session-restore-post-reboot.spec.ts` to confirm startup auto-resume, duplicate-launch protection, and unsupported-Hermes behavior end-to-end once local Chromium is available.
+- [x] 1.1–1.6 OpenCode sessions route + adapters + catalog hook
 
-## Non-MVP Follow-up
+## Phase 2: Reopen / History (complete)
 
-Codex/Cloud adapter extension points remain follow-up work only after OpenCode MVP ships and each provider's list/resume contract is verified.
+- [x] 2.1–2.5 TWM + AgentRoom shared catalog
+
+## Phase 3: Integration baseline
+
+- [x] 3.1–3.2 Fixtures + integration
+- [ ] 3.3–3.5 Folded into Phase 7 (e2e)
+
+---
+
+## Phase 4: Startup inject orchestration (TSIO) — **APPLIED**
+
+- [x] 4.1 RED: `startupInjectOrchestrator.test.js`
+- [x] 4.2 GREEN: `startupInjectOrchestrator.js`
+- [x] 4.3 RED: `startupRestoreRunner.test.js` skip when dispatched
+- [x] 4.4 GREEN: `startupRestoreRunner.js` intent integration
+- [x] 4.5 RED: policy gating kimi not shell-ephemeral
+- [x] 4.6 GREEN: `startupRestoreCoordinator.js` + `restorePolicyResolver.js`
+- [x] 4.7 RED: `WorkspaceRestoreCoordinator.test.js` grok suspended
+- [x] 4.8 GREEN: coordinator + `useTerminalInitialCommandLifecycle.js` reattach event
+- [x] 4.9 Existing `TerminalWorkspacesManager.startupRestore.test.jsx` still passes
+- [x] 4.10 VERIFY: targeted Jest suites green
+
+## Phase 5: Terminal restore gear (TRG) — **APPLIED**
+
+- [x] 5.1 RED/GREEN: `TerminalSettingsSection.restore.test.jsx`
+- [x] 5.2 GREEN: `includeRestorePolicies` prop
+- [x] 5.3 GREEN: modal copy + `includeRestorePolicies={false}` on Terminal tab
+- [x] 5.4 RED: grok generic manual suspended seed test
+- [x] 5.5 GREEN: `seedSuspendedPanelsByPolicy`
+- [x] 5.6 VERIFY: modal + section tests
+
+## Phase 6: Provider adapters (Phase B placeholders) — **APPLIED**
+
+- [x] 6.1 `provider-notes-grok.md`
+- [x] 6.2 `provider-notes-kimi.md`
+- [x] 6.3–6.4 Placeholder adapters in `resumableSessionAdapters.js`
+- [ ] 6.5 When CLI verified — future work
+
+## Phase 7: E2E + verify (remaining)
+
+- [ ] 7.1 GREEN: sharpen Playwright spec (single inject)
+- [ ] 7.2 VERIFY: `npx playwright test tests/e2e/terminal-session-restore-post-reboot.spec.ts`
+- [x] 7.3 `verify-report.md` updated

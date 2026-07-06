@@ -117,6 +117,38 @@ export const openCodeResumableSessionAdapter = {
   },
 };
 
+/** Placeholder until Grok CLI list+resume is verified — never auto-resumes on startup. */
+export const grokResumableSessionAdapter = {
+  id: 'grok',
+  supportsDurableResume() {
+    return false;
+  },
+  buildResumeCommand() {
+    return null;
+  },
+  async listSessions() {
+    return { provider: 'grok', status: 'empty', sessions: [], error: null };
+  },
+};
+
+/** Placeholder until Kimi/KimiCode CLI list+resume is verified. */
+export const kimiResumableSessionAdapter = {
+  id: 'kimi',
+  supportsDurableResume() {
+    return false;
+  },
+  buildResumeCommand() {
+    return null;
+  },
+  async listSessions() {
+    return { provider: 'kimi', status: 'empty', sessions: [], error: null };
+  },
+};
+
 export function getResumableSessionAdapters() {
   return [openCodeResumableSessionAdapter].filter((adapter) => adapter.supportsDurableResume());
+}
+
+export function getPlaceholderResumableSessionAdapters() {
+  return [grokResumableSessionAdapter, kimiResumableSessionAdapter];
 }

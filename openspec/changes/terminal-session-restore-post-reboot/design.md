@@ -1,93 +1,149 @@
-# Design: Terminal Session Restore Post Reboot
+# Design: Terminal Session Restore Post Reboot (Phase 2)
 
 ## Technical Approach
 
-Focus MVP on durable agent-session resume, not terminal resurrection. Normalize resumable sessions behind one provider adapter contract, harden `/api/opencode/sessions` with bounded execution, and make `TerminalWorkspacesManager` own one resumable-session catalog consumed by both topbar Reopen and Agent Room History. Hermes runtime detection stays separate from durable resume until CLI list+resume support is verified.
+Phases 1–2 delivered bounded OpenCode catalog + Reopen/History. Phase 2 (this design) adds a **cold-start inject orchestrator** so layout hydrate and startup restore cannot both push PTY input into the same live TUI, then aligns **gear** settings and **TUI taxonomy** (Grok/Kimi/OpenCode/Swarm) for faster, correct resume.
+
+**Branch:** `feature/terminal-decompose`.
 
 ## Architecture Decisions
 
-| Decision | Options | Choice | Rationale |
-|---|---|---|---|
-| Session domain model | Keep OpenCode-specific shapes in each UI; add shared resumable model | Shared `ResumableSession` adapter contract | Removes current split behavior and gives Hermes/Codex/Cloud clean future entry points. |
-| OpenCode listing control | Unbounded `execFile`; UI-only timeout; backend timeout + UI cancellation | Backend timeout + UI cancellation | Fixes hanging Reopen at source and prevents stale refresh races in renderer. |
-| History source | Keep `useAgentRegistryPolling` synthesizing OpenCode-only history; topbar separate fetch | Lift resumable catalog to `TerminalWorkspacesManager`, pass history down | One source of truth for durable resume while preserving existing active-agent polling. |
-| Hermes MVP | Reopen by cwd relaunch; hide entirely; conditional adapter | Conditional adapter, excluded from durable catalog until verified | Current `hermes` relaunch is NOT resume. Keep runtime presence, not fake durability. |
+| Decision             | Options                                           | Choice                                            | Rationale                                           |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------- |
+| Inject authority     | TTY-only; restore-only; **shared resolver**       | Shared `resolvePanelStartupInjectIntent`          | Single place to prevent OpenCode double-inject bug  |
+| `#recovery-*` suffix | Always bump on startup; **manual only**           | Manual revive + explicit user actions only        | Recovery suffix currently defeats redundancy guards |
+| Kimi classification  | generic shell-ephemeral; **TUI kind `kimi`**      | Explicit TUI kind                                 | Avoids wrong `RESTORE_SHELL_EMERGENT` path          |
+| Grok session resume  | Fake session ids; **relaunch until CLI verified** | Relaunch `grok` via hydrate; adapter later        | Matches user-approved current UX                    |
+| Restore settings UI  | Ajustes + gear; **gear Restauración only**        | Gear canonical; strip duplicate from Terminal tab | Product decision                                    |
+| Prefs scope          | per-project; **global**                           | `devhub_terminal_restore_prefs`                   | Product decision                                    |
 
-## Data Flow
-
-Sequence:
+## Cold Start Sequence
 
 ```text
-User opens Reopen / History
-  -> TerminalWorkspacesManager requests resumable catalog
-  -> provider adapter calls /api/opencode/sessions?cwd=...
-  -> route runs `opencode session list --format json --max-count 20` with 10s timeout
-  -> adapter normalizes, filters, dedupes, caps results
-  -> catalog state = success | empty | error
-  -> Topbar Reopen and Agent Room History render same sessions
-  -> Resume action launches `opencode --session <id>` in one new panel
+App visible + client loaded
+  -> Hydrate workspaces from terminalStateStorageKey
+  -> bootPanelIdsRef := hydrated panel ids
+  -> (defer) until terminalHydrationReadyRef if persisted state expected
+
+runStartupRestore (once per cold page load)
+  -> fetch runtime-diagnostics snapshot
+  -> optional OpenCode discovery patch manifest
+  -> buildRestoreManifestFromWorkspaceState(restorePreferences)
+  -> buildStartupRestorePlan(manifest, runtime)
+  -> FOR each relaunch action:
+        intent := resolvePanelStartupInjectIntent(panel, action, runtime, lifecycle)
+        IF intent.skip -> no applyPanelRelaunchCommand
+        ELSE applyPanelRelaunchCommand (no #recovery on auto startup)
+
+Parallel: each TerminalTTY connect
+  -> resolveConnectInitialCommandState (remount guard)
+  -> on server ready + viewport fit:
+        intent := resolvePanelStartupInjectIntent(...)
+        IF intent.skip OR sessionReattached -> mark sent, no PTY write
+        ELSE send normalized command once; markPanelInitialCommandDispatched
+
+onPanelLive / REATTACH_LIVE -> set panel lifecycle + TTY sessionReattached (new wiring)
 ```
 
-`ResumableSession` contract:
+## Panel Inject State Machine
 
-```js
-{
-  provider: 'opencode' | 'hermes' | 'future',
-  sessionId: string,
-  title: string,
-  cwd: string | null,
-  updatedAt: string | null,
-  isActive: boolean,
-  activePanelId: string | null,
-  resumeCommand: string,
-  durable: boolean,
-}
+```text
+                    ┌─────────────┐
+                    │  HYDRATED   │
+                    └──────┬──────┘
+                           │ runtime probe
+              ┌────────────┼────────────┐
+              v            v            v
+        ┌──────────┐ ┌──────────┐ ┌─────────────┐
+        │ REATTACH │ │ INJECT   │ │ SKIP/OFF    │
+        │ (alive)  │ │ ONCE     │ │ manual/off  │
+        └──────────┘ └──────────┘ └─────────────┘
+              │            │
+              └─────┬──────┘
+                    v
+              ┌──────────┐
+              │ STABLE   │  (no second auto inject)
+              └──────────┘
 ```
 
-Rules:
-- Backend caps provider fetch at 20 items; UI renders max 10 per provider.
-- Dedupe key = `${provider}:${sessionId}`.
-- CWD filter stays backend-first, prefix-match compatible with current route.
-- Every refresh is abortable; stale responses are ignored.
-- States are explicit: `loading`, `success`, `empty`, `error`.
+## New Module (proposed)
 
-## File Changes
+| Module                                          | Responsibility                                                                                                 |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `src/lib/terminal/startupInjectOrchestrator.js` | `normalizeInjectCommand`, `resolvePanelStartupInjectIntent`, cold-load session id in `sessionStorage` optional |
 
-| File | Action | Description |
-|---|---|---|
-| `src/app/api/opencode/sessions/route.js` | Modify | Add `execFile` timeout, normalized envelope, deterministic timeout/error metadata, newest-first dedupe/filter/cap behavior. |
-| `src/lib/agentSessions/resumableSessionAdapters.js` | Create | Define adapter contract, OpenCode normalizer, provider capability flags, future Hermes/Codex/Cloud extension points. |
-| `src/hooks/useResumableSessionCatalog.js` | Create | Fetch, abort, retry, and expose shared resumable catalog state for UI consumers. |
-| `src/components/TerminalWorkspacesManager.jsx` | Modify | Replace split OpenCode/Hermes local state with shared catalog; render timeout/error/empty states; keep resume launching through `reopenOpenCodeSession()`. |
-| `src/components/AgentRoomSidebar.jsx` | Modify | Consume resumable history as props instead of synthesizing OpenCode-only history internally. |
-| `src/hooks/useAgentRegistryPolling.js` | Modify | Stop owning durable history synthesis; stay focused on active/live agent state. |
+Integrate into:
 
-## Interfaces / Contracts
+- `startupRestoreRunner.dispatchStartupRestoreQueue` — skip `onRelaunch` when intent satisfied; use per-action command builder (rename `buildOpenCodeResumeCommand` usage to `buildStartupResumeCommand(action, panel)`).
+- `useTerminalInitialCommandLifecycle.sendInitialCommandIfReady` — call resolver before send.
+- `WorkspaceRestoreCoordinator.onPanelLive` — dispatch `devhub:panel-startup-reattach` or set lifecycle via existing debug bus.
 
-- `GET /api/opencode/sessions?cwd=...` -> `{ provider: 'opencode', status: 'success'|'empty'|'error', sessions: ResumableSession[], error?: { code, message, retryable } }`
-- Adapter interface:
-  - `id`
-  - `supportsDurableResume(): boolean`
-  - `listSessions(context): Promise<{status,sessions,error?}>`
-  - `buildResumeCommand(session): string`
+## Provider Phases (B)
 
-Hermes adapter MAY exist for runtime detection, but MUST return `supportsDurableResume() === false` until CLI list/resume is verified.
+| Provider        | Phase A (this change)         | Phase B follow-up                           |
+| --------------- | ----------------------------- | ------------------------------------------- |
+| OpenCode        | Orchestration + e2e           | Session id stability, discovery race fixes  |
+| Grok            | `grok` once via hydrate       | Adapter + API when CLI list/resume verified |
+| Kimi / KimiCode | TUI kind + no shell-ephemeral | Adapter when verified                       |
+| Swarm           | Reattach only (unchanged)     | Policy copy in gear                         |
+| Hermes          | Excluded durable              | Unchanged                                   |
+
+## File Changes (Phase A apply)
+
+| File                                                                  | Action                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `src/lib/terminal/startupInjectOrchestrator.js`                       | **Create**                                              |
+| `src/lib/terminal/startupInjectOrchestrator.test.js`                  | **Create** RED first                                    |
+| `src/lib/terminal/startupRestoreRunner.js`                            | Modify dispatch + command builder                       |
+| `src/lib/terminal/startupRestoreCoordinator.js`                       | Kimi in `isTuiLaunchCommand`; plan tweaks               |
+| `src/lib/terminal/restorePolicyResolver.js`                           | `inferPanelSessionKind` → `kimi`                        |
+| `src/components/workspace/WorkspaceRestoreCoordinator.js`             | `onPanelLive` wiring                                    |
+| `src/components/terminal/hooks/useTerminalInitialCommandLifecycle.js` | Resolver gate                                           |
+| `src/components/terminal/hooks/useTerminalV2Session.js`               | Listen for reattach signal                              |
+| `src/components/TerminalRestoreSettingsModal.jsx`                     | Copy + Terminal tab without restore dup                 |
+| `src/components/settings/TerminalSettingsSection.jsx`                 | Prop `showRestorePolicies` default true; false in modal |
+| `src/components/workspace/WorkspaceRestoreCoordinator.js`             | `seedSuspended*` generalized                            |
+| `tests/e2e/terminal-session-restore-post-reboot.spec.ts`              | Single-inject assertions                                |
+
+## Interfaces
+
+```ts
+// startupInjectOrchestrator.js (conceptual)
+type InjectIntent =
+  | { action: 'inject'; command: string; reason: string }
+  | { action: 'skip'; reason: 'already-dispatched' | 'runtime-live' | 'policy-off' | 'policy-manual' };
+
+function resolvePanelStartupInjectIntent({
+  panelId,
+  panel,
+  agentRun,
+  runtimeTerminal,
+  lifecycleRecord,
+  restorePolicy,
+  proposedCommand,
+  phase: 'hydrate' | 'startup-relaunch',
+}): InjectIntent;
+```
+
+Startup relaunch MUST pass `phase: 'startup-relaunch'`; TTY MUST pass `phase: 'hydrate'`.
 
 ## Testing Strategy
 
-| Layer | What to Test | Approach |
-|---|---|---|
-| Unit | OpenCode adapter normalization, dedupe, caps, unsupported-provider gating | Jest/Testing Library RED tests for adapter helpers first. |
-| Integration | `/api/opencode/sessions` success, timeout, malformed JSON, empty list | Route tests with mocked `execFile`; assert 10s failure contract and envelope shape. |
-| UI | Reopen loading/error/empty/success, retry, stale-refresh cancellation, History parity | Component tests for `TerminalWorkspacesManager` + `AgentRoomSidebar` using shared catalog mocks. |
-| E2E | Resume same OpenCode session from topbar and Agent Room | Playwright flow proving one panel launches with `opencode --session <id>`. |
+| Layer     | Focus                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| Unit      | `startupInjectOrchestrator` matrix: alive runtime, duplicate command, manual policy, opencode vs grok   |
+| Unit      | `startupRestoreRunner` skips relaunch when intent skip                                                  |
+| Component | `TerminalWorkspacesManager.startupRestore` — no second `devhub:relaunch-panel` when lifecycle satisfied |
+| Component | `TerminalRestoreSettingsModal` — no duplicate testids on Terminal tab                                   |
+| E2E       | Cold reload: one ws input or one relaunch for OpenCode fixture                                          |
 
-Strict TDD: RED route tests -> RED adapter tests -> RED component parity tests -> implementation.
+Strict TDD: orchestrator RED → runner → TTY hook → gear → e2e.
 
 ## Migration / Rollout
 
-No data migration required. Migrate behavior in three steps: (1) introduce adapter + catalog behind current OpenCode path, (2) switch topbar and Agent Room History to shared catalog, (3) remove `hermesSessions` durable reopen UI from MVP. Hermes/Codex/Cloud remain adapter slots, not shipped durable providers.
+No persisted schema migration. Behavior change only on cold start path. Rollback: remove orchestrator calls; restore unconditional `buildOpenCodeResumeCommand` relaunch (reverts to prior race risk).
 
 ## Open Questions
 
-- [ ] None blocking MVP; Hermes durable resume remains explicitly deferred pending verified CLI support.
+- [ ] Grok/Kimi CLI list+resume commands (Phase B) — document in provider tickets when discovered.
+- [ ] Whether `sessionStorage` cold-load token should reset lifecycle map on `navigation type reload` only (align with existing `shouldRunStartupRestoreThisPageLoad`).

@@ -31,7 +31,7 @@ import {
   setZoom,
 } from '@/lib/theme/themes';
 
-export default function TerminalSettingsSection() {
+export default function TerminalSettingsSection({ includeRestorePolicies = true }) {
   const [rendererMode, setRendererMode] = useState(() => {
     if (typeof window === 'undefined') return 'xterm-webgl';
     return readTerminalRendererDefaultModeSetting(window.localStorage);
@@ -249,44 +249,46 @@ export default function TerminalSettingsSection() {
             </button>
           </div>
 
-          <div>
-            <h4
-              className="font-mono text-sm font-semibold"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              Terminal restore
-            </h4>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-              Choose how terminals are restored at startup.
-            </p>
-            <div className="space-y-3 mt-3">
-              {[
-                { key: 'opencode', label: 'OpenCode' },
-                { key: 'generic', label: 'Shell Genérico' },
-                { key: 'swarm', label: 'Swarm' },
-              ].map(({ key, label }) => (
-                <div key={key} className="flex items-center justify-between max-w-sm">
-                  <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {label}
-                  </label>
-                  <select
-                    data-testid={`restore-policy-${key}`}
-                    value={restorePrefs[key]}
-                    onChange={handleRestorePolicyChange(key)}
-                    className="h-11 rounded-xl border px-3 text-sm"
-                    style={{
-                      ...chromeSurfaceStyle({ surface: 'pill' }),
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    <option value={RESTORE_POLICY.AUTO}>Automático</option>
-                    <option value={RESTORE_POLICY.MANUAL}>Manual</option>
-                    <option value={RESTORE_POLICY.OFF}>Desactivado</option>
-                  </select>
-                </div>
-              ))}
+          {includeRestorePolicies ? (
+            <div>
+              <h4
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Terminal restore
+              </h4>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                Choose how terminals are restored at startup.
+              </p>
+              <div className="space-y-3 mt-3">
+                {[
+                  { key: 'opencode', label: 'OpenCode' },
+                  { key: 'generic', label: 'Shell Genérico' },
+                  { key: 'swarm', label: 'Swarm' },
+                ].map(({ key, label }) => (
+                  <div key={key} className="flex items-center justify-between max-w-sm">
+                    <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {label}
+                    </label>
+                    <select
+                      data-testid={`restore-policy-${key}`}
+                      value={restorePrefs[key]}
+                      onChange={handleRestorePolicyChange(key)}
+                      className="h-11 rounded-xl border px-3 text-sm"
+                      style={{
+                        ...chromeSurfaceStyle({ surface: 'pill' }),
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      <option value={RESTORE_POLICY.AUTO}>Automático</option>
+                      <option value={RESTORE_POLICY.MANUAL}>Manual</option>
+                      <option value={RESTORE_POLICY.OFF}>Desactivado</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <div data-testid="settings-zoom">
             <h4

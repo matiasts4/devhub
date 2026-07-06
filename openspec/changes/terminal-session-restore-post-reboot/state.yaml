@@ -1,0 +1,31 @@
+# SDD phase tracking — terminal-session-restore-post-reboot
+# Branch: feature/terminal-decompose (all apply work stays here)
+
+change: terminal-session-restore-post-reboot
+schema: spec-driven
+
+phases:
+  explore:
+    status: completed
+    artifact: exploration.md
+  propose:
+    status: completed
+    artifact: proposal.md
+  spec:
+    status: completed
+    artifacts:
+      - specs/agent-session-reopen/spec.md
+      - specs/terminal-startup-inject-orchestration/spec.md
+      - specs/terminal-restore-gear/spec.md
+  design:
+    status: completed
+    artifact: design.md
+  tasks:
+    status: completed
+    artifact: tasks.md
+  apply:
+    status: completed
+    note: Phases 4–6 on feature/terminal-decompose; Phase 7 e2e pending
+  verify:
+    status: partial
+    artifact: verify-report.md

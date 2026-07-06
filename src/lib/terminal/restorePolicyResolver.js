@@ -47,6 +47,9 @@ export function inferPanelSessionKind({
   if (/opencode/i.test(String(initialCommand || ''))) {
     return 'opencode';
   }
+  if (/^kimi\b/i.test(String(initialCommand || '').trim())) {
+    return 'generic';
+  }
   return 'generic';
 }
 

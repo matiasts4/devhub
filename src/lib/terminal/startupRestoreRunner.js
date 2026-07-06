@@ -7,6 +7,7 @@ function sleep(ms) {
 }
 import { inferPanelSessionKind } from './restorePolicyResolver';
 import { buildOpencodeResumeCommand } from './opencodeSessionRegistry.js';
+import { resolvePanelStartupInjectIntent } from './startupInjectOrchestrator.js';
 
 export const STARTUP_RESTORE_MAX_CONCURRENCY = 2;
 export const STARTUP_RESTORE_DELAY_MS = 350;
@@ -88,6 +89,10 @@ export async function waitForRestoreMutexClear(
   return !isMutexHeld(storage, keys);
 }
 
+export function buildStartupResumeCommand(panel, action) {
+  return buildOpenCodeResumeCommand(panel, action);
+}
+
 export function buildOpenCodeResumeCommand(panel, action) {
   const sessionKind =
     action?.sessionKind ||
@@ -126,6 +131,8 @@ export async function dispatchStartupRestoreQueue({
   maxConcurrency = STARTUP_RESTORE_MAX_CONCURRENCY,
   delayMs = STARTUP_RESTORE_DELAY_MS,
   shouldSkipAction,
+  getRuntimeTerminal = null,
+  getRestorePolicy = null,
 } = {}) {
   const relaunchActions = actions.filter((action) => RELAUNCH_RESTORE_ACTIONS.has(action.action));
   const manualPanelIds = new Set(
@@ -162,12 +169,26 @@ export async function dispatchStartupRestoreQueue({
         continue;
       }
 
-      const command = buildOpenCodeResumeCommand(panel, action);
+      const command = buildStartupResumeCommand(panel, action);
       if (!action.terminalId || !command) {
         continue;
       }
 
-      await onRelaunch(action, panel, command);
+      const runtimeTerminal = getRuntimeTerminal?.(action.terminalId) || null;
+      const restorePolicy = getRestorePolicy?.(action.terminalId) || 'auto';
+      const intent = resolvePanelStartupInjectIntent({
+        panelId: action.terminalId,
+        panel,
+        proposedCommand: command,
+        phase: 'startup-relaunch',
+        runtimeTerminal,
+        restorePolicy,
+      });
+      if (intent.action === 'skip') {
+        continue;
+      }
+
+      await onRelaunch(action, panel, intent.command);
 
       if (delayMs > 0) {
         await sleep(delayMs);

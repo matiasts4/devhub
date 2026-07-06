@@ -76,7 +76,7 @@ function isTuiLaunchCommand(initialCommand) {
   const command = String(initialCommand || '')
     .replace(/\s*#recovery-\d+\s*$/i, '')
     .trim();
-  return /^(opencode|hermes|grok|groc)\b/i.test(command);
+  return /^(opencode|hermes|grok|groc|kimi)\b/i.test(command);
 }
 
 /** Shell-ephemeral respawn only — never relaunch live TUI sessions (opencode/grok/hermes). */

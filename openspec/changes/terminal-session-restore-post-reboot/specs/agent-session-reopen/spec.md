@@ -66,6 +66,14 @@ On app open after relaunch or reboot, DevHub MUST auto-resume verified durable s
 - THEN DevHub MUST NOT launch a duplicate panel for the same durable session
 - AND already restored panels MUST remain the single restored instance
 
+#### Scenario: Startup skips duplicate PTY inject into live TUI
+
+- GIVEN the panel TUI already received the normalized durable resume command on cold start
+- OR the runtime terminal is alive and reattach applies
+- WHEN startup auto-resume or hydrate lifecycle completes
+- THEN DevHub MUST NOT send a second copy of the same resume command into the PTY
+- AND MUST NOT corrupt an already-running OpenCode or Grok TUI (see `terminal-startup-inject-orchestration`)
+
 ### Requirement: Only Verified Durable Providers May Auto-Resume
 
 Reopen, resumable history, and startup auto-resume MUST surface durable sessions only for providers with verified CLI list-and-resume support. Hermes durable restore MUST remain unsupported and deferred unless that contract is verified. DevHub MUST NOT label plain `hermes` relaunch as reboot-safe restore. Codex and Cloud-like providers SHOULD remain extension points only.
@@ -83,6 +91,25 @@ Reopen, resumable history, and startup auto-resume MUST surface durable sessions
 - WHEN that provider is surfaced as durable
 - THEN DevHub MUST use that verified contract for reopen and startup auto-resume
 - AND it MAY join the same durable-provider model as OpenCode
+
+### Requirement: Non-OpenCode TUI Relaunch Preserved
+
+DevHub MUST continue to restore panel layout and relaunch Grok and Kimi TUIs from persisted `initialCommand` on cold start when no durable session id exists. This behavior MUST NOT be disabled by restore policy `auto` defaults.
+
+#### Scenario: Grok reopens without session id
+
+- GIVEN a saved panel with `initialCommand` `grok` and valid `cwd`
+- AND no Grok durable session adapter is registered
+- WHEN the app opens after cold start
+- THEN DevHub MUST show the panel and inject `grok` at most once
+- AND MUST NOT require `opencode --session` discovery
+
+#### Scenario: Kimi is not shell-ephemeral respawn
+
+- GIVEN a saved panel whose command launches Kimi TUI
+- WHEN startup restore plan is built
+- THEN DevHub MUST NOT classify that panel as plain `RESTORE_SHELL_EMERGENT` shell respawn
+- AND MUST use TUI-classified restore behavior
 
 ## Acceptance Criteria
 

@@ -3,7 +3,7 @@
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 3).
  */
 /* eslint-disable no-console -- parity with source TerminalTTY debug logs */
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { cliLog } from '@/components/terminal/TerminalTTY.helpers';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import {
@@ -22,6 +22,7 @@ import {
   shouldSkipRedundantInitialCommandSend,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { shouldBlockLateInitialCommandSend } from '@/components/terminal/TerminalTTY.helpers';
+import { resolvePanelStartupInjectIntent } from '@/lib/terminal/startupInjectOrchestrator';
 import { TERMINAL_PROJECTION_READY_TIMEOUT_MS } from '@/components/terminal/TerminalTTY.helpers';
 
 export default function useTerminalInitialCommandLifecycle({
@@ -280,6 +281,32 @@ export default function useTerminalInitialCommandLifecycle({
       }
     }
 
+    const hydrateIntent = resolvePanelStartupInjectIntent({
+      panelId: id,
+      panel: { id, initialCommand },
+      proposedCommand: commandToSend,
+      phase: 'hydrate',
+      runtimeTerminal: null,
+      restorePolicy: 'auto',
+      allowRecoverySuffix: isRecoveryRelaunch,
+    });
+    if (hydrateIntent.action === 'skip' && !isRecoveryRelaunch) {
+      logTerminalSession('initial-command-skipped', {
+        panelId: id,
+        reason: `orchestrator-${hydrateIntent.reason}`,
+        command: initialCommand,
+      });
+      hasSentInitialCommand.current = true;
+      if (
+        hydrateIntent.reason === 'already-dispatched' ||
+        hydrateIntent.reason === 'runtime-live'
+      ) {
+        sessionReattachedRef.current = true;
+      }
+      markPanelInitialCommandDispatched(id, commandToSend);
+      return;
+    }
+
     if (skipRedundantInitialCommandSend(commandToSend, isRecoveryRelaunch)) {
       logTerminalSession('initial-command-skipped', {
         panelId: id,
@@ -368,6 +395,20 @@ export default function useTerminalInitialCommandLifecycle({
     }
     sendInitialCommandIfReady();
   }, [ctxRef, sendInitialCommandIfReady, swarmContext?.startAfterMs]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = (event) => {
+      const { panelId } = event.detail || {};
+      if (panelId !== id) return;
+      const c = ctxRef.current;
+      c.sessionReattachedRef.current = true;
+      c.hasSentInitialCommand.current = true;
+      markPanelInitialCommandDispatched(id, event.detail?.initialCommand || initialCommand);
+    };
+    window.addEventListener('devhub:panel-startup-reattach', handler);
+    return () => window.removeEventListener('devhub:panel-startup-reattach', handler);
+  }, [ctxRef, id, initialCommand]);
 
   return {
     resolveSwarmTmuxSessionName,
