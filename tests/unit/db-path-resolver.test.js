@@ -45,14 +45,18 @@ describe('DevHub DB path resolver', () => {
     expect(fs.existsSync(path.join(homeDir, '.devhub', 'data'))).toBe(true);
   });
 
-  test('uses ~/.devhub-dev when tauri dev sidecar markers are present', () => {
+  test('uses ~/.devhub-dev when DEVHUB_HOME or DEVHUB_RUNTIME marks dev', () => {
     const homeDir = path.join(tmpRoot, 'home');
     const devDir = path.join(homeDir, '.devhub-dev');
+    const prodDir = path.join(homeDir, '.devhub');
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(path.join(devDir, 'sidecar-port.txt'), '4001', 'utf8');
 
     const { getCanonicalDevhubDir } = loadResolver();
-    expect(getCanonicalDevhubDir({ env: {}, homeDir })).toBe(devDir);
+    expect(getCanonicalDevhubDir({ env: { DEVHUB_HOME: devDir }, homeDir })).toBe(devDir);
+    expect(getCanonicalDevhubDir({ env: { DEVHUB_RUNTIME: 'development' }, homeDir })).toBe(devDir);
+    // Markers alone must not steal the installed home (coexistence).
+    expect(getCanonicalDevhubDir({ env: {}, homeDir })).toBe(prodDir);
   });
 
   test('syncs a stale ~/.devhub-dev database from newer ~/.devhub/data on resolve', () => {
@@ -82,7 +86,7 @@ describe('DevHub DB path resolver', () => {
 
     const { resolveDbPath } = loadResolver();
     const resolved = resolveDbPath({
-      env: {},
+      env: { DEVHUB_HOME: devDir },
       homeDir,
       cwd: path.join(tmpRoot, 'repo'),
       moduleDir: path.join(tmpRoot, 'repo', 'src', 'lib', 'db'),
@@ -120,7 +124,7 @@ describe('DevHub DB path resolver', () => {
 
     const { resolveDbPath } = loadResolver();
     resolveDbPath({
-      env: {},
+      env: { DEVHUB_HOME: devDir },
       homeDir,
       cwd: path.join(tmpRoot, 'repo'),
       moduleDir: path.join(tmpRoot, 'repo', 'src', 'lib', 'db'),

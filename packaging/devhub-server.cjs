@@ -280,11 +280,42 @@ function ensureNativeRuntime({ runtimeDir, packageName, label, checkKind, nodeBi
     : checkNodePty(runtimeDir, nodeBin);
 }
 
-function killListenersOnPort(port) {
+function isDevhubRelatedCommandLine(cmdline) {
+  const c = String(cmdline || '').toLowerCase();
+  return (
+    c.includes('sidecar-backend') ||
+    c.includes('devhub-server') ||
+    c.includes('.devhub') ||
+    c.includes('devhub')
+  );
+}
+
+function readProcessCommandLine(pid) {
+  if (!pid || pid === process.pid) return '';
+  if (process.platform === 'win32') {
+    try {
+      const out = execSync(
+        `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId=${pid}\\").CommandLine"`,
+        { encoding: 'utf8', timeout: 8000 }
+      );
+      return String(out || '').trim();
+    } catch (_error) {
+      return '';
+    }
+  }
+  try {
+    const out = execSync(`ps -p ${pid} -o args=`, { encoding: 'utf8' });
+    return String(out || '').trim();
+  } catch (_error) {
+    return '';
+  }
+}
+
+function collectListenerPids(port) {
+  const pids = new Set();
   if (process.platform === 'win32') {
     try {
       const output = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8' });
-      const pids = new Set();
       for (const line of output.split(/\r?\n/)) {
         const match = line.trim().match(/:(\d+)\s+.*?\s+(\d+)\s*$/);
         if (!match) continue;
@@ -292,27 +323,43 @@ function killListenersOnPort(port) {
         const pid = Number(match[2]);
         if (seenPort === port && pid > 0 && pid !== process.pid) pids.add(pid);
       }
-      for (const pid of pids) {
-        logStep(`Pre-killing listener PID ${pid} on :${port}`);
-        try {
-          execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
-        } catch (_error) {}
-      }
     } catch (_error) {}
-    return;
+    return [...pids];
   }
-
   try {
     const output = execSync(`ss -tlnp "sport = :${port}"`, { encoding: 'utf8' });
-    const pids = [...output.matchAll(/pid=(\d+)/g)].map((match) => Number(match[1]));
-    for (const pid of pids) {
-      if (!pid || pid === process.pid) continue;
-      logStep(`Pre-killing listener PID ${pid} on :${port}`);
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch (_error) {}
+    return [...output.matchAll(/pid=(\d+)/g)]
+      .map((match) => Number(match[1]))
+      .filter((pid) => pid > 0 && pid !== process.pid);
+  } catch (_error) {
+    return [];
+  }
+}
+
+/**
+ * Pre-kill listeners before bind. Only DevHub-owned processes — never kill
+ * arbitrary listeners (coexistence with installed app on :4000/:3400).
+ */
+function killListenersOnPort(port, { devLayout = false } = {}) {
+  if (devLayout && (port === 4000 || port === 3400)) {
+    logStep(`Skipping pre-kill on reserved installed port :${port} (dev layout)`);
+    return;
+  }
+  for (const pid of collectListenerPids(port)) {
+    const cmdline = readProcessCommandLine(pid);
+    if (!isDevhubRelatedCommandLine(cmdline)) {
+      logStep(`Skipping non-DevHub listener PID ${pid} on :${port}`);
+      continue;
     }
-  } catch (_error) {}
+    logStep(`Pre-killing DevHub listener PID ${pid} on :${port}`);
+    try {
+      if (process.platform === 'win32') {
+        execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
+      } else {
+        process.kill(pid, 'SIGTERM');
+      }
+    } catch (_error) {}
+  }
 }
 
 function detectLayout() {
@@ -434,11 +481,12 @@ function main() {
     });
   }
 
+  const devLayout = !layout.isSystemInstall;
   if (layout.nextPath && pathExists(layout.nextPath)) {
-    killListenersOnPort(Number(sidecarPort));
-    killListenersOnPort(Number(nextPort));
+    killListenersOnPort(Number(sidecarPort), { devLayout });
+    killListenersOnPort(Number(nextPort), { devLayout });
   } else {
-    killListenersOnPort(Number(sidecarPort));
+    killListenersOnPort(Number(sidecarPort), { devLayout });
   }
 
   const children = [];
@@ -457,6 +505,7 @@ function main() {
   if (layout.ptyPath && pathExists(layout.ptyPath)) {
     spawnChild(`PTY sidecar (:${sidecarPort})`, layout.ptyPath, {
       DEVHUB_HOME: layout.devhubDir,
+      DEVHUB_RUNTIME: layout.isSystemInstall ? 'production' : 'development',
       SIDECAR_PORT: sidecarPort,
       NODE_OPTIONS: buildNodeOptions(process.env.DEVHUB_PTY_MAX_OLD_SPACE_MB || '384', process.env.DEVHUB_PTY_NODE_OPTIONS_EXTRA || ''),
       NODE_ENV: 'production',
@@ -468,6 +517,7 @@ function main() {
   if (layout.nextPath && pathExists(layout.nextPath)) {
     spawnChild(`Next.js standalone (:${nextPort})`, layout.nextPath, {
       DEVHUB_HOME: layout.devhubDir,
+      DEVHUB_RUNTIME: 'production',
       PORT: nextPort,
       NODE_PATH: path.join(path.dirname(layout.nextPath), 'node_modules'),
       NODE_OPTIONS: buildNodeOptions(process.env.DEVHUB_NEXT_MAX_OLD_SPACE_MB || '1024', process.env.DEVHUB_NEXT_NODE_OPTIONS_EXTRA || ''),

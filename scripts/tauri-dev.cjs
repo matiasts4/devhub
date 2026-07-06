@@ -7,6 +7,9 @@ const path = require('path');
 if (!process.env.DEVHUB_HOME) {
   process.env.DEVHUB_HOME = path.join(os.homedir(), '.devhub-dev');
 }
+if (!process.env.DEVHUB_RUNTIME) {
+  process.env.DEVHUB_RUNTIME = 'development';
+}
 if (!process.env.SIDECAR_PORT) {
   process.env.SIDECAR_PORT = '4001';
 }

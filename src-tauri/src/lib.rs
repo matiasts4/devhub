@@ -322,6 +322,9 @@ fn cleanup_zombie_ports() {
     let mut zombie_ports: Vec<u16> = vec![sidecar_port()];
     if !cfg!(debug_assertions) {
         zombie_ports.push(nextjs_port());
+    } else {
+        // Installed app uses 4000/3400; dev uses 4001/3100 — never reap prod ports from dev.
+        zombie_ports.retain(|p| *p != 4000 && *p != 3400);
     }
 
     let mut sys = System::new_all();
@@ -608,6 +611,14 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         .sidecar("devhub-server")
         .expect("No se encontró el sidecar 'devhub-server'")
         .env("DEVHUB_HOME", devhub_dir().to_string_lossy().as_ref())
+        .env(
+            "DEVHUB_RUNTIME",
+            if cfg!(debug_assertions) {
+                "development"
+            } else {
+                "production"
+            },
+        )
         .env("SIDECAR_PORT", sidecar_port().to_string())
         .env("DEVHUB_WS_PORT", ws_port().to_string())
         .env("DEVHUB_TTY_PORT", tty_port().to_string())

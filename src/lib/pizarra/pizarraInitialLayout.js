@@ -9,6 +9,13 @@
  */
 
 import { SHAPE_TYPES } from './shapeModel';
+import {
+  VIEW_WORLD_HEIGHT,
+  VIEW_WORLD_WIDTH,
+  getViewIndex,
+  getViewWorldOrigin,
+  getSurfaceViewId,
+} from './pizarraViewLayout';
 
 export function isSurfacePositioned(pizarra = {}) {
   return typeof pizarra.x === 'number' && typeof pizarra.y === 'number';
@@ -126,7 +133,7 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
     return slotMap;
   }
 
-  if (browsers.length === 0 && terminals.length > 0 && terminals.length <= 3) {
+  if (browsers.length === 0 && terminals.length > 0 && terminals.length <= 4) {
     const tw = Math.max(
       200,
       Math.round((vis.width - PAD * 2 - GAP * (terminals.length - 1)) / terminals.length)
@@ -169,6 +176,37 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
  * Merge saved pizarra bounds with synchronous initial slots for unpositioned
  * live surfaces. Used at render time so the first paint is already distributed.
  */
+/**
+ * Resolve render bounds per workspace view region so V2+ surfaces are not
+ * provisionally placed in V1 world space (fixes blank pizarra on view switch).
+ */
+export function resolveRegistrySurfacesBoundsByView(
+  surfaces = [],
+  views = [],
+  fallbackViewId = null
+) {
+  if (!surfaces.length) return [];
+  const byView = new Map();
+  for (const s of surfaces) {
+    const viewId = getSurfaceViewId(s, views, fallbackViewId) || views[0]?.id;
+    if (!viewId) continue;
+    if (!byView.has(viewId)) byView.set(viewId, []);
+    byView.get(viewId).push(s);
+  }
+  const resolved = [];
+  for (const [viewId, group] of byView) {
+    const origin = getViewWorldOrigin(getViewIndex(viewId, views));
+    const vis = {
+      x: origin.x,
+      y: origin.y,
+      width: VIEW_WORLD_WIDTH,
+      height: VIEW_WORLD_HEIGHT,
+    };
+    resolved.push(...resolveSurfaceRenderBounds(group, vis));
+  }
+  return resolved;
+}
+
 export function resolveSurfaceRenderBounds(
   surfaces,
   vis,

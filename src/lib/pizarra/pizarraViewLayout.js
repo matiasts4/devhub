@@ -194,8 +194,12 @@ export function computeAdaptiveRectLayout(
       splitHorizontal(inner, 2, gap).forEach((slot, i) => {
         layouts.push({ id: terminals[i].id, ...slot });
       });
+    } else if (tCount === 3) {
+      splitHorizontal(inner, 3, gap).forEach((slot, i) => {
+        layouts.push({ id: terminals[i].id, ...slot });
+      });
     } else {
-      const cols = tCount <= 4 ? 2 : 2;
+      const cols = tCount === 4 ? 2 : Math.min(3, tCount);
       gridSlots(inner, terminals, { cols, gap }).forEach((slot) => layouts.push(slot));
     }
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
@@ -269,9 +273,14 @@ export function computeAdaptiveRectLayout(
       height: inner.height,
     };
     layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
-    gridSlots(padRect(termRect, 2), terminals, { cols: 1, gap }).forEach((slot) =>
-      layouts.push(slot)
-    );
+    const termInner = padRect(termRect, 2);
+    if (tCount === 3) {
+      splitHorizontal(termInner, 3, gap).forEach((slot, i) => {
+        layouts.push({ id: terminals[i].id, ...slot });
+      });
+    } else {
+      gridSlots(termInner, terminals, { cols: 2, gap }).forEach((slot) => layouts.push(slot));
+    }
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
   }
 

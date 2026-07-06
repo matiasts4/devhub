@@ -64,6 +64,20 @@ describe('pizarra adaptive layout', () => {
     expect(isCarriedWorkspaceBrowser(surfaces[0])).toBe(true);
   });
 
+  test('three terminals without browser use three horizontal columns', () => {
+    const surfaces = [
+      { id: 't1', type: 'terminal' },
+      { id: 't2', type: 'terminal' },
+      { id: 't3', type: 'terminal' },
+    ];
+    const { layouts } = computeAdaptiveViewLayout({ x: 0, y: 0 }, surfaces);
+    expect(layouts).toHaveLength(3);
+    const xs = layouts.map((l) => l.x);
+    expect(new Set(xs).size).toBe(3);
+    const ys = layouts.map((l) => l.y);
+    expect(new Set(ys).size).toBe(1);
+  });
+
   test('computeAdaptiveSnapZones creates two equal slots for two terminals', () => {
     const surfaces = [
       { id: 't1', type: 'terminal' },

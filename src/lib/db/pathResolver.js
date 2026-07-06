@@ -69,6 +69,19 @@ function readSidecarPortMarker(dirPath) {
   return Number.isInteger(port) && port > 0 ? port : null;
 }
 
+/**
+ * True when this Node process is part of the dev runtime (not the installed app).
+ * Do NOT infer dev home from ~/.devhub-dev marker files alone — that breaks
+ * coexistence when the installed app runs while dev markers exist on disk.
+ */
+function isDevhubDevelopmentRuntime(env = process.env) {
+  if (env.DEVHUB_HOME && isDevhubDevelopmentHome(env.DEVHUB_HOME)) return true;
+  if (env.DEVHUB_RUNTIME === 'development') return true;
+  if (String(env.PORT || '') === '3100') return true;
+  if (String(env.SIDECAR_PORT || '') === '4001') return true;
+  return false;
+}
+
 function getCanonicalDevhubDir({ env = process.env, homeDir = os.homedir() } = {}) {
   if (env.DEVHUB_HOME) {
     return ensureDirectory(path.resolve(env.DEVHUB_HOME));
@@ -76,14 +89,8 @@ function getCanonicalDevhubDir({ env = process.env, homeDir = os.homedir() } = {
 
   const productionDir = path.join(/*turbopackIgnore: true*/ homeDir, '.devhub');
   const developmentDir = path.join(/*turbopackIgnore: true*/ homeDir, '.devhub-dev');
-  const devSidecarPortFile = path.join(developmentDir, 'sidecar-port.txt');
-  const devSidecarPidFile = path.join(developmentDir, 'sidecar.pid');
 
-  // Tauri dev spawns the sidecar with ~/.devhub-dev; Next dev must read the same home.
-  if (
-    fs.existsSync(/*turbopackIgnore: true*/ devSidecarPortFile) ||
-    fs.existsSync(/*turbopackIgnore: true*/ devSidecarPidFile)
-  ) {
+  if (isDevhubDevelopmentRuntime(env)) {
     return ensureDirectory(developmentDir);
   }
 
@@ -211,6 +218,7 @@ module.exports = {
   DEVELOPMENT_SIDECAR_PORT,
   PRODUCTION_SIDECAR_PORT,
   isDevhubDevelopmentHome,
+  isDevhubDevelopmentRuntime,
   readSidecarPortMarker,
   copySqliteFamily,
   findExistingPath,

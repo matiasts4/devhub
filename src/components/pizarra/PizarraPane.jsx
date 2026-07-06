@@ -71,10 +71,9 @@ import {
   computeDevSplitSlots,
   computeDevTrioSlots,
   computeDualBrowserSlots,
-  computeAutoFitSlotMap,
   isSurfacePositioned,
   isLiveElementPositioned,
-  resolveSurfaceRenderBounds,
+  resolveRegistrySurfacesBoundsByView,
 } from '@/lib/pizarra/pizarraInitialLayout';
 import {
   readPizarraViewport,
@@ -254,6 +253,9 @@ export default function PizarraPane({
     return () => observer.disconnect();
   }, []);
 
+  const views = workspaceWindows || [];
+  const fallbackViewId = activeWorkspaceWindowId || views[0]?.id || null;
+
   // ── Unified elements state ──────────────────────────────────────────────
 
   const mergedElements = useMemo(() => {
@@ -262,19 +264,16 @@ export default function PizarraPane({
       (el) => el.type !== SHAPE_TYPES.TERMINAL && el.type !== SHAPE_TYPES.BROWSER
     );
 
-    // pizarra-workspace-switch: surfaces without saved x/y used to fall back to
-    // (100,100) here, so every card stacked in the corner for ~200ms until
-    // useEffect auto-fit ran. Resolve initial slots synchronously instead.
-    const vis = {
-      x: 0,
-      y: 0,
-      width: canvasSize.width || 900,
-      height: canvasSize.height || 600,
-    };
-    const registryShapes = resolveSurfaceRenderBounds(registry.surfaces || [], vis);
+    // pizarra-workspace-switch: provisional slots must use each surface's view
+    // world region (V1/V2/…), not the screen-sized rect at (0,0).
+    const registryShapes = resolveRegistrySurfacesBoundsByView(
+      registry.surfaces || [],
+      views,
+      fallbackViewId
+    );
 
     return [...localDrawings, ...registryShapes];
-  }, [state.elements, registry.surfaces, canvasSize.width, canvasSize.height]);
+  }, [state.elements, registry.surfaces, workspaceWindows, activeWorkspaceWindowId]);
 
   const selectedElements = useMemo(() => {
     return mergedElements.filter((el) => state.selectedElementIds.includes(el.id));
@@ -703,7 +702,6 @@ function PizarraInner({
     return (mergedElements || []).filter((el) => {
       if (el.type !== SHAPE_TYPES.TERMINAL && el.type !== SHAPE_TYPES.BROWSER) return false;
       if (el.pizarra?.visible === false) return false;
-      if (el._layoutResolved === false) return false;
       return visibleViewIds.some((viewId) => surfaceBelongsToView(el, viewId, views, null));
     });
   }, [mergedElements, views, fallbackViewId, visibleViewIds]);
@@ -756,14 +754,14 @@ function PizarraInner({
     };
   }, [canvasSize.width, canvasSize.height, zoom, pan.x, pan.y]);
 
+  const postViewSwitchFitRef = useRef(null);
+
   const finishViewSwitch = useCallback(
     (viewId) => {
       setViewTransitionPair(null);
       setPendingViewId(null);
       onWorkspaceWindowSelect?.(viewId);
-      skipViewAutoFitRef.current = true;
-      // Window/view parity: dock terminals stay mounted; visibility follows
-      // activeWindowIds — no layout-settled burst (same as workspace tab switch).
+      postViewSwitchFitRef.current = viewId;
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('devhub:pizarra-view-switch-complete', {
@@ -772,7 +770,7 @@ function PizarraInner({
         );
       }
     },
-    [onWorkspaceWindowSelect, mergedElements, views, fallbackViewId, workspaceId]
+    [onWorkspaceWindowSelect, workspaceId]
   );
 
   const handleSelectView = useCallback(
@@ -1088,29 +1086,39 @@ function PizarraInner({
       centerActiveView(1);
       return;
     }
-    const layoutRegion = getViewportLayoutRegionAtUnitZoom();
-    const { layouts } = applyAdaptiveVisibleLayout(liveSurfacesForZones, layoutRegion);
-    const layoutBounds = computeElementsBounds(layouts);
-    if (!layoutBounds?.width || !layoutBounds?.height) {
-      setZoom(1);
+    applyAdaptiveViewLayout(liveSurfacesForZones);
+    fitCameraToActiveView({ padding: 20, maxZoom: 1 });
+  }, [liveSurfacesForZones, centerActiveView, applyAdaptiveViewLayout, fitCameraToActiveView]);
+
+  // Pizarra tab remounts this tree each visit — refit when live surfaces first appear.
+  const pizarraEntryFitDoneRef = useRef(false);
+  useEffect(() => {
+    if (pizarraEntryFitDoneRef.current) return;
+    if (canvasSize.width < 200 || canvasSize.height < 200) return;
+    if (isViewTransitioning) return;
+    const count = liveSurfacesForZones.length;
+    if (count === 0) {
+      centerActiveView(1);
       return;
     }
-    const cx = layoutBounds.x + layoutBounds.width / 2;
-    const cy = layoutBounds.y + layoutBounds.height / 2;
-    setZoom(1);
-    setPan({
-      x: canvasSize.width / 2 - cx,
-      y: canvasSize.height / 2 - cy,
-    });
+    pizarraEntryFitDoneRef.current = true;
+    const delay = prefersReducedMotion() ? 40 : 120;
+    const timer = setTimeout(() => {
+      if (!isViewLockedRef.current) {
+        handleFitAllView();
+      } else {
+        fitCameraToActiveView({ padding: 20, maxZoom: 1 });
+      }
+    }, delay);
+    return () => clearTimeout(timer);
   }, [
-    liveSurfacesForZones,
-    centerActiveView,
-    getViewportLayoutRegionAtUnitZoom,
-    applyAdaptiveVisibleLayout,
     canvasSize.width,
     canvasSize.height,
-    setZoom,
-    setPan,
+    liveSurfacesForZones.length,
+    isViewTransitioning,
+    handleFitAllView,
+    fitCameraToActiveView,
+    centerActiveView,
   ]);
 
   const autoFitTimerRef = useRef(null);
@@ -1169,9 +1177,10 @@ function PizarraInner({
     const settleMs = prefersReducedMotion() ? 24 : 60;
     const timer = setTimeout(() => {
       if (liveSurfacesForZones.length === 0 || isViewTransitioning) return;
-      const allPositioned = liveSurfacesForZones.every(isLiveElementPositioned);
-      if (!isViewLockedRef.current && !allPositioned) {
+      if (!isViewLockedRef.current) {
         handleFitAllView();
+      } else {
+        fitCameraToActiveView({ padding: 20, maxZoom: 1 });
       }
       const panelIds = collectTerminalPanelIds(liveSurfacesForZones);
       if (panelIds.length > 0) {
@@ -1186,8 +1195,40 @@ function PizarraInner({
     canvasSize.height,
     liveSurfacesForZones,
     handleFitAllView,
+    fitCameraToActiveView,
     collectTerminalPanelIds,
     isViewTransitioning,
+  ]);
+
+  useEffect(() => {
+    if (isViewTransitioning || !postViewSwitchFitRef.current) return;
+    const switchedTo = postViewSwitchFitRef.current;
+    postViewSwitchFitRef.current = null;
+    const activeId = activeWorkspaceWindowId || fallbackViewId;
+    if (switchedTo !== activeId) return;
+    if (skipViewAutoFitRef.current) {
+      skipViewAutoFitRef.current = false;
+      fitCameraToActiveView({ padding: 20, maxZoom: 1 });
+      return;
+    }
+    if (liveSurfacesForZones.length === 0) {
+      centerActiveView(1);
+      return;
+    }
+    if (!isViewLocked) {
+      handleFitAllView();
+    } else {
+      fitCameraToActiveView({ padding: 20, maxZoom: 1 });
+    }
+  }, [
+    isViewTransitioning,
+    activeWorkspaceWindowId,
+    fallbackViewId,
+    liveSurfacesForZones.length,
+    isViewLocked,
+    handleFitAllView,
+    fitCameraToActiveView,
+    centerActiveView,
   ]);
 
   const prevViewIdRef = useRef(null);
@@ -1331,12 +1372,6 @@ function PizarraInner({
     let assigned = false;
     for (const [viewId, group] of groupsByView) {
       const viewOrigin = getViewWorldOrigin(getViewIndex(viewId, views));
-      const viewRegion = {
-        x: viewOrigin.x,
-        y: viewOrigin.y,
-        width: VIEW_WORLD_WIDTH,
-        height: VIEW_WORLD_HEIGHT,
-      };
       const bNeeds = group.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
       const tNeeds = group.filter((s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL);
 
@@ -1351,13 +1386,22 @@ function PizarraInner({
         continue;
       }
 
-      const slotMap = computeAutoFitSlotMap(viewRegion, group);
+      const { layouts, hiddenBrowserIds } = computeAdaptiveViewLayout(viewOrigin, group);
+      hiddenBrowserIds?.forEach((id) => {
+        try {
+          registry.updatePizarraLayout(id, { visible: false });
+        } catch {
+          // best-effort
+        }
+      });
+      const slotById = new Map(layouts.map((l) => [l.id, l]));
       group.forEach((s) => {
         if (laidOutRegistryRef.current.has(s.id)) return;
-        const slot = slotMap.get(s.id);
+        const slot = slotById.get(s.id);
         if (!slot) return;
+        const { id: _id, ...layout } = slot;
         try {
-          registry.updatePizarraLayout(s.id, { ...slot, visible: true });
+          registry.updatePizarraLayout(s.id, { ...layout, visible: true });
         } catch {
           // best-effort
         }
