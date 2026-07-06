@@ -116,44 +116,42 @@ export function derivePanelStatus({
     return PANEL_STATUS.ERROR;
   }
 
-  // Live WS activity signal is the primary indicator (event-driven, no polling aliasing).
-  // 'running' wins over any poll result; 'idle' wins only while the signal is fresh.
-  if (liveActivity === 'running') {
-    return PANEL_STATUS.RUNNING;
-  }
-  if (
-    liveActivity === 'idle' &&
-    (liveActivityAgeMs === null || liveActivityAgeMs <= LIVE_ACTIVITY_FALLBACK_MS)
-  ) {
-    return PANEL_STATUS.IDLE;
-  }
-
   const isAgentPanel = Boolean(
     terminalActivity?.agentType || agentRun || AGENT_TUI_PATTERN.test(String(initialCommand || ''))
   );
   const hasRecentPtyActivity =
     terminalActivity?.isActive || isTerminalRecentlyActive(terminalActivity);
 
-  // Agent TUI state parsed from the terminal output (e.g. Kimi's "thinking"
-  // footer) is the strongest signal: the agent is processing even when there
-  // is no new PTY activity. We trust it only while it has been refreshed recently.
   const agentTuiStateAgeMs = terminalActivity?.agentTuiStateAgeMs ?? null;
   const agentTuiStateFresh =
     terminalActivity?.agentTuiState &&
     (agentTuiStateAgeMs === null || agentTuiStateAgeMs <= AGENT_TUI_STATE_TTL_MS);
-  if (
-    agentTuiStateFresh &&
-    IN_PROGRESS_STATUSES.has(String(terminalActivity.agentTuiState).toLowerCase())
-  ) {
+  const semanticState = agentTuiStateFresh
+    ? String(terminalActivity.agentTuiState).toLowerCase()
+    : null;
+
+  if (agentTuiStateFresh && BLOCKED_STATUSES.has(semanticState)) {
+    return PANEL_STATUS.BLOCKED;
+  }
+  if (agentTuiStateFresh && IN_PROGRESS_STATUSES.has(semanticState)) {
     return PANEL_STATUS.RUNNING;
   }
+  if (agentTuiStateFresh && (semanticState === 'idle' || semanticState === 'active')) {
+    return PANEL_STATUS.IDLE;
+  }
 
-  // Blocked agent TUI state (e.g. permission prompts) overrides idle/waiting.
+  const semanticBlocksByteFallback =
+    agentTuiStateFresh && semanticState && semanticState !== 'unknown';
+
+  if (!semanticBlocksByteFallback && liveActivity === 'running') {
+    return PANEL_STATUS.RUNNING;
+  }
   if (
-    agentTuiStateFresh &&
-    BLOCKED_STATUSES.has(String(terminalActivity.agentTuiState).toLowerCase())
+    !semanticBlocksByteFallback &&
+    liveActivity === 'idle' &&
+    (liveActivityAgeMs === null || liveActivityAgeMs <= LIVE_ACTIVITY_FALLBACK_MS)
   ) {
-    return PANEL_STATUS.BLOCKED;
+    return PANEL_STATUS.IDLE;
   }
 
   // In-progress API status (agenthub) is a strong signal even when PTY is quiet.

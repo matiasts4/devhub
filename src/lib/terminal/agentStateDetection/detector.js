@@ -93,5 +93,6 @@ export function detectAgentState(agentType, screen, options = {}) {
   return evaluateManifest(manifest, {
     screen: screen || '',
     oscTitle: options.oscTitle || '',
+    oscProgress: options.oscProgress || '',
   });
 }

@@ -20,6 +20,7 @@ import {
   markPanelInitialCommandDispatched,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { createPanelActivityTracker } from '@/components/terminal/utils/panelActivityTracker';
+import { setPanelSemanticState } from '@/components/terminal/utils/panelSemanticStateStore';
 import {
   detectOpenCodeTuiReady,
   isOpenCodeLaunchCommand,
@@ -550,6 +551,14 @@ export default function useTerminalV2Session({ ctxRef }) {
               serverTermsizeRef.current = { cols, rows };
               termRef.current.resize(cols, rows);
             }
+            return;
+          }
+
+          if (payload.type === 'agent-state' && payload.agentTuiState) {
+            setPanelSemanticState(id, {
+              agentTuiState: payload.agentTuiState,
+              agentTuiStateAt: payload.at ?? Date.now(),
+            });
             return;
           }
 

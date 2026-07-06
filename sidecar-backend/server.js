@@ -20,10 +20,16 @@ const cors = require('cors');
 const { resolveSidecarSessionCwd } = require('./sessionCwd');
 const { buildSidecarSpawnConfig, parseBooleanQueryFlag } = require('./sessionSpawn');
 const {
+  ensureAgentDetectionSession,
+  ingestAgentDetectionFromFilteredOutput,
+  processOscTitle,
+  stripOscTitleSequences,
+  processOscProgress,
+} = require('./bundled/agentDetection.cjs');
+const {
   applyAgentTuiDetection,
   buildHistoryReplay,
   buildServerMessage,
-  detectAgentStateFromOutput,
   detectKimiTuiReady,
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
@@ -154,6 +160,12 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     agentTuiState: null,
     agentTuiStateAt: null,
     pendingInput: '',
+    title: null,
+    _oscTitleBuffer: '',
+    oscProgress: '',
+    _oscProgressBuffer: '',
+    agentStateMachine: null,
+    detectionBuffer: '',
     tmuxSession: spawnConfig.tmuxSession || null,
     swarmContext: {
       isSwarmRole: Boolean(swarmContext.isSwarmRole),
@@ -162,13 +174,21 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     },
   };
 
+  ensureAgentDetectionSession(session);
+
   // Capturar output del PTY y enviarlo a todos los clientes conectados
   ptyProcess.on('data', (data) => {
     const now = Date.now();
     session.lastSeenAt = new Date().toISOString();
     session.lastActivityAt = now;
 
-    const filteredData = filterTerminalOutputForSession(session, data);
+    processOscTitle(session, data);
+    processOscProgress(session, data);
+    let filteredData = data;
+    if (typeof filteredData === 'string') {
+      filteredData = stripOscTitleSequences(filteredData);
+    }
+    filteredData = filterTerminalOutputForSession(session, filteredData);
 
     if (typeof filteredData === 'string' && filteredData.length === 0) {
       return;
@@ -215,12 +235,15 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
       }
     }
 
-    // Detect active-agent states such as Kimi's "thinking" footer even when
-    // there is no new PTY input/output (the TUI itself is animating/processing).
-    const detectedState = detectAgentStateFromOutput(filteredData, session.agentType);
-    if (detectedState) {
-      session.agentTuiState = detectedState;
-      session.agentTuiStateAt = now;
+    if (typeof filteredData === 'string' && filteredData.length > 0) {
+      const ingestResult = ingestAgentDetectionFromFilteredOutput(session, filteredData, now);
+      if (ingestResult.published && session.agentTuiState) {
+        broadcastSessionPayload(session, {
+          type: 'agent-state',
+          agentTuiState: session.agentTuiState,
+          at: session.agentTuiStateAt,
+        });
+      }
     }
 
     broadcastSessionPayload(session, { type: 'output', data: filteredData });

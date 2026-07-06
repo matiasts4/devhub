@@ -11,6 +11,10 @@ import {
   getPanelActivityAgeMs,
   subscribePanelActivity,
 } from '@/components/terminal/utils/panelActivityStore';
+import {
+  getPanelSemanticState,
+  subscribePanelSemanticState,
+} from '@/components/terminal/utils/panelSemanticStateStore';
 
 const DEFAULT_POLLING_INTERVAL_MS = 6000;
 const FETCH_TIMEOUT_MS = 3000;
@@ -68,6 +72,25 @@ export default function usePanelAgentStatus(
   const liveActivity = useSyncExternalStore(subscribe, getSnapshot, () => null);
   const liveActivityAgeMs = liveActivity ? getPanelActivityAgeMs(panelId) : null;
 
+  const subscribeSemantic = useCallback(
+    (cb) => subscribePanelSemanticState(panelId, cb),
+    [panelId]
+  );
+  const getSemanticSnapshot = useCallback(() => getPanelSemanticState(panelId), [panelId]);
+  const liveSemantic = useSyncExternalStore(subscribeSemantic, getSemanticSnapshot, () => null);
+
+  const mergedTerminalActivity = useMemo(() => {
+    if (!terminalActivity && !liveSemantic) return null;
+    const base = terminalActivity ? { ...terminalActivity } : {};
+    if (liveSemantic?.agentTuiState) {
+      base.agentTuiState = liveSemantic.agentTuiState;
+      const at = liveSemantic.agentTuiStateAt ?? Date.now();
+      base.agentTuiStateAt = new Date(at).toISOString();
+      base.agentTuiStateAgeMs = Date.now() - at;
+    }
+    return Object.keys(base).length ? base : null;
+  }, [terminalActivity, liveSemantic]);
+
   const status = useMemo(
     () =>
       derivePanelStatus({
@@ -75,7 +98,7 @@ export default function usePanelAgentStatus(
         agentRun,
         initialCommand,
         apiStatus,
-        terminalActivity,
+        terminalActivity: mergedTerminalActivity,
         liveActivity,
         liveActivityAgeMs,
       }),
@@ -84,7 +107,7 @@ export default function usePanelAgentStatus(
       agentRun,
       initialCommand,
       apiStatus,
-      terminalActivity,
+      mergedTerminalActivity,
       liveActivity,
       liveActivityAgeMs,
     ]

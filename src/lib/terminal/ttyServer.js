@@ -16,14 +16,14 @@ import { detectKimiTuiReady } from './kimiReadyMarker.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 import {
-  detectAgentStateFromOutput,
   detectAgentTypeFromCommand,
   extractAgentSessionId,
   synthesizeAgentSessionId,
-  detectAgentState,
   AgentStateMachine,
 } from './agentTuiMetadata.node.js';
 import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
+import { processOscProgress } from './oscProgressParser.js';
+import { ingestAgentDetectionFromFilteredOutput } from './sessionAgentDetector.js';
 import { createScrollbackStore } from './terminalScrollbackStore.js';
 import { createOscCwdParser } from './oscCwdParser.js';
 import {
@@ -1064,6 +1064,7 @@ function handleSessionOutput(sessions, session, chunk) {
   // Capture OSC 0/2 title changes directly from PTY output so we do not need
   // to forward them over the WebSocket (which could leak into the TUI prompt).
   processOscTitle(session, chunk);
+  processOscProgress(session, chunk);
 
   let filtered = chunk;
   if (typeof filtered === 'string') {
@@ -1111,39 +1112,11 @@ function handleSessionOutput(sessions, session, chunk) {
       maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
     }
 
-    // Detect active-agent states such as Kimi's "thinking" footer even when
-    // there is no new PTY input/output (the TUI itself is animating/processing).
-    // First try the legacy single-chunk detector for agents without a manifest.
-    const legacyDetectedState = detectAgentStateFromOutput(filtered, session.agentType);
-    if (legacyDetectedState && !session.agentStateMachine) {
-      session.agentTuiState = legacyDetectedState;
-      session.agentTuiStateAt = Date.now();
-    }
-
-    // Herdr-style per-agent manifest detection on an accumulated buffer.
-    if (session.agentType && session.agentStateMachine) {
-      // Accumulate the last ~8KB of visible output for detection.
-      const visibleFiltered = typeof filtered === 'string' ? filtered : '';
-      session.detectionBuffer = (session.detectionBuffer || '') + visibleFiltered;
-      const MAX_DETECTION_BUFFER = 8192;
-      if (session.detectionBuffer.length > MAX_DETECTION_BUFFER) {
-        session.detectionBuffer = session.detectionBuffer.slice(-MAX_DETECTION_BUFFER);
-      }
-
-      const detected = detectAgentState(session.agentType, session.detectionBuffer, {
-        oscTitle: session.title || '',
-      });
-
-      // Skip state update for viewer screens (transcript/history) so they do
-      // not publish a false idle state while the user is reading scrollback.
-      if (!detected.skipStateUpdate) {
-        const published = session.agentStateMachine.publish(detected, Date.now());
-        if (published) {
-          session.agentTuiState = published.state;
-          session.agentTuiStateAt = Date.now();
-        }
-      }
-    }
+    session._lastAgentStateEvent = ingestAgentDetectionFromFilteredOutput(
+      session,
+      filtered,
+      Date.now()
+    );
   }
 
   // Phase 2 terminal-engine-v2: capture cwd from OSC 7 sequences emitted by
@@ -1173,8 +1146,25 @@ function handleSessionOutput(sessions, session, chunk) {
     }
   }
 
+  const agentStateEvent =
+    session._lastAgentStateEvent?.published && session.agentTuiState
+      ? {
+          type: 'agent-state',
+          agentTuiState: session.agentTuiState,
+          at: session.agentTuiStateAt,
+        }
+      : null;
+
   for (const socket of session.sockets) {
     if (socket.readyState !== socket.OPEN) continue;
+
+    if (agentStateEvent) {
+      try {
+        socket.send(JSON.stringify(agentStateEvent));
+      } catch {
+        /* stale socket */
+      }
+    }
 
     if (session.v2Subscribers.has(socket)) {
       try {

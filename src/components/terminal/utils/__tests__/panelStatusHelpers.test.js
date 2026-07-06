@@ -154,6 +154,25 @@ describe('panelStatusHelpers', () => {
       ).toBe(PANEL_STATUS.RUNNING);
     });
 
+    test('fresh semantic idle beats liveActivity running (spinner fallback)', () => {
+      expect(
+        derivePanelStatus({
+          connectionState: 'connected',
+          agentRun: null,
+          initialCommand: 'grok',
+          apiStatus: null,
+          terminalActivity: {
+            agentType: 'grok',
+            alive: true,
+            agentTuiState: 'idle',
+            agentTuiStateAgeMs: 500,
+          },
+          liveActivity: 'running',
+          liveActivityAgeMs: 100,
+        })
+      ).toBe(PANEL_STATUS.IDLE);
+    });
+
     test('agent TUI thinking state from output makes it running even without PTY activity', () => {
       expect(
         derivePanelStatus({
@@ -165,6 +184,7 @@ describe('panelStatusHelpers', () => {
             agentType: 'kimi',
             alive: true,
             agentTuiState: 'running',
+            agentTuiStateAgeMs: 500,
             lastActivityAt: new Date(Date.now() - 30000).toISOString(),
             isActive: false,
           },

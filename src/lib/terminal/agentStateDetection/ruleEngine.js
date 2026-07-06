@@ -109,6 +109,7 @@ export function getRegion(input, spec) {
   const trimmed = spec.trim();
 
   if (trimmed === 'osc_title') return input.oscTitle || '';
+  if (trimmed === 'osc_progress') return input.oscProgress || '';
 
   const content = input.screen || '';
 
