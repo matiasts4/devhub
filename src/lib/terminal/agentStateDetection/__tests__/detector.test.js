@@ -83,6 +83,31 @@ describe('agentStateDetection', () => {
       expect(result.state).toBe('blocked');
       expect(result.visibleBlocker).toBe(true);
     });
+
+    test('grok detects spinner with stop chip as running', () => {
+      const screen = '⠧ Waiting on subagent… 2.8s   13s ⇣29.7k [stop]\n';
+      const result = detectAgentState('grok', screen);
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('grok detects idle prompt footer', () => {
+      const screen = '\nctrl+.:shortcuts\n';
+      const result = detectAgentState('grok', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleIdle).toBe(true);
+    });
+
+    test('grok detects option dialog blocked', () => {
+      const screen = '┃  2 (○) Yes, proceed\n';
+      const result = detectAgentState('grok', screen);
+      expect(result.state).toBe('blocked');
+    });
+
+    test('claude detects osc_progress idle', () => {
+      const result = detectAgentState('claude', '', { oscProgress: '4;0' });
+      expect(result.state).toBe('idle');
+    });
   });
 
   describe('AgentStateMachine', () => {

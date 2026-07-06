@@ -233,6 +233,13 @@ export default {
       ],
     },
     {
+      id: 'osc_progress_idle',
+      state: 'idle',
+      priority: 250,
+      region: 'osc_progress',
+      regex: ['^4;0'],
+    },
+    {
       id: 'osc_title_idle',
       state: 'idle',
       priority: 250,

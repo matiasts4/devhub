@@ -1,0 +1,2 @@
+⠧ Waiting on subagent… 2.8s   13s ⇣29.7k [stop]
+esc:cancel  ctrl+.:shortcuts

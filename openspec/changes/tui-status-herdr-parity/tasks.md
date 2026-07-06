@@ -42,18 +42,19 @@ Chain strategy: feature-branch-chain
 
 ## Phase 3: Manifests and regions
 
-- [ ] 3.1 Port missing `getRegion` cases from herdr (`osc_progress`, prompt-box variants)
-- [ ] 3.2 Sync `grok.js` from `.research/herdr/.../grok.toml` + detector tests
-- [ ] 3.3 Add claude `osc_progress_idle` + parser tests
-- [ ] 3.4 Add `tests/fixtures/agent-screens/` samples; document compare script in change README
+- [x] 3.1 Port missing `getRegion` cases from herdr (`osc_progress`, prompt-box variants) — `osc_progress` wired; other herdr regions deferred (see verify-report)
+- [x] 3.2 Sync `grok.js` from `.research/herdr/.../grok.toml` + detector tests
+- [x] 3.3 Add claude `osc_progress_idle` + parser tests
+- [x] 3.4 Add `tests/fixtures/agent-screens/` samples; document compare script in change README
 
 ## Phase 4: Verification and DX
 
-- [ ] 4.1 Dev route or script `explain-agent-detection` (rule id + region preview)
-- [ ] 4.2 Run targeted Jest: agentStateDetection, panel\*, sidecar tests
-- [ ] 4.3 `verify-report.md` via `/sdd-verify tui-status-herdr-parity`
+- [x] 4.1 Dev route or script `explain-agent-detection` (rule id + region preview)
+- [x] 4.2 Run targeted Jest: agentStateDetection, panel\*, sidecar tests
+- [x] 4.3 `verify-report.md` via `/sdd-verify tui-status-herdr-parity`
 
 ## SDD pipeline status
 
 Planning phases: explore → propose → spec → design → tasks **complete**.  
-Next orchestrator step: **`/sdd-apply tui-status-herdr-parity`** after user picks chain strategy (stacked-to-main vs feature-branch-chain).
+Apply: **complete** (WU1–2 `97116ba`, WU3–4 stacked on `feature/terminal-decompose`).  
+Next: **`/sdd-archive tui-status-herdr-parity`** after user review (verify: PASS WITH WARNINGS).

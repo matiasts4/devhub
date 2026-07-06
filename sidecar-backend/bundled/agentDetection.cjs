@@ -592,6 +592,13 @@ var claude_default = {
       ]
     },
     {
+      id: "osc_progress_idle",
+      state: "idle",
+      priority: 250,
+      region: "osc_progress",
+      regex: ["^4;0"]
+    },
+    {
       id: "osc_title_idle",
       state: "idle",
       priority: 250,
@@ -795,9 +802,33 @@ var opencode_default = {
 // src/lib/terminal/agentStateDetection/manifests/grok.js
 var grok_default = {
   id: "grok",
-  version: "2026.06.10.1",
+  version: "2026.07.03.1",
   aliases: ["grok", "groc", "grok-build"],
   rules: [
+    {
+      id: "option_dialog_blocked",
+      state: "blocked",
+      priority: 320,
+      region: "whole_recent",
+      visibleBlocker: true,
+      lineRegex: ["^\\s*\u2503\\s+[0-9a-z]+\\s+\\([\u25CF\u25CB]\\)\\s"]
+    },
+    {
+      id: "permission_hints_blocked",
+      state: "blocked",
+      priority: 310,
+      region: "bottom_non_empty_lines(2)",
+      visibleBlocker: true,
+      contains: [":select", "ctrl+o:yolo", "ctrl+c:cancel"]
+    },
+    {
+      id: "question_dialog_hints_blocked",
+      state: "blocked",
+      priority: 305,
+      region: "bottom_non_empty_lines(2)",
+      visibleBlocker: true,
+      contains: ["tab:scrollback", "shift+x:dismiss"]
+    },
     {
       id: "permission_scope_selector",
       state: "blocked",
@@ -806,13 +837,25 @@ var grok_default = {
       visibleBlocker: true,
       contains: ["yes, proceed", "no, reject"],
       any: [
-        {
-          contains: ["use \u2190 \u2192 to choose permission whitelist scope"]
-        },
-        {
-          contains: ["\u2190/\u2192:scope"]
-        }
+        { contains: ["use \u2190 \u2192 to choose permission whitelist scope"] },
+        { contains: ["\u2190/\u2192:scope"] }
       ]
+    },
+    {
+      id: "spinner_status_working",
+      state: "running",
+      priority: 200,
+      region: "whole_recent",
+      visibleWorking: true,
+      lineRegex: ["^\\s*[\\u2801-\\u28FF]\\s.*\\[stop\\]\\s*$"]
+    },
+    {
+      id: "esc_cancel_hints_working",
+      state: "running",
+      priority: 190,
+      region: "bottom_non_empty_lines(2)",
+      visibleWorking: true,
+      contains: ["esc:cancel", "ctrl+.:shortcuts"]
     },
     {
       id: "waiting_tool_working",
@@ -823,18 +866,23 @@ var grok_default = {
       any: [
         {
           all: [
-            {
-              contains: ["ctrl+c:cancel", "ctrl+enter:interject"]
-            },
-            {
-              contains: ["waiting"]
-            }
+            { contains: ["ctrl+c:cancel", "ctrl+enter:interject"] },
+            { contains: ["waiting"] }
           ]
         },
         {
-          lineRegex: ["^\\s*[\\u2800-\\u28FF]\\s+(Run|Read|Search|List)\\b"]
+          lineRegex: ["^\\s*[\\u2801-\\u28FF]\\s+(Run|Read|Search|List)\\b"]
         }
       ]
+    },
+    {
+      id: "prompt_hints_idle",
+      state: "idle",
+      priority: 100,
+      region: "bottom_non_empty_lines(2)",
+      visibleIdle: true,
+      contains: ["ctrl+.:shortcuts"],
+      not: [{ contains: ["esc:cancel"] }, { contains: ["ctrl+c:cancel"] }]
     }
   ]
 };

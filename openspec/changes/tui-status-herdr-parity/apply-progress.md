@@ -36,6 +36,27 @@
 | 2.3 semantic-first derivePanelStatus | done   |
 | 2.4 panelStatusHelpers TTAS-S6       | done   |
 
-## Next batch
+## Completed (batch 3–4)
 
-Phase 3 (manifests grok/claude/regions) — work unit 3 on same branch.
+- Manifest parity (grok 8 rules, claude osc_progress_idle)
+- Fixtures + explain script
+- Sidecar bundle rebuilt
+- verify-report: PASS WITH WARNINGS
+
+## Completed (batch 3–4 — work unit 3)
+
+| Task                                                          | Status |
+| ------------------------------------------------------------- | ------ |
+| 3.1 osc_progress region (+ deferred herdr regions documented) | done   |
+| 3.2 grok manifest 8 rules                                     | done   |
+| 3.3 claude osc_progress_idle + oscProgressParser tests        | done   |
+| 3.4 fixtures README + compare script doc                      | done   |
+| 4.1 explain-agent-detection.mjs                               | done   |
+| 4.2 targeted Jest (40+ panel suite)                           | done   |
+| 4.3 verify-report.md                                          | done   |
+
+**Checkpoint commit:** WU3–4 (manifests, fixtures, DX, bundle rebuild, `build:sidecar-detection`).
+
+## SDD apply
+
+All implementation tasks complete except optional hermes manifest (cancelled).

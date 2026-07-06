@@ -95,6 +95,7 @@
     "dev": "node scripts/next-dev.cjs",
     "build": "next build && node scripts/build-standalone-zip.cjs",
     "build:sidecar": "node scripts/build-devhub-server-sidecar.cjs",
+    "build:sidecar-detection": "node scripts/build-sidecar-agent-detection.mjs",
     "tauri": "node scripts/tauri-cli.cjs",
     "tauri:dev": "node scripts/tauri-dev.cjs",
     "tauri:build": "node scripts/generate-icon-if-needed.cjs && npm run build:sidecar && node scripts/tauri-cli.cjs build",
