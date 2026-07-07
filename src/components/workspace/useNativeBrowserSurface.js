@@ -8,6 +8,7 @@ import {
   openNativeBrowser,
   probeNativeBrowser,
   resizeNativeBrowser,
+  raiseNativeBrowser,
   setNativeBrowserVisibility,
 } from '@/lib/browser/nativeBrowserBridge';
 
@@ -339,6 +340,7 @@ export function useNativeBrowserSurface({
         }
 
         if (focusOnShow) {
+          await raiseNativeBrowser({ panelId }).catch(() => {});
           await focusNativeBrowser({ panelId }).catch(() => {});
         }
 

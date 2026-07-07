@@ -64,6 +64,34 @@ fn parse_external_url(raw: &str) -> Result<Url, String> {
     Url::parse(raw).map_err(|e| format!("invalid-url:{e}"))
 }
 
+fn raise_embedded_webview<R: tauri::Runtime>(webview: &tauri::Webview<R>) {
+    let _ = webview.with_webview(|platform| {
+        #[cfg(windows)]
+        {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            };
+
+            let controller = platform.controller();
+            unsafe {
+                let mut hwnd = HWND::default();
+                if controller.ParentWindow(&mut hwnd).is_ok() {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(HWND_TOP),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
+                }
+            }
+        }
+    });
+}
+
 fn selector_init_script(panel_id: &str, invoke_key: &str) -> String {
     let panel_id_json =
         serde_json::to_string(panel_id).unwrap_or_else(|_| "\"\"".to_string());
@@ -258,6 +286,8 @@ pub fn embedded_browser_open(
         let _ = existing.set_size(size);
         let _ = existing.navigate(url.clone());
         let _ = existing.show();
+        raise_embedded_webview(&existing);
+        let _ = existing.set_focus();
         if let Ok(mut panels) = registry.panels.lock() {
             panels.insert(
                 panel_id.clone(),
@@ -283,12 +313,15 @@ pub fn embedded_browser_open(
 
     let tauri_window = window.as_ref().window();
     match tauri_window.add_child(builder, position, size) {
-        Ok(_) => {
+        Ok(child) => {
+            let _ = child.show();
+            raise_embedded_webview(&child);
+            let _ = child.set_focus();
             if let Ok(mut panels) = registry.panels.lock() {
                 panels.insert(
                     panel_id,
                     EmbeddedPanelRecord {
-                        webview_label: label,
+                        webview_label: label.clone(),
                         last_url: url.to_string(),
                     },
                 );
@@ -330,6 +363,7 @@ pub fn embedded_browser_resize(
         .set_position(position)
         .map_err(|e| e.to_string())?;
     webview.set_size(size).map_err(|e| e.to_string())?;
+    raise_embedded_webview(&webview);
     Ok(())
 }
 
@@ -357,10 +391,32 @@ pub fn embedded_browser_set_visibility(
             let _ = webview.set_size(size);
         }
         webview.show().map_err(|e| e.to_string())?;
+        raise_embedded_webview(&webview);
+        let _ = webview.set_focus();
     } else {
         webview.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+pub fn embedded_browser_raise(
+    app: AppHandle,
+    registry: State<'_, EmbeddedBrowserRegistry>,
+    request: NativeBrowserPanelRequest,
+) -> Result<(), String> {
+    let label = registry
+        .panels
+        .lock()
+        .map_err(|_| "registry-lock".to_string())?
+        .get(&request.panel_id)
+        .map(|p| p.webview_label.clone())
+        .ok_or_else(|| PANEL_NOT_FOUND.to_string())?;
+
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| PANEL_NOT_FOUND.to_string())?;
+    raise_embedded_webview(&webview);
+    webview.set_focus().map_err(|e| e.to_string())
 }
 
 pub fn embedded_browser_load_url(

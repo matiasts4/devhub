@@ -1482,8 +1482,13 @@ pub fn native_browser_focus(
 pub fn native_browser_raise(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserPanelRequest,
 ) -> Result<(), String> {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_raise(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;

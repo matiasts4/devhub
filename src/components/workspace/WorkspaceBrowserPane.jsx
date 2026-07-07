@@ -725,12 +725,16 @@ function WorkspaceBrowserPane({
       </form>
 
       <div
-        className={`flex min-h-0 flex-1 flex-col bg-[#050814] ${nativeRuntimeActive ? '' : 'p-3'}`}
+        className={`flex min-h-0 flex-1 flex-col ${
+          nativeRuntimeActive && nativeRuntimeReady ? 'bg-transparent' : 'bg-[#050814]'
+        } ${nativeRuntimeActive ? '' : 'p-3'}`}
         data-testid="browser-pane-body"
         style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
         <div
-          className={`relative min-h-0 flex-1 overflow-hidden border bg-[#0a111d] ${
+          className={`relative min-h-0 flex-1 overflow-hidden border ${
+            nativeRuntimeActive && nativeRuntimeReady ? 'border-0 bg-transparent' : 'bg-[#0a111d]'
+          } ${
             nativeRuntimeActive
               ? 'border-0'
               : 'rounded-[16px] border border-white/10 shadow-[0_18px_48px_rgba(3,7,18,0.28)]'
