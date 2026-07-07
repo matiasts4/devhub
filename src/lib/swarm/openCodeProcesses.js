@@ -1,6 +1,10 @@
 import { execSync } from 'child_process';
 
 export function getOpenCodeProcesses() {
+  if (process.platform === 'win32') {
+    // Unix `ps` is unavailable on Windows; swarm scan is best-effort only.
+    return [];
+  }
   try {
     const output = execSync(
       'ps aux | grep -E "opencode.*--agent|opencode.*--session" | grep -v grep',

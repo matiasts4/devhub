@@ -91,7 +91,8 @@ export function shouldWarnAboutFraming(url) {
 export function shouldUsePreviewProxy(browserUrl) {
   const value = String(browserUrl || '').trim();
   if (!value) return false;
-  if (value.startsWith('/api/preview-proxy?url=') || value.startsWith('/api/preview-proxy/?url=')) return false;
+  if (value.startsWith('/api/preview-proxy?url=') || value.startsWith('/api/preview-proxy/?url='))
+    return false;
 
   try {
     const parsed = new URL(value);
@@ -186,7 +187,11 @@ export function isSameOriginBrowserUrl(browserUrl) {
 
 export function getInitialSupportState(browserUrl, protocolVerified = false) {
   if (shouldUsePreviewProxy(browserUrl)) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY, SUPPORT_REASON.PROXY_ACTIVE, true);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
+      SUPPORT_REASON.PROXY_ACTIVE,
+      true
+    );
   }
 
   if (protocolVerified) {
@@ -194,13 +199,24 @@ export function getInitialSupportState(browserUrl, protocolVerified = false) {
   }
 
   if (isSameOriginBrowserUrl(browserUrl)) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM, SUPPORT_REASON.SAME_ORIGIN_ACCESS);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+      SUPPORT_REASON.SAME_ORIGIN_ACCESS
+    );
   }
 
-  return createSupportState(PREVIEW_SUPPORT_MODE.UNSUPPORTED, SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION);
+  return createSupportState(
+    PREVIEW_SUPPORT_MODE.UNSUPPORTED,
+    SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION
+  );
 }
 
-export function classifyPreviewSupport({ browserUrl, iframe, iframeSrc = '', protocolVerified = false } = {}) {
+export function classifyPreviewSupport({
+  browserUrl,
+  iframe,
+  iframeSrc = '',
+  protocolVerified = false,
+} = {}) {
   const currentIframeSrc = String(iframeSrc || iframe?.getAttribute?.('src') || '');
   const isProxyExpected = shouldUsePreviewProxy(browserUrl);
   const isProxyFrame = currentIframeSrc.includes('/api/preview-proxy');
@@ -210,7 +226,11 @@ export function classifyPreviewSupport({ browserUrl, iframe, iframeSrc = '', pro
   }
 
   if (isProxyExpected) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY, SUPPORT_REASON.PROXY_ACTIVE, true);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
+      SUPPORT_REASON.PROXY_ACTIVE,
+      true
+    );
   }
 
   if (protocolVerified) {
@@ -218,14 +238,23 @@ export function classifyPreviewSupport({ browserUrl, iframe, iframeSrc = '', pro
   }
 
   if (canAccessIframeDom(iframe)) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM, SUPPORT_REASON.SAME_ORIGIN_ACCESS);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+      SUPPORT_REASON.SAME_ORIGIN_ACCESS
+    );
   }
 
   if (safeHasVisualEditProtocol(getIframeContentWindow(iframe))) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_PENDING);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+      SUPPORT_REASON.PROTOCOL_PENDING
+    );
   }
 
-  return createSupportState(PREVIEW_SUPPORT_MODE.UNSUPPORTED, SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION);
+  return createSupportState(
+    PREVIEW_SUPPORT_MODE.UNSUPPORTED,
+    SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION
+  );
 }
 
 export function getUnsupportedCopy(reason) {
@@ -243,7 +272,9 @@ export function getUnsupportedCopy(reason) {
 }
 
 export function normalizeBrowserRuntime(runtime) {
-  return runtime === BROWSER_RUNTIME.NATIVE_GTK ? BROWSER_RUNTIME.NATIVE_GTK : BROWSER_RUNTIME.IFRAME;
+  return runtime === BROWSER_RUNTIME.NATIVE_GTK
+    ? BROWSER_RUNTIME.NATIVE_GTK
+    : BROWSER_RUNTIME.IFRAME;
 }
 
 export function resolveBrowserRuntimeSelection({
@@ -273,7 +304,8 @@ export function resolveBrowserRuntimeSelection({
     return {
       requestedRuntime: normalizedRequestedRuntime,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
-      fallbackReason: nativeCapability?.reason || BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
+      fallbackReason:
+        nativeCapability?.reason || BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
     };
   }
 
@@ -284,8 +316,20 @@ export function resolveBrowserRuntimeSelection({
   };
 }
 
+export function getEmbeddedBrowserEngineLabel() {
+  if (typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent || '')) {
+    return 'WebView2 (Chromium)';
+  }
+  if (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent || '')) {
+    return 'WKWebView';
+  }
+  return 'motor embebido';
+}
+
 export function getBrowserRuntimeLabel(runtime) {
-  return normalizeBrowserRuntime(runtime) === BROWSER_RUNTIME.NATIVE_GTK ? 'native gtk' : 'iframe';
+  return normalizeBrowserRuntime(runtime) === BROWSER_RUNTIME.NATIVE_GTK
+    ? getEmbeddedBrowserEngineLabel()
+    : 'iframe';
 }
 
 export function getBrowserRuntimeFallbackCopy(reason) {

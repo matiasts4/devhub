@@ -10,6 +10,7 @@ use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
+mod embedded_browser;
 mod native_browser;
 mod native_window_host;
 mod alacritty_terminal_host;
@@ -17,6 +18,7 @@ mod system_clipboard;
 mod voice_engine;
 mod voice_python_setup;
 
+use embedded_browser::{embedded_browser_selector_ipc, EmbeddedBrowserRegistry};
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
     native_browser_open, native_browser_probe, native_browser_raise, native_browser_reload,
@@ -268,6 +270,16 @@ fn listener_pids_on_port(port: u16) -> Vec<u32> {
             if parts.len() < 5 {
                 continue;
             }
+            let local_addr = parts[1];
+            let Some((_, port_str)) = local_addr.rsplit_once(':') else {
+                continue;
+            };
+            let Ok(seen_port) = port_str.parse::<u16>() else {
+                continue;
+            };
+            if seen_port != port {
+                continue;
+            }
             if let Some(pid) = parts.last().and_then(|s| s.parse::<u32>().ok()) {
                 if pid > 0 {
                     pids.push(pid);
@@ -355,6 +367,20 @@ fn cleanup_zombie_ports() {
 
     // Breve pausa para que el SO libere los puertos
     thread::sleep(Duration::from_millis(300));
+}
+
+fn pid_listens_on_port(pid: u32, port: u16) -> bool {
+    listener_pids_on_port(port).contains(&pid)
+}
+
+fn clear_sidecar_marker_files() {
+    let _ = fs::remove_file(get_sidecar_pid_file());
+    let _ = fs::remove_file(get_sidecar_port_file());
+}
+
+/// True si el PID pertenece al sidecar de *este* runtime (puerto esperado).
+fn sidecar_pid_matches_runtime(pid: u32) -> bool {
+    pid_listens_on_port(pid, sidecar_port())
 }
 
 fn find_devhub_pid_on_port(port: u16) -> Option<u32> {
@@ -487,8 +513,11 @@ fn installed_standalone_zip_path() -> Option<PathBuf> {
 }
 
 /// Obtiene el mtime actual del standalone.zip instalado como build-id de referencia.
-/// Solo aplica a instalaciones empaquetadas; en dev mode el path no existe → None.
+/// Solo aplica a instalaciones empaquetadas release; en `tauri dev` no debe reiniciar sidecars.
 fn get_installed_build_id() -> Option<u64> {
+    if cfg!(debug_assertions) {
+        return None;
+    }
     let path = installed_standalone_zip_path()?;
     fs::metadata(&path)
         .ok()
@@ -516,8 +545,25 @@ fn check_existing_sidecar() -> Option<u32> {
     if let Ok(content) = fs::read_to_string(&pid_file) {
         if let Ok(pid) = content.trim().parse::<u32>() {
             if is_sidecar_running(pid) {
-                // Comparar build-id del sidecar en ejecución vs el instalado actualmente.
-                // Si difieren, hay una nueva versión instalada → matar el sidecar viejo.
+                if !sidecar_pid_matches_runtime(pid) {
+                    log::warn!(
+                        "[DevHub] sidecar.pid={} no escucha en puerto {} (otro runtime, p. ej. instalado en :4000). Ignorando marcador.",
+                        pid,
+                        sidecar_port()
+                    );
+                    clear_sidecar_marker_files();
+                    return find_devhub_pid_on_port(sidecar_port()).map(|adopted| {
+                        let _ = fs::write(get_sidecar_pid_file(), adopted.to_string());
+                        let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
+                        log::info!(
+                            "[DevHub] Sidecar readoptado en puerto {} con PID {}.",
+                            sidecar_port(),
+                            adopted
+                        );
+                        adopted
+                    });
+                }
+                // Comparar build-id solo en release empaquetado (nunca en tauri dev).
                 if let (Some(installed), Some(running)) =
                     (get_installed_build_id(), get_running_build_id())
                 {
@@ -554,7 +600,9 @@ fn check_existing_sidecar() -> Option<u32> {
 }
 
 /// Shutdown graceful del sidecar: primero HTTP POST /shutdown, luego SIGKILL si no responde.
+/// Nunca apaga un sidecar de otro runtime (p. ej. prod :4000 mientras tauri dev usa :4001).
 fn shutdown_sidecar() {
+    let expected_port = sidecar_port();
     let pid_file = get_sidecar_pid_file();
     let Ok(content) = fs::read_to_string(&pid_file) else {
         return;
@@ -563,19 +611,60 @@ fn shutdown_sidecar() {
         return;
     };
 
+    if !sidecar_pid_matches_runtime(pid) {
+        log::warn!(
+            "[DevHub] No se apaga PID {}: no escucha en puerto {} (coexistencia dev/instalado).",
+            pid,
+            sidecar_port()
+        );
+        clear_sidecar_marker_files();
+        return;
+    }
+
+    let port_file = get_sidecar_port_file();
+    if let Ok(port_str) = fs::read_to_string(&port_file) {
+        if let Ok(recorded_port) = port_str.trim().parse::<u16>() {
+            if recorded_port != expected_port {
+                log::warn!(
+                    "[DevHub] Ignorando shutdown del sidecar PID {}: sidecar-port.txt={} ≠ runtime esperado {} (coexistencia instalado/dev).",
+                    pid,
+                    recorded_port,
+                    expected_port
+                );
+                let _ = fs::remove_file(&pid_file);
+                let _ = fs::remove_file(&port_file);
+                return;
+            }
+        }
+    }
+
     log::info!(
         "[DevHub] Solicitando shutdown graceful del sidecar (PID {})...",
         pid
     );
-    let port_file = get_sidecar_port_file();
     let mut closed_gracefully = false;
 
     // Intentar shutdown vía HTTP
     if let Ok(port_str) = fs::read_to_string(&port_file) {
         if let Ok(port) = port_str.trim().parse::<u16>() {
+            if port != expected_port {
+                let _ = fs::remove_file(&pid_file);
+                let _ = fs::remove_file(&port_file);
+                return;
+            }
             let url = format!("http://127.0.0.1:{}/shutdown", port);
+            let port_header = port.to_string();
             let _ = std::process::Command::new("curl")
-                .args(["-s", "-X", "POST", &url, "--max-time", "3"])
+                .args([
+                    "-s",
+                    "-X",
+                    "POST",
+                    &url,
+                    "--max-time",
+                    "3",
+                    "-H",
+                    &format!("X-Devhub-Shutdown-Port: {}", port_header),
+                ])
                 .output();
 
             // Esperar hasta 2s a que el sidecar termine
@@ -909,6 +998,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(NativeBrowserState::default())
+        .manage(EmbeddedBrowserRegistry::default())
         .manage(VoiceState::default())
         .invoke_handler(tauri::generate_handler![
             native_browser_probe,
@@ -923,6 +1013,7 @@ pub fn run() {
             native_browser_select_all,
             native_browser_copy,
             native_browser_close,
+            embedded_browser_selector_ipc,
             read_system_clipboard_text,
             read_system_clipboard_image,
             write_clipboard_image_to_temp_file,

@@ -241,7 +241,7 @@ fn unsupported_platform_reason() -> Option<String> {
     Some("unsupported-platform".to_string())
 }
 
-fn emit_native_browser_event(app: &AppHandle, payload: NativeBrowserEventPayload) {
+pub(crate) fn emit_native_browser_event(app: &AppHandle, payload: NativeBrowserEventPayload) {
     let _ = app.emit(NATIVE_BROWSER_EVENT_NAME, payload);
 }
 
@@ -255,7 +255,7 @@ fn selector_error_payload(panel_id: &str, reason: &str) -> NativeBrowserEventPay
     }
 }
 
-fn map_selector_event_payload(
+pub(crate) fn map_selector_event_payload(
     panel_id: &str,
     raw_payload: Option<&str>,
 ) -> NativeBrowserEventPayload {
@@ -1169,9 +1169,14 @@ fn registry_selector_command(
 #[tauri::command]
 pub fn native_browser_probe(
     app: AppHandle,
-    _state: State<'_, NativeBrowserState>,
+    state: State<'_, NativeBrowserState>,
+    _embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserProbeRequest,
 ) -> NativeBrowserProbeResponse {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_probe(app, state, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         match ensure_linux_probe_preconditions(&request)
@@ -1197,8 +1202,13 @@ pub fn native_browser_probe(
 pub fn native_browser_open(
     app: AppHandle,
     state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserOpenRequest,
 ) -> NativeBrowserOpenResponse {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_open(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let Some(bounds) = request.bounds.clone() else {
@@ -1287,8 +1297,13 @@ pub fn native_browser_open(
 pub fn native_browser_load_url(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserLoadUrlRequest,
 ) -> NativeBrowserLoadUrlResponse {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_load_url(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;
@@ -1333,8 +1348,13 @@ pub fn native_browser_load_url(
 pub fn native_browser_reload(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserPanelRequest,
 ) -> NativeBrowserReloadResponse {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_reload(app, embedded, &request.panel_id);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;
@@ -1378,8 +1398,13 @@ pub fn native_browser_reload(
 pub fn native_browser_resize(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserOpenRequest,
 ) -> Result<(), String> {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_resize(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let bounds = request
@@ -1413,8 +1438,13 @@ pub fn native_browser_resize(
 pub fn native_browser_focus(
     app: AppHandle,
     state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserPanelRequest,
 ) -> Result<(), String> {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_focus(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;
@@ -1487,8 +1517,13 @@ pub fn native_browser_raise(
 pub fn native_browser_set_visibility(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserVisibilityRequest,
 ) -> Result<(), String> {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_set_visibility(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;
@@ -1547,8 +1582,13 @@ pub fn native_browser_copy(
 pub fn native_browser_selector_command(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserSelectorCommandRequest,
 ) -> NativeBrowserCommandResponse {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_selector_command(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;
@@ -1594,8 +1634,13 @@ pub fn native_browser_selector_command(
 pub fn native_browser_close(
     app: AppHandle,
     state: State<'_, NativeBrowserState>,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserPanelRequest,
 ) -> Result<(), String> {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_close(app, embedded, request);
+    }
+
     #[cfg(target_os = "linux")]
     {
         let panel_id = request.panel_id;

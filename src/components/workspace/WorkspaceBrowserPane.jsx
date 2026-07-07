@@ -13,6 +13,7 @@ import {
   MousePointer2,
   Pencil,
   Plus,
+  GripVertical,
   RefreshCw,
   Sparkles,
   TriangleAlert,
@@ -80,6 +81,8 @@ function WorkspaceBrowserPane({
   tabsMode = 'single',
   isPizarraContext = false,
   nativePanelId: nativePanelIdProp = null,
+  pizarraDragHandleMouseDown = null,
+  onPizarraCloseCard = null,
 }) {
   const viewportShellRef = useRef(null);
   const measureNativeBounds = useCallback(() => {
@@ -123,9 +126,7 @@ function WorkspaceBrowserPane({
     const dockVisible = dockState.visible !== false;
     const maximizedView = dockState.maximizedView || 'browser';
     const takeoverBlocksWorkspaceBrowser =
-      dockState.maximized === true &&
-      maximizedView !== 'browser' &&
-      maximizedView !== 'window';
+      dockState.maximized === true && maximizedView !== 'browser' && maximizedView !== 'window';
     const browserOwnsLayout = !dockState.maximized || maximizedView === 'browser';
 
     return (
@@ -222,9 +223,11 @@ function WorkspaceBrowserPane({
     return 'Native inspect ready';
   }, [isInspecting, nativeRuntimeActive, nativeSelectorReady, selectorState]);
   const nativeInspectOnlyMode = nativeRuntimeActive && effectiveEditMode;
+  const embeddedEngineLabel = useMemo(() => getBrowserRuntimeLabel(BROWSER_RUNTIME.NATIVE_GTK), []);
+
   const runtimeStatusCopy = useMemo(() => {
     if (nativeRuntimeActive) {
-      return `Activo: ${getBrowserRuntimeLabel(BROWSER_RUNTIME.NATIVE_GTK)}`;
+      return `Activo: ${embeddedEngineLabel}`;
     }
     if (browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK) {
       const fallbackCopy = getBrowserRuntimeFallbackCopy(browserRuntimeSelection.fallbackReason);
@@ -243,6 +246,7 @@ function WorkspaceBrowserPane({
   }, [
     browserRuntimeSelection.fallbackReason,
     browserRuntimeSelection.requestedRuntime,
+    embeddedEngineLabel,
     nativeRuntimeActive,
   ]);
   const handleBrowserRuntimeChange = (nextRuntime) => {
@@ -409,13 +413,15 @@ function WorkspaceBrowserPane({
     }));
   };
 
+  const pizarraInlineTabs = isPizarraContext && showTabStrip;
+
   return (
     <div
       className="h-full min-h-0 flex flex-col bg-[linear-gradient(180deg,#09111b_0%,#060b12_100%)]"
       data-testid="workspace-browser-pane"
       data-tabs-mode={tabsMode}
     >
-      {showTabStrip ? (
+      {showTabStrip && !pizarraInlineTabs ? (
         <BrowserTabStrip
           tabs={tabStripApi.tabs}
           activeTabId={tabStripApi.activeTabId}
@@ -426,10 +432,40 @@ function WorkspaceBrowserPane({
         />
       ) : null}
       <form
-        className={`flex ${isPizarraContext ? 'h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-2' : 'px-3'}`}
+        className={`flex ${isPizarraContext ? 'h-8 min-h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-1.5' : 'px-3'}`}
         onSubmit={handleSubmit}
         data-testid="workspace-browser-toolbar"
+        data-pizarra-browser-surface-header={isPizarraContext ? 'true' : undefined}
       >
+        {isPizarraContext && typeof pizarraDragHandleMouseDown === 'function' ? (
+          <button
+            type="button"
+            data-testid="pizarra-drag-handle"
+            data-pizarra-surface-drag-handle="true"
+            aria-label="Mover ventana del navegador en la pizarra"
+            title="Arrastrar para mover"
+            onMouseDown={pizarraDragHandleMouseDown}
+            className="inline-flex h-6 w-5 shrink-0 cursor-move items-center justify-center rounded-md border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        {pizarraInlineTabs ? (
+          <div
+            className="flex min-w-0 max-w-[min(38%,12rem)] shrink items-center overflow-x-auto border-r border-[var(--border-subtle)] pr-1.5 mr-0.5"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <BrowserTabStrip
+              layout="inline"
+              tabs={tabStripApi.tabs}
+              activeTabId={tabStripApi.activeTabId}
+              onSelectTab={tabStripApi.selectTab}
+              onCloseTab={tabStripApi.closeTab}
+              onAddTab={tabStripApi.addTab}
+              currentUrl={dockState.browserUrl}
+            />
+          </div>
+        ) : null}
         {showFullscreenWorkspaceTabs ? (
           <div
             className="order-1 flex min-w-0 max-w-[min(40vw,34rem)] shrink items-center gap-2 overflow-x-auto pr-1"
@@ -610,36 +646,36 @@ function WorkspaceBrowserPane({
                 native gtk
               </button>
             </div>
-            {/* Show runtime/edit status chip even in pizarra (useful for inspector/reviews on page).
-                Was hidden before; now visible in browser cards for the "preguntas/reviews" functionality. */}
-            <div
-              className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
-                nativeRuntimeActive
-                  ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
-                  : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'border-amber-400/25 bg-amber-400/10 text-amber-100'
-                    : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
-              }`}
-              data-testid="browser-native-runtime-chip"
-              title={
-                nativeRuntimeActive
-                  ? 'Native GTK/WebKitGTK runtime active'
-                  : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'Native GTK pedido, pero el browser cayó a iframe'
-                    : 'Iframe runtime active'
-              }
-            >
-              <span
-                className={`inline-flex h-1.5 w-1.5 rounded-full ${
+            {!isPizarraContext ? (
+              <div
+                className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
                   nativeRuntimeActive
-                    ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]'
+                    ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
                     : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                      ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.45)]'
-                      : 'bg-white/35'
+                      ? 'border-amber-400/25 bg-amber-400/10 text-amber-100'
+                      : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
                 }`}
-              />
-              <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
-            </div>
+                data-testid="browser-native-runtime-chip"
+                title={
+                  nativeRuntimeActive
+                    ? `${embeddedEngineLabel} embebido en el dock (estilo Wave)`
+                    : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                      ? 'Motor embebido pedido, pero el browser cayó a iframe'
+                      : 'Iframe runtime active'
+                }
+              >
+                <span
+                  className={`inline-flex h-1.5 w-1.5 rounded-full ${
+                    nativeRuntimeActive
+                      ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]'
+                      : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
+                        ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.45)]'
+                        : 'bg-white/35'
+                  }`}
+                />
+                <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
+              </div>
+            ) : null}
 
             {dedicatedBrowserOpen ? (
               <button
@@ -668,6 +704,24 @@ function WorkspaceBrowserPane({
             ) : null}
           </div>
         </label>
+        {typeof onPizarraCloseCard === 'function' ? (
+          <button
+            type="button"
+            data-testid="pizarra-browser-close"
+            data-pizarra-close-button="true"
+            title="Cerrar ventana del navegador (en pizarra)"
+            aria-label="Cerrar ventana del navegador"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onPizarraCloseCard();
+            }}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-subtle)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
       </form>
 
       <div
@@ -805,8 +859,8 @@ function WorkspaceBrowserPane({
           ) : nativeRuntimeActive ? (
             <>
               {/*
-                The GTK/WebKitGTK WebView is rendered natively inside the Tauri
-                window overlay by `src-tauri/src/native_browser.rs`. We must
+                El motor embebido (WebView2/WKWebView/WebKit) se pinta como webview
+                hijo de Tauri en los bounds del dock (`embedded_browser.rs`). No
                 NOT paint any opaque React layer on top of it or the user only
                 sees this shell. The wrapper below stays in the DOM so the
                 `browser-native-runtime-shell` testid remains queryable, but
