@@ -862,13 +862,13 @@ export default function TerminalTTY({
     handleContextMenu,
     handleCopyFromMenu,
     handlePasteFromMenu,
-    handleViewportPaste,
   } = useTerminalClipboard({
     rendererRefs: rendererRefsBag,
     sessionRefs,
     lifecycleRefs,
     viewportRefs,
     panelId: id,
+    initialCommand,
     isActivePanel,
     shouldUseNativeRenderer,
     focusNativeVtePanel,
@@ -1195,6 +1195,7 @@ export default function TerminalTTY({
     disposeWebglAddonForContextLoss,
     scheduleWebglRecovery,
     coalescedForceRepaint,
+    coalescedSoftGpuVisibilityReveal,
     scheduleBoundedGpuRecover,
     scheduleBoundedFitRepaint,
     scheduleBoundedForceRepaint,
@@ -1684,7 +1685,8 @@ export default function TerminalTTY({
     >
       {!hideTitleBar && (
         <div
-          className="devhub-drag-handle h-9 flex items-center justify-between px-3 shrink-0 border-b select-none transition-colors group/handle cursor-pointer"
+          className="devhub-drag-handle h-9 flex items-center justify-between px-3 shrink-0 border-b select-none transition-colors group/handle cursor-default"
+          data-tauri-drag-region
           style={getTerminalTitleBarStyle()}
         >
           <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none">
@@ -1716,7 +1718,7 @@ export default function TerminalTTY({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
             <button
               onClick={() => adjustFontSize(-1)}
               title="Reducir tamaño de fuente"
@@ -1791,7 +1793,6 @@ export default function TerminalTTY({
           className="relative flex-1 bg-[var(--surface-app)]"
           onContextMenu={handleContextMenu}
           onMouseDown={handleViewportMouseDown}
-          onPaste={handleViewportPaste}
           data-testid="terminal-viewport-shell"
           style={{
             ...TERMINAL_VIEWPORT_SHELL_STYLE,
