@@ -134,13 +134,11 @@ async function drainLiveResize(panelId) {
       while (liveResizePending[panelId]) {
         const req = liveResizePending[panelId];
         delete liveResizePending[panelId];
-        // resize alone can no-op on WebView2 children; visibility+bounds is the
-        // path that reliably repositions the HWND (same as open/reveal).
-        last = await invokeNativeBrowser('native_browser_resize', req, {
-          reason: 'tauri-unavailable',
-        });
-        if (!last?.reason && req.bounds) {
-          const vis = await invokeNativeBrowser(
+        // Live path: one IPC. set_visibility(bounds) already set_position/set_size
+        // on the embedded WebView2; a prior resize+visibility pair doubled latency
+        // and made mid-drag follow feel like mouseup-only.
+        if (req.bounds) {
+          last = await invokeNativeBrowser(
             'native_browser_set_visibility',
             {
               panelId,
@@ -150,7 +148,10 @@ async function drainLiveResize(panelId) {
             },
             { reason: 'tauri-unavailable' }
           );
-          if (vis?.reason) last = vis;
+        } else {
+          last = await invokeNativeBrowser('native_browser_resize', req, {
+            reason: 'tauri-unavailable',
+          });
         }
       }
     } finally {

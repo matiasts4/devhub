@@ -70,7 +70,7 @@ const IFRAME_GPU_STYLE = {
 };
 
 /** Visible in toolbar — confirms the running bundle includes latest browser fixes. */
-const BROWSER_BUILD_TAG = '20260708t';
+const BROWSER_BUILD_TAG = '20260708u';
 
 function WorkspaceBrowserPane({
   dockState,

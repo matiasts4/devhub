@@ -216,13 +216,8 @@ export default function useRightDockController({
       return;
     }
 
-    if (isDraggingDockRef?.current) {
-      if (typeof process === 'undefined' || process.env.NODE_ENV !== 'test') {
-        applyLiveRightDockBoundsRef?.current?.();
-      }
-      return;
-    }
-
+    // Update measured bounds even while dragging so React style left/width tracks
+    // the placeholder. Skipping this left stale style that fought live HWND sync.
     setRightDockMeasuredBounds((prev) => {
       if (
         prev &&
@@ -235,8 +230,14 @@ export default function useRightDockController({
       return nextBounds;
     });
 
-    if (!isDraggingDockRef?.current && rightDockLayerRef?.current) {
+    if (rightDockLayerRef?.current) {
       applyRightDockLayerBounds(rightDockLayerRef.current, nextBounds);
+    }
+    if (
+      isDraggingDockRef?.current &&
+      (typeof process === 'undefined' || process.env.NODE_ENV !== 'test')
+    ) {
+      applyLiveRightDockBoundsRef?.current?.();
     }
   }, [
     resolveDockLayoutFlags,

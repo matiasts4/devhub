@@ -1654,6 +1654,22 @@ describe('TerminalWorkspacesManager right dock', () => {
     });
   });
 
+  test('dock chrome style keeps left/width during drag (live WebView2 follow)', () => {
+    // Regression: stripping left/width while isDraggingDock made React re-renders
+    // clear imperative geometry, so HWND only updated on mouseup.
+    const style = resolveRightDockLayerStyle({
+      isFullscreenBrowser: false,
+      size: 40,
+      measuredBounds: { left: 700, right: 0, width: 400 },
+    });
+    expect(style.left).toBe('700px');
+    expect(style.width).toBe('400px');
+    // Live drag must keep the same anchors — chrome style === layer style.
+    expect(style).toEqual(
+      expect.objectContaining({ top: 0, right: 'auto', bottom: 0, left: '700px', width: '400px' })
+    );
+  });
+
   test('resolveMeasuredRightDockBounds derives exact left and width from the real placeholder rect', () => {
     expect(
       resolveMeasuredRightDockBounds(

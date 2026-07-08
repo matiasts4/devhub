@@ -221,13 +221,13 @@ describe('nativeBrowserBridge', () => {
     frame();
     await bridge.flushNativeBrowserResize({ panelId: 'browser-live' });
 
-    const resizeCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_resize');
-    expect(resizeCalls.length).toBeGreaterThanOrEqual(1);
-    expect(resizeCalls[resizeCalls.length - 1][1].request.bounds.width).toBe(500);
+    // Live path uses a single set_visibility(bounds) IPC (not resize+visibility).
     const visCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_set_visibility');
     expect(visCalls.length).toBeGreaterThanOrEqual(1);
     expect(visCalls[visCalls.length - 1][1].request.visible).toBe(true);
     expect(visCalls[visCalls.length - 1][1].request.bounds.width).toBe(500);
+    const resizeCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_resize');
+    expect(resizeCalls).toHaveLength(0);
   });
 
   test('flushNativeBrowserResize applies pending bounds immediately', async () => {
@@ -251,9 +251,9 @@ describe('nativeBrowserBridge', () => {
       bounds: { x: 1, y: 80, width: 333, height: 200 },
     });
 
-    const resizeCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_resize');
-    expect(resizeCalls.length).toBeGreaterThanOrEqual(1);
-    expect(resizeCalls[resizeCalls.length - 1][1].request.bounds.width).toBe(333);
+    const visCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_set_visibility');
+    expect(visCalls.length).toBeGreaterThanOrEqual(1);
+    expect(visCalls[visCalls.length - 1][1].request.bounds.width).toBe(333);
   });
 
   test('emitNativeBrowserClosed dispatches window event', () => {

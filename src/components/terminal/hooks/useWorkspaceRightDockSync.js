@@ -266,9 +266,9 @@ export default function useWorkspaceRightDockSync({
     size: effectiveRightDockState.size,
     measuredBounds: rightDockMeasuredBounds,
   });
-  const rightDockLayerChromeStyle = isDraggingDock
-    ? { top: 0, right: 'auto', bottom: 0 }
-    : rightDockLayerStyle;
+  // Keep left/width in the React style during drag. Stripping them made every
+  // re-render clear the imperative live geometry, so WebView2 only caught up on mouseup.
+  const rightDockLayerChromeStyle = rightDockLayerStyle;
 
   syncRightDockMeasuredBoundsRef.current = syncRightDockMeasuredBounds;
 
