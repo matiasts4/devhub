@@ -9,7 +9,7 @@ import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand.shared';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { zedLog } from '../utils/zed-logger';
 
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi']);
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok']);
 
 function normalizeProgram(program) {
   const p = typeof program === 'string' ? program.trim().toLowerCase() : '';

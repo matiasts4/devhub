@@ -23,7 +23,7 @@ const mountedRoots = [];
 function createMockResult(overrides = {}) {
   return {
     status: PANEL_STATUS.IDLE,
-    label: 'Inactivo',
+    label: 'Idle',
     isPulsing: false,
     style: {
       dot: 'bg-slate-400',
@@ -75,7 +75,7 @@ describe('PanelStatusBadge', () => {
     mockUsePanelAgentStatus.mockReturnValue(
       createMockResult({
         status: PANEL_STATUS.IDLE,
-        label: 'Inactivo',
+        label: 'Idle',
         details: {
           connectionState: 'connected',
           agentRun: null,

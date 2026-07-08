@@ -88,6 +88,7 @@ describe('schema-aware no-params check (T-015)', () => {
     stubPrompt();
     process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.XAI_API_KEY;
     POST = require('../route').POST;
   });
   afterAll(async () => {

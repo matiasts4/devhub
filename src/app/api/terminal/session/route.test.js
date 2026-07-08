@@ -8,10 +8,11 @@ const mockCloseSession = jest.fn();
 const mockExistsSync = jest.fn(() => false);
 const mockReadFileSync = jest.fn();
 const mockSpawn = jest.fn();
-const mockReadProductionSidecarPort = jest.fn();
+const mockReadSidecarPortForTerminalSession = jest.fn();
 
 jest.mock('@/lib/devhub/sidecarRuntime', () => ({
-  readProductionSidecarPort: (...args) => mockReadProductionSidecarPort(...args),
+  readSidecarPortForTerminalSession: (...args) => mockReadSidecarPortForTerminalSession(...args),
+  readProductionSidecarPort: (...args) => mockReadSidecarPortForTerminalSession(...args),
 }));
 
 jest.mock('@/lib/terminal/ttyServer', () => ({
@@ -42,7 +43,7 @@ describe('GET /api/terminal/session', () => {
     global.fetch = jest.fn();
     mockExistsSync.mockReturnValue(false);
     mockReadFileSync.mockReset();
-    mockReadProductionSidecarPort.mockResolvedValue(null);
+    mockReadSidecarPortForTerminalSession.mockResolvedValue(null);
     mockSpawn.mockReturnValue({ unref: jest.fn() });
     NextResponse.json.mockImplementation((body, init) => ({ body, status: init?.status || 200 }));
     ensureTTYServer.mockResolvedValue({ port: 3001, wsPath: '/terminals' });
@@ -67,7 +68,7 @@ describe('GET /api/terminal/session', () => {
 
   test('returns the json tty path for the production sidecar transport', async () => {
     process.env.NODE_ENV = 'production';
-    mockReadProductionSidecarPort.mockResolvedValue(4000);
+    mockReadSidecarPortForTerminalSession.mockResolvedValue(4000);
 
     const { GET } = require('./route.js');
     const request = {
@@ -76,7 +77,7 @@ describe('GET /api/terminal/session', () => {
 
     const response = await GET(request);
 
-    expect(mockReadProductionSidecarPort).toHaveBeenCalled();
+    expect(mockReadSidecarPortForTerminalSession).toHaveBeenCalled();
     expect(response.body).toEqual({ port: 4000, wsPath: '/tty' });
     expect(ensureTTYServer).not.toHaveBeenCalled();
   });
@@ -84,7 +85,7 @@ describe('GET /api/terminal/session', () => {
   test('respawns the packaged sidecar when production health fails and standalone fallback is unavailable', async () => {
     process.env.NODE_ENV = 'production';
     ensureTTYServer.mockRejectedValue(new Error("Cannot find module 'node-pty'"));
-    mockReadProductionSidecarPort.mockResolvedValue(null);
+    mockReadSidecarPortForTerminalSession.mockResolvedValue(null);
     mockExistsSync.mockImplementation((targetPath) =>
       String(targetPath).includes('sidecar-backend/server.js')
     );
@@ -118,7 +119,7 @@ describe('GET /api/terminal/session', () => {
   test('keeps the production 503 when no sidecar recovery path exists', async () => {
     process.env.NODE_ENV = 'production';
     ensureTTYServer.mockRejectedValue(new Error("Cannot find module 'node-pty'"));
-    mockReadProductionSidecarPort.mockResolvedValue(null);
+    mockReadSidecarPortForTerminalSession.mockResolvedValue(null);
     mockExistsSync.mockReturnValue(false);
     global.fetch.mockRejectedValue(new Error('ECONNREFUSED'));
 
@@ -168,7 +169,7 @@ describe('DELETE /api/terminal/session', () => {
 
   test('forwards explicit close requests to the production sidecar', async () => {
     process.env.NODE_ENV = 'production';
-    mockReadProductionSidecarPort.mockResolvedValue(4000);
+    mockReadSidecarPortForTerminalSession.mockResolvedValue(4000);
     global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
 
     const { DELETE } = require('./route.js');

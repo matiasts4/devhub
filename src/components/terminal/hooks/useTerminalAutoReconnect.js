@@ -30,11 +30,12 @@ export default function useTerminalAutoReconnect({
     const { sessionClosingRef } = c;
     if (sessionClosingRef.current) return undefined;
 
-    if (shouldAutoReconnectTerminal(connectionState, autoFocus, initError)) {
-      if (!autoFocus) {
-        cliLog(`CLIENT:${id}`, 'auto-reconnect SKIPPED (not autoFocus)', { connectionState });
-        return;
-      }
+    const isVisibleInLayout = Boolean(c.isVisibleInLayoutRef?.current);
+    if (
+      shouldAutoReconnectTerminal(connectionState, autoFocus, initError, {
+        isVisibleInLayout,
+      })
+    ) {
       const delay = Math.min(300 * 2 ** reconnectAttemptsRef.current, 5000);
       cliLog(`CLIENT:${id}`, 'auto-reconnect scheduled', {
         connectionState,

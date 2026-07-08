@@ -55,6 +55,30 @@ describe('zedIntentRouter', () => {
     expect(hit.steps.length).toBeGreaterThanOrEqual(1);
   });
 
+  test('compound open + close named terminal is local-high with both steps', () => {
+    const multi = {
+      workspace_terminals: [
+        { terminalId: 'p1', displayName: 'Eibar' },
+        { terminalId: 'p2', displayName: 'Alex' },
+      ],
+      terminal_panel_count: 2,
+    };
+    const hit = resolveZedIntent('Abre una nueva terminal y cierra la de Eibar.', multi);
+    expect(hit.tier).toBe('local-high');
+    // May resolve via compound matcher or two-step clause split — both must open + close.
+    expect(hit.steps).toEqual([
+      { tool: 'open_terminal', input: {} },
+      { tool: 'close_terminal', input: { name: 'Eibar' } },
+    ]);
+    expect(hit.intent).toMatch(/open|close/i);
+  });
+
+  test('compound open + unknown close target → llm (no half plan)', () => {
+    const hit = resolveZedIntent('Abre una nueva terminal y cierra la de Fantasma.', ctx);
+    expect(hit.tier).toBe('llm');
+    expect(hit.steps).toHaveLength(0);
+  });
+
   test('maps spanish ejecuta to terminal-run local-high', () => {
     const hit = resolveZedIntent('ejecuta npm test', ctx);
     expect(hit.tier).toBe('local-high');

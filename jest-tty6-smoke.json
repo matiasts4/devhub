@@ -1,0 +1,264 @@
+{
+  "numFailedTestSuites": 0,
+  "numFailedTests": 0,
+  "numPassedTestSuites": 3,
+  "numPassedTests": 25,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 3,
+  "numTotalTests": 25,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783194411476,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path requests snapshot on ready and subscribes after the snapshot response",
+          "location": null,
+          "status": "passed",
+          "title": "requests snapshot on ready and subscribes after the snapshot response"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path does not send subscribe for legacy v1 panels",
+          "location": null,
+          "status": "passed",
+          "title": "does not send subscribe for legacy v1 panels"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path decodes terminal:append frames and writes them to xterm.js",
+          "location": null,
+          "status": "passed",
+          "title": "decodes terminal:append frames and writes them to xterm.js"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path sends unsubscribe before closing the socket on unmount",
+          "location": null,
+          "status": "passed",
+          "title": "sends unsubscribe before closing the socket on unmount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path includes v2=true in the WebSocket URL for v2 panels",
+          "location": null,
+          "status": "passed",
+          "title": "includes v2=true in the WebSocket URL for v2 panels"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path resizes back to container and notifies the PTY after rehydration completes",
+          "location": null,
+          "status": "passed",
+          "title": "resizes back to container and notifies the PTY after rehydration completes"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path applies server termsize from a metadata message",
+          "location": null,
+          "status": "passed",
+          "title": "applies server termsize from a metadata message"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path stashes the live xterm surface in the v2 graveyard on unmount",
+          "location": null,
+          "status": "passed",
+          "title": "stashes the live xterm surface in the v2 graveyard on unmount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path restores a previously stashed xterm surface on remount",
+          "location": null,
+          "status": "passed",
+          "title": "restores a previously stashed xterm surface on remount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path v2 WebGL context loss degrades to DOM without scheduling GPU recovery",
+          "location": null,
+          "status": "passed",
+          "title": "v2 WebGL context loss degrades to DOM without scheduling GPU recovery"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path does not stash output in terminalPanelBridge on v2 unmount",
+          "location": null,
+          "status": "passed",
+          "title": "does not stash output in terminalPanelBridge on v2 unmount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path does not register a devhub:terminal-survivor-recover listener when isEngineV2 is true",
+          "location": null,
+          "status": "passed",
+          "title": "does not register a devhub:terminal-survivor-recover listener when isEngineV2 is true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path ignores devhub:terminal-layout-settled survivor bursts when isEngineV2 is true",
+          "location": null,
+          "status": "passed",
+          "title": "ignores devhub:terminal-layout-settled survivor bursts when isEngineV2 is true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path ignores devhub:terminal-survivor-recover events when isEngineV2 is true",
+          "location": null,
+          "status": "passed",
+          "title": "ignores devhub:terminal-survivor-recover events when isEngineV2 is true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path keeps legacy output handling working when isEngineV2 is false",
+          "location": null,
+          "status": "passed",
+          "title": "keeps legacy output handling working when isEngineV2 is false"
+        }
+      ],
+      "endTime": 1783194443158,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalTTY.v2.test.jsx",
+      "startTime": 1783194411589,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol temp-resizes to the cached snapshot termsize before writing the serialized scrollback",
+          "location": null,
+          "status": "passed",
+          "title": "temp-resizes to the cached snapshot termsize before writing the serialized scrollback"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol replays the snapshot and then the ring-buffer delta before going live",
+          "location": null,
+          "status": "passed",
+          "title": "replays the snapshot and then the ring-buffer delta before going live"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol buffers heldData during rehydration and flushes it in order after replay completes",
+          "location": null,
+          "status": "passed",
+          "title": "buffers heldData during rehydration and flushes it in order after replay completes"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol subscribes from the current offset when no snapshot exists",
+          "location": null,
+          "status": "passed",
+          "title": "subscribes from the current offset when no snapshot exists"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol does not write append frames until loaded becomes true",
+          "location": null,
+          "status": "passed",
+          "title": "does not write append frames until loaded becomes true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol serializes and pushes a snapshot after ~100 KiB of processed output",
+          "location": null,
+          "status": "passed",
+          "title": "serializes and pushes a snapshot after ~100 KiB of processed output"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol sends a final snapshot before unsubscribing on unmount",
+          "location": null,
+          "status": "passed",
+          "title": "sends a final snapshot before unsubscribing on unmount"
+        }
+      ],
+      "endTime": 1783194457404,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalTTY.rehydration.test.jsx",
+      "startTime": 1783194443225,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["useTerminalV2Session"],
+          "failureMessages": [],
+          "fullName": "useTerminalV2Session returns connect aliases startV2Session and stopV2Session",
+          "location": null,
+          "status": "passed",
+          "title": "returns connect aliases startV2Session and stopV2Session"
+        },
+        {
+          "ancestorTitles": ["useTerminalV2Session"],
+          "failureMessages": [],
+          "fullName": "useTerminalV2Session stopV2Session silences and closes an open websocket",
+          "location": null,
+          "status": "passed",
+          "title": "stopV2Session silences and closes an open websocket"
+        },
+        {
+          "ancestorTitles": ["useTerminalV2Session"],
+          "failureMessages": [],
+          "fullName": "useTerminalV2Session skips connect when socket is already open and calls sendResize",
+          "location": null,
+          "status": "passed",
+          "title": "skips connect when socket is already open and calls sendResize"
+        }
+      ],
+      "endTime": 1783194458688,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\terminal\\hooks\\__tests__\\useTerminalV2Session.test.js",
+      "startTime": 1783194457425,
+      "status": "passed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

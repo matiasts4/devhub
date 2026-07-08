@@ -88,7 +88,7 @@ export default function TerminalAgentsSettings() {
                     style={pillStyle({ tone: isRunning ? 'success' : 'danger' })}
                   >
                     <Activity className="w-3 h-3" />
-                    {isRunning ? 'Activo' : 'Inactivo'}
+                    {isRunning ? 'Activo' : 'Idle'}
                   </span>
                 </div>
 

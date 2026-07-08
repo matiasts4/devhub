@@ -3,7 +3,10 @@
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 1).
  */
 import { useCallback } from 'react';
-import { isStaleXtermRendererError } from '@/components/terminal/TerminalTTY.helpers';
+import {
+  isStaleXtermRendererError,
+  isTerminalRendererReady,
+} from '@/components/terminal/TerminalTTY.helpers';
 import { setTerminalTypography } from '@/components/terminal/terminalTypographyPreferences';
 
 export default function useTerminalFontSize({ ctxRef }) {
@@ -22,7 +25,11 @@ export default function useTerminalFontSize({ ctxRef }) {
         } catch {
           /* ignore */
         }
-        if (termRef.current && !isDisposingRef.current) {
+        if (
+          termRef.current &&
+          !isDisposingRef.current &&
+          isTerminalRendererReady(termRef.current)
+        ) {
           termRef.current.options.fontSize = next;
           try {
             fitRef.current?.fit();

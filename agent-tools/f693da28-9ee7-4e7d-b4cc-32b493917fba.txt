@@ -1,0 +1,290 @@
+[STARTED] Backing up original state...
+[COMPLETED] Backed up original state in git stash (356e71b)
+[STARTED] Running tasks for staged files...
+[STARTED] package.json — 16 files
+[STARTED] *.{js,jsx,ts,tsx} — 10 files
+[STARTED] *.{css,json,md} — 6 files
+[STARTED] eslint --fix --max-warnings 200 --no-warn-ignored
+[STARTED] prettier --write
+[COMPLETED] prettier --write
+[COMPLETED] *.{css,json,md} — 6 files
+[FAILED] eslint --fix --max-warnings 200 --no-warn-ignored [FAILED]
+[FAILED] eslint --fix --max-warnings 200 --no-warn-ignored [FAILED]
+[COMPLETED] Running tasks for staged files...
+[STARTED] Applying modifications from tasks...
+[SKIPPED] Skipped because of errors from tasks.
+[STARTED] Reverting to original state because of errors...
+[COMPLETED] Reverting to original state because of errors...
+[STARTED] Cleaning up temporary files...
+[COMPLETED] Cleaning up temporary files...
+
+✖ eslint --fix --max-warnings 200 --no-warn-ignored:
+(node:22460) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/devhub/eslint.config.js?mtime=1782258700556 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to D:\devhub\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+D:\devhub\src\components\TerminalWorkspacesManager.jsx
+     1:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                                                                       no-unused-vars
+     2:10  warning  'motion' is defined but never used. Allowed unused vars must match /^_/u                                                                      no-unused-vars
+     2:18  warning  'AnimatePresence' is defined but never used. Allowed unused vars must match /^_/u                                                             no-unused-vars
+     4:3   warning  'getRightDockAnimProps' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+     5:3   warning  'getWorkspaceAnimProps' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+     6:3   warning  'resolveRightDockTakeoverChromeStyle' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+     7:3   warning  'resolveWorkspaceShellVisibilityStyle' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+     8:3   warning  'resolveWorkspaceWindowVisibilityStyle' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+    15:3   warning  'getTerminalFloatingControlStyle' is defined but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+    16:3   warning  'getTerminalGridShellStyle' is defined but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+    17:3   warning  'getTerminalPanelBodyStyle' is defined but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+    18:3   warning  'getTerminalPanelHeaderStyle' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    19:3   warning  'getWorkspaceShellChromeStyle' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+    20:3   warning  'getWorkspaceTopBarStyle' is defined but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+    21:3   warning  'getWorkspaceTabChromeStyle' is defined but never used. Allowed unused vars must match /^_/u                                                  no-unused-vars
+    24:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                                                        no-unused-vars
+    25:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                                                           no-unused-vars
+    26:3   warning  'Minus' is defined but never used. Allowed unused vars must match /^_/u                                                                       no-unused-vars
+    27:3   warning  'LayoutGrid' is defined but never used. Allowed unused vars must match /^_/u                                                                  no-unused-vars
+    28:3   warning  'SplitSquareHorizontal' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+    29:3   warning  'SplitSquareVertical' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+    30:3   warning  'Folder' is defined but never used. Allowed unused vars must match /^_/u                                                                      no-unused-vars
+    31:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u                                                                         no-unused-vars
+    32:3   warning  'History' is defined but never used. Allowed unused vars must match /^_/u                                                                     no-unused-vars
+    33:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u                                                                   no-unused-vars
+    34:3   warning  'Clock3' is defined but never used. Allowed unused vars must match /^_/u                                                                      no-unused-vars
+    35:3   warning  'ExternalLink' is defined but never used. Allowed unused vars must match /^_/u                                                                no-unused-vars
+    36:3   warning  'Maximize2' is defined but never used. Allowed unused vars must match /^_/u                                                                   no-unused-vars
+    37:3   warning  'Minimize2' is defined but never used. Allowed unused vars must match /^_/u                                                                   no-unused-vars
+    38:3   warning  'Grip' is defined but never used. Allowed unused vars must match /^_/u                                                                        no-unused-vars
+    39:3   warning  'Globe' is defined but never used. Allowed unused vars must match /^_/u                                                                       no-unused-vars
+    40:3   warning  'FileCode2' is defined but never used. Allowed unused vars must match /^_/u                                                                   no-unused-vars
+    41:3   warning  'Wand2' is defined but never used. Allowed unused vars must match /^_/u                                                                       no-unused-vars
+    42:3   warning  'Terminal' is defined but never used. Allowed unused vars must match /^_/u                                                                    no-unused-vars
+    43:3   warning  'Settings' is defined but never used. Allowed unused vars must match /^_/u                                                                    no-unused-vars
+    45:8   warning  'TerminalTTY' is defined but never used. Allowed unused vars must match /^_/u                                                                 no-unused-vars
+    47:3   warning  'SharedTerminalSurfacePortal' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    48:3   warning  'SharedTerminalSurfaceRegistrar' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+    51:10  warning  'Panel' is defined but never used. Allowed unused vars must match /^_/u                                                                       no-unused-vars
+    51:17  warning  'PanelGroup' is defined but never used. Allowed unused vars must match /^_/u                                                                  no-unused-vars
+    51:29  warning  'PanelResizeHandle' is defined but never used. Allowed unused vars must match /^_/u                                                           no-unused-vars
+    58:3   warning  'resolveWorkspaceVisibleTerminalPanelCount' is defined but never used. Allowed unused vars must match /^_/u                                   no-unused-vars
+    59:3   warning  'resolveWorkspaceAllWindowsTerminalPanelCount' is defined but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+    60:3   warning  'buildStableWorkspaceShellKey' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+    66:3   warning  'inferSwarmRoleKey' is defined but never used. Allowed unused vars must match /^_/u                                                           no-unused-vars
+    67:3   warning  'derivePanelSemanticMetadata' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    69:3   warning  'shortPath' is defined but never used. Allowed unused vars must match /^_/u                                                                   no-unused-vars
+    75:10  warning  'buildPanelHeaderDisplay' is defined but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+    77:8   warning  'NotificationCenter' is defined but never used. Allowed unused vars must match /^_/u                                                          no-unused-vars
+    78:8   warning  'TerminalSettingsModal' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+    79:8   warning  'TerminalRestoreSettingsModal' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+    80:8   warning  'WorkspaceTerminalSetupModal' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    81:10  warning  'isValidZedOpenTerminalEvent' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    81:39  warning  'resolveZedOpenTerminalPanelId' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+    82:10  warning  'applyZedOpenTerminalFocus' is defined but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+    83:8   warning  'ZedAmbientOverlay' is defined but never used. Allowed unused vars must match /^_/u                                                           no-unused-vars
+    85:3   warning  'buildTerminalSurfacesFromWindows' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+    88:10  warning  'dispatchZedOverlayToggle' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+    89:10  warning  'subscribeZedWorkspaceAction' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    91:3   warning  'DropdownMenu' is defined but never used. Allowed unused vars must match /^_/u                                                                no-unused-vars
+    92:3   warning  'DropdownMenuContent' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+    93:3   warning  'DropdownMenuItem' is defined but never used. Allowed unused vars must match /^_/u                                                            no-unused-vars
+    94:3   warning  'DropdownMenuLabel' is defined but never used. Allowed unused vars must match /^_/u                                                           no-unused-vars
+    95:3   warning  'DropdownMenuSeparator' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+    96:3   warning  'DropdownMenuTrigger' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+    98:10  warning  'formatDistanceToNow' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+    99:8   warning  'WorkspaceRightDock' is defined but never used. Allowed unused vars must match /^_/u                                                          no-unused-vars
+   100:8   warning  'WorkspaceWindowSwitcher' is defined but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+   101:3   warning  'MAX_WORKSPACE_WINDOWS' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+   103:8   warning  'WorkspaceWindowTabBar' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+   104:8   warning  'WorkspaceTerminalSurface' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+   105:8   warning  'WorkspaceRenderAssembly' is defined but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+   107:3   warning  'resolveMeasuredRightDockBounds' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   108:3   warning  'resolveRightDockLayerStyle' is defined but never used. Allowed unused vars must match /^_/u                                                  no-unused-vars
+   122:10  warning  'renderWorkspacePanel' is defined but never used. Allowed unused vars must match /^_/u                                                        no-unused-vars
+   123:8   warning  'PanelStatusBadge' is defined but never used. Allowed unused vars must match /^_/u                                                            no-unused-vars
+   125:8   warning  'FileExplorerEditorPane' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+   128:3   warning  'DEFAULT_RIGHT_DOCK_STATE' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+   129:3   warning  'MIN_RIGHT_DOCK_SIZE' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+   130:3   warning  'rightDockStatesEqual' is defined but never used. Allowed unused vars must match /^_/u                                                        no-unused-vars
+   131:3   warning  'sanitizeRightDockState' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+   132:3   warning  'writeRightDockState' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+   136:3   warning  'applyWorkspaceWindowSelectDockState' is defined but never used. Allowed unused vars must match /^_/u                                         no-unused-vars
+   137:3   warning  'applyZedOpenUrlDockUpdate' is defined but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+   139:10  warning  'coerceZedOpenUrlFocus' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+   139:33  warning  'isValidZedOpenUrlEvent' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+   140:10  warning  'buildBrowserWindowLabel' is defined but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+   142:3   warning  'isTerminalWorkspaceUiAction' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+   143:3   warning  'resolveTerminalNavigationAction' is defined but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+   144:3   warning  'resolveTerminalShortcutAction' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+   145:3   warning  'resolveTerminalWorkspaceAction' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   146:3   warning  'shouldHandleTerminalFocusExitShortcut' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   147:3   warning  'shouldHandleTerminalFocusShortcut' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   148:3   warning  'shouldHandleTerminalNavigationShortcut' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   149:3   warning  'shouldHandleTerminalShortcut' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+   150:3   warning  'shouldHandleTerminalWorkspaceShortcut' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   151:3   warning  'TERMINAL_WORKSPACE_SHORTCUTS' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+   159:8   warning  'PanelRendererSelect' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+   160:10  warning  'SHOW_RENDERER_SWITCH' is defined but never used. Allowed unused vars must match /^_/u                                                        no-unused-vars
+   162:3   warning  'createSwarmLaunchDraft' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+   163:3   warning  'deriveSwarmLaunchPreview' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+   167:3   warning  'resolveSwarmDelegatedRoleKeys' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+   168:3   warning  'shouldShowSwarmStandbyOverlay' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+   170:10  warning  'collectWorkspacePanelIds' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+   174:3   warning  'isOpenCodePanel' is defined but never used. Allowed unused vars must match /^_/u                                                             no-unused-vars
+   175:3   warning  'resolveOpenCodeSessionIdForPanel' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   176:3   warning  'shouldPersistOpenCodeSessionForPanel' is defined but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   179:3   warning  'dispatchStartupRestoreQueue' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+   180:3   warning  'runOpenCodeStartupRestoreMutex' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   184:3   warning  'enrichOpenCodeRestoreContext' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+   185:3   warning  'fetchOpenCodeSessionCatalog' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+   186:3   warning  'mergeDiscoveryIntoAgentRunsRecord' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   187:3   warning  'patchTerminalStateWithDiscoveredCommands' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   188:3   warning  'collectOpenCodePanelsNeedingDiscovery' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   192:3   warning  'dispatchSwarmLaunchMaterialized' is defined but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+   197:3   warning  'createSwarmLaunchQueueHandlers' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   199:3   warning  'createWorkspaceForSwarmLaunchRequestsFn' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   203:3   warning  'resolveActiveWorkspaceWindowId' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   204:3   warning  'resolvePanelVisibleInLayout' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+   205:3   warning  'resolveWorkspaceWindowsForRender' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   214:8   warning  'SwarmLaunchWizardModal' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+   215:10  warning  'useSwarmBusSnapshot' is defined but never used. Allowed unused vars must match /^_/u                                                         no-unused-vars
+   219:3   warning  'markSwarmLaunchWrapperDispatched' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   221:8   warning  'WorkspaceSurfaceRegistryProvider' is defined but never used. Allowed unused vars must match /^_/u                                            no-unused-vars
+   226:10  warning  'SharedDockStoreProvider' is defined but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+   227:8   warning  'RightDockSharedMirror' is defined but never used. Allowed unused vars must match /^_/u                                                       no-unused-vars
+   233:8   warning  'SharedSurfacesProvider' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+   291:9   warning  'swarmLaunchScheduledTimersRef' is assigned a value but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   388:6   warning  React Hook useCallback has a missing dependency: 'setWorkspaces'. Either include it or remove the dependency array                            react-hooks/exhaustive-deps
+   411:12  warning  'retryResumableSessions' is assigned a value but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+   420:23  warning  'setIsMaximized' is assigned a value but never used. Allowed unused vars must match /^_/u                                                     no-unused-vars
+   670:5   warning  React Hook useCallback has a missing dependency: 'setWorkspaces'. Either include it or remove the dependency array                            react-hooks/exhaustive-deps
+   673:11  warning  'flushTerminalPersistenceNow' is assigned a value but never used. Allowed unused vars must match /^_/u                                        no-unused-vars
+   756:5   warning  'swarmBusSnapshot' is assigned a value but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+   765:5   warning  'rightDockLayerStyle' is assigned a value but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+   812:9   warning  'requestedRendererMode' is assigned a value but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   968:5   warning  'buildNativeWorkspaceSyncDetail' is assigned a value but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   987:5   warning  React Hook useMemo has a missing dependency: 'setWorkspaceWindows'. Either include it or remove the dependency array                          react-hooks/exhaustive-deps
+   994:5   warning  'navigateToPanel' is assigned a value but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+  1063:9   warning  'findPanelInWorkspace' is assigned a value but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+  1141:5   warning  'swarmLaunchDraft' is assigned a value but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+  1149:5   warning  'resolvedSwarmLaunchDraft' is assigned a value but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+  1227:6   warning  React Hook useCallback has a missing dependency: 'setWorkspaces'. Either include it or remove the dependency array                            react-hooks/exhaustive-deps
+  1264:11  warning  'pending' is assigned a value but never used. Allowed unused vars must match /^_/u                                                            no-unused-vars
+  1517:5   warning  React Hook useCallback has missing dependencies: 'setActivePanelIds' and 'setWorkspaces'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  1571:6   warning  React Hook useEffect has a missing dependency: 'activePanelId'. Either include it or remove the dependency array                              react-hooks/exhaustive-deps
+  1738:20  warning  'err' is defined but never used                                                                                                               no-unused-vars
+
+D:\devhub\src\components\__tests__\TerminalWorkspacesManager.workspaceWindows.test.js
+  3:3  warning  'resolvePanelVisibleInLayout' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+D:\devhub\src\components\pizarra\PizarraPane.jsx
+    16:8   warning  'PizarraToolPalette' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                              no-unused-vars
+    17:8   warning  'PizarraLiveSurfaceLayer' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                         no-unused-vars
+    18:8   warning  'PizarraMinimap' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                  no-unused-vars
+    19:8   warning  'PizarraZoneGuides' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                               no-unused-vars
+    20:8   warning  'PizarraEdgeSwipeZones' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                           no-unused-vars
+    21:8   warning  'PizarraZoomControls' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                             no-unused-vars
+    23:8   warning  'CommandBar' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                      no-unused-vars
+    25:10  warning  'CanvasViewportProvider' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                          no-unused-vars
+    58:3   warning  'normalizeWheelDelta' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                             no-unused-vars
+    71:3   warning  'computeDevSplitSlots' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                            no-unused-vars
+    72:3   warning  'computeDevTrioSlots' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                             no-unused-vars
+    73:3   warning  'computeDualBrowserSlots' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                         no-unused-vars
+    85:7   warning  'PizarraCanvas' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                          no-unused-vars
+   239:9   warning  'lastDividerVRef' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                        no-unused-vars
+   240:9   warning  'lastDividerHRef' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                        no-unused-vars
+   372:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the dependency array                                                                                                                                     react-hooks/exhaustive-deps
+   406:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the dependency array                                                                                                                                     react-hooks/exhaustive-deps
+   498:10  warning  'PizarraInner' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                    no-unused-vars
+   535:9   warning  The 'views' logical expression could make the dependencies of useCallback Hook (at line 914) change on every render. To fix this, wrap the initialization of 'views' in its own useMemo() Hook                                                    react-hooks/exhaustive-deps
+   535:9   warning  The 'views' logical expression could make the dependencies of useCallback Hook (at line 993) change on every render. To fix this, wrap the initialization of 'views' in its own useMemo() Hook                                                    react-hooks/exhaustive-deps
+   535:9   warning  The 'views' logical expression could make the dependencies of useEffect Hook (at line 1269) change on every render. To fix this, wrap the initialization of 'views' in its own useMemo() Hook                                                     react-hooks/exhaustive-deps
+   709:6   warning  React Hook useMemo has an unnecessary dependency: 'fallbackViewId'. Either exclude it or remove the dependency array                                                                                                                              react-hooks/exhaustive-deps
+   775:5   warning  React Hook useCallback has unnecessary dependencies: 'fallbackViewId', 'mergedElements', and 'views'. Either exclude them or remove the dependency array                                                                                          react-hooks/exhaustive-deps
+   811:5   warning  React Hook useCallback has an unnecessary dependency: 'viewTransitionPair'. Either exclude it or remove the dependency array                                                                                                                      react-hooks/exhaustive-deps
+  1034:9   warning  'applyAdaptiveViewLayout' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                no-unused-vars
+  1130:9   warning  'scheduleCameraFitView' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                  no-unused-vars
+  1374:6   warning  React Hook useLayoutEffect has an unnecessary dependency: 'SHAPE_TYPES'. Either exclude it or remove the dependency array. Outer scope values like 'SHAPE_TYPES' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  1395:13  warning  'visCenterX' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                             no-unused-vars
+  1436:18  warning  'ignoredX' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                               no-unused-vars
+  1436:31  warning  'ignoredY' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                               no-unused-vars
+  1482:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the dependency array                                                                                                                                     react-hooks/exhaustive-deps
+  1585:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the dependency array                                                                                                                                     react-hooks/exhaustive-deps
+  1672:9   warning  'computeAutoFitSlots' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                    no-unused-vars
+  1989:9   warning  'selectedElement' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                        no-unused-vars
+  2210:5   warning  React Hook useCallback has a missing dependency: 'getVisibleCanvasRegion'. Either include it or remove the dependency array                                                                                                                       react-hooks/exhaustive-deps
+
+D:\devhub\src\components\terminal\components\WorkspaceRenderAssembly.jsx
+    3:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                                                  no-unused-vars
+    4:10  warning  'motion' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+    6:3   warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+    7:3   warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                                      no-unused-vars
+    8:3   warning  'Minus' is defined but never used. Allowed unused vars must match /^_/u                                                  no-unused-vars
+    9:3   warning  'LayoutGrid' is defined but never used. Allowed unused vars must match /^_/u                                             no-unused-vars
+   10:3   warning  'SplitSquareHorizontal' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   11:3   warning  'SplitSquareVertical' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   12:3   warning  'Folder' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+   13:3   warning  'Bot' is defined but never used. Allowed unused vars must match /^_/u                                                    no-unused-vars
+   14:3   warning  'History' is defined but never used. Allowed unused vars must match /^_/u                                                no-unused-vars
+   15:3   warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   16:3   warning  'Clock3' is defined but never used. Allowed unused vars must match /^_/u                                                 no-unused-vars
+   17:3   warning  'Grip' is defined but never used. Allowed unused vars must match /^_/u                                                   no-unused-vars
+   18:3   warning  'Globe' is defined but never used. Allowed unused vars must match /^_/u                                                  no-unused-vars
+   19:3   warning  'FileCode2' is defined but never used. Allowed unused vars must match /^_/u                                              no-unused-vars
+   20:3   warning  'Wand2' is defined but never used. Allowed unused vars must match /^_/u                                                  no-unused-vars
+   21:3   warning  'Terminal' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+   22:3   warning  'Settings' is defined but never used. Allowed unused vars must match /^_/u                                               no-unused-vars
+   44:3   warning  'DropdownMenu' is defined but never used. Allowed unused vars must match /^_/u                                           no-unused-vars
+   45:3   warning  'DropdownMenuContent' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   46:3   warning  'DropdownMenuItem' is defined but never used. Allowed unused vars must match /^_/u                                       no-unused-vars
+   47:3   warning  'DropdownMenuLabel' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   48:3   warning  'DropdownMenuSeparator' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   49:3   warning  'DropdownMenuTrigger' is defined but never used. Allowed unused vars must match /^_/u                                    no-unused-vars
+   51:8   warning  'NotificationCenter' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   52:8   warning  'TerminalSettingsModal' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   53:8   warning  'TerminalRestoreSettingsModal' is defined but never used. Allowed unused vars must match /^_/u                           no-unused-vars
+   54:8   warning  'WorkspaceTerminalSetupModal' is defined but never used. Allowed unused vars must match /^_/u                            no-unused-vars
+   55:8   warning  'ZedAmbientOverlay' is defined but never used. Allowed unused vars must match /^_/u                                      no-unused-vars
+   56:8   warning  'WorkspaceRightDock' is defined but never used. Allowed unused vars must match /^_/u                                     no-unused-vars
+   57:8   warning  'WorkspaceWindowSwitcher' is defined but never used. Allowed unused vars must match /^_/u                                no-unused-vars
+   58:8   warning  'WorkspaceWindowTabBar' is defined but never used. Allowed unused vars must match /^_/u                                  no-unused-vars
+   59:8   warning  'WorkspaceTerminalSurface' is defined but never used. Allowed unused vars must match /^_/u                               no-unused-vars
+   61:8   warning  'SwarmLaunchWizardModal' is defined but never used. Allowed unused vars must match /^_/u                                 no-unused-vars
+  403:5   warning  React Hook useCallback has a missing dependency: 'panelSubtabsBarRef'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  847:35  warning  'wsIndex' is defined but never used. Allowed unused args must match /^_/u                                                no-unused-vars
+
+D:\devhub\src\components\terminal\components\WorkspaceTerminalSurface.jsx
+   3:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                   no-unused-vars
+   4:10  warning  'Panel' is defined but never used. Allowed unused vars must match /^_/u                   no-unused-vars
+   4:17  warning  'PanelGroup' is defined but never used. Allowed unused vars must match /^_/u              no-unused-vars
+   4:29  warning  'PanelResizeHandle' is defined but never used. Allowed unused vars must match /^_/u       no-unused-vars
+   5:10  warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                    no-unused-vars
+   5:16  warning  'Terminal' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  33:10  warning  'TerminalRowSplitHandle' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  48:10  warning  'TerminalColSplitHandle' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  76:3   warning  'panelSubtabsBarRef' is defined but never used. Allowed unused args must match /^_/u      no-unused-vars
+
+D:\devhub\src\components\terminal\components\renderWorkspacePanel.jsx
+   4:8   warning  'React' is defined but never used. Allowed unused vars must match /^_/u                           no-unused-vars
+   5:10  warning  'SplitSquareVertical' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+   5:31  warning  'SplitSquareHorizontal' is defined but never used. Allowed unused vars must match /^_/u           no-unused-vars
+   5:54  warning  'Maximize2' is defined but never used. Allowed unused vars must match /^_/u                       no-unused-vars
+   5:65  warning  'Minimize2' is defined but never used. Allowed unused vars must match /^_/u                       no-unused-vars
+   5:76  warning  'X' is defined but never used. Allowed unused vars must match /^_/u                               no-unused-vars
+   6:8   warning  'TerminalTTY' is defined but never used. Allowed unused vars must match /^_/u                     no-unused-vars
+   9:8   warning  'PanelRendererSelect' is defined but never used. Allowed unused vars must match /^_/u             no-unused-vars
+  11:8   warning  'PanelStatusBadge' is defined but never used. Allowed unused vars must match /^_/u                no-unused-vars
+  13:3   warning  'SharedTerminalSurfacePortal' is defined but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  14:3   warning  'SharedTerminalSurfaceRegistrar' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+D:\devhub\src\components\terminal\hooks\useWorkspacePanelLifecycle.js
+   42:10  warning  'shouldDeferRightDockSizePersist' is defined but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                       no-unused-vars
+  178:6   warning  React Hook useEffect has missing dependencies: 'focusedPanelByWorkspaceRef' and 'setFocusedPanelByWorkspace'. Either include them or remove the dependency array. If 'setFocusedPanelByWorkspace' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+  247:6   warning  React Hook useEffect has a missing dependency: 'focusedPanelByWorkspaceRef'. Either include it or remove the dependency array                                                                                                                                                                           react-hooks/exhaustive-deps
+  580:15  warning  'nextPanelId' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                                  no-unused-vars
+  623:13  warning  'nextPanelId' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                                                                                  no-unused-vars
+  826:5   warning  React Hook useCallback has missing dependencies: 'activeWindowIdsRef' and 'workspaceWindowsRef'. Either include them or remove the dependency array                                                                                                                                                     react-hooks/exhaustive-deps
+
+✖ 246 problems (0 errors, 246 warnings)
+
+ESLint found too many warnings (maximum: 200).
+husky - pre-commit script failed (code 1)

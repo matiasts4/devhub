@@ -28,6 +28,11 @@ import {
 import { reconcileOpenCodeTuiWheelReadiness } from '@/components/terminal/TerminalTTY.helpers';
 import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import { detectGrokSessionFromOutput } from '@/components/terminal/TerminalTTY.helpers';
+import {
+  invalidateTerminalEndpointCache,
+  markTerminalEndpointConfirmed,
+  resolveTerminalSessionEndpoint,
+} from '@/lib/terminal/sessionEndpointPrefetch';
 
 export default function useTerminalV2Session({ ctxRef }) {
   const stopV2Session = useCallback(() => {
@@ -195,28 +200,38 @@ export default function useTerminalV2Session({ ctxRef }) {
 
       console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
       cliLog(`CLIENT:${id}`, 'fetching session API', { queryStr });
-      const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
-        cache: 'no-store',
-        signal: abortController.signal,
-      });
-      if (connectEpoch !== connectEpochRef.current) {
-        cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch after session API');
-        return;
-      }
-      if (!sessionResponse.ok) {
-        const errText = await sessionResponse.text().catch(() => '');
-        console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
-        cliLog(`CLIENT:${id}`, 'session API FAILED', {
-          status: sessionResponse.status,
-          body: errText,
-        });
-        throw new Error(`No se pudo crear la sesión de terminal (${sessionResponse.status}).`);
-      }
 
-      const { port, wsPath } = await sessionResponse.json();
+      // Prefer confirmed/fresh cache; never hang 10s on a dead port (stale cache
+      // after HMR / sidecar↔ttyServer flip was the WS timeout loop).
+      let sessionPayload = await resolveTerminalSessionEndpoint(cwd);
+      if (!sessionPayload?.port) {
+        const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
+          cache: 'no-store',
+          signal: abortController.signal,
+        });
+        if (connectEpoch !== connectEpochRef.current) {
+          cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch after session API');
+          return;
+        }
+        if (!sessionResponse.ok) {
+          const errText = await sessionResponse.text().catch(() => '');
+          console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
+          cliLog(`CLIENT:${id}`, 'session API FAILED', {
+            status: sessionResponse.status,
+            body: errText,
+          });
+          throw new Error(`No se pudo crear la sesión de terminal (${sessionResponse.status}).`);
+        }
+        sessionPayload = await sessionResponse.json();
+      }
       if (connectEpoch !== connectEpochRef.current) {
         cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch before WebSocket');
         return;
+      }
+
+      const { port, wsPath } = sessionPayload;
+      if (!port) {
+        throw new Error('No se pudo crear la sesión de terminal (sin puerto).');
       }
       console.log(`[TTY:${id}] Got port=${port}, wsPath=${wsPath}`);
       cliLog(`CLIENT:${id}`, 'session API ok', { port, wsPath });
@@ -271,21 +286,37 @@ export default function useTerminalV2Session({ ctxRef }) {
         }
       };
 
+      // Localhost should open in ms. 10s made every dead/stale port look hung.
+      const WS_OPEN_TIMEOUT_MS = 2500;
       const connectionTimeout = setTimeout(() => {
         if (socket.readyState !== WebSocket.OPEN) {
-          console.error(`[TTY:${id}] WebSocket connection timeout after 10s`);
-          cliLog(`CLIENT:${id}`, 'WS connection TIMEOUT (10s)', { readyState: socket.readyState });
-          socket.close();
+          console.error(
+            `[TTY:${id}] WebSocket connection timeout after ${WS_OPEN_TIMEOUT_MS}ms (port=${port})`
+          );
+          cliLog(`CLIENT:${id}`, 'WS connection TIMEOUT', {
+            readyState: socket.readyState,
+            ms: WS_OPEN_TIMEOUT_MS,
+            port,
+            wsPath,
+          });
+          // Drop bad cache so auto-reconnect hits a fresh /api/terminal/session.
+          invalidateTerminalEndpointCache('ws-timeout');
+          try {
+            socket.close();
+          } catch {
+            // ignore
+          }
           setConnectionState('error');
         }
-      }, 10000);
+      }, WS_OPEN_TIMEOUT_MS);
 
       socket.onopen = () => {
         if (connectEpoch !== connectEpochRef.current) return;
         clearTimeout(connectionTimeout);
         clearConnectDeferTimer();
+        markTerminalEndpointConfirmed(port, wsPath);
         console.log(`[TTY:${id}] WebSocket connected`);
-        cliLog(`CLIENT:${id}`, 'WS onopen — connected');
+        cliLog(`CLIENT:${id}`, 'WS onopen — connected', { port, wsPath });
         hasConnectedOnceRef.current = true;
         panelActivityTrackerRef.current?.onOpen();
         if (initialCommandConnectSnapshotRef.current === null) {
@@ -643,7 +674,8 @@ export default function useTerminalV2Session({ ctxRef }) {
       socket.onerror = (err) => {
         clearTimeout(connectionTimeout);
         console.error(`[TTY:${id}] WebSocket error:`, err);
-        cliLog(`CLIENT:${id}`, 'WS onerror');
+        cliLog(`CLIENT:${id}`, 'WS onerror', { port, wsPath });
+        invalidateTerminalEndpointCache('ws-error');
         setConnectionState('error');
       };
 

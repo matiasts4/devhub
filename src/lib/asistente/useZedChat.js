@@ -69,6 +69,7 @@ export function useZedChat({
   sessionKey = 'devhub-zed-chat-default',
   getTerminalPanelCount = null,
   getWorkspaceTerminals = null,
+  getWorkspaceWindows = null,
   streamEnabled = true,
 } = {}) {
   const [messages, setMessages] = useState(() => [DEFAULT_ZED_GREETING]);
@@ -87,6 +88,7 @@ export function useZedChat({
     terminal_panel_count: 0,
     max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
     workspace_terminals: [],
+    workspace_windows: [],
   });
   const [streamingMessage, setStreamingMessage] = useState(null);
   const textareaRef = useRef(null);
@@ -149,6 +151,9 @@ export function useZedChat({
       const workspaceTerminals =
         typeof getWorkspaceTerminals === 'function' ? getWorkspaceTerminals() : [];
 
+      const workspaceWindows =
+        typeof getWorkspaceWindows === 'function' ? getWorkspaceWindows() : [];
+
       const body = {
         message: userMessage,
         history,
@@ -159,6 +164,7 @@ export function useZedChat({
           terminal_panel_count: terminalPanelCount,
           max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
           workspace_terminals: Array.isArray(workspaceTerminals) ? workspaceTerminals : [],
+          workspace_windows: Array.isArray(workspaceWindows) ? workspaceWindows : [],
         },
       };
 
@@ -291,6 +297,7 @@ export function useZedChat({
       dispatchOpts,
       getTerminalPanelCount,
       getWorkspaceTerminals,
+      getWorkspaceWindows,
       messages,
       processToolResults,
       streamEnabled,
@@ -635,6 +642,8 @@ export function useZedChat({
             max_terminal_panels: MAX_ZED_TERMINAL_PANELS,
             workspace_terminals:
               typeof getWorkspaceTerminals === 'function' ? getWorkspaceTerminals() : [],
+            workspace_windows:
+              typeof getWorkspaceWindows === 'function' ? getWorkspaceWindows() : [],
           },
           confirm_tool: {
             tool,

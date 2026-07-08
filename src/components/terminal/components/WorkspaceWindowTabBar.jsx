@@ -37,7 +37,7 @@ function WorkspaceWindowTabBar({
   getAllPanelIds,
 }) {
   return (
-    <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
+    <div className="flex w-auto max-w-full gap-2 h-full items-center overflow-x-auto no-scrollbar py-1 shrink-0">
       {workspaces.map((ws) => {
         const totalPanels = getAllPanelIds(ws.columns).length;
         const workspaceTabKey = buildStableWorkspaceShellKey('workspace-tab', ws.id);
@@ -106,13 +106,13 @@ function WorkspaceWindowTabBar({
               <span className="min-w-0 truncate text-[12px] font-semibold">
                 {workspaceTabLabel}
               </span>
+              {/* Dedicated browser window: no visible emerald badge on workspace tabs
+                  (that cluttered the strip). Keep a screen-reader control + test hook. */}
               {hasOpenBrowserWindow ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-1.5 py-0.5">
-                  <span
-                    className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
-                    data-testid={`workspace-browser-indicator-${ws.id}`}
-                    title="Dedicated browser window open"
-                  />
+                <span className="sr-only">
+                  <span data-testid={`workspace-browser-indicator-${ws.id}`}>
+                    Browser dedicado abierto
+                  </span>
                   <button
                     type="button"
                     data-testid={`workspace-browser-close-${ws.id}`}
@@ -120,11 +120,8 @@ function WorkspaceWindowTabBar({
                       event.stopPropagation();
                       closeWorkspaceBrowserWindow(ws.id);
                     }}
-                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-emerald-100/80 transition-colors hover:bg-emerald-400/15 hover:text-white"
-                    title="Cerrar browser dedicado de este workspace"
-                    aria-label="Cerrar browser dedicado de este workspace"
                   >
-                    <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    Cerrar browser dedicado de este workspace
                   </button>
                 </span>
               ) : null}

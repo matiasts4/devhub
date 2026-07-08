@@ -1,0 +1,226 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 1,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 0,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 20,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 1,
+  "numTotalTests": 21,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783215005185,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() slides in from the right edge of the dock slot",
+          "location": null,
+          "status": "pending",
+          "title": "slides in from the right edge of the dock slot"
+        },
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() slides out to the right when hidden",
+          "location": null,
+          "status": "pending",
+          "title": "slides out to the right when hidden"
+        },
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() disables motion while the dock is being resized",
+          "location": null,
+          "status": "pending",
+          "title": "disables motion while the dock is being resized"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() returns full opacity when maximized",
+          "location": null,
+          "status": "pending",
+          "title": "returns full opacity when maximized"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() uses opacity-only animation in normal mode (no scale — native VTE sync)",
+          "location": null,
+          "status": "pending",
+          "title": "uses opacity-only animation in normal mode (no scale — native VTE sync)"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() transition duration is <= 300ms (GPU-composited, feel instant)",
+          "location": null,
+          "status": "pending",
+          "title": "transition duration is <= 300ms (GPU-composited, feel instant)"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() initial state starts from zero opacity for a clean fade-in on mount",
+          "location": null,
+          "status": "pending",
+          "title": "initial state starts from zero opacity for a clean fade-in on mount"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() maximized initial state skips the fade-in (already visible)",
+          "location": null,
+          "status": "pending",
+          "title": "maximized initial state skips the fade-in (already visible)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"string\"\nReceived: \"undefined\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:294:30)"
+          ],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate migrates legacy panels with no displayName to pool names on hydrate",
+          "location": null,
+          "status": "failed",
+          "title": "migrates legacy panels with no displayName to pool names on hydrate"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate persists the auto-assigned name in localStorage under devhub:panel-names:<workspaceId>",
+          "location": null,
+          "status": "pending",
+          "title": "persists the auto-assigned name in localStorage under devhub:panel-names:<workspaceId>"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate is idempotent — re-rendering does not overwrite a previously assigned name",
+          "location": null,
+          "status": "pending",
+          "title": "is idempotent — re-rendering does not overwrite a previously assigned name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI dbl-click on the tab opens an input pre-filled with the current name",
+          "location": null,
+          "status": "pending",
+          "title": "dbl-click on the tab opens an input pre-filled with the current name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI Enter commits the rename; tab shows the new name",
+          "location": null,
+          "status": "pending",
+          "title": "Enter commits the rename; tab shows the new name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI Escape cancels the rename; tab shows the previous name",
+          "location": null,
+          "status": "pending",
+          "title": "Escape cancels the rename; tab shows the previous name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI blur commits; tab shows the new name; aria-label updated",
+          "location": null,
+          "status": "pending",
+          "title": "blur commits; tab shows the new name; aria-label updated"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) planning-launch: gate is skipped; verbatim command is passed to handleSplit",
+          "location": null,
+          "status": "pending",
+          "title": "planning-launch: gate is skipped; verbatim command is passed to handleSplit"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) swarm-control-launch: short-circuits to enqueueSwarmLaunchRequest — the gate is NOT called (swarm paths are untouched)",
+          "location": null,
+          "status": "pending",
+          "title": "swarm-control-launch: short-circuits to enqueueSwarmLaunchRequest — the gate is NOT called (swarm paths are untouched)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) undefined launchOrigin: gate is still called (default path keeps the gate)",
+          "location": null,
+          "status": "pending",
+          "title": "undefined launchOrigin: gate is still called (default path keeps the gate)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate",
+          "location": null,
+          "status": "pending",
+          "title": "handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent dispatches devhub:run-agent-accepted with { taskId } after the split",
+          "location": null,
+          "status": "pending",
+          "title": "handleRunAgent dispatches devhub:run-agent-accepted with { taskId } after the split"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent keeps enforceDocOpsGateOnLaunchCommand for non-planning origins (swarm / reopen / default)",
+          "location": null,
+          "status": "pending",
+          "title": "handleRunAgent keeps enforceDocOpsGateOnLaunchCommand for non-planning origins (swarm / reopen / default)"
+        }
+      ],
+      "endTime": 1783215008184,
+      "message": "  ● TerminalWorkspacesManager — displayName migration on hydrate › migrates legacy panels with no displayName to pool names on hydrate\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"string\"\n    Received: \"undefined\"\n\n    \u001b[0m \u001b[90m 292 |\u001b[39m     \u001b[36mconst\u001b[39m parsed \u001b[33m=\u001b[39m \u001b[33mJSON\u001b[39m\u001b[33m.\u001b[39mparse(stored)\u001b[33m;\u001b[39m\n     \u001b[90m 293 |\u001b[39m     expect(\u001b[36mtypeof\u001b[39m parsed\u001b[33m.\u001b[39mp1)\u001b[33m.\u001b[39mtoBe(\u001b[32m'string'\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 294 |\u001b[39m     expect(\u001b[36mtypeof\u001b[39m parsed\u001b[33m.\u001b[39mp2)\u001b[33m.\u001b[39mtoBe(\u001b[32m'string'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m                              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 295 |\u001b[39m     expect(parsed\u001b[33m.\u001b[39mp1)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39mtoBe(parsed\u001b[33m.\u001b[39mp2)\u001b[33m;\u001b[39m\n     \u001b[90m 296 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 297 |\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.test.js:294:30)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js",
+      "startTime": 1783215005229,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

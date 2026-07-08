@@ -14,7 +14,11 @@ function makeFixture(overrides = {}) {
     browserUrl: null,
     browserHistory: [],
     browserHistoryIndex: 0,
-    browserRuntime: 'iframe',
+    // Matches the real default in rightDockState.js (post embedded-WebView2
+    // rollout); applyZedOpenUrlDockUpdate doesn't branch on this today, but
+    // the fixture should reflect production so future runtime-aware changes
+    // don't get validated against a stale 'iframe' assumption.
+    browserRuntime: 'native-gtk',
     editMode: false,
     browserLoadFallback: false,
     ...overrides,
@@ -65,5 +69,14 @@ describe('applyZedOpenUrlDockUpdate (T-WSR-zed-003)', () => {
     expect(next.maximizedView).toBe('pizarra');
     expect(next.activeTab).toBe('pizarra');
     expect(next.browserUrl).toBe('https://github.com');
+  });
+
+  test('leaves browserRuntime untouched (native-gtk default, embedded WebView2)', () => {
+    const dockState = makeFixture();
+    const next = applyZedOpenUrlDockUpdate(dockState, {
+      url: 'https://github.com',
+      focus: true,
+    });
+    expect(next.browserRuntime).toBe('native-gtk');
   });
 });

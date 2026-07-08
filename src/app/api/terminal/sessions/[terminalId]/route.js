@@ -25,7 +25,7 @@ async function readProductionSession(terminalId) {
 }
 
 async function readLocalSession(terminalId) {
-  const { getTTYSessionsSnapshot } = await import('@/lib/terminal/ttyServer');
+  const { getTTYSessionsSnapshot } = await import('@/lib/terminal/ttySessionSnapshot');
   const sessions = getTTYSessionsSnapshot();
   return sessions.find((s) => s.terminalId === terminalId) || null;
 }
@@ -60,6 +60,12 @@ export async function GET(_req, { params }) {
   }
 
   try {
+    // Tauri dev runs PTYs on the sidecar; browser-only dev may use embedded ttyServer.
+    const sidecarSession = await readProductionSession(terminalId);
+    if (sidecarSession) {
+      return NextResponse.json(sidecarSession);
+    }
+
     const { ensureTTYServer } = await import('@/lib/terminal/ttyServer');
     await ensureTTYServer();
     const session = await readLocalSession(terminalId);

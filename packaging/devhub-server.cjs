@@ -122,6 +122,25 @@ function looksLikeDevRepo(ptyPath) {
   return false;
 }
 
+function isDevhubDevelopmentHome(dirPath) {
+  if (!dirPath) return false;
+  const normalized = path.resolve(dirPath).replace(/\\/g, '/');
+  return normalized.endsWith('/.devhub-dev');
+}
+
+/**
+ * Tauri dev spawns this wrapper with DEVHUB_RUNTIME=development and SIDECAR_PORT=4001,
+ * but the debug bundle still ships standalone.zip. Without this guard we mis-detect
+ * "system install", pre-kill :3400/:4000, and take down the installed app's PTY/Next.
+ */
+function isPackagedDevelopmentRuntime(env = process.env) {
+  if (env.DEVHUB_RUNTIME === 'development') return true;
+  if (isDevhubDevelopmentHome(env.DEVHUB_HOME)) return true;
+  if (String(env.SIDECAR_PORT || '') === '4001') return true;
+  if (String(env.PORT || '') === '3100') return true;
+  return false;
+}
+
 function extractZip(zipPath, destinationDir) {
   ensureDir(destinationDir);
   if (process.platform === 'win32') {
@@ -341,8 +360,12 @@ function collectListenerPids(port) {
  * arbitrary listeners (coexistence with installed app on :4000/:3400).
  */
 function killListenersOnPort(port, { devLayout = false } = {}) {
-  if (devLayout && (port === 4000 || port === 3400)) {
-    logStep(`Skipping pre-kill on reserved installed port :${port} (dev layout)`);
+  const devCoexistence =
+    devLayout ||
+    isPackagedDevelopmentRuntime() ||
+    String(process.env.SIDECAR_PORT || '') === '4001';
+  if (devCoexistence && (port === 4000 || port === 3400)) {
+    logStep(`Skipping pre-kill on reserved installed port :${port} (dev coexistence)`);
     return;
   }
   for (const pid of collectListenerPids(port)) {
@@ -368,6 +391,23 @@ function detectLayout() {
   // to the Node binary, so we would never find the packaged standalone.zip.
   const scriptDir = __dirname;
   const devhubDirFromEnv = process.env.DEVHUB_HOME || '';
+
+  if (isPackagedDevelopmentRuntime()) {
+    const root = findProjectRoot(scriptDir) || findProjectRoot(process.cwd()) || process.cwd();
+    const devhubDir = devhubDirFromEnv || path.join(os.homedir(), '.devhub-dev');
+    ensureDir(devhubDir);
+    logStep(
+      'Development runtime (coexistence): PTY on dev ports only; not touching installed :3400/:4000'
+    );
+    return {
+      devhubDir,
+      isSystemInstall: 0,
+      nextPath: '',
+      ptyPath: path.join(root, 'sidecar-backend', 'server.js'),
+      installPrefix: '',
+    };
+  }
+
   let devhubDir = devhubDirFromEnv || path.join(os.homedir(), '.devhub');
   let isSystemInstall = 0;
   let nextPath = '';
@@ -567,4 +607,8 @@ if (require.main === module) {
   }
 }
 
-module.exports = { detectLayout, main };
+module.exports = {
+  detectLayout,
+  isPackagedDevelopmentRuntime,
+  main,
+};

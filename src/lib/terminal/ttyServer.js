@@ -13,6 +13,7 @@ import { buildTmuxPanelAttachCommand } from './tmuxStatusBar.js';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { detectKimiTuiReady } from './kimiReadyMarker.js';
+import { detectGrokSessionFromOutput } from './grokReadyMarker.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 import {
@@ -32,6 +33,9 @@ import {
   shouldSkipBackendRestore,
   unregisterOpencodeSession,
 } from './opencodeSessionRegistry.js';
+import { GLOBAL_TTY_SESSIONS_KEY, getTTYSessionsSnapshot } from './ttySessionSnapshot.js';
+
+export { getTTYSessionsSnapshot };
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -236,33 +240,34 @@ function resolveMcpServerPath() {
   );
 }
 
-import { createRequire } from 'module';
-
 function loadTerminalDependency(globalKey, moduleName) {
   if (globalThis[globalKey]) {
     return globalThis[globalKey];
   }
   try {
-    const nativeRequire = createRequire(path.resolve(process.cwd(), 'package.json'));
-    return nativeRequire(moduleName);
+    const mod = eval('require')(moduleName);
+    globalThis[globalKey] = mod;
+    return mod;
   } catch (err) {
-    ttyLog('loadDepErr', `failed to load ${moduleName} via nativeRequire, trying eval`, {
-      error: err?.message,
-    });
-    return eval('require')(moduleName);
+    ttyLog('loadDepErr', `failed to load ${moduleName}`, { error: err?.message });
+    throw err;
   }
 }
 
-// Use global require via eval or createRequire to bypass Webpack's statically analyzed requires
-// This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
-// instead of getting stubbed or mangled by Next.js's dev compiler.
-const pty = loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');
-const { WebSocketServer } = loadTerminalDependency('__DEVHUB_TTY_WS__', 'ws');
+function getNodePty() {
+  return loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');
+}
+
+function getWebSocketServerClass() {
+  return loadTerminalDependency('__DEVHUB_TTY_WS__', 'ws').WebSocketServer;
+}
+
+// ponytail: lazy native deps — importing ttyServer for snapshot/helpers must not
+// evaluate node-pty/ws at module load (Next/webpack warns on createRequire paths).
 
 const MCP_SERVER_PATH = resolveMcpServerPath();
 
 const GLOBAL_TTY_KEY = '__DEVHUB_TTY_SERVER__';
-const GLOBAL_TTY_SESSIONS_KEY = '__DEVHUB_TTY_SESSIONS__';
 const STRIPPED_SHELL_ENV_KEYS = ['npm_config_prefix', 'NPM_CONFIG_PREFIX'];
 const MAX_SESSIONS = 50;
 const IDLE_CLEANUP_INTERVAL_MS = 60_000; // 60s
@@ -348,7 +353,7 @@ async function findAvailablePort(basePort = 4077, attempts = 20) {
 }
 
 async function openWebSocketServer(port, wsPath) {
-  const wss = new WebSocketServer({ host: '127.0.0.1', port, path: wsPath });
+  const wss = new (getWebSocketServerClass())({ host: '127.0.0.1', port, path: wsPath });
 
   if (typeof wss.once !== 'function') {
     return { wss, port };
@@ -597,11 +602,24 @@ function getOrInitSessions() {
 /**
  * getSessionOutput — read the accumulated output buffer of a session.
  * Returns the history string or null if the session is unknown.
+ *
+ * Agent TUI sessions (opencode/kimi/grok/hermes) disable `history` on
+ * detection (see applyAgentTuiDetection) so the plain-text buffer stays
+ * empty for the lifetime of the panel. Output keeps flowing into the
+ * per-session ring buffer (`scrollbackStore`, terminal-engine-v2 Phase 1)
+ * regardless of `historyEnabled`, so fall back to it here — otherwise Zed's
+ * review_terminal_output/summarize_terminal tools see a blank capture for
+ * every agent TUI panel.
  */
 export function getSessionOutput(id) {
   const sessions = getOrInitSessions();
   const session = sessions.get(id);
   if (!session) return null;
+  if (session.history) return session.history;
+  if (session.scrollbackStore) {
+    const tail = session.scrollbackStore.read(0, { encoding: 'utf-8' });
+    if (tail) return tail;
+  }
   return session.history || '';
 }
 
@@ -909,7 +927,7 @@ export function createSession({
 
   let terminal;
   try {
-    terminal = pty.spawn(resolvedShell, spawnArgs, {
+    terminal = getNodePty().spawn(resolvedShell, spawnArgs, {
       name: 'xterm-256color',
       cols: 120,
       rows: 32,
@@ -998,9 +1016,14 @@ export function closeSession(id) {
     teardownPanelSessionProcesses(session, { hasTmux });
 
     try {
-      session.pty?.kill?.();
+      // Hard-kill the PTY shell so child agent TUIs (OpenCode/Grok/…) die with it.
+      session.pty?.kill?.('SIGKILL');
     } catch {
-      // ignore PTY kill failures during explicit close
+      try {
+        session.pty?.kill?.();
+      } catch {
+        // ignore PTY kill failures during explicit close
+      }
     }
 
     // Cancel any pending debounced save
@@ -1110,6 +1133,10 @@ function handleSessionOutput(sessions, session, chunk) {
         applyAgentTuiDetection(session, 'opencode');
       }
       maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
+    } else if (detectGrokSessionFromOutput(filtered)) {
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'grok');
+      }
     }
 
     session._lastAgentStateEvent = ingestAgentDetectionFromFilteredOutput(
@@ -1717,7 +1744,7 @@ export async function ensureTTYServer() {
 
       let terminal;
       try {
-        terminal = pty.spawn(shell, spawnArgs, {
+        terminal = getNodePty().spawn(shell, spawnArgs, {
           name: 'xterm-256color',
           cols: 120,
           rows: 32,
@@ -2166,37 +2193,6 @@ export async function ensureTTYServer() {
   startIdleCleanup(terminalSessions);
 
   return serverState;
-}
-
-export function getTTYSessionsSnapshot() {
-  const sessions = globalThis[GLOBAL_TTY_SESSIONS_KEY];
-  if (!sessions || typeof sessions.values !== 'function') return [];
-
-  const snapshot = [];
-  for (const [terminalId, session] of sessions.entries()) {
-    snapshot.push({
-      terminalId,
-      mode: session.mode || 'shell',
-      socketCount: session.sockets?.size || 0,
-      createdAt: session.createdAt || null,
-      lastActivityAt: session.lastActivityAt || null,
-      lastSeenAt: session.lastSeenAt || null,
-      cwd: session.cwd || null,
-      shell: session.shell || null,
-      title: session.title || null,
-      restored: session.restored || false,
-      alive: true,
-      opencodeSessionId: session.opencodeSessionId || null,
-      hermesSessionId: session.hermesSessionId || null,
-      agentType: session.agentType || null,
-      agentSessionId: session.agentSessionId || null,
-      agentTuiState: session.agentTuiState || null,
-      agentTuiStateAt: session.agentTuiStateAt || null,
-      initialCommand: session.initialCommand || null,
-    });
-  }
-
-  return snapshot;
 }
 
 /**

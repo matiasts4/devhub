@@ -13,7 +13,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const os = require('os');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
@@ -33,6 +33,7 @@ const {
   detectKimiTuiReady,
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
+  detectGrokSessionFromOutput,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
   getTransportMode,
@@ -90,7 +91,41 @@ function killTmuxSessionBestEffort(sessionName) {
   const normalized = String(sessionName || '').trim();
   if (!normalized || os.platform() === 'win32') return;
   try {
-    spawnSync('tmux', ['kill-session', '-t', normalized], { stdio: 'ignore', timeout: 5000 });
+    // Non-blocking: detached spawn so DELETE can return immediately.
+    const child = spawn('tmux', ['kill-session', '-t', normalized], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    child.unref?.();
+    child.on?.('error', () => {});
+  } catch (_) {
+    try {
+      spawnSync('tmux', ['kill-session', '-t', normalized], { stdio: 'ignore', timeout: 1500 });
+    } catch (__) {}
+  }
+}
+
+/**
+ * Hard-kill the full process tree (Windows: taskkill /T /F; Unix: SIGKILL group).
+ * Mirrors closing a native PowerShell/VTE window so agent TUIs cannot linger.
+ */
+function killProcessTreeHard(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return;
+  try {
+    if (os.platform() === 'win32') {
+      spawn('taskkill', ['/T', '/F', '/PID', String(n)], {
+        stdio: 'ignore',
+        detached: true,
+      }).unref?.();
+      return;
+    }
+    try {
+      process.kill(-n, 'SIGKILL');
+    } catch (_) {}
+    try {
+      process.kill(n, 'SIGKILL');
+    } catch (_) {}
   } catch (_) {}
 }
 
@@ -147,6 +182,7 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     id: sessionId,
     ptyProcess,
     history: [], // Buffer de los últimos 5000 chars para replay al reconectar
+    historyLen: 0, // Longitud acumulada de `history`, mantenida incremental
     clients: new Set(),
     cwd: effectiveCwd,
     createdAt: Date.now(),
@@ -194,13 +230,15 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
       return;
     }
 
-    // Guardar en buffer (máx 10000 chars)
+    // Guardar en buffer (máx 10000 chars). historyLen se mantiene incremental
+    // para evitar recorrer todo el array en cada chunk de PTY (session.history
+    // puede tener miles de entradas en terminales con mucho output).
     if (session.historyEnabled) {
       session.history.push(filteredData);
-    }
-    const totalLen = session.history.reduce((acc, s) => acc + s.length, 0);
-    while (session.history.length > 1 && totalLen > 10000) {
-      session.history.shift();
+      session.historyLen = (session.historyLen || 0) + filteredData.length;
+      while (session.history.length > 1 && session.historyLen > 10000) {
+        session.historyLen -= session.history.shift().length;
+      }
     }
 
     // Enviar a todos los clientes activos
@@ -232,6 +270,10 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
           opencodeSessionId: session.opencodeSessionId || null,
           reason: 'sidecar-tui-footer',
         });
+      }
+    } else if (detectGrokSessionFromOutput(filteredData)) {
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'grok');
       }
     }
 
@@ -393,22 +435,41 @@ app.delete('/sessions/:sessionId', (req, res) => {
     } catch (_) {}
   }
 
-  abortOpenCodeSessionBestEffort(session.opencodeSessionId);
-  killTmuxSessionBestEffort(session.tmuxSession);
+  // Respond immediately; hard-kill OS resources in the background so the
+  // frontend optimistic close never waits on tmux/agent teardown.
+  const ptyPid = session.ptyProcess?.pid || null;
+  const tmuxSession = session.tmuxSession;
+  const opencodeSessionId = session.opencodeSessionId;
 
   try {
-    session.ptyProcess.kill();
-  } catch (_) {}
+    session.ptyProcess.kill('SIGKILL');
+  } catch (_) {
+    try {
+      session.ptyProcess.kill();
+    } catch (__) {}
+  }
 
   sessions.delete(sessionId);
   console.log(`[Sidecar] Session ${sessionId} terminada por cierre explícito.`);
-  return res.json({ success: true, sessionId });
+  res.json({ success: true, sessionId });
+
+  setImmediate(() => {
+    abortOpenCodeSessionBestEffort(opencodeSessionId);
+    killTmuxSessionBestEffort(tmuxSession);
+    killProcessTreeHard(ptyPid);
+  });
 });
 
-// Endpoint de shutdown graceful — llamado por Tauri al cerrar la app
-app.post('/shutdown', (_req, res) => {
-  console.log('[Sidecar] Recibida señal de shutdown graceful...');
-  res.json({ ok: true, message: 'Shutting down...' });
+// Endpoint de shutdown graceful — llamado por Tauri al cerrar la app.
+// Rechaza peticiones dirigidas al puerto equivocado (coexistencia dev :4001 / prod :4000).
+app.post('/shutdown', (req, res) => {
+  const headerPort = Number(req.headers['x-devhub-shutdown-port']);
+  if (Number.isInteger(headerPort) && headerPort > 0 && headerPort !== PORT) {
+    console.warn(`[Sidecar] Shutdown rechazado: header port ${headerPort} ≠ sidecar PORT ${PORT}`);
+    return res.status(403).json({ ok: false, error: 'wrong-sidecar-port' });
+  }
+  console.log(`[Sidecar] Recibida señal de shutdown graceful (PORT=${PORT})...`);
+  res.json({ ok: true, message: 'Shutting down...', port: PORT });
 
   // Dar tiempo a que la respuesta HTTP llegue
   setTimeout(() => {
@@ -476,6 +537,14 @@ wss.on('connection', (ws, req) => {
     mode: session?.mode || 'shell',
     lastActivityAgeMs: Date.now() - (session?.lastActivityAt || 0),
   });
+
+  if (session.agentTuiState) {
+    sendToClient(ws, {
+      type: 'agent-state',
+      agentTuiState: session.agentTuiState,
+      at: session.agentTuiStateAt,
+    });
+  }
 
   ws.on('message', (msg) => {
     const payload = parseClientMessage(msg, ws.__devhubTransport || 'raw');

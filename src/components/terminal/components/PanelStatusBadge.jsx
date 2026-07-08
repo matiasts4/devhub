@@ -133,6 +133,9 @@ export default function PanelStatusBadge({
           {details?.terminalActivity?.agentType && (
             <DetailRow label="Agente" value={details.terminalActivity.agentType} />
           )}
+          {details?.terminalActivity?.agentTuiState && (
+            <DetailRow label="TUI" value={details.terminalActivity.agentTuiState} />
+          )}
           {details?.agentRun?.selectedAgent && (
             <DetailRow label="Agente" value={details.agentRun.selectedAgent} />
           )}

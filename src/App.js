@@ -1,7 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
-import { useRouteDirection } from '@/hooks/useRouteDirection';
 import {
   HashRouter,
   Routes,
@@ -35,9 +34,11 @@ import {
   applyAccentToDocument,
   applyMorphologyToDocument,
   applyThemeToDocument,
+  applyMotionModeToDocument,
   getStoredAccent,
   getStoredMorphology,
   getStoredTheme,
+  getStoredMotionMode,
   applyZoomToDocument,
   getStoredZoom,
   setZoom,
@@ -100,7 +101,6 @@ function WorkspaceLayout() {
   const { activeWorkspaceId } = useAuth();
   const navigate = useNavigate();
   const motionMode = useMotionMode();
-  const direction = useRouteDirection();
 
   const loadProject = useCallback(async () => {
     const { data } = await db.from('projects').select('*').eq('id', projectId).single();
@@ -237,20 +237,6 @@ function WorkspaceLayout() {
   const sidebarOffset = motionMode === 'reduced' ? 0 : -sidebarWidth;
   const sidebarTransition = getTransition('nav', motionMode);
 
-  const routeTransition = getTransition('nav', motionMode);
-  const routeScale = motionMode === 'reduced' ? 1 : motionMode === 'amplified' ? 0.95 : 0.98;
-  const routeVariants = {
-    enter: {
-      scale: routeScale,
-      opacity: 0,
-    },
-    center: { scale: 1, opacity: 1 },
-    exit: {
-      scale: direction === 'forward' ? 1.01 : 0.99,
-      opacity: 0,
-    },
-  };
-
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-surface-app">
@@ -309,19 +295,9 @@ function WorkspaceLayout() {
               scrollbarColor: 'var(--border-subtle) transparent',
             }}
           >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={location.pathname}
-                variants={routeVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={routeTransition}
-                style={{ width: '100%' }}
-              >
-                <Outlet context={{ project }} />
-              </motion.div>
-            </AnimatePresence>
+            <div key={location.pathname} style={{ width: '100%' }}>
+              <Outlet context={{ project }} />
+            </div>
           </main>
 
           {/* Persistent Terminal IDE Container */}
@@ -332,9 +308,7 @@ function WorkspaceLayout() {
             aria-hidden={terminalManagerEverMounted && !isTerminalRoute ? 'true' : undefined}
             style={terminalContainerStyle}
           >
-            {/* Drag region for the Tauri window is provided by the
-                WorkspaceWindowTabBar wrapper (data-tauri-drag-region on the tab bar
-                inside the terminal container). No extra header is needed here. */}
+            {/* Tauri drag: only workspace-window-drag-strip (see WorkspaceRenderAssembly). */}
             {project && (isTerminalRoute || terminalManagerEverMounted) ? (
               <OperatorActionsDispatchProvider>
                 <TerminalWorkspacesManager
@@ -363,7 +337,19 @@ function App() {
     applyThemeToDocument(getStoredTheme());
     applyMorphologyToDocument(getStoredMorphology());
     applyAccentToDocument(getStoredAccent());
+    applyMotionModeToDocument(getStoredMotionMode());
     applyZoomToDocument(getStoredZoom());
+  }, []);
+
+  // Warm xterm + session endpoint as early as the project shell mounts so
+  // entering Terminales never pays first-chunk latency on the critical path.
+  useEffect(() => {
+    void import('@/lib/terminal/xtermRuntimePreload')
+      .then((m) => m.preloadXtermRuntime())
+      .catch(() => null);
+    void import('@/lib/terminal/sessionEndpointPrefetch')
+      .then((m) => m.prefetchTerminalSessionEndpoint())
+      .catch(() => null);
   }, []);
 
   useEffect(() => {

@@ -96,5 +96,15 @@ describe('motion-tokens v2', () => {
       expect(getTransition('nav', 'amplified')).toEqual(amplified.nav.transition);
       expect(getTransition('open', 'amplified')).toEqual(amplified.open.transition);
     });
+
+    test('fade intent returns TRANSITION.fade — a pure opacity crossfade, not a spring', () => {
+      expect(TRANSITION.fade).toEqual({ duration: 0.5, ease: EASE.inOut });
+      expect(getTransition('fade', 'normal')).toEqual(TRANSITION.fade);
+      expect(getTransition('fade', 'amplified')).toEqual(TRANSITION.fade);
+    });
+
+    test('fade intent still yields the reduced-motion fallback when mode is reduced', () => {
+      expect(getTransition('fade', 'reduced')).toEqual(TRANSITION.reduced);
+    });
   });
 });

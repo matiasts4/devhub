@@ -1,0 +1,242 @@
+{
+  "numFailedTestSuites": 2,
+  "numFailedTests": 4,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 17,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 1,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 2,
+  "numTotalTests": 21,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783200520211,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() slides in from the right edge of the dock slot",
+          "location": null,
+          "status": "passed",
+          "title": "slides in from the right edge of the dock slot"
+        },
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() slides out to the right when hidden",
+          "location": null,
+          "status": "passed",
+          "title": "slides out to the right when hidden"
+        },
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() disables motion while the dock is being resized",
+          "location": null,
+          "status": "passed",
+          "title": "disables motion while the dock is being resized"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() returns full opacity when maximized",
+          "location": null,
+          "status": "passed",
+          "title": "returns full opacity when maximized"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() uses opacity-only animation in normal mode (no scale — native VTE sync)",
+          "location": null,
+          "status": "passed",
+          "title": "uses opacity-only animation in normal mode (no scale — native VTE sync)"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() transition duration is <= 300ms (GPU-composited, feel instant)",
+          "location": null,
+          "status": "passed",
+          "title": "transition duration is <= 300ms (GPU-composited, feel instant)"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() initial state starts from zero opacity for a clean fade-in on mount",
+          "location": null,
+          "status": "passed",
+          "title": "initial state starts from zero opacity for a clean fade-in on mount"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() maximized initial state skips the fade-in (already visible)",
+          "location": null,
+          "status": "passed",
+          "title": "maximized initial state skips the fade-in (already visible)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate migrates legacy panels with no displayName to pool names on hydrate",
+          "location": null,
+          "status": "passed",
+          "title": "migrates legacy panels with no displayName to pool names on hydrate"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate persists the auto-assigned name in localStorage under devhub:panel-names:<workspaceId>",
+          "location": null,
+          "status": "passed",
+          "title": "persists the auto-assigned name in localStorage under devhub:panel-names:<workspaceId>"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate is idempotent — re-rendering does not overwrite a previously assigned name",
+          "location": null,
+          "status": "passed",
+          "title": "is idempotent — re-rendering does not overwrite a previously assigned name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [
+            "Error: expect(received).not.toBeNull()\n\nReceived: null\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:451:21)"
+          ],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI dbl-click on the tab opens an input pre-filled with the current name",
+          "location": null,
+          "status": "failed",
+          "title": "dbl-click on the tab opens an input pre-filled with the current name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [
+            "TypeError: Cannot read properties of null (reading 'dispatchEvent')\n    at D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:358:13\n    at flushSync (D:\\devhub\\node_modules\\.pnpm\\react-dom@19.2.6_react@19.2.6\\node_modules\\react-dom\\cjs\\react-dom.development.js:136:18)\n    at fireDblClick (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:357:3)\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:483:11)"
+          ],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI Enter commits the rename; tab shows the new name",
+          "location": null,
+          "status": "failed",
+          "title": "Enter commits the rename; tab shows the new name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [
+            "TypeError: Cannot read properties of null (reading 'dispatchEvent')\n    at D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:358:13\n    at flushSync (D:\\devhub\\node_modules\\.pnpm\\react-dom@19.2.6_react@19.2.6\\node_modules\\react-dom\\cjs\\react-dom.development.js:136:18)\n    at fireDblClick (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:357:3)\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:521:11)"
+          ],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI Escape cancels the rename; tab shows the previous name",
+          "location": null,
+          "status": "failed",
+          "title": "Escape cancels the rename; tab shows the previous name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [
+            "TypeError: Cannot read properties of null (reading 'dispatchEvent')\n    at D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:358:13\n    at flushSync (D:\\devhub\\node_modules\\.pnpm\\react-dom@19.2.6_react@19.2.6\\node_modules\\react-dom\\cjs\\react-dom.development.js:136:18)\n    at fireDblClick (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:357:3)\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js:557:11)"
+          ],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI blur commits; tab shows the new name; aria-label updated",
+          "location": null,
+          "status": "failed",
+          "title": "blur commits; tab shows the new name; aria-label updated"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) planning-launch: gate is skipped; verbatim command is passed to handleSplit",
+          "location": null,
+          "status": "passed",
+          "title": "planning-launch: gate is skipped; verbatim command is passed to handleSplit"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) swarm-control-launch: short-circuits to enqueueSwarmLaunchRequest — the gate is NOT called (swarm paths are untouched)",
+          "location": null,
+          "status": "passed",
+          "title": "swarm-control-launch: short-circuits to enqueueSwarmLaunchRequest — the gate is NOT called (swarm paths are untouched)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) undefined launchOrigin: gate is still called (default path keeps the gate)",
+          "location": null,
+          "status": "passed",
+          "title": "undefined launchOrigin: gate is still called (default path keeps the gate)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate",
+          "location": null,
+          "status": "passed",
+          "title": "handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent dispatches devhub:run-agent-accepted with { taskId } after the split",
+          "location": null,
+          "status": "passed",
+          "title": "handleRunAgent dispatches devhub:run-agent-accepted with { taskId } after the split"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent keeps enforceDocOpsGateOnLaunchCommand for non-planning origins (swarm / reopen / default)",
+          "location": null,
+          "status": "passed",
+          "title": "handleRunAgent keeps enforceDocOpsGateOnLaunchCommand for non-planning origins (swarm / reopen / default)"
+        }
+      ],
+      "endTime": 1783200524699,
+      "message": "  ● TerminalWorkspacesManager — dbl-click rename UI › dbl-click on the tab opens an input pre-filled with the current name\n\n    expect(received).not.toBeNull()\n\n    Received: null\n\n    \u001b[0m \u001b[90m 449 |\u001b[39m\n     \u001b[90m 450 |\u001b[39m     \u001b[36mconst\u001b[39m tab \u001b[33m=\u001b[39m findPanelTab(document\u001b[33m,\u001b[39m \u001b[32m'p1'\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 451 |\u001b[39m     expect(tab)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39mtoBeNull()\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 452 |\u001b[39m     expect(tab\u001b[33m.\u001b[39mgetAttribute(\u001b[32m'aria-label'\u001b[39m))\u001b[33m.\u001b[39mtoContain(assignedName)\u001b[33m;\u001b[39m\n     \u001b[90m 453 |\u001b[39m\n     \u001b[90m 454 |\u001b[39m     \u001b[36mawait\u001b[39m fireDblClick(tab)\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.test.js:451:21)\n\n  ● TerminalWorkspacesManager — dbl-click rename UI › Enter commits the rename; tab shows the new name\n\n    TypeError: Cannot read properties of null (reading 'dispatchEvent')\n\n    \u001b[0m \u001b[90m 356 |\u001b[39m \u001b[36mfunction\u001b[39m fireDblClick(element) {\n     \u001b[90m 357 |\u001b[39m   flushSync(() \u001b[33m=>\u001b[39m {\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 358 |\u001b[39m     element\u001b[33m.\u001b[39mdispatchEvent(\u001b[36mnew\u001b[39m window\u001b[33m.\u001b[39m\u001b[33mMouseEvent\u001b[39m(\u001b[32m'dblclick'\u001b[39m\u001b[33m,\u001b[39m { bubbles\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m }))\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 359 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 360 |\u001b[39m   \u001b[36mreturn\u001b[39m flushEffects()\u001b[33m;\u001b[39m\n     \u001b[90m 361 |\u001b[39m }\u001b[0m\n\n      at src/components/__tests__/TerminalWorkspacesManager.test.js:358:13\n      at flushSync (node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)\n      at fireDblClick (src/components/__tests__/TerminalWorkspacesManager.test.js:357:3)\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.test.js:483:11)\n\n  ● TerminalWorkspacesManager — dbl-click rename UI › Escape cancels the rename; tab shows the previous name\n\n    TypeError: Cannot read properties of null (reading 'dispatchEvent')\n\n    \u001b[0m \u001b[90m 356 |\u001b[39m \u001b[36mfunction\u001b[39m fireDblClick(element) {\n     \u001b[90m 357 |\u001b[39m   flushSync(() \u001b[33m=>\u001b[39m {\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 358 |\u001b[39m     element\u001b[33m.\u001b[39mdispatchEvent(\u001b[36mnew\u001b[39m window\u001b[33m.\u001b[39m\u001b[33mMouseEvent\u001b[39m(\u001b[32m'dblclick'\u001b[39m\u001b[33m,\u001b[39m { bubbles\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m }))\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 359 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 360 |\u001b[39m   \u001b[36mreturn\u001b[39m flushEffects()\u001b[33m;\u001b[39m\n     \u001b[90m 361 |\u001b[39m }\u001b[0m\n\n      at src/components/__tests__/TerminalWorkspacesManager.test.js:358:13\n      at flushSync (node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)\n      at fireDblClick (src/components/__tests__/TerminalWorkspacesManager.test.js:357:3)\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.test.js:521:11)\n\n  ● TerminalWorkspacesManager — dbl-click rename UI › blur commits; tab shows the new name; aria-label updated\n\n    TypeError: Cannot read properties of null (reading 'dispatchEvent')\n\n    \u001b[0m \u001b[90m 356 |\u001b[39m \u001b[36mfunction\u001b[39m fireDblClick(element) {\n     \u001b[90m 357 |\u001b[39m   flushSync(() \u001b[33m=>\u001b[39m {\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 358 |\u001b[39m     element\u001b[33m.\u001b[39mdispatchEvent(\u001b[36mnew\u001b[39m window\u001b[33m.\u001b[39m\u001b[33mMouseEvent\u001b[39m(\u001b[32m'dblclick'\u001b[39m\u001b[33m,\u001b[39m { bubbles\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m }))\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 359 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 360 |\u001b[39m   \u001b[36mreturn\u001b[39m flushEffects()\u001b[33m;\u001b[39m\n     \u001b[90m 361 |\u001b[39m }\u001b[0m\n\n      at src/components/__tests__/TerminalWorkspacesManager.test.js:358:13\n      at flushSync (node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)\n      at fireDblClick (src/components/__tests__/TerminalWorkspacesManager.test.js:357:3)\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.test.js:557:11)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js",
+      "startTime": 1783200520273,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [],
+      "coverage": {},
+      "endTime": 1783200524918,
+      "message": "  ● Test suite failed to run\n\n    Cannot find module './nativeVteLayoutLifecycle' from 'src/lib/terminal/nativeVteLayoutLifecycle.test.js'\n\n    However, Jest was able to find:\n    \t'./nativeVteLayoutLifecycle.test.js'\n\n    You might want to include a file extension in your import, or update your 'moduleFileExtensions', which is currently ['js', 'jsx', 'ts', 'tsx', 'json', 'node'].\n\n    See https://jestjs.io/docs/configuration#modulefileextensions-arraystring\n\n    \u001b[0m\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 1 |\u001b[39m \u001b[36mimport\u001b[39m {\n     \u001b[90m   |\u001b[39m \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 2 |\u001b[39m   _resetNativeVteLayoutLifecycleForTests\u001b[33m,\u001b[39m\n     \u001b[90m 3 |\u001b[39m   cancelNativeVteLayoutHide\u001b[33m,\u001b[39m\n     \u001b[90m 4 |\u001b[39m   consumeHiddenNativeVteLease\u001b[33m,\u001b[39m\u001b[0m\n\n      at Resolver.resolveModule (node_modules/.pnpm/jest-resolve@27.5.1/node_modules/jest-resolve/build/resolver.js:324:11)\n      at Object.<anonymous> (src/lib/terminal/nativeVteLayoutLifecycle.test.js:1:1)\n      at TestScheduler.scheduleTests (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/TestScheduler.js:333:13)\n      at runJest (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/runJest.js:404:19)\n      at _run10000 (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/cli/index.js:320:7)\n      at runCLI (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/cli/index.js:173:3)\n",
+      "name": "D:\\devhub\\src\\lib\\terminal\\nativeVteLayoutLifecycle.test.js",
+      "startTime": 1783200524918,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

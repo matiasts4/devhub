@@ -34,6 +34,25 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
     return ReactLocal.createElement(
       'div',
       { 'data-testid': 'workspace-browser-pane' },
+      props.pizarraDragHandleMouseDown
+        ? ReactLocal.createElement('button', {
+            type: 'button',
+            'data-testid': 'pizarra-drag-handle',
+            'data-pizarra-surface-drag-handle': 'true',
+            onMouseDown: props.pizarraDragHandleMouseDown,
+          })
+        : null,
+      props.onPizarraCloseCard
+        ? ReactLocal.createElement('button', {
+            type: 'button',
+            'data-testid': 'pizarra-browser-close',
+            'data-pizarra-close-button': 'true',
+            'aria-label': 'Cerrar ventana del navegador',
+            title: 'Cerrar ventana del navegador',
+            onMouseDown: (e) => e.stopPropagation(),
+            onClick: props.onPizarraCloseCard,
+          })
+        : null,
       ReactLocal.createElement('input', {
         'data-testid': 'browser-url-input',
         defaultValue: browserUrl,
@@ -105,8 +124,8 @@ describe('PizarraBrowserSurface close button', () => {
     const closeBtn = container.querySelector('[data-testid="pizarra-browser-close"]');
     expect(closeBtn).toBeTruthy();
     expect(closeBtn.getAttribute('data-pizarra-close-button')).toBe('true');
-    expect(closeBtn.getAttribute('aria-label')).toBe('Cerrar navegador');
-    expect(closeBtn.getAttribute('title')).toBe('Cerrar navegador');
+    expect(closeBtn.getAttribute('aria-label')).toBe('Cerrar ventana del navegador');
+    expect(closeBtn.getAttribute('title')).toBe('Cerrar ventana del navegador');
     expect(closeBtn.getAttribute('type')).toBe('button');
   });
 

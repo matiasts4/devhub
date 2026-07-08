@@ -1,0 +1,7 @@
+# Lightweight install profile: cloud-only Grok STT (xAI), no local Whisper.
+# Used on Windows today (see voice_python_setup.rs) where the full torch /
+# faster-whisper / piper-tts stack is not installed. Mic capture + VAD only
+# need numpy/sounddevice; pyyaml is kept for parity with requirements.txt.
+numpy>=2.0
+sounddevice==0.5.1
+pyyaml

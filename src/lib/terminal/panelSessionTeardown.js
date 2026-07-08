@@ -1,10 +1,6 @@
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import os from 'os';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
-
-function sleepAsync(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export function normalizePanelTmuxSessionName(terminalId) {
   const cleaned = String(terminalId || 'terminal')
@@ -32,9 +28,13 @@ export function resolvePanelTmuxSessionName(session) {
   return null;
 }
 
+/**
+ * Kill a tmux session without blocking the event loop.
+ * Uses detached spawn so DELETE/close handlers return immediately.
+ */
 export function killPanelTmuxSessionBestEffort(
   session,
-  { hasTmux = defaultHasTmux, spawnSyncImpl = spawnSync } = {}
+  { hasTmux = defaultHasTmux, spawnImpl = spawn, spawnSyncImpl = spawnSync } = {}
 ) {
   if (!hasTmux() || os.platform() === 'win32') return false;
 
@@ -42,9 +42,19 @@ export function killPanelTmuxSessionBestEffort(
   if (!tmuxSession) return false;
 
   try {
+    if (typeof spawnImpl === 'function') {
+      const child = spawnImpl('tmux', ['kill-session', '-t', tmuxSession], {
+        stdio: 'ignore',
+        detached: true,
+      });
+      child.unref?.();
+      child.on?.('error', () => {});
+      return true;
+    }
+    // Test/legacy fallback: spawnSync with a short timeout.
     const result = spawnSyncImpl('tmux', ['kill-session', '-t', tmuxSession], {
       stdio: 'ignore',
-      timeout: 5000,
+      timeout: 1500,
     });
     return result.status === 0;
   } catch {
@@ -78,7 +88,7 @@ function getUnixChildPids(pid, { spawnSyncImpl = spawnSync } = {}) {
   try {
     const result = spawnSyncImpl('pgrep', ['-P', String(pid)], {
       encoding: 'utf-8',
-      timeout: 2000,
+      timeout: 1000,
     });
     if (result.status !== 0) return [];
     return result.stdout
@@ -91,63 +101,36 @@ function getUnixChildPids(pid, { spawnSyncImpl = spawnSync } = {}) {
 }
 
 /**
- * Recursively terminate a Unix process tree.
- *
- * First tries SIGTERM on the process group (so grandchildren die too), then
- * SIGTERM each known child recursively, waits a short grace period, and
- * finally SIGKILL anything still alive.
+ * Hard-kill a Unix process tree immediately (SIGKILL), like closing a native
+ * terminal window. No graceful SIGTERM grace period — agent TUIs (OpenCode,
+ * Grok, Kimi) must not linger and keep consuming RAM.
  */
-function killUnixProcessTree(pid, { spawnSyncImpl = spawnSync, sleepMs = 2000 } = {}) {
+function killUnixProcessTree(pid, { spawnSyncImpl = spawnSync } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-
-  // Try group kill first — node-pty usually makes the shell a group leader.
-  try {
-    process.kill(-pid, 'SIGTERM');
-  } catch {
-    // Not a group leader or already gone; fall through to child enumeration.
-  }
 
   const children = getUnixChildPids(pid, { spawnSyncImpl });
   for (const child of children) {
-    killUnixProcessTree(child, { spawnSyncImpl, sleepMs: 0 });
+    killUnixProcessTree(child, { spawnSyncImpl });
+  }
+
+  // Process-group kill first (node-pty shells are typically session leaders).
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    // Not a group leader or already gone.
   }
 
   try {
-    process.kill(pid, 'SIGTERM');
+    process.kill(pid, 'SIGKILL');
   } catch {
     // already gone
-  }
-
-  if (sleepMs > 0) {
-    try {
-      spawnSyncImpl(process.execPath, ['-e', `setTimeout(()=>{},${sleepMs})`], {
-        timeout: sleepMs + 500,
-      });
-    } catch {
-      // ignore sleep failures
-    }
-  }
-
-  // Final SIGKILL sweep for anything still alive.
-  const remaining = [pid, ...getUnixChildPids(pid, { spawnSyncImpl })];
-  for (const p of remaining) {
-    try {
-      process.kill(-p, 'SIGKILL');
-    } catch {
-      // ignore
-    }
-    try {
-      process.kill(p, 'SIGKILL');
-    } catch {
-      // ignore
-    }
   }
 
   return true;
 }
 
 /**
- * Terminate a Windows process tree using taskkill.
+ * Terminate a Windows process tree using taskkill /T /F (tree + force).
  */
 function killWindowsProcessTree(pid, { spawnSyncImpl = spawnSync } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -155,7 +138,7 @@ function killWindowsProcessTree(pid, { spawnSyncImpl = spawnSync } = {}) {
   try {
     const result = spawnSyncImpl('taskkill', ['/T', '/F', '/PID', String(pid)], {
       stdio: 'ignore',
-      timeout: 5000,
+      timeout: 3000,
     });
     return result.status === 0;
   } catch {
@@ -165,6 +148,7 @@ function killWindowsProcessTree(pid, { spawnSyncImpl = spawnSync } = {}) {
 
 /**
  * Kill the shell/agent process tree for a session. Best-effort: does not throw.
+ * Hard-kill only — mirrors native terminal close (PowerShell / VTE).
  */
 export function killProcessTreeBestEffort(pid, { spawnSyncImpl = spawnSync } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -177,70 +161,39 @@ export function killProcessTreeBestEffort(pid, { spawnSyncImpl = spawnSync } = {
 }
 
 /**
- * Async variant of killUnixProcessTree. The grace-period sleep is non-blocking
- * so that closing a panel never freezes the Node.js event loop.
+ * Resolve the best PID for process-tree kill from a session object.
  */
-async function killUnixProcessTreeAsync(pid, { sleepMs = 2000 } = {}) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-
-  try {
-    process.kill(-pid, 'SIGTERM');
-  } catch {
-    // Not a group leader or already gone.
+export function resolveSessionKillPid(session) {
+  if (!session) return null;
+  const candidates = [session.ptyPid, session.pty?.pid, session.ptyProcess?.pid, session.pid];
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n > 0) return n;
   }
-
-  const children = getUnixChildPids(pid);
-  for (const child of children) {
-    await killUnixProcessTreeAsync(child, { sleepMs: 0 });
-  }
-
-  try {
-    process.kill(pid, 'SIGTERM');
-  } catch {
-    // already gone
-  }
-
-  if (sleepMs > 0) {
-    await sleepAsync(sleepMs);
-  }
-
-  const remaining = [pid, ...getUnixChildPids(pid)];
-  for (const p of remaining) {
-    try {
-      process.kill(-p, 'SIGKILL');
-    } catch {
-      // ignore
-    }
-    try {
-      process.kill(p, 'SIGKILL');
-    } catch {
-      // ignore
-    }
-  }
-
-  return true;
+  return null;
 }
 
-async function killProcessTreeBestEffortAsync(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-
-  if (os.platform() === 'win32') {
-    return killWindowsProcessTree(pid);
-  }
-
-  return killUnixProcessTreeAsync(pid);
-}
-
+/**
+ * Tear down all OS resources for a panel session.
+ *
+ * Design:
+ * - OpenCode abort + tmux kill + process-tree kill are fire-and-forget.
+ * - Never blocks the HTTP DELETE / closeSession caller (no spawnSync sleep).
+ * - Hard-kills the full process tree so Grok/OpenCode/etc. cannot zombie.
+ */
 export function teardownPanelSessionProcesses(session, { hasTmux, spawnSyncImpl, fetchImpl } = {}) {
   if (!session) return;
 
   abortOpenCodeSessionBestEffort(session.opencodeSessionId, { fetchImpl });
-  killPanelTmuxSessionBestEffort(session, { hasTmux, spawnSyncImpl });
-  // Defer process-tree teardown so that neither the initial pgrep nor the
-  // grace-period wait block the frontend's close request.
-  const pid = session.ptyPid;
+
+  const pid = resolveSessionKillPid(session);
+
+  // Defer ALL OS process work so the frontend close path returns immediately.
   setImmediate(() => {
-    void killProcessTreeBestEffortAsync(pid);
+    killPanelTmuxSessionBestEffort(session, { hasTmux, spawnSyncImpl });
+    if (pid) {
+      killProcessTreeBestEffort(pid, { spawnSyncImpl });
+    }
   });
 }
 

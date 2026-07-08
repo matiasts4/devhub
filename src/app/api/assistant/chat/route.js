@@ -3,8 +3,12 @@
 // `docs/prompts/asistente/zed-system-prompt.md` and is loaded once at module
 // init (D7), and the tool loop is bounded by `MAX_TURNS` (D6).
 //
-// Critical model id: `minimax-coding-plan/MiniMax-M3` (the older M2.7
-// identifier returns 401 from `https://api.minimax.io/anthropic/v1/messages`).
+// Provider/model are resolved per-request by `resolveZedLlmConfig()`:
+// defaults to Grok (xai, OpenAI-compatible) when XAI_API_KEY is configured,
+// else falls back to MiniMax. `ZED_LLM_PROVIDER=minimax` forces MiniMax.
+//
+// Critical MiniMax model id: `minimax-coding-plan/MiniMax-M3` (the older
+// M2.7 identifier returns 401 from `https://api.minimax.io/anthropic/v1/messages`).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,11 +17,12 @@ import { buildZedRegistry } from '@/lib/asistente/buildZedRegistry';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { searchZedMemoriesServer, saveZedMemoryServer } from '@/lib/asistente/zedEngramServer';
 import { detectMaliciousPrompt } from '@/lib/asistente/zedSecurityPolicy';
-import { resolveZedApiKey } from '@/lib/asistente/resolveZedApiKey';
+import { resolveZedLlmConfig } from '@/lib/asistente/resolveZedApiKey';
 import { MAX_ZED_TERMINAL_PANELS } from '@/lib/terminal/workspaceTerminalLimits';
 import { runZedChatLoop, createZedSseStream } from '@/lib/asistente/runZedChatLoop';
 import { tryZedFastPath, createZedFastPathSseStream } from '@/lib/asistente/runZedFastPath';
-import { callMinimax, BASE_URL } from '@/lib/asistente/minimaxClient';
+import { callMinimax } from '@/lib/asistente/minimaxClient';
+import { callGrok, BASE_URL as GROK_BASE_URL } from '@/lib/asistente/grokClient';
 import { checkZedRateLimit } from '@/lib/asistente/zedRateLimit';
 import { fitHistoryWithinBudget, resolveMaxTokens } from '@/lib/asistente/zedContextBudget';
 import { recordZedServerMetric } from '@/lib/asistente/zedServerMetrics';
@@ -36,7 +41,10 @@ function recordZedTelemetry(payload) {
 }
 import { getCurrentUser } from '@/lib/auth/apiAuth';
 
-export { BASE_URL };
+/** @deprecated Prefer GROK_BASE_URL / provider-specific base URLs */
+export const BASE_URL = GROK_BASE_URL;
+// Legacy export: the MiniMax fallback model id. The actual per-request model
+// is resolved by resolveZedLlmConfig() (may be Grok's model instead).
 export const MODEL = 'minimax-coding-plan/MiniMax-M3';
 
 const PROMPT_PATH = path.join(
@@ -301,20 +309,35 @@ export async function POST(request) {
       payload: { intent: fastPath.intent?.intent },
     });
 
-    const { apiKey, source: apiKeySource } = resolveZedApiKey();
+    const {
+      apiKey,
+      source: apiKeySource,
+      provider: llmProvider,
+      model: llmModel,
+      baseUrl: llmBaseUrl,
+    } = await resolveZedLlmConfig();
     if (!apiKey) {
-      zedLog.error('CONFIG', 'No usable MiniMax API key configured', {
-        hint: 'Set MINIMAX_API_KEY in .env.local (not a placeholder) or data/llm-providers-config.json providers.minimax.MINIMAX_API_KEY',
+      zedLog.error('CONFIG', 'No usable LLM API key configured', {
+        hint: 'Set XAI_API_KEY, KIMI_CODE_API_KEY, or MINIMAX_API_KEY in .env.local, login SuperGrok OAuth, or configure data/llm-providers-config.json.',
       });
       return NextResponse.json(
         {
           error:
-            'No hay API key de MiniMax configurada. Revisá MINIMAX_API_KEY en .env.local o data/llm-providers-config.json.',
+            'No hay credenciales de LLM. Revisá Ajustes > Zed > Modelo: Grok (API key o suscripción SuperGrok), Kimi Code o MiniMax.',
         },
         { status: 500 }
       );
     }
-    zedLog.info('CONFIG', 'MiniMax API key resolved', { source: apiKeySource });
+    zedLog.info('CONFIG', 'Zed LLM config resolved', {
+      provider: llmProvider,
+      model: llmModel,
+      source: apiKeySource,
+      baseUrl: llmBaseUrl,
+    });
+    const callLlm =
+      llmProvider === 'minimax'
+        ? callMinimax
+        : (params) => callGrok({ ...params, baseUrl: llmBaseUrl || GROK_BASE_URL });
 
     let systemPrompt;
     try {
@@ -345,14 +368,16 @@ export async function POST(request) {
       apiKey,
       requestContext,
       maxTurns: MAX_TURNS,
-      callMinimax,
-      model: MODEL,
+      callMinimax: callLlm,
+      model: llmModel,
       maxTokens,
+      provider: llmProvider,
+      baseUrl: llmBaseUrl,
     };
 
     if (wantsZedStream(request, body)) {
       zedLog.orchestration('stream_start', { msgId });
-      const stream = createZedSseStream({ ...loopParams, msgId, model: MODEL });
+      const stream = createZedSseStream({ ...loopParams, msgId, model: llmModel });
       return new Response(stream, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -381,7 +406,7 @@ export async function POST(request) {
         payload: { upstream_status: err?.upstream_status ?? null, message: err.message },
       });
       const upstreamStatus = err?.upstream_status;
-      zedLog.error('API', 'MiniMax call failed', {
+      zedLog.error('API', `${llmProvider} call failed`, {
         error: err.message,
         upstream_status: upstreamStatus,
         stack: err.stack,
@@ -411,7 +436,7 @@ export async function POST(request) {
         estimatedTokensIn: budget.estimatedInputTokens,
         estimatedTokensOut: Math.ceil((finalText || '').length / 4),
         toolCount: allToolResults.length,
-        model: MODEL,
+        model: llmModel,
       },
     });
 
@@ -421,7 +446,7 @@ export async function POST(request) {
     return NextResponse.json({
       text: finalText,
       tool_results: allToolResults,
-      model: MODEL,
+      model: llmModel,
       msgId,
       ...(Object.keys(meta).length ? { meta } : {}),
     });

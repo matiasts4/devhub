@@ -355,7 +355,8 @@ export default function useWorkspaceWindowsController({
       const targetWindow = windows.find((win) => win.id === windowId);
       if (targetWindow?.columns?.length) {
         const panelIds = getAllPanelIds(targetWindow.columns);
-        await closeTerminalSessions(panelIds);
+        // Optimistic: hard-kill sessions in background; UI updates immediately.
+        void closeTerminalSessions(panelIds);
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);

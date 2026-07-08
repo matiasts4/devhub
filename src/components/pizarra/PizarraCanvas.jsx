@@ -47,6 +47,8 @@ export default function PizarraCanvas({
   width = 800,
   height = 600,
   onWheelViewNavigate,
+  onUserViewportAdjust,
+  onContextMenu,
 }) {
   // ── Refs ────────────────────────────────────────────────────────────────
   const stageRef = useRef(null);
@@ -74,6 +76,7 @@ export default function PizarraCanvas({
   const [marquee, setMarquee] = useState(null);
   const [isPanDragging, setIsPanDragging] = useState(false);
   const panDragRef = useRef(null);
+  const panWindowListenersRef = useRef(null);
   const [pizarraBackground, setPizarraBackground] = useState(() => readPizarraBackground());
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
 
@@ -150,7 +153,11 @@ export default function PizarraCanvas({
     const selectedNodes = selectedElementIds
       .map((id) => {
         const el = elements.find((e) => e.id === id);
-        if (el && COMPOSITE_TYPES.has(el.type)) return null;
+        // pizarra-editing-ux: composite elements render via React
+        // (PizarraLiveSurfaceLayer) and locked elements are not
+        // transformable — exclude both from the Konva Transformer so
+        // no resize/rotate handles appear on them.
+        if (el && (COMPOSITE_TYPES.has(el.type) || el.locked)) return null;
         return stage.findOne(`#${id}`);
       })
       .filter(Boolean);
@@ -218,6 +225,16 @@ export default function PizarraCanvas({
 
   // ── Handlers (useCallback — declared before early return) ───────────────
 
+  const clearPanWindowListeners = useCallback(() => {
+    const session = panWindowListenersRef.current;
+    if (!session) return;
+    panWindowListenersRef.current = null;
+    window.removeEventListener('mousemove', session.onMove);
+    window.removeEventListener('mouseup', session.onUp);
+  }, []);
+
+  useEffect(() => () => clearPanWindowListeners(), [clearPanWindowListeners]);
+
   const handleMouseDown = useCallback(
     (e) => {
       const clickedOnEmpty = e.target === e.target.getStage();
@@ -239,14 +256,49 @@ export default function PizarraCanvas({
           });
           return;
         }
-        const pos = e.target.getStage().getPointerPosition();
+        const clientX = e.evt?.clientX ?? 0;
+        const clientY = e.evt?.clientY ?? 0;
+        clearPanWindowListeners();
         panDragRef.current = {
-          startX: pos.x,
-          startY: pos.y,
+          startClientX: clientX,
+          startClientY: clientY,
           originPanX: pan.x,
           originPanY: pan.y,
           moved: false,
         };
+
+        const onMove = (moveEvent) => {
+          const session = panDragRef.current;
+          if (!session) return;
+          const dx = moveEvent.clientX - session.startClientX;
+          const dy = moveEvent.clientY - session.startClientY;
+          if (!session.moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+            session.moved = true;
+            setIsPanDragging(true);
+          }
+          if (session.moved) {
+            onUserViewportAdjust?.();
+            setPan({
+              x: session.originPanX + dx,
+              y: session.originPanY + dy,
+            });
+          }
+        };
+
+        const onUp = () => {
+          const session = panDragRef.current;
+          const wasPan = session?.moved;
+          panDragRef.current = null;
+          setIsPanDragging(false);
+          clearPanWindowListeners();
+          if (!wasPan) {
+            onDeselect();
+          }
+        };
+
+        panWindowListenersRef.current = { onMove, onUp };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
         return;
       }
 
@@ -264,28 +316,11 @@ export default function PizarraCanvas({
       setDrawing({ startX: pos.x, startY: pos.y, type: shapeType });
       onDeselect();
     },
-    [activeTool, onDeselect, pan.x, pan.y]
+    [activeTool, onDeselect, pan.x, pan.y, setPan, clearPanWindowListeners, onUserViewportAdjust]
   );
 
   const handleMouseMove = useCallback(
     (e) => {
-      if (panDragRef.current) {
-        const pos = e.target.getStage().getPointerPosition();
-        const dx = pos.x - panDragRef.current.startX;
-        const dy = pos.y - panDragRef.current.startY;
-        if (!panDragRef.current.moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-          panDragRef.current.moved = true;
-          setIsPanDragging(true);
-        }
-        if (panDragRef.current.moved) {
-          setPan({
-            x: panDragRef.current.originPanX + dx,
-            y: panDragRef.current.originPanY + dy,
-          });
-        }
-        return;
-      }
-
       if (marquee) {
         const pos = e.target.getStage().getPointerPosition();
         const x = Math.min(marquee.startX, pos.x);
@@ -354,12 +389,6 @@ export default function PizarraCanvas({
   const handleMouseUp = useCallback(
     (e) => {
       if (panDragRef.current) {
-        const wasPan = panDragRef.current.moved;
-        panDragRef.current = null;
-        setIsPanDragging(false);
-        if (!wasPan) {
-          onDeselect();
-        }
         return;
       }
 
@@ -589,6 +618,29 @@ export default function PizarraCanvas({
 
   const { Stage, Layer, Rect, Line, Transformer } = konva;
 
+  // pizarra-editing-ux: resolve a right-click on the Stage into a context
+  // target — the shape id under the pointer (or null for empty canvas) +
+  // the native clientX/Y so the menu can be positioned / paste-here can
+  // convert to world coords. Konva fires its contextmenu handler before
+  // the Radix Trigger (canvas child → wrapper parent) opens the menu, so
+  // the resolved id is available when the menu renders. We do NOT
+  // preventDefault here — Radix owns suppressing the native browser menu.
+  // Plain function (not useCallback): it sits after the !konva early
+  // return, so a hook here would be conditional. It closes over stageRef
+  // + the onContextMenu prop, both stable enough to recreate per render.
+  const handleStageContextMenu = (e) => {
+    const stage = stageRef.current;
+    const target = e?.target;
+    const clickedEmpty = !target || target === stage;
+    const id = clickedEmpty ? null : (target.id?.() ?? null);
+    const evt = e?.evt;
+    onContextMenu?.({
+      id,
+      clientX: evt?.clientX ?? 0,
+      clientY: evt?.clientY ?? 0,
+    });
+  };
+
   const stageCursor = activeTool === 'select' ? (isPanDragging ? 'grabbing' : 'grab') : 'crosshair';
 
   return (
@@ -613,6 +665,7 @@ export default function PizarraCanvas({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onContextMenu={handleStageContextMenu}
         style={{
           background: 'transparent',
           cursor: stageCursor,
@@ -666,6 +719,26 @@ export default function PizarraCanvas({
               listening={false}
             />
           )}
+
+          {/* pizarra-editing-ux: lock badges — a small amber marker at
+              the top-left of each locked element so the user can see
+              which shapes are locked (no drag/transform/delete). */}
+          {elements
+            .filter((el) => el.locked)
+            .map((el) => (
+              <Rect
+                key={`lock-badge-${el.id}`}
+                x={(el.x ?? 0) + 4}
+                y={(el.y ?? 0) + 4}
+                width={8}
+                height={8}
+                cornerRadius={2}
+                fill="#f59e0b"
+                stroke="#1a1f2e"
+                strokeWidth={1}
+                listening={false}
+              />
+            ))}
 
           {/* pizarra-motion-polish (P-MP-7): live shape preview during
               a drag. Renders the in-flight geometry as a dashed

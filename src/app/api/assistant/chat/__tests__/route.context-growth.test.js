@@ -69,6 +69,7 @@ describe('T-031: conversation grows linearly across tool-loop turns', () => {
     stubPrompt();
     process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.XAI_API_KEY;
     POST = require('../route').POST;
   });
   afterAll(async () => {

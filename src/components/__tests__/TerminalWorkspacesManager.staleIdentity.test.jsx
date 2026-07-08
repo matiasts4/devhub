@@ -554,9 +554,12 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     await click(ws1CloseBtn);
     await flushEffects();
 
-    // Verify ws1 is gone
-    const remainingCloseButtons = findWorkspaceCloseButtons(view.container);
-    expect(remainingCloseButtons.length).toBeGreaterThanOrEqual(1);
+    // Verify ws1 is gone. With a single remaining workspace the close buttons are
+    // intentionally not rendered (can't close the last workspace), so assert via
+    // the closed workspace's own testid rather than "at least one close button".
+    expect(view.container.querySelector('[data-testid="workspace-close-ws1"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-close-ws2"]')).toBeNull();
+    expect(findWorkspaceCloseButtons(view.container)).toHaveLength(0);
 
     // Add a NEW workspace ws3 — counterRandomizedRef is true so just counter increment
     const addButton2 = findAddWorkspaceButton(view.container);

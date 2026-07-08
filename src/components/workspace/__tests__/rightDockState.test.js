@@ -30,6 +30,68 @@ describe('rightDockState normalizeBrowserUrl', () => {
 });
 
 describe('rightDockState sanitizeRightDockState', () => {
+  test('resolveDefaultBrowserUrl avoids embedding the DevHub shell origin', () => {
+    const { resolveDefaultBrowserUrl, isDevHubShellBrowserUrl } = require('../rightDockState');
+    expect(isDevHubShellBrowserUrl('http://127.0.0.1:3100/')).toBe(true);
+    expect(isDevHubShellBrowserUrl('https://duckduckgo.com/')).toBe(false);
+    expect(resolveDefaultBrowserUrl()).toBe('https://example.com/');
+  });
+
+  test('sanitize migrates persisted shell self-URL to external home', () => {
+    const result = sanitizeRightDockState({
+      browserUrl: 'http://127.0.0.1:3100/',
+      browserHistory: ['http://127.0.0.1:3100/'],
+    });
+    expect(result.browserUrl).toBe('https://example.com/');
+    expect(result.browserHistory[0]).toBe('https://example.com/');
+  });
+
+  test('sanitize upgrades unpinned iframe to native-gtk on non-Windows', () => {
+    const result = sanitizeRightDockState({ browserRuntime: 'iframe' });
+    expect(result.browserRuntime).toBe('native-gtk');
+    expect(result.browserRuntimePinned).toBe(false);
+  });
+
+  test('sanitize resets stale auto-pinned iframe back to native-gtk', () => {
+    const result = sanitizeRightDockState({
+      browserRuntime: 'iframe',
+      browserRuntimePinned: true,
+    });
+    expect(result.browserRuntime).toBe('native-gtk');
+    expect(result.browserRuntimePinned).toBe(false);
+  });
+
+  test('sanitize keeps iframe when user explicitly picked it', () => {
+    const result = sanitizeRightDockState({
+      browserRuntime: 'iframe',
+      browserRuntimePinned: true,
+      browserRuntimeUserPick: true,
+    });
+    expect(result.browserRuntime).toBe('iframe');
+    expect(result.browserRuntimePinned).toBe(true);
+    expect(result.browserRuntimeUserPick).toBe(true);
+  });
+
+  test('readRightDockState rewrites unpinned iframe in storage to native-gtk', () => {
+    const storage = {
+      data: {},
+      getItem(key) {
+        return this.data[key] ?? null;
+      },
+      setItem(key, value) {
+        this.data[key] = value;
+      },
+    };
+    storage.setItem(
+      'devhub_right_dock_project-1_ws1',
+      JSON.stringify({ browserRuntime: 'iframe', visible: true })
+    );
+    const state = readRightDockState(storage, 'project-1', 'ws1');
+    expect(state.browserRuntime).toBe('native-gtk');
+    const persisted = JSON.parse(storage.data['devhub_right_dock_project-1_ws1']);
+    expect(persisted.browserRuntime).toBe('native-gtk');
+  });
+
   test('sanitizeRightDockState accepts activeTab: "pizarra"', () => {
     const result = sanitizeRightDockState({ activeTab: 'pizarra' });
     expect(result.activeTab).toBe('pizarra');
@@ -108,8 +170,8 @@ describe('rightDockStatesEqual', () => {
 
   test('returns false when browserUrl changes', () => {
     const a = sanitizeRightDockState({
-      browserUrl: 'http://localhost:3100/',
-      browserHistory: ['http://localhost:3100/'],
+      browserUrl: 'https://github.com/',
+      browserHistory: ['https://github.com/'],
       browserHistoryIndex: 0,
     });
     const b = sanitizeRightDockState({

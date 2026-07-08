@@ -19,7 +19,20 @@ const PERSISTABLE_ROOT_KEYS = [
   'requestedRendererMode',
 ];
 
-const PERSISTABLE_PIZARRA_KEYS = ['x', 'y', 'width', 'height', 'visible', 'maximized', 'viewId'];
+// pizarra-editing-ux Phase 4: zIndex (layer order) + locked (no
+// move/resize/delete) are persistable per-surface. Optional fields with
+// hydrate defaults below, so old storage entries hydrate without migration.
+const PERSISTABLE_PIZARRA_KEYS = [
+  'x',
+  'y',
+  'width',
+  'height',
+  'visible',
+  'maximized',
+  'viewId',
+  'zIndex',
+  'locked',
+];
 
 const DEFAULT_PIZARRA_LAYOUT = {
   x: null,
@@ -27,6 +40,8 @@ const DEFAULT_PIZARRA_LAYOUT = {
   width: 640,
   height: 400,
   visible: true,
+  zIndex: 0,
+  locked: false,
 };
 
 export function buildSurfaceStorageKey(projectId, workspaceId) {

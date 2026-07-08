@@ -3,7 +3,8 @@
  * Pure helpers — no DOM.
  */
 
-export const EDGE_ZONE_WIDTH_PX = 56;
+/** Default edge band width (right edge uses full height). */
+export const EDGE_ZONE_WIDTH_PX = 40;
 export const SWIPE_COMMIT_RATIO = 0.28;
 export const SWIPE_MIN_COMMIT_PX = 96;
 export const SWIPE_VELOCITY_COMMIT_PX = 520;

@@ -4,13 +4,28 @@ const {
   getRightDockAnimProps,
 } = require('../workspaceAnimProps.js');
 
-describe('getRightDockAnimProps — fullscreen takeover', () => {
-  test('uses 220ms opacity fade aligned with useModeTransition enter', () => {
-    const props = getRightDockAnimProps({ isVisible: true, isFullscreen: true });
+describe('getRightDockAnimProps — dock hosting WebView2', () => {
+  test('uses opacity-only fade (no horizontal slide) for normal dock', () => {
+    const props = getRightDockAnimProps({ isVisible: true, isFullscreen: false });
     expect(props.initial).toEqual({ opacity: 0 });
     expect(props.animate).toEqual({ opacity: 1 });
+    expect(props.initial.x).toBeUndefined();
+    expect(props.animate.x).toBeUndefined();
     expect(props.transition.duration).toBe(0.22);
-    expect(props.transition.ease).toEqual([0.22, 1, 0.36, 1]);
+  });
+
+  test('fullscreen takeover enters at full opacity (blank-pizarra hardening)', () => {
+    const props = getRightDockAnimProps({ isVisible: true, isFullscreen: true });
+    expect(props.initial).toEqual({ opacity: 1 });
+    expect(props.animate).toEqual({ opacity: 1 });
+    expect(props.transition.duration).toBe(0);
+    expect(props.initial.x).toBeUndefined();
+  });
+
+  test('fullscreen exit still fades out', () => {
+    const props = getRightDockAnimProps({ isVisible: false, isFullscreen: true });
+    expect(props.animate).toEqual({ opacity: 0 });
+    expect(props.transition.duration).toBe(0.22);
   });
 });
 

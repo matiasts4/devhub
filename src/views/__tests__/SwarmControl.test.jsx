@@ -1683,7 +1683,7 @@ describe('SwarmControl control room composition', () => {
 
     expect(text).toContain('worker-1');
     expect(text).toContain('aprobación requerida');
-    expect(text).toContain('Actividad en vivo: inactivo');
+    expect(text).toContain('Actividad en vivo: idle');
   });
 
   test('renders empty mission kernel states cleanly when no mission snapshot exists', async () => {

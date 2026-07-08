@@ -79,6 +79,7 @@ function isDevhubDevelopmentRuntime(env = process.env) {
   if (env.DEVHUB_RUNTIME === 'development') return true;
   if (String(env.PORT || '') === '3100') return true;
   if (String(env.SIDECAR_PORT || '') === '4001') return true;
+  if (env.DEVHUB_NEXT_DEV === '1' || env.DEVHUB_NEXT_DEV === 'true') return true;
   return false;
 }
 

@@ -2,6 +2,7 @@
 // Extracted from TerminalWorkspacesManager.jsx (Slice 6).
 
 import { useCallback, useRef, useEffect } from 'react';
+import { swarmProvisionPollIntervalMs } from '@/lib/devhub/devPollingIntervals';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 import { closeTerminalSessions } from '@/components/terminal/workspaceStateHelpers';
 import { buildWorkspaceColumnsForTerminalCount } from '@/components/terminal/utils/panelHelpers';
@@ -239,23 +240,25 @@ export default function useWorkspaceLifecycle({
     ) {
       swarmLaunchIds.push(workspaceSwarmSummary.launchId);
     }
+    // Swarm terminate is best-effort and must not block the optimistic UI close.
     if (swarmLaunchIds.length > 0 && projectId) {
-      try {
-        const terminateResults = await terminateSwarmLaunchesForWorkspace({
-          workspace: workspaceToRemove,
-          projectId,
-          storage,
-          workspaces,
+      void terminateSwarmLaunchesForWorkspace({
+        workspace: workspaceToRemove,
+        projectId,
+        storage,
+        workspaces,
+      })
+        .then((terminateResults) => {
+          terminateResults.forEach((result) => {
+            if (result.ok) {
+              dispatchTerminatePanelCloseEvents(result.payload);
+            }
+          });
+          setSwarmControlSnapshot(null);
+        })
+        .catch(() => {
+          // Best-effort: workspace close already proceeded.
         });
-        terminateResults.forEach((result) => {
-          if (result.ok) {
-            dispatchTerminatePanelCloseEvents(result.payload);
-          }
-        });
-        setSwarmControlSnapshot(null);
-      } catch {
-        // Best-effort: workspace close still proceeds.
-      }
     }
 
     const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== idToRemove);
@@ -288,9 +291,10 @@ export default function useWorkspaceLifecycle({
       // Ignore localStorage failures — cleanup is best-effort
     }
 
-    await closeTerminalSessions(panelIdsToClean);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await closeWorkspaceBrowserWindow(idToRemove);
+    // Optimistic UI: drop workspace from state immediately. Session DELETE +
+    // process-tree hard-kill run in background (no 200ms settle, no await).
+    void closeTerminalSessions(panelIdsToClean);
+    void closeWorkspaceBrowserWindow(idToRemove);
 
     setWorkspaces((prev) => {
       const newWs = prev.filter((w) => w.id !== idToRemove);
@@ -599,7 +603,7 @@ export default function useWorkspaceLifecycle({
     };
 
     void pollPendingWorkerProvisions();
-    const timer = window.setInterval(pollPendingWorkerProvisions, 3000);
+    const timer = window.setInterval(pollPendingWorkerProvisions, swarmProvisionPollIntervalMs());
     return () => {
       cancelled = true;
       window.clearInterval(timer);

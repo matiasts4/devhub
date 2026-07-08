@@ -64,22 +64,88 @@ export default function useRightDockController({
   const [hasMountedRightDock, setHasMountedRightDock] = useState(false);
   const [isDraggingDock, setIsDraggingDock] = useState(false);
   const prevActiveWsForBrowserHideRef = useRef(activeWsId);
+  const startupBrowserSweepRef = useRef(false);
 
-  // Hide the previous workspace native browser when switching tabs (dock host is shared).
+  // Clear stale embedded WebView2 from a prior session (Windows click-blocker).
+  // Sole owner of the startup sweep gate — do not add a second purge in TWM.
+  useEffect(() => {
+    if (!isClientLoaded || !projectId || !activeWsId || startupBrowserSweepRef.current)
+      return undefined;
+    startupBrowserSweepRef.current = true;
+    const panelId = `browser-${projectId}-${activeWsId}`;
+    import('@/lib/browser/nativeBrowserBridge')
+      .then(
+        ({
+          closeNativeBrowser,
+          scheduleNativeBrowserStartupSweep,
+          purgeOrphanNativeBrowsers,
+          emitNativeBrowserClosed,
+        }) =>
+          scheduleNativeBrowserStartupSweep(() =>
+            purgeOrphanNativeBrowsers()
+              .catch(() => ({ purged: 0 }))
+              .then(() =>
+                closeNativeBrowser({
+                  panelId,
+                  reason: 'startup-sweep',
+                })
+                  .catch(() => {})
+                  .finally(() => emitNativeBrowserClosed(panelId, 'startup-sweep'))
+              )
+          )
+      )
+      .catch(() => {});
+    return undefined;
+  }, [activeWsId, isClientLoaded, projectId]);
+
+  // Close the previous workspace native browser when switching tabs (dock host is shared).
   useEffect(() => {
     if (!isClientLoaded || !projectId) return undefined;
     const prevWsId = prevActiveWsForBrowserHideRef.current;
     if (prevWsId && activeWsId && prevWsId !== activeWsId) {
       const panelId = `browser-${projectId}-${prevWsId}`;
       import('@/lib/browser/nativeBrowserBridge')
-        .then(({ setNativeBrowserVisibility }) =>
-          setNativeBrowserVisibility({ panelId, visible: false })
+        .then(({ closeNativeBrowser, emitNativeBrowserClosed }) =>
+          closeNativeBrowser({ panelId, reason: 'workspace-switch' })
+            .catch(() => {})
+            .finally(() => emitNativeBrowserClosed(panelId, 'workspace-switch'))
         )
         .catch(() => {});
     }
     prevActiveWsForBrowserHideRef.current = activeWsId;
     return undefined;
   }, [activeWsId, isClientLoaded, projectId]);
+
+  // Destroy embedded WebView2 whenever the browser dock tab is not live (Windows click-blocker).
+  // Gate on dockWorkspaceId === activeWsId so DEFAULT visible:false before hydrate cannot
+  // close a panel the surface is about to open.
+  useEffect(() => {
+    if (!isClientLoaded || !projectId || !activeWsId) return undefined;
+    if (!dockWorkspaceId || dockWorkspaceId !== activeWsId) return undefined;
+    const browserTabLive =
+      rightDockState.visible === true &&
+      rightDockState.activeTab === 'browser' &&
+      (!rightDockState.maximized || rightDockState.maximizedView === 'browser');
+    if (browserTabLive) return undefined;
+    const panelId = `browser-${projectId}-${activeWsId}`;
+    import('@/lib/browser/nativeBrowserBridge')
+      .then(({ closeNativeBrowser, emitNativeBrowserClosed }) =>
+        closeNativeBrowser({ panelId, reason: 'dock-not-browser' })
+          .catch(() => {})
+          .finally(() => emitNativeBrowserClosed(panelId, 'dock-not-browser'))
+      )
+      .catch(() => {});
+    return undefined;
+  }, [
+    activeWsId,
+    dockWorkspaceId,
+    isClientLoaded,
+    projectId,
+    rightDockState.activeTab,
+    rightDockState.maximized,
+    rightDockState.maximizedView,
+    rightDockState.visible,
+  ]);
 
   // Persist dock state for the workspace this state belongs to.
   useEffect(() => {
@@ -101,13 +167,15 @@ export default function useRightDockController({
     }
   }, [rightDockState.visible]);
 
+  // ponytail: useNativeBrowserSurface closes the panel when !visibleInLayout; avoid duplicate close here.
   const updateRightDockState = useCallback((nextValue) => {
     setRightDockState((prev) => {
       const currentState = prev ?? { ...DEFAULT_RIGHT_DOCK_STATE };
-      const resolvedState =
-        typeof nextValue === 'function'
-          ? nextValue(currentState)
-          : { ...currentState, ...nextValue };
+      // A functional updater may return a partial patch; always merge it over the
+      // current state so callers don't have to spread it themselves (returning a
+      // bare `{ size }` used to wipe visible/activeTab and collapse the dock).
+      const patch = typeof nextValue === 'function' ? nextValue(currentState) : nextValue;
+      const resolvedState = { ...currentState, ...patch };
       const nextState = sanitizeRightDockState(resolvedState);
       return rightDockStatesEqual(currentState, nextState) ? prev : nextState;
     });

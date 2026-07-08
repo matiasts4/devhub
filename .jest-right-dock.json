@@ -1,0 +1,376 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 2,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 39,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 1,
+  "numTotalTests": 41,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783228290769,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps terminal-only layout by default and exposes dock tab controls without PageHeader",
+          "location": null,
+          "status": "passed",
+          "title": "keeps terminal-only layout by default and exposes dock tab controls without PageHeader"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab shows the dock shell and keeps the switch in the top toolbar",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab shows the dock shell and keeps the switch in the top toolbar"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock opening right dock browser side-by-side keeps native terminal policy live",
+          "location": null,
+          "status": "passed",
+          "title": "opening right dock browser side-by-side keeps native terminal policy live"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear",
+          "location": null,
+          "status": "passed",
+          "title": "pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer",
+          "location": null,
+          "status": "passed",
+          "title": "opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows active swarm summary without End swarm button (close workspace to terminate)",
+          "location": null,
+          "status": "passed",
+          "title": "shows active swarm summary without End swarm button (close workspace to terminate)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows active swarm summary from cached control snapshot when devhub_agent_runs is empty",
+          "location": null,
+          "status": "passed",
+          "title": "shows active swarm summary from cached control snapshot when devhub_agent_runs is empty"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock batches swarm runtime requests into a dedicated workspace instead of replacing the same split",
+          "location": null,
+          "status": "passed",
+          "title": "batches swarm runtime requests into a dedicated workspace instead of replacing the same split"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock materializes all swarm panels in one workspace from a single launch event",
+          "location": null,
+          "status": "passed",
+          "title": "materializes all swarm panels in one workspace from a single launch event"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)",
+          "location": null,
+          "status": "passed",
+          "title": "preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock opening right dock editor side-by-side keeps native terminal policy live without mutating fullscreen state",
+          "location": null,
+          "status": "passed",
+          "title": "opening right dock editor side-by-side keeps native terminal policy live without mutating fullscreen state"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock dock tab buttons toggle visibility when pressing the same tab twice",
+          "location": null,
+          "status": "passed",
+          "title": "dock tab buttons toggle visibility when pressing the same tab twice"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock switching to editor reveals the shared pane with contextual subtitle",
+          "location": null,
+          "status": "passed",
+          "title": "switching to editor reveals the shared pane with contextual subtitle"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock legacy bridge state hydrates as browser edit mode and persists normalized state",
+          "location": null,
+          "status": "passed",
+          "title": "legacy bridge state hydrates as browser edit mode and persists normalized state"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock rehydrates persisted visible editor dock state for the same project",
+          "location": null,
+          "status": "passed",
+          "title": "rehydrates persisted visible editor dock state for the same project"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [
+            "TypeError: Cannot read properties of null (reading 'visible')\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx:1025:21)"
+          ],
+          "fullName": "TerminalWorkspacesManager right dock right dock visibility and tab state stay isolated per workspace",
+          "location": null,
+          "status": "failed",
+          "title": "right dock visibility and tab state stay isolated per workspace"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock switching to a new workspace keeps a hidden native browser from staying visible on top",
+          "location": null,
+          "status": "passed",
+          "title": "switching to a new workspace keeps a hidden native browser from staying visible on top"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"ws2\"\nReceived: \"ws2370\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx:1108:67)"
+          ],
+          "fullName": "TerminalWorkspacesManager right dock keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1",
+          "location": null,
+          "status": "failed",
+          "title": "keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows a workspace browser indicator and lets the user close the dedicated browser state from the top toolbar",
+          "location": null,
+          "status": "passed",
+          "title": "shows a workspace browser indicator and lets the user close the dedicated browser state from the top toolbar"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab submits localhost urls, navigates back-forward, and reload remounts the iframe",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab submits localhost urls, navigates back-forward, and reload remounts the iframe"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock does not preemptively block localhost:3100 with framing warning",
+          "location": null,
+          "status": "passed",
+          "title": "does not preemptively block localhost:3100 with framing warning"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser pane uses an isolated solid viewport shell for smoother embedded rendering",
+          "location": null,
+          "status": "passed",
+          "title": "browser pane uses an isolated solid viewport shell for smoother embedded rendering"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser toolbar exposes an explicit maximize toggle for workspace-only browser mode",
+          "location": null,
+          "status": "passed",
+          "title": "browser toolbar exposes an explicit maximize toggle for workspace-only browser mode"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps the same browser iframe mounted when switching between browser and editor tabs",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the same browser iframe mounted when switching between browser and editor tabs"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps the same browser iframe mounted while toggling browser and terminal fullscreen views",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the same browser iframe mounted while toggling browser and terminal fullscreen views"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser maximized mode exposes workspace window tabs so terminal views remain reachable",
+          "location": null,
+          "status": "passed",
+          "title": "browser maximized mode exposes workspace window tabs so terminal views remain reachable"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock rehydrates duplicated workspace window ids with unique replacements before rendering tabs",
+          "location": null,
+          "status": "passed",
+          "title": "rehydrates duplicated workspace window ids with unique replacements before rendering tabs"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock hides the workspace path chip when the subtabs bar gets too narrow and restores it when space returns",
+          "location": null,
+          "status": "passed",
+          "title": "hides the workspace path chip when the subtabs bar gets too narrow and restores it when space returns"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock active tab in right-dock tab strip has 1px accent inner border",
+          "location": null,
+          "status": "passed",
+          "title": "active tab in right-dock tab strip has 1px accent inner border"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock inactive tabs in right-dock tab strip do not have accent border",
+          "location": null,
+          "status": "passed",
+          "title": "inactive tabs in right-dock tab strip do not have accent border"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock dock maximize toggles between persisted panel size and full width",
+          "location": null,
+          "status": "passed",
+          "title": "dock maximize toggles between persisted panel size and full width"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock dock drag overlay never blocks editor interactions and clears after pointer release",
+          "location": null,
+          "status": "passed",
+          "title": "dock drag overlay never blocks editor interactions and clears after pointer release"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock right dock layout placeholder never captures pointer events above the real dock layer",
+          "location": null,
+          "status": "passed",
+          "title": "right dock layout placeholder never captures pointer events above the real dock layer"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock resolveRightDockLayerStyle anchors the dock to measured placeholder bounds when available",
+          "location": null,
+          "status": "passed",
+          "title": "resolveRightDockLayerStyle anchors the dock to measured placeholder bounds when available"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock resolveMeasuredRightDockBounds derives exact left and width from the real placeholder rect",
+          "location": null,
+          "status": "passed",
+          "title": "resolveMeasuredRightDockBounds derives exact left and width from the real placeholder rect"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock measured right dock bounds realign the absolute dock layer after workspace switches",
+          "location": null,
+          "status": "passed",
+          "title": "measured right dock bounds realign the absolute dock layer after workspace switches"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab resolves free-text input into a searchable web url",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab resolves free-text input into a searchable web url"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab defaults plain domains to https navigation",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab defaults plain domains to https navigation"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows a visible localhost error state instead of leaving the browser blank",
+          "location": null,
+          "status": "passed",
+          "title": "shows a visible localhost error state instead of leaving the browser blank"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock rendering the visible right dock does not emit React key warnings",
+          "location": null,
+          "status": "passed",
+          "title": "rendering the visible right dock does not emit React key warnings"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock right dock browser state stays mounted across slower timer advances",
+          "location": null,
+          "status": "passed",
+          "title": "right dock browser state stays mounted across slower timer advances"
+        }
+      ],
+      "endTime": 1783228304330,
+      "message": "  ● TerminalWorkspacesManager right dock › right dock visibility and tab state stay isolated per workspace\n\n    TypeError: Cannot read properties of null (reading 'visible')\n\n      1023 |     expect(ws1State.visible).toBe(true);\n      1024 |     expect(ws1State.activeTab).toBe('editor');\n    > 1025 |     expect(ws2State.visible).toBe(false);\n           |                     ^\n      1026 |   });\n      1027 |\n      1028 |   test('switching to a new workspace keeps a hidden native browser from staying visible on top', async () => {\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1025:21)\n\n  ● TerminalWorkspacesManager right dock › keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"ws2\"\n    Received: \"ws2370\"\n\n      1106 |     const editorPaneAfterAdd = view.container.querySelector('[data-testid=\"shared-editor-pane\"]');\n      1107 |     expect(editorPaneAfterAdd).toBe(editorPane);\n    > 1108 |     expect(editorPaneAfterAdd?.getAttribute('data-workspace-id')).toBe('ws2');\n           |                                                                   ^\n      1109 |     expect(view.container.querySelectorAll('[data-testid=\"shared-editor-pane\"]')).toHaveLength(1);\n      1110 |     expect(\n      1111 |       view.container.querySelectorAll('[data-testid=\"workspace-right-dock-layer\"]')\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1108:67)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx",
+      "startTime": 1783228290807,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

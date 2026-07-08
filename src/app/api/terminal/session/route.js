@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
+import { readSidecarPortForTerminalSession } from '@/lib/devhub/sidecarRuntime';
 import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 import { createSession, ensureTTYServer, pushSessionInput } from '@/lib/terminal/ttyServer';
 
@@ -130,9 +130,16 @@ async function recoverProductionSidecar() {
 }
 
 export async function GET(request) {
-  // Always check for production sidecar first (works in both dev and prod)
+  // Fail-fast sidecar probe: the previous defaults (450ms × 4 attempts ≈ 2s)
+  // ran *before* ensureTTYServer every connect, so "Conectando…" hung even
+  // when the in-process TTY server was already fine. One short probe is enough;
+  // if the sidecar is up it answers in <50ms, otherwise fall through immediately.
   try {
-    const port = await readProductionSidecarPort();
+    const port = await readSidecarPortForTerminalSession({
+      timeoutMs: 120,
+      attempts: 1,
+      gapMs: 0,
+    });
     if (port) {
       return NextResponse.json({ port, wsPath: '/tty' });
     }

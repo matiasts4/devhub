@@ -1,3 +1,11 @@
+// SharedTerminalSurface pulls TerminalTTY → static xterm; mock for Node.
+jest.mock('xterm', () => ({ Terminal: class Terminal {} }), { virtual: true });
+jest.mock('xterm-addon-fit', () => ({ FitAddon: class FitAddon {} }), { virtual: true });
+jest.mock('xterm-addon-search', () => ({ SearchAddon: class SearchAddon {} }), {
+  virtual: true,
+});
+jest.mock('@/components/TerminalTTY', () => () => null);
+
 const {
   resolveSharedTerminalVisibility,
   PIZARRA_SHARED_SURFACE_HOST,

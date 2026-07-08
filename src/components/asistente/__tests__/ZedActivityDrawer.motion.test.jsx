@@ -44,4 +44,10 @@ describe('ZedActivityDrawer — motion preset migration', () => {
     expect(drawerBlock).not.toMatch(/\bheight:\s*0/);
     expect(drawerBlock).not.toMatch(/height:\s*['"]auto['"]/);
   });
+
+  test('width comes from the widthPx prop (ZedOverlaySettings drawer width control)', () => {
+    expect(source).toMatch(/widthPx\s*=\s*400/);
+    expect(source).not.toMatch(/w-\[min\(400px/);
+    expect(source).toMatch(/width:\s*`min\(\$\{widthPx\}px,\s*calc\(100vw - 1\.5rem\)\)`/);
+  });
 });

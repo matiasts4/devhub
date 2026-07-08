@@ -10,7 +10,7 @@ const DEFAULT_IGNORED_SEGMENTS = [
   'dist',
   'build',
   'coverage',
-  path.join('src-tauri', 'target'),
+  'src-tauri/target',
 ];
 
 function getState() {
@@ -38,8 +38,7 @@ function shouldIgnorePath(watchPath) {
   return DEFAULT_IGNORED_SEGMENTS.some((segment) => {
     const normalizedSegment = segment.split(path.sep).join('/');
     return (
-      normalized.includes(`/${normalizedSegment}/`) ||
-      normalized.endsWith(`/${normalizedSegment}`)
+      normalized.includes(`/${normalizedSegment}/`) || normalized.endsWith(`/${normalizedSegment}`)
     );
   });
 }
@@ -88,7 +87,7 @@ export function ensureRealtimeServer(options = {}) {
         rootPath: state.rootPath,
         message: 'DevHub realtime channel ready',
         timestamp: Date.now(),
-      }),
+      })
     );
 
     socket.on('message', (raw) => {

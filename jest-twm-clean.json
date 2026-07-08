@@ -1,0 +1,1650 @@
+{
+  "numFailedTestSuites": 4,
+  "numFailedTests": 18,
+  "numPassedTestSuites": 8,
+  "numPassedTests": 158,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 12,
+  "numTotalTests": 177,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783208693156,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps terminal-only layout by default and exposes dock tab controls without PageHeader",
+          "location": null,
+          "status": "passed",
+          "title": "keeps terminal-only layout by default and exposes dock tab controls without PageHeader"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab shows the dock shell and keeps the switch in the top toolbar",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab shows the dock shell and keeps the switch in the top toolbar"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock opening right dock browser side-by-side keeps native terminal policy live",
+          "location": null,
+          "status": "passed",
+          "title": "opening right dock browser side-by-side keeps native terminal policy live"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"hidden\"\nReceived: undefined\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx:493:96)"
+          ],
+          "fullName": "TerminalWorkspacesManager right dock pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear",
+          "location": null,
+          "status": "failed",
+          "title": "pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer",
+          "location": null,
+          "status": "passed",
+          "title": "opening swarm wizard suspends native terminal surfaces and renders modal above the terminal layer"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows active swarm summary without End swarm button (close workspace to terminate)",
+          "location": null,
+          "status": "passed",
+          "title": "shows active swarm summary without End swarm button (close workspace to terminate)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows active swarm summary from cached control snapshot when devhub_agent_runs is empty",
+          "location": null,
+          "status": "passed",
+          "title": "shows active swarm summary from cached control snapshot when devhub_agent_runs is empty"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [
+            "Error: expect(received).toContain(expected) // indexOf\n\nMatcher error: received value must not be null nor undefined\n\nReceived has value: undefined\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx:698:7)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager right dock shows terminate swarm action for active workspace launch and posts launch-scoped terminate request",
+          "location": null,
+          "status": "failed",
+          "title": "shows terminate swarm action for active workspace launch and posts launch-scoped terminate request"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock batches swarm runtime requests into a dedicated workspace instead of replacing the same split",
+          "location": null,
+          "status": "passed",
+          "title": "batches swarm runtime requests into a dedicated workspace instead of replacing the same split"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock materializes all swarm panels in one workspace from a single launch event",
+          "location": null,
+          "status": "passed",
+          "title": "materializes all swarm panels in one workspace from a single launch event"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)",
+          "location": null,
+          "status": "passed",
+          "title": "preserves 3-column layout when director arrives first and workers arrive later (two-phase dispatch)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock opening right dock editor side-by-side keeps native terminal policy live without mutating fullscreen state",
+          "location": null,
+          "status": "passed",
+          "title": "opening right dock editor side-by-side keeps native terminal policy live without mutating fullscreen state"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock dock tab buttons toggle visibility when pressing the same tab twice",
+          "location": null,
+          "status": "passed",
+          "title": "dock tab buttons toggle visibility when pressing the same tab twice"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock switching to editor reveals the shared pane with contextual subtitle",
+          "location": null,
+          "status": "passed",
+          "title": "switching to editor reveals the shared pane with contextual subtitle"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock legacy bridge state hydrates as browser edit mode and persists normalized state",
+          "location": null,
+          "status": "passed",
+          "title": "legacy bridge state hydrates as browser edit mode and persists normalized state"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock rehydrates persisted visible editor dock state for the same project",
+          "location": null,
+          "status": "passed",
+          "title": "rehydrates persisted visible editor dock state for the same project"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock right dock visibility and tab state stay isolated per workspace",
+          "location": null,
+          "status": "passed",
+          "title": "right dock visibility and tab state stay isolated per workspace"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [
+            "Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\nExpected: \"native_browser_set_visibility\", {\"request\": ObjectContaining {\"panelId\": \"browser-project-1-ws1\", \"visible\": false}}\nReceived\n       1\n          \"native_browser_probe\",\n          Object {\n        -   \"request\": ObjectContaining {\n        -     \"panelId\": \"browser-project-1-ws1\",\n        -     \"visible\": false,\n        +   \"request\": Object {\n        +     \"panelId\": \"browser-project-1-ws2\",\n        +     \"requestedMode\": \"native-gtk\",\n        +     \"tauriAvailable\": true,\n            },\n          },\n       2\n          \"native_browser_selector_command\",\n          Object {\n        -   \"request\": ObjectContaining {\n        -     \"panelId\": \"browser-project-1-ws1\",\n        -     \"visible\": false,\n        +   \"request\": Object {\n        +     \"action\": \"deactivate\",\n        +     \"panelId\": \"browser-project-1-ws2\",\n            },\n          },\n       3\n          \"native_browser_selector_command\",\n          Object {\n        -   \"request\": ObjectContaining {\n        -     \"panelId\": \"browser-project-1-ws1\",\n        -     \"visible\": false,\n        +   \"request\": Object {\n        +     \"action\": \"clear-selection\",\n        +     \"panelId\": \"browser-project-1-ws2\",\n            },\n          },\n\nNumber of calls: 3\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx:1128:24)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at processTimers (node:internal/timers:538:9)"
+          ],
+          "fullName": "TerminalWorkspacesManager right dock switching to a new workspace keeps a hidden native browser from staying visible on top",
+          "location": null,
+          "status": "failed",
+          "title": "switching to a new workspace keeps a hidden native browser from staying visible on top"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1",
+          "location": null,
+          "status": "passed",
+          "title": "keeps a single shared editor dock mounted while switching ws1 → ws2 → ws1"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows a workspace browser indicator and lets the user close the dedicated browser state from the top toolbar",
+          "location": null,
+          "status": "passed",
+          "title": "shows a workspace browser indicator and lets the user close the dedicated browser state from the top toolbar"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab submits localhost urls, navigates back-forward, and reload remounts the iframe",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab submits localhost urls, navigates back-forward, and reload remounts the iframe"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock does not preemptively block localhost:3100 with framing warning",
+          "location": null,
+          "status": "passed",
+          "title": "does not preemptively block localhost:3100 with framing warning"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser pane uses an isolated solid viewport shell for smoother embedded rendering",
+          "location": null,
+          "status": "passed",
+          "title": "browser pane uses an isolated solid viewport shell for smoother embedded rendering"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser toolbar exposes an explicit maximize toggle for workspace-only browser mode",
+          "location": null,
+          "status": "passed",
+          "title": "browser toolbar exposes an explicit maximize toggle for workspace-only browser mode"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps the same browser iframe mounted when switching between browser and editor tabs",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the same browser iframe mounted when switching between browser and editor tabs"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock keeps the same browser iframe mounted while toggling browser and terminal fullscreen views",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the same browser iframe mounted while toggling browser and terminal fullscreen views"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser maximized mode exposes workspace window tabs so terminal views remain reachable",
+          "location": null,
+          "status": "passed",
+          "title": "browser maximized mode exposes workspace window tabs so terminal views remain reachable"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock rehydrates duplicated workspace window ids with unique replacements before rendering tabs",
+          "location": null,
+          "status": "passed",
+          "title": "rehydrates duplicated workspace window ids with unique replacements before rendering tabs"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock hides the workspace path chip when the subtabs bar gets too narrow and restores it when space returns",
+          "location": null,
+          "status": "passed",
+          "title": "hides the workspace path chip when the subtabs bar gets too narrow and restores it when space returns"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock active tab in right-dock tab strip has 1px accent inner border",
+          "location": null,
+          "status": "passed",
+          "title": "active tab in right-dock tab strip has 1px accent inner border"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock inactive tabs in right-dock tab strip do not have accent border",
+          "location": null,
+          "status": "passed",
+          "title": "inactive tabs in right-dock tab strip do not have accent border"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock dock maximize toggles between persisted panel size and full width",
+          "location": null,
+          "status": "passed",
+          "title": "dock maximize toggles between persisted panel size and full width"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock dock drag overlay never blocks editor interactions and clears after pointer release",
+          "location": null,
+          "status": "passed",
+          "title": "dock drag overlay never blocks editor interactions and clears after pointer release"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock right dock layout placeholder never captures pointer events above the real dock layer",
+          "location": null,
+          "status": "passed",
+          "title": "right dock layout placeholder never captures pointer events above the real dock layer"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock resolveRightDockLayerStyle anchors the dock to measured placeholder bounds when available",
+          "location": null,
+          "status": "passed",
+          "title": "resolveRightDockLayerStyle anchors the dock to measured placeholder bounds when available"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock resolveMeasuredRightDockBounds derives exact left and width from the real placeholder rect",
+          "location": null,
+          "status": "passed",
+          "title": "resolveMeasuredRightDockBounds derives exact left and width from the real placeholder rect"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"580px\"\nReceived: \"68%\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx:1767:34)"
+          ],
+          "fullName": "TerminalWorkspacesManager right dock measured right dock bounds realign the absolute dock layer after workspace switches",
+          "location": null,
+          "status": "failed",
+          "title": "measured right dock bounds realign the absolute dock layer after workspace switches"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab resolves free-text input into a searchable web url",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab resolves free-text input into a searchable web url"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock browser tab defaults plain domains to https navigation",
+          "location": null,
+          "status": "passed",
+          "title": "browser tab defaults plain domains to https navigation"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock shows a visible localhost error state instead of leaving the browser blank",
+          "location": null,
+          "status": "passed",
+          "title": "shows a visible localhost error state instead of leaving the browser blank"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock rendering the visible right dock does not emit React key warnings",
+          "location": null,
+          "status": "passed",
+          "title": "rendering the visible right dock does not emit React key warnings"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager right dock"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager right dock right dock browser state stays mounted across slower timer advances",
+          "location": null,
+          "status": "passed",
+          "title": "right dock browser state stays mounted across slower timer advances"
+        }
+      ],
+      "endTime": 1783208705767,
+      "message": "  ● TerminalWorkspacesManager right dock › pizarra fullscreen marks workspace terminals hidden in layout so native layers can disappear\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"hidden\"\n    Received: undefined\n\n      491 |       expect(view.container.querySelector('[data-testid=\"pizarra-host\"]')).not.toBeNull();\n      492 |\n    > 493 |       expect(view.container.querySelector('[data-testid=\"terminal-visible-p1\"]')?.textContent).toBe(\n          |                                                                                                ^\n      494 |         'hidden'\n      495 |       );\n      496 |       expect(view.container.querySelector('[data-testid=\"terminal-suspend-p1\"]')?.textContent).toBe(\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:493:96)\n\n  ● TerminalWorkspacesManager right dock › shows terminate swarm action for active workspace launch and posts launch-scoped terminate request\n\n    expect(received).toContain(expected) // indexOf\n\n    Matcher error: received value must not be null nor undefined\n\n    Received has value: undefined\n\n      696 |     expect(\n      697 |       view.container.querySelector('[data-testid=\"workspace-swarm-terminate-summary\"]')?.textContent\n    > 698 |     ).toContain('Terminal swarm');\n          |       ^\n      699 |\n      700 |     await click(view.container.querySelector('[data-testid=\"workspace-swarm-terminate-button\"]'));\n      701 |\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:698:7)\n\n  ● TerminalWorkspacesManager right dock › switching to a new workspace keeps a hidden native browser from staying visible on top\n\n    expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n    Expected: \"native_browser_set_visibility\", {\"request\": ObjectContaining {\"panelId\": \"browser-project-1-ws1\", \"visible\": false}}\n    Received\n           1\n              \"native_browser_probe\",\n              Object {\n            -   \"request\": ObjectContaining {\n            -     \"panelId\": \"browser-project-1-ws1\",\n            -     \"visible\": false,\n            +   \"request\": Object {\n            +     \"panelId\": \"browser-project-1-ws2\",\n            +     \"requestedMode\": \"native-gtk\",\n            +     \"tauriAvailable\": true,\n                },\n              },\n           2\n              \"native_browser_selector_command\",\n              Object {\n            -   \"request\": ObjectContaining {\n            -     \"panelId\": \"browser-project-1-ws1\",\n            -     \"visible\": false,\n            +   \"request\": Object {\n            +     \"action\": \"deactivate\",\n            +     \"panelId\": \"browser-project-1-ws2\",\n                },\n              },\n           3\n              \"native_browser_selector_command\",\n              Object {\n            -   \"request\": ObjectContaining {\n            -     \"panelId\": \"browser-project-1-ws1\",\n            -     \"visible\": false,\n            +   \"request\": Object {\n            +     \"action\": \"clear-selection\",\n            +     \"panelId\": \"browser-project-1-ws2\",\n                },\n              },\n\n    Number of calls: 3\n\n      1126 |     await confirmNewWorkspaceSetup(1);\n      1127 |\n    > 1128 |     expect(mockInvoke).toHaveBeenCalledWith('native_browser_set_visibility', {\n           |                        ^\n      1129 |       request: expect.objectContaining({\n      1130 |         panelId: 'browser-project-1-ws1',\n      1131 |         visible: false,\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1128:24)\n\n  ● TerminalWorkspacesManager right dock › measured right dock bounds realign the absolute dock layer after workspace switches\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"580px\"\n    Received: \"68%\"\n\n      1765 |     await flushEffects();\n      1766 |\n    > 1767 |     expect(dockLayer.style.left).toBe('580px');\n           |                                  ^\n      1768 |     expect(dockLayer.style.width).toBe('380px');\n      1769 |\n      1770 |     await click(view.container.querySelector('[data-testid=\"workspace-add-button\"]'));\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1767:34)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx",
+      "startTime": 1783208693203,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar renders sub-tabs bar with V1 active on initial load",
+          "location": null,
+          "status": "passed",
+          "title": "renders sub-tabs bar with V1 active on initial load"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar + button is enabled when only 1 view exists",
+          "location": null,
+          "status": "passed",
+          "title": "+ button is enabled when only 1 view exists"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar clicking + adds a V2 tab",
+          "location": null,
+          "status": "passed",
+          "title": "clicking + adds a V2 tab"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar V2 tab is focused after clicking +",
+          "location": null,
+          "status": "passed",
+          "title": "V2 tab is focused after clicking +"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar clicking V1 while V2 is active re-activates V1",
+          "location": null,
+          "status": "passed",
+          "title": "clicking V1 while V2 is active re-activates V1"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar + button stays enabled after creating 3 panels",
+          "location": null,
+          "status": "passed",
+          "title": "+ button stays enabled after creating 3 panels"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar allows rendering a 4th panel tab",
+          "location": null,
+          "status": "passed",
+          "title": "allows rendering a 4th panel tab"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar close button is absent when only 1 view exists",
+          "location": null,
+          "status": "passed",
+          "title": "close button is absent when only 1 view exists"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar close button appears on tabs when 2+ views exist",
+          "location": null,
+          "status": "passed",
+          "title": "close button appears on tabs when 2+ views exist"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar renders visible split controls without shortcut hint badges",
+          "location": null,
+          "status": "passed",
+          "title": "renders visible split controls without shortcut hint badges"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar clicking Split Right creates a new column and activates the new panel",
+          "location": null,
+          "status": "passed",
+          "title": "clicking Split Right creates a new column and activates the new panel"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar clicking Split Down stacks a panel in the same column and activates the new panel",
+          "location": null,
+          "status": "passed",
+          "title": "clicking Split Down stacks a panel in the same column and activates the new panel"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [
+            "Error: expect(received).toHaveLength(expected)\n\nExpected length: 3\nReceived length: 5\nReceived object: [<div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p1\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p1\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"fallback\" data-testid=\"panel-semantic-header-p1\" title=\"Terminal\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel P4 controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p1\" title=\"Panel P4 actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p1\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel P4 actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p1\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p1\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p2\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p2\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"fallback\" data-testid=\"panel-semantic-header-p2\" title=\"Terminal\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel P4 controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p2\" title=\"Panel P4 actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p2\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel P4 actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p2\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p2\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p3\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p3\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p3\" title=\"Blake\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel Blake controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p3\" title=\"Panel Blake actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p3\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Blake actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p3\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p3\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p4\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p4\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p4\" title=\"Cameron\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel Cameron controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p4\" title=\"Panel Cameron actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p4\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Cameron actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p4\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p4\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]\" data-testid=\"panel-slot-p5\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p5\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p5\" title=\"Casey\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-100\" /><div aria-label=\"Panel Casey controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p5\" title=\"Panel Casey actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p5\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Casey actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p5\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"true\" data-testid=\"terminal-p5\"><span … /><span … /><button … /></div></div></div></div>]\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.panel-subtabs.test.jsx:511:76)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at processTimers (node:internal/timers:538:9)"
+          ],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar split controls remain enabled after creating multiple views and can keep splitting in the active view",
+          "location": null,
+          "status": "failed",
+          "title": "split controls remain enabled after creating multiple views and can keep splitting in the active view"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar closing V2 removes its tab and leaves V1 active",
+          "location": null,
+          "status": "passed",
+          "title": "closing V2 removes its tab and leaves V1 active"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [
+            "Error: expect(received).toHaveLength(expected)\n\nExpected length: 2\nReceived length: 3\nReceived object: [<div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p1\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p1\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p1\" title=\"Alex\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel Alex controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p1\" title=\"Panel Alex actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p1\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Alex actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p1\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p1\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]\" data-testid=\"panel-slot-p2\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p2\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p2\" title=\"Avery\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-100\" /><div aria-label=\"Panel Avery controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p2\" title=\"Panel Avery actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p2\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Avery actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p2\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"true\" data-testid=\"terminal-p2\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p3\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p3\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"fallback\" data-testid=\"panel-semantic-header-p3\" title=\"Terminal\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel P3 controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p3\" title=\"Panel P3 actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p3\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel P3 actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p3\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p3\"><span … /><span … /><button … /></div></div></div></div>]\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.panel-subtabs.test.jsx:555:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar closing a split V1 does not transfer its panels into the remaining V2",
+          "location": null,
+          "status": "failed",
+          "title": "closing a split V1 does not transfer its panels into the remaining V2"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"vte-experimental\"\nReceived: \"xterm-webgl\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.panel-subtabs.test.jsx:598:90)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at processTimers (node:internal/timers:538:9)"
+          ],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar stores an explicit renderer selection for the active panel and keeps other panels independent",
+          "location": null,
+          "status": "failed",
+          "title": "stores an explicit renderer selection for the active panel and keeps other panels independent"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar lets the visible terminal recovery action force the active panel back to xterm",
+          "location": null,
+          "status": "passed",
+          "title": "lets the visible terminal recovery action force the active panel back to xterm"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar uses xterm-webgl as the default renderer for fresh workspaces and inherited views",
+          "location": null,
+          "status": "passed",
+          "title": "uses xterm-webgl as the default renderer for fresh workspaces and inherited views"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar persisted workspace default renderer from settings/preferences is reused after reload",
+          "location": null,
+          "status": "passed",
+          "title": "persisted workspace default renderer from settings/preferences is reused after reload"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar applies global Settings renderer default when no workspace override exists",
+          "location": null,
+          "status": "passed",
+          "title": "applies global Settings renderer default when no workspace override exists"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar keeps explicit panel override independent from workspace default settings",
+          "location": null,
+          "status": "passed",
+          "title": "keeps explicit panel override independent from workspace default settings"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar does not show operational renderer selectors in the terminal header anymore",
+          "location": null,
+          "status": "passed",
+          "title": "does not show operational renderer selectors in the terminal header anymore"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — panel sub-tabs bar"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 5\n\n- ObjectContaining {\n-   \"isActivePanel\": true,\n+ Object {\n+   \"autoFocus\": false,\n+   \"id\": \"p1\",\n+   \"isActivePanel\": false,\n+   \"requestedRendererMode\": \"xterm-webgl\",\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.panel-subtabs.test.jsx:736:45)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at processTimers (node:internal/timers:538:9)"
+          ],
+          "fullName": "TerminalWorkspacesManager — panel sub-tabs bar marks only the active panel as native-eligible when switching between views",
+          "location": null,
+          "status": "failed",
+          "title": "marks only the active panel as native-eligible when switching between views"
+        }
+      ],
+      "endTime": 1783208710886,
+      "message": "  ● TerminalWorkspacesManager — panel sub-tabs bar › split controls remain enabled after creating multiple views and can keep splitting in the active view\n\n    expect(received).toHaveLength(expected)\n\n    Expected length: 3\n    Received length: 5\n    Received object: [<div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p1\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p1\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"fallback\" data-testid=\"panel-semantic-header-p1\" title=\"Terminal\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel P4 controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p1\" title=\"Panel P4 actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p1\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel P4 actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p1\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p1\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p2\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p2\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"fallback\" data-testid=\"panel-semantic-header-p2\" title=\"Terminal\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel P4 controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p2\" title=\"Panel P4 actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p2\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel P4 actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p2\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p2\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p3\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p3\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p3\" title=\"Blake\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel Blake controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p3\" title=\"Panel Blake actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p3\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Blake actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p3\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p3\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p4\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p4\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p4\" title=\"Cameron\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel Cameron controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p4\" title=\"Panel Cameron actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p4\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Cameron actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p4\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p4\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]\" data-testid=\"panel-slot-p5\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p5\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p5\" title=\"Casey\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-100\" /><div aria-label=\"Panel Casey controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p5\" title=\"Panel Casey actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p5\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Casey actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p5\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"true\" data-testid=\"terminal-p5\"><span … /><span … /><button … /></div></div></div></div>]\n\n      509 |\n      510 |     const visibleShell = getVisibleWorkspaceShell(container);\n    > 511 |     expect(visibleShell?.querySelectorAll('[data-testid^=\"panel-slot-\"]')).toHaveLength(3);\n          |                                                                            ^\n      512 |     expect(getPanelTab(container, 'p4')).toBeNull();\n      513 |     expect(getPanelTab(container, 'p5')).toBeNull();\n      514 |   });\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.panel-subtabs.test.jsx:511:76)\n\n  ● TerminalWorkspacesManager — panel sub-tabs bar › closing a split V1 does not transfer its panels into the remaining V2\n\n    expect(received).toHaveLength(expected)\n\n    Expected length: 2\n    Received length: 3\n    Received object: [<div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p1\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p1\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p1\" title=\"Alex\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel Alex controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p1\" title=\"Panel Alex actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p1\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Alex actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p1\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p1\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb,88,166,255),0.18)]\" data-testid=\"panel-slot-p2\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p2\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"display-name\" data-testid=\"panel-semantic-header-p2\" title=\"Avery\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-100\" /><div aria-label=\"Panel Avery controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p2\" title=\"Panel Avery actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p2\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel Avery actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p2\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"true\" data-testid=\"terminal-p2\"><span … /><span … /><button … /></div></div></div></div>, <div class=\"group relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-visible rounded-md border border-transparent\" data-testid=\"panel-slot-p3\"><div class=\"pointer-events-none relative min-h-8 shrink-0 overflow-visible px-1.5 pt-0.5\" data-native-safe-zone=\"floating-chrome\" data-safe-zone-min-top=\"30\" data-testid=\"panel-safe-zone-p3\" style=\"min-height: 30px; border-bottom-style: solid;\"><div class=\"pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-center justify-start pl-2 pr-[108px] pt-1\"><div class=\"flex min-w-0 items-center gap-2 text-[11px] leading-none\" data-panel-metadata-source=\"fallback\" data-testid=\"panel-semantic-header-p3\" title=\"Terminal\"><span … /></div></div><div aria-hidden=\"true\" class=\"absolute inset-x-0 top-0 h-[calc(100%-0.0625rem)] rounded-t-[8px] bg-[linear-gradient(180deg,rgba(15,23,36,0.18),rgba(15,23,36,0.01))] transition-opacity opacity-70\" /><div aria-label=\"Panel P3 controls\" class=\"pointer-events-none absolute right-1 top-0.5 z-10\" data-floating-placement=\"inside-top-right\" data-testid=\"panel-chrome-overlay-p3\" title=\"Panel P3 actions\"><div class=\"pointer-events-auto flex items-center gap-0.5 rounded-md border px-0.5 py-0 backdrop-blur-md transition-colors\" data-testid=\"panel-header-actions-p3\" style=\"box-shadow: var(--chrome-shadow-control);\" title=\"Panel P3 actions\"><button … /><button … /><button … /><button … /></div></div></div><div class=\"relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0\" data-testid=\"panel-body-p3\" style=\"box-shadow: var(--terminal-chrome-shadow-panel, var(--chrome-shadow-panel));\"><div class=\"h-full w-full overflow-hidden bg-[var(--surface-app)]\"><div data-autofocus=\"false\" data-testid=\"terminal-p3\"><span … /><span … /><button … /></div></div></div></div>]\n\n      553 |     expect(\n      554 |       getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^=\"panel-slot-\"]')\n    > 555 |     ).toHaveLength(2);\n          |       ^\n      556 |\n      557 |     const closeV1 = getPanelTab(container, 'p1').querySelector('[role=\"button\"]');\n      558 |     await click(closeV1);\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.panel-subtabs.test.jsx:555:7)\n\n  ● TerminalWorkspacesManager — panel sub-tabs bar › stores an explicit renderer selection for the active panel and keeps other panels independent\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"vte-experimental\"\n    Received: \"xterm-webgl\"\n\n      596 |\n      597 |     await click(getAddButton(container));\n    > 598 |     expect(container.querySelector('[data-testid=\"terminal-renderer-p2\"]')?.textContent).toBe(\n          |                                                                                          ^\n      599 |       'vte-experimental'\n      600 |     );\n      601 |\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.panel-subtabs.test.jsx:598:90)\n\n  ● TerminalWorkspacesManager — panel sub-tabs bar › marks only the active panel as native-eligible when switching between views\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 2\n    + Received  + 5\n\n    - ObjectContaining {\n    -   \"isActivePanel\": true,\n    + Object {\n    +   \"autoFocus\": false,\n    +   \"id\": \"p1\",\n    +   \"isActivePanel\": false,\n    +   \"requestedRendererMode\": \"xterm-webgl\",\n      }\n\n      734 |       'active'\n      735 |     );\n    > 736 |     expect(getLatestTerminalTTYProps('p1')).toEqual(\n          |                                             ^\n      737 |       expect.objectContaining({ isActivePanel: true })\n      738 |     );\n      739 |     expect(getLatestTerminalTTYProps('p2')).toEqual(\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.panel-subtabs.test.jsx:736:45)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.panel-subtabs.test.jsx",
+      "startTime": 1783208706145,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu shows loading state without indefinite spinner text when catalog is loading",
+          "location": null,
+          "status": "passed",
+          "title": "shows loading state without indefinite spinner text when catalog is loading"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu shows empty state when no durable sessions are available",
+          "location": null,
+          "status": "passed",
+          "title": "shows empty state when no durable sessions are available"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu shows deterministic error state with retry action",
+          "location": null,
+          "status": "passed",
+          "title": "shows deterministic error state with retry action"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu renders the same resumable sessions in topbar reopen dropdown",
+          "location": null,
+          "status": "passed",
+          "title": "renders the same resumable sessions in topbar reopen dropdown"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu reopens an OpenCode session in exactly one new panel and records the run",
+          "location": null,
+          "status": "passed",
+          "title": "reopens an OpenCode session in exactly one new panel and records the run"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu keeps topbar Reopen dropdown in sync through timeout retry recovery",
+          "location": null,
+          "status": "passed",
+          "title": "keeps topbar Reopen dropdown in sync through timeout retry recovery"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [
+            "Error: expect(received).toHaveLength(expected)\n\nExpected length: 1\nReceived length: 2\nReceived array:  [<div data-command=\"\" data-renderer=\"xterm-webgl\" data-testid=\"terminal-p1\">p1</div>, <div data-command=\"opencode --session oc-expired\" data-renderer=\"xterm-webgl\" data-testid=\"terminal-p2\">p2</div>]\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.reopen.test.jsx:369:54)"
+          ],
+          "fullName": "TerminalWorkspacesManager reopen menu shows deterministic failure instead of leaving a blank substitute panel when reopen exits immediately",
+          "location": null,
+          "status": "failed",
+          "title": "shows deterministic failure instead of leaving a blank substitute panel when reopen exits immediately"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu does not apply OpenCode session detect to unrelated grok panels",
+          "location": null,
+          "status": "passed",
+          "title": "does not apply OpenCode session detect to unrelated grok panels"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu restores persisted OpenCode session command after reboot-style reload",
+          "location": null,
+          "status": "passed",
+          "title": "restores persisted OpenCode session command after reboot-style reload"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu dispatches one relaunch event from startup restore plan when runtime has no live terminal",
+          "location": null,
+          "status": "passed",
+          "title": "dispatches one relaunch event from startup restore plan when runtime has no live terminal"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu migrates legacy Ghostty renderer preference to xterm on reload",
+          "location": null,
+          "status": "passed",
+          "title": "migrates legacy Ghostty renderer preference to xterm on reload"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu keeps restored OpenCode command persisted after process exit instead of removing the panel",
+          "location": null,
+          "status": "passed",
+          "title": "keeps restored OpenCode command persisted after process exit instead of removing the panel"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager reopen menu does not advertise Hermes as reboot-safe resumable history when catalog has no durable sessions",
+          "location": null,
+          "status": "passed",
+          "title": "does not advertise Hermes as reboot-safe resumable history when catalog has no durable sessions"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager reopen menu"],
+          "failureMessages": [
+            "Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\nExpected: \"/api/agenthub/sessions/launch-session-1/binding\", ObjectContaining {\"body\": \"{\\\"workspace_id\\\":\\\"ws-canon-1\\\",\\\"run_id\\\":\\\"run-canon-1\\\",\\\"opencode_session_id\\\":\\\"oc-real-1\\\"}\", \"headers\": {\"Content-Type\": \"application/json\"}, \"method\": \"POST\"}\nReceived\n       1: \"/api/terminal/sessions/p1\", {\"signal\": {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 0, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false, Symbol(kTimeout): true}}\n       2: \"https://devhub.test/api/agenthub/operations/health?project_id=project-1\", {\"cache\": \"no-store\"}\n       3: \"/api/agenthub/operations/health?project_id=project-1\"\n\nNumber of calls: 15\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.reopen.test.jsx:687:28)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager reopen menu posts canonical binding reconciliation when a swarm launch panel detects a verified OpenCode session",
+          "location": null,
+          "status": "failed",
+          "title": "posts canonical binding reconciliation when a swarm launch panel detects a verified OpenCode session"
+        }
+      ],
+      "endTime": 1783208713827,
+      "message": "  ● TerminalWorkspacesManager reopen menu › shows deterministic failure instead of leaving a blank substitute panel when reopen exits immediately\n\n    expect(received).toHaveLength(expected)\n\n    Expected length: 1\n    Received length: 2\n    Received array:  [<div data-command=\"\" data-renderer=\"xterm-webgl\" data-testid=\"terminal-p1\">p1</div>, <div data-command=\"opencode --session oc-expired\" data-renderer=\"xterm-webgl\" data-testid=\"terminal-p2\">p2</div>]\n\n      367 |\n      368 |     expect(view.container.textContent).toContain('Session is no longer available to resume.');\n    > 369 |     expect(getRenderedTerminalNodes(view.container)).toHaveLength(1);\n          |                                                      ^\n      370 |\n      371 |     const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');\n      372 |     expect(runs['oc-reopen-oc-expired']).toBeUndefined();\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx:369:54)\n\n  ● TerminalWorkspacesManager reopen menu › posts canonical binding reconciliation when a swarm launch panel detects a verified OpenCode session\n\n    expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n    Expected: \"/api/agenthub/sessions/launch-session-1/binding\", ObjectContaining {\"body\": \"{\\\"workspace_id\\\":\\\"ws-canon-1\\\",\\\"run_id\\\":\\\"run-canon-1\\\",\\\"opencode_session_id\\\":\\\"oc-real-1\\\"}\", \"headers\": {\"Content-Type\": \"application/json\"}, \"method\": \"POST\"}\n    Received\n           1: \"/api/terminal/sessions/p1\", {\"signal\": {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 0, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false, Symbol(kTimeout): true}}\n           2: \"https://devhub.test/api/agenthub/operations/health?project_id=project-1\", {\"cache\": \"no-store\"}\n           3: \"/api/agenthub/operations/health?project_id=project-1\"\n\n    Number of calls: 15\n\n      685 |       await flushEffects();\n      686 |\n    > 687 |       expect(global.fetch).toHaveBeenCalledWith(\n          |                            ^\n      688 |         '/api/agenthub/sessions/launch-session-1/binding',\n      689 |         expect.objectContaining({\n      690 |           method: 'POST',\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx:687:28)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.reopen.test.jsx",
+      "startTime": 1783208710923,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout renders horizontal splits as side-by-side workspace columns",
+          "location": null,
+          "status": "passed",
+          "title": "renders horizontal splits as side-by-side workspace columns"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout renders vertical splits as stacked panels inside the same column",
+          "location": null,
+          "status": "passed",
+          "title": "renders vertical splits as stacked panels inside the same column"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout keeps two visible split native panels mounted at the same time while focus stays panel-scoped",
+          "location": null,
+          "status": "passed",
+          "title": "keeps two visible split native panels mounted at the same time while focus stays panel-scoped"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"command\"\nReceived: \"display-name\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:517:72)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout renders minimal semantic metadata derived from the initial command",
+          "location": null,
+          "status": "failed",
+          "title": "renders minimal semantic metadata derived from the initial command"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"agent-run\"\nReceived: \"display-name\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:564:72)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout prefers devhub agent run metadata over the initial command for the semantic header",
+          "location": null,
+          "status": "failed",
+          "title": "prefers devhub agent run metadata over the initial command for the semantic header"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout wires reset and per-panel close intent while keeping the visible sibling mounted",
+          "location": null,
+          "status": "passed",
+          "title": "wires reset and per-panel close intent while keeping the visible sibling mounted"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"Panel P1 controls\"\nReceived: \"Panel Alex controls\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:674:60)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout renders floating per-panel chrome outside the terminal render body so native content does not cover controls",
+          "location": null,
+          "status": "failed",
+          "title": "renders floating per-panel chrome outside the terminal render body so native content does not cover controls"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout keeps the native-safe floating header while hiding the upper V1/V2 chrome",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the native-safe floating header while hiding the upper V1/V2 chrome"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout keeps floating panel chrome invariants under brutalist-stage morphology",
+          "location": null,
+          "status": "passed",
+          "title": "keeps floating panel chrome invariants under brutalist-stage morphology"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"34\"\nReceived: \"30\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:806:67)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout keeps floating panel chrome invariants under brutalist-stage morphology",
+          "location": null,
+          "status": "failed",
+          "title": "keeps floating panel chrome invariants under brutalist-stage morphology"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).not.toBeNull()\n\nReceived: null\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:854:73)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout keeps per-panel split controls working from the floating overlay chrome",
+          "location": null,
+          "status": "failed",
+          "title": "keeps per-panel split controls working from the floating overlay chrome"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).not.toBeNull()\n\nReceived: null\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:910:73)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout uses the clicked terminal as the split source for global split controls",
+          "location": null,
+          "status": "failed",
+          "title": "uses the clicked terminal as the split source for global split controls"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).not.toBeNull()\n\nReceived: null\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:966:73)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout uses the last native-activated terminal as the split source for global split controls",
+          "location": null,
+          "status": "failed",
+          "title": "uses the last native-activated terminal as the split source for global split controls"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"suspended\"\nReceived: \"live\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx:1011:94)\n    at runNextTicks (node:internal/process/task_queues:64:5)\n    at listOnTimeout (node:internal/timers:567:9)\n    at processTimers (node:internal/timers:541:7)"
+          ],
+          "fullName": "TerminalWorkspacesManager split layout suspends native surfaces while Grid dropdown is open and restores them when it closes",
+          "location": null,
+          "status": "failed",
+          "title": "suspends native surfaces while Grid dropdown is open and restores them when it closes"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout keeps native surfaces live during internal split drag and settles layout on drag end without changing active panel",
+          "location": null,
+          "status": "passed",
+          "title": "keeps native surfaces live during internal split drag and settles layout on drag end without changing active panel"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout emits only the focused panel as active for native workspace sync",
+          "location": null,
+          "status": "passed",
+          "title": "emits only the focused panel as active for native workspace sync"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout emits non-rendered focused-mode siblings as hidden for native workspace sync",
+          "location": null,
+          "status": "passed",
+          "title": "emits non-rendered focused-mode siblings as hidden for native workspace sync"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager split layout"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager split layout emits previous workspace panels as hidden after workspace switch",
+          "location": null,
+          "status": "passed",
+          "title": "emits previous workspace panels as hidden after workspace switch"
+        }
+      ],
+      "endTime": 1783208716247,
+      "message": "  ● TerminalWorkspacesManager split layout › renders minimal semantic metadata derived from the initial command\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"command\"\n    Received: \"display-name\"\n\n      515 |     const semanticHeader = view.container.querySelector('[data-testid=\"panel-semantic-header-p1\"]');\n      516 |     expect(semanticHeader).not.toBeNull();\n    > 517 |     expect(semanticHeader?.getAttribute('data-panel-metadata-source')).toBe('command');\n          |                                                                        ^\n      518 |     expect(semanticHeader?.textContent).toBe('OpenCode · sdd-explore');\n      519 |     expect(\n      520 |       view.container.querySelector('[data-testid=\"panel-semantic-primary-p1\"]')?.textContent\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:517:72)\n\n  ● TerminalWorkspacesManager split layout › prefers devhub agent run metadata over the initial command for the semantic header\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"agent-run\"\n    Received: \"display-name\"\n\n      562 |     const semanticHeader = view.container.querySelector('[data-testid=\"panel-semantic-header-p1\"]');\n      563 |     expect(semanticHeader).not.toBeNull();\n    > 564 |     expect(semanticHeader?.getAttribute('data-panel-metadata-source')).toBe('agent-run');\n          |                                                                        ^\n      565 |     expect(semanticHeader?.textContent).toBe('gemini · revisión');\n      566 |     expect(semanticHeader?.textContent).not.toContain('sdd-apply');\n      567 |   });\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:564:72)\n\n  ● TerminalWorkspacesManager split layout › renders floating per-panel chrome outside the terminal render body so native content does not cover controls\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"Panel P1 controls\"\n    Received: \"Panel Alex controls\"\n\n      672 |     expect(panelSafeZone?.contains(panelSemanticHeader)).toBe(true);\n      673 |     expect(panelChromeOverlay).not.toBeNull();\n    > 674 |     expect(panelChromeOverlay?.getAttribute('aria-label')).toBe('Panel P1 controls');\n          |                                                            ^\n      675 |     expect(panelChromeOverlay?.getAttribute('data-floating-placement')).toBe('inside-top-right');\n      676 |     expect(panelActions).not.toBeNull();\n      677 |     expect(panelActions?.getAttribute('title')).toBe('Panel P1 actions');\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:674:60)\n\n  ● TerminalWorkspacesManager split layout › keeps floating panel chrome invariants under brutalist-stage morphology\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"34\"\n    Received: \"30\"\n\n      804 |     expect(workspaceTopBar?.getAttribute('data-testid')).toBe('workspace-top-tab-bar');\n      805 |     expect(panelSafeZone?.getAttribute('data-native-safe-zone')).toBe('floating-chrome');\n    > 806 |     expect(panelSafeZone?.getAttribute('data-safe-zone-min-top')).toBe('34');\n          |                                                                   ^\n      807 |     expect(panelSafeZone?.contains(panelChromeOverlay)).toBe(true);\n      808 |     expect(panelChromeOverlay?.querySelector('[data-testid=\"panel-split-right-p1\"]')).toBe(\n      809 |       splitRightButton\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:806:67)\n\n  ● TerminalWorkspacesManager split layout › keeps per-panel split controls working from the floating overlay chrome\n\n    expect(received).not.toBeNull()\n\n    Received: null\n\n      852 |     expect(columns).toHaveLength(3);\n      853 |     expect(columns[0].querySelector('[data-testid=\"terminal-p1\"]')).not.toBeNull();\n    > 854 |     expect(columns[1].querySelector('[data-testid=\"terminal-p3\"]')).not.toBeNull();\n          |                                                                         ^\n      855 |     expect(columns[2].querySelector('[data-testid=\"terminal-p2\"]')).not.toBeNull();\n      856 |   });\n      857 |\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:854:73)\n\n  ● TerminalWorkspacesManager split layout › uses the clicked terminal as the split source for global split controls\n\n    expect(received).not.toBeNull()\n\n    Received: null\n\n      908 |     expect(columns).toHaveLength(3);\n      909 |     expect(columns[0].querySelector('[data-testid=\"terminal-p1\"]')).not.toBeNull();\n    > 910 |     expect(columns[1].querySelector('[data-testid=\"terminal-p3\"]')).not.toBeNull();\n          |                                                                         ^\n      911 |     expect(columns[2].querySelector('[data-testid=\"terminal-p2\"]')).not.toBeNull();\n      912 |   });\n      913 |\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:910:73)\n\n  ● TerminalWorkspacesManager split layout › uses the last native-activated terminal as the split source for global split controls\n\n    expect(received).not.toBeNull()\n\n    Received: null\n\n      964 |     expect(columns).toHaveLength(3);\n      965 |     expect(columns[0].querySelector('[data-testid=\"terminal-p1\"]')).not.toBeNull();\n    > 966 |     expect(columns[1].querySelector('[data-testid=\"terminal-p3\"]')).not.toBeNull();\n          |                                                                         ^\n      967 |     expect(columns[2].querySelector('[data-testid=\"terminal-p2\"]')).not.toBeNull();\n      968 |   });\n      969 |\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:966:73)\n\n  ● TerminalWorkspacesManager split layout › suspends native surfaces while Grid dropdown is open and restores them when it closes\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"suspended\"\n    Received: \"live\"\n\n      1009 |     await Promise.resolve();\n      1010 |\n    > 1011 |     expect(view.container.querySelector('[data-testid=\"terminal-suspend-p1\"]')?.textContent).toBe(\n           |                                                                                              ^\n      1012 |       'suspended'\n      1013 |     );\n      1014 |     expect(view.container.querySelector('[data-testid=\"terminal-suspend-p2\"]')?.textContent).toBe(\n\n      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.split-layout.test.jsx:1011:94)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.split-layout.test.jsx",
+      "startTime": 1783208713843,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "auto policy — dispatch relaunch event"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring auto policy — dispatch relaunch event dispatches devhub:relaunch-panel for opencode session with auto policy",
+          "location": null,
+          "status": "passed",
+          "title": "dispatches devhub:relaunch-panel for opencode session with auto policy"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "auto policy — dispatch relaunch event"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring auto policy — dispatch relaunch event dispatches devhub:relaunch-panel for shell-ephemeral session with auto policy",
+          "location": null,
+          "status": "passed",
+          "title": "dispatches devhub:relaunch-panel for shell-ephemeral session with auto policy"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "manual policy — NO relaunch dispatch"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring manual policy — NO relaunch dispatch does NOT dispatch relaunch for opencode session with manual policy",
+          "location": null,
+          "status": "passed",
+          "title": "does NOT dispatch relaunch for opencode session with manual policy"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "manual policy — NO relaunch dispatch"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring manual policy — NO relaunch dispatch manual revive dispatches opencode --session relaunch",
+          "location": null,
+          "status": "passed",
+          "title": "manual revive dispatches opencode --session relaunch"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "manual policy — NO relaunch dispatch"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring manual policy — NO relaunch dispatch does NOT dispatch relaunch for shell-ephemeral session with manual policy",
+          "location": null,
+          "status": "passed",
+          "title": "does NOT dispatch relaunch for shell-ephemeral session with manual policy"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "off policy — NO relaunch dispatch"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring off policy — NO relaunch dispatch does NOT dispatch relaunch for opencode session with off policy",
+          "location": null,
+          "status": "passed",
+          "title": "does NOT dispatch relaunch for opencode session with off policy"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "missing restorePolicy — defaults to auto and dispatches"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring missing restorePolicy — defaults to auto and dispatches dispatches relaunch when restorePolicy is missing (treated as auto)",
+          "location": null,
+          "status": "passed",
+          "title": "dispatches relaunch when restorePolicy is missing (treated as auto)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "dual mutex polling — waits for both opencode and generic mutex flags"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring dual mutex polling — waits for both opencode and generic mutex flags sets and clears devhub_opencode_restore_in_progress mutex during startup restore",
+          "location": null,
+          "status": "passed",
+          "title": "sets and clears devhub_opencode_restore_in_progress mutex during startup restore"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "dual mutex polling — waits for both opencode and generic mutex flags"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring dual mutex polling — waits for both opencode and generic mutex flags waits for devhub_generic_restore_in_progress to clear before dispatching when generic restore is running",
+          "location": null,
+          "status": "pending",
+          "title": "waits for devhub_generic_restore_in_progress to clear before dispatching when generic restore is running"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — restorePolicy wiring",
+            "mixed policies in same render"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — restorePolicy wiring mixed policies in same render auto session gets relaunch, manual and off sessions do not",
+          "location": null,
+          "status": "passed",
+          "title": "auto session gets relaunch, manual and off sessions do not"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager startup restore — in-app remount"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — in-app remount does not show suspended overlay on second mount in the same browser session (auto policy)",
+          "location": null,
+          "status": "passed",
+          "title": "does not show suspended overlay on second mount in the same browser session (auto policy)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager startup restore — OpenCode catalog discovery"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager startup restore — OpenCode catalog discovery discovers session id from opencode session list when panel only has plain opencode",
+          "location": null,
+          "status": "passed",
+          "title": "discovers session id from opencode session list when panel only has plain opencode"
+        }
+      ],
+      "endTime": 1783208727957,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.startupRestore.test.jsx",
+      "startTime": 1783208716291,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["resolveWorkspaceWindowsForRender"],
+          "failureMessages": [],
+          "fullName": "resolveWorkspaceWindowsForRender returns persisted window snapshots when present",
+          "location": null,
+          "status": "passed",
+          "title": "returns persisted window snapshots when present"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceWindowsForRender"],
+          "failureMessages": [],
+          "fullName": "resolveWorkspaceWindowsForRender falls back to a single default window from live columns",
+          "location": null,
+          "status": "passed",
+          "title": "falls back to a single default window from live columns"
+        },
+        {
+          "ancestorTitles": ["resolveActiveWorkspaceWindowId"],
+          "failureMessages": [],
+          "fullName": "resolveActiveWorkspaceWindowId prefers activeWindowIds entry",
+          "location": null,
+          "status": "passed",
+          "title": "prefers activeWindowIds entry"
+        },
+        {
+          "ancestorTitles": ["resolveActiveWorkspaceWindowId"],
+          "failureMessages": [],
+          "fullName": "resolveActiveWorkspaceWindowId falls back to first window id",
+          "location": null,
+          "status": "passed",
+          "title": "falls back to first window id"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace window switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace window switching switching windows clears stale focus and shows all destination panels (TWS-S1)",
+          "location": null,
+          "status": "passed",
+          "title": "switching windows clears stale focus and shows all destination panels (TWS-S1)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace window switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace window switching switching to a window that contains the focused panel keeps focus mode (TWS-S2)",
+          "location": null,
+          "status": "passed",
+          "title": "switching to a window that contains the focused panel keeps focus mode (TWS-S2)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace window switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace window switching selecting the already-active window does not emit a new workspace-window-switch event (regression)",
+          "location": null,
+          "status": "passed",
+          "title": "selecting the already-active window does not emit a new workspace-window-switch event (regression)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace tab switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace tab switching switching workspace tabs shows all destination panels without layout-settled bursts",
+          "location": null,
+          "status": "passed",
+          "title": "switching workspace tabs shows all destination panels without layout-settled bursts"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace tab switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace tab switching selecting the already-active workspace tab does not emit a new workspace-switch event",
+          "location": null,
+          "status": "passed",
+          "title": "selecting the already-active workspace tab does not emit a new workspace-switch event"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace tab switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace tab switching drag-and-dropping a workspace tab reorders workspaces",
+          "location": null,
+          "status": "passed",
+          "title": "drag-and-dropping a workspace tab reorders workspaces"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager workspace tab switching"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager workspace tab switching closing the active workspace dispatches a workspace-switch burst for the destination panels (RC0c)",
+          "location": null,
+          "status": "passed",
+          "title": "closing the active workspace dispatches a workspace-switch burst for the destination panels (RC0c)"
+        }
+      ],
+      "endTime": 1783208732178,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.workspaceWindows.test.js",
+      "startTime": 1783208727989,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TIC-1: Workspace close unbinds terminal identity state"],
+          "failureMessages": [],
+          "fullName": "TIC-1: Workspace close unbinds terminal identity state TIC-S1: devhub_agent_runs entries are deleted when workspace is removed",
+          "location": null,
+          "status": "passed",
+          "title": "TIC-S1: devhub_agent_runs entries are deleted when workspace is removed"
+        },
+        {
+          "ancestorTitles": ["TIC-1: Workspace close unbinds terminal identity state"],
+          "failureMessages": [],
+          "fullName": "TIC-1: Workspace close unbinds terminal identity state TIC-S2: closing a workspace with multiple panels cleans all its panel identities",
+          "location": null,
+          "status": "passed",
+          "title": "TIC-S2: closing a workspace with multiple panels cleans all its panel identities"
+        },
+        {
+          "ancestorTitles": ["TIC-2: Panel ID counter randomized on fresh workspace creation"],
+          "failureMessages": [],
+          "fullName": "TIC-2: Panel ID counter randomized on fresh workspace creation TIC-S3: new workspace panels get fresh IDs after close+add cycle",
+          "location": null,
+          "status": "passed",
+          "title": "TIC-S3: new workspace panels get fresh IDs after close+add cycle"
+        },
+        {
+          "ancestorTitles": ["TIC-S1 / TIC-S4 regression: no stale identity in new workspaces"],
+          "failureMessages": [],
+          "fullName": "TIC-S1 / TIC-S4 regression: no stale identity in new workspaces after swarm workspace close, first new workspace shows no director/coder label",
+          "location": null,
+          "status": "passed",
+          "title": "after swarm workspace close, first new workspace shows no director/coder label"
+        }
+      ],
+      "endTime": 1783208733946,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.staleIdentity.test.jsx",
+      "startTime": 1783208732221,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+PageDown wraps to the first workspace in reordered state order",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+PageDown wraps to the first workspace in reordered state order"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+PageUp wraps to the previous workspace in reordered state order",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+PageUp wraps to the previous workspace in reordered state order"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+PageDown activates the next adjacent workspace and preserves workspace order in storage",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+PageDown activates the next adjacent workspace and preserves workspace order in storage"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+PageUp activates the previous adjacent workspace and falls back to the first live panel when saved panel is missing",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+PageUp activates the previous adjacent workspace and falls back to the first live panel when saved panel is missing"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts terminal navigation shortcuts do nothing when the terminal UI is hidden",
+          "location": null,
+          "status": "passed",
+          "title": "terminal navigation shortcuts do nothing when the terminal UI is hidden"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts terminal shortcuts do nothing while an editable field inside the manager is focused",
+          "location": null,
+          "status": "passed",
+          "title": "terminal shortcuts do nothing while an editable field inside the manager is focused"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+R preserves split-right behavior",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+R preserves split-right behavior"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+D preserves split-down behavior",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+D preserves split-down behavior"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+W twice closes the active terminal panel",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+W twice closes the active terminal panel"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+B opens the browser dock from terminal focus",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+B opens the browser dock from terminal focus"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+E opens the editor dock from terminal focus",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+E opens the editor dock from terminal focus"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+. closes the right dock",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+. closes the right dock"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+N opens the new workspace setup modal",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+N opens the new workspace setup modal"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+ArrowDown switches workspace when no vertical split exists",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+ArrowDown switches workspace when no vertical split exists"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+ArrowDown switches workspace when no vertical split exists",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+ArrowDown switches workspace when no vertical split exists"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+PageDown from xterm-like textarea focus switches workspace",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+PageDown from xterm-like textarea focus switches workspace"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+ArrowRight inside the terminal viewport moves to the adjacent panel",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+ArrowRight inside the terminal viewport moves to the adjacent panel"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+PageDown and Ctrl+PageUp navigate workspaces from chrome focus",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+PageDown and Ctrl+PageUp navigate workspaces from chrome focus"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts native VTE navigation-shortcut events move between adjacent panels",
+          "location": null,
+          "status": "passed",
+          "title": "native VTE navigation-shortcut events move between adjacent panels"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts workspace setup modal adjusts terminal count with arrows and confirms with Enter",
+          "location": null,
+          "status": "passed",
+          "title": "workspace setup modal adjusts terminal count with arrows and confirms with Enter"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts terminal workspace shortcuts are suspended while the setup modal is open",
+          "location": null,
+          "status": "passed",
+          "title": "terminal workspace shortcuts are suspended while the setup modal is open"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager shortcuts"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager shortcuts Ctrl+Shift+V inside the terminal viewport does not trigger workspace shortcuts",
+          "location": null,
+          "status": "passed",
+          "title": "Ctrl+Shift+V inside the terminal viewport does not trigger workspace shortcuts"
+        }
+      ],
+      "endTime": 1783208736763,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.shortcuts.test.jsx",
+      "startTime": 1783208733959,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TIC-2: Panel ID counter randomized on fresh workspace creation"],
+          "failureMessages": [],
+          "fullName": "TIC-2: Panel ID counter randomized on fresh workspace creation TIC-S3: first addWorkspace randomizes counters to HIGH range [1000,10000]",
+          "location": null,
+          "status": "passed",
+          "title": "TIC-S3: first addWorkspace randomizes counters to HIGH range [1000,10000]"
+        },
+        {
+          "ancestorTitles": ["TIC-2: Panel ID counter randomized on fresh workspace creation"],
+          "failureMessages": [],
+          "fullName": "TIC-2: Panel ID counter randomized on fresh workspace creation TIC-S4: subsequent addWorkspace continues from HIGH counter, does not re-randomize",
+          "location": null,
+          "status": "passed",
+          "title": "TIC-S4: subsequent addWorkspace continues from HIGH counter, does not re-randomize"
+        },
+        {
+          "ancestorTitles": ["TIC-2: Panel ID counter randomized on fresh workspace creation"],
+          "failureMessages": [],
+          "fullName": "TIC-2: Panel ID counter randomized on fresh workspace creation TIC-S4: stale localStorage entries with low IDs do not match new high panels",
+          "location": null,
+          "status": "passed",
+          "title": "TIC-S4: stale localStorage entries with low IDs do not match new high panels"
+        },
+        {
+          "ancestorTitles": ["TIC-2: Panel ID counter randomized on fresh workspace creation"],
+          "failureMessages": [],
+          "fullName": "TIC-2: Panel ID counter randomized on fresh workspace creation counterRandomizedRef stays true across add/remove/add cycle",
+          "location": null,
+          "status": "passed",
+          "title": "counterRandomizedRef stays true across add/remove/add cycle"
+        }
+      ],
+      "endTime": 1783208738359,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.counterRandomization.test.jsx",
+      "startTime": 1783208736796,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() slides in from the right edge of the dock slot",
+          "location": null,
+          "status": "passed",
+          "title": "slides in from the right edge of the dock slot"
+        },
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() slides out to the right when hidden",
+          "location": null,
+          "status": "passed",
+          "title": "slides out to the right when hidden"
+        },
+        {
+          "ancestorTitles": ["getRightDockAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps() disables motion while the dock is being resized",
+          "location": null,
+          "status": "passed",
+          "title": "disables motion while the dock is being resized"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() returns full opacity when maximized",
+          "location": null,
+          "status": "passed",
+          "title": "returns full opacity when maximized"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() uses opacity-only animation in normal mode (no scale — native VTE sync)",
+          "location": null,
+          "status": "passed",
+          "title": "uses opacity-only animation in normal mode (no scale — native VTE sync)"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() transition duration is <= 300ms (GPU-composited, feel instant)",
+          "location": null,
+          "status": "passed",
+          "title": "transition duration is <= 300ms (GPU-composited, feel instant)"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() initial state starts from zero opacity for a clean fade-in on mount",
+          "location": null,
+          "status": "passed",
+          "title": "initial state starts from zero opacity for a clean fade-in on mount"
+        },
+        {
+          "ancestorTitles": ["getWorkspaceAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getWorkspaceAnimProps() maximized initial state skips the fade-in (already visible)",
+          "location": null,
+          "status": "passed",
+          "title": "maximized initial state skips the fade-in (already visible)"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate migrates legacy panels with no displayName to pool names on hydrate",
+          "location": null,
+          "status": "passed",
+          "title": "migrates legacy panels with no displayName to pool names on hydrate"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate persists the auto-assigned name in localStorage under devhub:panel-names:<workspaceId>",
+          "location": null,
+          "status": "passed",
+          "title": "persists the auto-assigned name in localStorage under devhub:panel-names:<workspaceId>"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — displayName migration on hydrate"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — displayName migration on hydrate is idempotent — re-rendering does not overwrite a previously assigned name",
+          "location": null,
+          "status": "passed",
+          "title": "is idempotent — re-rendering does not overwrite a previously assigned name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI dbl-click on the tab opens an input pre-filled with the current name",
+          "location": null,
+          "status": "passed",
+          "title": "dbl-click on the tab opens an input pre-filled with the current name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI Enter commits the rename; tab shows the new name",
+          "location": null,
+          "status": "passed",
+          "title": "Enter commits the rename; tab shows the new name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI Escape cancels the rename; tab shows the previous name",
+          "location": null,
+          "status": "passed",
+          "title": "Escape cancels the rename; tab shows the previous name"
+        },
+        {
+          "ancestorTitles": ["TerminalWorkspacesManager — dbl-click rename UI"],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — dbl-click rename UI blur commits; tab shows the new name; aria-label updated",
+          "location": null,
+          "status": "passed",
+          "title": "blur commits; tab shows the new name; aria-label updated"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) planning-launch: gate is skipped; verbatim command is passed to handleSplit",
+          "location": null,
+          "status": "passed",
+          "title": "planning-launch: gate is skipped; verbatim command is passed to handleSplit"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) swarm-control-launch: short-circuits to enqueueSwarmLaunchRequest — the gate is NOT called (swarm paths are untouched)",
+          "location": null,
+          "status": "passed",
+          "title": "swarm-control-launch: short-circuits to enqueueSwarmLaunchRequest — the gate is NOT called (swarm paths are untouched)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip (Fase 4) undefined launchOrigin: gate is still called (default path keeps the gate)",
+          "location": null,
+          "status": "passed",
+          "title": "undefined launchOrigin: gate is still called (default path keeps the gate)"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate",
+          "location": null,
+          "status": "passed",
+          "title": "handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent dispatches devhub:run-agent-accepted with { taskId } after the split",
+          "location": null,
+          "status": "passed",
+          "title": "handleRunAgent dispatches devhub:run-agent-accepted with { taskId } after the split"
+        },
+        {
+          "ancestorTitles": [
+            "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip)"
+          ],
+          "failureMessages": [],
+          "fullName": "TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch skip) handleRunAgent keeps enforceDocOpsGateOnLaunchCommand for non-planning origins (swarm / reopen / default)",
+          "location": null,
+          "status": "passed",
+          "title": "handleRunAgent keeps enforceDocOpsGateOnLaunchCommand for non-planning origins (swarm / reopen / default)"
+        }
+      ],
+      "endTime": 1783208739928,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.test.js",
+      "startTime": 1783208738369,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["renderWorkspacePanel — v2 graveyard flag and mount logic"],
+          "failureMessages": [],
+          "fullName": "renderWorkspacePanel — v2 graveyard flag and mount logic passes isEngineV2=true for a v2 panel",
+          "location": null,
+          "status": "passed",
+          "title": "passes isEngineV2=true for a v2 panel"
+        },
+        {
+          "ancestorTitles": ["renderWorkspacePanel — v2 graveyard flag and mount logic"],
+          "failureMessages": [],
+          "fullName": "renderWorkspacePanel — v2 graveyard flag and mount logic passes isEngineV2=false for a legacy panel",
+          "location": null,
+          "status": "passed",
+          "title": "passes isEngineV2=false for a legacy panel"
+        },
+        {
+          "ancestorTitles": ["renderWorkspacePanel — v2 graveyard flag and mount logic"],
+          "failureMessages": [],
+          "fullName": "renderWorkspacePanel — v2 graveyard flag and mount logic mounts TerminalTTY for a visible v2 panel",
+          "location": null,
+          "status": "passed",
+          "title": "mounts TerminalTTY for a visible v2 panel"
+        },
+        {
+          "ancestorTitles": ["renderWorkspacePanel — v2 graveyard flag and mount logic"],
+          "failureMessages": [],
+          "fullName": "renderWorkspacePanel — v2 graveyard flag and mount logic renders a stash placeholder instead of TerminalTTY for a hidden v2 panel",
+          "location": null,
+          "status": "passed",
+          "title": "renders a stash placeholder instead of TerminalTTY for a hidden v2 panel"
+        },
+        {
+          "ancestorTitles": ["renderWorkspacePanel — v2 graveyard flag and mount logic"],
+          "failureMessages": [],
+          "fullName": "renderWorkspacePanel — v2 graveyard flag and mount logic keeps a legacy panel mounted even when hidden",
+          "location": null,
+          "status": "passed",
+          "title": "keeps a legacy panel mounted even when hidden"
+        }
+      ],
+      "endTime": 1783208740728,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.v2graveyard.test.jsx",
+      "startTime": 1783208739964,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["workspace close keeps surviving terminal panels mounted"],
+          "failureMessages": [],
+          "fullName": "workspace close keeps surviving terminal panels mounted closing the first workspace does not remount grok panel in ws2",
+          "location": null,
+          "status": "passed",
+          "title": "closing the first workspace does not remount grok panel in ws2"
+        }
+      ],
+      "endTime": 1783208741609,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalWorkspacesManager.workspaceCloseRemount.test.jsx",
+      "startTime": 1783208740733,
+      "status": "passed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

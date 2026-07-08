@@ -1,0 +1,14 @@
+D:\devhub\src\components\__tests__\TerminalWorkspacesManager.panel-subtabs.test.jsx
+D:\devhub\src\components\__tests__\TerminalWorkspacesManager.reopen.test.jsx
+D:\devhub\src\components\__tests__\TerminalWorkspacesManager.right-dock.test.jsx
+D:\devhub\src\components\__tests__\TerminalWorkspacesManager.split-layout.test.jsx
+D:\devhub\src\components\__tests__\terminalRendererCapabilities.xterm-webgl.test.js
+D:\devhub\src\components\__tests__\terminalRendererPreferences.test.js
+D:\devhub\src\components\__tests__\terminalRendererPreferences.xterm-webgl.test.js
+D:\devhub\src\components\terminal\__tests__\workspaceAnimProps.test.js
+D:\devhub\src\components\terminal\hooks\__tests__\useTerminalWorkspaceShowRecovery.test.js
+D:\devhub\src\lib\terminal\__tests__\cwdGuard.test.js
+D:\devhub\src\lib\terminal\cwdGuard.test.js
+D:\devhub\src\lib\terminal\sessionStore.test.js
+D:\devhub\src\lib\terminal\ttyServer.test.js
+D:\devhub\tests\unit\terminal-renderer-roadmap-doc.test.js

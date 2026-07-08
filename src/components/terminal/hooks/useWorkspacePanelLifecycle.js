@@ -321,7 +321,13 @@ export default function useWorkspacePanelLifecycle({
 
       const pendingSize = pendingDockSizeRef.current;
       if (pendingSize != null) {
-        updateRightDockState({ size: pendingSize });
+        updateRightDockState((current) => ({
+          size: pendingSize,
+          browserLayoutEpoch:
+            current.activeTab === 'browser' && current.visible
+              ? (Number(current.browserLayoutEpoch) || 0) + 1
+              : current.browserLayoutEpoch,
+        }));
         pendingDockSizeRef.current = null;
       }
       syncRightDockMeasuredBoundsRef.current?.();
@@ -848,7 +854,10 @@ export default function useWorkspacePanelLifecycle({
 
       markPanelsClosing([targetId]);
 
-      await closeTerminalSessions([targetId]);
+      // Optimistic UI: tear down client + DELETE in background so the panel
+      // disappears immediately (native PowerShell-like close feel). Backend
+      // hard-kills the full process tree (tmux + Grok/OpenCode/etc.).
+      void closeTerminalSessions([targetId]);
 
       const nextColumnsSnapshot = activeWorkspace.columns
         .map((col) => ({
@@ -952,10 +961,10 @@ export default function useWorkspacePanelLifecycle({
             terminated[run.opencodeSessionId] = Date.now();
             localStorage.setItem('devhub_oc_terminated', JSON.stringify(terminated));
           }
-          // Also mark in agent_registry if projectId available
+          // Also mark in agent_registry if projectId available (non-blocking)
           if (projectId) {
             const db = createClient();
-            await db
+            void db
               .from('agent_registry')
               .update({ status: 'idle', updated_at: new Date().toISOString() })
               .eq('agent_id', matchingRunKey);

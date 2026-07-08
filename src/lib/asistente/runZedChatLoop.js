@@ -10,6 +10,7 @@ import { mergeWorkspaceTerminalProcesses } from './workspaceTerminalRegistry';
 import { shouldShortCircuitAfterTools } from './zedShortCircuit';
 import { formatZedToolResultsReply } from './zedFastPathResponse';
 import { streamMinimax } from './streamMinimax';
+import { streamGrok } from './streamGrok';
 
 export function toolHasRequiredSchema(toolDef) {
   if (!toolDef || !toolDef.parameters) return false;
@@ -114,11 +115,15 @@ async function executeSingleTool(registry, requestContext, tc, emit) {
  * @param {string} params.apiKey
  * @param {object} params.requestContext
  * @param {number} params.maxTurns
- * @param {typeof import('./minimaxClient').callMinimax} params.callMinimax
+ * @param {typeof import('./minimaxClient').callMinimax} params.callMinimax Blocking call fn for the
+ *   selected provider — route.js injects `callMinimax` or `callGrok` here (same signature/response
+ *   shape, see grokClient.js).
  * @param {string} params.model
  * @param {number} [params.maxTokens]
  * @param {(evt: { type: string, payload: unknown }) => void} [params.onEvent]
- * @param {boolean} [params.enableStreaming] when true, use MiniMax SSE streaming for lower TTFT
+ * @param {boolean} [params.enableStreaming] when true, use SSE streaming for lower TTFT
+ * @param {'minimax'|'xai'|'kimi_code'} [params.provider] selects the streaming client
+ * @param {string|null} [params.baseUrl] OpenAI-compatible URL for xai/kimi_code streaming
  * @returns {Promise<{ finalText: string, allToolResults: Array, meta: object }>}
  */
 export async function runZedChatLoop({
@@ -134,6 +139,8 @@ export async function runZedChatLoop({
   maxTokens = 2048,
   onEvent = null,
   enableStreaming = false,
+  provider = 'minimax',
+  baseUrl = null,
 }) {
   const emit = (type, payload) => {
     if (typeof onEvent === 'function') onEvent({ type, payload });
@@ -154,7 +161,11 @@ export async function runZedChatLoop({
     try {
       if (enableStreaming) {
         streamedThisTurn = true;
-        const streamingResult = await streamMinimax({
+        const streamFn =
+          provider === 'minimax'
+            ? streamMinimax
+            : (streamParams) => streamGrok({ ...streamParams, baseUrl: baseUrl || undefined });
+        const streamingResult = await streamFn({
           model,
           maxTokens,
           system: systemPrompt,

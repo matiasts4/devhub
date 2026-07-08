@@ -42,9 +42,18 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
   default: (props) => {
     const ReactLocal = require('react');
     capturedWorkspacePaneProps = props;
-    return ReactLocal.createElement('div', {
-      'data-testid': 'workspace-browser-pane',
-    });
+    return ReactLocal.createElement(
+      'div',
+      { 'data-testid': 'workspace-browser-pane' },
+      props.pizarraDragHandleMouseDown
+        ? ReactLocal.createElement('button', {
+            type: 'button',
+            'data-testid': 'pizarra-drag-handle',
+            'data-pizarra-surface-drag-handle': 'true',
+            onMouseDown: props.pizarraDragHandleMouseDown,
+          })
+        : null
+    );
   },
 }));
 

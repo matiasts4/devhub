@@ -1,0 +1,1497 @@
+{
+  "numFailedTestSuites": 8,
+  "numFailedTests": 20,
+  "numPassedTestSuites": 11,
+  "numPassedTests": 133,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 19,
+  "numTotalTests": 153,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783200204571,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer — restoreSessions"],
+          "failureMessages": [],
+          "fullName": "ttyServer — restoreSessions calls loadSessions on startup and creates PTY sessions for restored entries",
+          "location": null,
+          "status": "passed",
+          "title": "calls loadSessions on startup and creates PTY sessions for restored entries"
+        },
+        {
+          "ancestorTitles": ["ttyServer — restoreSessions"],
+          "failureMessages": [],
+          "fullName": "ttyServer — restoreSessions restored sessions retain PTY output in history and broadcast it to attached sockets",
+          "location": null,
+          "status": "passed",
+          "title": "restored sessions retain PTY output in history and broadcast it to attached sockets"
+        },
+        {
+          "ancestorTitles": ["ttyServer — restoreSessions"],
+          "failureMessages": [],
+          "fullName": "ttyServer — restoreSessions does not crash when session file has no sessions",
+          "location": null,
+          "status": "passed",
+          "title": "does not crash when session file has no sessions"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session create calls saveSessions after creating a new session via createSession()",
+          "location": null,
+          "status": "passed",
+          "title": "calls saveSessions after creating a new session via createSession()"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session create detects opencode --session in spawn command and marks session opencode-durable",
+          "location": null,
+          "status": "passed",
+          "title": "detects opencode --session in spawn command and marks session opencode-durable"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session create falls back to a safe cwd when the requested cwd does not exist",
+          "location": null,
+          "status": "passed",
+          "title": "falls back to a safe cwd when the requested cwd does not exist"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session create strips npm prefix env vars from spawned shell sessions to avoid nvm startup noise",
+          "location": null,
+          "status": "passed",
+          "title": "strips npm prefix env vars from spawned shell sessions to avoid nvm startup noise"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session create passes zsh --no-use args for direct shell sessions to skip nvm auto-use warnings",
+          "location": null,
+          "status": "passed",
+          "title": "passes zsh --no-use args for direct shell sessions to skip nvm auto-use warnings"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session create auto-generates an id when createSession is called without one (POST /api/terminal/session contract)",
+          "location": null,
+          "status": "passed",
+          "title": "auto-generates an id when createSession is called without one (POST /api/terminal/session contract)"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session create"],
+          "failureMessages": [
+            "Error: Swarm worktree cwd validation failed: Swarm role coder must use .devhub/worktrees, got: D:\\devhub\\.devhub\\worktrees\\launch-123\\coder\n    at createSession (D:\\devhub\\src\\lib\\terminal\\ttyServer.js:878:13)\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\ttyServer.test.js:299:23)"
+          ],
+          "fullName": "ttyServer — session create uses role-based tmux session naming for swarm agents",
+          "location": null,
+          "status": "failed",
+          "title": "uses role-based tmux session naming for swarm agents"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session close"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session close calls saveSessions after closing a session via closeSession()",
+          "location": null,
+          "status": "passed",
+          "title": "calls saveSessions after closing a session via closeSession()"
+        },
+        {
+          "ancestorTitles": ["ttyServer — PTY lifecycle helpers"],
+          "failureMessages": [],
+          "fullName": "ttyServer — PTY lifecycle helpers returns live runtime evidence for an existing PTY session",
+          "location": null,
+          "status": "passed",
+          "title": "returns live runtime evidence for an existing PTY session"
+        },
+        {
+          "ancestorTitles": ["ttyServer — PTY lifecycle helpers"],
+          "failureMessages": [],
+          "fullName": "ttyServer — PTY lifecycle helpers openPtyLifecycle creates a PTY runtime when no live handle exists",
+          "location": null,
+          "status": "passed",
+          "title": "openPtyLifecycle creates a PTY runtime when no live handle exists"
+        },
+        {
+          "ancestorTitles": ["ttyServer — PTY lifecycle helpers"],
+          "failureMessages": [],
+          "fullName": "ttyServer — PTY lifecycle helpers attachPtyLifecycle degrades when runtime handle is missing and never spawns",
+          "location": null,
+          "status": "passed",
+          "title": "attachPtyLifecycle degrades when runtime handle is missing and never spawns"
+        },
+        {
+          "ancestorTitles": ["ttyServer — PTY lifecycle helpers"],
+          "failureMessages": [],
+          "fullName": "ttyServer — PTY lifecycle helpers reuses an existing live PTY handle for both open and attach without respawning",
+          "location": null,
+          "status": "passed",
+          "title": "reuses an existing live PTY handle for both open and attach without respawning"
+        },
+        {
+          "ancestorTitles": ["ttyServer — DEVHUB_MCP_CMD uses dynamic project-root path"],
+          "failureMessages": [],
+          "fullName": "ttyServer — DEVHUB_MCP_CMD uses dynamic project-root path resolves devhub-mcp/server.js relative to this file, not a hardcoded home path",
+          "location": null,
+          "status": "passed",
+          "title": "resolves devhub-mcp/server.js relative to this file, not a hardcoded home path"
+        },
+        {
+          "ancestorTitles": ["ttyServer — getTTYSessionsSnapshot includes cwd and restored"],
+          "failureMessages": [],
+          "fullName": "ttyServer — getTTYSessionsSnapshot includes cwd and restored includes cwd and restored in snapshot entries",
+          "location": null,
+          "status": "passed",
+          "title": "includes cwd and restored in snapshot entries"
+        },
+        {
+          "ancestorTitles": ["ttyServer — TERM-01 diagnostics helpers"],
+          "failureMessages": [],
+          "fullName": "ttyServer — TERM-01 diagnostics helpers builds focused resize diagnostics for session recovery debugging",
+          "location": null,
+          "status": "passed",
+          "title": "builds focused resize diagnostics for session recovery debugging"
+        },
+        {
+          "ancestorTitles": ["ttyServer — TERM-01 diagnostics helpers"],
+          "failureMessages": [],
+          "fullName": "ttyServer — TERM-01 diagnostics helpers suppresses duplicate diagnostics but keeps meaningful state changes",
+          "location": null,
+          "status": "passed",
+          "title": "suppresses duplicate diagnostics but keeps meaningful state changes"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [],
+          "fullName": "ttyServer — shell history hygiene preserves normal shell output in history and broadcast",
+          "location": null,
+          "status": "passed",
+          "title": "preserves normal shell output in history and broadcast"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [],
+          "fullName": "ttyServer — shell history hygiene filters terminal response noise from tui-mode broadcast",
+          "location": null,
+          "status": "passed",
+          "title": "filters terminal response noise from tui-mode broadcast"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [],
+          "fullName": "ttyServer — shell history hygiene drops pure terminal response noise from websocket input before pty.write",
+          "location": null,
+          "status": "passed",
+          "title": "drops pure terminal response noise from websocket input before pty.write"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [],
+          "fullName": "ttyServer — shell history hygiene filters terminal response noise from shell-mode broadcast and history",
+          "location": null,
+          "status": "passed",
+          "title": "filters terminal response noise from shell-mode broadcast and history"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [],
+          "fullName": "ttyServer — shell history hygiene filters recurring nvm startup warnings from shell-mode broadcast and history",
+          "location": null,
+          "status": "passed",
+          "title": "filters recurring nvm startup warnings from shell-mode broadcast and history"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [
+            "Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\nExpected: \"{\\\"type\\\":\\\"output\\\",\\\"data\\\":\\\"prompt$ pwd\\\\r\\\\n/home/user\\\\r\\\\n\\\"}\"\nReceived: \"{\\\"type\\\":\\\"ready\\\",\\\"reattached\\\":true,\\\"mode\\\":\\\"shell\\\"}\"\n\nNumber of calls: 1\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\ttyServer.test.js:715:34)"
+          ],
+          "fullName": "ttyServer — shell history hygiene does not replay stored terminal response noise on existing shell-session reconnect",
+          "location": null,
+          "status": "failed",
+          "title": "does not replay stored terminal response noise on existing shell-session reconnect"
+        },
+        {
+          "ancestorTitles": ["ttyServer — shell history hygiene"],
+          "failureMessages": [],
+          "fullName": "ttyServer — shell history hygiene falls back to a safe cwd for fresh websocket sessions with an invalid requested cwd",
+          "location": null,
+          "status": "passed",
+          "title": "falls back to a safe cwd for fresh websocket sessions with an invalid requested cwd"
+        }
+      ],
+      "endTime": 1783200205872,
+      "message": "  ● ttyServer — session create › uses role-based tmux session naming for swarm agents\n\n    Swarm worktree cwd validation failed: Swarm role coder must use .devhub/worktrees, got: D:\\devhub\\.devhub\\worktrees\\launch-123\\coder\n\n    \u001b[0m \u001b[90m 876 |\u001b[39m         error\u001b[33m:\u001b[39m cwdValidation\u001b[33m.\u001b[39merror\u001b[33m,\u001b[39m\n     \u001b[90m 877 |\u001b[39m       })\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 878 |\u001b[39m       \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\u001b[32m`Swarm worktree cwd validation failed: ${cwdValidation.error}`\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 879 |\u001b[39m     }\n     \u001b[90m 880 |\u001b[39m     \u001b[36mif\u001b[39m (explicitSwarmRole) {\n     \u001b[90m 881 |\u001b[39m       ttyLog(\u001b[32m'createSession'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m`swarm cwd validation passed`\u001b[39m\u001b[33m,\u001b[39m {\u001b[0m\n\n      at createSession (src/lib/terminal/ttyServer.js:878:13)\n      at Object.<anonymous> (src/lib/terminal/ttyServer.test.js:299:23)\n\n  ● ttyServer — shell history hygiene › does not replay stored terminal response noise on existing shell-session reconnect\n\n    expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n    Expected: \"{\\\"type\\\":\\\"output\\\",\\\"data\\\":\\\"prompt$ pwd\\\\r\\\\n/home/user\\\\r\\\\n\\\"}\"\n    Received: \"{\\\"type\\\":\\\"ready\\\",\\\"reattached\\\":true,\\\"mode\\\":\\\"shell\\\"}\"\n\n    Number of calls: 1\n\n    \u001b[0m \u001b[90m 713 |\u001b[39m     connectionHandler(reconnectSocket\u001b[33m,\u001b[39m { url\u001b[33m:\u001b[39m \u001b[32m'/terminal?id=replay-shell&cwd=%2Fhome%2Fuser'\u001b[39m })\u001b[33m;\u001b[39m\n     \u001b[90m 714 |\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 715 |\u001b[39m     expect(reconnectSocket\u001b[33m.\u001b[39msend)\u001b[33m.\u001b[39mtoHaveBeenCalledWith(\n     \u001b[90m     |\u001b[39m                                  \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 716 |\u001b[39m       \u001b[33mJSON\u001b[39m\u001b[33m.\u001b[39mstringify({ type\u001b[33m:\u001b[39m \u001b[32m'output'\u001b[39m\u001b[33m,\u001b[39m data\u001b[33m:\u001b[39m \u001b[32m'prompt$ pwd\\r\\n/home/user\\r\\n'\u001b[39m })\n     \u001b[90m 717 |\u001b[39m     )\u001b[33m;\u001b[39m\n     \u001b[90m 718 |\u001b[39m     expect(reconnectSocket\u001b[33m.\u001b[39msend)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39mtoHaveBeenCalledWith(\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/ttyServer.test.js:715:34)\n",
+      "name": "D:\\devhub\\src\\lib\\terminal\\ttyServer.test.js",
+      "startTime": 1783200204631,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences returns project-scoped storage key when project id exists",
+          "location": null,
+          "status": "passed",
+          "title": "returns project-scoped storage key when project id exists"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences sanitizes unknown workspaces, stale panels, and invalid modes back to baseline",
+          "location": null,
+          "status": "passed",
+          "title": "sanitizes unknown workspaces, stale panels, and invalid modes back to baseline"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences resolves panel inherit from workspace default and falls back to xterm-webgl for missing prefs",
+          "location": null,
+          "status": "passed",
+          "title": "resolves panel inherit from workspace default and falls back to xterm-webgl for missing prefs"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"vte-experimental\"\nReceived: \"inherit\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\terminalRendererPreferences.test.js:111:91)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererPreferences returns raw panel preference so UI can distinguish inherit from explicit overrides",
+          "location": null,
+          "status": "failed",
+          "title": "returns raw panel preference so UI can distinguish inherit from explicit overrides"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences reads stored prefs through scoped key and sanitizes them against live workspace ids",
+          "location": null,
+          "status": "passed",
+          "title": "reads stored prefs through scoped key and sanitizes them against live workspace ids"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences uses settings default mode as the baseline when no workspace override exists",
+          "location": null,
+          "status": "passed",
+          "title": "uses settings default mode as the baseline when no workspace override exists"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [
+            "Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\nExpected: \"devhub_terminal_renderer_default_mode\", \"vte-experimental\"\nReceived: \"devhub_terminal_renderer_default_mode\", \"xterm-webgl\"\n\nNumber of calls: 1\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\terminalRendererPreferences.test.js:183:29)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererPreferences writes and reads renderer default mode for Settings while migrating legacy ghostty to xterm",
+          "location": null,
+          "status": "failed",
+          "title": "writes and reads renderer default mode for Settings while migrating legacy ghostty to xterm"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences creates baseline xterm-webgl preferences when storage is empty or invalid",
+          "location": null,
+          "status": "passed",
+          "title": "creates baseline xterm-webgl preferences when storage is empty or invalid"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences demotes xterm-webgl to xterm on packaged Tauri Linux runtimes",
+          "location": null,
+          "status": "passed",
+          "title": "demotes xterm-webgl to xterm on packaged Tauri Linux runtimes"
+        }
+      ],
+      "endTime": 1783200206089,
+      "message": "  ● terminalRendererPreferences › returns raw panel preference so UI can distinguish inherit from explicit overrides\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"vte-experimental\"\n    Received: \"inherit\"\n\n    \u001b[0m \u001b[90m 109 |\u001b[39m       \u001b[32m'inherit'\u001b[39m\n     \u001b[90m 110 |\u001b[39m     )\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 111 |\u001b[39m     expect(getPanelRendererPreferenceMode({ workspaceId\u001b[33m:\u001b[39m \u001b[32m'ws-1'\u001b[39m\u001b[33m,\u001b[39m panelId\u001b[33m:\u001b[39m \u001b[32m'p2'\u001b[39m\u001b[33m,\u001b[39m prefs }))\u001b[33m.\u001b[39mtoBe(\n     \u001b[90m     |\u001b[39m                                                                                           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 112 |\u001b[39m       \u001b[32m'vte-experimental'\u001b[39m\n     \u001b[90m 113 |\u001b[39m     )\u001b[33m;\u001b[39m\n     \u001b[90m 114 |\u001b[39m     expect(getPanelRendererPreferenceMode({ workspaceId\u001b[33m:\u001b[39m \u001b[32m'ws-1'\u001b[39m\u001b[33m,\u001b[39m panelId\u001b[33m:\u001b[39m \u001b[32m'p999'\u001b[39m\u001b[33m,\u001b[39m prefs }))\u001b[33m.\u001b[39mtoBe(\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererPreferences.test.js:111:91)\n\n  ● terminalRendererPreferences › writes and reads renderer default mode for Settings while migrating legacy ghostty to xterm\n\n    expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n    Expected: \"devhub_terminal_renderer_default_mode\", \"vte-experimental\"\n    Received: \"devhub_terminal_renderer_default_mode\", \"xterm-webgl\"\n\n    Number of calls: 1\n\n    \u001b[0m \u001b[90m 181 |\u001b[39m     writeTerminalRendererDefaultModeSetting(storage\u001b[33m,\u001b[39m \u001b[32m'vte-experimental'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 182 |\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 183 |\u001b[39m     expect(storage\u001b[33m.\u001b[39msetItem)\u001b[33m.\u001b[39mtoHaveBeenCalledWith(\n     \u001b[90m     |\u001b[39m                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 184 |\u001b[39m       \u001b[32m'devhub_terminal_renderer_default_mode'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 185 |\u001b[39m       \u001b[32m'vte-experimental'\u001b[39m\n     \u001b[90m 186 |\u001b[39m     )\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererPreferences.test.js:183:29)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\terminalRendererPreferences.test.js",
+      "startTime": 1783200205947,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["SESSION_FILE_PATH constant"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"/mock-home/.devhub/terminal-sessions.json\"\nReceived: \"\\\\mock-home\\\\.devhub\\\\terminal-sessions.json\"\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\sessionStore.test.js:32:34)"
+          ],
+          "fullName": "SESSION_FILE_PATH constant resolves to ~/.devhub/terminal-sessions.json",
+          "location": null,
+          "status": "failed",
+          "title": "resolves to ~/.devhub/terminal-sessions.json"
+        },
+        {
+          "ancestorTitles": ["SESSION_FILE_PATH constant"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"/mock-devhub-home/terminal-sessions.json\"\nReceived: \"\\\\mock-devhub-home\\\\terminal-sessions.json\"\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\sessionStore.test.js:38:34)"
+          ],
+          "fullName": "SESSION_FILE_PATH constant honors DEVHUB_HOME when set",
+          "location": null,
+          "status": "failed",
+          "title": "honors DEVHUB_HOME when set"
+        },
+        {
+          "ancestorTitles": ["STALE_TTL_MS constant"],
+          "failureMessages": [],
+          "fullName": "STALE_TTL_MS constant equals 7 days in milliseconds",
+          "location": null,
+          "status": "passed",
+          "title": "equals 7 days in milliseconds"
+        },
+        {
+          "ancestorTitles": ["saveSessions"],
+          "failureMessages": [
+            "Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\nExpected: \"/mock-home/.devhub/terminal-sessions.json.tmp\", Any<String>, \"utf8\"\nReceived: \"\\\\mock-devhub-home\\\\terminal-sessions.json.tmp\", \"{\n  \\\"version\\\": 4,\n  \\\"sessions\\\": [\n    {\n      \\\"id\\\": \\\"term-1\\\",\n      \\\"cwd\\\": \\\"/home/user\\\",\n      \\\"shell\\\": \\\"/bin/zsh\\\",\n      \\\"title\\\": null,\n      \\\"createdAt\\\": \\\"2026-07-04T21:23:26.254Z\\\",\n      \\\"lastSeenAt\\\": \\\"2026-07-04T21:23:26.254Z\\\",\n      \\\"lastActivityAt\\\": null,\n      \\\"ptyPid\\\": null,\n      \\\"opencodeSessionId\\\": null,\n      \\\"initialCommand\\\": null,\n      \\\"agentType\\\": null,\n      \\\"agentSessionId\\\": null,\n      \\\"swarmRole\\\": null,\n      \\\"swarmId\\\": null,\n      \\\"sessionType\\\": \\\"shell-ephemeral\\\",\n      \\\"skipBackendRestore\\\": false,\n      \\\"durableRestore\\\": false,\n      \\\"restored\\\": false,\n      \\\"restorePolicy\\\": \\\"auto\\\"\n    }\n  ]\n}\", \"utf8\"\n\nNumber of calls: 1\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\sessionStore.test.js:74:34)"
+          ],
+          "fullName": "saveSessions writes JSON via tmp+rename (atomic write)",
+          "location": null,
+          "status": "failed",
+          "title": "writes JSON via tmp+rename (atomic write)"
+        },
+        {
+          "ancestorTitles": ["saveSessions"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes correct JSON schema with version=1",
+          "location": null,
+          "status": "passed",
+          "title": "writes correct JSON schema with version=1"
+        },
+        {
+          "ancestorTitles": ["saveSessions"],
+          "failureMessages": [
+            "Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n- Expected\n+ Received\n\n- \"/mock-home/.devhub\",\n+ \"\\\\mock-devhub-home\",\n  {\"recursive\": true},\n\nNumber of calls: 1\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\sessionStore.test.js:123:30)"
+          ],
+          "fullName": "saveSessions creates the ~/.devhub directory if it does not exist",
+          "location": null,
+          "status": "failed",
+          "title": "creates the ~/.devhub directory if it does not exist"
+        },
+        {
+          "ancestorTitles": ["saveSessions"],
+          "failureMessages": [],
+          "fullName": "saveSessions skips mkdirSync if directory already exists",
+          "location": null,
+          "status": "passed",
+          "title": "skips mkdirSync if directory already exists"
+        },
+        {
+          "ancestorTitles": ["loadSessions"],
+          "failureMessages": [],
+          "fullName": "loadSessions returns [] if session file does not exist",
+          "location": null,
+          "status": "passed",
+          "title": "returns [] if session file does not exist"
+        },
+        {
+          "ancestorTitles": ["loadSessions"],
+          "failureMessages": [],
+          "fullName": "loadSessions returns [] if session file contains invalid JSON",
+          "location": null,
+          "status": "passed",
+          "title": "returns [] if session file contains invalid JSON"
+        },
+        {
+          "ancestorTitles": ["loadSessions"],
+          "failureMessages": [],
+          "fullName": "loadSessions filters out sessions older than 7 days",
+          "location": null,
+          "status": "passed",
+          "title": "filters out sessions older than 7 days"
+        },
+        {
+          "ancestorTitles": ["loadSessions"],
+          "failureMessages": [],
+          "fullName": "loadSessions marks all returned sessions with restored: true",
+          "location": null,
+          "status": "passed",
+          "title": "marks all returned sessions with restored: true"
+        },
+        {
+          "ancestorTitles": ["loadSessions"],
+          "failureMessages": [],
+          "fullName": "loadSessions returns all fresh sessions without modification (except restored flag)",
+          "location": null,
+          "status": "passed",
+          "title": "returns all fresh sessions without modification (except restored flag)"
+        },
+        {
+          "ancestorTitles": ["readPersistedSessionEvidence"],
+          "failureMessages": [],
+          "fullName": "readPersistedSessionEvidence returns missing evidence when no persisted session matches the runtime hint",
+          "location": null,
+          "status": "passed",
+          "title": "returns missing evidence when no persisted session matches the runtime hint"
+        },
+        {
+          "ancestorTitles": ["readPersistedSessionEvidence"],
+          "failureMessages": [],
+          "fullName": "readPersistedSessionEvidence returns restorable evidence for a fresh matching persisted session",
+          "location": null,
+          "status": "passed",
+          "title": "returns restorable evidence for a fresh matching persisted session"
+        },
+        {
+          "ancestorTitles": ["readPersistedSessionEvidence"],
+          "failureMessages": [],
+          "fullName": "readPersistedSessionEvidence returns stale evidence for an expired persisted session without reviving it",
+          "location": null,
+          "status": "passed",
+          "title": "returns stale evidence for an expired persisted session without reviving it"
+        }
+      ],
+      "endTime": 1783200206280,
+      "message": "  ● SESSION_FILE_PATH constant › resolves to ~/.devhub/terminal-sessions.json\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"/mock-home/.devhub/terminal-sessions.json\"\n    Received: \"\\\\mock-home\\\\.devhub\\\\terminal-sessions.json\"\n\n    \u001b[0m \u001b[90m 30 |\u001b[39m   it(\u001b[32m'resolves to ~/.devhub/terminal-sessions.json'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\n     \u001b[90m 31 |\u001b[39m     \u001b[36mconst\u001b[39m { getSessionFilePath } \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m \u001b[36mimport\u001b[39m(\u001b[32m'./sessionStore.js'\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 32 |\u001b[39m     expect(getSessionFilePath())\u001b[33m.\u001b[39mtoBe(\u001b[33mMOCK_SESSIONS_FILE\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                                  \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 33 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 34 |\u001b[39m\n     \u001b[90m 35 |\u001b[39m   it(\u001b[32m'honors DEVHUB_HOME when set'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/sessionStore.test.js:32:34)\n\n  ● SESSION_FILE_PATH constant › honors DEVHUB_HOME when set\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"/mock-devhub-home/terminal-sessions.json\"\n    Received: \"\\\\mock-devhub-home\\\\terminal-sessions.json\"\n\n    \u001b[0m \u001b[90m 36 |\u001b[39m     process\u001b[33m.\u001b[39menv\u001b[33m.\u001b[39m\u001b[33mDEVHUB_HOME\u001b[39m \u001b[33m=\u001b[39m \u001b[32m'/mock-devhub-home'\u001b[39m\u001b[33m;\u001b[39m\n     \u001b[90m 37 |\u001b[39m     \u001b[36mconst\u001b[39m { getSessionFilePath } \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m \u001b[36mimport\u001b[39m(\u001b[32m'./sessionStore.js'\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 38 |\u001b[39m     expect(getSessionFilePath())\u001b[33m.\u001b[39mtoBe(\u001b[32m'/mock-devhub-home/terminal-sessions.json'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                                  \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 39 |\u001b[39m     \u001b[36mdelete\u001b[39m process\u001b[33m.\u001b[39menv\u001b[33m.\u001b[39m\u001b[33mDEVHUB_HOME\u001b[39m\u001b[33m;\u001b[39m\n     \u001b[90m 40 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 41 |\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/sessionStore.test.js:38:34)\n\n  ● saveSessions › writes JSON via tmp+rename (atomic write)\n\n    expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n    Expected: \"/mock-home/.devhub/terminal-sessions.json.tmp\", Any<String>, \"utf8\"\n    Received: \"\\\\mock-devhub-home\\\\terminal-sessions.json.tmp\", \"{\n      \\\"version\\\": 4,\n      \\\"sessions\\\": [\n        {\n          \\\"id\\\": \\\"term-1\\\",\n          \\\"cwd\\\": \\\"/home/user\\\",\n          \\\"shell\\\": \\\"/bin/zsh\\\",\n          \\\"title\\\": null,\n          \\\"createdAt\\\": \\\"2026-07-04T21:23:26.254Z\\\",\n          \\\"lastSeenAt\\\": \\\"2026-07-04T21:23:26.254Z\\\",\n          \\\"lastActivityAt\\\": null,\n          \\\"ptyPid\\\": null,\n          \\\"opencodeSessionId\\\": null,\n          \\\"initialCommand\\\": null,\n          \\\"agentType\\\": null,\n          \\\"agentSessionId\\\": null,\n          \\\"swarmRole\\\": null,\n          \\\"swarmId\\\": null,\n          \\\"sessionType\\\": \\\"shell-ephemeral\\\",\n          \\\"skipBackendRestore\\\": false,\n          \\\"durableRestore\\\": false,\n          \\\"restored\\\": false,\n          \\\"restorePolicy\\\": \\\"auto\\\"\n        }\n      ]\n    }\", \"utf8\"\n\n    Number of calls: 1\n\n    \u001b[0m \u001b[90m 72 |\u001b[39m     saveSessions(sessions)\u001b[33m;\u001b[39m\n     \u001b[90m 73 |\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 74 |\u001b[39m     expect(mockFs\u001b[33m.\u001b[39mwriteFileSync)\u001b[33m.\u001b[39mtoHaveBeenCalledWith(\u001b[33mMOCK_TMP_FILE\u001b[39m\u001b[33m,\u001b[39m expect\u001b[33m.\u001b[39many(\u001b[33mString\u001b[39m)\u001b[33m,\u001b[39m \u001b[32m'utf8'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                                  \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 75 |\u001b[39m     expect(mockFs\u001b[33m.\u001b[39mrenameSync)\u001b[33m.\u001b[39mtoHaveBeenCalledWith(\u001b[33mMOCK_TMP_FILE\u001b[39m\u001b[33m,\u001b[39m \u001b[33mMOCK_SESSIONS_FILE\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 76 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 77 |\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/sessionStore.test.js:74:34)\n\n  ● saveSessions › creates the ~/.devhub directory if it does not exist\n\n    expect(jest.fn()).toHaveBeenCalledWith(...expected)\n\n    - Expected\n    + Received\n\n    - \"/mock-home/.devhub\",\n    + \"\\\\mock-devhub-home\",\n      {\"recursive\": true},\n\n    Number of calls: 1\n\n    \u001b[0m \u001b[90m 121 |\u001b[39m     saveSessions(\u001b[36mnew\u001b[39m \u001b[33mMap\u001b[39m())\u001b[33m;\u001b[39m\n     \u001b[90m 122 |\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 123 |\u001b[39m     expect(mockFs\u001b[33m.\u001b[39mmkdirSync)\u001b[33m.\u001b[39mtoHaveBeenCalledWith(\u001b[33mMOCK_DIR\u001b[39m\u001b[33m,\u001b[39m { recursive\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m })\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m                              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 124 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 125 |\u001b[39m\n     \u001b[90m 126 |\u001b[39m   it(\u001b[32m'skips mkdirSync if directory already exists'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/sessionStore.test.js:123:30)\n",
+      "name": "D:\\devhub\\src\\lib\\terminal\\sessionStore.test.js",
+      "startTime": 1783200206094,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences.xterm-webgl setPanelRendererPreference(..., \"xterm-webgl\") round-trips through write/read (TRP-XW-1 SCEN-1)",
+          "location": null,
+          "status": "passed",
+          "title": "setPanelRendererPreference(..., \"xterm-webgl\") round-trips through write/read (TRP-XW-1 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 5\n+ Received  + 3\n\n- ObjectContaining {\n-   \"workspaces\": Object {\n-     \"ws1\": ObjectContaining {\n+ Object {\n    \"defaultMode\": \"xterm-webgl\",\n-     },\n-   },\n+   \"version\": 1,\n+   \"workspaces\": Object {},\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\terminalRendererPreferences.xterm-webgl.test.js:81:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererPreferences.xterm-webgl setWorkspaceDefaultRenderer(..., \"xterm-webgl\") round-trips the workspace default (TRP-XW-1 SCEN-2)",
+          "location": null,
+          "status": "failed",
+          "title": "setWorkspaceDefaultRenderer(..., \"xterm-webgl\") round-trips the workspace default (TRP-XW-1 SCEN-2)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences.xterm-webgl a fresh read after restart preserves the xterm-webgl panel override (TRP-XW-2 SCEN-1)",
+          "location": null,
+          "status": "passed",
+          "title": "a fresh read after restart preserves the xterm-webgl panel override (TRP-XW-2 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"vte-experimental\"\nReceived: \"xterm-webgl\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\terminalRendererPreferences.xterm-webgl.test.js:133:46)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererPreferences.xterm-webgl a panel override survives a workspace default change (TRP-XW-3 SCEN-1)",
+          "location": null,
+          "status": "failed",
+          "title": "a panel override survives a workspace default change (TRP-XW-3 SCEN-1)"
+        }
+      ],
+      "endTime": 1783200206421,
+      "message": "  ● terminalRendererPreferences.xterm-webgl › setWorkspaceDefaultRenderer(..., \"xterm-webgl\") round-trips the workspace default (TRP-XW-1 SCEN-2)\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 5\n    + Received  + 3\n\n    - ObjectContaining {\n    -   \"workspaces\": Object {\n    -     \"ws1\": ObjectContaining {\n    + Object {\n        \"defaultMode\": \"xterm-webgl\",\n    -     },\n    -   },\n    +   \"version\": 1,\n    +   \"workspaces\": Object {},\n      }\n\n    \u001b[0m \u001b[90m 79 |\u001b[39m     expect(\n     \u001b[90m 80 |\u001b[39m       readTerminalRendererPreferences(storage\u001b[33m,\u001b[39m \u001b[32m'proj-A'\u001b[39m\u001b[33m,\u001b[39m [createWorkspace(\u001b[32m'ws1'\u001b[39m\u001b[33m,\u001b[39m [\u001b[32m'p1'\u001b[39m])])\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 81 |\u001b[39m     )\u001b[33m.\u001b[39mtoEqual(\n     \u001b[90m    |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 82 |\u001b[39m       expect\u001b[33m.\u001b[39mobjectContaining({\n     \u001b[90m 83 |\u001b[39m         workspaces\u001b[33m:\u001b[39m {\n     \u001b[90m 84 |\u001b[39m           ws1\u001b[33m:\u001b[39m expect\u001b[33m.\u001b[39mobjectContaining({\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererPreferences.xterm-webgl.test.js:81:7)\n\n  ● terminalRendererPreferences.xterm-webgl › a panel override survives a workspace default change (TRP-XW-3 SCEN-1)\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"vte-experimental\"\n    Received: \"xterm-webgl\"\n\n    \u001b[0m \u001b[90m 131 |\u001b[39m     ])\u001b[33m;\u001b[39m\n     \u001b[90m 132 |\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 133 |\u001b[39m     expect(fresh\u001b[33m.\u001b[39mworkspaces\u001b[33m.\u001b[39mws1\u001b[33m.\u001b[39mdefaultMode)\u001b[33m.\u001b[39mtoBe(\u001b[32m'vte-experimental'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m                                              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 134 |\u001b[39m     expect(fresh\u001b[33m.\u001b[39mworkspaces\u001b[33m.\u001b[39mws1\u001b[33m.\u001b[39mpanels\u001b[33m.\u001b[39mp1)\u001b[33m.\u001b[39mtoBe(\u001b[32m'xterm-webgl'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 135 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 136 |\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererPreferences.xterm-webgl.test.js:133:46)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\terminalRendererPreferences.xterm-webgl.test.js",
+      "startTime": 1783200206284,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "isDevHubWorktreePath"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation isDevHubWorktreePath returns true for .devhub/worktrees paths",
+          "location": null,
+          "status": "passed",
+          "title": "returns true for .devhub/worktrees paths"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "isDevHubWorktreePath"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation isDevHubWorktreePath returns false for other paths",
+          "location": null,
+          "status": "passed",
+          "title": "returns false for other paths"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "isPlyriumWorktreePath"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation isPlyriumWorktreePath returns true for .plyrium-forge paths",
+          "location": null,
+          "status": "passed",
+          "title": "returns true for .plyrium-forge paths"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "isPlyriumWorktreePath"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation isPlyriumWorktreePath returns false for other paths",
+          "location": null,
+          "status": "passed",
+          "title": "returns false for other paths"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\__tests__\\cwdGuard.test.js:48:28)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)"
+          ],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd validates correct swarm worktree path",
+          "location": null,
+          "status": "failed",
+          "title": "validates correct swarm worktree path"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd rejects empty cwd",
+          "location": null,
+          "status": "passed",
+          "title": "rejects empty cwd"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd rejects Plyrium paths",
+          "location": null,
+          "status": "passed",
+          "title": "rejects Plyrium paths"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd rejects non-devhub paths for swarm roles",
+          "location": null,
+          "status": "passed",
+          "title": "rejects non-devhub paths for swarm roles"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [
+            "Error: expect(received).toContain(expected) // indexOf\n\nExpected substring: \"does not exist\"\nReceived string:    \"Swarm role coder must use .devhub/worktrees, got: D:\\\\repo\\\\.devhub\\\\worktrees\\\\launch-xxx\\\\coder\"\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\__tests__\\cwdGuard.test.js:98:28)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)"
+          ],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd rejects non-existent worktree",
+          "location": null,
+          "status": "failed",
+          "title": "rejects non-existent worktree"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [
+            "Error: expect(received).toContain(expected) // indexOf\n\nExpected substring: \".git\"\nReceived string:    \"Swarm role coder must use .devhub/worktrees, got: D:\\\\repo\\\\.devhub\\\\worktrees\\\\launch-abc\\\\coder\"\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\__tests__\\cwdGuard.test.js:112:28)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)"
+          ],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd rejects worktree without .git marker",
+          "location": null,
+          "status": "failed",
+          "title": "rejects worktree without .git marker"
+        },
+        {
+          "ancestorTitles": ["cwdGuard — swarm validation", "validateSwarmCwd"],
+          "failureMessages": [],
+          "fullName": "cwdGuard — swarm validation validateSwarmCwd allows non-swarm roles to use any valid path",
+          "location": null,
+          "status": "passed",
+          "title": "allows non-swarm roles to use any valid path"
+        }
+      ],
+      "endTime": 1783200206565,
+      "message": "  ● cwdGuard — swarm validation › validateSwarmCwd › validates correct swarm worktree path\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: true\n    Received: false\n\n    \u001b[0m \u001b[90m 46 |\u001b[39m         fsImpl\u001b[33m:\u001b[39m mockFs\u001b[33m,\u001b[39m\n     \u001b[90m 47 |\u001b[39m       })\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 48 |\u001b[39m       expect(result\u001b[33m.\u001b[39mvalid)\u001b[33m.\u001b[39mtoBe(\u001b[36mtrue\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                            \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 49 |\u001b[39m       expect(result\u001b[33m.\u001b[39merror)\u001b[33m.\u001b[39mtoBeNull()\u001b[33m;\u001b[39m\n     \u001b[90m 50 |\u001b[39m       expect(result\u001b[33m.\u001b[39meffectiveCwd)\u001b[33m.\u001b[39mtoBe(\u001b[32m'/repo/.devhub/worktrees/launch-abc/coder'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 51 |\u001b[39m     })\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/__tests__/cwdGuard.test.js:48:28)\n\n  ● cwdGuard — swarm validation › validateSwarmCwd › rejects non-existent worktree\n\n    expect(received).toContain(expected) // indexOf\n\n    Expected substring: \"does not exist\"\n    Received string:    \"Swarm role coder must use .devhub/worktrees, got: D:\\\\repo\\\\.devhub\\\\worktrees\\\\launch-xxx\\\\coder\"\n\n    \u001b[0m \u001b[90m  96 |\u001b[39m       })\u001b[33m;\u001b[39m\n     \u001b[90m  97 |\u001b[39m       expect(result\u001b[33m.\u001b[39mvalid)\u001b[33m.\u001b[39mtoBe(\u001b[36mfalse\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  98 |\u001b[39m       expect(result\u001b[33m.\u001b[39merror)\u001b[33m.\u001b[39mtoContain(\u001b[32m'does not exist'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m                            \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m  99 |\u001b[39m     })\u001b[33m;\u001b[39m\n     \u001b[90m 100 |\u001b[39m\n     \u001b[90m 101 |\u001b[39m     test(\u001b[32m'rejects worktree without .git marker'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/__tests__/cwdGuard.test.js:98:28)\n\n  ● cwdGuard — swarm validation › validateSwarmCwd › rejects worktree without .git marker\n\n    expect(received).toContain(expected) // indexOf\n\n    Expected substring: \".git\"\n    Received string:    \"Swarm role coder must use .devhub/worktrees, got: D:\\\\repo\\\\.devhub\\\\worktrees\\\\launch-abc\\\\coder\"\n\n    \u001b[0m \u001b[90m 110 |\u001b[39m       })\u001b[33m;\u001b[39m\n     \u001b[90m 111 |\u001b[39m       expect(result\u001b[33m.\u001b[39mvalid)\u001b[33m.\u001b[39mtoBe(\u001b[36mfalse\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 112 |\u001b[39m       expect(result\u001b[33m.\u001b[39merror)\u001b[33m.\u001b[39mtoContain(\u001b[32m'.git'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m     |\u001b[39m                            \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 113 |\u001b[39m     })\u001b[33m;\u001b[39m\n     \u001b[90m 114 |\u001b[39m\n     \u001b[90m 115 |\u001b[39m     test(\u001b[32m'allows non-swarm roles to use any valid path'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/__tests__/cwdGuard.test.js:112:28)\n",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\cwdGuard.test.js",
+      "startTime": 1783200206424,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["terminal renderer roadmap documentation"],
+          "failureMessages": [
+            "Error: expect(received).toMatch(expected)\n\nExpected pattern: /GTK\\/VTE.*opt-in|vte-experimental.*opt-in/i\nReceived string:  \"# Terminal renderer robusto — estrategia activa y roadmap·\n**Estado:** TERM-01 y TERM-02 cerrados, TERM-03 **descartado** (VTE eliminado en `terminal-engine-v2` Phase 0), TERM-04 cerrado como no-go, TERM-05 absorbido como decisión arquitectónica/documental. **`terminal-engine-v2` apply completo** (2026-07-04).\n**Fecha:** 2026-05-16 (revisión: 2026-07-04 — xterm-only + motor v2 con PTY persistente y rehidratación).·\n## Decisión guía (vigente post `terminal-engine-v2`)·\nDevHub adopta **xterm-webgl como renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore. El stack es **xterm-only** (sin GTK/VTE nativo).·\n- `xterm-webgl` es el **renderer por defecto** para fresh users y para nuevos paneles sin preferencia almacenada.\n- `xterm` (DOM) es el **fallback estable** cuando xterm-webgl no esté disponible (WebView sin WebGL, addon registration failure, context lost, etc.). En paneles `terminal-engine-v2`, el context loss **degrada permanentemente a DOM** (sin re-attach WebGL).\n- **`vte-experimental` eliminado** — `native_vte.rs`, `nativeVteBridge.js` y branches VTE fueron retirados; preferencias legacy en `localStorage` se ignoran/migran a xterm.·\n**Motor `terminal-engine-v2` (flag por panel):** sidecar con ring buffer 2 MiB + pub/sub, termsize/cwd canónicos, rehidratación two-tier (`SerializeAddon` + delta), `unsubscribe` explícito (PTY vivo sin grace timer de 1 h), graveyard LRU global N=12, sesiones `opencode-durable` con `--session`. Spec: `openspec/changes/terminal-engine-v2/`.·\nLa rama `checkpoint/terminal-experiments-2026-05-14` sigue valiendo como **material de referencia**, NO como merge directo: **no conviene mover esa rama completa**.·\n## Estado por TERM·\n| TERM    | Estado actual             | Decisión                                                                                                                                                                                 |\n| ------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| TERM-01 | Implementado              | Evidence pack + baseline/fallback documentado en `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md`.                                                                                   |\n| TERM-02 | Implementado              | Quedó la infraestructura de requested/effective renderer y fallback. La UI actual todavía expone selectores temporales en la vista terminal.                                             |\n| TERM-03 | **Descartado**            | VTE nativo eliminado (`terminal-engine-v2` Phase 0). Stack xterm-only.                                                                                                                   |\n| TERM-04 | Cerrado / no-go por ahora | **No se sigue con Ghostty/libghostty** salvo que TERM-03 y la auditoría de compatibilidad demuestren un bloqueo real que xterm-webgl + xterm fallback no puedan resolver razonablemente. |\n| TERM-05 | Dirección aceptada        | Estrategia canónica vigente: xterm-webgl default, xterm DOM fallback. VTE descartado. Lifecycle v2 en `terminal-engine-v2`.                                                              |·\n## Qué queda descartado o degradado·\n### 1. Ghostty / libghostty·\nGhostty queda **fuera del roadmap activo**.·\nMotivo:·\n- hoy no hay evidencia de que haga falta abrir otra línea nativa más compleja;\n- suma costo de build, empaquetado, runtime y mantenimiento;\n- distrae del problema real actual, que ya no es “encontrar otro renderer”, sino **cerrar bien el camino GTK/VTE y su compatibilidad con la app**.·\nReapertura permitida sólo si aparece un gap concreto y probado que GTK/VTE + xterm fallback no puedan cubrir.·\n### 2. WezTerm / Alacritty / Kitty / terminal externa·\nQuedan **rechazados como dirección principal**.·\nMotivo:·\n- no cumplen bien el requisito de terminal realmente dentro del layout DevHub;\n- tensionan foco, z-index, resize, docking y multi-monitor;\n- pueden servir como debug/manual fallback externo, pero NO como renderer del panel principal.·\n### 3. Overlay / child-window nativo·\nQueda como **último recurso degradado**, no como arquitectura objetivo.·\nMotivo:·\n- puede “parecer” in-app pero no comportarse como panel real;\n- complica lifecycle, stacking, resize fino y consistencia UX.·\n## Hallazgos de auditoría pendientes·\nLa parte visual de GTK/VTE mejoró mucho, pero todavía NO se puede declarar “camino terminal resuelto” por estas razones:·\n### A. Hoy conviven dos runtimes al mismo tiempo·\n`src/components/TerminalTTY.jsx` todavía inicializa xterm y abre el WebSocket/PTy incluso cuando el renderer efectivo es GTK/VTE.·\nEso significa que el renderer nativo mejora la superficie visual, pero el pipeline viejo sigue vivo en paralelo.·\n**Dirección requerida:** un panel debe tener **un solo runtime terminal activo a la vez**.·\n### B. OpenCode/Hermes no están cerrados igual bajo GTK·\n`src/lib/terminal/nativeVteBridge.js` ya sabe reenviar eventos nativos tipo:·\n- `opencode-session-detected`\n- `hermes-session-detected`\n- `terminal-exit`·\nPero en `src-tauri/src/native_vte.rs` hoy sólo quedó verificado claramente el emit de:·\n- `runtime-error`\n- `terminal-exit`·\nConclusión: la capa frontend está preparada para más paridad nativa, pero **no está probado que GTK emita hoy la misma semántica de sesión que el camino xterm/WebSocket**.·\n### C. OpenCode tiene reanudación parcial; Hermes no·\n`src/components/TerminalWorkspacesManager.jsx` escucha `devhub:opencode-session-detected` y `devhub:terminal-exit` para reopen/resume.·\nNo existe wiring equivalente ahí para `devhub:hermes-session-detected`.·\nAdemás, `src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx` ya documenta que Hermes **no se considera reboot-safe resumable history** hoy.·\n### D. Swarm / Agent Room todavía dependen del pipeline viejo·\nComo la detección y varios eventos siguen pasando por el camino xterm/WebSocket, todavía hace falta auditar:·\n- launches desde Swarm/Bridge;\n- tracking de `agent_runs` / `agent_registry`;\n- reanudación de sesiones OpenCode;\n- comportamiento real de Hermes;\n- fallback/restore después de `terminal-exit` o error nativo.·\n### E. La UX de renderer todavía muestra una etapa anterior·\nAntes de TERM-08/09 seguían existiendo:·\n- opciones `ghostty-experimental` en `src/components/terminal/terminalRendererCapabilities.js` y `terminalRendererPreferences.js`;\n- selectores `Renderer por defecto` y `Vista activa` en `src/components/TerminalWorkspacesManager.jsx`;\n- copy de UI como `GTK VTE experimental · misma ventana · panel activo` en `src/components/TerminalTTY.jsx`.·\nEso CONTRADICÍA la dirección actual. TERM-08/09 lo corrigen moviendo la preferencia a Settings, ocultando selectores operativos del header y tratando Ghostty sólo como compatibilidad legacy migrada a `xterm`.·\n**Dirección requerida:** la selección/configuración del renderer debe migrar a **Settings**, y la vista terminal no debería exponer un selector si el usuario normal no necesita operar esa decisión ahí.·\n## Estrategia activa a partir de ahora·\n1. **xterm-webgl es el renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore.\n2. **xterm (DOM) queda como fallback único y estable** cuando xterm-webgl no esté disponible.\n3. **GTK/VTE descartado** — renderer xterm-only; ver `terminal-engine-v2` para lifecycle persistente.\n4. **Ghostty/libghostty sale del roadmap activo.**\n5. **No se aceptan terminales externas/overlay como camino principal.**\n6. **No se considera listo TERM-03** hasta auditar OpenCode, Hermes, Swarm y reanudación real.\n7. **No se debe arrancar dos runtimes a la vez** para el mismo panel salvo fallback/recovery explícito.\n8. **La configuración del renderer debe vivir en Settings**, no en el header operativo de la terminal.\n9. **Soft roll-out:** stored `vte-experimental` se preserva; no se sobreescribe la preferencia del usuario en primer load.·\n## Próximos trabajos recomendados·\n### TERM-03 cierre real·\n- revalidar los pendientes 5.3 y 6.15 del cambio `openspec/changes/term-03-gtk-vte-native-spike/`;\n- rerun focalizado con entorno que sí tenga `libsoup-3.0`, `javascriptcoregtk-4.1` y `webkit2gtk-4.1` para poder compilar/probar el camino Rust.·\n### TERM-06 — Auditoría de compatibilidad GTK/VTE·\nVerificar de punta a punta:·\n- OpenCode launch/detección/reopen;\n- Hermes launch/detección/durabilidad;\n- Swarm / Agent Room / `agent_runs` / `agent_registry`;\n- `terminal-exit`, recovery y fallback.·\n### TERM-07 — Separación de runtime activo·\nCambiar `TerminalTTY` para que, cuando GTK/VTE sea el renderer efectivo, **no bootée también el runtime xterm/WebSocket** salvo que el fallback se active de forma deliberada.·\n### TERM-08 — UX/configuración de renderer·\n- mover la preferencia a Settings;\n- ocultar selectores del header terminal;\n- limpiar labels `experimental` y referencias activas a Ghostty.·\n### TERM-09 — Limpieza de docs/tests/copy·\nActualizar documentación y tests para que reflejen la estrategia nueva: GTK/VTE default + xterm fallback, sin Ghostty como candidato activo.·\n## Criterio para reabrir TERM-04·\nSólo reabrir Ghostty/libghostty si pasa TODO esto:·\n- existe un bloqueo concreto, reproducible y relevante en GTK/VTE;\n- ese bloqueo no se resuelve razonablemente con hardening del camino actual;\n- el costo de build/empaquetado/runtime de Ghostty está justificado por evidencia, no por intuición.·\nSi no se cumplen esas tres condiciones, TERM-04 permanece cerrado.·\n## Referencias·\n- `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md`\n- `openspec/changes/term-03-gtk-vte-native-spike/`\n- `src/components/TerminalTTY.jsx`\n- `src/components/TerminalWorkspacesManager.jsx`\n- `src/components/terminal/terminalRendererCapabilities.js`\n- `src/components/terminal/terminalRendererPreferences.js`\n- `openspec/changes/terminal-engine-v2/` (motor v2, apply completo)\n- `src/lib/terminal/v2Graveyard.js`\n\"\n    at Object.<anonymous> (D:\\devhub\\tests\\unit\\terminal-renderer-roadmap-doc.test.js:18:17)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminal renderer roadmap documentation documents xterm-webgl default strategy, xterm fallback, and TERM-04 closure",
+          "location": null,
+          "status": "failed",
+          "title": "documents xterm-webgl default strategy, xterm fallback, and TERM-04 closure"
+        },
+        {
+          "ancestorTitles": ["terminal renderer roadmap documentation"],
+          "failureMessages": [],
+          "fullName": "terminal renderer roadmap documentation captures rejected terminal paths and remaining compatibility audit gaps",
+          "location": null,
+          "status": "passed",
+          "title": "captures rejected terminal paths and remaining compatibility audit gaps"
+        }
+      ],
+      "endTime": 1783200206698,
+      "message": "  ● terminal renderer roadmap documentation › documents xterm-webgl default strategy, xterm fallback, and TERM-04 closure\n\n    expect(received).toMatch(expected)\n\n    Expected pattern: /GTK\\/VTE.*opt-in|vte-experimental.*opt-in/i\n    Received string:  \"# Terminal renderer robusto — estrategia activa y roadmap·\n    **Estado:** TERM-01 y TERM-02 cerrados, TERM-03 **descartado** (VTE eliminado en `terminal-engine-v2` Phase 0), TERM-04 cerrado como no-go, TERM-05 absorbido como decisión arquitectónica/documental. **`terminal-engine-v2` apply completo** (2026-07-04).\n    **Fecha:** 2026-05-16 (revisión: 2026-07-04 — xterm-only + motor v2 con PTY persistente y rehidratación).·\n    ## Decisión guía (vigente post `terminal-engine-v2`)·\n    DevHub adopta **xterm-webgl como renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore. El stack es **xterm-only** (sin GTK/VTE nativo).·\n    - `xterm-webgl` es el **renderer por defecto** para fresh users y para nuevos paneles sin preferencia almacenada.\n    - `xterm` (DOM) es el **fallback estable** cuando xterm-webgl no esté disponible (WebView sin WebGL, addon registration failure, context lost, etc.). En paneles `terminal-engine-v2`, el context loss **degrada permanentemente a DOM** (sin re-attach WebGL).\n    - **`vte-experimental` eliminado** — `native_vte.rs`, `nativeVteBridge.js` y branches VTE fueron retirados; preferencias legacy en `localStorage` se ignoran/migran a xterm.·\n    **Motor `terminal-engine-v2` (flag por panel):** sidecar con ring buffer 2 MiB + pub/sub, termsize/cwd canónicos, rehidratación two-tier (`SerializeAddon` + delta), `unsubscribe` explícito (PTY vivo sin grace timer de 1 h), graveyard LRU global N=12, sesiones `opencode-durable` con `--session`. Spec: `openspec/changes/terminal-engine-v2/`.·\n    La rama `checkpoint/terminal-experiments-2026-05-14` sigue valiendo como **material de referencia**, NO como merge directo: **no conviene mover esa rama completa**.·\n    ## Estado por TERM·\n    | TERM    | Estado actual             | Decisión                                                                                                                                                                                 |\n    | ------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n    | TERM-01 | Implementado              | Evidence pack + baseline/fallback documentado en `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md`.                                                                                   |\n    | TERM-02 | Implementado              | Quedó la infraestructura de requested/effective renderer y fallback. La UI actual todavía expone selectores temporales en la vista terminal.                                             |\n    | TERM-03 | **Descartado**            | VTE nativo eliminado (`terminal-engine-v2` Phase 0). Stack xterm-only.                                                                                                                   |\n    | TERM-04 | Cerrado / no-go por ahora | **No se sigue con Ghostty/libghostty** salvo que TERM-03 y la auditoría de compatibilidad demuestren un bloqueo real que xterm-webgl + xterm fallback no puedan resolver razonablemente. |\n    | TERM-05 | Dirección aceptada        | Estrategia canónica vigente: xterm-webgl default, xterm DOM fallback. VTE descartado. Lifecycle v2 en `terminal-engine-v2`.                                                              |·\n    ## Qué queda descartado o degradado·\n    ### 1. Ghostty / libghostty·\n    Ghostty queda **fuera del roadmap activo**.·\n    Motivo:·\n    - hoy no hay evidencia de que haga falta abrir otra línea nativa más compleja;\n    - suma costo de build, empaquetado, runtime y mantenimiento;\n    - distrae del problema real actual, que ya no es “encontrar otro renderer”, sino **cerrar bien el camino GTK/VTE y su compatibilidad con la app**.·\n    Reapertura permitida sólo si aparece un gap concreto y probado que GTK/VTE + xterm fallback no puedan cubrir.·\n    ### 2. WezTerm / Alacritty / Kitty / terminal externa·\n    Quedan **rechazados como dirección principal**.·\n    Motivo:·\n    - no cumplen bien el requisito de terminal realmente dentro del layout DevHub;\n    - tensionan foco, z-index, resize, docking y multi-monitor;\n    - pueden servir como debug/manual fallback externo, pero NO como renderer del panel principal.·\n    ### 3. Overlay / child-window nativo·\n    Queda como **último recurso degradado**, no como arquitectura objetivo.·\n    Motivo:·\n    - puede “parecer” in-app pero no comportarse como panel real;\n    - complica lifecycle, stacking, resize fino y consistencia UX.·\n    ## Hallazgos de auditoría pendientes·\n    La parte visual de GTK/VTE mejoró mucho, pero todavía NO se puede declarar “camino terminal resuelto” por estas razones:·\n    ### A. Hoy conviven dos runtimes al mismo tiempo·\n    `src/components/TerminalTTY.jsx` todavía inicializa xterm y abre el WebSocket/PTy incluso cuando el renderer efectivo es GTK/VTE.·\n    Eso significa que el renderer nativo mejora la superficie visual, pero el pipeline viejo sigue vivo en paralelo.·\n    **Dirección requerida:** un panel debe tener **un solo runtime terminal activo a la vez**.·\n    ### B. OpenCode/Hermes no están cerrados igual bajo GTK·\n    `src/lib/terminal/nativeVteBridge.js` ya sabe reenviar eventos nativos tipo:·\n    - `opencode-session-detected`\n    - `hermes-session-detected`\n    - `terminal-exit`·\n    Pero en `src-tauri/src/native_vte.rs` hoy sólo quedó verificado claramente el emit de:·\n    - `runtime-error`\n    - `terminal-exit`·\n    Conclusión: la capa frontend está preparada para más paridad nativa, pero **no está probado que GTK emita hoy la misma semántica de sesión que el camino xterm/WebSocket**.·\n    ### C. OpenCode tiene reanudación parcial; Hermes no·\n    `src/components/TerminalWorkspacesManager.jsx` escucha `devhub:opencode-session-detected` y `devhub:terminal-exit` para reopen/resume.·\n    No existe wiring equivalente ahí para `devhub:hermes-session-detected`.·\n    Además, `src/components/__tests__/TerminalWorkspacesManager.reopen.test.jsx` ya documenta que Hermes **no se considera reboot-safe resumable history** hoy.·\n    ### D. Swarm / Agent Room todavía dependen del pipeline viejo·\n    Como la detección y varios eventos siguen pasando por el camino xterm/WebSocket, todavía hace falta auditar:·\n    - launches desde Swarm/Bridge;\n    - tracking de `agent_runs` / `agent_registry`;\n    - reanudación de sesiones OpenCode;\n    - comportamiento real de Hermes;\n    - fallback/restore después de `terminal-exit` o error nativo.·\n    ### E. La UX de renderer todavía muestra una etapa anterior·\n    Antes de TERM-08/09 seguían existiendo:·\n    - opciones `ghostty-experimental` en `src/components/terminal/terminalRendererCapabilities.js` y `terminalRendererPreferences.js`;\n    - selectores `Renderer por defecto` y `Vista activa` en `src/components/TerminalWorkspacesManager.jsx`;\n    - copy de UI como `GTK VTE experimental · misma ventana · panel activo` en `src/components/TerminalTTY.jsx`.·\n    Eso CONTRADICÍA la dirección actual. TERM-08/09 lo corrigen moviendo la preferencia a Settings, ocultando selectores operativos del header y tratando Ghostty sólo como compatibilidad legacy migrada a `xterm`.·\n    **Dirección requerida:** la selección/configuración del renderer debe migrar a **Settings**, y la vista terminal no debería exponer un selector si el usuario normal no necesita operar esa decisión ahí.·\n    ## Estrategia activa a partir de ahora·\n    1. **xterm-webgl es el renderer por defecto** para workspace panels, command-bar spawns, swarm agent terminals y session restore.\n    2. **xterm (DOM) queda como fallback único y estable** cuando xterm-webgl no esté disponible.\n    3. **GTK/VTE descartado** — renderer xterm-only; ver `terminal-engine-v2` para lifecycle persistente.\n    4. **Ghostty/libghostty sale del roadmap activo.**\n    5. **No se aceptan terminales externas/overlay como camino principal.**\n    6. **No se considera listo TERM-03** hasta auditar OpenCode, Hermes, Swarm y reanudación real.\n    7. **No se debe arrancar dos runtimes a la vez** para el mismo panel salvo fallback/recovery explícito.\n    8. **La configuración del renderer debe vivir en Settings**, no en el header operativo de la terminal.\n    9. **Soft roll-out:** stored `vte-experimental` se preserva; no se sobreescribe la preferencia del usuario en primer load.·\n    ## Próximos trabajos recomendados·\n    ### TERM-03 cierre real·\n    - revalidar los pendientes 5.3 y 6.15 del cambio `openspec/changes/term-03-gtk-vte-native-spike/`;\n    - rerun focalizado con entorno que sí tenga `libsoup-3.0`, `javascriptcoregtk-4.1` y `webkit2gtk-4.1` para poder compilar/probar el camino Rust.·\n    ### TERM-06 — Auditoría de compatibilidad GTK/VTE·\n    Verificar de punta a punta:·\n    - OpenCode launch/detección/reopen;\n    - Hermes launch/detección/durabilidad;\n    - Swarm / Agent Room / `agent_runs` / `agent_registry`;\n    - `terminal-exit`, recovery y fallback.·\n    ### TERM-07 — Separación de runtime activo·\n    Cambiar `TerminalTTY` para que, cuando GTK/VTE sea el renderer efectivo, **no bootée también el runtime xterm/WebSocket** salvo que el fallback se active de forma deliberada.·\n    ### TERM-08 — UX/configuración de renderer·\n    - mover la preferencia a Settings;\n    - ocultar selectores del header terminal;\n    - limpiar labels `experimental` y referencias activas a Ghostty.·\n    ### TERM-09 — Limpieza de docs/tests/copy·\n    Actualizar documentación y tests para que reflejen la estrategia nueva: GTK/VTE default + xterm fallback, sin Ghostty como candidato activo.·\n    ## Criterio para reabrir TERM-04·\n    Sólo reabrir Ghostty/libghostty si pasa TODO esto:·\n    - existe un bloqueo concreto, reproducible y relevante en GTK/VTE;\n    - ese bloqueo no se resuelve razonablemente con hardening del camino actual;\n    - el costo de build/empaquetado/runtime de Ghostty está justificado por evidencia, no por intuición.·\n    Si no se cumplen esas tres condiciones, TERM-04 permanece cerrado.·\n    ## Referencias·\n    - `docs/26_TERM-01_Terminal_Renderer_Evidence_Pack.md`\n    - `openspec/changes/term-03-gtk-vte-native-spike/`\n    - `src/components/TerminalTTY.jsx`\n    - `src/components/TerminalWorkspacesManager.jsx`\n    - `src/components/terminal/terminalRendererCapabilities.js`\n    - `src/components/terminal/terminalRendererPreferences.js`\n    - `openspec/changes/terminal-engine-v2/` (motor v2, apply completo)\n    - `src/lib/terminal/v2Graveyard.js`\n    \"\n\n    \u001b[0m \u001b[90m 16 |\u001b[39m     expect(doc)\u001b[33m.\u001b[39mtoMatch(\u001b[35m/xterm-webgl como renderer por defecto/i\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 17 |\u001b[39m     expect(doc)\u001b[33m.\u001b[39mtoMatch(\u001b[35m/xterm.*fallback/i\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 18 |\u001b[39m     expect(doc)\u001b[33m.\u001b[39mtoMatch(\u001b[35m/GTK\\/VTE.*opt-in|vte-experimental.*opt-in/i\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                 \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 19 |\u001b[39m     expect(doc)\u001b[33m.\u001b[39mtoMatch(\u001b[35m/TERM-04.*cerrado/i\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 20 |\u001b[39m     expect(doc)\u001b[33m.\u001b[39mtoMatch(\u001b[35m/Ghostty.*fuera del roadmap activo|Ghostty.*no-go/i\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 21 |\u001b[39m     expect(doc)\u001b[33m.\u001b[39mtoContain(\u001b[32m'checkpoint/terminal-experiments-2026-05-14'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (tests/unit/terminal-renderer-roadmap-doc.test.js:18:17)\n",
+      "name": "D:\\devhub\\tests\\unit\\terminal-renderer-roadmap-doc.test.js",
+      "startTime": 1783200206568,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["getRightDockAnimProps — fullscreen takeover"],
+          "failureMessages": [],
+          "fullName": "getRightDockAnimProps — fullscreen takeover uses 220ms opacity fade aligned with useModeTransition enter",
+          "location": null,
+          "status": "passed",
+          "title": "uses 220ms opacity fade aligned with useModeTransition enter"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceShellVisibilityStyle"],
+          "failureMessages": [],
+          "fullName": "resolveWorkspaceShellVisibilityStyle instantly hides inactive or fullscreen-takeover shells",
+          "location": null,
+          "status": "passed",
+          "title": "instantly hides inactive or fullscreen-takeover shells"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceShellVisibilityStyle"],
+          "failureMessages": [],
+          "fullName": "resolveWorkspaceShellVisibilityStyle shows the active workspace shell instantly without opacity animation",
+          "location": null,
+          "status": "passed",
+          "title": "shows the active workspace shell instantly without opacity animation"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceWindowVisibilityStyle"],
+          "failureMessages": [
+            "Error: expect(received).toMatchObject(expected)\n\n- Expected  - 2\n+ Received  + 1\n\n  Object {\n-   \"contain\": \"strict\",\n+   \"contain\": \"layout paint\",\n    \"opacity\": 0,\n    \"pointerEvents\": \"none\",\n-   \"visibility\": \"hidden\",\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\components\\terminal\\__tests__\\workspaceAnimProps.test.js:72:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "resolveWorkspaceWindowVisibilityStyle parks inactive windows with visibility:hidden (WebGL needs soft refresh on return)",
+          "location": null,
+          "status": "failed",
+          "title": "parks inactive windows with visibility:hidden (WebGL needs soft refresh on return)"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceWindowVisibilityStyle"],
+          "failureMessages": [
+            "Error: expect(received).toMatchObject(expected)\n\n- Expected  - 1\n+ Received  + 0\n\n  Object {\n    \"backgroundColor\": \"var(--surface-app)\",\n    \"opacity\": 1,\n    \"pointerEvents\": \"auto\",\n-   \"visibility\": \"visible\",\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\components\\terminal\\__tests__\\workspaceAnimProps.test.js:85:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "resolveWorkspaceWindowVisibilityStyle shows the active window with opaque background",
+          "location": null,
+          "status": "failed",
+          "title": "shows the active window with opaque background"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceWindowVisibilityStyle"],
+          "failureMessages": [
+            "Error: expect(received).toMatchObject(expected)\n\n- Expected  - 1\n+ Received  + 0\n\n  Object {\n    \"opacity\": 0,\n    \"pointerEvents\": \"none\",\n-   \"visibility\": \"hidden\",\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\components\\terminal\\__tests__\\workspaceAnimProps.test.js:99:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "resolveWorkspaceWindowVisibilityStyle fullscreen takeover hides the active window too (matches workspace shell)",
+          "location": null,
+          "status": "failed",
+          "title": "fullscreen takeover hides the active window too (matches workspace shell)"
+        },
+        {
+          "ancestorTitles": ["resolveRightDockTakeoverChromeStyle"],
+          "failureMessages": [],
+          "fullName": "resolveRightDockTakeoverChromeStyle adds opaque isolation only during fullscreen takeover",
+          "location": null,
+          "status": "passed",
+          "title": "adds opaque isolation only during fullscreen takeover"
+        }
+      ],
+      "endTime": 1783200206847,
+      "message": "  ● resolveWorkspaceWindowVisibilityStyle › parks inactive windows with visibility:hidden (WebGL needs soft refresh on return)\n\n    expect(received).toMatchObject(expected)\n\n    - Expected  - 2\n    + Received  + 1\n\n      Object {\n    -   \"contain\": \"strict\",\n    +   \"contain\": \"layout paint\",\n        \"opacity\": 0,\n        \"pointerEvents\": \"none\",\n    -   \"visibility\": \"hidden\",\n      }\n\n    \u001b[0m \u001b[90m 70 |\u001b[39m         isActiveWindow\u001b[33m:\u001b[39m \u001b[36mfalse\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 71 |\u001b[39m       })\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 72 |\u001b[39m     )\u001b[33m.\u001b[39mtoMatchObject({\n     \u001b[90m    |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 73 |\u001b[39m       opacity\u001b[33m:\u001b[39m \u001b[35m0\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 74 |\u001b[39m       visibility\u001b[33m:\u001b[39m \u001b[32m'hidden'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 75 |\u001b[39m       pointerEvents\u001b[33m:\u001b[39m \u001b[32m'none'\u001b[39m\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/terminal/__tests__/workspaceAnimProps.test.js:72:7)\n\n  ● resolveWorkspaceWindowVisibilityStyle › shows the active window with opaque background\n\n    expect(received).toMatchObject(expected)\n\n    - Expected  - 1\n    + Received  + 0\n\n      Object {\n        \"backgroundColor\": \"var(--surface-app)\",\n        \"opacity\": 1,\n        \"pointerEvents\": \"auto\",\n    -   \"visibility\": \"visible\",\n      }\n\n    \u001b[0m \u001b[90m 83 |\u001b[39m         isActiveWindow\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 84 |\u001b[39m       })\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 85 |\u001b[39m     )\u001b[33m.\u001b[39mtoMatchObject({\n     \u001b[90m    |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 86 |\u001b[39m       opacity\u001b[33m:\u001b[39m \u001b[35m1\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 87 |\u001b[39m       visibility\u001b[33m:\u001b[39m \u001b[32m'visible'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 88 |\u001b[39m       pointerEvents\u001b[33m:\u001b[39m \u001b[32m'auto'\u001b[39m\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/terminal/__tests__/workspaceAnimProps.test.js:85:7)\n\n  ● resolveWorkspaceWindowVisibilityStyle › fullscreen takeover hides the active window too (matches workspace shell)\n\n    expect(received).toMatchObject(expected)\n\n    - Expected  - 1\n    + Received  + 0\n\n      Object {\n        \"opacity\": 0,\n        \"pointerEvents\": \"none\",\n    -   \"visibility\": \"hidden\",\n      }\n\n    \u001b[0m \u001b[90m  97 |\u001b[39m         isFullscreenTakeover\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m  98 |\u001b[39m       })\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m  99 |\u001b[39m     )\u001b[33m.\u001b[39mtoMatchObject({\n     \u001b[90m     |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 100 |\u001b[39m       opacity\u001b[33m:\u001b[39m \u001b[35m0\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 101 |\u001b[39m       visibility\u001b[33m:\u001b[39m \u001b[32m'hidden'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 102 |\u001b[39m       pointerEvents\u001b[33m:\u001b[39m \u001b[32m'none'\u001b[39m\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/terminal/__tests__/workspaceAnimProps.test.js:99:7)\n",
+      "name": "D:\\devhub\\src\\components\\terminal\\__tests__\\workspaceAnimProps.test.js",
+      "startTime": 1783200206702,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["resolveTerminalSpawnCwd"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 2\n\n  Object {\n-   \"effectiveCwd\": \"/safe/requested\",\n-   \"requestedCwd\": \"/safe/requested\",\n+   \"effectiveCwd\": \"D:\\\\safe\\\\requested\",\n+   \"requestedCwd\": \"D:\\\\safe\\\\requested\",\n    \"usedFallback\": false,\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\cwdGuard.test.js:29:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "resolveTerminalSpawnCwd uses requested cwd when it exists",
+          "location": null,
+          "status": "failed",
+          "title": "uses requested cwd when it exists"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalSpawnCwd"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 3\n+ Received  + 3\n\n  Object {\n-   \"effectiveCwd\": \"/safe/process\",\n-   \"requestedCwd\": \"/missing/project\",\n-   \"usedFallback\": true,\n+   \"effectiveCwd\": \"D:\\\\missing\\\\project\",\n+   \"requestedCwd\": \"D:\\\\missing\\\\project\",\n+   \"usedFallback\": false,\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\cwdGuard.test.js:45:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "resolveTerminalSpawnCwd falls back to process cwd when requested cwd is missing",
+          "location": null,
+          "status": "failed",
+          "title": "falls back to process cwd when requested cwd is missing"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalSpawnCwd"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 3\n+ Received  + 3\n\n  Object {\n-   \"effectiveCwd\": \"/safe/home\",\n-   \"requestedCwd\": \"/missing/project\",\n-   \"usedFallback\": true,\n+   \"effectiveCwd\": \"D:\\\\missing\\\\project\",\n+   \"requestedCwd\": \"D:\\\\missing\\\\project\",\n+   \"usedFallback\": false,\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\lib\\terminal\\cwdGuard.test.js:61:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "resolveTerminalSpawnCwd falls back to home when process cwd is unavailable",
+          "location": null,
+          "status": "failed",
+          "title": "falls back to home when process cwd is unavailable"
+        }
+      ],
+      "endTime": 1783200206979,
+      "message": "  ● resolveTerminalSpawnCwd › uses requested cwd when it exists\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 2\n    + Received  + 2\n\n      Object {\n    -   \"effectiveCwd\": \"/safe/requested\",\n    -   \"requestedCwd\": \"/safe/requested\",\n    +   \"effectiveCwd\": \"D:\\\\safe\\\\requested\",\n    +   \"requestedCwd\": \"D:\\\\safe\\\\requested\",\n        \"usedFallback\": false,\n      }\n\n    \u001b[0m \u001b[90m 27 |\u001b[39m         homeDir\u001b[33m:\u001b[39m \u001b[32m'/safe/home'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 28 |\u001b[39m       })\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 29 |\u001b[39m     )\u001b[33m.\u001b[39mtoEqual({\n     \u001b[90m    |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 30 |\u001b[39m       requestedCwd\u001b[33m:\u001b[39m \u001b[32m'/safe/requested'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 31 |\u001b[39m       effectiveCwd\u001b[33m:\u001b[39m \u001b[32m'/safe/requested'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 32 |\u001b[39m       usedFallback\u001b[33m:\u001b[39m \u001b[36mfalse\u001b[39m\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/cwdGuard.test.js:29:7)\n\n  ● resolveTerminalSpawnCwd › falls back to process cwd when requested cwd is missing\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 3\n    + Received  + 3\n\n      Object {\n    -   \"effectiveCwd\": \"/safe/process\",\n    -   \"requestedCwd\": \"/missing/project\",\n    -   \"usedFallback\": true,\n    +   \"effectiveCwd\": \"D:\\\\missing\\\\project\",\n    +   \"requestedCwd\": \"D:\\\\missing\\\\project\",\n    +   \"usedFallback\": false,\n      }\n\n    \u001b[0m \u001b[90m 43 |\u001b[39m         homeDir\u001b[33m:\u001b[39m \u001b[32m'/safe/home'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 44 |\u001b[39m       })\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 45 |\u001b[39m     )\u001b[33m.\u001b[39mtoEqual({\n     \u001b[90m    |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 46 |\u001b[39m       requestedCwd\u001b[33m:\u001b[39m \u001b[32m'/missing/project'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 47 |\u001b[39m       effectiveCwd\u001b[33m:\u001b[39m \u001b[32m'/safe/process'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 48 |\u001b[39m       usedFallback\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/cwdGuard.test.js:45:7)\n\n  ● resolveTerminalSpawnCwd › falls back to home when process cwd is unavailable\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 3\n    + Received  + 3\n\n      Object {\n    -   \"effectiveCwd\": \"/safe/home\",\n    -   \"requestedCwd\": \"/missing/project\",\n    -   \"usedFallback\": true,\n    +   \"effectiveCwd\": \"D:\\\\missing\\\\project\",\n    +   \"requestedCwd\": \"D:\\\\missing\\\\project\",\n    +   \"usedFallback\": false,\n      }\n\n    \u001b[0m \u001b[90m 59 |\u001b[39m         homeDir\u001b[33m:\u001b[39m \u001b[32m'/safe/home'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 60 |\u001b[39m       })\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 61 |\u001b[39m     )\u001b[33m.\u001b[39mtoEqual({\n     \u001b[90m    |\u001b[39m       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 62 |\u001b[39m       requestedCwd\u001b[33m:\u001b[39m \u001b[32m'/missing/project'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 63 |\u001b[39m       effectiveCwd\u001b[33m:\u001b[39m \u001b[32m'/safe/home'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 64 |\u001b[39m       usedFallback\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/lib/terminal/cwdGuard.test.js:61:7)\n",
+      "name": "D:\\devhub\\src\\lib\\terminal\\cwdGuard.test.js",
+      "startTime": 1783200206855,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store creates a scrollback store for every new session",
+          "location": null,
+          "status": "passed",
+          "title": "creates a scrollback store for every new session"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store appends PTY output to the scrollback store",
+          "location": null,
+          "status": "passed",
+          "title": "appends PTY output to the scrollback store"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store publishes terminal:append frames to v2 subscribers only",
+          "location": null,
+          "status": "passed",
+          "title": "publishes terminal:append frames to v2 subscribers only"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store keeps the legacy output path for non-v2 panels",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the legacy output path for non-v2 panels"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store stops sending append events after unsubscribe without killing the PTY",
+          "location": null,
+          "status": "passed",
+          "title": "stops sending append events after unsubscribe without killing the PTY"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store does not start the auto-kill timer for v2 sessions after socket close",
+          "location": null,
+          "status": "passed",
+          "title": "does not start the auto-kill timer for v2 sessions after socket close"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store starts the auto-kill timer for legacy v1 sessions after socket close",
+          "location": null,
+          "status": "passed",
+          "title": "starts the auto-kill timer for legacy v1 sessions after socket close"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 scrollback store"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 scrollback store routes v1 output to a replaced v2 subscriber correctly",
+          "location": null,
+          "status": "passed",
+          "title": "routes v1 output to a replaced v2 subscriber correctly"
+        }
+      ],
+      "endTime": 1783200207355,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\ttyServer.scrollback.test.js",
+      "startTime": 1783200206982,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer — canonical termsize"],
+          "failureMessages": [],
+          "fullName": "ttyServer — canonical termsize stores termsize on resize and returns it on metadata query",
+          "location": null,
+          "status": "passed",
+          "title": "stores termsize on resize and returns it on metadata query"
+        },
+        {
+          "ancestorTitles": ["ttyServer — canonical termsize"],
+          "failureMessages": [],
+          "fullName": "ttyServer — canonical termsize broadcasts termsize to v2 subscribers when one client resizes",
+          "location": null,
+          "status": "passed",
+          "title": "broadcasts termsize to v2 subscribers when one client resizes"
+        },
+        {
+          "ancestorTitles": ["ttyServer — canonical termsize"],
+          "failureMessages": [],
+          "fullName": "ttyServer — canonical termsize sends cached termsize in the ready frame on v2 reconnect",
+          "location": null,
+          "status": "passed",
+          "title": "sends cached termsize in the ready frame on v2 reconnect"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session metadata"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session metadata metadata query returns the full object",
+          "location": null,
+          "status": "passed",
+          "title": "metadata query returns the full object"
+        },
+        {
+          "ancestorTitles": ["ttyServer — session metadata"],
+          "failureMessages": [],
+          "fullName": "ttyServer — session metadata responds to get-metadata message over WebSocket",
+          "location": null,
+          "status": "passed",
+          "title": "responds to get-metadata message over WebSocket"
+        },
+        {
+          "ancestorTitles": ["ttyServer — OSC 7 cwd capture"],
+          "failureMessages": [],
+          "fullName": "ttyServer — OSC 7 cwd capture updates session.cwd from OSC 7 sequences in PTY output",
+          "location": null,
+          "status": "passed",
+          "title": "updates session.cwd from OSC 7 sequences in PTY output"
+        },
+        {
+          "ancestorTitles": ["ttyServer — OSC 7 cwd capture"],
+          "failureMessages": [],
+          "fullName": "ttyServer — OSC 7 cwd capture captures cwd from OSC 7 split across chunks",
+          "location": null,
+          "status": "passed",
+          "title": "captures cwd from OSC 7 split across chunks"
+        }
+      ],
+      "endTime": 1783200207771,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\ttyServer.metadata.test.js",
+      "startTime": 1783200207389,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer — snapshot storage"],
+          "failureMessages": [],
+          "fullName": "ttyServer — snapshot storage stores a snapshot from a save-snapshot message and returns it via get-snapshot",
+          "location": null,
+          "status": "passed",
+          "title": "stores a snapshot from a save-snapshot message and returns it via get-snapshot"
+        },
+        {
+          "ancestorTitles": ["ttyServer — snapshot storage"],
+          "failureMessages": [],
+          "fullName": "ttyServer — snapshot storage also accepts cache:term:full as an alias for save-snapshot",
+          "location": null,
+          "status": "passed",
+          "title": "also accepts cache:term:full as an alias for save-snapshot"
+        },
+        {
+          "ancestorTitles": ["ttyServer — snapshot storage"],
+          "failureMessages": [],
+          "fullName": "ttyServer — snapshot storage returns a null snapshot when none has been saved",
+          "location": null,
+          "status": "passed",
+          "title": "returns a null snapshot when none has been saved"
+        },
+        {
+          "ancestorTitles": ["ttyServer — snapshot storage"],
+          "failureMessages": [],
+          "fullName": "ttyServer — snapshot storage overwrites the previous snapshot with a newer one",
+          "location": null,
+          "status": "passed",
+          "title": "overwrites the previous snapshot with a newer one"
+        },
+        {
+          "ancestorTitles": ["ttyServer — subscribe with fromOffset"],
+          "failureMessages": [],
+          "fullName": "ttyServer — subscribe with fromOffset replays the ring-buffer delta from fromOffset before going live",
+          "location": null,
+          "status": "passed",
+          "title": "replays the ring-buffer delta from fromOffset before going live"
+        },
+        {
+          "ancestorTitles": ["ttyServer — subscribe with fromOffset"],
+          "failureMessages": [],
+          "fullName": "ttyServer — subscribe with fromOffset does not replay when fromOffset is omitted",
+          "location": null,
+          "status": "passed",
+          "title": "does not replay when fromOffset is omitted"
+        }
+      ],
+      "endTime": 1783200208111,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\ttyServer.snapshot.test.js",
+      "startTime": 1783200207792,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer — v2 unsubscribe keeps PTY alive"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 unsubscribe keeps PTY alive stops append events to the unsubscribed socket",
+          "location": null,
+          "status": "passed",
+          "title": "stops append events to the unsubscribed socket"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 unsubscribe keeps PTY alive"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 unsubscribe keeps PTY alive does not start the auto-kill timer after unsubscribe or socket close",
+          "location": null,
+          "status": "passed",
+          "title": "does not start the auto-kill timer after unsubscribe or socket close"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 unsubscribe keeps PTY alive"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 unsubscribe keeps PTY alive re-subscribe replays the delta accumulated while unsubscribed",
+          "location": null,
+          "status": "passed",
+          "title": "re-subscribe replays the delta accumulated while unsubscribed"
+        },
+        {
+          "ancestorTitles": ["ttyServer — v2 unsubscribe keeps PTY alive"],
+          "failureMessages": [],
+          "fullName": "ttyServer — v2 unsubscribe keeps PTY alive subscribe accepts sessionId and fromOffset",
+          "location": null,
+          "status": "passed",
+          "title": "subscribe accepts sessionId and fromOffset"
+        }
+      ],
+      "endTime": 1783200208377,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\ttyServer.unsubscribe.test.js",
+      "startTime": 1783200208125,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer PTY identity integration"],
+          "failureMessages": [],
+          "fullName": "ttyServer PTY identity integration Phase 5.2: session activation populates PTY identity and session termination clears it",
+          "location": null,
+          "status": "passed",
+          "title": "Phase 5.2: session activation populates PTY identity and session termination clears it"
+        }
+      ],
+      "endTime": 1783200208552,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\ttyServer.ptyIdentity.test.js",
+      "startTime": 1783200208388,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["restoreSessions skips pty-durable without live pid"],
+          "failureMessages": [],
+          "fullName": "restoreSessions skips pty-durable without live pid skips pty-durable session whose ptyPid is no longer alive",
+          "location": null,
+          "status": "passed",
+          "title": "skips pty-durable session whose ptyPid is no longer alive"
+        },
+        {
+          "ancestorTitles": ["restoreSessions skips pty-durable without live pid"],
+          "failureMessages": [],
+          "fullName": "restoreSessions skips pty-durable without live pid restores pty-durable session whose ptyPid IS alive",
+          "location": null,
+          "status": "passed",
+          "title": "restores pty-durable session whose ptyPid IS alive"
+        },
+        {
+          "ancestorTitles": ["restoreSessions skips opencode-durable sessions"],
+          "failureMessages": [],
+          "fullName": "restoreSessions skips opencode-durable sessions skips opencode-durable session — React handles it",
+          "location": null,
+          "status": "passed",
+          "title": "skips opencode-durable session — React handles it"
+        },
+        {
+          "ancestorTitles": ["restoreSessions respawns shell-ephemeral sessions"],
+          "failureMessages": [],
+          "fullName": "restoreSessions respawns shell-ephemeral sessions respawns shell-ephemeral with correct cwd/shell — no ptyPid check",
+          "location": null,
+          "status": "passed",
+          "title": "respawns shell-ephemeral with correct cwd/shell — no ptyPid check"
+        },
+        {
+          "ancestorTitles": ["restoreSessions respawns shell-ephemeral sessions"],
+          "failureMessages": [],
+          "fullName": "restoreSessions respawns shell-ephemeral sessions skips shell-ephemeral if both cwd and shell are missing",
+          "location": null,
+          "status": "passed",
+          "title": "skips shell-ephemeral if both cwd and shell are missing"
+        },
+        {
+          "ancestorTitles": ["devhub_generic_restore_in_progress mutex flag"],
+          "failureMessages": [],
+          "fullName": "devhub_generic_restore_in_progress mutex flag sets devhub_generic_restore_in_progress flag before restore and clears it after",
+          "location": null,
+          "status": "passed",
+          "title": "sets devhub_generic_restore_in_progress flag before restore and clears it after"
+        },
+        {
+          "ancestorTitles": ["devhub_generic_restore_in_progress mutex flag"],
+          "failureMessages": [],
+          "fullName": "devhub_generic_restore_in_progress mutex flag flag is cleared even if restore throws",
+          "location": null,
+          "status": "passed",
+          "title": "flag is cleared even if restore throws"
+        },
+        {
+          "ancestorTitles": ["restoreSessions console output"],
+          "failureMessages": [],
+          "fullName": "restoreSessions console output logs shell-ephemeral restored count",
+          "location": null,
+          "status": "passed",
+          "title": "logs shell-ephemeral restored count"
+        }
+      ],
+      "endTime": 1783200208706,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\ttyServer.restoreEphemeral.test.js",
+      "startTime": 1783200208555,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["closeSession()"],
+          "failureMessages": [],
+          "fullName": "closeSession() kills the PTY process before removing the session",
+          "location": null,
+          "status": "passed",
+          "title": "kills the PTY process before removing the session"
+        },
+        {
+          "ancestorTitles": ["closeSession()"],
+          "failureMessages": [],
+          "fullName": "closeSession() does not synthesize a replacement handle when closing a missing session",
+          "location": null,
+          "status": "passed",
+          "title": "does not synthesize a replacement handle when closing a missing session"
+        }
+      ],
+      "endTime": 1783200208859,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\ttyServer.closeSession.test.js",
+      "startTime": 1783200208709,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["classifySession"],
+          "failureMessages": [],
+          "fullName": "classifySession returns opencode-durable when opencodeSessionId is present",
+          "location": null,
+          "status": "passed",
+          "title": "returns opencode-durable when opencodeSessionId is present"
+        },
+        {
+          "ancestorTitles": ["classifySession"],
+          "failureMessages": [],
+          "fullName": "classifySession returns pty-durable when ptyPid is present (no opencodeSessionId)",
+          "location": null,
+          "status": "passed",
+          "title": "returns pty-durable when ptyPid is present (no opencodeSessionId)"
+        },
+        {
+          "ancestorTitles": ["classifySession"],
+          "failureMessages": [],
+          "fullName": "classifySession returns shell-ephemeral when neither ptyPid nor opencodeSessionId is present",
+          "location": null,
+          "status": "passed",
+          "title": "returns shell-ephemeral when neither ptyPid nor opencodeSessionId is present"
+        },
+        {
+          "ancestorTitles": ["classifySession"],
+          "failureMessages": [],
+          "fullName": "classifySession opencode-durable takes precedence over pty-durable when both are set",
+          "location": null,
+          "status": "passed",
+          "title": "opencode-durable takes precedence over pty-durable when both are set"
+        },
+        {
+          "ancestorTitles": ["classifySession"],
+          "failureMessages": [],
+          "fullName": "classifySession returns shell-ephemeral for empty object",
+          "location": null,
+          "status": "passed",
+          "title": "returns shell-ephemeral for empty object"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes version:2 in JSON root",
+          "location": null,
+          "status": "passed",
+          "title": "writes version:2 in JSON root"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes sessionType per session for pty-durable",
+          "location": null,
+          "status": "passed",
+          "title": "writes sessionType per session for pty-durable"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes sessionType per session for opencode-durable",
+          "location": null,
+          "status": "passed",
+          "title": "writes sessionType per session for opencode-durable"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes sessionType per session for shell-ephemeral",
+          "location": null,
+          "status": "passed",
+          "title": "writes sessionType per session for shell-ephemeral"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes durable restore flags for opencode-durable sessions",
+          "location": null,
+          "status": "passed",
+          "title": "writes durable restore flags for opencode-durable sessions"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes opencodeSessionId and initialCommand fields when present",
+          "location": null,
+          "status": "passed",
+          "title": "writes opencodeSessionId and initialCommand fields when present"
+        },
+        {
+          "ancestorTitles": ["saveSessions writes version:2 with sessionType"],
+          "failureMessages": [],
+          "fullName": "saveSessions writes version:2 with sessionType writes swarmRole and swarmId when present",
+          "location": null,
+          "status": "passed",
+          "title": "writes swarmRole and swarmId when present"
+        },
+        {
+          "ancestorTitles": ["loadSessions migrates v1 sessions to sessionType"],
+          "failureMessages": [],
+          "fullName": "loadSessions migrates v1 sessions to sessionType loadSessions migrates v1 session without sessionType to shell-ephemeral",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions migrates v1 session without sessionType to shell-ephemeral"
+        },
+        {
+          "ancestorTitles": ["loadSessions migrates v1 sessions to sessionType"],
+          "failureMessages": [],
+          "fullName": "loadSessions migrates v1 sessions to sessionType loadSessions migrates v1 session with ptyPid to pty-durable",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions migrates v1 session with ptyPid to pty-durable"
+        },
+        {
+          "ancestorTitles": ["loadSessions migrates v1 sessions to sessionType"],
+          "failureMessages": [],
+          "fullName": "loadSessions migrates v1 sessions to sessionType loadSessions migrates v1 session with opencodeSessionId to opencode-durable",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions migrates v1 session with opencodeSessionId to opencode-durable"
+        },
+        {
+          "ancestorTitles": ["loadSessions migrates v1 sessions to sessionType"],
+          "failureMessages": [],
+          "fullName": "loadSessions migrates v1 sessions to sessionType loadSessions preserves existing sessionType on v2 sessions",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions preserves existing sessionType on v2 sessions"
+        },
+        {
+          "ancestorTitles": ["loadSessions migrates v1 sessions to sessionType"],
+          "failureMessages": [],
+          "fullName": "loadSessions migrates v1 sessions to sessionType loadSessions marks all returned sessions with restored: true",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions marks all returned sessions with restored: true"
+        },
+        {
+          "ancestorTitles": ["loadSessions migrates v1 sessions to sessionType"],
+          "failureMessages": [],
+          "fullName": "loadSessions migrates v1 sessions to sessionType loadSessions filters out stale sessions (7-day TTL)",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions filters out stale sessions (7-day TTL)"
+        }
+      ],
+      "endTime": 1783200209039,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\sessionStore.migration.test.js",
+      "startTime": 1783200208871,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["ttyServer — getAllActiveSessions (T-023)"],
+          "failureMessages": [],
+          "fullName": "ttyServer — getAllActiveSessions (T-023) returns a plain PTY session that has no opencodeSessionId",
+          "location": null,
+          "status": "passed",
+          "title": "returns a plain PTY session that has no opencodeSessionId"
+        },
+        {
+          "ancestorTitles": ["ttyServer — getAllActiveSessions (T-023)"],
+          "failureMessages": [],
+          "fullName": "ttyServer — getAllActiveSessions (T-023) sorts sessions by createdAt ascending",
+          "location": null,
+          "status": "passed",
+          "title": "sorts sessions by createdAt ascending"
+        }
+      ],
+      "endTime": 1783200209247,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\ttyServer.getAllActiveSessions.test.js",
+      "startTime": 1783200209042,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["v2 → v3 migration: restorePolicy defaults to \"auto\""],
+          "failureMessages": [],
+          "fullName": "v2 → v3 migration: restorePolicy defaults to \"auto\" loadSessions adds restorePolicy:\"auto\" to v2 session without that field",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions adds restorePolicy:\"auto\" to v2 session without that field"
+        },
+        {
+          "ancestorTitles": ["v2 → v3 migration: restorePolicy defaults to \"auto\""],
+          "failureMessages": [],
+          "fullName": "v2 → v3 migration: restorePolicy defaults to \"auto\" loadSessions migrates ALL v2 sessions in the file",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions migrates ALL v2 sessions in the file"
+        },
+        {
+          "ancestorTitles": ["v3 sessions: restorePolicy is preserved"],
+          "failureMessages": [],
+          "fullName": "v3 sessions: restorePolicy is preserved loadSessions preserves restorePolicy:\"auto\" on v3 session",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions preserves restorePolicy:\"auto\" on v3 session"
+        },
+        {
+          "ancestorTitles": ["v3 sessions: restorePolicy is preserved"],
+          "failureMessages": [],
+          "fullName": "v3 sessions: restorePolicy is preserved loadSessions preserves restorePolicy:\"manual\" on v3 session",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions preserves restorePolicy:\"manual\" on v3 session"
+        },
+        {
+          "ancestorTitles": ["v3 sessions: restorePolicy is preserved"],
+          "failureMessages": [],
+          "fullName": "v3 sessions: restorePolicy is preserved loadSessions preserves restorePolicy:\"off\" on v3 session",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions preserves restorePolicy:\"off\" on v3 session"
+        },
+        {
+          "ancestorTitles": ["sanitizeRestorePolicy: unknown values default to \"auto\""],
+          "failureMessages": [],
+          "fullName": "sanitizeRestorePolicy: unknown values default to \"auto\" loadSessions sanitizes unknown restorePolicy to \"auto\"",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions sanitizes unknown restorePolicy to \"auto\""
+        },
+        {
+          "ancestorTitles": ["sanitizeRestorePolicy: unknown values default to \"auto\""],
+          "failureMessages": [],
+          "fullName": "sanitizeRestorePolicy: unknown values default to \"auto\" loadSessions sanitizes null restorePolicy to \"auto\"",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions sanitizes null restorePolicy to \"auto\""
+        },
+        {
+          "ancestorTitles": ["sanitizeRestorePolicy: unknown values default to \"auto\""],
+          "failureMessages": [],
+          "fullName": "sanitizeRestorePolicy: unknown values default to \"auto\" loadSessions sanitizes undefined restorePolicy to \"auto\"",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions sanitizes undefined restorePolicy to \"auto\""
+        },
+        {
+          "ancestorTitles": ["sanitizeRestorePolicy: unknown values default to \"auto\""],
+          "failureMessages": [],
+          "fullName": "sanitizeRestorePolicy: unknown values default to \"auto\" loadSessions sanitizes empty string restorePolicy to \"auto\"",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions sanitizes empty string restorePolicy to \"auto\""
+        },
+        {
+          "ancestorTitles": ["migration idempotency: only runs once"],
+          "failureMessages": [],
+          "fullName": "migration idempotency: only runs once loadSessions does NOT overwrite v3 restorePolicy when already set to \"manual\"",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions does NOT overwrite v3 restorePolicy when already set to \"manual\""
+        },
+        {
+          "ancestorTitles": ["migration idempotency: only runs once"],
+          "failureMessages": [],
+          "fullName": "migration idempotency: only runs once loadSessions does NOT overwrite v3 restorePolicy when already set to \"off\"",
+          "location": null,
+          "status": "passed",
+          "title": "loadSessions does NOT overwrite v3 restorePolicy when already set to \"off\""
+        },
+        {
+          "ancestorTitles": ["migration idempotency: only runs once"],
+          "failureMessages": [],
+          "fullName": "migration idempotency: only runs once multiple loadSessions calls all return the same restorePolicy value (idempotent)",
+          "location": null,
+          "status": "passed",
+          "title": "multiple loadSessions calls all return the same restorePolicy value (idempotent)"
+        },
+        {
+          "ancestorTitles": ["saveSessions persists restorePolicy"],
+          "failureMessages": [],
+          "fullName": "saveSessions persists restorePolicy saveSessions writes restorePolicy field when present on session object",
+          "location": null,
+          "status": "passed",
+          "title": "saveSessions writes restorePolicy field when present on session object"
+        },
+        {
+          "ancestorTitles": ["saveSessions persists restorePolicy"],
+          "failureMessages": [],
+          "fullName": "saveSessions persists restorePolicy saveSessions writes restorePolicy:\"auto\" when session has no restorePolicy",
+          "location": null,
+          "status": "passed",
+          "title": "saveSessions writes restorePolicy:\"auto\" when session has no restorePolicy"
+        },
+        {
+          "ancestorTitles": ["saveSessions persists restorePolicy"],
+          "failureMessages": [],
+          "fullName": "saveSessions persists restorePolicy saveSessions writes version:3 in JSON root",
+          "location": null,
+          "status": "passed",
+          "title": "saveSessions writes version:3 in JSON root"
+        }
+      ],
+      "endTime": 1783200209392,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\__tests__\\sessionStore.migration-v3.test.js",
+      "startTime": 1783200209250,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "Phase 3 — dual mutex keys",
+            "generic restore uses devhub_generic_restore_in_progress"
+          ],
+          "failureMessages": [],
+          "fullName": "Phase 3 — dual mutex keys generic restore uses devhub_generic_restore_in_progress sets devhub_generic_restore_in_progress when restoring pty-durable sessions",
+          "location": null,
+          "status": "passed",
+          "title": "sets devhub_generic_restore_in_progress when restoring pty-durable sessions"
+        },
+        {
+          "ancestorTitles": [
+            "Phase 3 — dual mutex keys",
+            "generic restore uses devhub_generic_restore_in_progress"
+          ],
+          "failureMessages": [],
+          "fullName": "Phase 3 — dual mutex keys generic restore uses devhub_generic_restore_in_progress sets devhub_generic_restore_in_progress when restoring shell-ephemeral sessions",
+          "location": null,
+          "status": "passed",
+          "title": "sets devhub_generic_restore_in_progress when restoring shell-ephemeral sessions"
+        },
+        {
+          "ancestorTitles": [
+            "Phase 3 — dual mutex keys",
+            "opencode-durable sessions do NOT trigger generic mutex"
+          ],
+          "failureMessages": [],
+          "fullName": "Phase 3 — dual mutex keys opencode-durable sessions do NOT trigger generic mutex opencode-durable sessions are skipped by backend and do not appear in restored sessions",
+          "location": null,
+          "status": "passed",
+          "title": "opencode-durable sessions are skipped by backend and do not appear in restored sessions"
+        },
+        {
+          "ancestorTitles": ["Phase 3 — dual mutex keys", "concurrent restore safety"],
+          "failureMessages": [],
+          "fullName": "Phase 3 — dual mutex keys concurrent restore safety second restore call while mutex is held does not corrupt state",
+          "location": null,
+          "status": "passed",
+          "title": "second restore call while mutex is held does not corrupt state"
+        },
+        {
+          "ancestorTitles": ["Phase 3 — dual mutex keys", "concurrent restore safety"],
+          "failureMessages": [],
+          "fullName": "Phase 3 — dual mutex keys concurrent restore safety mix of opencode-durable and generic sessions — only generic mutex is set",
+          "location": null,
+          "status": "passed",
+          "title": "mix of opencode-durable and generic sessions — only generic mutex is set"
+        }
+      ],
+      "endTime": 1783200209547,
+      "message": "",
+      "name": "D:\\devhub\\src\\lib\\terminal\\ttyServer.dualMutex.test.js",
+      "startTime": 1783200209400,
+      "status": "passed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

@@ -41,6 +41,7 @@ export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   codex: '/home/matias/.nvm/versions/node/v24.14.0/bin/codex',
   hermes: '/home/matias/.local/bin/hermes',
   kimi: '/home/matias/.kimi-code/bin/kimi',
+  grok: 'grok',
 });
 
 export const KIMI_SKILL_DIRS = Object.freeze({
@@ -204,6 +205,9 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       }
       break;
     }
+    case 'grok':
+      innerCommand = executable;
+      break;
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;

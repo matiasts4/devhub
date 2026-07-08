@@ -10,32 +10,31 @@ import { TRANSITION } from '@/components/ui/system/motion-tokens';
  */
 
 /**
- * GPU slide for the shared right dock layer (browser, editor, swarm, etc.).
- * Position (left/width) is applied instantly; only transform + opacity animate
- * so the panel enters from the right without sweeping across the workspace.
+ * Opacity-only fade for the shared right dock layer (browser, editor, swarm).
+ * Position (left/width) is applied instantly. No horizontal transform — a
+ * slide would desync WebView2 child HWND bounds from getBoundingClientRect.
  *
- * @param {{ isVisible: boolean, isDragging?: boolean }} options
+ * @param {{ isVisible: boolean, isDragging?: boolean, isFullscreen?: boolean }} options
  * @returns {{ initial, animate, transition }}
  */
 export function getRightDockAnimProps({ isVisible, isDragging = false, isFullscreen = false }) {
-  // Fullscreen takeover (pizarra / browser / swarm maximized): the dock fills
-  // the whole workspace, so the default `x: '100%'` slide is a slow horizontal
-  // sweep across the entire screen (280ms) that feels sluggish when entering
-  // the pizarra. For takeovers we use an opacity-only fade timed to match
-  // useModeTransition enter (220ms) so workspace↔pizarra cross-fades feel
-  // synchronized. Opacity stays on the GPU and keeps native surface bounds
-  // in sync (no transform on the shell).
-  if (isFullscreen) {
-    return {
-      initial: { opacity: 0 },
-      animate: isVisible ? { opacity: 1 } : { opacity: 0 },
-      transition: isDragging ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
-    };
-  }
+  // ponytail: WebView2 child HWND is screen-positioned. A horizontal slide
+  // (x: 100% → 0) desyncs getBoundingClientRect from the native surface and
+  // leaves a black dock on cold launch. Opacity-only keeps bounds stable —
+  // same contract as VTE / fullscreen takeover.
+  //
+  // Blank-pizarra hardening: fullscreen takeovers (and any already-visible
+  // dock) start at opacity 1. Starting at 0 left a black content area when
+  // the enter animation was interrupted mid-toggle or mid-workspace-switch.
+  const startVisible = Boolean(isVisible && isFullscreen);
   return {
-    initial: { opacity: 0, x: '100%' },
-    animate: isVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: '100%' },
-    transition: isDragging ? { duration: 0 } : TRANSITION.enter,
+    initial: { opacity: startVisible || isVisible ? (isFullscreen ? 1 : 0) : 0 },
+    animate: isVisible ? { opacity: 1 } : { opacity: 0 },
+    transition: isDragging
+      ? { duration: 0 }
+      : isFullscreen && isVisible
+        ? { duration: 0 }
+        : { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
   };
 }
 

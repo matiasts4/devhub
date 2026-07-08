@@ -1,6 +1,71 @@
 /* global module */
-const DEFAULT_BROWSER_URL = 'http://localhost:3200/';
+const LEGACY_BROWSER_HOME_URLS = ['http://localhost:3200/', 'http://localhost:3000/'];
+/** Safe external home — never the DevHub shell (child WebView2 loading itself hangs). */
+const EXTERNAL_BROWSER_HOME_URL = 'https://example.com/';
+const DEFAULT_BROWSER_URL = EXTERNAL_BROWSER_HOME_URL;
 const DEFAULT_SEARCH_URL = 'https://duckduckgo.com/?q=';
+
+function isDevHubShellOrigin(origin) {
+  const normalized = String(origin || '')
+    .trim()
+    .toLowerCase();
+  if (!normalized || normalized === 'null') return false;
+  if (normalized.includes('tauri.localhost')) return true;
+  // Only the real DevHub shell ports (dev 3100, prod 3400). 3200/3000 were legacy
+  // browser-home defaults, not the shell — migrating those is handled separately.
+  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):(3100|3400)$/.test(normalized);
+}
+
+function isDevHubShellBrowserUrl(url) {
+  try {
+    return isDevHubShellOrigin(new URL(String(url || '').trim()).origin);
+  } catch {
+    return false;
+  }
+}
+
+function resolveDefaultBrowserUrl() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      const origin = String(window.location.origin || '').trim();
+      // ponytail: only use live origin when it is a distinct dev target, not our shell.
+      if (origin && origin !== 'null' && !isDevHubShellOrigin(origin)) {
+        return `${origin}/`;
+      }
+    } catch {
+      // Fall through to external default.
+    }
+  }
+  return EXTERNAL_BROWSER_HOME_URL;
+}
+
+function resolveSanitizedBrowserRuntime(rawState = {}) {
+  const browserRuntimePinned = rawState.browserRuntimePinned === true;
+  const userPick = rawState.browserRuntimeUserPick === true;
+  const normalized = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
+
+  // Stale auto-pinned iframe from the 5s WebView2 timeout fallback (build 20260708b).
+  if (normalized === 'iframe' && browserRuntimePinned && !userPick) {
+    return 'native-gtk';
+  }
+
+  if (browserRuntimePinned && userPick) {
+    return normalized;
+  }
+
+  return 'native-gtk';
+}
+
+function migrateLegacyBrowserHomeUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return resolveDefaultBrowserUrl();
+  const normalized = raw.endsWith('/') ? raw : `${raw}/`;
+  if (LEGACY_BROWSER_HOME_URLS.includes(normalized) || isDevHubShellBrowserUrl(normalized)) {
+    return resolveDefaultBrowserUrl();
+  }
+  return raw;
+}
+
 const MIN_RIGHT_DOCK_SIZE = 20;
 const MAX_RIGHT_DOCK_SIZE = 82;
 
@@ -15,7 +80,7 @@ const DEFAULT_RIGHT_DOCK_STATE = {
   maximizedView: 'browser',
   size: 32,
   browserUrl: DEFAULT_BROWSER_URL,
-  browserHistory: [DEFAULT_BROWSER_URL],
+  browserHistory: [DEFAULT_BROWSER_URL], // readRightDockState replaces with resolveDefaultBrowserUrl()
   browserHistoryIndex: 0,
   // pizarra-ux-overhaul: opt-in flag for the pizarra-mounted browser
   // surface to keep using the iframe path even when the native GTK
@@ -134,7 +199,10 @@ function sanitizeRightDockState(rawState = {}) {
     : rawActiveTab === 'zed'
       ? 'browser'
       : 'browser';
-  const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
+  const browserRuntime = resolveSanitizedBrowserRuntime(rawState);
+  const browserRuntimePinned =
+    rawState.browserRuntimeUserPick === true && rawState.browserRuntimePinned === true;
+  const browserRuntimeUserPick = rawState.browserRuntimeUserPick === true;
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
   const normalizedActiveTab = activeTab;
@@ -158,16 +226,18 @@ function sanitizeRightDockState(rawState = {}) {
     ? clamp(rawSize, MIN_RIGHT_DOCK_SIZE, MAX_RIGHT_DOCK_SIZE)
     : DEFAULT_RIGHT_DOCK_STATE.size;
 
+  const defaultHomeUrl = resolveDefaultBrowserUrl();
+
   const normalizedHistory = Array.isArray(rawState.browserHistory)
     ? rawState.browserHistory
-        .map((entry) => normalizeBrowserUrl(entry))
+        .map((entry) => normalizeBrowserUrl(migrateLegacyBrowserHomeUrl(entry)))
         .filter((entry, index, array) => entry && array.indexOf(entry) === index)
     : [];
 
   const normalizedUrl =
-    normalizeBrowserUrl(rawState.browserUrl) ||
+    normalizeBrowserUrl(migrateLegacyBrowserHomeUrl(rawState.browserUrl)) ||
     normalizedHistory[0] ||
-    DEFAULT_RIGHT_DOCK_STATE.browserUrl;
+    defaultHomeUrl;
 
   const browserHistory = normalizedHistory.length > 0 ? normalizedHistory : [normalizedUrl];
   const browserHistoryIndex = clamp(
@@ -195,6 +265,8 @@ function sanitizeRightDockState(rawState = {}) {
     activeTab: normalizedActiveTab,
     browserLayoutEpoch,
     browserRuntime,
+    browserRuntimePinned,
+    browserRuntimeUserPick,
     editMode,
     maximized,
     maximizedView,
@@ -214,6 +286,8 @@ function rightDockStatesEqual(a, b) {
     a.activeTab === b.activeTab &&
     a.browserLayoutEpoch === b.browserLayoutEpoch &&
     a.browserRuntime === b.browserRuntime &&
+    a.browserRuntimePinned === b.browserRuntimePinned &&
+    a.browserRuntimeUserPick === b.browserRuntimeUserPick &&
     a.editMode === b.editMode &&
     a.maximized === b.maximized &&
     a.maximizedView === b.maximizedView &&
@@ -225,19 +299,28 @@ function rightDockStatesEqual(a, b) {
   );
 }
 
+function buildFreshRightDockState() {
+  const homeUrl = resolveDefaultBrowserUrl();
+  return {
+    ...DEFAULT_RIGHT_DOCK_STATE,
+    browserUrl: homeUrl,
+    browserHistory: [homeUrl],
+  };
+}
+
 function readRightDockState(storage, projectId, wsId) {
   if (!storage || typeof storage.getItem !== 'function') {
-    return { ...DEFAULT_RIGHT_DOCK_STATE };
+    return buildFreshRightDockState();
   }
 
   try {
     const raw = storage.getItem(buildRightDockStorageKey(projectId, wsId));
-    if (!raw) return { ...DEFAULT_RIGHT_DOCK_STATE };
+    if (!raw) return buildFreshRightDockState();
     const state = sanitizeRightDockState(JSON.parse(raw));
     writeRightDockState(storage, projectId, wsId, state);
     return state;
   } catch {
-    return { ...DEFAULT_RIGHT_DOCK_STATE };
+    return buildFreshRightDockState();
   }
 }
 
@@ -259,9 +342,15 @@ module.exports = {
   DEFAULT_RIGHT_DOCK_STATE,
   MAX_RIGHT_DOCK_SIZE,
   MIN_RIGHT_DOCK_SIZE,
+  buildFreshRightDockState,
   buildRightDockStorageKey,
+  migrateLegacyBrowserHomeUrl,
   normalizeBrowserUrl,
   readRightDockState,
+  resolveDefaultBrowserUrl,
+  isDevHubShellBrowserUrl,
+  isDevHubShellOrigin,
+  resolveSanitizedBrowserRuntime,
   rightDockStatesEqual,
   sanitizeRightDockState,
   writeRightDockState,

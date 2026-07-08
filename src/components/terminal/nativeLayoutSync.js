@@ -17,11 +17,17 @@ export function getTerminalLayoutSettledGeneration() {
 export function dispatchTerminalLayoutSettled(detail = {}) {
   if (typeof window === 'undefined') return;
   terminalLayoutSettledGeneration += 1;
-  window.dispatchEvent(
-    new CustomEvent('devhub:terminal-layout-settled', {
-      detail: { ...detail, at: Date.now(), generation: terminalLayoutSettledGeneration },
-    })
-  );
+  try {
+    const EventCtor = typeof CustomEvent === 'function' ? CustomEvent : null;
+    if (!EventCtor) return;
+    window.dispatchEvent(
+      new EventCtor('devhub:terminal-layout-settled', {
+        detail: { ...detail, at: Date.now(), generation: terminalLayoutSettledGeneration },
+      })
+    );
+  } catch {
+    // jsdom / non-DOM test hosts without CustomEvent
+  }
 }
 
 /**

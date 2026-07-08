@@ -14,15 +14,18 @@ const {
 } = require('../terminal/workspaceAnimProps.js');
 
 describe('getRightDockAnimProps()', () => {
-  test('slides in from the right edge of the dock slot', () => {
+  test('fades in with opacity only (no horizontal slide — WebView2 HWND sync)', () => {
     const props = getRightDockAnimProps({ isVisible: true });
-    expect(props.initial).toEqual({ opacity: 0, x: '100%' });
-    expect(props.animate).toEqual({ opacity: 1, x: 0 });
+    expect(props.initial).toEqual({ opacity: 0 });
+    expect(props.animate).toEqual({ opacity: 1 });
+    expect(props.initial.x).toBeUndefined();
+    expect(props.animate.x).toBeUndefined();
   });
 
-  test('slides out to the right when hidden', () => {
+  test('fades out with opacity only when hidden', () => {
     const props = getRightDockAnimProps({ isVisible: false });
-    expect(props.animate).toEqual({ opacity: 0, x: '100%' });
+    expect(props.animate).toEqual({ opacity: 0 });
+    expect(props.animate.x).toBeUndefined();
   });
 
   test('disables motion while the dock is being resized', () => {
@@ -370,10 +373,7 @@ function fireKey(element, key) {
 }
 
 function setControlledInputValue(element, value) {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    'value'
-  )?.set;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
   const tracker = element._valueTracker;
   if (tracker) {
     tracker.setValue(element.value);
@@ -389,7 +389,6 @@ function fireInputChange(element, value) {
   });
   return flushEffects();
 }
-
 
 function findPanelTab(doc, panelId) {
   return doc.querySelector(`[data-testid="panel-chrome-overlay-${panelId}"]`);
@@ -616,9 +615,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
         {
           id: 'ws1',
           name: 'Workspace 1',
-          columns: [
-            { id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] },
-          ],
+          columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] }],
         },
       ],
       activeWsId: 'ws1',
@@ -666,9 +663,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
         {
           id: 'ws1',
           name: 'Workspace 1',
-          columns: [
-            { id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] },
-          ],
+          columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] }],
         },
       ],
       activeWsId: 'ws1',
@@ -678,8 +673,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
     await renderManager();
     await flushEffects();
 
-    const swarmCommand =
-      'opencode --agent swarm-worker --task "do-the-thing"';
+    const swarmCommand = 'opencode --agent swarm-worker --task "do-the-thing"';
 
     dispatchRunAgent({
       command: swarmCommand,
@@ -704,9 +698,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
         {
           id: 'ws1',
           name: 'Workspace 1',
-          columns: [
-            { id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] },
-          ],
+          columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] }],
         },
       ],
       activeWsId: 'ws1',
@@ -763,7 +755,7 @@ describe('TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch 
     return src.slice(start);
   }
 
-  test('handleRunAgent branches on launchOrigin === \'planning-launch\' to skip the DocOps gate', () => {
+  test("handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate", () => {
     const block = extractHandleRunAgentBlock(source);
     expect(block).toContain("'planning-launch'");
     // The handler must NOT call enforceDocOpsGateOnLaunchCommand on the

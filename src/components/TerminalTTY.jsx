@@ -324,14 +324,55 @@ export default function TerminalTTY({
     }
   });
 
-  const [isInitializing, setIsInitializing] = useState(true);
+  // Start non-blocking so the panel shell paints immediately; engine flips
+  // this only if a hard error path needs it.
+  const [isInitializing, setIsInitializing] = useState(false);
   const isInitializingRef = useRef(false);
   const [initError, setInitError] = useState(null);
-  const [internalConnectionState, setInternalConnectionState] = useState('idle');
+  // Connection state must NEVER become a write-no-op when the parent passes
+  // `connectionState`. The old controlled pattern discarded setConnectionState
+  // after the first parent sync — so after reporting "connecting", subsequent
+  // setConnectionState('connected') was a no-op and the UI stayed stuck on
+  // "Conectando…" (especially visible on workspace↔pizarra host switches when
+  // the singleton remounted with the stale parent value).
+  const [internalConnectionState, setInternalConnectionState] = useState(
+    () => externalConnectionState || 'idle'
+  );
+  const onConnectionStateChangeRef = useRef(onConnectionStateChange);
+  onConnectionStateChangeRef.current = onConnectionStateChange;
+  const setConnectionState = useCallback(
+    (nextOrFn) => {
+      setInternalConnectionState((prev) => {
+        const next = typeof nextOrFn === 'function' ? nextOrFn(prev) : nextOrFn;
+        if (next && next !== prev && typeof onConnectionStateChangeRef.current === 'function') {
+          // Defer parent notify so we don't setState-in-render on TWM.
+          queueMicrotask(() => {
+            try {
+              onConnectionStateChangeRef.current?.(id, next);
+            } catch {
+              // ignore parent handler errors
+            }
+          });
+        }
+        return next;
+      });
+    },
+    [id]
+  );
+  // Prefer live internal state for UI; accept external only for parent-driven
+  // modes (e.g. suspended restore) that we are not currently transitioning past.
   const connectionState =
-    externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;
-  const setConnectionState =
-    externalConnectionState !== undefined ? () => {} : setInternalConnectionState;
+    externalConnectionState === 'suspended' && internalConnectionState !== 'connecting'
+      ? externalConnectionState
+      : internalConnectionState || externalConnectionState || 'idle';
+
+  // Sync parent-driven suspension into internal state without clobbering an
+  // in-flight connect (connecting → connected must stay local).
+  useEffect(() => {
+    if (externalConnectionState === 'suspended') {
+      setInternalConnectionState('suspended');
+    }
+  }, [externalConnectionState]);
   const [restoredToast, setRestoredToast] = useState(false);
   const [nativeVteProbeResult, setNativeVteProbeResult] = useState(null);
   const [nativeVteOpenFailure, setNativeVteOpenFailure] = useState(null);
@@ -713,10 +754,7 @@ export default function TerminalTTY({
 
   useEffect(() => {
     connectionStateRef.current = connectionState;
-    if (typeof onConnectionStateChange === 'function') {
-      onConnectionStateChange(id, connectionState);
-    }
-  }, [connectionState, id, onConnectionStateChange]);
+  }, [connectionState]);
 
   useEffect(() => {
     requestedRendererModeRef.current = requestedRendererMode;
@@ -1533,6 +1571,7 @@ export default function TerminalTTY({
     transportRef,
     waitForVisibleDimensions,
     maybeConnectAfterViewportFit,
+    scheduleConnectDeferForce,
     coalescedSoftGpuVisibilityReveal,
     scheduleInactiveViewportRepaint,
     logViewportDiagnostic,
@@ -1854,9 +1893,9 @@ export default function TerminalTTY({
 
           {/* Loading overlay — first boot only; panel switches keep the live terminal interactive */}
           {showTerminalLoadingOverlay && (
-            <div className="pointer-events-none absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm">
-              <Loader2 className="w-6 h-6 animate-spin text-[#388bfd]" />
-              {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}
+            <div className="pointer-events-none absolute inset-0 bg-[var(--surface-app)]/70 flex flex-col items-center justify-center gap-2 text-xs text-gray-400 font-mono z-10">
+              <Loader2 className="w-5 h-5 animate-spin text-[#388bfd]" />
+              {connectionState === 'connecting' ? 'Conectando…' : 'Iniciando…'}
             </div>
           )}
 

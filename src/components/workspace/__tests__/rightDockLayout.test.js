@@ -8,10 +8,29 @@ const { sanitizeRightDockState } = require('../rightDockState');
 
 describe('rightDockLayout', () => {
   test('selecting browser opens browser tab', () => {
-    const next = applyRightDockTabSelect({ visible: false, activeTab: 'editor' }, 'browser');
+    const next = applyRightDockTabSelect(
+      { visible: false, activeTab: 'editor', browserLayoutEpoch: 0 },
+      'browser'
+    );
     expect(next.activeTab).toBe('browser');
     expect(next.visible).toBe(true);
+    expect(next.browserLayoutEpoch).toBe(1);
     expect(isRightDockWorkspacePaneVisible(next)).toBe(true);
+  });
+
+  test('re-selecting browser while already visible does not bump layout epoch', () => {
+    const next = applyRightDockTabSelect(
+      {
+        visible: true,
+        activeTab: 'browser',
+        maximized: false,
+        maximizedView: 'browser',
+        browserLayoutEpoch: 3,
+      },
+      'browser'
+    );
+    expect(next.visible).toBe(false);
+    expect(next.browserLayoutEpoch).toBe(3);
   });
 
   test('open_url focus enters pizarra canvas', () => {

@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
-  '0': 'desconocido',
+  0: 'desconocido',
   disponible: 'disponible',
   patch: 'parche',
   active: 'activo',
@@ -15,7 +15,7 @@ const TOKEN_LABELS = Object.freeze({
   failed: 'fallido',
   aborted: 'abortado',
   running: 'en ejecución',
-  idle: 'inactivo',
+  idle: 'idle',
   online: 'en línea',
   offline: 'fuera de línea',
   current: 'actual',
@@ -91,7 +91,7 @@ export const STATUS_COLORS = Object.freeze({
   stale_registry: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   offline: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unknown: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
-  '0': { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
+  0: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   disponible: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', dot: '#22c55e' },
   patch: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },
   unavailable: { bg: 'rgba(107,114,128,0.10)', color: '#9ca3af', dot: '#6b7280' },

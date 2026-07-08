@@ -30,12 +30,13 @@
 
 ## P2 — Degradación visual (sin crash)
 
-| ID       | Síntoma                                          | Trigger                                | Doc relacionado                                                                          | Estado                         |
-| -------- | ------------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------ |
-| **G-01** | Bloques grises, glifos superpuestos              | GPU atlas en panel oculto              | [03-terminal-canvas-glyph-corruption](../03-terminal-canvas-glyph-corruption/README.md)  | Abierto                        |
-| **G-02** | `1;2c0;276;0c` en prompt (DA1 leak)              | Focus reporting en panel inactivo      | TerminalTTY blur path                                                                    | Mitigado parcial               |
-| **G-03** | Layout Ink roto (cols/rows incorrectos al boot)  | `initialCommand` antes de viewport fit | swarm-launch burst timing                                                                | Abierto                        |
-| **G-04** | Prompt bootstrap ZED superpuesto / texto partido | lazy launch 1 panel + tmux paste largo | [05-swarm-bootstrap-injection-debug](./05-swarm-bootstrap-injection-debug-2026-06-13.md) | **Abierto** — debug 2026-06-13 |
+| ID       | Síntoma                                          | Trigger                                    | Doc relacionado                                                                                       | Estado                                                         |
+| -------- | ------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **G-01** | Bloques grises, glifos superpuestos              | GPU atlas en panel oculto                  | [03-terminal-canvas-glyph-corruption](../03-terminal-canvas-glyph-corruption/README.md)               | Abierto                                                        |
+| **G-02** | `1;2c0;276;0c` en prompt (DA1 leak)              | Focus reporting en panel inactivo          | TerminalTTY blur path                                                                                 | Mitigado parcial                                               |
+| **G-03** | Layout Ink roto (cols/rows incorrectos al boot)  | `initialCommand` antes de viewport fit     | swarm-launch burst timing                                                                             | Abierto                                                        |
+| **G-04** | Prompt bootstrap ZED superpuesto / texto partido | lazy launch 1 panel + tmux paste largo     | [05-swarm-bootstrap-injection-debug](./05-swarm-bootstrap-injection-debug-2026-06-13.md)              | **Abierto** — debug 2026-06-13                                 |
+| **G-05** | Pegar en Grok envía un mensaje por línea         | Copy multilínea DevHub → paste en TUI Grok | [07-terminal-clipboard-grok-multiline-paste](../07-terminal-clipboard-grok-multiline-paste/README.md) | **Fixed** — bracketed paste + bloqueo paste xterm (2026-07-06) |
 
 ---
 

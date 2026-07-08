@@ -32,6 +32,16 @@ jest.mock('@/components/settings/ZedVoiceSettings', () => () => {
   return React.createElement('div', { 'data-testid': 'voice-settings-mock' }, 'Voice');
 });
 
+jest.mock('@/components/settings/ZedOverlaySettings', () => () => {
+  const React = require('react');
+  return React.createElement('div', { 'data-testid': 'zed-overlay-settings-mock' }, 'Zed Overlay');
+});
+
+jest.mock('@/components/settings/ZedModelSettings', () => () => {
+  const React = require('react');
+  return React.createElement('div', { 'data-testid': 'zed-model-settings-mock' }, 'Zed Model');
+});
+
 jest.mock('@/components/settings/TerminalShortcutsSettings', () => () => {
   const React = require('react');
   return React.createElement('div', { 'data-testid': 'shortcuts-settings-mock' }, 'Shortcuts');
@@ -138,9 +148,29 @@ describe('TerminalRestoreSettingsModal', () => {
     expect(bodyText).toContain('Restauración');
     expect(bodyText).toContain('Terminal');
     expect(bodyText).toContain('Pizarra');
+    expect(bodyText).toContain('Zed');
     expect(bodyText).toContain('Voz');
     expect(bodyText).toContain('Atajos');
     expect(bodyText).toContain('Agentes');
+  });
+
+  test('switches to Zed section when clicked', async () => {
+    const TerminalRestoreSettingsModal = require('../TerminalRestoreSettingsModal').default;
+    rendered = await renderIntoDom(
+      React.createElement(TerminalRestoreSettingsModal, { open: true, onClose: jest.fn() })
+    );
+
+    const zedButton = Array.from(document.body.querySelectorAll('button')).find(
+      (btn) => btn.textContent?.trim() === 'Zed'
+    );
+    expect(zedButton).toBeTruthy();
+
+    flushSync(() => {
+      zedButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(document.body.querySelector('[data-testid="zed-overlay-settings-mock"]')).toBeTruthy();
   });
 
   test('restore section shows selectors and save hint', async () => {

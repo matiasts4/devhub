@@ -142,6 +142,8 @@ function renderHost(props) {
       onMove: props.onMove,
       moveMeta: props.moveMeta || {},
       onNativeSync: props.onNativeSync,
+      // pizarra-editing-ux Phase 4: lock bail — when true, the hook no-ops.
+      locked: props.locked,
     });
     // Wire a wrapping onMouseDown that injects the current zoom.
     function wrappedOnMouseDown(event) {
@@ -624,6 +626,33 @@ describe('usePizarraSurfaceDrag — board-terminal-drag contract', () => {
     expect(onNativeSyncSink.length).toBe(1);
     expect(onNativeSyncSink[0].totalDeltaX).toBe(12);
     expect(onNativeSyncSink[0].totalDeltaY).toBe(18);
+
+    unmountHost(harness);
+  });
+
+  // pizarra-editing-ux Phase 4: a locked surface does not drag. The hook
+  // bails on mousedown BEFORE calling onSelect / onDragStart or attaching
+  // mousemove listeners, so neither onMove nor onNativeSync ever fire and
+  // the click-to-select path remains usable (selection is the consumer's
+  // own click handler, not the drag hook).
+  test('locked: mousedown bails — no onSelect, no onMove, no onNativeSync', () => {
+    const props = makeTestHost({});
+    const harness = renderHost({ ...props, locked: true });
+
+    act(() => {
+      harness.button.dispatchEvent(makeMouseEvent('mousedown', 0, 0));
+    });
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mousemove', 25, 35));
+    });
+    flushRaf();
+    act(() => {
+      global.window.dispatchEvent(makeMouseEvent('mouseup'));
+    });
+
+    expect(onSelectSink.length).toBe(0);
+    expect(onMoveSink.length).toBe(0);
+    expect(onNativeSyncSink.length).toBe(0);
 
     unmountHost(harness);
   });

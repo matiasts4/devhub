@@ -22,6 +22,8 @@ import {
   isWorkspaceCloseRecoverReason,
   scheduleTerminalViewportSyncBurst,
   isStaleXtermRendererError,
+  clearXtermAsyncWork,
+  installXtermTeardownSafety,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
 } from '@/components/terminal/TerminalTTY.helpers';
 
@@ -276,20 +278,53 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         scheduleBoundedFitRepaint,
         scheduleBoundedGpuRecover,
         scrollTerminalToBottom,
+        sendResizeRef,
       } = c;
       if (isDisposingRef.current) return;
       if (!termRef.current || !fitRef.current) return;
 
       const reason = event?.detail?.reason || 'layout-settled';
 
-      // Phase 6 terminal-engine-v2: only projection/initial-command hooks; no bursts.
+      // Phase 6 terminal-engine-v2: projection/host-switch hooks without full
+      // survivor bursts. Still must re-fit on pizarra↔workspace host flips —
+      // skipping that left terminals at stale cols and looked "unadjusted".
       if (!usesLegacyTerminalSurvivorRecovery(isEngineV2Ref.current)) {
+        const reasonStr = String(reason);
         const isProjectionReason =
-          String(reason).includes('workspace-created') ||
-          String(reason).includes('shared-surface-projection-ready') ||
-          String(reason).includes('shared-surface-host-resize');
+          reasonStr.includes('workspace-created') ||
+          reasonStr.includes('shared-surface-projection-ready') ||
+          reasonStr.includes('shared-surface-host-resize') ||
+          reasonStr.includes('pizarra-mode-enter') ||
+          reasonStr.includes('pizarra-mode-exit');
         if (isProjectionReason && isVisibleInLayoutRef.current) {
           projectionReadyRef.current = true;
+          if (containerRef.current && termRef.current) {
+            // pizarra enter/exit remounts host surfaces; drop stale idle resize
+            // work and re-assert runtime shields before fit/repaint churn.
+            try {
+              installXtermTeardownSafety(termRef.current);
+              clearXtermAsyncWork(termRef.current);
+              fitTerminalViewport({
+                container: containerRef.current,
+                fitAddon: fitRef.current,
+                term: termRef.current,
+                socket: wsRef.current,
+                clearAtlas: false,
+                lastPtySizeRef: lastPtySizeRef.current,
+              });
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                sendResizeRef.current?.();
+              }
+              if (isTerminalRendererReady(termRef.current)) {
+                refreshTerminalViewport(termRef.current);
+                forceTerminalViewportRepaint(termRef.current);
+              }
+              scheduleBoundedFitRepaint?.(6);
+              scheduleBoundedForceRepaint?.(6);
+            } catch (error) {
+              if (!isStaleXtermRendererError(error)) throw error;
+            }
+          }
           if (initialCommand && !hasSentInitialCommand.current) {
             sendInitialCommandIfReady();
           }
@@ -339,6 +374,26 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         String(reason).includes('shared-surface-host-resize');
       if (isProjectionReason && isVisibleInLayoutRef.current) {
         projectionReadyRef.current = true;
+        // Portal target just gained a real size — re-fit so the panel lands
+        // adjusted in pizarra/workspace instead of a stale cols×rows grid.
+        if (containerRef.current && termRef.current) {
+          fitTerminalViewport({
+            container: containerRef.current,
+            fitAddon: fitRef.current,
+            term: termRef.current,
+            socket: wsRef.current,
+            clearAtlas: false,
+            lastPtySizeRef: lastPtySizeRef.current,
+          });
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            sendResizeRef.current?.();
+          }
+          if (isTerminalRendererReady(termRef.current)) {
+            refreshTerminalViewport(termRef.current);
+            forceTerminalViewportRepaint(termRef.current);
+          }
+          scheduleBoundedFitRepaint?.(6);
+        }
         if (initialCommand && !hasSentInitialCommand.current) {
           sendInitialCommandIfReady();
         }
@@ -573,23 +628,27 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         String(reason).includes('pizarra-mode-exit') ||
         String(reason).includes('pizarra-mode-enter')
       ) {
-        if (
-          !hasConnectedOnceRef.current &&
-          isVisibleInLayoutRef.current &&
-          containerRef.current &&
-          termRef.current
-        ) {
+        // Host switch (workspace dock ↔ pizarra canvas): the singleton TTY is
+        // re-projected into a different portal target. Always re-fit to the new
+        // container size; never force a full reconnect if the socket is already
+        // open (that was the multi-second "Conectando…" hang).
+        if (isVisibleInLayoutRef.current && containerRef.current && termRef.current) {
           const fitWorked = fitTerminalViewport({
             container: containerRef.current,
             fitAddon: fitRef.current,
             term: termRef.current,
             socket: wsRef.current,
-            clearAtlas: false,
+            clearAtlas:
+              webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
             lastPtySizeRef: lastPtySizeRef.current,
           });
-          maybeConnectAfterViewportFit(fitWorked);
-        }
-        if (isVisibleInLayoutRef.current) {
+          const socketOpen = wsRef.current?.readyState === WebSocket.OPEN;
+          if (!socketOpen && !hasConnectedOnceRef.current) {
+            maybeConnectAfterViewportFit(fitWorked);
+          } else if (socketOpen) {
+            // Already live — nudge PTY to the new cols/rows without reconnect.
+            sendResizeRef.current?.();
+          }
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
             clearAtlas:
               webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
@@ -608,6 +667,10 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
             }
             refreshTerminalViewport(termRef.current);
             forceTerminalViewportRepaint(termRef.current);
+            // Bounded retries: portal target often measures 0×0 on the first
+            // frame after host flip; re-fit once the projection has size.
+            scheduleBoundedFitRepaint?.(8);
+            scheduleBoundedForceRepaint?.(8);
           }
         } else {
           needsViewportSyncOnShowRef.current = true;

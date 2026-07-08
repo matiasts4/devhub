@@ -20,7 +20,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { moveBrowserHistory } from './browserHistory';
+import { moveBrowserHistory, syncBrowserUrlFromNative } from './browserHistory';
 import { buildBrowserWindowLabel } from './browserWindowState';
 import { BRIDGE_AGENT_OPTIONS } from './bridgeAgentRequest';
 import useBrowserPreviewController, { SELECTOR_STATE } from './useBrowserPreviewController';
@@ -51,17 +51,26 @@ import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
+// Note: do NOT use `contain: size` here — with flex-1 it can collapse the shell to a
+// near-zero box on some Windows/Tauri layouts, which then measures as a thin strip and
+// the native WebView2 is placed as a 1–40px line on the edge of the dock.
 const VIEWPORT_SHELL_STYLE = {
-  contain: 'layout paint size',
   isolation: 'isolate',
   transform: 'translateZ(0)',
   backfaceVisibility: 'hidden',
+};
+const VIEWPORT_SHELL_STYLE_IFRAME = {
+  ...VIEWPORT_SHELL_STYLE,
+  contain: 'layout paint',
 };
 
 const IFRAME_GPU_STYLE = {
   transform: 'translateZ(0)',
   backfaceVisibility: 'hidden',
 };
+
+/** Visible in toolbar — confirms the running bundle includes latest browser fixes. */
+const BROWSER_BUILD_TAG = '20260708t';
 
 function WorkspaceBrowserPane({
   dockState,
@@ -77,6 +86,7 @@ function WorkspaceBrowserPane({
   onWorkspaceWindowAdd = null,
   onWorkspaceWindowRemove = null,
   layoutSyncKey = null,
+  layoutReady = true,
   suspendNativeSurface = false,
   tabsMode = 'single',
   isPizarraContext = false,
@@ -85,13 +95,92 @@ function WorkspaceBrowserPane({
   onPizarraCloseCard = null,
 }) {
   const viewportShellRef = useRef(null);
+  const browserChromeRef = useRef(null);
+  // Declared early: past HMR crashes used this binding mid-render while
+  // undefined ("browserChromeActive is not defined") and blanked the UI.
+  const [browserChromeActive, setBrowserChromeActive] = useState(false);
+  const chromeOccludeTimerRef = useRef(null);
+  const engageBrowserChrome = useCallback(() => {
+    if (chromeOccludeTimerRef.current) {
+      clearTimeout(chromeOccludeTimerRef.current);
+      chromeOccludeTimerRef.current = null;
+    }
+    setBrowserChromeActive(true);
+  }, []);
+  const releaseBrowserChrome = useCallback((delayMs = 200) => {
+    if (chromeOccludeTimerRef.current) {
+      clearTimeout(chromeOccludeTimerRef.current);
+      chromeOccludeTimerRef.current = null;
+    }
+    if (delayMs <= 0) {
+      setBrowserChromeActive(false);
+      return;
+    }
+    chromeOccludeTimerRef.current = setTimeout(() => {
+      chromeOccludeTimerRef.current = null;
+      setBrowserChromeActive(false);
+    }, delayMs);
+  }, []);
+  useEffect(
+    () => () => {
+      if (chromeOccludeTimerRef.current) {
+        clearTimeout(chromeOccludeTimerRef.current);
+      }
+    },
+    []
+  );
   const measureNativeBounds = useCallback(() => {
-    const rect = viewportShellRef.current?.getBoundingClientRect?.();
+    const shell = viewportShellRef.current;
+    const rect = shell?.getBoundingClientRect?.();
+    const chromeRect = browserChromeRef.current?.getBoundingClientRect?.();
+    const paneEl = shell?.closest?.('[data-testid="workspace-browser-pane"]');
+    const paneRect = paneEl?.getBoundingClientRect?.() ?? null;
+
+    // Prefer the viewport shell only. Falling back to the full pane while the
+    // shell is still collapsing (flex settle) opened WebView2 at dock/window
+    // size — "totalmente expandido" — and later sync could not recover.
+    const shellW = rect && Number.isFinite(rect.width) ? rect.width : 0;
+    const shellH = rect && Number.isFinite(rect.height) ? rect.height : 0;
+    const shellDegenerate = !rect || shellW < 48 || shellH < 48;
+    if (shellDegenerate) {
+      return {
+        x: Math.round(rect && Number.isFinite(rect.left) ? rect.left : 0),
+        y: Math.round(rect && Number.isFinite(rect.top) ? rect.top : 0),
+        width: Math.max(1, Math.round(shellW)),
+        height: Math.max(1, Math.round(shellH)),
+      };
+    }
+
+    let x = Number.isFinite(rect.left) ? rect.left : 0;
+    let y = Number.isFinite(rect.top) ? rect.top : 0;
+    let width = Math.max(shellW, 1);
+    let height = Math.max(shellH, 1);
+
+    // Keep native surface strictly below React toolbar chrome (hit-test padding on WebView2).
+    const CHROME_HIT_SLOP_PX = 2;
+    if (chromeRect && Number.isFinite(chromeRect.bottom) && chromeRect.bottom > y) {
+      const push = chromeRect.bottom - y + CHROME_HIT_SLOP_PX;
+      y += push;
+      height = Math.max(height - push, 24);
+    }
+
+    // Soft clamp: never expand past the pane (covers terminal), never negative sizes.
+    if (paneRect && Number.isFinite(paneRect.left)) {
+      const left = paneRect.left;
+      const right = paneRect.right;
+      const top = Math.max(paneRect.top, chromeRect?.bottom ?? paneRect.top);
+      const bottom = paneRect.bottom;
+      x = Math.min(Math.max(x, left), Math.max(right - 48, left));
+      y = Math.min(Math.max(y, top), Math.max(bottom - 24, top));
+      width = Math.max(48, Math.min(width, right - x));
+      height = Math.max(24, Math.min(height, bottom - y));
+    }
+
     return {
-      x: Number(rect?.x) || 0,
-      y: Number(rect?.y) || 0,
-      width: Math.max(Number(rect?.width) || 0, 1),
-      height: Math.max(Number(rect?.height) || 0, 1),
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height),
     };
   }, []);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
@@ -123,7 +212,7 @@ function WorkspaceBrowserPane({
     }
 
     const activeTab = dockState.activeTab || 'browser';
-    const dockVisible = dockState.visible !== false;
+    const dockVisible = dockState.visible === true;
     const maximizedView = dockState.maximizedView || 'browser';
     const takeoverBlocksWorkspaceBrowser =
       dockState.maximized === true && maximizedView !== 'browser' && maximizedView !== 'window';
@@ -224,12 +313,14 @@ function WorkspaceBrowserPane({
   }, [isInspecting, nativeRuntimeActive, nativeSelectorReady, selectorState]);
   const nativeInspectOnlyMode = nativeRuntimeActive && effectiveEditMode;
   const embeddedEngineLabel = useMemo(() => getBrowserRuntimeLabel(BROWSER_RUNTIME.NATIVE_GTK), []);
+  const nativeEditPanelInsetPx =
+    nativeRuntimeActive && effectiveEditMode && !nativeInspectOnlyMode ? 336 : 0;
 
   const runtimeStatusCopy = useMemo(() => {
+    let base = '';
     if (nativeRuntimeActive) {
-      return `Activo: ${embeddedEngineLabel}`;
-    }
-    if (browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK) {
+      base = `Activo: ${embeddedEngineLabel}`;
+    } else if (browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK) {
       const fallbackCopy = getBrowserRuntimeFallbackCopy(browserRuntimeSelection.fallbackReason);
       const fallbackReason = fallbackCopy.startsWith('iframe fallback · ')
         ? fallbackCopy.slice('iframe fallback · '.length)
@@ -237,12 +328,13 @@ function WorkspaceBrowserPane({
           ? ''
           : fallbackCopy;
 
-      return fallbackReason
+      base = fallbackReason
         ? `Fallback activo: iframe · ${fallbackReason}`
         : 'Fallback activo: iframe';
+    } else {
+      base = `Activo: ${getBrowserRuntimeLabel(BROWSER_RUNTIME.IFRAME)}`;
     }
-
-    return `Activo: ${getBrowserRuntimeLabel(BROWSER_RUNTIME.IFRAME)}`;
+    return `${base} · build ${BROWSER_BUILD_TAG}`;
   }, [
     browserRuntimeSelection.fallbackReason,
     browserRuntimeSelection.requestedRuntime,
@@ -263,6 +355,8 @@ function WorkspaceBrowserPane({
       return {
         ...currentState,
         browserRuntime: normalizedRuntime,
+        browserRuntimePinned: true,
+        browserRuntimeUserPick: true,
       };
     });
   };
@@ -284,15 +378,129 @@ function WorkspaceBrowserPane({
   // UX is preserved by default.
   const tabStripApi = useBrowserTabs({ projectId, workspaceId });
   const showTabStrip = tabsMode === 'multi';
-  const { nativeRuntimeReady, nativeError, retryNative } = useNativeBrowserSurface({
-    panelId: nativePanelId,
-    url: dockState.browserUrl,
-    active: nativeRuntimeActive && !browserError,
-    visibleInLayout: nativeRuntimeVisibleInLayout,
-    measureBounds: measureNativeBounds,
-    observeNode: viewportShellRef,
-    layoutSyncKey,
-  });
+  // Modal/dialog portals paint under the native WebView HWND unless we hide it.
+  // IMPORTANT: only *open* dialog/modal overlays count.
+  // Never treat bare [data-state="open"] as blocking — Radix tabs/selects/collapsibles
+  // use that attribute and would hide WebView2 forever (black dock; "Ventana" still works).
+  const [overlayOccludesNative, setOverlayOccludesNative] = useState(false);
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+      return undefined;
+    }
+    const isVisiblyOpenOverlay = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      if (node.getAttribute('aria-hidden') === 'true') return false;
+      if (node.hidden) return false;
+      const state = node.getAttribute('data-state');
+      if (state === 'closed' || state === 'hiding') return false;
+
+      const role = node.getAttribute('role');
+      const isDialogRole =
+        role === 'dialog' || role === 'alertdialog' || node.getAttribute('aria-modal') === 'true';
+      const isDevhubModal =
+        node.dataset?.modalOpen === 'true' || node.dataset?.devhubModal === 'true';
+      if (!isDialogRole && !isDevhubModal) return false;
+
+      // Closed dialogs often stay mounted with role=dialog but data-state=closed.
+      if (state && state !== 'open' && !isDevhubModal) return false;
+
+      // Require real on-screen geometry (ignores display:none / zero-size portals).
+      const rect = node.getBoundingClientRect?.();
+      if (!rect || rect.width < 8 || rect.height < 8) return false;
+      const style = window.getComputedStyle?.(node);
+      if (
+        style &&
+        (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')
+      ) {
+        return false;
+      }
+      return true;
+    };
+    const scan = () => {
+      const nodes = document.querySelectorAll(
+        '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [data-modal-open="true"], [data-devhub-modal="true"]'
+      );
+      let blocking = false;
+      nodes.forEach((node) => {
+        if (isVisiblyOpenOverlay(node)) blocking = true;
+      });
+      setOverlayOccludesNative((prev) => (prev === blocking ? prev : blocking));
+    };
+    scan();
+    const observer = new MutationObserver(() => {
+      scan();
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        'role',
+        'aria-modal',
+        'aria-hidden',
+        'hidden',
+        'data-modal-open',
+        'data-devhub-modal',
+        'data-state',
+        'class',
+        'style',
+      ],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // Do NOT hide the native surface just because the React toolbar is focused.
+  // Bounds already exclude the chrome hit area; full-hide on chrome focus left the
+  // dock blank after typing a URL (focus stayed on the input → permanent occlude).
+  // Edit panel is React above WebView2 HWND — hide native under it (inset alone loses clicks).
+  const nativeEditOccludes = nativeRuntimeActive && effectiveEditMode && !nativeInspectOnlyMode;
+  const nativeChromeOccluded =
+    nativeRuntimeActive && (Boolean(browserError) || overlayOccludesNative || nativeEditOccludes);
+  const { nativeRuntimeReady, nativeError, retryNative, focusNativeViewport, noteNativeUrl } =
+    useNativeBrowserSurface({
+      panelId: nativePanelId,
+      url: dockState.browserUrl,
+      active: nativeRuntimeActive && !browserError,
+      visibleInLayout: nativeRuntimeVisibleInLayout,
+      measureBounds: measureNativeBounds,
+      observeNode: viewportShellRef,
+      layoutSyncKey,
+      layoutReady,
+      occludeNative: nativeChromeOccluded,
+      // When edit occludes fully, inset is unused; keep for inspect-only / future shrink.
+      rightInsetPx: nativeEditOccludes ? 0 : nativeEditPanelInsetPx,
+    });
+
+  // Sync uncontrolled URL input when history / in-page navigation changes browserUrl.
+  useEffect(() => {
+    const input = urlInputRef?.current;
+    if (!input) return;
+    const next = dockState.browserUrl || '';
+    if (document.activeElement === input) return;
+    if (input.value !== next) {
+      input.value = next;
+    }
+  }, [dockState.browserUrl, urlInputRef]);
+
+  // In-page link clicks don't go through React — mirror them into dock history/URL bar.
+  // Use syncBrowserUrlFromNative (not commitBrowserNavigation): commit truncates the forward
+  // stack, so back→page-load→commit used to erase "adelante" after a few steps.
+  useEffect(() => {
+    if (!nativeRuntimeActive) return undefined;
+    const onNativeEvent = (event) => {
+      const payload = event?.detail || {};
+      if (payload.panelId && payload.panelId !== nativePanelId) return;
+      if (payload.type !== 'url-changed' || !payload.url) return;
+      const nextUrl = String(payload.url);
+      noteNativeUrl?.(nextUrl);
+      onDockStateChange?.((current) => {
+        if (current.browserUrl === nextUrl) return current;
+        return syncBrowserUrlFromNative(current, nextUrl);
+      });
+    };
+    window.addEventListener('devhub:native-browser-event', onNativeEvent);
+    return () => window.removeEventListener('devhub:native-browser-event', onNativeEvent);
+  }, [nativePanelId, nativeRuntimeActive, noteNativeUrl, onDockStateChange]);
 
   // pizarra-browser-fix: clear any persisted browserLoadFallback:true that
   // previous sessions may have written to localStorage, so native-gtk is
@@ -370,7 +578,8 @@ function WorkspaceBrowserPane({
           updatedAt: Date.now(),
         });
       });
-      browserWindow.once('tauri://error', () => {
+      browserWindow.once('tauri://error', (event) => {
+        console.error('[browser] dedicated window error', event);
         onBrowserWindowStateChange?.(workspaceId, {
           open: false,
           label: dedicatedBrowserWindowLabel,
@@ -379,7 +588,8 @@ function WorkspaceBrowserPane({
         });
         window.open(targetUrl, '_blank', 'noopener,noreferrer');
       });
-    } catch {
+    } catch (error) {
+      console.error('[browser] dedicated window failed', error);
       window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
   };
@@ -419,321 +629,305 @@ function WorkspaceBrowserPane({
     <div
       className="h-full min-h-0 flex flex-col bg-[linear-gradient(180deg,#09111b_0%,#060b12_100%)]"
       data-testid="workspace-browser-pane"
+      data-native-panel-id={nativeRuntimeActive ? nativePanelId : undefined}
       data-tabs-mode={tabsMode}
     >
-      {showTabStrip && !pizarraInlineTabs ? (
-        <BrowserTabStrip
-          tabs={tabStripApi.tabs}
-          activeTabId={tabStripApi.activeTabId}
-          onSelectTab={tabStripApi.selectTab}
-          onCloseTab={tabStripApi.closeTab}
-          onAddTab={tabStripApi.addTab}
-          currentUrl={dockState.browserUrl}
-        />
-      ) : null}
-      <form
-        className={`flex ${isPizarraContext ? 'h-8 min-h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-1.5' : 'px-3'}`}
-        onSubmit={handleSubmit}
-        data-testid="workspace-browser-toolbar"
-        data-pizarra-browser-surface-header={isPizarraContext ? 'true' : undefined}
+      <div
+        ref={browserChromeRef}
+        className="relative z-30 shrink-0"
+        data-testid="browser-chrome-stack"
+        data-chrome-active={browserChromeActive ? 'true' : 'false'}
+        onPointerDownCapture={engageBrowserChrome}
+        onPointerLeave={() => releaseBrowserChrome(250)}
+        onFocusCapture={engageBrowserChrome}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            releaseBrowserChrome(120);
+          }
+        }}
       >
-        {isPizarraContext && typeof pizarraDragHandleMouseDown === 'function' ? (
-          <button
-            type="button"
-            data-testid="pizarra-drag-handle"
+        {isPizarraContext && typeof onPizarraCloseCard === 'function' ? (
+          <div
+            className="flex h-7 min-h-7 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[#07111c] px-1.5"
+            data-testid="pizarra-browser-titlebar"
             data-pizarra-surface-drag-handle="true"
-            aria-label="Mover ventana del navegador en la pizarra"
-            title="Arrastrar para mover"
-            onMouseDown={pizarraDragHandleMouseDown}
-            className="inline-flex h-6 w-5 shrink-0 cursor-move items-center justify-center rounded-md border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-subtle)] hover:bg-white/[0.05] hover:text-[var(--text-secondary)]"
+            onMouseDown={
+              typeof pizarraDragHandleMouseDown === 'function'
+                ? pizarraDragHandleMouseDown
+                : undefined
+            }
           >
-            <GripVertical className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
-        {pizarraInlineTabs ? (
-          <div
-            className="flex min-w-0 max-w-[min(38%,12rem)] shrink items-center overflow-x-auto border-r border-[var(--border-subtle)] pr-1.5 mr-0.5"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <BrowserTabStrip
-              layout="inline"
-              tabs={tabStripApi.tabs}
-              activeTabId={tabStripApi.activeTabId}
-              onSelectTab={tabStripApi.selectTab}
-              onCloseTab={tabStripApi.closeTab}
-              onAddTab={tabStripApi.addTab}
-              currentUrl={dockState.browserUrl}
-            />
-          </div>
-        ) : null}
-        {showFullscreenWorkspaceTabs ? (
-          <div
-            className="order-1 flex min-w-0 max-w-[min(40vw,34rem)] shrink items-center gap-2 overflow-x-auto pr-1"
-            data-testid="browser-workspace-window-selector"
-          >
-            {visibleWorkspaceWindows.map((windowView, index) => {
-              const tabLabel = windowView?.name || `V${index + 1}`;
-              return (
-                <button
-                  key={windowView?.id || `browser-window-${index}`}
-                  type="button"
-                  data-testid={`browser-workspace-window-tab-${index + 1}`}
-                  onClick={() => onWorkspaceWindowSelect?.(windowView?.id)}
-                  className="group inline-flex h-7 shrink-0 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-transparent px-3.5 text-[13px] font-mono font-semibold text-[var(--text-muted)] transition-colors hover:bg-white/[0.05] hover:text-[var(--text-secondary)]"
-                  title={`Mostrar ${tabLabel} en fullscreen`}
-                >
-                  {tabLabel}
-                  {visibleWorkspaceWindows.length > 1 ? (
-                    <span
-                      role="button"
-                      aria-label={`Cerrar ${tabLabel}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onWorkspaceWindowRemove?.(windowView?.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-4 h-4 rounded-md hover:bg-white/15 transition-opacity"
-                    >
-                      <X className="w-3 h-3" />
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)]">
+              {typeof pizarraDragHandleMouseDown === 'function' ? (
+                <GripVertical
+                  className="h-3.5 w-3.5 shrink-0"
+                  aria-hidden="true"
+                  data-testid="pizarra-drag-handle"
+                />
+              ) : null}
+              <span className="truncate">Navegador</span>
+            </span>
             <button
               type="button"
-              data-testid="browser-workspace-window-browser"
-              className="inline-flex h-7 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-mono font-semibold text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]"
-              title="Browser fullscreen"
+              data-testid="pizarra-browser-close"
+              data-pizarra-close-button="true"
+              title="Cerrar ventana del navegador"
+              aria-label="Cerrar ventana del navegador"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onPizarraCloseCard();
+              }}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-subtle)] hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
             >
-              <Globe className="w-3.5 h-3.5" />
-              Browser
-            </button>
-            <button
-              type="button"
-              data-testid="browser-workspace-window-add"
-              onClick={() => onWorkspaceWindowAdd?.()}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-white/[0.05] hover:text-[var(--text-primary)]"
-              title="Agregar una nueva vista al workspace"
-              aria-label="Agregar una nueva vista al workspace"
-            >
-              <Plus className="h-3.5 w-3.5" />
+              <X className="h-3.5 w-3.5" />
             </button>
           </div>
         ) : null}
-        <div className="inline-flex items-center gap-1 shrink-0 order-2">
-          <button
-            type="button"
-            data-testid="browser-back"
-            onClick={() =>
-              onDockStateChange((currentState) => moveBrowserHistory(currentState, -1))
-            }
-            disabled={!canGoBack}
-            className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent`}
-            aria-label="Back"
-          >
-            <ArrowLeft className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-          </button>
-          <button
-            type="button"
-            data-testid="browser-forward"
-            onClick={() => onDockStateChange((currentState) => moveBrowserHistory(currentState, 1))}
-            disabled={!canGoForward}
-            className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent`}
-            aria-label="Forward"
-          >
-            <ArrowRight className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-          </button>
-          <button
-            type="button"
-            data-testid="browser-reload"
-            onClick={handleRuntimeReload}
-            className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05]`}
-            aria-label="Reload"
-          >
-            <RefreshCw className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-          </button>
-        </div>
-
-        <label className="flex-1 min-w-0 relative order-3">
-          <Globe
-            className={`${isPizarraContext ? 'w-3 h-3 left-2' : 'w-4 h-4 left-3'} absolute top-1/2 -translate-y-1/2 text-[var(--text-muted)]`}
+        {showTabStrip && !pizarraInlineTabs ? (
+          <BrowserTabStrip
+            tabs={tabStripApi.tabs}
+            activeTabId={tabStripApi.activeTabId}
+            onSelectTab={tabStripApi.selectTab}
+            onCloseTab={tabStripApi.closeTab}
+            onAddTab={tabStripApi.addTab}
+            currentUrl={dockState.browserUrl}
           />
-          <input
-            data-testid="browser-url-input"
-            ref={urlInputRef}
-            type="text"
-            defaultValue={dockState.browserUrl || ''}
-            placeholder={
-              isPizarraContext ? 'URL' : 'Escribí una URL, localhost:3200 o una búsqueda'
-            }
-            className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-16 text-[10px]' : 'h-8 pl-9 pr-36 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
-          />
-          <div className="absolute inset-y-0 right-1 flex items-center gap-1">
-            <button
-              type="button"
-              data-testid="browser-edit-toggle"
-              onClick={handleEditModeToggle}
-              className={`inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
-                effectiveEditMode
-                  ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                  : 'text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
-              }`}
-              aria-label={effectiveEditMode ? 'Close edit mode' : 'Open edit mode'}
-              title={effectiveEditMode ? 'Close edit mode' : 'Open edit mode'}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            {dockState.browserUrl && !isPizarraContext ? (
-              <button
-                type="button"
-                data-testid="browser-toggle-workspace-maximize"
-                onClick={handleWorkspaceMaximizeToggle}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded-md px-2 text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
-                aria-label={
-                  dockState.maximized
-                    ? 'Restore browser with terminals'
-                    : 'Expand browser in workspace'
-                }
-                title={
-                  dockState.maximized
-                    ? 'Restore browser with terminals'
-                    : 'Expand browser in workspace'
-                }
-              >
-                {dockState.maximized ? (
-                  <Minimize2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-                <span className="text-[10px] font-semibold">
-                  {dockState.maximized ? 'Terminales' : 'Expandir'}
-                </span>
-              </button>
-            ) : null}
+        ) : null}
+        <form
+          className={`flex ${isPizarraContext ? 'h-8 min-h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-1.5' : 'px-3'}`}
+          onSubmit={handleSubmit}
+          data-testid="workspace-browser-toolbar"
+          data-pizarra-browser-surface-header={isPizarraContext ? 'true' : undefined}
+        >
+          {pizarraInlineTabs ? (
             <div
-              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5"
-              style={{ display: 'none' }}
-              data-testid="browser-runtime-toggle"
+              className="flex min-w-0 max-w-[min(38%,12rem)] shrink items-center overflow-x-auto border-r border-[var(--border-subtle)] pr-1.5 mr-0.5"
+              onMouseDown={(event) => event.stopPropagation()}
             >
+              <BrowserTabStrip
+                layout="inline"
+                tabs={tabStripApi.tabs}
+                activeTabId={tabStripApi.activeTabId}
+                onSelectTab={tabStripApi.selectTab}
+                onCloseTab={tabStripApi.closeTab}
+                onAddTab={tabStripApi.addTab}
+                currentUrl={dockState.browserUrl}
+              />
+            </div>
+          ) : null}
+          {showFullscreenWorkspaceTabs ? (
+            <div
+              className="order-1 flex min-w-0 max-w-[min(40vw,34rem)] shrink items-center gap-2 overflow-x-auto pr-1"
+              data-testid="browser-workspace-window-selector"
+            >
+              {visibleWorkspaceWindows.map((windowView, index) => {
+                const tabLabel = windowView?.name || `V${index + 1}`;
+                return (
+                  <button
+                    key={windowView?.id || `browser-window-${index}`}
+                    type="button"
+                    data-testid={`browser-workspace-window-tab-${index + 1}`}
+                    onClick={() => onWorkspaceWindowSelect?.(windowView?.id)}
+                    className="group inline-flex h-7 shrink-0 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-transparent px-3.5 text-[13px] font-mono font-semibold text-[var(--text-muted)] transition-colors hover:bg-white/[0.05] hover:text-[var(--text-secondary)]"
+                    title={`Mostrar ${tabLabel} en fullscreen`}
+                  >
+                    {tabLabel}
+                    {visibleWorkspaceWindows.length > 1 ? (
+                      <span
+                        role="button"
+                        aria-label={`Cerrar ${tabLabel}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onWorkspaceWindowRemove?.(windowView?.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-4 h-4 rounded-md hover:bg-white/15 transition-opacity"
+                      >
+                        <X className="w-3 h-3" />
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
               <button
                 type="button"
-                data-testid="browser-runtime-option-iframe"
-                aria-pressed={browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.IFRAME}
-                onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.IFRAME)}
-                className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
-                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.IFRAME
-                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                    : 'text-[var(--text-muted)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
-                }`}
-                title="Use iframe runtime"
+                data-testid="browser-workspace-window-browser"
+                className="inline-flex h-7 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-mono font-semibold text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] border-[rgba(var(--accent-rgb,88,166,255),0.35)]"
+                title="Browser fullscreen"
               >
-                iframe
+                <Globe className="w-3.5 h-3.5" />
+                Browser
               </button>
               <button
                 type="button"
-                data-testid="browser-runtime-option-native-gtk"
-                aria-pressed={
-                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                }
-                onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.NATIVE_GTK)}
-                className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
-                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                    : 'text-[var(--text-muted)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
-                }`}
-                title="Use native GTK runtime"
+                data-testid="browser-workspace-window-add"
+                onClick={() => onWorkspaceWindowAdd?.()}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-white/[0.05] hover:text-[var(--text-primary)]"
+                title="Agregar una nueva vista al workspace"
+                aria-label="Agregar una nueva vista al workspace"
               >
-                native gtk
+                <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
-            {!isPizarraContext ? (
-              <div
-                className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
-                  nativeRuntimeActive
-                    ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
-                    : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                      ? 'border-amber-400/25 bg-amber-400/10 text-amber-100'
-                      : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
-                }`}
-                data-testid="browser-native-runtime-chip"
-                title={
-                  nativeRuntimeActive
-                    ? `${embeddedEngineLabel} embebido en el dock (estilo Wave)`
-                    : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                      ? 'Motor embebido pedido, pero el browser cayó a iframe'
-                      : 'Iframe runtime active'
-                }
-              >
-                <span
-                  className={`inline-flex h-1.5 w-1.5 rounded-full ${
-                    nativeRuntimeActive
-                      ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]'
-                      : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                        ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.45)]'
-                        : 'bg-white/35'
-                  }`}
-                />
-                <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
-              </div>
-            ) : null}
+          ) : null}
+          <div className="inline-flex items-center gap-1 shrink-0 order-2">
+            <button
+              type="button"
+              data-testid="browser-back"
+              onClick={() =>
+                onDockStateChange((currentState) => moveBrowserHistory(currentState, -1))
+              }
+              disabled={!canGoBack}
+              className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent`}
+              aria-label="Back"
+            >
+              <ArrowLeft className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+            </button>
+            <button
+              type="button"
+              data-testid="browser-forward"
+              onClick={() =>
+                onDockStateChange((currentState) => moveBrowserHistory(currentState, 1))
+              }
+              disabled={!canGoForward}
+              className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] disabled:opacity-40 disabled:hover:bg-transparent`}
+              aria-label="Forward"
+            >
+              <ArrowRight className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+            </button>
+            <button
+              type="button"
+              data-testid="browser-reload"
+              onClick={handleRuntimeReload}
+              className={`inline-flex items-center justify-center ${isPizarraContext ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05]`}
+              aria-label="Reload"
+            >
+              <RefreshCw className={isPizarraContext ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+            </button>
+          </div>
 
-            {dedicatedBrowserOpen ? (
+          <label className="flex-1 min-w-0 relative order-3">
+            <Globe
+              className={`${isPizarraContext ? 'w-3 h-3 left-2' : 'w-4 h-4 left-3'} absolute top-1/2 -translate-y-1/2 text-[var(--text-muted)]`}
+            />
+            <input
+              data-testid="browser-url-input"
+              ref={urlInputRef}
+              type="text"
+              defaultValue={dockState.browserUrl || ''}
+              placeholder={
+                isPizarraContext ? 'URL' : 'Escribí una URL, localhost:3100 o una búsqueda'
+              }
+              className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-16 text-[10px]' : 'h-8 pl-9 pr-36 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
+            />
+            <div className="absolute inset-y-0 right-1 flex items-center gap-1">
               <button
                 type="button"
-                data-testid="browser-close-dedicated"
-                onClick={handleCloseDedicatedBrowser}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-200 hover:bg-rose-400/10 hover:text-rose-100"
-                aria-label="Close dedicated DevHub browser window"
-                title="Close dedicated DevHub browser window"
+                data-testid="browser-edit-toggle"
+                onClick={handleEditModeToggle}
+                className={`inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+                  effectiveEditMode
+                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
+                    : 'text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
+                }`}
+                aria-label={effectiveEditMode ? 'Close edit mode' : 'Open edit mode'}
+                title={effectiveEditMode ? 'Close edit mode' : 'Open edit mode'}
               >
-                <X className="h-3.5 w-3.5" />
+                <Pencil className="h-3.5 w-3.5" />
               </button>
-            ) : null}
-            {dockState.browserUrl ? (
-              <a
-                href={dockState.browserUrl}
-                target="_blank"
-                rel="noreferrer"
-                data-testid="browser-open-external"
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
-                aria-label={`Open ${hostLabel} externally`}
-                title={`Open ${hostLabel} externally`}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            ) : null}
-          </div>
-        </label>
-        {typeof onPizarraCloseCard === 'function' ? (
-          <button
-            type="button"
-            data-testid="pizarra-browser-close"
-            data-pizarra-close-button="true"
-            title="Cerrar ventana del navegador (en pizarra)"
-            aria-label="Cerrar ventana del navegador"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onPizarraCloseCard();
-            }}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-subtle)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
-      </form>
+              {dockState.browserUrl && !isPizarraContext ? (
+                <button
+                  type="button"
+                  data-testid="browser-toggle-workspace-maximize"
+                  onClick={handleWorkspaceMaximizeToggle}
+                  className="inline-flex h-6 items-center justify-center gap-1 rounded-md px-2 text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
+                  aria-label={
+                    dockState.maximized
+                      ? 'Restore browser with terminals'
+                      : 'Expand browser in workspace'
+                  }
+                  title={
+                    dockState.maximized
+                      ? 'Restore browser with terminals'
+                      : 'Expand browser in workspace'
+                  }
+                >
+                  {dockState.maximized ? (
+                    <Minimize2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  )}
+                  <span className="text-[10px] font-semibold">
+                    {dockState.maximized ? 'Terminales' : 'Expandir'}
+                  </span>
+                </button>
+              ) : null}
+              {!isPizarraContext && nativeRuntimeActive ? (
+                <div
+                  className="inline-flex h-6 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 text-[10px] font-semibold text-[var(--text-muted)]"
+                  data-testid="browser-native-runtime-chip"
+                  title={`${embeddedEngineLabel} embebido en el dock`}
+                >
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]" />
+                  <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
+                </div>
+              ) : null}
+
+              {dedicatedBrowserOpen ? (
+                <button
+                  type="button"
+                  data-testid="browser-close-dedicated"
+                  onClick={handleCloseDedicatedBrowser}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-200 hover:bg-rose-400/10 hover:text-rose-100"
+                  aria-label="Close dedicated DevHub browser window"
+                  title="Close dedicated DevHub browser window"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+              {dockState.browserUrl ? (
+                <button
+                  type="button"
+                  data-testid="browser-open-dedicated"
+                  onClick={() => {
+                    void handleOpenDedicatedBrowser();
+                  }}
+                  className="inline-flex h-6 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-[10px] font-medium text-[var(--text-secondary)] hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
+                  title="Abrir en ventana DevHub (WebView2 completa)"
+                >
+                  <MonitorUp className="h-3.5 w-3.5" />
+                  Ventana
+                </button>
+              ) : null}
+              {dockState.browserUrl ? (
+                <a
+                  href={dockState.browserUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-testid="browser-open-external"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
+                  aria-label={`Open ${hostLabel} externally`}
+                  title={`Open ${hostLabel} externally`}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ) : null}
+            </div>
+          </label>
+        </form>
+      </div>
 
       <div
         className={`flex min-h-0 flex-1 flex-col ${
-          nativeRuntimeActive && nativeRuntimeReady ? 'bg-transparent' : 'bg-[#050814]'
+          nativeRuntimeActive ? 'bg-transparent' : 'bg-[#050814]'
         } ${nativeRuntimeActive ? '' : 'p-3'}`}
         data-testid="browser-pane-body"
         style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
         <div
           className={`relative min-h-0 flex-1 overflow-hidden border ${
-            nativeRuntimeActive && nativeRuntimeReady ? 'border-0 bg-transparent' : 'bg-[#0a111d]'
+            nativeRuntimeActive ? 'border-0 bg-transparent' : 'bg-[#0a111d]'
           } ${
             nativeRuntimeActive
               ? 'border-0'
@@ -741,11 +935,20 @@ function WorkspaceBrowserPane({
           }`}
           data-testid="browser-viewport-shell"
           style={{
-            ...VIEWPORT_SHELL_STYLE,
+            ...(nativeRuntimeActive ? VIEWPORT_SHELL_STYLE : VIEWPORT_SHELL_STYLE_IFRAME),
             flex: '1 1 auto',
             minHeight: 0,
+            minWidth: 0,
+            width: '100%',
+            height: '100%',
           }}
           ref={viewportShellRef}
+          onMouseDown={() => {
+            releaseBrowserChrome(0);
+            if (nativeRuntimeActive && nativeRuntimeReady) {
+              focusNativeViewport();
+            }
+          }}
         >
           {shouldShowFrameWarning ? (
             <div

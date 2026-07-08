@@ -45,4 +45,17 @@ describe('App.js — MotionProvider mount at root (ZAA-6)', () => {
     const between = app.slice(openIdx, closeIdx);
     expect(between).toMatch(/HashRouter/);
   });
+
+  test('applies the stored motion mode to the document on boot', () => {
+    // Regression: the `data-motion-mode` attribute was only ever set when the
+    // user actively changed the preference in Ajustes during the current
+    // session (setMotionMode -> applyMotionModeToDocument). On a fresh load,
+    // globals.css `[data-motion-mode='reduced']` selectors had nothing to
+    // match even though localStorage held a 'reduced' preference. App.js must
+    // apply the stored preference on boot alongside theme/accent/morphology.
+    expect(app).toMatch(
+      /import\s*\{[^}]*\bapplyMotionModeToDocument\b[^}]*\bgetStoredMotionMode\b[^}]*\}\s*from\s*['"]@\/lib\/theme\/themes['"]/s
+    );
+    expect(app).toMatch(/applyMotionModeToDocument\(getStoredMotionMode\(\)\)/);
+  });
 });

@@ -9,6 +9,11 @@ import {
   resolveRightDockLayerStyle,
 } from '@/components/terminal/hooks/useRightDockController';
 import { DEFAULT_RIGHT_DOCK_STATE } from '@/components/workspace/rightDockState';
+import {
+  flushNativeBrowserResize,
+  scheduleNativeBrowserResize,
+  setNativeBrowserVisibility,
+} from '@/lib/browser/nativeBrowserBridge';
 
 export default function useWorkspaceRightDockSync({
   activeWorkspace,
@@ -19,7 +24,6 @@ export default function useWorkspaceRightDockSync({
   isDraggingDock,
   isDraggingDockRef,
   isDraggingInternalSplit,
-  nudgeBrowserNativeLiveRef,
   projectId,
   rightDockLayerRef,
   rightDockMeasuredBounds,
@@ -140,78 +144,103 @@ export default function useWorkspaceRightDockSync({
     effectiveRightDockState?.maximizedView,
   ]);
 
-  // Live direct nudge for the (native gtk) browser surface during dock drag.
-  const nudgeBrowserNativeLive = useCallback(() => {
-    if (!isDraggingDock) return;
-    if (typeof document === 'undefined') return;
-    const showingBrowser =
-      effectiveRightDockState.visible &&
-      !effectiveRightDockState.maximized &&
-      (effectiveRightDockState.activeTab === 'browser' || !effectiveRightDockState.activeTab);
-    if (!showingBrowser) return;
-
-    try {
-      const dockLayer = document.querySelector('[data-testid="workspace-right-dock-layer"]');
-      const shell =
-        (dockLayer && dockLayer.querySelector('[data-testid="browser-viewport-shell"]')) ||
-        document.querySelector('[data-testid="browser-viewport-shell"]');
-      if (!shell) return;
-
-      const r = shell.getBoundingClientRect();
-      if (r.width < 10 || r.height < 10) return;
-
-      const wsId = activeWsIdRef.current;
-      if (!projectId || !wsId) return;
-
-      const panelId = `browser-${projectId}-${wsId}`;
-
-      import('@/lib/browser/nativeBrowserBridge')
-        .then(({ resizeNativeBrowser }) => {
-          resizeNativeBrowser({
-            panelId,
-            bounds: {
-              x: Math.round(r.left),
-              y: Math.round(r.top),
-              width: Math.round(r.width),
-              height: Math.round(r.height),
-            },
-          }).catch(() => {});
-        })
-        .catch(() => {});
-    } catch {
-      /* best effort during gesture */
-    }
-  }, [
-    isDraggingDock,
-    effectiveRightDockState.visible,
-    effectiveRightDockState.maximized,
-    effectiveRightDockState.activeTab,
-    projectId,
-  ]);
-
-  nudgeBrowserNativeLiveRef.current = nudgeBrowserNativeLive;
-
+  // Live dock CSS + WebView2 HWND. During splitter drag the layer is mutated via
+  // style.left/width; ResizeObserver often misses left-only moves, so push the
+  // viewport-shell rect every frame. Read panelId from the live DOM so we never
+  // resize a stale/wrong id while the chrome moves and HWND stays stuck.
   const applyLiveRightDockBounds = useCallback(() => {
-    if (!isDraggingDockRef.current) return false;
-
     const containerElement = workspaceGridAreaRef.current;
     const placeholderElement = rightDockPlaceholderRef.current;
     const dockLayer = rightDockLayerRef.current;
     if (!containerElement || !placeholderElement || !dockLayer) return false;
 
-    const nextBounds = resolveMeasuredRightDockBounds(
-      containerElement.getBoundingClientRect?.(),
-      placeholderElement.getBoundingClientRect?.()
-    );
-    if (!nextBounds) return false;
+    const dragging = Boolean(isDraggingDockRef.current);
+    let applied = false;
 
-    const changed = applyRightDockLayerBounds(dockLayer, nextBounds);
-    if (changed) {
-      nudgeBrowserNativeLiveRef.current?.();
+    if (dragging) {
+      const nextBounds = resolveMeasuredRightDockBounds(
+        containerElement.getBoundingClientRect?.(),
+        placeholderElement.getBoundingClientRect?.()
+      );
+      if (nextBounds) {
+        applied = applyRightDockLayerBounds(dockLayer, nextBounds);
+      }
     }
-    return changed;
-  }, []);
+
+    const dock = rightDockState;
+    const browserLive =
+      dock?.visible && (dock?.activeTab === 'browser' || dock?.maximizedView === 'browser');
+    if (!browserLive) return applied;
+
+    try {
+      const pane = dockLayer.querySelector?.('[data-testid="workspace-browser-pane"]');
+      const shell =
+        dockLayer.querySelector?.('[data-testid="browser-viewport-shell"]') ||
+        pane?.querySelector?.('[data-testid="browser-viewport-shell"]');
+      const rect = shell?.getBoundingClientRect?.();
+      if (!rect || rect.width < 48 || rect.height < 24) return applied;
+
+      const panelIdFromDom = pane?.getAttribute?.('data-native-panel-id');
+      const wsId = activeWorkspace?.id || dockWorkspaceId;
+      const panelId = panelIdFromDom || `browser-${projectId || 'global'}-${wsId || 'workspace'}`;
+      const bounds = {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+
+      if (dragging) {
+        scheduleNativeBrowserResize({ panelId, bounds });
+      } else {
+        // Non-drag layout settle (panel group commit): flush immediately.
+        flushNativeBrowserResize({ panelId, bounds }).catch(() => {});
+        setNativeBrowserVisibility({ panelId, visible: true, bounds }).catch(() => {});
+      }
+    } catch {
+      /* ignore mid-drag measure failures */
+    }
+
+    return applied;
+  }, [activeWorkspace?.id, dockWorkspaceId, projectId, rightDockState]);
   applyLiveRightDockBoundsRef.current = applyLiveRightDockBounds;
+
+  // Keep HWND glued to the dock shell while the browser tab is visible — not only
+  // during explicit drag. Catches splitter commits, window resize, and layout
+  // settles that never flip isDraggingDock.
+  useEffect(() => {
+    const dock = rightDockState;
+    const browserLive =
+      dock?.visible && (dock?.activeTab === 'browser' || dock?.maximizedView === 'browser');
+    if (!browserLive) return undefined;
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      return undefined;
+    }
+
+    let raf = null;
+    let lastKey = '';
+    const tick = () => {
+      raf = window.requestAnimationFrame(tick);
+      const dockLayer = rightDockLayerRef.current;
+      if (!dockLayer) return;
+      const shell = dockLayer.querySelector?.('[data-testid="browser-viewport-shell"]');
+      const rect = shell?.getBoundingClientRect?.();
+      if (!rect || rect.width < 48 || rect.height < 24) return;
+      const key = `${Math.round(rect.left)}:${Math.round(rect.top)}:${Math.round(rect.width)}:${Math.round(rect.height)}`;
+      if (key === lastKey && !isDraggingDockRef.current) return;
+      lastKey = key;
+      applyLiveRightDockBoundsRef.current?.();
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      if (raf != null) window.cancelAnimationFrame(raf);
+    };
+  }, [
+    rightDockState?.activeTab,
+    rightDockState?.maximizedView,
+    rightDockState?.visible,
+    rightDockState?.size,
+  ]);
 
   const isFullscreenBrowser =
     effectiveRightDockState.visible &&

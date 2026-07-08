@@ -1199,23 +1199,21 @@ pub fn native_browser_probe(
 }
 
 #[tauri::command]
-pub fn native_browser_open(
+pub async fn native_browser_open(
     app: AppHandle,
-    state: State<'_, NativeBrowserState>,
-    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserOpenRequest,
-) -> NativeBrowserOpenResponse {
+) -> Result<NativeBrowserOpenResponse, String> {
     if crate::embedded_browser::embedded_browser_enabled() {
-        return crate::embedded_browser::embedded_browser_open(app, embedded, request);
+        return Ok(crate::embedded_browser::embedded_browser_open(app, request).await);
     }
 
     #[cfg(target_os = "linux")]
     {
         let Some(bounds) = request.bounds.clone() else {
-            return NativeBrowserOpenResponse {
+            return Ok(NativeBrowserOpenResponse {
                 opened: false,
                 reason: Some(MISSING_BOUNDS_REASON.to_string()),
-            };
+            });
         };
 
         let panel_id = request.panel_id.clone();
@@ -1256,16 +1254,16 @@ pub fn native_browser_open(
             )
         }) {
             Ok(()) => {
-                if let Ok(mut focused_panel_id) = state.focused_panel_id.lock() {
+                if let Ok(mut focused_panel_id) = app.state::<NativeBrowserState>().focused_panel_id.lock() {
                     *focused_panel_id = Some(panel_id.clone());
                 }
 
                 log::info!("[DevHub] native_browser_open success panel={}", panel_id);
 
-                NativeBrowserOpenResponse {
+                Ok(NativeBrowserOpenResponse {
                     opened: true,
                     reason: None,
-                }
+                })
             }
             Err(reason) => {
                 log::error!(
@@ -1273,10 +1271,10 @@ pub fn native_browser_open(
                     panel_id,
                     reason
                 );
-                NativeBrowserOpenResponse {
+                Ok(NativeBrowserOpenResponse {
                     opened: false,
                     reason: Some(reason),
-                }
+                })
             }
         }
     }
@@ -1284,24 +1282,22 @@ pub fn native_browser_open(
     #[cfg(not(target_os = "linux"))]
     {
         let _ = app;
-        let _ = state;
         let _ = request;
-        NativeBrowserOpenResponse {
+        Ok(NativeBrowserOpenResponse {
             opened: false,
             reason: unsupported_platform_reason(),
-        }
+        })
     }
 }
 
 #[tauri::command]
-pub fn native_browser_load_url(
+pub async fn native_browser_load_url(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
-    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserLoadUrlRequest,
-) -> NativeBrowserLoadUrlResponse {
+) -> Result<NativeBrowserLoadUrlResponse, String> {
     if crate::embedded_browser::embedded_browser_enabled() {
-        return crate::embedded_browser::embedded_browser_load_url(app, embedded, request);
+        return Ok(crate::embedded_browser::embedded_browser_load_url(app, request).await);
     }
 
     #[cfg(target_os = "linux")]
@@ -1322,14 +1318,14 @@ pub fn native_browser_load_url(
                 move || registry_load_panel_url(&panel_id, &url),
             )
         }) {
-            Ok(()) => NativeBrowserLoadUrlResponse {
+            Ok(()) => Ok(NativeBrowserLoadUrlResponse {
                 loaded: true,
                 reason: None,
-            },
-            Err(reason) => NativeBrowserLoadUrlResponse {
+            }),
+            Err(reason) => Ok(NativeBrowserLoadUrlResponse {
                 loaded: false,
                 reason: Some(reason),
-            },
+            }),
         }
     }
 
@@ -1337,22 +1333,21 @@ pub fn native_browser_load_url(
     {
         let _ = app;
         let _ = request;
-        NativeBrowserLoadUrlResponse {
+        Ok(NativeBrowserLoadUrlResponse {
             loaded: false,
             reason: unsupported_platform_reason(),
-        }
+        })
     }
 }
 
 #[tauri::command]
-pub fn native_browser_reload(
+pub async fn native_browser_reload(
     app: AppHandle,
     _state: State<'_, NativeBrowserState>,
-    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
     request: NativeBrowserPanelRequest,
-) -> NativeBrowserReloadResponse {
+) -> Result<NativeBrowserReloadResponse, String> {
     if crate::embedded_browser::embedded_browser_enabled() {
-        return crate::embedded_browser::embedded_browser_reload(app, embedded, &request.panel_id);
+        return Ok(crate::embedded_browser::embedded_browser_reload(app, request.panel_id).await);
     }
 
     #[cfg(target_os = "linux")]
@@ -1372,14 +1367,14 @@ pub fn native_browser_reload(
                 move || registry_reload_panel(&panel_id),
             )
         }) {
-            Ok(()) => NativeBrowserReloadResponse {
+            Ok(()) => Ok(NativeBrowserReloadResponse {
                 reloaded: true,
                 reason: None,
-            },
-            Err(reason) => NativeBrowserReloadResponse {
+            }),
+            Err(reason) => Ok(NativeBrowserReloadResponse {
                 reloaded: false,
                 reason: Some(reason),
-            },
+            }),
         }
     }
 
@@ -1387,10 +1382,10 @@ pub fn native_browser_reload(
     {
         let _ = app;
         let _ = request;
-        NativeBrowserReloadResponse {
+        Ok(NativeBrowserReloadResponse {
             reloaded: false,
             reason: unsupported_platform_reason(),
-        }
+        })
     }
 }
 
@@ -1633,6 +1628,17 @@ pub fn native_browser_selector_command(
             reason: unsupported_platform_reason(),
         }
     }
+}
+
+#[tauri::command]
+pub fn native_browser_purge_orphans(
+    app: AppHandle,
+    embedded: State<'_, crate::embedded_browser::EmbeddedBrowserRegistry>,
+) -> u32 {
+    if crate::embedded_browser::embedded_browser_enabled() {
+        return crate::embedded_browser::embedded_browser_purge_orphans(app, embedded) as u32;
+    }
+    0
 }
 
 #[tauri::command]

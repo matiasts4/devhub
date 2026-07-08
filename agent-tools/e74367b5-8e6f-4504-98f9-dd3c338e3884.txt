@@ -1,0 +1,313 @@
+node : (node:18684) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland 
+alternative instead.
+En l�nea: 1 Car�cter: 25
++ ...  D:\devhub; node D:\devhub\node_modules\jest\bin\jest.js --runInBand  ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:18684) [D...native instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS src/components/__tests__/TerminalWorkspacesManager.v2graveyard.test.jsx
+  ● Console
+    console.warn
+      Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for 
+faster performance: https://react.dev/link/new-jsx-transform
+      166 |               </span>
+      167 |             ) : null}
+    > 168 |             <PanelStatusBadge
+          |             ^
+      169 |               panelId={panel.id}
+      170 |               terminalId={panel.id}
+      171 |               agentRun={agentRun}
+      at __jsx (node_modules/.pnpm/react@19.2.6/node_modules/react/cjs/react.development.js:1014:19)
+      at renderWorkspacePanel (src/components/terminal/components/renderWorkspacePanel.jsx:168:13)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.v2graveyard.test.jsx:283:21)
+FAIL src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx
+  ● Console
+    console.warn
+      Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for 
+faster performance: https://react.dev/link/new-jsx-transform
+      17 | /** @type {Record<string, React.ReactNode>} */
+      18 | const STATUS_ICONS = {
+    > 19 |   requested: <Loader2 className="w-4 h-4 animate-spin text-blue-500" />,
+         |              ^
+      20 |   dispatched: <Loader2 className="w-4 h-4 animate-spin text-blue-500" />,
+      21 |   completed: <CheckCircle2 className="w-4 h-4 text-green-500" />,
+      22 |   failed: <XCircle className="w-4 h-4 text-red-500" />,
+      at __jsx (node_modules/.pnpm/react@19.2.6/node_modules/react/cjs/react.development.js:1014:19)
+      at Object.<anonymous> (src/components/workspace/OperatorActionCard.jsx:19:14)
+      at Object.<anonymous> (src/components/workspace/WorkspaceRightDock.jsx:5:1)
+      at Object.<anonymous> (src/components/TerminalWorkspacesManager.jsx:100:1)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:258:41)
+      at TestScheduler.scheduleTests 
+(node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/TestScheduler.js:333:13)
+      at runJest (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/runJest.js:404:19)
+      at _run10000 (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/cli/index.js:320:7)
+      at runCLI (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/cli/index.js:173:3)
+    console.error
+      ReferenceError: Cannot access 'getAllPanelIds' before initialization
+          at TerminalWorkspacesManager (D:\devhub\src\components\TerminalWorkspacesManager.jsx:1332:5)
+          at Object.react_stack_bottom_frame (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\r
+eact-dom\cjs\react-dom-client.development.js:25904:20)
+          at renderWithHooks (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\rea
+ct-dom-client.development.js:7662:22)
+          at updateFunctionComponent (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom
+\cjs\react-dom-client.development.js:10166:19)
+          at beginWork (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\react-dom
+-client.development.js:11778:18)
+          at runWithFiberInDEV (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\r
+eact-dom-client.development.js:874:13)
+          at performUnitOfWork (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\r
+eact-dom-client.development.js:17641:22)
+          at workLoopSync (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\react-
+dom-client.development.js:17469:41)
+          at renderRootSync (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\reac
+t-dom-client.development.js:17450:11)
+          at performWorkOnRoot (D:\devhub\node_modules\.pnpm\react-dom@19.2.6_react@19.2.6\node_modules\react-dom\cjs\r
+eact-dom-client.development.js:16583:35)
+      300 |   mountedRoots.push({ root, container });
+      301 |
+    > 302 |   flushSync(() => {
+          |   ^
+      303 |     root.render(element);
+      304 |   });
+      305 |   await flushEffects();
+      at console.<anonymous> (node_modules/.pnpm/jest-mock@27.5.1/node_modules/jest-mock/build/index.js:854:25)
+      at Object.<anonymous>.process.env.NODE_ENV.reportGlobalError 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:25513:23)
+      at defaultOnUncaughtError 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:9361:7)
+      at logUncaughtError 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:9431:11)
+      at runWithFiberInDEV 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at lane.callback 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:9461:9)
+      at callCallback 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:7423:16)
+      at commitCallbacks 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:7443:11)
+      at runWithFiberInDEV 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at commitLayoutEffectOnFiber 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:14047:15)
+      at flushLayoutEffects 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:18138:15)
+      at commitRoot 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:17954:9)
+      at commitRootWhenReady 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:16824:7)
+      at performWorkOnRoot 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:16722:15)
+      at performSyncWorkOnRoot 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:18972:7)
+      at flushSyncWorkAcrossRoots_impl 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:18814:21)
+      at flushSyncWork$1 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:16898:12)
+      at Object.f 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:27521:26)
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:140:23)
+      at renderIntoDom (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:302:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:385:24)
+      at TestScheduler.scheduleTests 
+(node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/TestScheduler.js:333:13)
+      at runJest (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/runJest.js:404:19)
+      at _run10000 (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/cli/index.js:320:7)
+      at runCLI (node_modules/.pnpm/@jest+core@27.5.1/node_modules/@jest/core/build/cli/index.js:173:3)
+    console.warn
+      An error occurred in the <TerminalWorkspacesManager> component.
+      
+      Consider adding an error boundary to your tree to customize error handling behavior.
+      Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
+      300 |   mountedRoots.push({ root, container });
+      301 |
+    > 302 |   flushSync(() => {
+          |   ^
+      303 |     root.render(element);
+      304 |   });
+      305 |   await flushEffects();
+      at defaultOnUncaughtError 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:9362:15)
+      at logUncaughtError 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:9431:11)
+      at runWithFiberInDEV 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at lane.callback 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:9461:9)
+      at callCallback 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:7423:16)
+      at commitCallbacks 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:7443:11)
+      at runWithFiberInDEV 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at commitLayoutEffectOnFiber 
+(node_modules/.p
+
+... (output truncated) ...
+
+ht-dock tab strip has 1px accent inner border
+    expect(received).not.toBeNull()
+    Received: null
+      1543 |     // The browser tab starts as the active tab (default), but is inactive at mount because right dock is 
+hidden.
+      1544 |     const browserTab = view.container.querySelector('[data-testid="right-dock-tab-browser"]');
+    > 1545 |     expect(browserTab).not.toBeNull();
+           |                            ^
+      1546 |     expect(browserTab.getAttribute('data-pizarra-active-tab')).toBe('false');
+      1547 |     expect(browserTab.className).not.toContain('outline-inset');
+      1548 |
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1545:28)
+  ● TerminalWorkspacesManager right dock › inactive tabs in right-dock tab strip do not have accent border
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1574:11)
+  ● TerminalWorkspacesManager right dock › dock maximize toggles between persisted panel size and full width
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1594:11)
+  ● TerminalWorkspacesManager right dock › dock drag overlay never blocks editor interactions and clears after 
+pointer release
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1622:11)
+  ● TerminalWorkspacesManager right dock › right dock layout placeholder never captures pointer events above the 
+real dock layer
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1659:11)
+  ● TerminalWorkspacesManager right dock › measured right dock bounds realign the absolute dock layer after 
+workspace switches
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1738:11)
+  ● TerminalWorkspacesManager right dock › browser tab resolves free-text input into a searchable web url
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1810:11)
+  ● TerminalWorkspacesManager right dock › browser tab defaults plain domains to https navigation
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1829:11)
+  ● TerminalWorkspacesManager right dock › shows a visible localhost error state instead of leaving the browser 
+blank
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1864:11)
+  ● TerminalWorkspacesManager right dock › rendering the visible right dock does not emit React key warnings
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1890:11)
+  ● TerminalWorkspacesManager right dock › right dock browser state stays mounted across slower timer advances
+    TypeError: Cannot read properties of null (reading 'dispatchEvent')
+      309 | async function click(element) {
+      310 |   flushSync(() => {
+    > 311 |     element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+          |             ^
+      312 |   });
+      313 |   await flushEffects();
+      314 | }
+      at src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:311:13
+      at flushSync 
+(node_modules/.pnpm/react-dom@19.2.6_react@19.2.6/node_modules/react-dom/cjs/react-dom.development.js:136:18)
+      at click (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:310:3)
+      at Object.<anonymous> (src/components/__tests__/TerminalWorkspacesManager.right-dock.test.jsx:1908:11)
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       40 failed, 7 passed, 47 total
+Snapshots:   0 total
+Time:        8.843 s
+Ran all test suites matching /src\\components\\__tests__\\TerminalWorkspacesManager.v2graveyard.test.jsx|src\\component
+s\\__tests__\\TerminalWorkspacesManager.right-dock.test.jsx/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after 
+all tests finished?

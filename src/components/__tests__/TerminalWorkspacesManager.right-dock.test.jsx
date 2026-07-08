@@ -920,8 +920,8 @@ describe('TerminalWorkspacesManager right dock', () => {
         activeTab: 'bridge',
         maximized: false,
         size: 38,
-        browserUrl: 'http://localhost:3200/',
-        browserHistory: ['http://localhost:3200/'],
+        browserUrl: 'http://localhost:4173/',
+        browserHistory: ['http://localhost:4173/'],
         browserHistoryIndex: 0,
       })
     );
@@ -940,7 +940,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     const iframeSrc =
       view.container.querySelector('[data-testid="browser-iframe"]')?.getAttribute('src') || '';
     expect(iframeSrc).toContain('/api/preview-proxy/?url=');
-    expect(iframeSrc).toContain('http%3A%2F%2Flocalhost%3A3200%2F');
+    expect(iframeSrc).toContain('http%3A%2F%2Flocalhost%3A4173%2F');
     expect(view.container.querySelector('[data-testid="browser-edit-toggle"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="bridge-selection-summary"]')).not.toBeNull();
 
@@ -1123,7 +1123,7 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(sharedEditorPaneUnmountCount).toBe(0);
   });
 
-  test('shows a workspace browser indicator and lets the user close the dedicated browser state from the top toolbar', async () => {
+  test('tracks dedicated browser state without visible workspace-tab badges', async () => {
     window.localStorage.setItem(
       buildBrowserWindowStorageKey('project-1'),
       JSON.stringify({
@@ -1144,15 +1144,17 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    expect(
-      view.container.querySelector('[data-testid="workspace-browser-indicator-ws1"]')
-    ).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="workspace-browser-close-ws1"]')
-    ).not.toBeNull();
+    const tabIndicator = view.container.querySelector(
+      '[data-testid="workspace-browser-indicator-ws1"]'
+    );
+    expect(tabIndicator).not.toBeNull();
+    // Must not paint the old emerald badge/chip on the workspace strip.
+    expect(tabIndicator?.closest('.sr-only')).not.toBeNull();
+    expect(tabIndicator?.className || '').not.toMatch(/bg-emerald/);
     expect(
       view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')
     ).not.toBeNull();
+
     await click(view.container.querySelector('[data-testid="workspace-browser-close-ws1"]'));
 
     expect(
@@ -1162,7 +1164,6 @@ describe('TerminalWorkspacesManager right dock', () => {
     expect(
       view.container.querySelector('[data-testid="right-dock-tab-browser-indicator"]')
     ).toBeNull();
-    expect(view.container.querySelector('[data-testid="workspace-browser-close-ws1"]')).toBeNull();
 
     const persisted = JSON.parse(
       window.localStorage.getItem(buildBrowserWindowStorageKey('project-1'))
@@ -1219,7 +1220,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       window.localStorage.getItem(buildRightDockStorageKey('project-1', 'ws1'))
     );
     expect(persistedState.browserHistory).toEqual([
-      'http://localhost:3200/',
+      // Fresh dock home resolves to the live origin (JSDOM: https://devhub.test/),
+      // no longer the legacy localhost:3200 default.
+      'https://devhub.test/',
       'http://localhost:4173/',
       'http://localhost:52827/#community',
     ]);

@@ -16,6 +16,12 @@ const VOICE_NAME = 'es_ES-davefx-medium';
 const VOICE_ONNX = path.join(VOICES_DIR, `${VOICE_NAME}.onnx`);
 const TORCH_CPU = 'https://download.pytorch.org/whl/cpu';
 
+// `npm run voice:ensure` (predev/prebuild) always bootstraps VOICE_NAME with
+// no args. `npm run voice:add-voice -- <id>` forwards an extra Piper voice
+// id (see src/lib/voice/ttsVoiceCatalog.js) to fetch alongside it, e.g. the
+// higher-quality es_AR-daniela-high used from Zed's voice settings.
+const EXTRA_VOICE_NAME = process.argv[2] || null;
+
 function run(cmd, args, opts = {}) {
   const result = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
   if (result.status !== 0) {
@@ -44,11 +50,21 @@ function depsHealthy() {
   return sttOk && piperOk && voiceOk && fs.existsSync(MARKER);
 }
 
-function ensureVoiceModel() {
-  if (fs.existsSync(VOICE_ONNX)) return;
+function ensureVoiceModel(name = VOICE_NAME) {
+  const onnx = path.join(VOICES_DIR, `${name}.onnx`);
+  if (fs.existsSync(onnx)) {
+    console.log(`[voice:ensure] Voice ${name} already downloaded`);
+    return;
+  }
   fs.mkdirSync(VOICES_DIR, { recursive: true });
-  console.log(`[voice:ensure] Downloading Piper voice ${VOICE_NAME} (~60MB)…`);
-  run(PYTHON, ['-m', 'piper.download_voices', VOICE_NAME], { cwd: VOICES_DIR });
+  console.log(`[voice:ensure] Downloading Piper voice ${name}…`);
+  run(PYTHON, ['-m', 'piper.download_voices', name], { cwd: VOICES_DIR });
+}
+
+function ensureExtraVoiceIfRequested() {
+  if (EXTRA_VOICE_NAME && EXTRA_VOICE_NAME !== VOICE_NAME) {
+    ensureVoiceModel(EXTRA_VOICE_NAME);
+  }
 }
 
 function main() {
@@ -59,6 +75,7 @@ function main() {
 
   if (depsHealthy()) {
     console.log('[voice:ensure] Voice Python venv already healthy');
+    ensureExtraVoiceIfRequested();
     return;
   }
 
@@ -72,6 +89,7 @@ function main() {
 
   if (venvExists && sttOk && piperOk && !fs.existsSync(VOICE_ONNX)) {
     ensureVoiceModel();
+    ensureExtraVoiceIfRequested();
     fs.writeFileSync(MARKER, `ok\n${new Date().toISOString()}\n`);
     console.log('[voice:ensure] Piper voice model ready');
     return;
@@ -88,6 +106,7 @@ function main() {
   run(PYTHON, ['-m', 'pip', 'install', 'torch', 'torchaudio', '--index-url', TORCH_CPU]);
 
   ensureVoiceModel();
+  ensureExtraVoiceIfRequested();
 
   fs.writeFileSync(MARKER, `ok\n${new Date().toISOString()}\n`);
   console.log('[voice:ensure] Voice Python venv ready at packages/veloce-audio/python/.venv');

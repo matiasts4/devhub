@@ -1739,7 +1739,9 @@ Dale, empezá leyendo el contexto del proyecto.`;
                   return;
                 }
                 navigate(`/project/${project.id}/swarm`);
-                sileo.info({ title: `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control` });
+                sileo.info({
+                  title: `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control`,
+                });
               }}
             />
 
@@ -1859,7 +1861,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
                   border: '1px solid var(--border-subtle)',
                 }}
               >
-                Inactivo
+                Idle
               </span>
             )}
             {(streamingModel || activeModelOverride) && (

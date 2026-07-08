@@ -42,7 +42,7 @@ function requireParam(params, name) {
   return null;
 }
 
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi']);
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok']);
 
 export const terminalTool = {
   name: 'open_terminal',
@@ -134,6 +134,7 @@ export const terminalTool = {
     // downstream tools can target the new panel by name without re-resolving.
     let terminalId = null;
     let displayName = null;
+    const usedNames = collectUsedDisplayNames(context);
     if (typeof requestedName === 'string' && requestedName.trim()) {
       const cleanName = requestedName.trim();
       const clientTerminals = workspaceTerminalsFromContext(context);
@@ -148,23 +149,20 @@ export const terminalTool = {
           hint: 'execute_in_terminal',
         };
       }
-      // Pool helper: picks the name unless already in use; falls back to
-      // "Panel-N" when the requested name is not in the canonical pool.
-      const reserved = acquireDisplayName([...DISPLAY_NAME_POOL, cleanName]);
-      displayName = reserved;
-      terminalId = mintTerminalId();
-      // If the model asked for a custom name not in the pool, preserve it
-      // exactly. acquire() returns "Panel-N" for unknown names; detect that
-      // case and use the requested name as-is (the model wanted that name).
-      if (cleanName && !DISPLAY_NAME_POOL.includes(reserved) && reserved.startsWith('Panel-')) {
+      // Prefer requested name when free; otherwise next free pool name.
+      if (!usedNames.has(cleanName.toLowerCase())) {
         displayName = cleanName;
+      } else {
+        displayName = acquireDisplayName([...usedNames]);
       }
+      terminalId = mintTerminalId(context);
     } else {
-      // No name provided: still mint an id and resolve a name from the pool
-      // so the model can chain a follow-up execute by name if needed.
-      terminalId = mintTerminalId();
-      displayName = acquireDisplayName([]);
+      // No name provided: mint id + unique pool name against live + in-request names.
+      terminalId = mintTerminalId(context);
+      displayName = acquireDisplayName([...usedNames]);
     }
+    rememberReservedDisplayName(context, displayName);
+    rememberMintedTerminal(context, terminalId, displayName);
 
     const result = {
       opened: true,
@@ -172,6 +170,9 @@ export const terminalTool = {
       cwd: cwd || null,
       terminalId,
       displayName,
+      // Default: do not steal focus / maximize. Client may set focus:true only
+      // when the user explicitly asked (see dispatchZedActions).
+      focus: params?.focus === true,
       hint: 'Terminal opens in the workspace UI. Use list_terminals to refresh the live id, or call execute_in_terminal / summarize_terminal with this `name` immediately.',
     };
     const cmdToReport = cmdToRun;
@@ -272,8 +273,78 @@ function augmentDisplayNames(processes) {
 // helper handles the dedup against the current set of active names.
 // Module-local counter so each open_terminal call mints a unique id.
 let _nextTerminalId = 0;
-function mintTerminalId() {
-  _nextTerminalId += 1;
+
+/**
+ * Display names already taken: live workspace panels + names reserved earlier
+ * in this same request (multi open_terminal in one turn).
+ * @param {object} context
+ * @returns {Set<string>} lowercased names for acquire(), plus original casing list via array
+ */
+function collectUsedDisplayNames(context) {
+  const used = [];
+  const list = workspaceTerminalsFromContext(context) || [];
+  for (const t of list) {
+    if (typeof t?.displayName === 'string' && t.displayName.trim()) {
+      used.push(t.displayName.trim());
+    }
+  }
+  const reserved = context?._reserved_display_names;
+  if (Array.isArray(reserved)) {
+    for (const n of reserved) {
+      if (typeof n === 'string' && n.trim()) used.push(n.trim());
+    }
+  }
+  return new Set(used.map((n) => n.toLowerCase()));
+}
+
+function rememberReservedDisplayName(context, name) {
+  if (!context || typeof context !== 'object' || !name) return;
+  if (!Array.isArray(context._reserved_display_names)) {
+    context._reserved_display_names = [];
+  }
+  context._reserved_display_names.push(name);
+  // Also mirror into workspace_terminals so mint floor + name resolution see it.
+  if (!Array.isArray(context.workspace_terminals)) {
+    context.workspace_terminals = [];
+  }
+}
+
+function rememberMintedTerminal(context, terminalId, displayName) {
+  if (!context || typeof context !== 'object' || !terminalId) return;
+  if (!Array.isArray(context.workspace_terminals)) {
+    context.workspace_terminals = [];
+  }
+  const existing = context.workspace_terminals.find((t) => t.terminalId === terminalId);
+  const row = { terminalId, displayName: displayName || terminalId };
+  if (existing) Object.assign(existing, row);
+  else context.workspace_terminals.push(row);
+}
+
+// Zed's counter is a server-process-lifetime module global; the UI's own
+// `panelCounterRef` is a per-browser-tab React ref. They can drift apart
+// (e.g. after a page reload the client counter resets while Zed's stays
+// high, or the client accumulates more manual splits than Zed ever opened),
+// so minting blindly from `_nextTerminalId` risks handing out a `pN` that
+// already belongs to a live panel. `context.workspace_terminals` reflects
+// the client's live panel list for this request (and gets opens from this
+// same turn merged in via mergeOpensIntoRequestContext), so use its highest
+// numeric panel id as a floor before minting.
+function highestPanelNumberFromContext(context) {
+  const list = workspaceTerminalsFromContext(context) || [];
+  let max = 0;
+  for (const t of list) {
+    const match = /^p(\d+)$/i.exec(String(t?.terminalId || ''));
+    if (match) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  return max;
+}
+
+function mintTerminalId(context) {
+  const floor = highestPanelNumberFromContext(context);
+  _nextTerminalId = Math.max(_nextTerminalId, floor) + 1;
   return `p${_nextTerminalId}`;
 }
 function _resetOpenTerminalCounterForTests() {

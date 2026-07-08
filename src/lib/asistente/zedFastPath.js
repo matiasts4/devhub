@@ -4,15 +4,28 @@
  */
 
 import { resolveTerminalByName } from './zedTerminalResolver';
-import { resolveNamedTerminalFromMessage } from './zedTerminalNamePhrase';
+import {
+  resolveNamedTerminalFromMessage,
+  nameCandidatesFromEnPhrase,
+} from './zedTerminalNamePhrase';
 import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
 import { stripDiacritics } from '../text';
 
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi']);
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok']);
 const OPEN_VERBS = /\b(abre|abr[eía]s?|abrir|abramos|open|crea|crear|nueva|lanza|lanzar)\b/;
 const CLOSE_VERBS =
   /\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|cerramen|close|cierres|cierren|mata)\b/;
 const TERMINAL_NOUN_RE = /\b(terminal(?:es)?|panel(?:es)?)\b/;
+
+const NUMBER_WORDS = {
+  una: 1,
+  un: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+};
 
 /**
  * @typedef {{
@@ -33,6 +46,7 @@ export function normalizeAgentAliases(text) {
     .replace(/\bopen\s+code\b/g, 'opencode')
     .replace(/\bopen\s+codex\b/g, 'codex')
     .replace(/\bopen\s+kimi\b/g, 'kimi')
+    .replace(/\bopen\s+grok\b/g, 'grok')
     .replace(/\bquimy\b/g, 'kimi')
     .replace(/\bkimy\b/g, 'kimi');
 }
@@ -74,7 +88,11 @@ export function extractTerminalNameFromMessage(message, terminals = []) {
   );
 
   const seen = new Set();
+  const expanded = [];
   for (const cand of candidates) {
+    expanded.push(cand, ...cleanTerminalNameChunk(cand));
+  }
+  for (const cand of expanded) {
     const key = cand.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -86,7 +104,73 @@ export function extractTerminalNameFromMessage(message, terminals = []) {
 }
 
 /**
- * Extract multiple terminal names from close requests: "cierra Chase y Cesar".
+ * Normalize a spoken/written terminal name chunk for lookup.
+ * Handles "la de Eibar", "el de Chase", "terminal de Cesar", trailing punctuation.
+ *
+ * @param {string} chunk
+ * @returns {string[]} candidate strings to try (most specific first)
+ */
+export function cleanTerminalNameChunk(chunk) {
+  if (typeof chunk !== 'string') return [];
+  const s = chunk
+    .trim()
+    .replace(/[.?!,;:]+$/g, '')
+    .trim();
+  if (!s) return [];
+
+  const variants = new Set();
+  const push = (v) => {
+    const t =
+      typeof v === 'string'
+        ? v
+            .trim()
+            .replace(/[.?!,;:]+$/g, '')
+            .trim()
+        : '';
+    if (t) variants.add(t);
+  };
+
+  push(s);
+  // "la de Eibar" / "el de Chase" / "las de Avery"
+  push(s.replace(/^(la|el|las|los|the)\s+de\s+/i, ''));
+  push(s.replace(/^(la|el|las|los|the)\s+/i, ''));
+  push(s.replace(/^(de|del|of)\s+/i, ''));
+  push(s.replace(/^(terminal(?:es)?|panel(?:es)?)\s+(de\s+)?/i, ''));
+  push(s.replace(/^(terminal(?:es)?|panel(?:es)?)\s+/i, ''));
+  // After previous strips, still "de Eibar"
+  for (const v of [...variants]) {
+    push(v.replace(/^(de|del|of)\s+/i, ''));
+    push(v.replace(/^(la|el|las|los|the)\s+de\s+/i, ''));
+  }
+
+  // Last token often is the display name: "la terminal de Eibar" → Eibar
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length >= 1) push(words[words.length - 1]);
+
+  return [...variants];
+}
+
+/**
+ * Try to resolve a free-text chunk to a single terminal display name.
+ * @returns {string | null | 'AMBIGUOUS'}
+ */
+function resolveNameFromChunk(chunk, terminals) {
+  for (const cand of cleanTerminalNameChunk(chunk)) {
+    const lookup = resolveTerminalByName(cand, terminals);
+    if (lookup.ok) return lookup.displayName;
+    if (lookup.code === 'ambiguous') return 'AMBIGUOUS';
+    for (const en of nameCandidatesFromEnPhrase(cand)) {
+      const inner = resolveTerminalByName(en, terminals);
+      if (inner.ok) return inner.displayName;
+      if (inner.code === 'ambiguous') return 'AMBIGUOUS';
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract multiple terminal names from close requests: "cierra Chase y Cesar",
+ * "cierra la de Eibar", "cierra la terminal de Avery".
  *
  * @param {string} message
  * @param {Array<{ terminalId: string, displayName?: string }>} terminals
@@ -96,29 +180,128 @@ export function extractMultipleCloseNames(message, terminals = []) {
   const raw = typeof message === 'string' ? message.trim() : '';
   if (!raw || !CLOSE_VERBS.test(normalizeText(raw))) return [];
 
+  // Prefer the segment after the first close verb (supports compound open+close).
   let rest = raw.replace(
-    /^.*?\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|close|cierres|cierren|mata)\b\s*(?:(?:la|las|el|los|todas?\s+las?|todos?\s+los?)\s+)?(?:terminales?|paneles?)?\s*/i,
+    /^.*?\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|close|cierres|cierren|mata)\b\s*/i,
     ''
   );
-  rest = rest.replace(/\s+(por favor|please|gracias)\.?$/i, '').trim();
+  rest = rest
+    .replace(
+      /^(?:(?:la|las|el|los|todas?\s+las?|todos?\s+los?)\s+)?(?:terminales?|paneles?)?\s*/i,
+      ''
+    )
+    .replace(/^(?:de\s+)/i, '')
+    .replace(/\s+(por favor|please|gracias)\.?$/i, '')
+    .trim();
+  if (!rest) return [];
+
+  // Stop at a following open-clause if the close came first: "cierra Eibar y abre una"
+  rest = rest.split(/\s+(?=abre|abrir|open|crea|crear|lanza|lanzar)\b/i)[0].trim();
   if (!rest) return [];
 
   const chunks = rest
     .split(/\s+(?:y|e|and)\s+|,\s*/i)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // Drop pure open-side leftovers if any slipped through
+    .filter((c) => !OPEN_VERBS.test(normalizeText(c)));
 
   const names = [];
   for (const chunk of chunks) {
-    const cleaned = chunk.replace(/^(terminal|panel)\s+/i, '').trim();
-    const lookup = resolveTerminalByName(cleaned, terminals);
-    if (lookup.ok) {
-      if (!names.includes(lookup.displayName)) names.push(lookup.displayName);
-    } else if (lookup.code === 'ambiguous') {
-      return 'AMBIGUOUS';
-    }
+    const resolved = resolveNameFromChunk(chunk, terminals);
+    if (resolved === 'AMBIGUOUS') return 'AMBIGUOUS';
+    if (resolved && !names.includes(resolved)) names.push(resolved);
   }
   return names;
+}
+
+/**
+ * True when the user clearly targeted a close name but it did not resolve
+ * against the live catalog (force LLM rather than half-executing).
+ *
+ * @param {string} message
+ * @param {Array} terminals
+ */
+export function hasUnresolvedCloseTarget(message, terminals = []) {
+  const lower = normalizeText(message);
+  if (!CLOSE_VERBS.test(lower)) return false;
+  const names = extractMultipleCloseNames(message, terminals);
+  if (names === 'AMBIGUOUS') return true;
+  if (names.length > 0) return false;
+
+  // After close verb there is leftover name-like text that is not a bare open phrase.
+  const after = message.replace(
+    /^.*?\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|close|cierres|cierren|mata)\b\s*/i,
+    ''
+  );
+  const leftover = after
+    .replace(/^(?:(?:la|las|el|los)\s+)?(?:terminales?|paneles?)?\s*/i, '')
+    .replace(/\s+(por favor|please|gracias)\.?$/i, '')
+    .split(/\s+(?=abre|abrir|open|crea|crear)\b/i)[0]
+    .trim();
+  if (!leftover) return false;
+  // "cierra la terminal" with no name → implicit close, not unresolved
+  if (/^(la|el|las|los)?\s*(terminales?|paneles?)?$/i.test(leftover)) return false;
+  // Has some token that looks like a name (letter word not only fillers)
+  return /[a-zA-ZáéíóúÁÉÍÓÚñÑ]{2,}/.test(
+    leftover.replace(/\b(la|el|las|los|de|del|the|of)\b/gi, '')
+  );
+}
+
+/**
+ * Compound "abre … y cierra …" / "cierra … y abre …" → multi-step local plan.
+ * Returns null to fall through (or force LLM via unresolved close target).
+ *
+ * @param {string} text
+ * @param {string} lower
+ * @param {Array} terminals
+ * @param {string|null} program
+ * @returns {ZedFastPathHit | null}
+ */
+export function resolveCompoundOpenCloseIntent(text, lower, terminals, program = null) {
+  if (!OPEN_VERBS.test(lower) || !CLOSE_VERBS.test(lower)) return null;
+
+  // Need some signal that the open side is about terminals/panels (not "abre el browser").
+  const openLooksLikeTerminal =
+    TERMINAL_NOUN_RE.test(lower) ||
+    wantsNewTerminal(lower) ||
+    /\b(abre|abrir|open|crea|crear)\s+(una|un|nueva|nuevo|otra|otro|\d+|dos|tres)\b/.test(lower);
+  if (!openLooksLikeTerminal) return null;
+
+  const closeNames = extractMultipleCloseNames(text, terminals);
+  if (closeNames === 'AMBIGUOUS') return null;
+
+  if (closeNames.length === 0) {
+    // Named close that didn't resolve → let LLM handle rather than open-only half plan.
+    if (hasUnresolvedCloseTarget(text, terminals)) return null;
+    return null;
+  }
+
+  // Open count from the open-side clause when possible.
+  const openClause =
+    text
+      .split(/\s+(?:y(?:\s+luego)?|and(?:\s+then)?|y\s+despu[eé]s)\s+/i)
+      .find((p) => OPEN_VERBS.test(normalizeText(p))) || text;
+  const openCount = extractTerminalCount(openClause);
+  const openSteps = Array.from({ length: openCount }, () =>
+    program ? { tool: 'open_terminal', input: { program } } : { tool: 'open_terminal', input: {} }
+  );
+  const closeSteps = closeNames.map((name) => ({
+    tool: 'close_terminal',
+    input: { name },
+  }));
+
+  const openIdx = lower.search(OPEN_VERBS);
+  const closeIdx = lower.search(CLOSE_VERBS);
+  // Prefer user order; if close comes first, close then open.
+  const steps = openIdx <= closeIdx ? [...openSteps, ...closeSteps] : [...closeSteps, ...openSteps];
+
+  return hit(
+    steps,
+    'open_and_close_terminals',
+    0.93,
+    `compound:open${openCount}+close:${closeNames.join(',')}`
+  );
 }
 
 function extractUrl(message) {
@@ -146,6 +329,89 @@ function detectAgentProgram(message) {
     if (norm.includes(p)) return p;
   }
   return null;
+}
+
+const WINDOW_NOUN_RE = /\b(ventana(?:s)?|window(?:s)?|vista(?:s)?)\b/;
+
+function extractWindowIndexFromMessage(message) {
+  const lower = normalizeText(message);
+  const digit =
+    lower.match(/\b(?:ventana|window|vista)\s*(?:n[uú]mero\s*)?(\d+)\b/) ||
+    lower.match(/\b(?:ventana|window|vista)\s+(?:a\s+)?(\d+)\b/) ||
+    lower.match(/\b(?:a|al|hacia|to)\s*(?:la\s+)?(?:ventana|window|vista)\s*(\d+)\b/) ||
+    lower.match(/\b(?:v|view)\s*(\d+)\b/);
+  if (digit?.[1]) {
+    const n = parseInt(digit[1], 10);
+    return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
+  }
+  for (const [word, value] of Object.entries(NUMBER_WORDS)) {
+    if (
+      new RegExp(`\\b(?:ventana|window|vista)\\s+(?:n[uú]mero\\s+)?${word}\\b`).test(lower) ||
+      new RegExp(`\\b(?:ventana|window|vista)\\s+(?:a\\s+)?${word}\\b`).test(lower) ||
+      new RegExp(`\\b(?:a|al|hacia)\\s+(?:la\\s+)?(?:ventana|window|vista)\\s+${word}\\b`).test(
+        lower
+      )
+    ) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function isSwitchWindowIntent(lower, text) {
+  if (!WINDOW_NOUN_RE.test(lower)) return false;
+  return (
+    /\b(cambia|cambiar|switch|ve|ir|mueve|mover|pas[aá]|pasa)\b/.test(lower) ||
+    extractWindowIndexFromMessage(text) !== null
+  );
+}
+
+function isListWindowsIntent(lower) {
+  if (!WINDOW_NOUN_RE.test(lower)) return false;
+  return (
+    /\b(cuant|cuánt|cuales|cuáles|que|qué|list|mostr|decime|dime|hay|tengo)\b/.test(lower) &&
+    !/\b(cambia|cambiar|switch|ve a|ir a)\b/.test(lower)
+  );
+}
+
+function extractTerminalNameForReadIntent(message, terminals) {
+  const raw = typeof message === 'string' ? message.trim() : '';
+  if (!raw) return null;
+
+  const patterns = [
+    /qu[eé]\s+dice\s+(?:la\s+)?(?:terminal\s+)?(?:de\s+)?(.+?)(?:\?|$)/iu,
+    /qu[eé]\s+(?:dice|muestra|muestr[aá]|respondi[oó]|contest[oó])\s+(?:la\s+)?(?:terminal\s+)?(?:de\s+)?(.+?)(?:\?|$)/iu,
+    /(?:lee|leer|mostr[aá]|muestra|ver|revis[aá]|revisar)\s+(?:la\s+)?(?:terminal\s+)?(?:de\s+)?(.+?)(?:\?|$)/iu,
+    /what\s+does\s+(?:the\s+)?(.+?)\s+(?:terminal\s+)?say(?:\?|$)/iu,
+    /read\s+(?:the\s+)?(.+?)\s+terminal(?:\?|$)/iu,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (!match?.[1]) continue;
+    const candidate = match[1].trim().replace(/\s+(por favor|please)\.?$/i, '');
+    const lookup = resolveTerminalByName(candidate, terminals);
+    if (lookup.ok) return lookup.displayName;
+    if (lookup.code === 'ambiguous') return 'AMBIGUOUS';
+    for (const cand of nameCandidatesFromEnPhrase(candidate)) {
+      const inner = resolveTerminalByName(cand, terminals);
+      if (inner.ok) return inner.displayName;
+      if (inner.code === 'ambiguous') return 'AMBIGUOUS';
+    }
+  }
+
+  const explicit = resolveNamedTerminalFromMessage(raw, terminals);
+  if (explicit?.ok) return explicit.displayName;
+  if (explicit?.code === 'ambiguous') return 'AMBIGUOUS';
+  return null;
+}
+
+function isReadTerminalOutputIntent(lower) {
+  return (
+    /\b(qu[eé]\s+dice|que\s+dice|what\s+does|lee|leer|mostr[aá]|muestra|revis[aá]|revisar|contenido|salida|output)\b/.test(
+      lower
+    ) && TERMINAL_NOUN_RE.test(lower)
+  );
 }
 
 const SWARM_NOUN_RE = /\b(swarm|enjambre|misión|mision|mission|missions)\b/;
@@ -226,16 +492,6 @@ function extractCommandForExistingTerminal(message) {
   if (!match) return null;
   return { command: match[1].trim(), terminalName: match[2].trim() };
 }
-
-const NUMBER_WORDS = {
-  una: 1,
-  un: 1,
-  dos: 2,
-  tres: 3,
-  cuatro: 4,
-  cinco: 5,
-  seis: 6,
-};
 
 function extractTerminalCount(message) {
   const lower = normalizeText(message);
@@ -402,6 +658,7 @@ const AGENT_PROGRAM_ALIASES = {
   codex: ['codex', 'code x'],
   hermes: ['hermes'],
   kimi: ['kimi', 'kimy', 'quimy'],
+  grok: ['grok', 'groc'],
 };
 
 function extractLaunchAgentProgram(message) {
@@ -518,6 +775,18 @@ export function resolveZedFastPathIntent(message, context = {}) {
   const explicitTarget = resolveExplicitExistingTerminalTarget(text, terminals);
   if (explicitTarget?.code === 'ambiguous') return null;
 
+  // --- compound open + close (before single-intent open which would swallow "cierra …") ---
+  const compound = resolveCompoundOpenCloseIntent(text, lower, terminals, program);
+  if (compound) return compound;
+  // User asked both open and close but the close target was not resolved → LLM.
+  if (
+    OPEN_VERBS.test(lower) &&
+    CLOSE_VERBS.test(lower) &&
+    hasUnresolvedCloseTarget(text, terminals)
+  ) {
+    return null;
+  }
+
   // --- open URL ---
   const url = extractUrl(text);
   if (
@@ -560,6 +829,32 @@ export function resolveZedFastPathIntent(message, context = {}) {
       'arrange_pizarra',
       0.94,
       'arrange_pizarra'
+    );
+  }
+
+  if (isSwitchWindowIntent(lower, text)) {
+    const windowIndex = extractWindowIndexFromMessage(text);
+    if (windowIndex) {
+      return hit(
+        [
+          {
+            tool: 'workspace_action',
+            input: { action: 'switch_workspace_window', window_index: windowIndex },
+          },
+        ],
+        'switch_workspace_window',
+        0.95,
+        `switch_window:${windowIndex}`
+      );
+    }
+  }
+
+  if (isListWindowsIntent(lower)) {
+    return hit(
+      [{ tool: 'workspace_action', input: { action: 'list_workspace_windows' } }],
+      'list_workspace_windows',
+      0.94,
+      'list_workspace_windows'
     );
   }
 
@@ -683,6 +978,27 @@ export function resolveZedFastPathIntent(message, context = {}) {
         'summarize_terminal',
         0.92,
         'summarize_terminal_named'
+      );
+    }
+  }
+
+  if (isReadTerminalOutputIntent(lower)) {
+    const readName = extractTerminalNameForReadIntent(text, terminals);
+    if (readName === 'AMBIGUOUS') return null;
+    if (readName) {
+      return hit(
+        [{ tool: 'review_terminal_output', input: { name: readName } }],
+        'review_terminal_output',
+        0.94,
+        'review_terminal_named'
+      );
+    }
+    if (terminalCount === 1 && terminals[0]?.displayName) {
+      return hit(
+        [{ tool: 'review_terminal_output', input: { name: terminals[0].displayName } }],
+        'review_terminal_output',
+        0.88,
+        'review_terminal_single'
       );
     }
   }

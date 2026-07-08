@@ -64,8 +64,36 @@ function buildTauriEnv({
   platform = process.platform,
   execFileSync: exec = execFileSync,
   existsSync = fs.existsSync,
+  forDev = false,
 } = {}) {
   const nextEnv = { ...env };
+
+  if (forDev) {
+    const os = require('os');
+    if (!nextEnv.DEVHUB_HOME) {
+      nextEnv.DEVHUB_HOME = path.join(os.homedir(), '.devhub-dev');
+    }
+    if (!nextEnv.DEVHUB_RUNTIME) {
+      nextEnv.DEVHUB_RUNTIME = 'development';
+    }
+    if (!nextEnv.SIDECAR_PORT) {
+      nextEnv.SIDECAR_PORT = '4001';
+    }
+    if (!nextEnv.DEVHUB_WS_PORT) {
+      nextEnv.DEVHUB_WS_PORT = '3402';
+    }
+    if (!nextEnv.DEVHUB_TTY_PORT) {
+      nextEnv.DEVHUB_TTY_PORT = '4078';
+    }
+    const merged = String(nextEnv.NODE_OPTIONS || '')
+      .split(/\s+/)
+      .filter(Boolean);
+    if (!merged.some((value) => value.startsWith('--max-old-space-size='))) {
+      merged.push('--max-old-space-size=8192');
+    }
+    nextEnv.NODE_OPTIONS = merged.join(' ');
+    nextEnv.NEXT_TELEMETRY_DISABLED = nextEnv.NEXT_TELEMETRY_DISABLED || '1';
+  }
 
   if (platform === 'linux') {
     nextEnv.PKG_CONFIG_PATH = mergePkgConfigPath(nextEnv.PKG_CONFIG_PATH, platform);
@@ -149,6 +177,26 @@ function injectArgsBeforeAppArgs(args, extraArgs) {
   return [...args.slice(0, appArgsIndex), ...extraArgs, ...args.slice(appArgsIndex)];
 }
 
+function stripDevhubCliFlags(args = []) {
+  let skipFrontend = process.env.DEVHUB_SKIP_FRONTEND_BUILD === '1';
+  let fastRust = process.env.DEVHUB_TAURI_RELEASE_PROFILE === 'release-fast';
+
+  const stripped = [];
+  for (const arg of args) {
+    if (arg === '--skip-frontend') {
+      skipFrontend = true;
+      continue;
+    }
+    if (arg === '--fast-rust') {
+      fastRust = true;
+      continue;
+    }
+    stripped.push(arg);
+  }
+
+  return { args: stripped, skipFrontend, fastRust };
+}
+
 function resolveTauriCliArgs({ args = [], buildConfig = null, devUrlReady = false } = {}) {
   if (
     args[0] !== 'dev'
@@ -162,7 +210,38 @@ function resolveTauriCliArgs({ args = [], buildConfig = null, devUrlReady = fals
   return injectArgsBeforeAppArgs(args, ['-c', JSON.stringify({ build: { beforeDevCommand: '' } })]);
 }
 
+function resolveTauriBuildOptimizations({
+  args = [],
+  buildConfig = null,
+  skipFrontend = false,
+  fastRust = false,
+} = {}) {
+  if (args[0] !== 'build') {
+    return args;
+  }
+
+  let next = args;
+
+  if (skipFrontend && buildConfig?.beforeBuildCommand) {
+    next = injectArgsBeforeAppArgs(next, [
+      '-c',
+      JSON.stringify({ build: { beforeBuildCommand: '' } }),
+    ]);
+  }
+
+  if (fastRust) {
+    next = injectArgsBeforeAppArgs(next, ['--', '--profile', 'release-fast']);
+  }
+
+  return next;
+}
+
+function syncDevhubServerResourceOnly() {
+  require('./sync-devhub-server-resource.cjs').syncDevhubServerResource();
+}
+
 function syncDevhubServerSidecar() {
+  syncDevhubServerResourceOnly();
   const { syncLinuxSidecar, syncWindowsSidecar } = require('./build-devhub-server-sidecar.cjs');
   if (process.platform === 'linux') {
     syncLinuxSidecar();
@@ -224,25 +303,41 @@ function normalizeTauriCliArgs(args = []) {
 }
 
 function runTauriCli({
-  args = normalizeTauriCliArgs(process.argv.slice(2)),
+  args: explicitArgs,
   env = buildTauriEnv(),
   spawnSync: spawn = spawnSync,
+  buildFlags: explicitBuildFlags,
 } = {}) {
+  const rawArgv = Array.isArray(explicitArgs) ? explicitArgs : process.argv.slice(2);
+  const buildFlags = explicitBuildFlags || stripDevhubCliFlags(rawArgv);
+  const args = normalizeTauriCliArgs(buildFlags.args);
   const buildConfig = readTauriBuildConfig();
-  const cliArgs = resolveTauriCliArgs({
+  const devUrlReady = args[0] === 'dev' ? isDevUrlReady(buildConfig?.devUrl, { spawnSync: spawn }) : false;
+  let cliArgs = resolveTauriCliArgs({
     args,
     buildConfig,
-    devUrlReady: args[0] === 'dev' ? isDevUrlReady(buildConfig?.devUrl, { spawnSync: spawn }) : false,
+    devUrlReady,
+  });
+  cliArgs = resolveTauriBuildOptimizations({
+    args: cliArgs,
+    buildConfig,
+    skipFrontend: buildFlags.skipFrontend,
+    fastRust: buildFlags.fastRust,
   });
 
   const isBuild = args.includes('build');
+  const isDev = args[0] === 'dev';
   if (isBuild) {
     syncDevhubServerSidecar();
+  } else if (isDev) {
+    syncDevhubServerResourceOnly();
   }
+
+  const tauriEnv = buildTauriEnv({ env, forDev: isDev });
 
   const result = spawn(process.execPath, [TAURI_CLI_ENTRY, ...cliArgs], {
     stdio: 'inherit',
-    env,
+    env: tauriEnv,
   });
 
   if (result.error) {
@@ -275,6 +370,8 @@ if (require.main === module) {
 
 module.exports = {
   normalizeTauriCliArgs,
+  stripDevhubCliFlags,
+  resolveTauriBuildOptimizations,
   buildDevReadyProbeUrl,
   buildTauriEnv,
   DEV_URL_READY_PATH,

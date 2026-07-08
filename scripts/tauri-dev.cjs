@@ -20,6 +20,8 @@ if (!process.env.DEVHUB_WS_PORT) {
   process.env.DEVHUB_WS_PORT = '3402';
 }
 
+require('./sync-devhub-server-resource.cjs').syncDevhubServerResource();
+
 const tauriCli = path.join(__dirname, 'tauri-cli.cjs');
 const result = spawnSync(process.execPath, [tauriCli, 'dev'], {
   stdio: 'inherit',

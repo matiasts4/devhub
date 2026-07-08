@@ -30,6 +30,10 @@ export const PIZARRA_ACTIONS = {
   // Decision 7). Future work that lifts the preview into the
   // reducer can dispatch this action without further changes.
   DRAW_UPDATE: 'DRAW_UPDATE',
+  // pizarra-editing-ux: layer order, element lock, and bulk paste.
+  REORDER_ELEMENT: 'REORDER_ELEMENT',
+  SET_LOCKED: 'SET_LOCKED',
+  BULK_ADD: 'BULK_ADD',
 };
 
 // ─── Reducer ────────────────────────────────────────────────────────────────
@@ -114,6 +118,45 @@ export function pizarraReducer(state, action) {
     // without further contract changes.
     case PIZARRA_ACTIONS.DRAW_UPDATE: {
       return state;
+    }
+
+    // pizarra-editing-ux: lock a single element. Locked elements are
+    // not draggable / transformable / deletable from the editing paths,
+    // but remain selectable so the user can unlock them.
+    case PIZARRA_ACTIONS.SET_LOCKED: {
+      const { id, locked } = action.payload;
+      return {
+        ...state,
+        elements: state.elements.map((el) => (el.id === id ? { ...el, locked } : el)),
+      };
+    }
+
+    // pizarra-editing-ux: paste / bulk-add. Appends multiple elements
+    // in one dispatch so a paste commit is a single render.
+    case PIZARRA_ACTIONS.BULK_ADD: {
+      const items = Array.isArray(action.payload) ? action.payload : [];
+      return { ...state, elements: [...state.elements, ...items] };
+    }
+
+    // pizarra-editing-ux: layer order. Sort by current zIndex, move the
+    // target element per op, then re-index sequentially (0..n-1) so the
+    // z-space stays compact and stable instead of growing unboundedly.
+    case PIZARRA_ACTIONS.REORDER_ELEMENT: {
+      const { id, op } = action.payload;
+      const sorted = [...state.elements].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      const idx = sorted.findIndex((el) => el.id === id);
+      if (idx === -1) return state;
+      let target = idx;
+      if (op === 'front') target = sorted.length - 1;
+      else if (op === 'back') target = 0;
+      else if (op === 'forward') target = Math.min(sorted.length - 1, idx + 1);
+      else if (op === 'backward') target = Math.max(0, idx - 1);
+      else return state;
+      if (target === idx) return state;
+      const [moved] = sorted.splice(idx, 1);
+      sorted.splice(target, 0, moved);
+      const reindexed = sorted.map((el, i) => ({ ...el, zIndex: i }));
+      return { ...state, elements: reindexed };
     }
 
     default:

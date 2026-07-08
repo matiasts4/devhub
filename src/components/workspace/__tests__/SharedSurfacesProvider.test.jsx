@@ -369,10 +369,7 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
       );
     }
 
-    renderInto(
-      root,
-      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
-    );
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
 
     const hostWorkspace = document.querySelector(
       '[data-testid="surface-portal-host-workspace-dock-term-1"]'
@@ -393,9 +390,9 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
     });
 
     expect(registry.getPreferredHostForSurface('term-1')).toBe('workspace-dock');
-    expect(
-      hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))
-    ).toBe(true);
+    expect(hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      true
+    );
     expect(hostPizarra.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
       false
     );
@@ -428,10 +425,7 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
       );
     }
 
-    renderInto(
-      root,
-      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
-    );
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
 
     const hostPizarra = document.querySelector(
       '[data-testid="surface-portal-host-pizarra-canvas-term-1"]'
@@ -471,10 +465,7 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
       );
     }
 
-    renderInto(
-      root,
-      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
-    );
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
 
     const hostWorkspace = document.querySelector(
       '[data-testid="surface-portal-host-workspace-dock-term-1"]'
@@ -485,9 +476,65 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
     });
 
     expect(registry.getPreferredHostForSurface('term-1')).toBe('pizarra-canvas');
-    expect(
-      hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))
-    ).toBe(false);
+    expect(hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      false
+    );
     expect(document.querySelector('[data-testid="surface-hidden-mount-term-1"]')).not.toBeNull();
+  });
+
+  test('preferred pizarra host keeps attachment when registered target is still 0×0', () => {
+    const { root } = makeRoot();
+    let registry;
+
+    function Setup() {
+      registry = useSurfaceRegistry();
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(HiddenSurfaceMount, {
+          surfaceId: 'term-1',
+          content: React.createElement('div', {
+            'data-testid': 'surface-content',
+            'data-surface': 'term-1',
+          }),
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'workspace-dock',
+        }),
+        React.createElement(SurfacePortal, {
+          surfaceId: 'term-1',
+          hostId: 'pizarra-canvas',
+        })
+      );
+    }
+
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
+
+    const hostPizarra = document.querySelector(
+      '[data-testid="surface-portal-host-pizarra-canvas-term-1"]'
+    );
+    // Simulate first-paint 0×0 pizarra host while workspace already has layout.
+    Object.defineProperty(hostPizarra, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }),
+    });
+    const hostWorkspace = document.querySelector(
+      '[data-testid="surface-portal-host-workspace-dock-term-1"]'
+    );
+    Object.defineProperty(hostWorkspace, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300 }),
+    });
+
+    act(() => {
+      registry.setPreferredHostForSurface('term-1', 'pizarra-canvas');
+    });
+
+    // Content stays attached to the preferred pizarra host (even at 0×0)
+    // so ResizeObserver can promote it — not parked in the hidden mount.
+    expect(hostPizarra.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      true
+    );
   });
 });

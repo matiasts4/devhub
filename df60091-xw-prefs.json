@@ -1,0 +1,80 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 2,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 2,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 1,
+  "numTotalTests": 4,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783204063709,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences.xterm-webgl setPanelRendererPreference(..., \"xterm-webgl\") round-trips through write/read (TRP-XW-1 SCEN-1)",
+          "location": null,
+          "status": "passed",
+          "title": "setPanelRendererPreference(..., \"xterm-webgl\") round-trips through write/read (TRP-XW-1 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 5\n+ Received  + 3\n\n- ObjectContaining {\n-   \"workspaces\": Object {\n-     \"ws1\": ObjectContaining {\n+ Object {\n    \"defaultMode\": \"xterm-webgl\",\n-     },\n-   },\n+   \"version\": 1,\n+   \"workspaces\": Object {},\n  }\n    at Object.<anonymous> (D:\\devhub\\.tmp\\df60091-baseline\\src\\components\\__tests__\\terminalRendererPreferences.xterm-webgl.test.js:81:7)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererPreferences.xterm-webgl setWorkspaceDefaultRenderer(..., \"xterm-webgl\") round-trips the workspace default (TRP-XW-1 SCEN-2)",
+          "location": null,
+          "status": "failed",
+          "title": "setWorkspaceDefaultRenderer(..., \"xterm-webgl\") round-trips the workspace default (TRP-XW-1 SCEN-2)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [],
+          "fullName": "terminalRendererPreferences.xterm-webgl a fresh read after restart preserves the xterm-webgl panel override (TRP-XW-2 SCEN-1)",
+          "location": null,
+          "status": "passed",
+          "title": "a fresh read after restart preserves the xterm-webgl panel override (TRP-XW-2 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererPreferences.xterm-webgl"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"vte-experimental\"\nReceived: \"xterm-webgl\"\n    at Object.<anonymous> (D:\\devhub\\.tmp\\df60091-baseline\\src\\components\\__tests__\\terminalRendererPreferences.xterm-webgl.test.js:133:46)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererPreferences.xterm-webgl a panel override survives a workspace default change (TRP-XW-3 SCEN-1)",
+          "location": null,
+          "status": "failed",
+          "title": "a panel override survives a workspace default change (TRP-XW-3 SCEN-1)"
+        }
+      ],
+      "endTime": 1783204064353,
+      "message": "  ● terminalRendererPreferences.xterm-webgl › setWorkspaceDefaultRenderer(..., \"xterm-webgl\") round-trips the workspace default (TRP-XW-1 SCEN-2)\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 5\n    + Received  + 3\n\n    - ObjectContaining {\n    -   \"workspaces\": Object {\n    -     \"ws1\": ObjectContaining {\n    + Object {\n        \"defaultMode\": \"xterm-webgl\",\n    -     },\n    -   },\n    +   \"version\": 1,\n    +   \"workspaces\": Object {},\n      }\n\n      79 |     expect(\n      80 |       readTerminalRendererPreferences(storage, 'proj-A', [createWorkspace('ws1', ['p1'])])\n    > 81 |     ).toEqual(\n         |       ^\n      82 |       expect.objectContaining({\n      83 |         workspaces: {\n      84 |           ws1: expect.objectContaining({\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererPreferences.xterm-webgl.test.js:81:7)\n\n  ● terminalRendererPreferences.xterm-webgl › a panel override survives a workspace default change (TRP-XW-3 SCEN-1)\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: \"vte-experimental\"\n    Received: \"xterm-webgl\"\n\n      131 |     ]);\n      132 |\n    > 133 |     expect(fresh.workspaces.ws1.defaultMode).toBe('vte-experimental');\n          |                                              ^\n      134 |     expect(fresh.workspaces.ws1.panels.p1).toBe('xterm-webgl');\n      135 |   });\n      136 | });\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererPreferences.xterm-webgl.test.js:133:46)\n",
+      "name": "D:\\devhub\\.tmp\\df60091-baseline\\src\\components\\__tests__\\terminalRendererPreferences.xterm-webgl.test.js",
+      "startTime": 1783204063750,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

@@ -3,7 +3,7 @@
  * Extracted from TerminalTTY.jsx.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   readClipboardImage,
   readClipboardText,
@@ -12,9 +12,12 @@ import {
 } from '@/lib/terminal/terminalClipboard';
 import {
   cliLog,
+  formatTerminalPastePayload,
   getClipboardApi,
+  normalizeTerminalSelectionForClipboard,
   resolveTerminalClipboardShortcut,
   sendTerminalPasteInput,
+  isMultilineTerminalPaste,
 } from '@/components/terminal/TerminalTTY.helpers';
 
 export default function useTerminalClipboard({
@@ -23,6 +26,7 @@ export default function useTerminalClipboard({
   lifecycleRefs,
   viewportRefs,
   panelId,
+  initialCommand,
   isActivePanel,
   shouldUseNativeRenderer,
   focusNativeVtePanel,
@@ -31,19 +35,21 @@ export default function useTerminalClipboard({
 }) {
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  const pasteInFlightRef = useRef(false);
 
   const copyTextToClipboard = useCallback(async (text) => {
-    if (!text) return false;
+    const normalized = normalizeTerminalSelectionForClipboard(text);
+    if (!normalized) return false;
 
     try {
       const clipboardApi = getClipboardApi();
       if (!clipboardApi?.writeText) {
         throw new Error('clipboard-unavailable');
       }
-      await clipboardApi.writeText(text);
+      await clipboardApi.writeText(normalized);
     } catch {
       const textarea = document.createElement('textarea');
-      textarea.value = text;
+      textarea.value = normalized;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand('copy');
@@ -63,90 +69,113 @@ export default function useTerminalClipboard({
 
   const handlePasteIntoTerminal = useCallback(
     async ({ clipboardEvent, image: providedImage } = {}) => {
+      if (pasteInFlightRef.current) {
+        cliLog('[paste]', 'skipped duplicate paste (in flight)');
+        return false;
+      }
+      pasteInFlightRef.current = true;
       cliLog('[paste]', 'handlePasteIntoTerminal called');
 
       const termRef = rendererRefs?.current?.termRef;
       const wsRef = sessionRefs?.current?.wsRef;
       const transportRef = sessionRefs?.current?.transportRef;
 
-      const image = providedImage || (await readClipboardImage({ clipboardEvent }));
-      if (image?.data) {
-        cliLog(
-          '[paste]',
-          `clipboard image detected mime=${image.mimeType} len=${image.data.length}`
-        );
-        const tempPath = await saveClipboardImageToTempFile(image);
-        if (!tempPath) {
-          cliLog('[paste]', 'failed to save clipboard image to temp file');
+      try {
+        const image = providedImage || (await readClipboardImage({ clipboardEvent }));
+        if (image?.data) {
+          cliLog(
+            '[paste]',
+            `clipboard image detected mime=${image.mimeType} len=${image.data.length}`
+          );
+          const tempPath = await saveClipboardImageToTempFile(image);
+          if (!tempPath) {
+            cliLog('[paste]', 'failed to save clipboard image to temp file');
+            return false;
+          }
+          cliLog('[paste]', `saved clipboard image to temp path=${tempPath}`);
+          const quotedPath = `"${tempPath.replace(/"/g, '\\"')}"`;
+
+          if (shouldUseNativeRenderer) {
+            cliLog('[paste]', `shouldUseNativeRenderer=true, image temp path=${tempPath}`);
+            await Promise.resolve(focusNativeVtePanel({ panelId })).catch(
+              handleNativeLeaseCommandError
+            );
+            const result = await pasteNativeVtePanel({ panelId, text: quotedPath });
+            cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
+            return Boolean(result?.supported);
+          }
+
+          const bracketedPath = `\x1b[200~${tempPath}\x1b[201~`;
+          cliLog('[paste]', `pasting image path via forced bracketed paste`);
+          if (
+            sendTerminalPasteInput({
+              socket: wsRef?.current,
+              transport: transportRef?.current,
+              text: bracketedPath,
+            })
+          ) {
+            return true;
+          }
+
+          if (typeof termRef?.current?.paste === 'function') {
+            cliLog('[paste]', `falling back to term.paste for image path`);
+            termRef.current.paste(tempPath);
+            return true;
+          }
+
           return false;
         }
-        cliLog('[paste]', `saved clipboard image to temp path=${tempPath}`);
-        const quotedPath = `"${tempPath.replace(/"/g, '\\"')}"`;
+
+        const text = await readClipboardText({ clipboardEvent });
+        if (!text) return false;
+
+        const pastePayload = formatTerminalPastePayload(text, lifecycleRefs, initialCommand);
+        const bracketed = pastePayload !== normalizeTerminalSelectionForClipboard(text);
+        cliLog(
+          '[paste]',
+          `payload len=${pastePayload.length} lines=${(text.match(/\n/g) || []).length + 1} bracketed=${bracketed}`
+        );
 
         if (shouldUseNativeRenderer) {
-          cliLog('[paste]', `shouldUseNativeRenderer=true, image temp path=${tempPath}`);
+          cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text.length}`);
           await Promise.resolve(focusNativeVtePanel({ panelId })).catch(
             handleNativeLeaseCommandError
           );
-          const result = await pasteNativeVtePanel({ panelId, text: quotedPath });
+          const result = await pasteNativeVtePanel({ panelId, text: pastePayload });
           cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
           return Boolean(result?.supported);
         }
 
-        const bracketedPath = `\x1b[200~${tempPath}\x1b[201~`;
-        cliLog('[paste]', `pasting image path via forced bracketed paste`);
         if (
           sendTerminalPasteInput({
             socket: wsRef?.current,
             transport: transportRef?.current,
-            text: bracketedPath,
+            text: pastePayload,
           })
         ) {
           return true;
         }
 
+        if (isMultilineTerminalPaste(pastePayload)) {
+          cliLog('[paste]', 'refusing xterm.paste fallback for multiline (would split submits)');
+          return false;
+        }
+
         if (typeof termRef?.current?.paste === 'function') {
-          cliLog('[paste]', `falling back to term.paste for image path`);
-          termRef.current.paste(tempPath);
+          termRef.current.paste(pastePayload);
           return true;
         }
 
         return false;
+      } finally {
+        pasteInFlightRef.current = false;
       }
-
-      const text = await readClipboardText({ clipboardEvent });
-      if (!text) return false;
-
-      if (shouldUseNativeRenderer) {
-        cliLog('[paste]', `shouldUseNativeRenderer=true, clipboard text len=${text.length}`);
-        await Promise.resolve(focusNativeVtePanel({ panelId })).catch(
-          handleNativeLeaseCommandError
-        );
-        const result = await pasteNativeVtePanel({ panelId, text });
-        cliLog('[paste]', `pasteNativeVtePanel returned supported=${result?.supported}`);
-        return Boolean(result?.supported);
-      }
-
-      if (
-        sendTerminalPasteInput({
-          socket: wsRef?.current,
-          transport: transportRef?.current,
-          text,
-        })
-      ) {
-        return true;
-      }
-
-      if (typeof termRef?.current?.paste === 'function') {
-        termRef.current.paste(text);
-        return true;
-      }
-
-      return false;
     },
     [
       focusNativeVtePanel,
       handleNativeLeaseCommandError,
+      initialCommand,
+      lifecycleRefs,
       panelId,
       pasteNativeVtePanel,
       rendererRefs,
@@ -190,6 +219,61 @@ export default function useTerminalClipboard({
   useEffect(() => {
     const handler = (e) => {
       if (lifecycleRefs?.current?.isDisposingRef?.current) return;
+      const termRef = rendererRefs?.current?.termRef;
+      const rootElement = viewportRefs?.current?.terminalRootRef?.current;
+      const activeElement = document?.activeElement || null;
+      const eventTarget = e.target instanceof Node ? e.target : null;
+      const belongsToTerminal = terminalClipboardEventBelongsToPanel({
+        rootElement,
+        activeElement,
+        eventTarget,
+        isActivePanel,
+      });
+      if (!belongsToTerminal) return;
+
+      const raw = termRef?.current?.getSelection?.() || '';
+      const text = normalizeTerminalSelectionForClipboard(raw);
+      if (!text) return;
+
+      if (e.clipboardData) {
+        e.clipboardData.setData('text/plain', text);
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      cliLog('[copy]', `normalized terminal selection len=${text.length}`);
+    };
+
+    document.addEventListener('copy', handler, true);
+    return () => document.removeEventListener('copy', handler, true);
+  }, [isActivePanel, lifecycleRefs, rendererRefs, viewportRefs]);
+
+  const routePasteFromPanel = useCallback(
+    (e) => {
+      if (lifecycleRefs?.current?.isDisposingRef?.current) return;
+      const rootElement = viewportRefs?.current?.terminalRootRef?.current;
+      const eventTarget = e.target instanceof Node ? e.target : null;
+      if (!rootElement || !eventTarget || !rootElement.contains(eventTarget)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+      void handlePasteIntoTerminal({ clipboardEvent: e }).catch(() => false);
+    },
+    [handlePasteIntoTerminal, lifecycleRefs, viewportRefs]
+  );
+
+  useLayoutEffect(() => {
+    const rootElement = viewportRefs?.current?.terminalRootRef?.current;
+    if (!rootElement) return undefined;
+    rootElement.addEventListener('paste', routePasteFromPanel, true);
+    return () => rootElement.removeEventListener('paste', routePasteFromPanel, true);
+  }, [routePasteFromPanel, viewportRefs]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (lifecycleRefs?.current?.isDisposingRef?.current) return;
       const rootElement = viewportRefs?.current?.terminalRootRef?.current;
       const activeElement = document?.activeElement || null;
       const eventTarget = e.target instanceof Node ? e.target : null;
@@ -203,6 +287,7 @@ export default function useTerminalClipboard({
 
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation?.();
       void handlePasteIntoTerminal({ clipboardEvent: e }).catch(() => false);
     };
 

@@ -217,9 +217,7 @@ export default function usePanelAgentStatus(
         if (cancelled || requestId !== tickRequestIdRef.current) return;
 
         if (!res.ok) {
-          if (res.status === 404) {
-            setTerminalActivity(null);
-          }
+          // Keep last snapshot on 404 — Tauri may attach before the API route finds sidecar.
           return;
         }
 

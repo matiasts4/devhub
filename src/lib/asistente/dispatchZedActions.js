@@ -86,6 +86,10 @@ export function dispatchZedOpenTerminalFromToolResults(
     }
     keys.add(dispatchKey);
 
+    // Focus/maximize only when the tool result explicitly opts in.
+    // Default false so multi-open and agent launches do not steal focus
+    // or maximize panels (user can still click the new tab).
+    const wantFocus = parsed.focus === true;
     dispatchZedOpenTerminal({
       command: commandToRun,
       cwd: parsed?.cwd || null,
@@ -94,7 +98,7 @@ export function dispatchZedOpenTerminalFromToolResults(
       terminalId,
       displayName,
       program: typeof parsed?.program === 'string' ? parsed.program : null,
-      focus: parsed.focus !== false,
+      focus: wantFocus,
     });
     zedClientDebug('client_dispatch', { tool: 'open_terminal', terminalId, displayName });
     count += 1;

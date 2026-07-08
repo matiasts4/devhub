@@ -49,6 +49,7 @@ describe('chat route — summarizeTerminal registration (T-105 / ZTT-005)', () =
     // Long-enough key for the isUsableZedApiKey() check (min 16 chars).
     process.env.MINIMAX_API_KEY = 'test-key-1234567890ABCDEF';
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.XAI_API_KEY;
     route = require('../route');
     POST = route.POST;
   });
@@ -59,7 +60,9 @@ describe('chat route — summarizeTerminal registration (T-105 / ZTT-005)', () =
   });
 
   test('summarize_terminal tool module is loadable and has oneOf-like schema', () => {
-    const { summarizeTerminalTool } = require('../../../../../lib/asistente/tools/summarizeTerminal');
+    const {
+      summarizeTerminalTool,
+    } = require('../../../../../lib/asistente/tools/summarizeTerminal');
     expect(summarizeTerminalTool).toBeDefined();
     expect(summarizeTerminalTool.name).toBe('summarize_terminal');
     // Input schema must accept `name` AND `terminalId` (oneOf-style).

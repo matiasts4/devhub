@@ -599,6 +599,23 @@ describe('ttyServer — shell history hygiene', () => {
     expect(socket.send).toHaveBeenCalledTimes(2);
   });
 
+  it('getSessionOutput falls back to scrollbackStore when history is disabled (agent TUI)', async () => {
+    const { createSession, getSessionOutput } = await import('./ttyServer.js');
+
+    createSession({ id: 'tui-capture', cwd: '/home/user', shell: '/bin/zsh' });
+    const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
+    const session = sessions.get('tui-capture');
+    session.mode = 'tui';
+    session.historyEnabled = false;
+    session.history = '';
+
+    const onDataHandler = mockPtyProcess.onData.mock.calls.at(-1)?.[0];
+    onDataHandler('opencode ready\r\n');
+
+    expect(session.history).toBe('');
+    expect(getSessionOutput('tui-capture')).toBe('opencode ready\r\n');
+  });
+
   it('drops pure terminal response noise from websocket input before pty.write', async () => {
     const { ensureTTYServer } = await import('./ttyServer.js');
 

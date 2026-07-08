@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
-import { appendFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeClientLogEntry } from '@/lib/crashLog';
 
-const LOG_DIR = join(process.cwd(), 'data', 'logs');
-const LOG_FILE = join(LOG_DIR, 'browser.log');
-
+/**
+ * POST /api/client-log
+ * Body: { level, message, details?, source?, ts?, userAgent?, href?, build? }
+ *
+ * Always appends to data/logs/browser.log.
+ * Errors/crashes also go to data/logs/crash.log.
+ * Severity "crash" writes a JSON dump under data/logs/crash-dumps/.
+ */
 export async function POST(request) {
   let body;
   try {
@@ -13,19 +17,24 @@ export async function POST(request) {
     return NextResponse.json({ error: 'invalid-json' }, { status: 400 });
   }
 
-  const { level = 'log', message = '', details, source, ts } = body;
-  const timestamp = ts ? new Date(ts).toISOString() : new Date().toISOString();
-  const detailsStr = details !== undefined ? ' ' + JSON.stringify(details) : '';
-  const sourceStr = source ? ` (${source})` : '';
-  const line = `[${timestamp}] [${level.toUpperCase()}]${sourceStr} ${message}${detailsStr}\n`;
-
   try {
-    await mkdir(LOG_DIR, { recursive: true });
-    await appendFile(LOG_FILE, line, 'utf-8');
+    const result = await writeClientLogEntry({
+      level: body.level || 'log',
+      message: body.message || '',
+      details: body.details,
+      source: body.source,
+      ts: body.ts,
+      userAgent: body.userAgent,
+      href: body.href,
+      build: body.build,
+    });
+    return NextResponse.json({
+      ok: true,
+      severity: result.severity,
+      dump: result.dumpPath ? true : false,
+    });
   } catch (err) {
     console.error('[devhub][client-log] write-failed', err?.message);
     return NextResponse.json({ error: 'write-failed' }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true });
 }

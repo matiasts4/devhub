@@ -54,14 +54,19 @@ export function getXtermContainerAnimProps(visible) {
   };
 }
 
-export function shouldShowTerminalViewport(isInitializing, initError) {
-  return !isInitializing && !initError;
+/**
+ * Show the xterm surface as soon as the panel mounts.
+ * Hiding the viewport while `isInitializing` made the panel look empty/blocked
+ * for the entire dynamic-import + open path (seconds of "dead" UI).
+ */
+export function shouldShowTerminalViewport(_isInitializing, initError) {
+  return !initError;
 }
 
-/** Max wait before first connect when viewport fit keeps deferring (mode-switch undersize). */
-export const TERMINAL_CONNECT_DEFER_MAX_MS = 1800;
+/** Max wait before first connect when viewport fit keeps deferring (zero-size container). */
+export const TERMINAL_CONNECT_DEFER_MAX_MS = 120;
 /** Fresh-panel command injection must wait for the host surface projection; cap the wait. */
-export const TERMINAL_PROJECTION_READY_TIMEOUT_MS = 500;
+export const TERMINAL_PROJECTION_READY_TIMEOUT_MS = 200;
 /** ponytail: parallel cold mount — stagger caused left-to-right seconds-long panel pop-in. */
 export const TERMINAL_COLD_MOUNT_STAGGER_MS = 0;
 export function resolveColdMountStaggerMs({
@@ -73,14 +78,23 @@ export function resolveColdMountStaggerMs({
   return Math.max(0, Number(coldMountOrdinal) || 0) * staggerMsPerPanel;
 }
 
-/** Full-screen blocking loader — only on first boot, never on panel-switch reconnects. */
+/**
+ * Full-screen loader policy.
+ *
+ * Instant-feel contract: NEVER blank the panel for "connecting".
+ * The previous policy painted a full "Conectando…" overlay for the entire
+ * session-API + WebSocket RTT (often 1–5s when the sidecar health probe
+ * failed slowly). The shell must stay interactive; connection runs in the
+ * background and the PTY output appears when ready.
+ *
+ * Kept as a pure function so tests can pin the contract.
+ */
 export function shouldShowTerminalLoadingOverlay(
-  isInitializing,
-  connectionState,
-  hasConnectedOnce
+  _isInitializing,
+  _connectionState,
+  _hasConnectedOnce
 ) {
-  if (isInitializing) return true;
-  return connectionState === 'connecting' && !hasConnectedOnce;
+  return false;
 }
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
@@ -486,16 +500,25 @@ export function isTerminalRendererReady(term) {
   if (!term) return false;
 
   if (term._core?._isDisposed) return false;
+  // xterm marks disposal on the public instance as well (varies by version).
+  if (term._isDisposed === true || term.isDisposed === true) return false;
   if (term.element && !term.element.isConnected) return false;
 
   const renderService = term._core?._renderService;
   if (!renderService) return true;
 
   const rendererSlot = renderService._renderer;
-  if (!rendererSlot?.value) return false;
+  // MutableDisposable slot empty → Viewport._innerRefresh will throw on dimensions.
+  if (rendererSlot && rendererSlot.value == null) return false;
+  if (!rendererSlot?.value && rendererSlot !== undefined) return false;
 
-  const cell = renderService.dimensions?.css?.cell;
-  if (cell && (!Number(cell.width) || !Number(cell.height))) return false;
+  try {
+    const cell = renderService.dimensions?.css?.cell;
+    if (cell && (!Number(cell.width) || !Number(cell.height))) return false;
+  } catch {
+    // Accessing dimensions while half-disposed can itself throw.
+    return false;
+  }
 
   return true;
 }
@@ -518,15 +541,284 @@ export function isWebglAddonContextLost(addon) {
   }
 }
 
-function isStaleXtermRendererError(error) {
+/**
+ * Known xterm teardown / half-disposed races. Safe to swallow.
+ * @param {unknown} error
+ */
+export function isStaleXtermRendererError(error) {
   const message = String(error?.message || error || '');
   return (
     message.includes('_renderer') ||
     message.includes('dimensions') ||
+    message.includes("reading 'dimensions'") ||
+    message.includes("reading 'handleResize'") ||
     message.includes('RenderService') ||
     message.includes('handleResize') ||
-    message.includes('_innerRefresh')
+    message.includes('_innerRefresh') ||
+    message.includes('onRequestRedraw') ||
+    message.includes('IdleTaskQueue') ||
+    (message.includes('Cannot read properties of undefined') &&
+      (message.includes('dimensions') || message.includes('handleResize')))
   );
+}
+
+/**
+ * Install once-per-terminal runtime shields so async xterm work cannot throw
+ * uncaught into window.onerror (full-app flicker / Next error overlay).
+ *
+ * Covers the pizarra↔workspace host flip path: layout-settled fires fit/refresh
+ * while Viewport RAF / RenderService._pausedResizeTask (IdleTaskQueue) may still
+ * hold closures over a renderer that is mid-reattach or already cleared.
+ *
+ * Safe to call multiple times (idempotent via __devhubTeardownSafety).
+ *
+ * @param {import('xterm').Terminal | null | undefined} term
+ */
+export function installXtermTeardownSafety(term) {
+  if (!term) return;
+  try {
+    const core = term._core;
+    if (!core || core.__devhubTeardownSafety) return;
+    core.__devhubTeardownSafety = true;
+
+    const renderService = core._renderService;
+    if (renderService && typeof renderService === 'object') {
+      // Wrap DebouncedIdleTask.set so queued handleResize never reads a null slot.
+      const pausedTask = renderService._pausedResizeTask;
+      if (
+        pausedTask &&
+        typeof pausedTask.set === 'function' &&
+        !pausedTask.__devhubTeardownSafety
+      ) {
+        pausedTask.__devhubTeardownSafety = true;
+        const originalSet = pausedTask.set.bind(pausedTask);
+        pausedTask.set = (fn) => {
+          if (typeof fn !== 'function') {
+            return originalSet(fn);
+          }
+          return originalSet(() => {
+            try {
+              if (!renderService._renderer?.value) return false;
+              return fn();
+            } catch (error) {
+              if (isStaleXtermRendererError(error)) return false;
+              throw error;
+            }
+          });
+        };
+      }
+
+      if (
+        typeof renderService.handleResize === 'function' &&
+        !renderService.__devhubHandleResizeSafety
+      ) {
+        renderService.__devhubHandleResizeSafety = true;
+        const originalHandleResize = renderService.handleResize.bind(renderService);
+        renderService.handleResize = (cols, rows) => {
+          try {
+            if (!renderService._renderer?.value) return;
+            return originalHandleResize(cols, rows);
+          } catch (error) {
+            if (isStaleXtermRendererError(error)) return;
+            throw error;
+          }
+        };
+      }
+    }
+
+    // Viewport._innerRefresh → get dimensions is the other full-app flicker source.
+    const viewport = core.viewport;
+    if (viewport && typeof viewport === 'object' && !viewport.__devhubTeardownSafety) {
+      viewport.__devhubTeardownSafety = true;
+      if (typeof viewport._innerRefresh === 'function') {
+        const originalInnerRefresh = viewport._innerRefresh.bind(viewport);
+        viewport._innerRefresh = (...args) => {
+          try {
+            if (!core._renderService?._renderer?.value && core._renderService?._renderer) {
+              return;
+            }
+            return originalInnerRefresh(...args);
+          } catch (error) {
+            if (isStaleXtermRendererError(error)) return;
+            throw error;
+          }
+        };
+      }
+      if (typeof viewport.syncScrollArea === 'function') {
+        const originalSync = viewport.syncScrollArea.bind(viewport);
+        viewport.syncScrollArea = (...args) => {
+          try {
+            return originalSync(...args);
+          } catch (error) {
+            if (isStaleXtermRendererError(error)) return;
+            throw error;
+          }
+        };
+      }
+    }
+  } catch {
+    // never throw from safety install
+  }
+}
+
+/**
+ * Drop deferred xterm work that can still run after we start tearing down.
+ *
+ * Crash signature (17:01–17:03 local):
+ *   TypeError: Cannot read properties of undefined (reading 'handleResize')
+ *     at IdleTaskQueue._process
+ *
+ * Root cause in xterm@5.3 RenderService.handleResize when paused:
+ *   this._pausedResizeTask.set(() => this._renderer.value.handleResize(e, t))
+ * The enqueue checks `_renderer.value`, but by the time IdleTaskQueue runs the
+ * task the MutableDisposable may already be cleared → uncaught TypeError.
+ *
+ * Also cancels Viewport RAF that feeds `_innerRefresh` → `dimensions` crashes.
+ *
+ * @param {import('xterm').Terminal | null | undefined} term
+ */
+export function clearXtermAsyncWork(term) {
+  if (!term) return;
+  try {
+    const core = term._core;
+    if (!core) return;
+
+    // Viewport: cancel pending RAF into _innerRefresh
+    const viewport = core.viewport;
+    if (viewport && typeof viewport === 'object') {
+      try {
+        if (typeof viewport._refreshAnimationFrame === 'number') {
+          try {
+            cancelAnimationFrame(viewport._refreshAnimationFrame);
+          } catch {
+            // ignore
+          }
+          viewport._refreshAnimationFrame = null;
+        }
+      } catch {
+        // ignore private shape drift
+      }
+    }
+
+    // RenderService: clear DebouncedIdleTask behind _pausedResizeTask
+    const renderService = core._renderService;
+    if (renderService && typeof renderService === 'object') {
+      try {
+        const pausedTask = renderService._pausedResizeTask;
+        // DebouncedIdleTask has no public clear(); clear the inner IdleTaskQueue.
+        if (pausedTask && pausedTask._queue && typeof pausedTask._queue.clear === 'function') {
+          pausedTask._queue.clear();
+        }
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // never throw from async-work clear
+  }
+}
+
+/**
+ * Before dispose (or when a surface is orphaned), neuter async xterm paths
+ * that still fire ResizeObserver / RAF into Viewport._innerRefresh.
+ * This is the main source of full-window flicker: uncaught TypeError in xterm
+ * bubbles to window.onerror and can blank the React tree.
+ *
+ * @param {import('xterm').Terminal | null | undefined} term
+ */
+export function neutralizeXtermSurface(term) {
+  if (!term) return;
+  try {
+    // Public dispose flag for isTerminalRendererReady guards.
+    try {
+      term._isDisposed = true;
+    } catch {
+      // ignore
+    }
+
+    const core = term._core;
+    if (!core) return;
+
+    try {
+      core._isDisposed = true;
+    } catch {
+      // ignore
+    }
+
+    clearXtermAsyncWork(term);
+
+    // Viewport is what throws: get dimensions → _innerRefresh
+    const viewport = core.viewport;
+    if (viewport && typeof viewport === 'object') {
+      try {
+        viewport._innerRefresh = () => {};
+        viewport.syncScrollArea = () => {};
+        if (typeof viewport._refreshAnimationFrame === 'number') {
+          try {
+            cancelAnimationFrame(viewport._refreshAnimationFrame);
+          } catch {
+            // ignore
+          }
+        }
+        viewport._refreshAnimationFrame = null;
+      } catch {
+        // ignore private shape drift
+      }
+    }
+
+    const renderService = core._renderService;
+    if (renderService && typeof renderService === 'object') {
+      try {
+        if (typeof renderService.handleResize === 'function') {
+          renderService.handleResize = () => {};
+        }
+        if (typeof renderService.refreshRows === 'function') {
+          renderService.refreshRows = () => {};
+        }
+        if (typeof renderService._handleOnRequestRedraw === 'function') {
+          renderService._handleOnRequestRedraw = () => {};
+        }
+        // Prevent late resize listeners from reading a null renderer slot.
+        if (renderService._renderer && typeof renderService._renderer === 'object') {
+          const slot = renderService._renderer;
+          if (!slot.value) {
+            try {
+              slot.value = {
+                handleResize: () => {},
+                clearTextureAtlas: () => {},
+                dispose: () => {},
+              };
+            } catch {
+              // ignore
+            }
+          } else if (typeof slot.value.handleResize === 'function') {
+            slot.value.handleResize = () => {};
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // No-op public refresh so callers that skip isTerminalRendererReady still safe.
+    if (typeof term.refresh === 'function') {
+      term.refresh = () => {};
+    }
+    if (typeof term.resize === 'function') {
+      const originalResize = term.resize.bind(term);
+      term.resize = (...args) => {
+        try {
+          if (term._core?._isDisposed || term._isDisposed) return;
+          return originalResize(...args);
+        } catch (error) {
+          if (isStaleXtermRendererError(error)) return undefined;
+          throw error;
+        }
+      };
+    }
+  } catch {
+    // never throw from neutralize
+  }
 }
 
 // xterm-addon-webgl@0.16.0 keeps `_renderer` (a MutableDisposable) and the
@@ -537,16 +829,56 @@ function isStaleXtermRendererError(error) {
 // ResizeObserver / fit() during that window, and the addon's listener crashes
 // with `undefined is not an object (evaluating '_this._renderer.value.handleResize')`.
 //
-// We can't rewrite the addon, but we can replace the live renderer's
-// handleResize with a noop right before dispose so a stray resize lands on
-// a safe stub instead of an undefined slot. Best-effort: the addon's internal
-// shape may evolve, so we guard every access and never throw from here.
-function neutralizeWebglAddonForDisposal(addon) {
+// Same race shows up as Chrome:
+//   Cannot read properties of undefined (reading 'handleResize')
+// from RenderService's paused IdleTaskQueue task:
+//   () => this._renderer.value.handleResize(cols, rows)
+//
+// Fix: if the MutableDisposable slot is already empty, plant a stub renderer
+// so late handleResize/IdleTaskQueue work is a no-op. If a live renderer still
+// exists, neuter its handleResize. Best-effort; never throw.
+export function neutralizeWebglAddonForDisposal(addon) {
   if (!addon) return;
   try {
-    const renderer = addon._renderer?.value;
-    if (renderer && typeof renderer.handleResize === 'function') {
+    const slot = addon._renderer;
+    if (!slot || typeof slot !== 'object') return;
+
+    const stubRenderer = {
+      handleResize: () => {},
+      handleDevicePixelRatioChange: () => {},
+      handleCharSizeChanged: () => {},
+      handleBlur: () => {},
+      handleFocus: () => {},
+      handleSelectionChanged: () => {},
+      handleCursorMove: () => {},
+      clear: () => {},
+      clearTextureAtlas: () => {},
+      renderRows: () => {},
+      dispose: () => {},
+    };
+
+    const renderer = slot.value;
+    if (!renderer || typeof renderer !== 'object') {
+      try {
+        slot.value = stubRenderer;
+      } catch {
+        try {
+          Object.defineProperty(slot, 'value', {
+            value: stubRenderer,
+            writable: true,
+            configurable: true,
+          });
+        } catch {
+          // ignore unwritable slot
+        }
+      }
+      return;
+    }
+
+    try {
       renderer.handleResize = () => {};
+    } catch {
+      // ignore
     }
   } catch {
     // ignore — addon internals are private API; if shape changed, skip.
@@ -741,9 +1073,18 @@ export function shouldDeferTerminalConnectUntilViewportFitted({
   term = null,
   hasConnectedOnce = false,
 } = {}) {
-  if (!ready || !fitWorked || !term) return true;
+  // Reconnects never block — the PTY is already live.
   if (hasConnectedOnce) return false;
-  return isTerminalViewportUndersized({ containerRect, term });
+  // First connect needs a real container + a successful fit so cols/rows are sane.
+  if (!ready || !fitWorked || !term) return true;
+  const width = Number(containerRect?.width ?? 0);
+  const height = Number(containerRect?.height ?? 0);
+  if (width <= 0 || height <= 0) return true;
+  // Do NOT block on fill-ratio "undersize". That used to hold connect for up to
+  // TERMINAL_CONNECT_DEFER_MAX_MS while layout settled, which felt like a long
+  // "Iniciando/Conectando" hang. Start the PTY immediately; a follow-up fit +
+  // SIGWINCH corrects size once the panel finishes settling.
+  return false;
 }
 
 export function fitTerminalViewport({
@@ -885,14 +1226,45 @@ export function resolveTerminalConnectionCloseState(previousState, didReceivePro
   return previousState === 'error' ? 'error' : 'disconnected';
 }
 
-export function shouldAutoReconnectTerminal(connectionState, autoFocus, initError = null) {
-  if (!autoFocus) return false;
+export function shouldAutoReconnectTerminal(
+  connectionState,
+  autoFocus,
+  initError = null,
+  { isVisibleInLayout = false } = {}
+) {
   if (initError) return false;
+  if (!autoFocus && !isVisibleInLayout) return false;
   return connectionState === 'disconnected' || connectionState === 'error';
 }
 
 export function getClipboardApi() {
   return globalThis?.navigator?.clipboard || null;
+}
+
+/**
+ * xterm joins selected buffer rows with CRLF on Windows. Grok and other TUIs can
+ * treat each CR/LF as a separate submit when that text is pasted back. LF-only
+ * matches what most native terminals put on the system clipboard.
+ */
+export function normalizeTerminalSelectionForClipboard(text) {
+  if (typeof text !== 'string' || text.length === 0) return text;
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
+ * ConPTY on Windows often omits WRAP metadata — xterm then copies one clipboard
+ * line per viewport row. buildNumber below 21376 turns on wrap heuristics so
+ * soft-wrapped rows merge in getSelection() (see xterm WindowsMode / windowsPty).
+ */
+export function resolveXtermWindowsPtyOptions(platform) {
+  const normalized = String(platform || getTerminalRuntimePlatform()).toLowerCase();
+  if (!normalized.includes('win')) return {};
+  return {
+    windowsPty: {
+      backend: 'conpty',
+      buildNumber: 19041,
+    },
+  };
 }
 
 export function resolveTerminalClipboardShortcut(event) {
@@ -918,7 +1290,45 @@ export function resolveTerminalClipboardShortcut(event) {
   return null;
 }
 
-/** Send clipboard text to the PTY as raw input (avoids xterm bracketed-paste breaking TUIs). */
+export const TERMINAL_BRACKETED_PASTE_START = '\x1b[200~';
+export const TERMINAL_BRACKETED_PASTE_END = '\x1b[201~';
+
+export function wrapTerminalBracketedPaste(text) {
+  if (typeof text !== 'string') return text;
+  return `${TERMINAL_BRACKETED_PASTE_START}${text}${TERMINAL_BRACKETED_PASTE_END}`;
+}
+
+export function isMultilineTerminalPaste(text) {
+  return typeof text === 'string' && /[\r\n]/.test(text);
+}
+
+/**
+ * Agent TUIs (Grok, OpenCode, Kimi) treat raw CR/LF as submit when pasted via PTY.
+ * Bracketed paste inserts the whole clipboard as one edit buffer (native terminal behavior).
+ */
+export function shouldBracketTerminalTextPaste(lifecycleRefs, text, initialCommand) {
+  if (!isMultilineTerminalPaste(text)) return false;
+  if (isGrokTuiInitialCommand(initialCommand)) return true;
+  if (isLikelyTuiInitialCommand(initialCommand)) return true;
+  const lifecycle = lifecycleRefs?.current;
+  if (!lifecycle) return true;
+  if (lifecycle.isGrokSessionRef?.current === true || lifecycle.grokTuiReadyRef?.current === true) {
+    return true;
+  }
+  if (lifecycle.kimiReadyNotifiedRef?.current === true) return true;
+  if (lifecycle.tuiSessionActiveRef?.current === true) return true;
+  return true;
+}
+
+export function formatTerminalPastePayload(text, lifecycleRefs, initialCommand) {
+  const normalized = normalizeTerminalSelectionForClipboard(text);
+  if (shouldBracketTerminalTextPaste(lifecycleRefs, normalized, initialCommand)) {
+    return wrapTerminalBracketedPaste(normalized);
+  }
+  return normalized;
+}
+
+/** Send clipboard text to the PTY (optionally bracket-wrapped for live TUIs). */
 export function sendTerminalPasteInput({
   socket,
   transport = 'json',
@@ -1795,10 +2205,5 @@ export function resolveTerminalFontFamily() {
   return cssMonoStack || DEFAULT_TERMINAL_FONT_FAMILY;
 }
 
-export {
-  cliLog,
-  attachTerminalRendererAddons,
-  neutralizeWebglAddonForDisposal,
-  isStaleXtermRendererError,
-  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
-};
+// Named re-exports for symbols that are not `export function` above.
+export { cliLog, attachTerminalRendererAddons, TERMINAL_SPLIT_WEBGL_PANEL_LIMIT };

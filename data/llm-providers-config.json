@@ -18,9 +18,25 @@
       "MINIMAX_MODEL": "minimax-coding-plan/MiniMax-M2.7",
       "MINIMAX_API_KEY": "sk-cp-h6_Tw_RcCRP_fHhFdcxZWjysfpl9LriVaR4z0X-pRK3sAL9GU0mU7TgSIjOQvrehLvQv1GxsyH8HDJktt9dT8hU6BW2AXyYLoL4rr6V5giXaV9HNiPVFwLE",
       "enabled": true
+    },
+    "xai": {
+      "XAI_BASE_URL": "https://api.x.ai/v1/chat/completions",
+      "XAI_MODEL": "grok-composer-2.5-fast",
+      "XAI_API_KEY": "",
+      "XAI_AUTH_MODE": "oauth",
+      "XAI_OAUTH_ACCESS_TOKEN": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6Im9hdXRoMi1wcm9kdWN0aW9uLTIwMjYtMDItMTkifQ.eyJpc3MiOiJodHRwczovL2F1dGgueC5haSIsInN1YiI6ImYyOTc2ZDMyLTVmYmUtNDA0MC04MTU4LWNmMWZhNzRiOTk3ZiIsImF1ZCI6ImIxYTAwNDkyLTA3M2EtNDdlYS04MTZmLTRjMzI5MjY0YTgyOCIsImV4cCI6MTc4MzU2MDg2OCwiaWF0IjoxNzgzNTM5MjY4LCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIG9mZmxpbmVfYWNjZXNzIGdyb2stY2xpOmFjY2VzcyBhcGk6YWNjZXNzIiwicHJpbmNpcGFsX3R5cGUiOiJVc2VyIiwicHJpbmNpcGFsX2lkIjoiZjI5NzZkMzItNWZiZS00MDQwLTgxNTgtY2YxZmE3NGI5OTdmIiwiY2xpZW50X2lkIjoiYjFhMDA0OTItMDczYS00N2VhLTgxNmYtNGMzMjkyNjRhODI4IiwianRpIjoiOGNiYWE5ZjAtYzE1MC00NGVjLWJjNDYtZjE3NTZiMzJmMDg5IiwidGllciI6MSwidGVhbV9pZCI6IjdlZjk0ZDQyLWZiOTItNGM4Ny1iNTYwLTc4MTMyMTMwNjYyYSJ9.MO0tKn-aQlzzMM_3KeC8njWXK4nn4EwiMs7l6cAZOkLc5R-Ec81htNltQ0SeeR9GIRYiZjNECtOfPxNLsBQN3Q",
+      "XAI_OAUTH_REFRESH_TOKEN": "bBO283Ypd8LuoGYEZxEtDpz4pLpTySsR5CMi-6eV-eEoKqsg8GfWAvX7oqp4bPZnPnKq5l0xZjw_QA35nbhbIw",
+      "XAI_OAUTH_EXPIRES_AT": 1783560868122,
+      "XAI_OAUTH_USERNAME": "matits1404@gmail.com",
+      "enabled": true
+    },
+    "kimi_code": {
+      "KIMI_CODE_API_KEY": "",
+      "KIMI_CODE_MODEL": "kimi-for-coding",
+      "enabled": true
     }
   },
-  "priorityOrder": ["copilot", "minimax", "opencode", "openrouter", "zen", "direct"],
+  "priorityOrder": ["xai", "copilot", "minimax", "opencode", "openrouter", "zen", "direct"],
   "bridgeEnabled": true,
   "modelOptions": {
     "opencode": [
@@ -518,7 +534,17 @@
       "text-embedding-3-small",
       "text-embedding-3-small-inference"
     ],
-    "minimax": ["minimax-coding-plan/MiniMax-M2.7", "minimax-coding-plan/MiniMax-M3"]
+    "minimax": ["minimax-coding-plan/MiniMax-M2.7", "minimax-coding-plan/MiniMax-M3"],
+    "xai": [
+      "grok-4.5",
+      "grok-composer-2.5-fast",
+      "grok-build-0.1",
+      "grok-4.3",
+      "grok-4.20-0309-non-reasoning",
+      "grok-4.20-0309-reasoning",
+      "grok-4.20-multi-agent-0309"
+    ],
+    "kimi_code": ["kimi-for-coding"]
   },
   "favoriteModels": {
     "openrouter": ["qwen/qwen3.6-plus-preview:free", "qwen/qwen3.6-plus:free"],
@@ -526,5 +552,8 @@
     "opencode": ["google/gemini-3.1-flash-lite-preview"]
   },
   "globalTemperature": 0.7,
-  "globalMaxTokens": 4000
+  "globalMaxTokens": 4000,
+  "zed": {
+    "provider": "xai"
+  }
 }

@@ -8,7 +8,9 @@ import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
 import { recordIntentResolution } from './zedMetrics';
 
 const commandRouter = createRuleIntentRouter();
-const TWO_STEP_SPLIT = /\s+(?:y(?:\s+luego)?|and\s+then|;\s*then|y\s+después|y\s+despues)\s+/i;
+/** Split compound Spanish/English commands into ordered clauses. */
+const TWO_STEP_SPLIT =
+  /\s+(?:y(?:\s+luego)?|e(?:\s+luego)?|and(?:\s+then)?|;\s*(?:then)?|y\s+despu[eé]s|,\s*y)\s+/i;
 
 const TIER_HIGH = 0.85;
 const TIER_MEDIUM = 0.7;
@@ -114,19 +116,22 @@ function resolveTwoStepIntent(message, context = {}) {
     .split(TWO_STEP_SPLIT)
     .map((p) => p.trim())
     .filter(Boolean);
-  if (parts.length !== 2) return null;
+  // Allow 2–3 short clauses: "abre una, cierra Eibar y listá" is rare; keep 2–3.
+  if (parts.length < 2 || parts.length > 3) return null;
 
-  const first = resolveZedIntentSingle(parts[0], context);
-  const second = resolveZedIntentSingle(parts[1], context);
-  if (!first || !second) return null;
-  if (first.tier === 'llm' || second.tier === 'llm') return null;
+  const resolved = [];
+  for (const part of parts) {
+    const hit = resolveZedIntentSingle(part, context);
+    if (!hit || hit.tier === 'llm' || !hit.steps?.length) return null;
+    resolved.push(hit);
+  }
 
-  const confidence = Math.min(first.confidence, second.confidence);
+  const confidence = Math.min(...resolved.map((r) => r.confidence));
   return {
-    steps: [...first.steps, ...second.steps],
-    intent: `${first.intent}+${second.intent}`,
+    steps: resolved.flatMap((r) => r.steps),
+    intent: resolved.map((r) => r.intent).join('+'),
     confidence,
-    matched: `two-step:${first.matched}+${second.matched}`,
+    matched: `two-step:${resolved.map((r) => r.matched).join('+')}`,
   };
 }
 

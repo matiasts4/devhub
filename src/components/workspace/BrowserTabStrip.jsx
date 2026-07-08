@@ -50,9 +50,9 @@ function BrowserTabItemImpl({ tab, isActive, onSelect, onClose }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '4px 8px',
-        borderRadius: 8,
+        gap: 4,
+        padding: '2px 6px',
+        borderRadius: 6,
         border: isActive
           ? '1px solid var(--accent-primary, #58a6ff)'
           : '1px solid rgba(255,255,255,0.08)',
@@ -62,7 +62,7 @@ function BrowserTabItemImpl({ tab, isActive, onSelect, onClose }) {
         maxWidth: 200,
         minWidth: 0,
         fontFamily: 'inherit',
-        fontSize: 12,
+        fontSize: 11,
         lineHeight: 1.2,
         userSelect: 'none',
       }}
@@ -114,24 +114,30 @@ function BrowserTabStripImpl({
   onAddTab,
   currentUrl = '',
   tabCap = 20,
+  layout = 'stack',
 }) {
   const atCap = tabs.length >= tabCap;
   const handleAdd = () => {
     onAddTab(currentUrl);
   };
 
+  const isInline = layout === 'inline';
+
   return (
     <div
       role="tablist"
       data-testid="browser-tab-strip"
+      data-layout={layout}
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '6px 8px',
+        gap: isInline ? 4 : 6,
+        padding: isInline ? '0 2px 0 0' : '6px 8px',
         overflowX: 'auto',
-        background: 'rgba(8, 14, 24, 0.7)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        minWidth: isInline ? 0 : undefined,
+        flex: isInline ? '1 1 auto' : undefined,
+        background: isInline ? 'transparent' : 'rgba(8, 14, 24, 0.7)',
+        borderBottom: isInline ? 'none' : '1px solid rgba(255,255,255,0.06)',
       }}
     >
       {tabs.map((tab) => (
@@ -155,8 +161,8 @@ function BrowserTabStripImpl({
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: 26,
-          height: 24,
+          width: isInline ? 22 : 26,
+          height: isInline ? 20 : 24,
           padding: 0,
           borderRadius: 6,
           border: '1px solid rgba(255,255,255,0.08)',

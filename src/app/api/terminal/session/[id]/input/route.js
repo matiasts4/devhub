@@ -32,6 +32,14 @@ export async function PUT(request, { params }) {
     return NextResponse.json(sidecar);
   }
 
+  // Neither the in-process ttyServer nor the sidecar know this session — the
+  // client will fall back to dispatching devhub:zed-terminal-input to an
+  // open WebSocket panel, which only works if that panel is currently
+  // mounted/subscribed. Log so this rare-but-fragile path stays observable.
+  console.warn(
+    `[terminal/input] unknown session ${id}: neither tty nor sidecar had it, falling back to client WebSocket dispatch`
+  );
+
   return NextResponse.json(
     {
       error: 'unknown session',

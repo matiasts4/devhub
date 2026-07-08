@@ -39,16 +39,34 @@ def configure_windows_cuda_dll_paths():
             pass
 
 
-configure_windows_cuda_dll_paths()
-
 import numpy as np
 import sounddevice as sd
 from queue import Queue, Empty
-from faster_whisper import WhisperModel
-from huggingface_hub import HfApi, snapshot_download
-from tqdm.auto import tqdm
-import torch
-import torchaudio
+
+# ponytail: the local ML stack (faster-whisper/torch/torchaudio/ctranslate2) is
+# optional so the lightweight cloud-only install profile (Grok STT on Windows)
+# can run without it. See LOCAL_ML_AVAILABLE checks in get_torch_cuda_info(),
+# resolve_backend() and load_backend(). Upgrade path: once Windows also bundles
+# the full requirements.txt, this always succeeds like it does today on Linux.
+LOCAL_ML_AVAILABLE = True
+try:
+    configure_windows_cuda_dll_paths()
+    from faster_whisper import WhisperModel
+    from huggingface_hub import HfApi, snapshot_download
+    from tqdm.auto import tqdm
+    import torch
+    import torchaudio
+    import ctranslate2
+except ImportError:
+    LOCAL_ML_AVAILABLE = False
+    WhisperModel = None
+    HfApi = None
+    snapshot_download = None
+    tqdm = None
+    torch = None
+    torchaudio = None
+    ctranslate2 = None
+
 import logging
 import datetime
 import atexit
@@ -270,6 +288,12 @@ WHISPERCPP_SERVER_HOST = "127.0.0.1"
 WHISPERCPP_SERVER_PORT = 8178
 WHISPERCPP_SERVER_HEALTH_TIMEOUT = 30.0
 
+# Grok STT (xAI) cloud transcription — REST only (no websocket streaming, see
+# openspec decision to keep this lightweight). Same account/key as Zed's LLM chat.
+GROK_STT_URL = "https://api.x.ai/v1/stt"
+GROK_STT_TIMEOUT_FINAL = 12.0
+GROK_STT_TIMEOUT_PARTIAL = 8.0
+
 GRATITUDE_PHRASES = [
     "gracias",
     "muchas gracias",
@@ -346,6 +370,7 @@ selected_language = "es"
 gpu_enabled = True
 selected_backend = "auto"
 active_backend = "faster-whisper"
+xai_api_key = ""
 current_stream = None
 model_whisper = None
 loaded_model = ""
@@ -373,7 +398,7 @@ warnings.filterwarnings("ignore", message=r".*HF Hub.*")
 
 
 SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo", "distil-large-v3", "voxtral-mini-4b-realtime-2602"]
-SUPPORTED_BACKENDS = ["auto", "faster-whisper", "whispercpp"]
+SUPPORTED_BACKENDS = ["auto", "faster-whisper", "whispercpp", "grok"]
 WHISPERCPP_FALLBACK_MODELS = ["large-v3-turbo", "large-v3", "medium", "small", "base", "tiny"]
 MODEL_REPOS = {
     "tiny": "Systran/faster-whisper-tiny",
@@ -410,11 +435,17 @@ def get_exe_ext() -> str:
     return ".exe" if sys.platform.startswith("win") else ""
 
 
-import ctranslate2
-
 def get_torch_cuda_info() -> dict:
+    if not LOCAL_ML_AVAILABLE:
+        return {
+            "cuda_available": False,
+            "torch_version": "unavailable",
+            "gpu_name": "None",
+            "vram_gb": None,
+        }
+
     cuda_available = torch.cuda.is_available()
-    
+
     # Fallback: check ctranslate2 if torch returns False (e.g. missing torch_cuda.dll)
     if not cuda_available:
         try:
@@ -655,11 +686,14 @@ def http_get(url: str, timeout_s: float = 5.0):
         return response.getcode(), data.decode("utf-8", errors="ignore")
 
 
-def http_post_multipart(url: str, fields: dict[str, str], file_field: tuple[str, str, bytes, str] | None = None, timeout_s: float = 120.0):
+def http_post_multipart(url: str, fields: dict[str, str], file_field: tuple[str, str, bytes, str] | None = None, timeout_s: float = 120.0, headers: dict[str, str] | None = None):
     body, content_type = build_multipart_payload(fields, file_field)
     request = urllib.request.Request(url=url, data=body, method="POST")
     request.add_header("Content-Type", content_type)
     request.add_header("Accept", "application/json")
+    if headers:
+        for key, value in headers.items():
+            request.add_header(key, value)
 
     with urllib.request.urlopen(request, timeout=timeout_s) as response:
         data = response.read()
@@ -1191,9 +1225,19 @@ def get_whispercpp_status(model_name: str) -> dict:
 
 def resolve_backend(model_name: str, prefer_gpu: bool, backend_name: str) -> str:
     requested = normalize_backend_name(backend_name)
-    cuda_available = get_torch_cuda_info()["cuda_available"]
 
+    if requested == "grok":
+        return "grok"
+
+    # Lightweight install profile (Windows Grok-only setup, no torch/faster-whisper):
+    # whisper.cpp still works since it's a standalone binary, but faster-whisper
+    # and the "auto" default cannot — steer straight to Grok instead of a doomed
+    # local load. See LOCAL_ML_AVAILABLE in the import block.
     if requested == "faster-whisper":
+        if not LOCAL_ML_AVAILABLE:
+            emit({"error": "Backend faster-whisper no disponible: este perfil liviano no incluye el stack local de ML (torch/faster-whisper). Usando Grok STT (nube)."})
+            return "grok"
+        cuda_available = get_torch_cuda_info()["cuda_available"]
         if prefer_gpu and not cuda_available:
             emit({"log": "Backend faster-whisper seleccionado con GPU ON, pero CUDA no está disponible; se ejecutará en CPU."})
         return "faster-whisper"
@@ -1205,9 +1249,14 @@ def resolve_backend(model_name: str, prefer_gpu: bool, backend_name: str) -> str
                 emit({"log": f"whisper.cpp: usando modelo local '{status['resolved_model']}' para solicitud '{model_name}'"})
             return "whispercpp"
         emit({"error": f"Backend whisper.cpp no disponible: {status['reason']}"})
-        return "faster-whisper"
+        return "grok" if not LOCAL_ML_AVAILABLE else "faster-whisper"
 
     # auto
+    if not LOCAL_ML_AVAILABLE:
+        emit({"log": "Auto backend: perfil liviano sin stack local de ML instalado. Usando Grok STT (nube)."})
+        return "grok"
+
+    cuda_available = get_torch_cuda_info()["cuda_available"]
     if prefer_gpu and not cuda_available:
         status = get_whispercpp_status(model_name)
         if status["available"]:
@@ -1630,6 +1679,12 @@ def get_hardware_info():
                     "model_path": whispercpp_status.get("model_path", ""),
                     "model_dir": whispercpp_status.get("model_dir", ""),
                 },
+                {
+                    "id": "grok",
+                    "available": True,
+                    "key_configured": bool((xai_api_key or os.environ.get("XAI_API_KEY", "")).strip()),
+                    "reason": "Cloud STT (xAI) — requires an API key" if not (xai_api_key or os.environ.get("XAI_API_KEY", "")).strip() else "Ready",
+                },
             ],
         },
         "models": sorted(list(merged_models.values()), key=lambda model: model["id"]),
@@ -1786,6 +1841,26 @@ def load_backend(model_name, prefer_gpu, backend_name):
             emit({"status": "ready"})
             emit({"log": f"Model ready: {resolved_model} on whisper.cpp server ({model_path})"})
             return resolved_model
+
+        if chosen_backend == "grok":
+            emit({"log": "Using Grok STT (xAI) cloud backend"})
+
+            with model_lock:
+                previous_model = model_whisper
+                model_whisper = None
+            if previous_model is not None:
+                emit({"log": "Unloading faster-whisper model from memory"})
+                del previous_model
+                gc.collect()
+
+            active_backend = "grok"
+            loaded_model = model_name
+            loaded_gpu = prefer_gpu
+            loaded_backend_type = backend_name
+            emit({"status": "ready"})
+            if not (xai_api_key or os.environ.get("XAI_API_KEY", "")).strip():
+                emit({"error": "Grok STT requiere una API key de x.ai. Configúrala en Ajustes → Zed."})
+            return model_name
 
         emit({"log": "Using faster-whisper backend"})
         active_backend = "faster-whisper"
@@ -2242,6 +2317,29 @@ def transcribe_segment(audio_data, is_final=False, retry_on_cpu=True):
             })
         return
 
+    if active_backend == "grok":
+        # Cloud REST call, same (audio_int16, language, is_final) -> (text, error)
+        # contract as transcribe_whispercpp — no session_transcript concatenation
+        # needed since each call already covers the delta/segment it was given.
+        start_time = time.time()
+        text, error = transcribe_grok(audio_data, selected_language, is_final=is_final)
+        latency_ms = (time.time() - start_time) * 1000
+        if error:
+            emit({"error": error})
+            return
+
+        text = cleanup_transcription_text(text, chunk_duration_s)
+
+        if text:
+            emit({
+                "transcription": text,
+                "is_final": is_final,
+                "recording_id": current_recording_id,
+                "speaker": speaker_label,
+                "response_ms": int(latency_ms)
+            })
+        return
+
     # faster-whisper flow
     audio_float32 = audio_data.astype(np.float32) / 32768.0
     
@@ -2670,8 +2768,75 @@ def transcribe_whispercpp(audio_int16: np.ndarray, language: str, is_final: bool
         return "", f"whisper.cpp error: {e}"
 
 
+def resolve_grok_language(language: str) -> str:
+    lang = (language or "").strip().lower()
+    if not lang or lang == "auto":
+        return "es"
+    return lang
+
+
+def transcribe_grok(audio_int16: np.ndarray, language: str, is_final: bool = True) -> tuple[str, str | None]:
+    """Transcribe a speech segment using xAI Grok STT (REST, cloud).
+
+    Lightweight cloud counterpart to transcribe_whispercpp(): no local model,
+    no torch — just stdlib urllib + the shared http_post_multipart() helper.
+    Same (audio_int16, language, is_final) -> (text, error) contract so
+    transcribe_segment() can dispatch to it the same way it dispatches to
+    whisper.cpp.
+    """
+    api_key = (xai_api_key or os.environ.get("XAI_API_KEY", "")).strip()
+    if not api_key:
+        return "", "Grok STT requiere una API key de x.ai. Configúrala en Ajustes → Zed."
+
+    try:
+        audio_contiguous = np.ascontiguousarray(audio_int16.reshape(-1).astype(np.int16))
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, "wb") as wav_writer:
+            wav_writer.setnchannels(1)
+            wav_writer.setsampwidth(2)
+            wav_writer.setframerate(RATE)
+            wav_writer.writeframes(audio_contiguous.tobytes())
+        wav_buffer.seek(0)
+        audio_bytes = wav_buffer.read()
+    except Exception as e:
+        return "", f"Grok STT: error preparando audio WAV: {e}"
+
+    fields: dict[str, str] = {
+        "language": resolve_grok_language(language),
+        "format": "true",
+    }
+    headers = {"Authorization": f"Bearer {api_key}"}
+    timeout_s = GROK_STT_TIMEOUT_FINAL if is_final else GROK_STT_TIMEOUT_PARTIAL
+
+    try:
+        status_code, response_text = http_post_multipart(
+            GROK_STT_URL,
+            fields=fields,
+            file_field=("file", "segment.wav", audio_bytes, "audio/wav"),
+            timeout_s=timeout_s,
+            headers=headers,
+        )
+        if status_code != 200:
+            return "", f"Grok STT respondió {status_code}: {response_text[:240]}"
+
+        try:
+            payload = json.loads(response_text)
+            text = str(payload.get("text", "")).strip()
+        except Exception:
+            return "", "Grok STT: respuesta inválida (no es JSON)"
+
+        return text, None
+    except urllib.error.HTTPError as e:
+        response = e.read().decode("utf-8", errors="ignore") if hasattr(e, "read") else ""
+        return "", f"Grok STT HTTP error {e.code}: {response[:240]}"
+    except urllib.error.URLError as e:
+        return "", f"Grok STT: error de red: {e}"
+    except Exception as e:
+        return "", f"Grok STT error: {e}"
+
+
 def command_listener():
-    global recording, selected_device, selected_model, selected_model_dir, selected_language, gpu_enabled, selected_backend, current_recording_id, session_transcript, stopping
+    global recording, selected_device, selected_model, selected_model_dir, selected_language, gpu_enabled, selected_backend, current_recording_id, session_transcript, stopping, xai_api_key
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -2735,6 +2900,7 @@ def command_listener():
                 language = str(payload.get("language", selected_language))
                 prefer_gpu = bool(payload.get("gpu_enabled", gpu_enabled))
                 backend = normalize_backend_name(str(payload.get("backend", selected_backend)))
+                xai_api_key = str(payload.get("xai_api_key", xai_api_key)).strip()
                 
                 config_uuid = str(uuid.uuid4())[:6]
                 emit({"log": f"Received CONFIG [{config_uuid}]: model={model}, gpu={prefer_gpu}, backend={backend}"})
@@ -2889,7 +3055,89 @@ def command_listener():
     stop_whisper_server()
     os._exit(0)
 
+def _selftest() -> None:
+    """Assert-based self-check for the Grok STT wiring -- no mic, model
+    download, or network call required. Run with:
+    python audio_engine.py --selftest
+    """
+    global xai_api_key, LOCAL_ML_AVAILABLE
+
+    assert normalize_backend_name("grok") == "grok"
+    assert normalize_backend_name("GROK") == "grok"
+    assert normalize_backend_name("not-a-real-backend") == "auto"
+
+    assert resolve_grok_language("auto") == "es"
+    assert resolve_grok_language("") == "es"
+    assert resolve_grok_language("EN") == "en"
+
+    saved_local_ml = LOCAL_ML_AVAILABLE
+    saved_key = xai_api_key
+    try:
+        # Explicit "grok" is honored regardless of local ML availability/GPU flag.
+        LOCAL_ML_AVAILABLE = True
+        assert resolve_backend("large-v3-turbo", True, "grok") == "grok"
+        LOCAL_ML_AVAILABLE = False
+        assert resolve_backend("large-v3-turbo", False, "grok") == "grok"
+
+        # Lightweight install profile (no torch/faster-whisper): "auto" and an
+        # explicit "faster-whisper" request both degrade to grok instead of a
+        # doomed local load.
+        assert resolve_backend("large-v3-turbo", False, "auto") == "grok"
+        assert resolve_backend("tiny", False, "faster-whisper") == "grok"
+
+        # Missing API key surfaces a clear, actionable error (not a crash).
+        xai_api_key = ""
+        os.environ.pop("XAI_API_KEY", None)
+        text, error = transcribe_grok(np.zeros(1600, dtype=np.int16), "es", is_final=True)
+        assert text == "" and error and "API key" in error, (text, error)
+    finally:
+        LOCAL_ML_AVAILABLE = saved_local_ml
+        xai_api_key = saved_key
+
+    # http_post_multipart() must forward custom headers (needed for the Bearer
+    # token) -- monkeypatch urlopen to capture the outgoing Request instead of
+    # touching the network.
+    captured = {}
+    real_urlopen = urllib.request.urlopen
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"text": "hola"}'
+
+        def getcode(self):
+            return 200
+
+    def _fake_urlopen(request, timeout=None):
+        captured["request"] = request
+        return _FakeResponse()
+
+    urllib.request.urlopen = _fake_urlopen
+    try:
+        status, body = http_post_multipart(
+            GROK_STT_URL,
+            fields={"language": "es"},
+            file_field=("file", "segment.wav", b"RIFF....", "audio/wav"),
+            headers={"Authorization": "Bearer xai-test-key"},
+        )
+        assert status == 200
+        assert json.loads(body)["text"] == "hola"
+        assert captured["request"].get_header("Authorization") == "Bearer xai-test-key"
+    finally:
+        urllib.request.urlopen = real_urlopen
+
+    print("audio_engine selftest OK")
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
+        _selftest()
+        sys.exit(0)
     try:
         log_path = setup_logging()
         logging.info("Logging initialized.")

@@ -4,6 +4,9 @@ const {
   resolveZedFastPathIntent,
   extractTerminalNameFromMessage,
   extractMultipleCloseNames,
+  cleanTerminalNameChunk,
+  hasUnresolvedCloseTarget,
+  resolveCompoundOpenCloseIntent,
   normalizeAgentAliases,
   wantsCloseAllTerminals,
 } = require('../zedFastPath');
@@ -149,6 +152,91 @@ describe('zedFastPath intent cache', () => {
     });
     expect(hit?.steps[0]?.tool).toBe('close_terminal');
     expect(hit?.steps[0]?.input?.name).toBe('Chase');
+  });
+
+  test('cleanTerminalNameChunk handles "la de Eibar"', () => {
+    const cands = cleanTerminalNameChunk('la de Eibar');
+    expect(cands).toEqual(expect.arrayContaining(['Eibar', 'la de Eibar']));
+  });
+
+  test('extractMultipleCloseNames resolves "cierra la de Cesar"', () => {
+    const names = extractMultipleCloseNames('cierra la de Cesar', TERMINALS);
+    expect(names).toEqual(['Cesar']);
+  });
+
+  test('compound: abre una nueva terminal y cierra la de Cesar', () => {
+    const hit = resolveZedFastPathIntent('Abre una nueva terminal y cierra la de Cesar.', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_and_close_terminals');
+    expect(hit?.steps).toHaveLength(2);
+    expect(hit.steps[0]).toMatchObject({ tool: 'open_terminal', input: {} });
+    expect(hit.steps[1]).toMatchObject({ tool: 'close_terminal', input: { name: 'Cesar' } });
+    expect(hit.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
+  test('compound: cierra Chase y abre una nueva terminal (close first)', () => {
+    const hit = resolveZedFastPathIntent('cierra Chase y abre una nueva terminal', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_and_close_terminals');
+    expect(hit.steps[0]).toMatchObject({ tool: 'close_terminal', input: { name: 'Chase' } });
+    expect(hit.steps[1]).toMatchObject({ tool: 'open_terminal' });
+  });
+
+  test('compound: abre dos terminales y cierra Chase', () => {
+    const hit = resolveZedFastPathIntent('abre dos terminales y cierra Chase', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_and_close_terminals');
+    expect(hit.steps.filter((s) => s.tool === 'open_terminal')).toHaveLength(2);
+    expect(hit.steps.some((s) => s.tool === 'close_terminal' && s.input?.name === 'Chase')).toBe(
+      true
+    );
+  });
+
+  test('compound with unknown close name falls back to LLM (null)', () => {
+    const hit = resolveZedFastPathIntent('Abre una nueva terminal y cierra la de Eibar.', {
+      workspace_terminals: TERMINALS,
+    });
+    // Eibar not in catalog → do not half-execute open-only
+    expect(hit).toBeNull();
+    expect(hasUnresolvedCloseTarget('cierra la de Eibar', TERMINALS)).toBe(true);
+  });
+
+  test('resolveCompoundOpenCloseIntent returns ordered steps', () => {
+    const lower = 'abre una nueva terminal y cierra la de cesar';
+    const hit = resolveCompoundOpenCloseIntent(
+      'Abre una nueva terminal y cierra la de Cesar.',
+      lower,
+      TERMINALS,
+      null
+    );
+    expect(hit?.steps.map((s) => s.tool)).toEqual(['open_terminal', 'close_terminal']);
+  });
+
+  /**
+   * Table-driven coverage: quantity × agent program.
+   * Goal: maximize cases per iteration instead of one-off regressions.
+   */
+  test.each([
+    ['abre dos terminales', 2, null],
+    ['abre 2 nuevas terminales', 2, null],
+    ['Quiero que abras dos nuevas terminales', 2, null],
+    ['abre tres paneles', 3, null],
+    ['abre dos nuevas terminales con grok', 2, 'grok'],
+    ['Quiero que abras dos nuevas terminales y vayas a Grok', 2, 'grok'],
+    ['abre dos terminales con opencode', 2, 'opencode'],
+    ['abre una terminal con kimi', 1, 'kimi'],
+  ])('matrix open: %s → count=%i program=%s', (phrase, count, program) => {
+    const hit = resolveZedFastPathIntent(phrase, { workspace_terminals: TERMINALS });
+    expect(hit).not.toBeNull();
+    expect(hit.steps.filter((s) => s.tool === 'open_terminal')).toHaveLength(count);
+    if (program) {
+      expect(hit.steps.every((s) => s.input?.program === program)).toBe(true);
+    } else {
+      expect(hit.steps.every((s) => !s.input?.program)).toBe(true);
+    }
   });
 
   test('execute opencode in existing terminal', () => {
@@ -529,6 +617,41 @@ describe('zedFastPath intent cache', () => {
     expect(hit).toMatchObject({
       intent: 'execute_in_terminal_named',
       steps: [{ tool: 'execute_in_terminal', input: { name: 'Chase', input: 'npm test\n' } }],
+    });
+  });
+
+  test('switch workspace window by index', () => {
+    const hit = resolveZedFastPathIntent('cambia de ventana a 2', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'switch_workspace_window',
+      steps: [
+        {
+          tool: 'workspace_action',
+          input: { action: 'switch_workspace_window', window_index: 2 },
+        },
+      ],
+    });
+  });
+
+  test('review terminal output by name — qué dice', () => {
+    const hit = resolveZedFastPathIntent('qué dice la terminal de Chase', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'review_terminal_output',
+      steps: [{ tool: 'review_terminal_output', input: { name: 'Chase' } }],
+    });
+  });
+
+  test('open grok terminal', () => {
+    const hit = resolveZedFastPathIntent('abre una terminal nueva con grok', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit).toMatchObject({
+      intent: 'open_terminal_agent',
+      steps: [{ tool: 'open_terminal', input: { program: 'grok' } }],
     });
   });
 });

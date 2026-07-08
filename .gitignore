@@ -118,6 +118,13 @@ research/external/
 devhub-cli/node_modules/
 vendor/ponytail/
 
+# === Local build cache (standalone fingerprint) ===
+.devhub-build/
+
+# === Local scratch / experiments (safe to delete) ===
+.tmp/
+tmp_*.log
+
 # === Worktrees ===
 .devhub/worktrees/
 .worktrees/

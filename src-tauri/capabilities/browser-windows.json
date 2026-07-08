@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "browser-windows",
+  "description": "Dedicated DevHub browser WebviewWindows (toolbar Ventana)",
+  "windows": ["devhub-browser-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-set-title",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:webview:allow-webview-close",
+    "shell:allow-open"
+  ]
+}

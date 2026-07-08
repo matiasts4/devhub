@@ -21,7 +21,7 @@ mod voice_python_setup;
 use embedded_browser::{embedded_browser_selector_ipc, EmbeddedBrowserRegistry};
 use native_browser::{
     native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
-    native_browser_open, native_browser_probe, native_browser_raise, native_browser_reload,
+    native_browser_open, native_browser_probe, native_browser_purge_orphans, native_browser_raise, native_browser_reload,
     native_browser_resize, native_browser_select_all, native_browser_selector_command,
     native_browser_set_visibility, NativeBrowserState,
 };
@@ -1013,6 +1013,7 @@ pub fn run() {
             native_browser_select_all,
             native_browser_copy,
             native_browser_close,
+            native_browser_purge_orphans,
             embedded_browser_selector_ipc,
             read_system_clipboard_text,
             read_system_clipboard_image,

@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 const TREE_CACHE_TTL_MS = 1_000;
 const GLOBAL_TREE_CACHE_KEY = '__DEVHUB_FS_TREE_CACHE__';
 const IGNORED_SEGMENTS = new Set(['.git', '.next', 'node_modules', 'dist', 'build', 'coverage']);
-const IGNORED_PATHS = [path.join('src-tauri', 'target')];
+const IGNORED_PATHS = ['src-tauri/target'];
 
 function getTreeCache() {
   if (!globalThis[GLOBAL_TREE_CACHE_KEY]) {
@@ -34,7 +34,10 @@ function shouldIgnoreEntry(relativePath) {
   const normalizedPath = normalizedSegments.join('/');
   return IGNORED_PATHS.some((ignoredPath) => {
     const normalizedIgnoredPath = ignoredPath.split(path.sep).join('/');
-    return normalizedPath === normalizedIgnoredPath || normalizedPath.startsWith(`${normalizedIgnoredPath}/`);
+    return (
+      normalizedPath === normalizedIgnoredPath ||
+      normalizedPath.startsWith(`${normalizedIgnoredPath}/`)
+    );
   });
 }
 
@@ -48,7 +51,7 @@ async function buildFileTree(dirPath, rootPath = dirPath) {
     if (shouldIgnoreEntry(relativePath)) {
       continue;
     }
-    
+
     const node = {
       name: item.name,
       path: relativePath,
@@ -75,7 +78,7 @@ async function buildFileTree(dirPath, rootPath = dirPath) {
 export async function GET(request) {
   // Nota: Next.js 'force-static' con API Routes dinamicas arroja 500 al compilar
   // Se ignora el condicional process.env.NODE_ENV ya que se invoca on-demand
-  
+
   try {
     const { searchParams } = new URL(request.url);
     const baseDir = searchParams.get('base') || process.cwd();

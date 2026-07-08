@@ -102,7 +102,10 @@ export default function useTerminalViewportSync({ ctxRef }) {
       scheduleBoundedForceRepaint,
       buildViewportSnapshot,
     } = c;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    // ~12 frames max (~200ms). Previously 40 frames (~1.3s) delayed first connect
+    // when layout was still settling. Zero-size cases fall through to the short
+    // connect-defer force instead of spinning here.
+    for (let attempt = 0; attempt < 12; attempt += 1) {
       const container = containerRef.current;
       if (!container) return false;
 

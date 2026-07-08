@@ -55,12 +55,21 @@ function applyRightDockTabSelect(currentState, tab) {
     if (sameWorkspaceTab) {
       return { ...state, visible: false };
     }
+    const nextEpoch =
+      tab === 'browser' &&
+      (!state.visible ||
+        state.activeTab !== 'browser' ||
+        state.maximizedView === 'pizarra' ||
+        state.maximized === true)
+        ? (Number(state.browserLayoutEpoch) || 0) + 1
+        : state.browserLayoutEpoch;
     return {
       ...state,
       visible: true,
       activeTab: tab,
       maximized: false,
       maximizedView: tab,
+      browserLayoutEpoch: nextEpoch,
     };
   }
 

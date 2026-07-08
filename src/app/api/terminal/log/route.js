@@ -6,6 +6,23 @@ export const dynamic = 'force-dynamic';
 
 const LOG_FILE = path.resolve(process.cwd(), 'data', 'logs', 'terminal-debug.log');
 
+const devLogThrottleMs = new Map();
+const DEV_VIEWPORT_LOG_MIN_INTERVAL_MS = 750;
+
+function shouldPersistClientLog(tag, msg) {
+  if (process.env.NODE_ENV === 'production') return true;
+  if (typeof msg !== 'string' || !msg.includes('viewport diagnostic')) return true;
+
+  const key = String(tag || 'CLIENT');
+  const now = Date.now();
+  const last = devLogThrottleMs.get(key) || 0;
+  if (now - last < DEV_VIEWPORT_LOG_MIN_INTERVAL_MS) {
+    return false;
+  }
+  devLogThrottleMs.set(key, now);
+  return true;
+}
+
 /**
  * Heuristic for printing a log line to the host terminal where `npm run
  * tauri:dev` is running. We only echo xterm-webgl (renderer switcher
@@ -43,6 +60,10 @@ function shouldEchoToStdout(tag, msg, extra) {
  */
 export async function POST(request) {
   try {
+    if (process.env.NODE_ENV === 'development' && process.env.DEVHUB_TERMINAL_CLIENT_LOG !== '1') {
+      return NextResponse.json({ ok: true, skipped: true });
+    }
+
     const body = await request.json();
     const { tag = 'CLIENT', msg = '', extra = {} } = body;
 
@@ -50,10 +71,12 @@ export async function POST(request) {
     const extraStr = Object.keys(extra).length ? ' ' + JSON.stringify(extra) : '';
     const line = `${ts} [${tag}] ${msg}${extraStr}\n`;
 
-    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
-    fs.appendFileSync(LOG_FILE, line);
+    if (shouldPersistClientLog(tag, msg)) {
+      fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+      fs.appendFileSync(LOG_FILE, line);
+    }
 
-    if (shouldEchoToStdout(tag, msg, extra)) {
+    if (shouldEchoToStdout(tag, msg, extra) && shouldPersistClientLog(tag, msg)) {
       const extraOut = Object.keys(extra).length ? ' ' + JSON.stringify(extra) : '';
 
       console.log(`[devhub-log] [${tag}] ${msg}${extraOut}`);

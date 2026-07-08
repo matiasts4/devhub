@@ -1,0 +1,1282 @@
+{
+  "numFailedTestSuites": 0,
+  "numFailedTests": 0,
+  "numPassedTestSuites": 4,
+  "numPassedTests": 148,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 3,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 4,
+  "numTotalTests": 151,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783221895816,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path requests snapshot on ready and subscribes after the snapshot response",
+          "location": null,
+          "status": "passed",
+          "title": "requests snapshot on ready and subscribes after the snapshot response"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path does not send subscribe for legacy v1 panels",
+          "location": null,
+          "status": "passed",
+          "title": "does not send subscribe for legacy v1 panels"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path decodes terminal:append frames and writes them to xterm.js",
+          "location": null,
+          "status": "passed",
+          "title": "decodes terminal:append frames and writes them to xterm.js"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path sends unsubscribe before closing the socket on unmount",
+          "location": null,
+          "status": "passed",
+          "title": "sends unsubscribe before closing the socket on unmount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path includes v2=true in the WebSocket URL for v2 panels",
+          "location": null,
+          "status": "passed",
+          "title": "includes v2=true in the WebSocket URL for v2 panels"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path resizes back to container and notifies the PTY after rehydration completes",
+          "location": null,
+          "status": "passed",
+          "title": "resizes back to container and notifies the PTY after rehydration completes"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path applies server termsize from a metadata message",
+          "location": null,
+          "status": "passed",
+          "title": "applies server termsize from a metadata message"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path stashes the live xterm surface in the v2 graveyard on unmount",
+          "location": null,
+          "status": "passed",
+          "title": "stashes the live xterm surface in the v2 graveyard on unmount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path restores a previously stashed xterm surface on remount",
+          "location": null,
+          "status": "passed",
+          "title": "restores a previously stashed xterm surface on remount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path v2 WebGL context loss degrades to DOM without scheduling GPU recovery",
+          "location": null,
+          "status": "passed",
+          "title": "v2 WebGL context loss degrades to DOM without scheduling GPU recovery"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path does not stash output in terminalPanelBridge on v2 unmount",
+          "location": null,
+          "status": "passed",
+          "title": "does not stash output in terminalPanelBridge on v2 unmount"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path does not register a devhub:terminal-survivor-recover listener when isEngineV2 is true",
+          "location": null,
+          "status": "passed",
+          "title": "does not register a devhub:terminal-survivor-recover listener when isEngineV2 is true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path ignores devhub:terminal-layout-settled survivor bursts when isEngineV2 is true",
+          "location": null,
+          "status": "passed",
+          "title": "ignores devhub:terminal-layout-settled survivor bursts when isEngineV2 is true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path ignores devhub:terminal-survivor-recover events when isEngineV2 is true",
+          "location": null,
+          "status": "passed",
+          "title": "ignores devhub:terminal-survivor-recover events when isEngineV2 is true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 engine path"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 engine path keeps legacy output handling working when isEngineV2 is false",
+          "location": null,
+          "status": "passed",
+          "title": "keeps legacy output handling working when isEngineV2 is false"
+        }
+      ],
+      "endTime": 1783221925711,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalTTY.v2.test.jsx",
+      "startTime": 1783221895855,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol temp-resizes to the cached snapshot termsize before writing the serialized scrollback",
+          "location": null,
+          "status": "passed",
+          "title": "temp-resizes to the cached snapshot termsize before writing the serialized scrollback"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol replays the snapshot and then the ring-buffer delta before going live",
+          "location": null,
+          "status": "passed",
+          "title": "replays the snapshot and then the ring-buffer delta before going live"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol buffers heldData during rehydration and flushes it in order after replay completes",
+          "location": null,
+          "status": "passed",
+          "title": "buffers heldData during rehydration and flushes it in order after replay completes"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol subscribes from the current offset when no snapshot exists",
+          "location": null,
+          "status": "passed",
+          "title": "subscribes from the current offset when no snapshot exists"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol does not write append frames until loaded becomes true",
+          "location": null,
+          "status": "passed",
+          "title": "does not write append frames until loaded becomes true"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol serializes and pushes a snapshot after ~100 KiB of processed output",
+          "location": null,
+          "status": "passed",
+          "title": "serializes and pushes a snapshot after ~100 KiB of processed output"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — v2 rehydration protocol"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — v2 rehydration protocol sends a final snapshot before unsubscribing on unmount",
+          "location": null,
+          "status": "passed",
+          "title": "sends a final snapshot before unsubscribing on unmount"
+        }
+      ],
+      "endTime": 1783221939830,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalTTY.rehydration.test.jsx",
+      "startTime": 1783221925792,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["resolveTerminalClipboardShortcut()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalClipboardShortcut() maps Ctrl+V and Ctrl+Shift+V to paste",
+          "location": null,
+          "status": "passed",
+          "title": "maps Ctrl+V and Ctrl+Shift+V to paste"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalClipboardShortcut()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalClipboardShortcut() maps Ctrl+Shift+C to copy",
+          "location": null,
+          "status": "passed",
+          "title": "maps Ctrl+Shift+C to copy"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalClipboardShortcut()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalClipboardShortcut() maps Shift+Insert to paste",
+          "location": null,
+          "status": "passed",
+          "title": "maps Shift+Insert to paste"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalClipboardShortcut()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalClipboardShortcut() ignores plain keys and other shortcuts",
+          "location": null,
+          "status": "passed",
+          "title": "ignores plain keys and other shortcuts"
+        },
+        {
+          "ancestorTitles": ["getXtermContainerAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getXtermContainerAnimProps() does not re-fade from opacity 0 on every visibility toggle",
+          "location": null,
+          "status": "passed",
+          "title": "does not re-fade from opacity 0 on every visibility toggle"
+        },
+        {
+          "ancestorTitles": ["getXtermContainerAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getXtermContainerAnimProps() returns opacity 1 as animate when visible=true",
+          "location": null,
+          "status": "passed",
+          "title": "returns opacity 1 as animate when visible=true"
+        },
+        {
+          "ancestorTitles": ["getXtermContainerAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getXtermContainerAnimProps() transition is instant to avoid blink during workspace switches",
+          "location": null,
+          "status": "passed",
+          "title": "transition is instant to avoid blink during workspace switches"
+        },
+        {
+          "ancestorTitles": ["getXtermContainerAnimProps()"],
+          "failureMessages": [],
+          "fullName": "getXtermContainerAnimProps() when visible=false, animate keeps opacity 0",
+          "location": null,
+          "status": "passed",
+          "title": "when visible=false, animate keeps opacity 0"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalLoadingOverlay()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalLoadingOverlay() blocks only during first init or first connect",
+          "location": null,
+          "status": "passed",
+          "title": "blocks only during first init or first connect"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalViewport() shows the viewport once initialization finishes without init error",
+          "location": null,
+          "status": "passed",
+          "title": "shows the viewport once initialization finishes without init error"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalViewport() keeps the viewport hidden while initializing or after init failure",
+          "location": null,
+          "status": "passed",
+          "title": "keeps the viewport hidden while initializing or after init failure"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalFontFamily()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalFontFamily() prefers the configured mono CSS variable when available",
+          "location": null,
+          "status": "passed",
+          "title": "prefers the configured mono CSS variable when available"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalFontFamily()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalFontFamily() falls back to a stable system monospace stack when no CSS variable is set",
+          "location": null,
+          "status": "passed",
+          "title": "falls back to a stable system monospace stack when no CSS variable is set"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalStatusOverlay()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalStatusOverlay() shows overlay for terminated sessions after initialization",
+          "location": null,
+          "status": "passed",
+          "title": "shows overlay for terminated sessions after initialization"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalStatusOverlay()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalStatusOverlay() shows overlay for init errors and recoverable connection failures",
+          "location": null,
+          "status": "passed",
+          "title": "shows overlay for init errors and recoverable connection failures"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalStatusOverlay()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalStatusOverlay() does not show overlay while initializing or when connected",
+          "location": null,
+          "status": "passed",
+          "title": "does not show overlay while initializing or when connected"
+        },
+        {
+          "ancestorTitles": ["shouldShowTerminalStatusOverlay()"],
+          "failureMessages": [],
+          "fullName": "shouldShowTerminalStatusOverlay() shows suspended overlay even while initializing (native VTE probe)",
+          "location": null,
+          "status": "passed",
+          "title": "shows suspended overlay even while initializing (native VTE probe)"
+        },
+        {
+          "ancestorTitles": ["refreshTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "refreshTerminalViewport() refreshes every visible row when the terminal has a rendered buffer",
+          "location": null,
+          "status": "passed",
+          "title": "refreshes every visible row when the terminal has a rendered buffer"
+        },
+        {
+          "ancestorTitles": ["refreshTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "refreshTerminalViewport() skips repaint when the terminal has no visible rows yet",
+          "location": null,
+          "status": "passed",
+          "title": "skips repaint when the terminal has no visible rows yet"
+        },
+        {
+          "ancestorTitles": ["refreshTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "refreshTerminalViewport() skips repaint when the renderer slot is not ready",
+          "location": null,
+          "status": "passed",
+          "title": "skips repaint when the renderer slot is not ready"
+        },
+        {
+          "ancestorTitles": ["refreshTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "refreshTerminalViewport() swallows stale renderer refresh errors",
+          "location": null,
+          "status": "passed",
+          "title": "swallows stale renderer refresh errors"
+        },
+        {
+          "ancestorTitles": ["forceTerminalViewportRepaint()"],
+          "failureMessages": [],
+          "fullName": "forceTerminalViewportRepaint() nudges 1 row down then back up to force a real canvas resize+repaint",
+          "location": null,
+          "status": "passed",
+          "title": "nudges 1 row down then back up to force a real canvas resize+repaint"
+        },
+        {
+          "ancestorTitles": ["forceTerminalViewportRepaint()"],
+          "failureMessages": [],
+          "fullName": "forceTerminalViewportRepaint() nudges cols when only one row is available",
+          "location": null,
+          "status": "passed",
+          "title": "nudges cols when only one row is available"
+        },
+        {
+          "ancestorTitles": ["forceTerminalViewportRepaint()"],
+          "failureMessages": [],
+          "fullName": "forceTerminalViewportRepaint() skips when the renderer is not ready",
+          "location": null,
+          "status": "passed",
+          "title": "skips when the renderer is not ready"
+        },
+        {
+          "ancestorTitles": ["forceTerminalViewportRepaint()"],
+          "failureMessages": [],
+          "fullName": "forceTerminalViewportRepaint() skips when cols/rows are zero",
+          "location": null,
+          "status": "passed",
+          "title": "skips when cols/rows are zero"
+        },
+        {
+          "ancestorTitles": ["proposeTerminalViewportDimensions()"],
+          "failureMessages": [],
+          "fullName": "proposeTerminalViewportDimensions() keeps floored rows when clipping one extra row would waste more space than the slack band",
+          "location": null,
+          "status": "passed",
+          "title": "keeps floored rows when clipping one extra row would waste more space than the slack band"
+        },
+        {
+          "ancestorTitles": ["proposeTerminalViewportDimensions()"],
+          "failureMessages": [],
+          "fullName": "proposeTerminalViewportDimensions() keeps floored rows when slack is smaller than half a cell",
+          "location": null,
+          "status": "passed",
+          "title": "keeps floored rows when slack is smaller than half a cell"
+        },
+        {
+          "ancestorTitles": ["proposeTerminalViewportDimensions()"],
+          "failureMessages": [],
+          "fullName": "proposeTerminalViewportDimensions() adds one extra row when slack is larger than the clip cost of an extra cell",
+          "location": null,
+          "status": "passed",
+          "title": "adds one extra row when slack is larger than the clip cost of an extra cell"
+        },
+        {
+          "ancestorTitles": ["proposeTerminalViewportDimensions()"],
+          "failureMessages": [],
+          "fullName": "proposeTerminalViewportDimensions() adds one extra column when horizontal slack is larger than the clip cost",
+          "location": null,
+          "status": "passed",
+          "title": "adds one extra column when horizontal slack is larger than the clip cost"
+        },
+        {
+          "ancestorTitles": ["proposeTerminalViewportDimensions()"],
+          "failureMessages": [],
+          "fullName": "proposeTerminalViewportDimensions() falls back to fitAddon when cell metrics are implausibly small",
+          "location": null,
+          "status": "passed",
+          "title": "falls back to fitAddon when cell metrics are implausibly small"
+        },
+        {
+          "ancestorTitles": ["proposeTerminalViewportDimensions()"],
+          "failureMessages": [],
+          "fullName": "proposeTerminalViewportDimensions() clamps runaway row counts from corrupted renderer metrics",
+          "location": null,
+          "status": "passed",
+          "title": "clamps runaway row counts from corrupted renderer metrics"
+        },
+        {
+          "ancestorTitles": ["stabilizeTerminalRenderer()"],
+          "failureMessages": [],
+          "fullName": "stabilizeTerminalRenderer() clears the xterm texture atlas before repainting when supported",
+          "location": null,
+          "status": "passed",
+          "title": "clears the xterm texture atlas before repainting when supported"
+        },
+        {
+          "ancestorTitles": ["stabilizeTerminalRenderer()"],
+          "failureMessages": [],
+          "fullName": "stabilizeTerminalRenderer() still repaints terminals that do not expose clearTextureAtlas",
+          "location": null,
+          "status": "passed",
+          "title": "still repaints terminals that do not expose clearTextureAtlas"
+        },
+        {
+          "ancestorTitles": ["stabilizeTerminalRenderer()"],
+          "failureMessages": [],
+          "fullName": "stabilizeTerminalRenderer() can repaint inactive split siblings without clearing the WebGL atlas",
+          "location": null,
+          "status": "passed",
+          "title": "can repaint inactive split siblings without clearing the WebGL atlas"
+        },
+        {
+          "ancestorTitles": ["isTerminalViewportNearBottom()"],
+          "failureMessages": [],
+          "fullName": "isTerminalViewportNearBottom() returns true when the viewport is pinned to the latest output",
+          "location": null,
+          "status": "passed",
+          "title": "returns true when the viewport is pinned to the latest output"
+        },
+        {
+          "ancestorTitles": ["isTerminalViewportNearBottom()"],
+          "failureMessages": [],
+          "fullName": "isTerminalViewportNearBottom() returns false when the user is reading older output",
+          "location": null,
+          "status": "passed",
+          "title": "returns false when the user is reading older output"
+        },
+        {
+          "ancestorTitles": ["resolveColdMountStaggerMs()"],
+          "failureMessages": [],
+          "fullName": "resolveColdMountStaggerMs() returns zero for hidden panels and when stagger is disabled",
+          "location": null,
+          "status": "passed",
+          "title": "returns zero for hidden panels and when stagger is disabled"
+        },
+        {
+          "ancestorTitles": ["resolveColdMountStaggerMs()"],
+          "failureMessages": [],
+          "fullName": "resolveColdMountStaggerMs() applies ordinal stagger only for visible panels when enabled",
+          "location": null,
+          "status": "passed",
+          "title": "applies ordinal stagger only for visible panels when enabled"
+        },
+        {
+          "ancestorTitles": ["shouldSyncTerminalViewportOnLayoutShow()"],
+          "failureMessages": [],
+          "fullName": "shouldSyncTerminalViewportOnLayoutShow() only triggers a full viewport sync when a workspace shell becomes visible",
+          "location": null,
+          "status": "passed",
+          "title": "only triggers a full viewport sync when a workspace shell becomes visible"
+        },
+        {
+          "ancestorTitles": ["isWorkspaceCloseRecoverReason()"],
+          "failureMessages": [],
+          "fullName": "isWorkspaceCloseRecoverReason() matches workspace switch and workspace removed lifecycle reasons",
+          "location": null,
+          "status": "passed",
+          "title": "matches workspace switch and workspace removed lifecycle reasons"
+        },
+        {
+          "ancestorTitles": ["isWorkspaceSurvivorRecoverLayoutReason()"],
+          "failureMessages": [],
+          "fullName": "isWorkspaceSurvivorRecoverLayoutReason() matches survivor recover layout reason and raf follow-up",
+          "location": null,
+          "status": "passed",
+          "title": "matches survivor recover layout reason and raf follow-up"
+        },
+        {
+          "ancestorTitles": ["resolveConnectInitialCommandState()"],
+          "failureMessages": [],
+          "fullName": "resolveConnectInitialCommandState() clears lifecycle only on first connect for a fresh panel",
+          "location": null,
+          "status": "passed",
+          "title": "clears lifecycle only on first connect for a fresh panel"
+        },
+        {
+          "ancestorTitles": ["resolveConnectInitialCommandState()"],
+          "failureMessages": [],
+          "fullName": "resolveConnectInitialCommandState() preserves dispatch guard on remount (no connected-once but lifecycle exists)",
+          "location": null,
+          "status": "passed",
+          "title": "preserves dispatch guard on remount (no connected-once but lifecycle exists)"
+        },
+        {
+          "ancestorTitles": ["resolveConnectInitialCommandState()"],
+          "failureMessages": [],
+          "fullName": "resolveConnectInitialCommandState() preserves dispatch guard when reconnecting a live session",
+          "location": null,
+          "status": "passed",
+          "title": "preserves dispatch guard when reconnecting a live session"
+        },
+        {
+          "ancestorTitles": ["shouldRunPanelClickViewportRecovery()"],
+          "failureMessages": [],
+          "fullName": "shouldRunPanelClickViewportRecovery() skips heavy recovery when the clicked panel is already active",
+          "location": null,
+          "status": "passed",
+          "title": "skips heavy recovery when the clicked panel is already active"
+        },
+        {
+          "ancestorTitles": ["shouldRecoverPanelOnActivation()"],
+          "failureMessages": [],
+          "fullName": "shouldRecoverPanelOnActivation() only recovers on false→true activation edges",
+          "location": null,
+          "status": "passed",
+          "title": "only recovers on false→true activation edges"
+        },
+        {
+          "ancestorTitles": ["shouldClearWebglAtlasOnPanelActivation()"],
+          "failureMessages": [],
+          "fullName": "shouldClearWebglAtlasOnPanelActivation() skips atlas clears when WebGL is already attached",
+          "location": null,
+          "status": "passed",
+          "title": "skips atlas clears when WebGL is already attached"
+        },
+        {
+          "ancestorTitles": ["shouldSkipReactivateViewportOnPanelActivation()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipReactivateViewportOnPanelActivation() skips fit churn when GPU renderer is attached and grid already matches container",
+          "location": null,
+          "status": "passed",
+          "title": "skips fit churn when GPU renderer is attached and grid already matches container"
+        },
+        {
+          "ancestorTitles": ["shouldAttachWebglRenderer()"],
+          "failureMessages": [],
+          "fullName": "shouldAttachWebglRenderer() allows WebGL only when the operational renderer is xterm-webgl",
+          "location": null,
+          "status": "passed",
+          "title": "allows WebGL only when the operational renderer is xterm-webgl"
+        },
+        {
+          "ancestorTitles": ["shouldAttachCanvasRenderer()"],
+          "failureMessages": [],
+          "fullName": "shouldAttachCanvasRenderer() allows Canvas only when the operational renderer is xterm-canvas",
+          "location": null,
+          "status": "passed",
+          "title": "allows Canvas only when the operational renderer is xterm-canvas"
+        },
+        {
+          "ancestorTitles": ["shouldMountCanvasAddon()"],
+          "failureMessages": [],
+          "fullName": "shouldMountCanvasAddon() mounts canvas on every visible split panel (active and inactive)",
+          "location": null,
+          "status": "passed",
+          "title": "mounts canvas on every visible split panel (active and inactive)"
+        },
+        {
+          "ancestorTitles": ["isWebglAddonContextLost()"],
+          "failureMessages": [],
+          "fullName": "isWebglAddonContextLost() returns false for missing addon or unsupported shape",
+          "location": null,
+          "status": "passed",
+          "title": "returns false for missing addon or unsupported shape"
+        },
+        {
+          "ancestorTitles": ["isWebglAddonContextLost()"],
+          "failureMessages": [],
+          "fullName": "isWebglAddonContextLost() returns true only when the underlying WebGL context reports lost",
+          "location": null,
+          "status": "passed",
+          "title": "returns true only when the underlying WebGL context reports lost"
+        },
+        {
+          "ancestorTitles": ["isWebglAddonContextLost()"],
+          "failureMessages": [],
+          "fullName": "isWebglAddonContextLost() swallows private-API access errors and returns false",
+          "location": null,
+          "status": "passed",
+          "title": "swallows private-API access errors and returns false"
+        },
+        {
+          "ancestorTitles": ["needsGpuRendererReattach()"],
+          "failureMessages": [],
+          "fullName": "needsGpuRendererReattach() webgl mode needs reattach when the addon ref is null (disposed renderer still in slot)",
+          "location": null,
+          "status": "passed",
+          "title": "webgl mode needs reattach when the addon ref is null (disposed renderer still in slot)"
+        },
+        {
+          "ancestorTitles": ["needsGpuRendererReattach()"],
+          "failureMessages": [],
+          "fullName": "needsGpuRendererReattach() canvas mode needs reattach when the addon ref is null",
+          "location": null,
+          "status": "passed",
+          "title": "canvas mode needs reattach when the addon ref is null"
+        },
+        {
+          "ancestorTitles": ["needsGpuRendererReattach()"],
+          "failureMessages": [],
+          "fullName": "needsGpuRendererReattach() DOM renderer and native modes never need a GPU reattach",
+          "location": null,
+          "status": "passed",
+          "title": "DOM renderer and native modes never need a GPU reattach"
+        },
+        {
+          "ancestorTitles": ["shouldFreezeDomViewportOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldFreezeDomViewportOnWorkspaceShow() freezes DOM TUI on workspace show when cols already match container",
+          "location": null,
+          "status": "passed",
+          "title": "freezes DOM TUI on workspace show when cols already match container"
+        },
+        {
+          "ancestorTitles": ["shouldFreezeDomViewportOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldFreezeDomViewportOnWorkspaceShow() does not freeze when container wants different cols than the term grid",
+          "location": null,
+          "status": "passed",
+          "title": "does not freeze when container wants different cols than the term grid"
+        },
+        {
+          "ancestorTitles": ["shouldFreezeDomViewportOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldFreezeDomViewportOnWorkspaceShow() does not freeze on survivor recover after workspace close",
+          "location": null,
+          "status": "passed",
+          "title": "does not freeze on survivor recover after workspace close"
+        },
+        {
+          "ancestorTitles": ["shouldSkipRedundantLayoutSettleViewportSync()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipRedundantLayoutSettleViewportSync() does not skip split layout churn even when cols/rows are unchanged",
+          "location": null,
+          "status": "passed",
+          "title": "does not skip split layout churn even when cols/rows are unchanged"
+        },
+        {
+          "ancestorTitles": ["shouldSkipRedundantLayoutSettleViewportSync()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipRedundantLayoutSettleViewportSync() still skips generic layout-settled when dimensions are unchanged",
+          "location": null,
+          "status": "passed",
+          "title": "still skips generic layout-settled when dimensions are unchanged"
+        },
+        {
+          "ancestorTitles": ["shouldSkipRedundantLayoutSettleViewportSync()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipRedundantLayoutSettleViewportSync() does not skip when dimensions changed or renderer is recovering",
+          "location": null,
+          "status": "passed",
+          "title": "does not skip when dimensions changed or renderer is recovering"
+        },
+        {
+          "ancestorTitles": ["shouldClearAtlasForSplitCanvas()"],
+          "failureMessages": [],
+          "fullName": "shouldClearAtlasForSplitCanvas() requires canvas renderer and more than one visible panel",
+          "location": null,
+          "status": "passed",
+          "title": "requires canvas renderer and more than one visible panel"
+        },
+        {
+          "ancestorTitles": ["terminal viewport undersize detection"],
+          "failureMessages": [],
+          "fullName": "terminal viewport undersize detection isTerminalViewportUndersized flags a short fitted grid",
+          "location": null,
+          "status": "passed",
+          "title": "isTerminalViewportUndersized flags a short fitted grid"
+        },
+        {
+          "ancestorTitles": ["terminal viewport undersize detection"],
+          "failureMessages": [],
+          "fullName": "terminal viewport undersize detection shouldDeferTerminalConnectUntilViewportFitted allows a filled grid",
+          "location": null,
+          "status": "passed",
+          "title": "shouldDeferTerminalConnectUntilViewportFitted allows a filled grid"
+        },
+        {
+          "ancestorTitles": ["hidden output catchup policy"],
+          "failureMessages": [],
+          "fullName": "hidden output catchup policy shouldDiscardHiddenOutputCatchup rejects reattach and mega-buffers",
+          "location": null,
+          "status": "passed",
+          "title": "shouldDiscardHiddenOutputCatchup rejects reattach and mega-buffers"
+        },
+        {
+          "ancestorTitles": ["hidden output catchup policy"],
+          "failureMessages": [],
+          "fullName": "hidden output catchup policy terminalBufferHasRenderableContent detects existing prompt lines",
+          "location": null,
+          "status": "passed",
+          "title": "terminalBufferHasRenderableContent detects existing prompt lines"
+        },
+        {
+          "ancestorTitles": ["hidden output catchup policy"],
+          "failureMessages": [],
+          "fullName": "hidden output catchup policy shouldDiscardHiddenOutputCatchup rejects active TUI and OpenCode footer replay",
+          "location": null,
+          "status": "passed",
+          "title": "shouldDiscardHiddenOutputCatchup rejects active TUI and OpenCode footer replay"
+        },
+        {
+          "ancestorTitles": ["hidden output catchup policy"],
+          "failureMessages": [],
+          "fullName": "hidden output catchup policy shouldSkipRedundantLayoutSettleViewportSync skips pizarra mode transitions when size unchanged",
+          "location": null,
+          "status": "passed",
+          "title": "shouldSkipRedundantLayoutSettleViewportSync skips pizarra mode transitions when size unchanged"
+        },
+        {
+          "ancestorTitles": ["hidden output catchup policy"],
+          "failureMessages": [],
+          "fullName": "hidden output catchup policy chunkTerminalOutputForCatchup splits large replay safely",
+          "location": null,
+          "status": "passed",
+          "title": "chunkTerminalOutputForCatchup splits large replay safely"
+        },
+        {
+          "ancestorTitles": ["hidden terminal output buffer helpers"],
+          "failureMessages": [],
+          "fullName": "hidden terminal output buffer helpers appendHiddenTerminalOutputBuffer caps retained bytes",
+          "location": null,
+          "status": "passed",
+          "title": "appendHiddenTerminalOutputBuffer caps retained bytes"
+        },
+        {
+          "ancestorTitles": ["hidden terminal output buffer helpers"],
+          "failureMessages": [],
+          "fullName": "hidden terminal output buffer helpers nudgeTerminalPtyResize sends restore resize to the PTY",
+          "location": null,
+          "status": "passed",
+          "title": "nudgeTerminalPtyResize sends restore resize to the PTY"
+        },
+        {
+          "ancestorTitles": ["hidden terminal output buffer helpers"],
+          "failureMessages": [],
+          "fullName": "hidden terminal output buffer helpers nudgeTerminalPtyResize skips unchanged dimensions to avoid SIGWINCH to live TUIs",
+          "location": null,
+          "status": "passed",
+          "title": "nudgeTerminalPtyResize skips unchanged dimensions to avoid SIGWINCH to live TUIs"
+        },
+        {
+          "ancestorTitles": ["hidden terminal output buffer helpers"],
+          "failureMessages": [],
+          "fullName": "hidden terminal output buffer helpers nudgeTerminalPtyResize can force an unchanged-dimension nudge",
+          "location": null,
+          "status": "passed",
+          "title": "nudgeTerminalPtyResize can force an unchanged-dimension nudge"
+        },
+        {
+          "ancestorTitles": ["shouldSkipTerminalOutputWhileLayoutHidden()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipTerminalOutputWhileLayoutHidden() buffers output for hidden GPU panels even when addon is still attached",
+          "location": null,
+          "status": "passed",
+          "title": "buffers output for hidden GPU panels even when addon is still attached"
+        },
+        {
+          "ancestorTitles": ["shouldSkipTerminalOutputWhileLayoutHidden()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipTerminalOutputWhileLayoutHidden() buffers layout-hidden GPU panels and never buffers visible panels",
+          "location": null,
+          "status": "passed",
+          "title": "buffers layout-hidden GPU panels and never buffers visible panels"
+        },
+        {
+          "ancestorTitles": ["resolveWorkspaceLayoutShowRevealMode()"],
+          "failureMessages": [],
+          "fullName": "resolveWorkspaceLayoutShowRevealMode() uses soft reveal whenever GPU is eligible (never pure — TUIs go black)",
+          "location": null,
+          "status": "passed",
+          "title": "uses soft reveal whenever GPU is eligible (never pure — TUIs go black)"
+        },
+        {
+          "ancestorTitles": ["shouldSoftGpuWorkspaceReveal()"],
+          "failureMessages": [],
+          "fullName": "shouldSoftGpuWorkspaceReveal() allows soft reveal for GPU workspaces with attached addon (single or split)",
+          "location": null,
+          "status": "passed",
+          "title": "allows soft reveal for GPU workspaces with attached addon (single or split)"
+        },
+        {
+          "ancestorTitles": ["shouldSoftGpuWorkspaceReveal()"],
+          "failureMessages": [],
+          "fullName": "shouldSoftGpuWorkspaceReveal() requires recovery for DOM renderer, missing GPU addon, or release flags",
+          "location": null,
+          "status": "passed",
+          "title": "requires recovery for DOM renderer, missing GPU addon, or release flags"
+        },
+        {
+          "ancestorTitles": ["flushHiddenTerminalCatchupToTerm()"],
+          "failureMessages": [],
+          "fullName": "flushHiddenTerminalCatchupToTerm() writes buffered output and clears the catchup flag without repainting",
+          "location": null,
+          "status": "passed",
+          "title": "writes buffered output and clears the catchup flag without repainting"
+        },
+        {
+          "ancestorTitles": ["shouldSkipGpuVisibilityReveal()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipGpuVisibilityReveal() skips JS repaint on pure GPU visibility reveal when dims are stable",
+          "location": null,
+          "status": "passed",
+          "title": "skips JS repaint on pure GPU visibility reveal when dims are stable"
+        },
+        {
+          "ancestorTitles": ["shouldSkipGpuVisibilityReveal()"],
+          "failureMessages": [],
+          "fullName": "shouldSkipGpuVisibilityReveal() does not skip when output was buffered while hidden or GPU recovery is pending",
+          "location": null,
+          "status": "passed",
+          "title": "does not skip when output was buffered while hidden or GPU recovery is pending"
+        },
+        {
+          "ancestorTitles": ["shouldFreezeSingleWebglViewportOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldFreezeSingleWebglViewportOnWorkspaceShow() freezes unchanged single-panel webgl workspace tab switches",
+          "location": null,
+          "status": "passed",
+          "title": "freezes unchanged single-panel webgl workspace tab switches"
+        },
+        {
+          "ancestorTitles": ["shouldFreezeSingleWebglViewportOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldFreezeSingleWebglViewportOnWorkspaceShow() does not freeze split canvas workspaces or real resizes",
+          "location": null,
+          "status": "passed",
+          "title": "does not freeze split canvas workspaces or real resizes"
+        },
+        {
+          "ancestorTitles": ["shouldClearGpuAtlasOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldClearGpuAtlasOnWorkspaceShow() limits canvas atlas clears to pending catch-up and split-layout churn",
+          "location": null,
+          "status": "passed",
+          "title": "limits canvas atlas clears to pending catch-up and split-layout churn"
+        },
+        {
+          "ancestorTitles": ["shouldClearGpuAtlasOnWorkspaceShow()"],
+          "failureMessages": [],
+          "fullName": "shouldClearGpuAtlasOnWorkspaceShow() keeps webgl atlas clears on recover only, not layout or settled show passes",
+          "location": null,
+          "status": "passed",
+          "title": "keeps webgl atlas clears on recover only, not layout or settled show passes"
+        },
+        {
+          "ancestorTitles": ["shouldReleaseWebglRendererOnLayoutHide()"],
+          "failureMessages": [],
+          "fullName": "shouldReleaseWebglRendererOnLayoutHide() releases webgl when the whole workspace shell hides",
+          "location": null,
+          "status": "passed",
+          "title": "releases webgl when the whole workspace shell hides"
+        },
+        {
+          "ancestorTitles": ["shouldReleaseWebglRendererOnLayoutHide()"],
+          "failureMessages": [],
+          "fullName": "shouldReleaseWebglRendererOnLayoutHide() keeps webgl attached when only a window is parked within the active workspace",
+          "location": null,
+          "status": "passed",
+          "title": "keeps webgl attached when only a window is parked within the active workspace"
+        },
+        {
+          "ancestorTitles": ["shouldReleaseWebglRendererOnLayoutHide()"],
+          "failureMessages": [],
+          "fullName": "shouldReleaseWebglRendererOnLayoutHide() ignores non-webgl renderers and show edges",
+          "location": null,
+          "status": "passed",
+          "title": "ignores non-webgl renderers and show edges"
+        },
+        {
+          "ancestorTitles": ["shouldReleaseCanvasRendererOnLayoutHide()"],
+          "failureMessages": [],
+          "fullName": "shouldReleaseCanvasRendererOnLayoutHide() releases canvas when the whole workspace shell hides",
+          "location": null,
+          "status": "passed",
+          "title": "releases canvas when the whole workspace shell hides"
+        },
+        {
+          "ancestorTitles": ["shouldReleaseCanvasRendererOnLayoutHide()"],
+          "failureMessages": [],
+          "fullName": "shouldReleaseCanvasRendererOnLayoutHide() keeps canvas attached when only a window is parked within the active workspace",
+          "location": null,
+          "status": "passed",
+          "title": "keeps canvas attached when only a window is parked within the active workspace"
+        },
+        {
+          "ancestorTitles": ["shouldReleaseCanvasRendererOnLayoutHide()"],
+          "failureMessages": [],
+          "fullName": "shouldReleaseCanvasRendererOnLayoutHide() ignores non-canvas renderers and show edges",
+          "location": null,
+          "status": "passed",
+          "title": "ignores non-canvas renderers and show edges"
+        },
+        {
+          "ancestorTitles": ["sendTerminalPasteInput()"],
+          "failureMessages": [],
+          "fullName": "sendTerminalPasteInput() sends JSON input when the websocket is open",
+          "location": null,
+          "status": "passed",
+          "title": "sends JSON input when the websocket is open"
+        },
+        {
+          "ancestorTitles": ["sendTerminalPasteInput()"],
+          "failureMessages": [],
+          "fullName": "sendTerminalPasteInput() returns false when the socket is not open",
+          "location": null,
+          "status": "passed",
+          "title": "returns false when the socket is not open"
+        },
+        {
+          "ancestorTitles": ["scheduleTerminalViewportSyncBurst()"],
+          "failureMessages": [],
+          "fullName": "scheduleTerminalViewportSyncBurst() runs sync immediately and on delayed phases",
+          "location": null,
+          "status": "passed",
+          "title": "runs sync immediately and on delayed phases"
+        },
+        {
+          "ancestorTitles": ["shouldRefitVisibleInactiveSplitPanel()"],
+          "failureMessages": [],
+          "fullName": "shouldRefitVisibleInactiveSplitPanel() refits visible inactive split siblings on layout churn",
+          "location": null,
+          "status": "passed",
+          "title": "refits visible inactive split siblings on layout churn"
+        },
+        {
+          "ancestorTitles": ["shouldRunTerminalViewportReactivation()"],
+          "failureMessages": [],
+          "fullName": "shouldRunTerminalViewportReactivation() only reactivates visible active panels while the document is visible",
+          "location": null,
+          "status": "passed",
+          "title": "only reactivates visible active panels while the document is visible"
+        },
+        {
+          "ancestorTitles": ["fitTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "fitTerminalViewport() fits, repaints, and emits resize when the viewport is visible and socket is open",
+          "location": null,
+          "status": "passed",
+          "title": "fits, repaints, and emits resize when the viewport is visible and socket is open"
+        },
+        {
+          "ancestorTitles": ["fitTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "fitTerminalViewport() does nothing when the container is still hidden",
+          "location": null,
+          "status": "passed",
+          "title": "does nothing when the container is still hidden"
+        },
+        {
+          "ancestorTitles": ["fitTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "fitTerminalViewport() skips stale xterm instances whose renderer was already disposed during view switches",
+          "location": null,
+          "status": "passed",
+          "title": "skips stale xterm instances whose renderer was already disposed during view switches"
+        },
+        {
+          "ancestorTitles": ["fitTerminalViewport()"],
+          "failureMessages": [],
+          "fullName": "fitTerminalViewport() fixes black gutters: resizes stale smaller cols to the container width and emits SIGWINCH with the new cols",
+          "location": null,
+          "status": "passed",
+          "title": "fixes black gutters: resizes stale smaller cols to the container width and emits SIGWINCH with the new cols"
+        },
+        {
+          "ancestorTitles": ["buildTerminalViewportDiagnosticPayload()"],
+          "failureMessages": [],
+          "fullName": "buildTerminalViewportDiagnosticPayload() captures actionable viewport diagnostics for resize/repaint investigation",
+          "location": null,
+          "status": "passed",
+          "title": "captures actionable viewport diagnostics for resize/repaint investigation"
+        },
+        {
+          "ancestorTitles": ["buildTerminalViewportDiagnosticPayload()"],
+          "failureMessages": [],
+          "fullName": "buildTerminalViewportDiagnosticPayload() marks zero-sized containers so hidden-panel fits are easy to identify",
+          "location": null,
+          "status": "passed",
+          "title": "marks zero-sized containers so hidden-panel fits are easy to identify"
+        },
+        {
+          "ancestorTitles": ["shouldLogTerminalViewportDiagnostic()"],
+          "failureMessages": [],
+          "fullName": "shouldLogTerminalViewportDiagnostic() skips duplicate viewport diagnostics for the same snapshot",
+          "location": null,
+          "status": "passed",
+          "title": "skips duplicate viewport diagnostics for the same snapshot"
+        },
+        {
+          "ancestorTitles": ["shouldLogTerminalViewportDiagnostic()"],
+          "failureMessages": [],
+          "fullName": "shouldLogTerminalViewportDiagnostic() logs again when the actionable state changes",
+          "location": null,
+          "status": "passed",
+          "title": "logs again when the actionable state changes"
+        },
+        {
+          "ancestorTitles": ["createTerminalViewportDiagnosticLogger()"],
+          "failureMessages": [],
+          "fullName": "createTerminalViewportDiagnosticLogger() uses the latest connection state without recreating the logger callback",
+          "location": null,
+          "status": "passed",
+          "title": "uses the latest connection state without recreating the logger callback"
+        },
+        {
+          "ancestorTitles": ["createTerminalViewportDiagnosticLogger()"],
+          "failureMessages": [],
+          "fullName": "createTerminalViewportDiagnosticLogger() deduplicates repeated snapshots while preserving the stable logger instance",
+          "location": null,
+          "status": "passed",
+          "title": "deduplicates repeated snapshots while preserving the stable logger instance"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalRendererViewModel()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalRendererViewModel() keeps xterm as both requested and effective renderer by default",
+          "location": null,
+          "status": "passed",
+          "title": "keeps xterm as both requested and effective renderer by default"
+        },
+        {
+          "ancestorTitles": ["resolveTerminalRendererViewModel()"],
+          "failureMessages": [],
+          "fullName": "resolveTerminalRendererViewModel() normalizes legacy vte-experimental requests to xterm-webgl default",
+          "location": null,
+          "status": "passed",
+          "title": "normalizes legacy vte-experimental requests to xterm-webgl default"
+        },
+        {
+          "ancestorTitles": ["getTerminalRendererStatusCopy()"],
+          "failureMessages": [],
+          "fullName": "getTerminalRendererStatusCopy() returns empty copy for legacy vte-experimental now mapped to xterm-webgl",
+          "location": null,
+          "status": "passed",
+          "title": "returns empty copy for legacy vte-experimental now mapped to xterm-webgl"
+        },
+        {
+          "ancestorTitles": ["getTerminalRendererStatusCopy()"],
+          "failureMessages": [],
+          "fullName": "getTerminalRendererStatusCopy() normalizes legacy ghostty requests to xterm without showing a stale fallback banner",
+          "location": null,
+          "status": "passed",
+          "title": "normalizes legacy ghostty requests to xterm without showing a stale fallback banner"
+        },
+        {
+          "ancestorTitles": ["getTerminalRendererStatusCopy()"],
+          "failureMessages": [],
+          "fullName": "getTerminalRendererStatusCopy() returns empty copy when no fallback happened",
+          "location": null,
+          "status": "passed",
+          "title": "returns empty copy when no fallback happened"
+        },
+        {
+          "ancestorTitles": ["Workspace-created fresh panel initial command injection"],
+          "failureMessages": [],
+          "fullName": "Workspace-created fresh panel initial command injection sends initial TUI command after workspace-created layout-settled",
+          "location": null,
+          "status": "passed",
+          "title": "sends initial TUI command after workspace-created layout-settled"
+        }
+      ],
+      "endTime": 1783221942490,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalTTY.test.js",
+      "startTime": 1783221939852,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring XW-04-SCEN-1: WebglAddon is constructed and terminal.loadAddon(addon) is called once when effectiveMode is xterm-webgl",
+          "location": null,
+          "status": "passed",
+          "title": "XW-04-SCEN-1: WebglAddon is constructed and terminal.loadAddon(addon) is called once when effectiveMode is xterm-webgl"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring XW-05-SCEN-1: addon throw keeps the panel mounted and renders the WebGL fallback warning line",
+          "location": null,
+          "status": "passed",
+          "title": "XW-05-SCEN-1: addon throw keeps the panel mounted and renders the WebGL fallback warning line"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring unready xterm-webgl capability: no WebglAddon is constructed and no WebGL code path runs",
+          "location": null,
+          "status": "passed",
+          "title": "unready xterm-webgl capability: no WebglAddon is constructed and no WebGL code path runs"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring xterm-webgl demoted by capability: warning line surfaces the demotion reason (XW-06)",
+          "location": null,
+          "status": "passed",
+          "title": "xterm-webgl demoted by capability: warning line surfaces the demotion reason (XW-06)"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring clearing xterm-webgl demotion warning when the user picks a different renderer (XW-07)",
+          "location": null,
+          "status": "passed",
+          "title": "clearing xterm-webgl demotion warning when the user picks a different renderer (XW-07)"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring on unmount, the registered WebglAddon instance is disposed",
+          "location": null,
+          "status": "passed",
+          "title": "on unmount, the registered WebglAddon instance is disposed"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring probeWebglSupport runs ONCE per mount, not on every re-render (XW-PROBE-ONCE)",
+          "location": null,
+          "status": "passed",
+          "title": "probeWebglSupport runs ONCE per mount, not on every re-render (XW-PROBE-ONCE)"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring WebglAddon.onContextLoss keeps the terminal visible on DOM fallback (XW-CONTEXT-LOSS)",
+          "location": null,
+          "status": "passed",
+          "title": "WebglAddon.onContextLoss keeps the terminal visible on DOM fallback (XW-CONTEXT-LOSS)"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring teardown neutralizes WebglAddon.handleResize before disposing the terminal (Linux race)",
+          "location": null,
+          "status": "passed",
+          "title": "teardown neutralizes WebglAddon.handleResize before disposing the terminal (Linux race)"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring resize landing mid-dispose is ignored and teardown completes cleanly (A.4 guard)",
+          "location": null,
+          "status": "passed",
+          "title": "resize landing mid-dispose is ignored and teardown completes cleanly (A.4 guard)"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring visible split panels attach Canvas 2D on every visible sibling",
+          "location": null,
+          "status": "passed",
+          "title": "visible split panels attach Canvas 2D on every visible sibling"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring opening a split migrates WebGL to Canvas without disposing the xterm runtime",
+          "location": null,
+          "status": "passed",
+          "title": "opening a split migrates WebGL to Canvas without disposing the xterm runtime"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring hiding a canvas panel releases the Canvas addon to avoid atlas corruption while hidden",
+          "location": null,
+          "status": "pending",
+          "title": "hiding a canvas panel releases the Canvas addon to avoid atlas corruption while hidden"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring reattaches the Canvas addon when a split panel becomes visible again",
+          "location": null,
+          "status": "pending",
+          "title": "reattaches the Canvas addon when a split panel becomes visible again"
+        },
+        {
+          "ancestorTitles": ["TerminalTTY — xterm-addon-webgl wiring"],
+          "failureMessages": [],
+          "fullName": "TerminalTTY — xterm-addon-webgl wiring onData drops xterm focus/DA answerback before sending to the PTY websocket",
+          "location": null,
+          "status": "pending",
+          "title": "onData drops xterm focus/DA answerback before sending to the PTY websocket"
+        }
+      ],
+      "endTime": 1783221943910,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\TerminalTTY.xterm-webgl.test.jsx",
+      "startTime": 1783221942521,
+      "status": "passed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

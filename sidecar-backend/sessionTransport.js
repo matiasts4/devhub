@@ -219,11 +219,30 @@ function detectAgentStateFromOutput(output, agentType) {
   return null;
 }
 
+/** Grok TUI chrome — mirror TerminalTTY.helpers detectGrok* (sidecar is CJS). */
+function detectGrokTuiReady(text) {
+  if (!text || typeof text !== 'string') return false;
+  return (
+    /Shift\+Tab\s+mode/i.test(text) ||
+    /ctrl\+c:cancel/i.test(text) ||
+    /user_prompt_submit/i.test(text) ||
+    /ctrl\+c\s+cancel/i.test(text) ||
+    /esc\s+cancel/i.test(text)
+  );
+}
+
+function detectGrokSessionFromOutput(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /\]0;grok\b/i.test(text) || detectGrokTuiReady(text);
+}
+
 module.exports = {
   applyAgentTuiDetection,
   buildHistoryReplay,
   buildServerMessage,
   detectAgentStateFromOutput,
+  detectGrokSessionFromOutput,
+  detectGrokTuiReady,
   detectKimiTuiReady,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,

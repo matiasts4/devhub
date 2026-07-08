@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCopilotToken } from '@/lib/copilot-token';
+import { isXaiOAuthMode, listXaiChatModels, resolveXaiOAuthAccessToken } from '@/lib/xai-oauth';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -74,6 +75,11 @@ function getProviderRequest(provider, config = {}) {
         isMinimax: true,
       };
     }
+    case 'xai': {
+      return {
+        isXai: true,
+      };
+    }
     default:
       return null;
   }
@@ -109,7 +115,13 @@ export async function POST(request) {
 
     if (reqConfig.isMinimax) {
       // Static manifest — no HTTP call needed (D-6)
-      return NextResponse.json({ models: ['minimax-coding-plan/MiniMax-M2.7', 'minimax-coding-plan/MiniMax-M3'] });
+      return NextResponse.json({
+        models: ['minimax-coding-plan/MiniMax-M2.7', 'minimax-coding-plan/MiniMax-M3'],
+      });
+    }
+
+    if (reqConfig.isXai) {
+      return NextResponse.json(await loadXaiModels(config || {}));
     }
 
     const baseUrl = normalizeBaseUrl(reqConfig.baseUrl);
@@ -188,4 +200,71 @@ export async function POST(request) {
   } catch (err) {
     return NextResponse.json({ models: [], error: err.message }, { status: 200 });
   }
+}
+
+/**
+ * Resolve xAI chat models from live catalogs.
+ * - SuperGrok OAuth: API catalog + CLI subscription catalog (Composer 2.5, Grok 4.5)
+ * - API key: API catalog + pinned chat models
+ */
+async function loadXaiModels(config) {
+  let accessToken = '';
+  let authSource = 'none';
+  const oauthMode = isXaiOAuthMode(config);
+
+  if (oauthMode) {
+    try {
+      const oauth = await resolveXaiOAuthAccessToken(config);
+      if (oauth.accessToken) {
+        accessToken = oauth.accessToken;
+        authSource = oauth.source || 'xai-oauth';
+      }
+    } catch (err) {
+      return {
+        models: [],
+        error: `No se pudo refrescar la sesión SuperGrok: ${err.message}`,
+        sources: [],
+      };
+    }
+  }
+
+  if (!accessToken) {
+    const apiKey = (config.XAI_API_KEY || '').trim();
+    if (apiKey) {
+      accessToken = apiKey;
+      authSource = 'api_key';
+    }
+  }
+
+  if (!accessToken) {
+    return {
+      models: [],
+      error:
+        'Sin credenciales xAI. Usá SuperGrok OAuth o una XAI_API_KEY para sincronizar modelos.',
+      sources: [],
+    };
+  }
+
+  const result = await listXaiChatModels({
+    accessToken,
+    // CLI catalog is subscription-facing; still try with API keys (may 401 — ignored).
+    includeSubscriptionCatalog: true,
+    pinSubscriptionModels: true,
+  });
+
+  if (!result.models.length) {
+    return {
+      models: [],
+      error: result.errors.join('; ') || 'No se obtuvieron modelos de xAI',
+      sources: result.sources,
+      authSource,
+    };
+  }
+
+  return {
+    models: result.models,
+    sources: result.sources,
+    authSource,
+    warnings: result.errors.length ? result.errors : undefined,
+  };
 }

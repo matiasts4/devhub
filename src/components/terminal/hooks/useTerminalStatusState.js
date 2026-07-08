@@ -45,6 +45,9 @@ export default function useTerminalStatusState({
     [initialCommand, sessionExitReason, initError, connectionState]
   );
 
+  // Don't advertise "Conectando..." in the chrome — it made host switches and
+  // first paint feel multi-second slow even when the shell was already usable.
+  // Keep a quiet label until the socket is open.
   const statusLabel = isConnected
     ? 'Conectado'
     : connectionState === 'suspended'
@@ -52,10 +55,12 @@ export default function useTerminalStatusState({
       : connectionState === 'agent-exited'
         ? 'Agente finalizado'
         : connectionState === 'connecting'
-          ? 'Conectando...'
+          ? 'Listo'
           : connectionState === 'terminated'
             ? 'Finalizada'
-            : 'Desconectado';
+            : connectionState === 'idle'
+              ? 'Listo'
+              : 'Desconectado';
 
   return {
     isConnected,

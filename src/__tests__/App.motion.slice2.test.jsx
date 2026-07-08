@@ -11,6 +11,7 @@ function readApp() {
 
 describe('App.js — Slice 2 motion migrations', () => {
   let app;
+
   beforeAll(() => {
     app = readApp();
   });
@@ -29,16 +30,13 @@ describe('App.js — Slice 2 motion migrations', () => {
     });
 
     test('sidebar wrapper uses translateX (x) instead of width animation', () => {
-      // The sidebar motion wrapper must animate x and opacity, not width.
       expect(app).toMatch(/animate=\{\{[^}]*\bx:\s*0[^}]*\}\}/);
       expect(app).toMatch(/initial=\{\{[^}]*\bx:/);
       expect(app).toMatch(/exit=\{\{[^}]*\bx:/);
     });
 
     test('sidebar motion wrapper no longer animates width', () => {
-      // We still allow a parent div to set width as a layout snap, but the
-      // motion.div itself must not have width in its animate/initial/exit.
-      const sidebarMatch = app.match(/key=["']workspace-sidebar-wrapper["'][\s\S]*?\u003e/m);
+      const sidebarMatch = app.match(/key=["']workspace-sidebar-wrapper["'][\s\S]*?>/m);
       expect(sidebarMatch).not.toBeNull();
       const sidebarBlock = sidebarMatch[0];
       expect(sidebarBlock).not.toMatch(/animate=\{\{[^}]*\bwidth:/);
@@ -52,43 +50,24 @@ describe('App.js — Slice 2 motion migrations', () => {
   });
 
   describe('3.2 Route transitions', () => {
-    test('imports useRouteDirection hook', () => {
-      expect(app).toMatch(
-        /import\s*\{[^}]*\buseRouteDirection\b[^}]*\}\s*from\s+['"]@\/hooks\/useRouteDirection['"]/
-      );
-    });
-
-    test('wraps Outlet inside AnimatePresence mode="wait"', () => {
-      expect(app).toMatch(/\u003cAnimatePresence\s+mode=["']wait["']\s*\u003e/);
-    });
-
-    test('keys the route motion wrapper by location pathname', () => {
+    test('routes use instant swap (no AnimatePresence mode=wait / scale FOUC)', () => {
+      // Page transitions previously used mode="wait" + scale+opacity which left a
+      // blank/background-only frame in the Tauri webview. Routes must be instant.
+      expect(app).not.toMatch(/<AnimatePresence\s+mode=["']wait["']\s*>/);
+      expect(app).not.toMatch(/scale:\s*routeScale/);
       expect(app).toMatch(/key=\{location\.pathname\}/);
+      expect(app).toMatch(/<Outlet\s+context=\{\{\s*project\s*\}\}\s*\/>/);
     });
 
-    test('route motion wrapper uses scale + opacity variants (no lateral slide)', () => {
-      expect(app).toMatch(/variants=\{routeVariants\}/);
-      expect(app).toMatch(/initial=["']enter["']/);
-      expect(app).toMatch(/animate=["']center["']/);
-      expect(app).toMatch(/exit=["']exit["']/);
-      // Variants must use scale, not x (no lateral slide on desktop)
-      expect(app).toMatch(/scale:\s*routeScale/);
-      expect(app).not.toMatch(/x:\s*direction/);
-    });
-
-    test('route transition comes from getTransition with nav intent', () => {
-      expect(app).toMatch(/transition=\{routeTransition\}/);
-      expect(app).toMatch(
-        /const\s+routeTransition\s*=\s*getTransition\(['"]nav["'],\s*motionMode\)/
+    test('terminal container is not wrapped by route motion', () => {
+      // Terminal shell must remain a sibling of main content, not inside a
+      // route transition wrapper that unmounts on navigation.
+      expect(app).toMatch(/data-terminal-container/);
+      const mainMatch = app.match(
+        /\{\/\* Main Routed Content \*\/\}[\s\S]*?\{\/\* Persistent Terminal/
       );
-    });
-
-    test('terminal container is not inside the route AnimatePresence wrapper', () => {
-      const animatePresenceMatch = app.match(
-        /\u003cAnimatePresence\s+mode=["']wait["']\s*\u003e[\s\S]*?\u003c\/AnimatePresence\u003e/
-      );
-      expect(animatePresenceMatch).not.toBeNull();
-      expect(animatePresenceMatch[0]).not.toMatch(/data-terminal-container/);
+      expect(mainMatch).not.toBeNull();
+      expect(mainMatch[0]).not.toMatch(/data-terminal-container/);
     });
 
     test('terminal container remains rendered as a sibling', () => {

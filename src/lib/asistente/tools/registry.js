@@ -63,22 +63,36 @@ export class ToolRegistry {
     this.registerFromSkillRegistry(skillRegistry);
   }
 
-  // Convert registered tools to Anthropic/MiniMax compatible tool definitions
+  // Convert registered tools to Anthropic/MiniMax/xAI compatible tool definitions
   // for native function calling (input_schema). This enables reliable tool_use
   // blocks instead of fragile textual TOOL:/PARAM: scraping.
   // Cached until a new tool is registered.
+  //
+  // DevHub tool defs use a MiniMax-friendly shorthand (`required: true` on each
+  // property). JSON Schema (and xAI's Grok API) require `required` to be an
+  // array of property names on the object schema — property-level booleans
+  // cause 400 "standard_violation". Strip them when building the wire schema.
   toAnthropicTools() {
     if (this._anthropicToolsCache) return this._anthropicToolsCache;
 
     const result = Array.from(this.tools.values()).map((tool) => {
       const params = tool.parameters || {};
       const required = Object.keys(params).filter((k) => params[k] && params[k].required === true);
+      const properties = {};
+      for (const [key, schema] of Object.entries(params)) {
+        if (!schema || typeof schema !== 'object') {
+          properties[key] = schema;
+          continue;
+        }
+        const { required: _reqFlag, ...rest } = schema;
+        properties[key] = rest;
+      }
       return {
         name: tool.name,
         description: tool.description || '',
         input_schema: {
           type: 'object',
-          properties: params,
+          properties,
           ...(required.length ? { required } : {}),
         },
       };

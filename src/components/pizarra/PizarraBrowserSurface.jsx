@@ -18,21 +18,25 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 // eslint-disable-next-line no-unused-vars -- false positive: these icon names are JSX-tag references (lucide-react proxies)
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars -- false positive: WorkspaceBrowserPane is rendered inside the JSX below; eslint-plugin-react v7.37.5 + ESLint 9.23.0 fails to track the JSX usage
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
 import {
+  flushNativeBrowserResize,
   raiseNativeBrowser,
-  resizeNativeBrowser,
+  scheduleNativeBrowserResize,
   setNativeBrowserVisibility,
 } from '@/lib/browser/nativeBrowserBridge';
+import {
+  isDevHubShellBrowserUrl,
+  resolveDefaultBrowserUrl,
+} from '@/components/workspace/rightDockState';
 // pizarra-shared-view-state Phase 3: same tab strip as the
 // workspace right-dock (single source of truth). Pizarra is
 // always opt-in: tabsMode defaults to 'multi' on this surface.
-import { useBrowserTabs } from '@/components/workspace/hooks/useBrowserTabs';
-import BrowserTabStrip from '@/components/workspace/BrowserTabStrip';
+
 import {
   ensureSurfaceMotionKeyframes,
   resolveFrameVisual,
@@ -40,9 +44,7 @@ import {
   FRAME_TRANSITION,
   SURFACE_ENTER_OPACITY_ONLY,
   PIZARRA_SURFACE_FRAME_INSET,
-  PIZARRA_SURFACE_HEADER_HEIGHT,
   PIZARRA_SURFACE_BORDER_RADIUS,
-  PIZARRA_SURFACE_HEADER_STYLE,
   PIZARRA_SURFACE_FRAME_BG,
 } from '@/lib/pizarra/surfaceMotion';
 import { normalizeBrowserUrl } from '@/components/workspace/rightDockState';
@@ -60,11 +62,11 @@ const LEGACY_LOCALHOST_3200 = 'http://localhost:3200/';
 const LEGACY_LOCALHOST_3000 = 'http://localhost:3000/';
 
 function resolveBrowserUrl(url) {
-  const DEFAULT =
-    typeof window !== 'undefined' ? window.location.origin + '/' : 'http://localhost:3100/';
+  const DEFAULT = resolveDefaultBrowserUrl();
   if (!url) return DEFAULT;
   const normalized = url.endsWith('/') ? url : url + '/';
   if (normalized === LEGACY_LOCALHOST_3200 || normalized === LEGACY_LOCALHOST_3000) return DEFAULT;
+  if (isDevHubShellBrowserUrl(normalized)) return DEFAULT;
   return url;
 }
 
@@ -126,6 +128,8 @@ export default function PizarraBrowserSurface({
   suspendDuringViewTransition = false,
   suspendDuringCanvasPan = false,
   skipEnterAnimation = false,
+  // pizarra-editing-ux Phase 4: locked surfaces skip drag (hook bails).
+  locked = false,
 }) {
   // Compute early (before any hooks/state) so initial dockState can use it.
   // isCarriedFromWorkspace: the surface was auto-registered by TWM from the
@@ -192,18 +196,6 @@ export default function PizarraBrowserSurface({
   // The hook is optional in the codebase; we import it dynamically so
   // the module graph stays valid even if it is not yet present.
   const nativeCapability = useNativeBrowserCapabilitySafe();
-
-  // pizarra-shared-view-state: use the *workspace* key for tabs so the browser
-  // tabs/state ("la misma") are identical between pizarra cards and the normal
-  // right-dock WorkspaceBrowserPane. Multiple pizarra browser shapes currently
-  // share the single ws browser tabs list (the "one browser per workspace" model
-  // with internal tabs; multi-surface browser is future per shared-dock comment).
-  // This makes switch pizarra<->normal preserve the live tabs/urls without loss.
-  const tabStripApi = useBrowserTabs({
-    projectId: projectId || 'pizarra',
-    workspaceId: workspaceId || shape.id,
-  });
-  const showTabStrip = tabsMode === 'multi';
 
   useEffect(() => {
     const nextUrl = canonicalBrowserUrl(shape.url);
@@ -332,8 +324,10 @@ export default function PizarraBrowserSurface({
   // For carried: use nativePanelId (the registered one from normal) so the live
   // webview moves under this pizarra card immediately.
   useEffect(() => {
+    if (resolvedDockState.browserRuntime === 'iframe') return undefined;
     raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
-  }, [nativePanelId]); // mount only
+    return undefined;
+  }, [nativePanelId, resolvedDockState.browserRuntime]); // mount only
 
   const syncCarriedNativeBrowserBounds = useCallback(() => {
     const shell = surfaceRootRef.current?.querySelector?.('[data-testid="browser-viewport-shell"]');
@@ -346,7 +340,7 @@ export default function PizarraBrowserSurface({
       width: Math.round(r.width),
       height: Math.round(r.height),
     };
-    resizeNativeBrowser({ panelId: nativePanelId, bounds: nextBounds }).catch(() => {});
+    scheduleNativeBrowserResize({ panelId: nativePanelId, bounds: nextBounds });
     setNativeBrowserVisibility({
       panelId: nativePanelId,
       visible: true,
@@ -359,7 +353,7 @@ export default function PizarraBrowserSurface({
   // The layout pass attempts the handoff before paint; the RAF is only a
   // correction for cases where the shell rect settles one frame later.
   useLayoutEffect(() => {
-    if (!isCarriedFromWorkspace) return;
+    if (!isCarriedFromWorkspace || resolvedDockState.browserRuntime === 'iframe') return;
     raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
     syncCarriedNativeBrowserBounds();
     const raf = requestAnimationFrame(() => {
@@ -504,7 +498,7 @@ export default function PizarraBrowserSurface({
             if (r.width > 10 && r.height > 10) {
               // Use nativePanelId (prefers shape.panelId from TWM registration) for
               // consistency with normal mode's browser webview instance.
-              resizeNativeBrowser({
+              scheduleNativeBrowserResize({
                 panelId: nativePanelId,
                 bounds: {
                   x: Math.round(r.left),
@@ -512,7 +506,7 @@ export default function PizarraBrowserSurface({
                   width: Math.round(r.width),
                   height: Math.round(r.height),
                 },
-              }).catch(() => {});
+              });
             }
           }
         } catch {
@@ -540,6 +534,27 @@ export default function PizarraBrowserSurface({
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
 
+        // Flush the latest live bounds so HWND lands on the final rect immediately.
+        try {
+          const shell = surfaceRoot?.querySelector?.('[data-testid="browser-viewport-shell"]');
+          if (shell) {
+            const r = shell.getBoundingClientRect();
+            if (r.width > 10 && r.height > 10) {
+              flushNativeBrowserResize({
+                panelId: nativePanelId,
+                bounds: {
+                  x: Math.round(r.left),
+                  y: Math.round(r.top),
+                  width: Math.round(r.width),
+                  height: Math.round(r.height),
+                },
+              }).catch(() => {});
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+
         // Single commit on release.
         onUpdateElement?.(shape.id, lastLogical);
       };
@@ -556,6 +571,7 @@ export default function PizarraBrowserSurface({
     bounds,
     onSelect,
     onMove,
+    locked,
     onDragEnd: (args) => {
       setIsDragging(false);
       // Re-raise after drop so the browser native ends up on top in the final
@@ -581,7 +597,6 @@ export default function PizarraBrowserSurface({
     hovered: isHovered,
     dragging: isManipulating,
   });
-  const headerHeight = PIZARRA_SURFACE_HEADER_HEIGHT;
   const handleSizing = resolveHandleSizing(zoom);
   // pizarra-motion-polish (P-MP-6): apply the opacity-only enter
   // animation to the inner chrome frame (not the positioned wrapper,
@@ -641,52 +656,6 @@ export default function PizarraBrowserSurface({
         }}
       >
         <div
-          data-testid="pizarra-drag-handle"
-          data-pizarra-browser-surface-header="true"
-          data-pizarra-surface-drag-handle="true"
-          onMouseDown={handleDragStart}
-          style={{
-            height: headerHeight,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 8px',
-            cursor: 'move',
-            userSelect: 'none',
-            ...PIZARRA_SURFACE_HEADER_STYLE,
-          }}
-        >
-          <span>{shape.label || 'Browser'}</span>
-          <button
-            type="button"
-            data-testid="pizarra-browser-close"
-            data-pizarra-close-button="true"
-            title="Cerrar ventana del navegador (en pizarra)"
-            aria-label="Cerrar ventana del navegador"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose?.(shape.id);
-            }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 18,
-              height: 18,
-              padding: 0,
-              borderRadius: 4,
-              border: 'none',
-              background: 'transparent',
-              color: '#9fb5d1',
-              cursor: 'pointer',
-            }}
-          >
-            <X size={12} />
-          </button>
-        </div>
-        <div
           style={{
             position: 'relative',
             flex: '1 1 auto',
@@ -696,18 +665,6 @@ export default function PizarraBrowserSurface({
           }}
           data-tabs-mode={tabsMode}
         >
-          {showTabStrip ? (
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <BrowserTabStrip
-                tabs={tabStripApi.tabs}
-                activeTabId={tabStripApi.activeTabId}
-                onSelectTab={tabStripApi.selectTab}
-                onCloseTab={tabStripApi.closeTab}
-                onAddTab={tabStripApi.addTab}
-                currentUrl={resolvedDockState.browserUrl}
-              />
-            </div>
-          ) : null}
           <WorkspaceBrowserPane
             projectId={projectId || 'pizarra'}
             workspaceId={workspaceId || shape.id}
@@ -722,19 +679,16 @@ export default function PizarraBrowserSurface({
             onWorkspaceWindowAdd={onWorkspaceWindowAdd}
             onWorkspaceWindowRemove={onWorkspaceWindowRemove}
             layoutSyncKey={layoutSyncKey}
-            // Suspend native ONLY on move/drag (isDragging), NOT on resize (isResizing).
-            // During resize the native body must stay visible and the RO inside
-            // useNativeBrowserSurface will pick up the live size changes from our
-            // direct style mutations on the ancestors. This makes the "cuerpo"
-            // (web content / terminal lines) follow the header without pop-in on release.
             suspendNativeSurface={
-              isDragging || suspendDuringViewTransition || suspendDuringCanvasPan
+              // Keep WebView2 live during card drag — suspending left the HWND
+              // frozen at the old screen rect while the chrome moved (superposición).
+              // Resize already syncs live; drag must do the same.
+              suspendDuringViewTransition || suspendDuringCanvasPan
             }
             isPizarraContext={true}
-            // pizarra-shared-view-state Phase 3: pass tabsMode through
-            // so the inner WorkspaceBrowserPane does not render a
-            // duplicate strip. Pizarra owns the strip at this layer.
-            tabsMode={showTabStrip ? 'single' : 'single'}
+            tabsMode={tabsMode}
+            pizarraDragHandleMouseDown={handleDragStart}
+            onPizarraCloseCard={() => onClose?.(shape.id)}
           />
         </div>
 

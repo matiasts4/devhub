@@ -5,6 +5,7 @@ const {
   PRODUCTION_SIDECAR_PORT,
   getCanonicalDevhubDir,
   isDevhubDevelopmentHome,
+  isDevhubDevelopmentRuntime,
   readSidecarPortMarker,
 } = require('../db/pathResolver');
 
@@ -70,18 +71,67 @@ async function probeSidecarPorts(
 async function readProductionSidecarPort({
   fetchImpl = fetch,
   timeoutMs = 2500,
+  attempts,
+  gapMs,
   env = process.env,
   homeDir,
 } = {}) {
   const home = getCanonicalDevhubDir({ env, homeDir });
   const probeOrder = resolveSidecarProbeOrder(home);
   const trustedPort = resolveTrustedSidecarPortFromFile(home);
+  const healthCheck =
+    attempts != null
+      ? (port) => fetchSidecarHealthWithRetries(port, { fetchImpl, timeoutMs, attempts, gapMs })
+      : (port) => fetchSidecarHealth(port, { fetchImpl, timeoutMs });
 
-  if (trustedPort && (await fetchSidecarHealth(trustedPort, { fetchImpl, timeoutMs }))) {
+  if (trustedPort && (await healthCheck(trustedPort))) {
     return trustedPort;
   }
 
-  return probeSidecarPorts(probeOrder, { fetchImpl, timeoutMs });
+  for (const port of probeOrder) {
+    if (await healthCheck(port)) {
+      return port;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Terminal session API: in dev never attach to the installed sidecar (:4000).
+ */
+async function readSidecarPortForTerminalSession(options = {}) {
+  const env = options.env ?? process.env;
+  const healthOptions = {
+    ...options,
+    timeoutMs: options.timeoutMs ?? 450,
+    attempts: options.attempts ?? 4,
+  };
+  if (isDevhubDevelopmentRuntime(env)) {
+    const home = getCanonicalDevhubDir({ env, homeDir: options.homeDir });
+    const trusted = resolveTrustedSidecarPortFromFile(home);
+    const devPort = trusted || DEVELOPMENT_SIDECAR_PORT;
+    if (await fetchSidecarHealthWithRetries(devPort, healthOptions)) {
+      return devPort;
+    }
+    return null;
+  }
+  return readProductionSidecarPort(healthOptions);
+}
+
+async function fetchSidecarHealthWithRetries(
+  port,
+  { fetchImpl = fetch, timeoutMs = 450, attempts = 4, gapMs = 120 } = {}
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await fetchSidecarHealth(port, { fetchImpl, timeoutMs })) {
+      return true;
+    }
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, gapMs));
+    }
+  }
+  return false;
 }
 
 module.exports = {
@@ -89,9 +139,11 @@ module.exports = {
   DEVELOPMENT_SIDECAR_PORT,
   PRODUCTION_SIDECAR_PORT,
   fetchSidecarHealth,
+  fetchSidecarHealthWithRetries,
   getSidecarPortFilePath,
   probeSidecarPorts,
   readProductionSidecarPort,
+  readSidecarPortForTerminalSession,
   resolveSidecarProbeOrder,
   resolveTrustedSidecarPortFromFile,
 };

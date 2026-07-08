@@ -89,7 +89,19 @@ function createZipArchive(sourceDir, zipPath) {
   }
 }
 
+function pruneStaleStandaloneZipTemps(zipPath = ZIP_PATH) {
+  const resourcesDir = path.dirname(zipPath);
+  if (!fs.existsSync(resourcesDir)) return;
+  for (const entry of fs.readdirSync(resourcesDir)) {
+    if (/^standalone\.zip\..+\.tmp$/i.test(entry)) {
+      removeIfExists(path.join(resourcesDir, entry));
+    }
+  }
+}
+
 function main() {
+  pruneStaleStandaloneZipTemps();
+
   if (!fs.existsSync(STANDALONE_DIR)) {
     throw new Error(`Standalone output missing at ${STANDALONE_DIR}. Run next build first.`);
   }
@@ -126,4 +138,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { createZipArchive, main };
+module.exports = { createZipArchive, main, pruneStaleStandaloneZipTemps };

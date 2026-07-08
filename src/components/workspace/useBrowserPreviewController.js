@@ -952,9 +952,12 @@ export default function useBrowserPreviewController({
     // tying isLoading to iframeSrc leaves the loading veil stuck forever.
     if (nativeRuntimeActive) {
       setIsLoading(false);
-      return;
+      return undefined;
     }
     setIsLoading(Boolean(iframeSrc));
+    if (!iframeSrc) return undefined;
+    const timer = setTimeout(() => setIsLoading(false), 12000);
+    return () => clearTimeout(timer);
   }, [iframeSrc, reloadKey, nativeRuntimeActive]);
 
   useEffect(() => {
@@ -1141,6 +1144,7 @@ export default function useBrowserPreviewController({
 
       switch (payload.type) {
         case 'selector-ready':
+        case 'selector-armed':
         case 'selector-hover':
           commitObservedState({
             selector: SELECTOR_STATE.ARMED,

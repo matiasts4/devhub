@@ -35,8 +35,70 @@ npm run build
 ### Paso 2: Generar los Instaladores de tauri
 
 ```bash
-npm run tauri:build
+pnpm run tauri:build
 ```
+
+`pnpm run build` usa caché local (`.devhub-build/standalone-fingerprint.json`): si no cambiaron fuentes relevantes y ya existe `src-tauri/resources/standalone.zip`, salta `next build` + zip. Para forzar frontend completo: `pnpm run build:force`.
+
+Builds iterativos (solo Rust/Tauri, zip ya válido):
+
+```bash
+pnpm run tauri:build:fast
+```
+
+Equivale a `tauri build` sin `beforeBuildCommand` y con perfil Cargo `release-fast` (más rápido, no usar para release final).
+
+Opcional en máquinas de desarrollo: `RUSTC_WRAPPER=sccache` acelera recompilaciones Rust.
+
+### F. Espacio en disco (equilibrio build vs caché)
+
+El repo puede crecer mucho por artefactos locales (no van a git):
+
+| Qué                        | Orden de magnitud | ¿Borrable?                                                                             |
+| -------------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| `src-tauri/target/debug`   | ~10–15 GB         | **Sí** — solo `tauri dev`; se regenera                                                 |
+| `src-tauri/target/release` | ~3 GB             | Solo si aceptás recompilar instalador                                                  |
+| `.next/`                   | ~2–3 GB           | Sí — `pnpm run build` lo recrea; el zip en `resources/` se conserva en limpieza normal |
+| `standalone.zip.*.tmp`     | hasta ~1 GB       | **Sí** — basura de builds interrumpidos                                                |
+| `.tmp/`                    | variable          | **Sí** — scratch local                                                                 |
+
+Limpieza recomendada (mantiene release + `standalone.zip`):
+
+```bash
+pnpm run clean:disk:dry-run   # ver cuánto liberaría
+pnpm run clean:disk             # safe + rust-debug + .tmp
+```
+
+Limpieza fuerte (rebuild completo Next + Rust):
+
+```bash
+pnpm run clean:disk:aggressive
+```
+
+Tras `clean:disk`, `tauri dev` recompila debug; instalador: `pnpm run tauri:build` o `tauri:build:fast` si el zip sigue válido.
+
+### G. ¿Dónde se construye todo (C: vs D:)?
+
+Auditoría rápida:
+
+```bash
+pnpm run audit:disk-locations
+```
+
+Con el repo en `D:\devhub` (tu caso típico):
+
+| Ubicación                                      | Disco  | Rol                                                          |
+| ---------------------------------------------- | ------ | ------------------------------------------------------------ |
+| `D:\devhub\src-tauri\target`                   | **D:** | Compilación Rust (debug/release)                             |
+| `D:\devhub\.next`                              | **D:** | Build Next                                                   |
+| `D:\devhub\src-tauri\resources\standalone.zip` | **D:** | Zip empaquetado                                              |
+| `D:\devhub\node_modules` + `D:\.pnpm-store`    | **D:** | Deps JS (store pnpm en D: si está configurado así)           |
+| `C:\Users\<user>\.cargo` / `.rustup`           | **C:** | Caché crates + toolchains Rust (~2–3 GB)                     |
+| `C:\Users\<user>\AppData\Local\Temp`           | **C:** | Temporales de build (`TEMP`/`TMP`) — puede crecer mucho      |
+| `C:\Users\<user>\.devhub`                      | **C:** | Runtime instalado (standalone extraído, DB, sidecar markers) |
+| `AppData\Local\DevHub` + `com.devhub.desktop`  | **C:** | Binario instalado NSIS + datos de app                        |
+
+Si C: es justo: mover **TEMP** y opcionalmente **DEVHUB_HOME** a D: (`packaging/windows/devhub-build-env.example.ps1`). `CARGO_TARGET_DIR` no hace falta si el repo ya está en D: — Cargo usa `D:\devhub\src-tauri\target` por defecto.
 
 _(Si los builds cacheados de Cargo fallan previamente por algún motivo, corre `cd src-tauri && cargo clean && cd ..` antes de este paso)._
 
@@ -110,6 +172,7 @@ Este script bash cumple tres funciones vitales cuando el usuario hace clic en el
 
 ### D. Puertos 3400 (Next prod) vs 3100 (dev) y conflictos al lanzar instalado
 
+- Si al lanzar **`tauri dev`** se caen las terminales de la app instalada, ver [08-dev-instalado-coexistencia-terminales](errores/08-dev-instalado-coexistencia-terminales/README.md) (wrapper `devhub-server.cjs` + coexistencia).
 - El binario instalado (release) siempre usa 3400 para el standalone Next y 4000 para el PTY sidecar.
 - Si tenés un `pnpm next dev` (3100) o un next-server zombie en 3400 corriendo, el wrapper puede fallar con EADDRINUSE y el Tauri espera 60s+120s recovery → "no responde" o gris.
 - Cleanup en Rust + pre-kill en wrapper intentan matar listeners "next"/"devhub", pero hacé fuerza manual antes de probar el instalado:
@@ -122,8 +185,8 @@ Este script bash cumple tres funciones vitales cuando el usuario hace clic en el
 ### E. Actualizar / re-instalar después de cambios de empaquetado
 
 ```bash
-pnpm run build
-pnpm run tauri:build
+pnpm run build          # o build:force si cambiaste scripts de empaquetado
+pnpm run tauri:build    # instalador release; tauri:build:fast solo para iterar Rust
 sudo dpkg -i --force-overwrite src-tauri/target/release/bundle/deb/DevHub_*.deb
 # verificar
 cat /usr/share/applications/DevHub.desktop | grep -E 'Exec=|StartupWMClass'

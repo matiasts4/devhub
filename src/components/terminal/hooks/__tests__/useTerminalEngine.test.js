@@ -2,6 +2,13 @@
  * Guard tests for useTerminalEngine — dispose/boot surface.
  */
 
+// Static xterm imports need mocks in Node (no `self`/DOM until installDom).
+jest.mock('xterm', () => ({ Terminal: class Terminal {} }), { virtual: true });
+jest.mock('xterm-addon-fit', () => ({ FitAddon: class FitAddon {} }), { virtual: true });
+jest.mock('xterm-addon-search', () => ({ SearchAddon: class SearchAddon {} }), {
+  virtual: true,
+});
+
 const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook } = require('@testing-library/react');

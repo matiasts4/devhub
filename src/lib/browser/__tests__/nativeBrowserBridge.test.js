@@ -60,14 +60,29 @@ describe('nativeBrowserBridge', () => {
       bounds: { x: 20, y: 24, width: 960, height: 640 },
     };
 
-    await bridge.probeNativeBrowser({ panelId: 'browser-panel', requestedMode: 'native-gtk', tauriAvailable: true });
+    await bridge.probeNativeBrowser({
+      panelId: 'browser-panel',
+      requestedMode: 'native-gtk',
+      tauriAvailable: true,
+    });
     await bridge.openNativeBrowser(openPayload);
-    await bridge.loadNativeBrowserUrl({ panelId: 'browser-panel', url: 'https://example.com/docs' });
+    await bridge.loadNativeBrowserUrl({
+      panelId: 'browser-panel',
+      url: 'https://example.com/docs',
+    });
     await bridge.reloadNativeBrowser({ panelId: 'browser-panel' });
     await bridge.resizeNativeBrowser({ panelId: 'browser-panel', bounds: openPayload.bounds });
     await bridge.focusNativeBrowser({ panelId: 'browser-panel' });
-    await bridge.setNativeBrowserVisibility({ panelId: 'browser-panel', visible: true, bounds: openPayload.bounds });
-    await bridge.nativeBrowserSelectorCommand({ panelId: 'browser-panel', action: 'activate', mode: 'select' });
+    await bridge.setNativeBrowserVisibility({
+      panelId: 'browser-panel',
+      visible: true,
+      bounds: openPayload.bounds,
+    });
+    await bridge.nativeBrowserSelectorCommand({
+      panelId: 'browser-panel',
+      action: 'activate',
+      mode: 'select',
+    });
     await bridge.selectAllNativeBrowser({ panelId: 'browser-panel' });
     await bridge.copyNativeBrowser({ panelId: 'browser-panel' });
     await bridge.closeNativeBrowser({ panelId: 'browser-panel', reason: 'cleanup' });
@@ -120,7 +135,13 @@ describe('nativeBrowserBridge', () => {
     const teardown = await bridge.subscribeNativeBrowserEvents();
     expect(listenMock).toHaveBeenCalledWith('native-browser-event', expect.any(Function));
 
-    callback?.({ payload: { panelId: 'browser-panel', type: 'selector-selected', element: { tagName: 'button' } } });
+    callback?.({
+      payload: {
+        panelId: 'browser-panel',
+        type: 'selector-selected',
+        element: { tagName: 'button' },
+      },
+    });
     expect(payloads).toEqual([
       { panelId: 'browser-panel', type: 'selector-selected', element: { tagName: 'button' } },
     ]);
@@ -137,5 +158,109 @@ describe('nativeBrowserBridge', () => {
       ready: false,
       reason: 'tauri-unavailable',
     });
+  });
+
+  test('await blocks open until scheduleNativeBrowserStartupSweep finishes', async () => {
+    invokeMock.mockResolvedValue({ purged: 0 });
+    const bridge = require('../nativeBrowserBridge');
+
+    let sweepDone = false;
+    const awaiter = bridge.awaitNativeBrowserStartupSweep({ timeoutMs: 0 }).then(() => {
+      expect(sweepDone).toBe(true);
+    });
+
+    await Promise.resolve();
+    expect(sweepDone).toBe(false);
+
+    bridge.scheduleNativeBrowserStartupSweep(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      sweepDone = true;
+    });
+
+    await awaiter;
+    expect(sweepDone).toBe(true);
+  });
+
+  test('resizeNativeBrowser returns reason when invoke fails', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('panel-not-found'));
+    const bridge = require('../nativeBrowserBridge');
+
+    await expect(
+      bridge.resizeNativeBrowser({
+        panelId: 'browser-panel',
+        bounds: { x: 0, y: 48, width: 400, height: 300 },
+      })
+    ).resolves.toEqual(expect.objectContaining({ reason: 'panel-not-found' }));
+  });
+
+  test('scheduleNativeBrowserResize coalesces to latest bounds per frame', async () => {
+    invokeMock.mockResolvedValue(undefined);
+    const bridge = require('../nativeBrowserBridge');
+    const rafQueue = [];
+    window.requestAnimationFrame = (cb) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    };
+    window.cancelAnimationFrame = (id) => {
+      rafQueue[id - 1] = null;
+    };
+
+    bridge.scheduleNativeBrowserResize({
+      panelId: 'browser-live',
+      bounds: { x: 10, y: 80, width: 200, height: 300 },
+    });
+    bridge.scheduleNativeBrowserResize({
+      panelId: 'browser-live',
+      bounds: { x: 10, y: 80, width: 500, height: 300 },
+    });
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(rafQueue.filter(Boolean)).toHaveLength(1);
+
+    const frame = rafQueue.find(Boolean);
+    frame();
+    await bridge.flushNativeBrowserResize({ panelId: 'browser-live' });
+
+    const resizeCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_resize');
+    expect(resizeCalls.length).toBeGreaterThanOrEqual(1);
+    expect(resizeCalls[resizeCalls.length - 1][1].request.bounds.width).toBe(500);
+    const visCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_set_visibility');
+    expect(visCalls.length).toBeGreaterThanOrEqual(1);
+    expect(visCalls[visCalls.length - 1][1].request.visible).toBe(true);
+    expect(visCalls[visCalls.length - 1][1].request.bounds.width).toBe(500);
+  });
+
+  test('flushNativeBrowserResize applies pending bounds immediately', async () => {
+    invokeMock.mockResolvedValue(undefined);
+    const bridge = require('../nativeBrowserBridge');
+    const rafQueue = [];
+    window.requestAnimationFrame = (cb) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    };
+    window.cancelAnimationFrame = jest.fn((id) => {
+      rafQueue[id - 1] = null;
+    });
+
+    bridge.scheduleNativeBrowserResize({
+      panelId: 'browser-flush',
+      bounds: { x: 1, y: 80, width: 100, height: 200 },
+    });
+    await bridge.flushNativeBrowserResize({
+      panelId: 'browser-flush',
+      bounds: { x: 1, y: 80, width: 333, height: 200 },
+    });
+
+    const resizeCalls = invokeMock.mock.calls.filter((c) => c[0] === 'native_browser_resize');
+    expect(resizeCalls.length).toBeGreaterThanOrEqual(1);
+    expect(resizeCalls[resizeCalls.length - 1][1].request.bounds.width).toBe(333);
+  });
+
+  test('emitNativeBrowserClosed dispatches window event', () => {
+    const bridge = require('../nativeBrowserBridge');
+    const payloads = [];
+    window.addEventListener('devhub:native-browser-closed', (e) => payloads.push(e.detail));
+    bridge.emitNativeBrowserClosed('browser-panel', 'dock-not-browser');
+    expect(payloads).toEqual([{ panelId: 'browser-panel', reason: 'dock-not-browser' }]);
   });
 });

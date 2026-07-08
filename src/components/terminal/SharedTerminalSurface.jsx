@@ -197,9 +197,10 @@ function TerminalSurfaceContent({ surfaceId }) {
     };
 
     const scheduleProjectionReadyDelay = () => {
+      // Keep short: long delay made workspace↔pizarra feel stuck mid-transition.
       timer = window.setTimeout(() => {
         dispatchIfLive('shared-surface-projection-ready-delay');
-      }, 180);
+      }, 48);
     };
 
     const targetEl = registry?.getActiveTarget(surfaceId);

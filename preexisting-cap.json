@@ -1,0 +1,114 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 2,
+  "numPassedTestSuites": 1,
+  "numPassedTests": 5,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 0,
+  "numRuntimeErrorTestSuites": 0,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 2,
+  "numTotalTests": 7,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1783200382870,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl"],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n- ObjectContaining {\n-   \"label\": Any<String>,\n+ Object {\n+   \"label\": \"xterm + WebGL\",\n    \"mode\": \"xterm-webgl\",\n-   \"ready\": Any<Boolean>,\n-   \"reason\": Anything,\n+   \"ready\": true,\n+   \"reason\": null,\n  }\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\terminalRendererCapabilities.xterm-webgl.test.js:24:24)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererCapabilities.xterm-webgl getTerminalRendererCapability(\"xterm-webgl\") returns the 4-key descriptor with mode + label + ready + reason (XW-01 SCEN-1)",
+          "location": null,
+          "status": "failed",
+          "title": "getTerminalRendererCapability(\"xterm-webgl\") returns the 4-key descriptor with mode + label + ready + reason (XW-01 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl"],
+          "failureMessages": [],
+          "fullName": "terminalRendererCapabilities.xterm-webgl TERMINAL_WEBGL_FALLBACK_REASONS is a frozen 5-value enum covering the documented WebGL failure shapes (XW-02 SCEN-1)",
+          "location": null,
+          "status": "passed",
+          "title": "TERMINAL_WEBGL_FALLBACK_REASONS is a frozen 5-value enum covering the documented WebGL failure shapes (XW-02 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl"],
+          "failureMessages": [
+            "Error: expect(received).not.toBe(expected) // Object.is equality\n\nExpected: not \"xterm + WebGL\"\n    at Object.<anonymous> (D:\\devhub\\src\\components\\__tests__\\terminalRendererCapabilities.xterm-webgl.test.js:64:27)\n    at Promise.then.completed (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:391:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\utils.js:316:10)\n    at _callCircusTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:218:40)\n    at _runTest (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:155:3)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:66:9)\n    at _runTestsForDescribeBlock (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:60:9)\n    at run (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\run.js:25:3)\n    at runAndTransformResultsToJestFormat (D:\\devhub\\node_modules\\.pnpm\\jest-circus@27.5.1\\node_modules\\jest-circus\\build\\legacy-code-todo-rewrite\\jestAdapterInit.js:170:21)"
+          ],
+          "fullName": "terminalRendererCapabilities.xterm-webgl getTerminalRendererOptionLabel(\"xterm-webgl\") is stable, non-empty, and distinct from xterm/vte-experimental (XW-03 SCEN-1)",
+          "location": null,
+          "status": "failed",
+          "title": "getTerminalRendererOptionLabel(\"xterm-webgl\") is stable, non-empty, and distinct from xterm/vte-experimental (XW-03 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl"],
+          "failureMessages": [],
+          "fullName": "terminalRendererCapabilities.xterm-webgl WEBGL_FALLBACK_WARNING_TEXT is the exact substring the TerminalTTY runtime renders in the panel body (XW-05 constant half)",
+          "location": null,
+          "status": "passed",
+          "title": "WEBGL_FALLBACK_WARNING_TEXT is the exact substring the TerminalTTY runtime renders in the panel body (XW-05 constant half)"
+        }
+      ],
+      "endTime": 1783200383367,
+      "message": "  ● terminalRendererCapabilities.xterm-webgl › getTerminalRendererCapability(\"xterm-webgl\") returns the 4-key descriptor with mode + label + ready + reason (XW-01 SCEN-1)\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 4\n    + Received  + 4\n\n    - ObjectContaining {\n    -   \"label\": Any<String>,\n    + Object {\n    +   \"label\": \"xterm + WebGL\",\n        \"mode\": \"xterm-webgl\",\n    -   \"ready\": Any<Boolean>,\n    -   \"reason\": Anything,\n    +   \"ready\": true,\n    +   \"reason\": null,\n      }\n\n    \u001b[0m \u001b[90m 22 |\u001b[39m     \u001b[36mconst\u001b[39m capability \u001b[33m=\u001b[39m getTerminalRendererCapability(\u001b[32m'xterm-webgl'\u001b[39m)\u001b[33m;\u001b[39m\n     \u001b[90m 23 |\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 24 |\u001b[39m     expect(capability)\u001b[33m.\u001b[39mtoEqual(\n     \u001b[90m    |\u001b[39m                        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 25 |\u001b[39m       expect\u001b[33m.\u001b[39mobjectContaining({\n     \u001b[90m 26 |\u001b[39m         mode\u001b[33m:\u001b[39m \u001b[32m'xterm-webgl'\u001b[39m\u001b[33m,\u001b[39m\n     \u001b[90m 27 |\u001b[39m         label\u001b[33m:\u001b[39m expect\u001b[33m.\u001b[39many(\u001b[33mString\u001b[39m)\u001b[33m,\u001b[39m\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererCapabilities.xterm-webgl.test.js:24:24)\n\n  ● terminalRendererCapabilities.xterm-webgl › getTerminalRendererOptionLabel(\"xterm-webgl\") is stable, non-empty, and distinct from xterm/vte-experimental (XW-03 SCEN-1)\n\n    expect(received).not.toBe(expected) // Object.is equality\n\n    Expected: not \"xterm + WebGL\"\n\n    \u001b[0m \u001b[90m 62 |\u001b[39m     expect(firstCall)\u001b[33m.\u001b[39mtoBe(secondCall)\u001b[33m;\u001b[39m\n     \u001b[90m 63 |\u001b[39m     expect(firstCall)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39mtoBe(getTerminalRendererOptionLabel(\u001b[32m'xterm'\u001b[39m))\u001b[33m;\u001b[39m\n    \u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 64 |\u001b[39m     expect(firstCall)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39mtoBe(getTerminalRendererOptionLabel(\u001b[32m'vte-experimental'\u001b[39m))\u001b[33m;\u001b[39m\n     \u001b[90m    |\u001b[39m                           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n     \u001b[90m 65 |\u001b[39m   })\u001b[33m;\u001b[39m\n     \u001b[90m 66 |\u001b[39m\n     \u001b[90m 67 |\u001b[39m   test(\u001b[32m'WEBGL_FALLBACK_WARNING_TEXT is the exact substring the TerminalTTY runtime renders in the panel body (XW-05 constant half)'\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\u001b[0m\n\n      at Object.<anonymous> (src/components/__tests__/terminalRendererCapabilities.xterm-webgl.test.js:64:27)\n",
+      "name": "D:\\devhub\\src\\components\\__tests__\\terminalRendererCapabilities.xterm-webgl.test.js",
+      "startTime": 1783200382929,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl.resolver"],
+          "failureMessages": [],
+          "fullName": "terminalRendererCapabilities.xterm-webgl.resolver resolveRendererSelection routes xterm-webgl to itself when the capability is ready (XW-06 SCEN-1)",
+          "location": null,
+          "status": "passed",
+          "title": "resolveRendererSelection routes xterm-webgl to itself when the capability is ready (XW-06 SCEN-1)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl.resolver"],
+          "failureMessages": [],
+          "fullName": "terminalRendererCapabilities.xterm-webgl.resolver resolveRendererSelection falls back to xterm when xterm-webgl capability is unready (XW-06 SCEN-2)",
+          "location": null,
+          "status": "passed",
+          "title": "resolveRendererSelection falls back to xterm when xterm-webgl capability is unready (XW-06 SCEN-2)"
+        },
+        {
+          "ancestorTitles": ["terminalRendererCapabilities.xterm-webgl.resolver"],
+          "failureMessages": [],
+          "fullName": "terminalRendererCapabilities.xterm-webgl.resolver getTerminalRendererRuntimeCapabilities includes an xterm-webgl key in the output map (XW-06 runtime map assertion)",
+          "location": null,
+          "status": "passed",
+          "title": "getTerminalRendererRuntimeCapabilities includes an xterm-webgl key in the output map (XW-06 runtime map assertion)"
+        }
+      ],
+      "endTime": 1783200383501,
+      "message": "",
+      "name": "D:\\devhub\\src\\components\\__tests__\\terminalRendererCapabilities.xterm-webgl.resolver.test.js",
+      "startTime": 1783200383378,
+      "status": "passed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

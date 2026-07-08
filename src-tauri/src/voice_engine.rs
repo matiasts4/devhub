@@ -284,6 +284,10 @@ pub async fn voice_speak<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, VoiceState>,
     text: String,
+    // Opaque passthrough merged into the SPEAK payload as-is (e.g. `voice`,
+    // `length_scale`) so new tts_engine.py knobs don't need a matching Rust
+    // struct field + IPC casing to keep in sync on every change.
+    options: Option<serde_json::Value>,
 ) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
@@ -309,7 +313,14 @@ pub async fn voice_speak<R: Runtime>(
         format!("{}:{}", venv_bin.to_string_lossy(), path_env)
     };
 
-    let payload = serde_json::json!({ "text": text }).to_string();
+    let mut payload_obj = serde_json::Map::new();
+    payload_obj.insert("text".to_string(), serde_json::Value::String(text.clone()));
+    if let Some(serde_json::Value::Object(opts)) = options {
+        for (key, value) in opts {
+            payload_obj.insert(key, value);
+        }
+    }
+    let payload = serde_json::Value::Object(payload_obj).to_string();
     let child = std::process::Command::new(&python_exe)
         .arg(&tts_script)
         .env("PATH", merged_path)

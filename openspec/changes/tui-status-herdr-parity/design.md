@@ -6,13 +6,14 @@ Centralize PTY semantic detection in `src/lib/terminal/sessionAgentDetector.js` 
 
 ## Architecture Decisions
 
-| Decision             | Choice                                        | Rationale                                            |
-| -------------------- | --------------------------------------------- | ---------------------------------------------------- |
-| D1 Semantic vs bytes | Semantic wins when fresh                      | Matches herdr; avoids spinner false running          |
-| D2 Sidecar parity    | Required for v1                               | Tauri is primary desktop path                        |
-| D3 State naming      | `working` → `running` at API boundary         | Existing `PANEL_STATUS` vocabulary                   |
-| D4 CJS delivery      | Build script copies/bundles detection package | Sidecar cannot import ESM manifests at runtime today |
-| D5 Viewport rows     | Default 40 lines, env-tunable                 | Bridge until true ghostty-style viewport read exists |
+| Decision             | Choice                                               | Rationale                                            |
+| -------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
+| D1 Semantic vs bytes | Semantic wins when fresh                             | Matches herdr; avoids spinner false running          |
+| D2 Sidecar parity    | Required for v1                                      | Tauri is primary desktop path                        |
+| D3 State naming      | `working` → `running` at API boundary                | Existing `PANEL_STATUS` vocabulary                   |
+| D6 Display labels    | `idle` shown as **Idle** / **idle** (not _inactivo_) | Align UI with Grok/OpenCode/herdr enum tokens        |
+| D4 CJS delivery      | Build script copies/bundles detection package        | Sidecar cannot import ESM manifests at runtime today |
+| D5 Viewport rows     | Default 40 lines, env-tunable                        | Bridge until true ghostty-style viewport read exists |
 
 ## Data Flow
 

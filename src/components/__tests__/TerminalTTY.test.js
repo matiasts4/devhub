@@ -130,6 +130,11 @@ const {
   needsGpuRendererReattach,
   shouldRefitVisibleInactiveSplitPanel,
   sendTerminalPasteInput,
+  shouldBracketTerminalTextPaste,
+  wrapTerminalBracketedPaste,
+  formatTerminalPastePayload,
+  normalizeTerminalSelectionForClipboard,
+  resolveXtermWindowsPtyOptions,
   scheduleTerminalViewportSyncBurst,
   resolveColdMountStaggerMs,
   shouldSyncTerminalViewportOnLayoutShow,
@@ -392,21 +397,23 @@ describe('getXtermContainerAnimProps()', () => {
 });
 
 describe('shouldShowTerminalLoadingOverlay()', () => {
-  test('blocks only during first init or first connect', () => {
-    expect(shouldShowTerminalLoadingOverlay(true, 'idle', false)).toBe(true);
-    expect(shouldShowTerminalLoadingOverlay(false, 'connecting', false)).toBe(true);
+  test('never blanks the panel for connecting (instant-feel contract)', () => {
+    // Session API + WS can take seconds when the sidecar probe fails slowly.
+    // The shell must stay visible; connection is background work.
+    expect(shouldShowTerminalLoadingOverlay(true, 'idle', false)).toBe(false);
+    expect(shouldShowTerminalLoadingOverlay(false, 'connecting', false)).toBe(false);
     expect(shouldShowTerminalLoadingOverlay(false, 'connecting', true)).toBe(false);
     expect(shouldShowTerminalLoadingOverlay(false, 'connected', true)).toBe(false);
   });
 });
 
 describe('shouldShowTerminalViewport()', () => {
-  test('shows the viewport once initialization finishes without init error', () => {
+  test('shows the viewport even while initializing (instant shell paint)', () => {
     expect(shouldShowTerminalViewport(false, null)).toBe(true);
+    expect(shouldShowTerminalViewport(true, null)).toBe(true);
   });
 
-  test('keeps the viewport hidden while initializing or after init failure', () => {
-    expect(shouldShowTerminalViewport(true, null)).toBe(false);
+  test('hides the viewport after init failure', () => {
     expect(shouldShowTerminalViewport(false, 'boom')).toBe(false);
   });
 });
@@ -1150,14 +1157,15 @@ describe('terminal viewport undersize detection', () => {
       _core: { _renderService: { dimensions: { css: { cell: { height: 20, width: 10 } } } } },
     };
     expect(isTerminalViewportUndersized({ containerRect: { height: 900 }, term })).toBe(true);
+    // Undersize no longer blocks first connect (PTY starts + resizes later).
     expect(
       shouldDeferTerminalConnectUntilViewportFitted({
         ready: true,
         fitWorked: true,
-        containerRect: { height: 900 },
+        containerRect: { width: 1200, height: 900 },
         term,
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test('shouldDeferTerminalConnectUntilViewportFitted allows a filled grid', () => {
@@ -1169,10 +1177,30 @@ describe('terminal viewport undersize detection', () => {
       shouldDeferTerminalConnectUntilViewportFitted({
         ready: true,
         fitWorked: true,
-        containerRect: { height: 900 },
+        containerRect: { width: 1200, height: 900 },
         term,
       })
     ).toBe(false);
+  });
+
+  test('shouldDeferTerminalConnectUntilViewportFitted blocks zero-size first connect', () => {
+    const term = { rows: 24 };
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { width: 0, height: 0 },
+        term,
+      })
+    ).toBe(true);
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: false,
+        fitWorked: false,
+        containerRect: { width: 800, height: 600 },
+        term,
+      })
+    ).toBe(true);
   });
 });
 
@@ -1703,6 +1731,46 @@ describe('shouldReleaseCanvasRendererOnLayoutHide()', () => {
   });
 });
 
+describe('terminal clipboard copy helpers', () => {
+  test('normalizeTerminalSelectionForClipboard strips CR for LF-only paste', () => {
+    expect(normalizeTerminalSelectionForClipboard('a\r\nb\rc')).toBe('a\nb\nc');
+    expect(normalizeTerminalSelectionForClipboard('')).toBe('');
+  });
+
+  test('resolveXtermWindowsPtyOptions enables wrap heuristics on Windows', () => {
+    expect(resolveXtermWindowsPtyOptions('win32')).toEqual({
+      windowsPty: { backend: 'conpty', buildNumber: 19041 },
+    });
+    expect(resolveXtermWindowsPtyOptions('linux')).toEqual({});
+  });
+});
+
+describe('terminal bracketed paste helpers', () => {
+  test('shouldBracketTerminalTextPaste is true for grok multiline', () => {
+    const lifecycleRefs = {
+      current: {
+        isGrokSessionRef: { current: true },
+        grokTuiReadyRef: { current: false },
+        tuiSessionActiveRef: { current: false },
+        tuiSessionFooterConfirmedRef: { current: false },
+        kimiReadyNotifiedRef: { current: false },
+      },
+    };
+    expect(shouldBracketTerminalTextPaste(lifecycleRefs, 'line1\nline2')).toBe(true);
+    expect(shouldBracketTerminalTextPaste(lifecycleRefs, 'single')).toBe(false);
+  });
+
+  test('formatTerminalPastePayload wraps any multiline paste for PTY inject', () => {
+    expect(formatTerminalPastePayload('a\nb', { current: {} }, 'grok')).toBe(
+      wrapTerminalBracketedPaste('a\nb')
+    );
+    expect(formatTerminalPastePayload('a\nb', { current: {} }, 'bash')).toBe(
+      wrapTerminalBracketedPaste('a\nb')
+    );
+    expect(formatTerminalPastePayload('single', { current: {} }, 'grok')).toBe('single');
+  });
+});
+
 describe('sendTerminalPasteInput()', () => {
   test('sends JSON input when the websocket is open', () => {
     const socket = { readyState: 1, send: jest.fn() };
@@ -1855,6 +1923,91 @@ describe('fitTerminalViewport()', () => {
     expect(fitAddon.fit).not.toHaveBeenCalled();
     expect(term.refresh).not.toHaveBeenCalled();
     expect(socket.send).not.toHaveBeenCalled();
+  });
+
+  test('isStaleXtermRendererError matches Chrome dimensions TypeError from crash logs', () => {
+    const { isStaleXtermRendererError } = require('../terminal/TerminalTTY.helpers');
+    expect(
+      isStaleXtermRendererError(
+        new TypeError("Cannot read properties of undefined (reading 'dimensions')")
+      )
+    ).toBe(true);
+    expect(
+      isStaleXtermRendererError(
+        new TypeError("Cannot read properties of undefined (reading 'handleResize')")
+      )
+    ).toBe(true);
+  });
+
+  test('neutralizeWebglAddonForDisposal stubs missing renderer for IdleTaskQueue', () => {
+    const { neutralizeWebglAddonForDisposal } = require('../terminal/TerminalTTY.helpers');
+    const addon = { _renderer: { value: undefined } };
+    neutralizeWebglAddonForDisposal(addon);
+    expect(() => addon._renderer.value.handleResize(80, 24)).not.toThrow();
+  });
+
+  test('installXtermTeardownSafety swallows late dimensions/handleResize races', () => {
+    const { installXtermTeardownSafety } = require('../terminal/TerminalTTY.helpers');
+    let idleFn = null;
+    const renderService = {
+      _renderer: { value: { handleResize: jest.fn() } },
+      _pausedResizeTask: {
+        set(fn) {
+          idleFn = fn;
+        },
+      },
+      handleResize(cols, rows) {
+        this._pausedResizeTask.set(() => this._renderer.value.handleResize(cols, rows));
+      },
+    };
+    const term = {
+      _core: {
+        _renderService: renderService,
+        viewport: {
+          _innerRefresh: () => {
+            throw new TypeError("Cannot read properties of undefined (reading 'dimensions')");
+          },
+        },
+      },
+    };
+    installXtermTeardownSafety(term);
+    expect(() => term._core.viewport._innerRefresh()).not.toThrow();
+    renderService.handleResize(80, 24);
+    renderService._renderer.value = undefined;
+    expect(() => idleFn()).not.toThrow();
+  });
+
+  test('neutralizeXtermSurface makes refresh/resize safe after half-dispose', () => {
+    const {
+      neutralizeXtermSurface,
+      isTerminalRendererReady,
+    } = require('../terminal/TerminalTTY.helpers');
+    let refreshCalls = 0;
+    const term = {
+      cols: 80,
+      rows: 24,
+      refresh: () => {
+        refreshCalls += 1;
+        throw new TypeError("Cannot read properties of undefined (reading 'dimensions')");
+      },
+      resize: jest.fn(),
+      _core: {
+        viewport: {
+          _innerRefresh: () => {
+            throw new TypeError("Cannot read properties of undefined (reading 'dimensions')");
+          },
+        },
+        _renderService: {
+          _renderer: { value: undefined },
+          handleResize: jest.fn(),
+        },
+      },
+    };
+    neutralizeXtermSurface(term);
+    expect(() => term.refresh(0, 10)).not.toThrow();
+    expect(() => term._core.viewport._innerRefresh()).not.toThrow();
+    expect(isTerminalRendererReady(term)).toBe(false);
+    expect(refreshCalls).toBe(0);
   });
 
   test('skips stale xterm instances whose renderer was already disposed during view switches', () => {

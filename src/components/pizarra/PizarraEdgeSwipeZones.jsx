@@ -8,7 +8,17 @@ import {
   resolveEdgeSwipeCommit,
 } from '@/lib/pizarra/pizarraEdgeViewSwipe';
 
-function EdgeZone({ side, enabled, canvasHeight, onDragStart, onDragMove, onDragEnd }) {
+function EdgeZone({
+  side,
+  enabled,
+  canvasHeight,
+  insetTop = 0,
+  insetBottom = 0,
+  zoneWidth = EDGE_ZONE_WIDTH_PX,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}) {
   const [active, setActive] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -104,13 +114,20 @@ function EdgeZone({ side, enabled, canvasHeight, onDragStart, onDragMove, onDrag
       onPointerLeave={() => {
         if (!active) setHovered(false);
       }}
+      title={
+        enabled
+          ? isLeft
+            ? 'Arrastra hacia la derecha para la ventana anterior'
+            : 'Arrastra hacia la izquierda para la siguiente ventana'
+          : undefined
+      }
       style={{
         position: 'absolute',
-        top: 0,
-        bottom: 0,
+        top: insetTop,
+        bottom: insetBottom,
         [isLeft ? 'left' : 'right']: 0,
-        width: EDGE_ZONE_WIDTH_PX,
-        zIndex: 10003,
+        width: zoneWidth,
+        zIndex: isLeft ? 10006 : 10005,
         pointerEvents: enabled ? 'auto' : 'none',
         touchAction: 'none',
         cursor: enabled ? (active ? 'grabbing' : 'grab') : 'default',
@@ -146,6 +163,8 @@ export default function PizarraEdgeSwipeZones({
   canvasHeight = 600,
   canGoPrev = false,
   canGoNext = false,
+  leftInsetBottom = 0,
+  leftZoneWidth = EDGE_ZONE_WIDTH_PX,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -173,6 +192,8 @@ export default function PizarraEdgeSwipeZones({
         side="left"
         enabled={canGoPrev}
         canvasHeight={canvasHeight}
+        insetBottom={leftInsetBottom}
+        zoneWidth={leftZoneWidth}
         onDragStart={onDragStart}
         onDragMove={onDragMove}
         onDragEnd={handleDragEnd}

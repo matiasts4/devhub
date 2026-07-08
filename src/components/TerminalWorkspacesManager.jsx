@@ -263,6 +263,28 @@ export {
 } from './terminal/hooks/useRightDockController';
 
 export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
+  // Warm xterm + session endpoint as soon as the terminal shell mounts so the
+  // first new panel does not pay dynamic-import + sidecar lookup latency on
+  // the "Iniciando/Conectando" critical path.
+  useEffect(() => {
+    let cancelled = false;
+    void import('@/lib/terminal/xtermRuntimePreload')
+      .then((mod) => {
+        if (!cancelled) return mod.preloadXtermRuntime();
+        return null;
+      })
+      .catch(() => null);
+    void import('@/lib/terminal/sessionEndpointPrefetch')
+      .then((mod) => {
+        if (!cancelled) return mod.prefetchTerminalSessionEndpoint(cwd);
+        return null;
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd]);
+
   const managerRootRef = useRef(null);
   const [shortcutHint, setShortcutHint] = useState(null);
   const panelSubtabsBarRef = useRef(null);
@@ -271,7 +293,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
   const rightDockLayerRef = useRef(null);
   const pendingDockSizeRef = useRef(null);
   const isDraggingDockRef = useRef(false);
-  const nudgeBrowserNativeLiveRef = useRef(null);
   const syncRightDockMeasuredBoundsRef = useRef(null);
   const applyLiveRightDockBoundsRef = useRef(null);
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
@@ -283,9 +304,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? `devhub_restore_manifest:${projectId}`
     : 'devhub_restore_manifest';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
-  const deferHeavySurfacesUntilPaint =
-    typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
-  const [heavySurfacesReady, setHeavySurfacesReady] = useState(!deferHeavySurfacesUntilPaint);
+  // Never gate the terminal grid behind a multi-rAF "booting" spinner —
+  // that made entering Terminales feel like 3–5s of dead UI. Heavy surfaces
+  // mount immediately; native/browser docks already self-suspend when hidden.
+  const deferHeavySurfacesUntilPaint = false;
+  const [heavySurfacesReady, setHeavySurfacesReady] = useState(true);
   const [reopenActionError, setReopenActionError] = useState(null);
   const pendingReopenPanelsRef = useRef(new Map());
   const swarmLaunchScheduledTimersRef = useRef(new Map());
@@ -534,6 +557,10 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     heavySurfacesReady,
   });
 
+  // ponytail: startup WebView2 purge lives only in useRightDockController via
+  // scheduleNativeBrowserStartupSweep — a second TWM purge raced after open and
+  // left the dock black with a stale React lease.
+
   const {
     workspaceWindows,
     setWorkspaceWindows,
@@ -773,7 +800,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     isDraggingDock,
     isDraggingDockRef,
     isDraggingInternalSplit,
-    nudgeBrowserNativeLiveRef,
     projectId,
     rightDockLayerRef,
     rightDockMeasuredBounds,
@@ -795,9 +821,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     for (const workspace of workspaces) {
       const windows = workspaceWindows?.[workspace.id] || [];
       const columnSources =
-        windows.length > 0
-          ? windows.flatMap((win) => win.columns || [])
-          : workspace.columns || [];
+        windows.length > 0 ? windows.flatMap((win) => win.columns || []) : workspace.columns || [];
       for (const column of columnSources) {
         for (const panel of column.panels || []) {
           if (panel?.id && ordinals[panel.id] === undefined) {
@@ -921,6 +945,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     if (normalized.includes('opencode')) return 'opencode';
     if (normalized.includes('codex')) return 'codex';
     if (normalized.includes('hermes')) return 'hermes';
+    if (normalized.includes('kimi')) return 'kimi';
+    if (/\b(grok|groc)\b/.test(normalized)) return 'grok';
     return null;
   }, []);
 
@@ -963,6 +989,20 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
 
     return results;
   }, [inferProgramFromPanelCommand]);
+
+  const getWorkspaceWindows = useCallback(() => {
+    const wsId = activeWsIdRef.current || activeWsId;
+    if (!wsId) return [];
+    const windows = workspaceWindowsRef.current?.[wsId] || [];
+    const activeWindowId = activeWindowIdsRef.current?.[wsId] || null;
+    return windows.map((view, index) => ({
+      id: view.id,
+      name: view.name || `V${index + 1}`,
+      index: index + 1,
+      active: view.id === activeWindowId,
+      panelCount: getAllPanelIds(view.columns || []).length,
+    }));
+  }, [activeWsId, getAllPanelIds]);
 
   const {
     buildNativeWorkspaceSyncDetail,
@@ -1055,6 +1095,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
       if (shouldDeferRightDockSizePersist(isDraggingDockRef.current)) {
         return;
       }
+      // ponytail: react-resizable-panels onResize fires during layout settle; bumping
+      // browserLayoutEpoch here re-opened WebView2 on every tick (infinite reload).
       updateRightDockState({ size });
     },
     [updateRightDockState]
@@ -1420,6 +1462,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     updateBrowserWindowState,
     setWorkspaces,
     setRestoreSettingsModal,
+    switchWindowInWorkspace,
   });
 
   useTerminalWorkspaceShortcuts({
@@ -1653,6 +1696,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     reopenOpenCodeSession,
     workspaceGridAreaRef,
     heavySurfacesReady,
+    rightDockMeasuredBounds,
     isFullscreenBrowser,
     hideRightDockPanel,
     updateRightDockState,
@@ -1718,6 +1762,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     createWorkspaceWithTerminalCount,
     getActiveWorkspaceTerminalPanelCount,
     getWorkspaceTerminals,
+    getWorkspaceWindows,
     showWorkspacePathChip,
   };
 

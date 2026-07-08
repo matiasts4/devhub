@@ -84,6 +84,49 @@ async function flushEffects() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+const BROWSER_VIEWPORT_RECT = {
+  x: 120,
+  y: 80,
+  width: 720,
+  height: 540,
+  top: 80,
+  left: 120,
+  right: 840,
+  bottom: 620,
+};
+
+function ensureBrowserViewportBounds(container) {
+  const shell = container.querySelector('[data-testid="browser-viewport-shell"]');
+  if (shell) {
+    shell.getBoundingClientRect = () => ({ ...BROWSER_VIEWPORT_RECT, toJSON() {} });
+  }
+  return shell;
+}
+
+function mockEmbeddedNativeBrowserInvoke() {
+  return async (command) => {
+    if (command === 'native_browser_probe') {
+      return {
+        ready: true,
+        reason: null,
+        persistentProfile: true,
+        capabilities: { persistentProfile: true, selector: { inspect: true } },
+      };
+    }
+    if (command === 'native_browser_open') return { opened: true, reason: null };
+    if (command === 'native_browser_load_url') return { loaded: true, reason: null };
+    if (
+      command === 'native_browser_resize' ||
+      command === 'native_browser_set_visibility' ||
+      command === 'native_browser_focus' ||
+      command === 'native_browser_raise'
+    ) {
+      return null;
+    }
+    return null;
+  };
+}
+
 async function renderIntoDom(element) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -92,6 +135,8 @@ async function renderIntoDom(element) {
   flushSync(() => {
     root.render(element);
   });
+  await flushEffects();
+  ensureBrowserViewportBounds(container);
   await flushEffects();
   return { container, root };
 }
@@ -475,26 +520,7 @@ describe('WorkspaceBridgePane', () => {
 
   test('hides native loading overlay once the GTK surface is ready', async () => {
     window.__TAURI_INTERNALS__ = {};
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === 'native_browser_probe') {
-        return {
-          ready: true,
-          reason: null,
-          persistentProfile: true,
-          capabilities: { persistentProfile: true, selector: { inspect: true } },
-        };
-      }
-      if (command === 'native_browser_open') return { opened: true, reason: null };
-      if (command === 'native_browser_load_url') return { loaded: true, reason: null };
-      if (
-        command === 'native_browser_resize' ||
-        command === 'native_browser_set_visibility' ||
-        command === 'native_browser_focus'
-      ) {
-        return null;
-      }
-      return null;
-    });
+    mockInvoke.mockImplementation(mockEmbeddedNativeBrowserInvoke());
 
     const view = await renderIntoDom(
       React.createElement(WorkspaceBrowserPane, {
@@ -513,10 +539,9 @@ describe('WorkspaceBridgePane', () => {
       })
     );
 
-    await flushEffects();
-    await flushEffects();
-
-    expect(view.container.querySelector('[data-testid="browser-loading-overlay"]')).toBeNull();
+    await waitForAssertion(() => {
+      expect(view.container.querySelector('[data-testid="browser-loading-overlay"]')).toBeNull();
+    });
     expect(
       view.container.querySelector('[data-testid="browser-native-runtime-shell"]')
     ).not.toBeNull();
@@ -524,19 +549,7 @@ describe('WorkspaceBridgePane', () => {
 
   test('hides the native gtk panel when the browser pane stops being visible in layout', async () => {
     window.__TAURI_INTERNALS__ = {};
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === 'native_browser_probe') {
-        return {
-          ready: true,
-          reason: null,
-          persistentProfile: true,
-          capabilities: { persistentProfile: true, selector: { inspect: true } },
-        };
-      }
-      if (command === 'native_browser_open') return { opened: true, reason: null };
-      if (command === 'native_browser_load_url') return { loaded: true, reason: null };
-      return null;
-    });
+    mockInvoke.mockImplementation(mockEmbeddedNativeBrowserInvoke());
 
     const view = await renderIntoDom(
       React.createElement(WorkspaceBrowserPane, {
@@ -555,7 +568,9 @@ describe('WorkspaceBridgePane', () => {
       })
     );
 
-    await flushEffects();
+    await waitForAssertion(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('native_browser_open', expect.any(Object));
+    });
     mockInvoke.mockClear();
 
     flushSync(() => {
@@ -588,19 +603,7 @@ describe('WorkspaceBridgePane', () => {
 
   test('hides the native gtk panel when workspace layout is window-maximized instead of browser-visible', async () => {
     window.__TAURI_INTERNALS__ = {};
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === 'native_browser_probe') {
-        return {
-          ready: true,
-          reason: null,
-          persistentProfile: true,
-          capabilities: { persistentProfile: true, selector: { inspect: true } },
-        };
-      }
-      if (command === 'native_browser_open') return { opened: true, reason: null };
-      if (command === 'native_browser_load_url') return { loaded: true, reason: null };
-      return null;
-    });
+    mockInvoke.mockImplementation(mockEmbeddedNativeBrowserInvoke());
 
     const view = await renderIntoDom(
       React.createElement(WorkspaceBrowserPane, {
@@ -619,7 +622,9 @@ describe('WorkspaceBridgePane', () => {
       })
     );
 
-    await flushEffects();
+    await waitForAssertion(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('native_browser_open', expect.any(Object));
+    });
     mockInvoke.mockClear();
 
     flushSync(() => {
@@ -686,6 +691,10 @@ describe('WorkspaceBridgePane', () => {
         onDockStateChange: jest.fn(),
       })
     );
+
+    await waitForAssertion(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('native_browser_open', expect.any(Object));
+    });
 
     flushSync(() => {
       view.root.render(
@@ -1012,7 +1021,9 @@ describe('WorkspaceBridgePane', () => {
       })
     );
 
-    await flushEffects();
+    await waitForAssertion(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('native_browser_open', expect.any(Object));
+    });
     mockInvoke.mockClear();
 
     await click(view.container.querySelector('[data-testid="browser-edit-toggle"]'));

@@ -27,7 +27,7 @@ export function isLiveElementPositioned(el = {}) {
 }
 
 export function computeDevSplitSlots(vis) {
-  const edgePad = 8;
+  const edgePad = 4;
   const gap = 12;
   const usableW = Math.max(640, vis.width - edgePad * 2);
   const usableH = Math.max(300, vis.height - edgePad * 2);
@@ -43,7 +43,7 @@ export function computeDevSplitSlots(vis) {
 }
 
 export function computeDevTrioSlots(vis) {
-  const edgePad = 8;
+  const edgePad = 4;
   const gap = 12;
   const rowGap = 12;
   const usableW = Math.max(640, vis.width - edgePad * 2);
@@ -64,7 +64,7 @@ export function computeDevTrioSlots(vis) {
 }
 
 export function computeDualBrowserSlots(vis) {
-  const edgePad = 8;
+  const edgePad = 4;
   const gap = 12;
   const usableW = Math.max(640, vis.width - edgePad * 2);
   const usableH = Math.max(300, vis.height - edgePad * 2);
@@ -90,9 +90,9 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
 
   const cx = vis.x + vis.width / 2;
   const cy = vis.y + vis.height / 2;
-  const PAD = 20;
-  const GAP = 16;
-  const maxH = Math.max(200, Math.round(vis.height * 0.88));
+  const PAD = 10;
+  const GAP = 12;
+  const maxH = Math.max(200, Math.round(vis.height * 0.96));
 
   const browsers = surfaces.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
   const terminals = surfaces.filter(
@@ -105,8 +105,8 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
   if (n === 1) {
     const s = surfaces[0];
     const isBrowser = s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER;
-    const w = Math.max(400, Math.round(vis.width * 0.86));
-    const h = Math.max(300, Math.min(Math.round(vis.height * 0.86), isBrowser ? 800 : 600));
+    const w = Math.max(400, Math.round(vis.width * 0.96));
+    const h = Math.max(300, Math.min(Math.round(vis.height * 0.96), isBrowser ? 1200 : 900));
     put(s.id, { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), width: w, height: h });
     return slotMap;
   }
@@ -138,7 +138,7 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
       200,
       Math.round((vis.width - PAD * 2 - GAP * (terminals.length - 1)) / terminals.length)
     );
-    const th = Math.max(240, Math.min(maxH, Math.round(vis.height * 0.82)));
+    const th = Math.max(240, Math.min(maxH, Math.round(vis.height * 0.94)));
     const totalW = tw * terminals.length + GAP * (terminals.length - 1);
     const startX = Math.round(cx - totalW / 2);
     const startY = Math.round(cy - th / 2);
@@ -183,13 +183,15 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
 export function resolveRegistrySurfacesBoundsByView(
   surfaces = [],
   views = [],
-  fallbackViewId = null
+  fallbackViewId = null,
+  { layoutWidth = VIEW_WORLD_WIDTH, layoutHeight = VIEW_WORLD_HEIGHT } = {}
 ) {
   if (!surfaces.length) return [];
   const byView = new Map();
   for (const s of surfaces) {
-    const viewId = getSurfaceViewId(s, views, fallbackViewId) || views[0]?.id;
-    if (!viewId) continue;
+    // Always place the surface: empty workspaceWindows (tests / first open)
+    // used to drop every card when neither viewId nor fallback existed.
+    const viewId = getSurfaceViewId(s, views, fallbackViewId) || views[0]?.id || '__default__';
     if (!byView.has(viewId)) byView.set(viewId, []);
     byView.get(viewId).push(s);
   }
@@ -199,8 +201,8 @@ export function resolveRegistrySurfacesBoundsByView(
     const vis = {
       x: origin.x,
       y: origin.y,
-      width: VIEW_WORLD_WIDTH,
-      height: VIEW_WORLD_HEIGHT,
+      width: layoutWidth,
+      height: layoutHeight,
     };
     resolved.push(...resolveSurfaceRenderBounds(group, vis));
   }
@@ -248,6 +250,12 @@ export function resolveSurfaceRenderBounds(
         y: saved.y,
         width: saved.width ?? defaultW,
         height: saved.height ?? defaultH,
+        // pizarra-editing-ux Phase 4: surface locking + layer order ride
+        // on pizarra.* and are flattened onto the render shape so the
+        // live-surface layer + consumers read shape.locked / shape.zIndex
+        // uniformly (same contract as simple shapes).
+        locked: Boolean(saved.locked),
+        zIndex: saved.zIndex ?? 0,
         _layoutResolved: true,
       };
     }
@@ -259,6 +267,8 @@ export function resolveSurfaceRenderBounds(
         y: slot.y,
         width: slot.width,
         height: slot.height,
+        locked: Boolean(saved.locked),
+        zIndex: saved.zIndex ?? 0,
         _layoutResolved: true,
         _layoutProvisional: true,
       };
@@ -271,6 +281,8 @@ export function resolveSurfaceRenderBounds(
       y: -10000,
       width: saved.width ?? defaultW,
       height: saved.height ?? defaultH,
+      locked: Boolean(saved.locked),
+      zIndex: saved.zIndex ?? 0,
       _layoutResolved: false,
     };
   });

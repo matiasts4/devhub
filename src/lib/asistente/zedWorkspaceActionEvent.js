@@ -30,7 +30,12 @@ export function dispatchZedWorkspaceActionFromToolResults(toolResults) {
     if (!parsed || parsed.error || !parsed.action) continue;
 
     const event = new CustomEvent(EVENT_NAME, {
-      detail: { action: parsed.action, section: parsed.section },
+      detail: {
+        action: parsed.action,
+        section: parsed.section,
+        window_id: parsed.window_id,
+        window_index: parsed.window_index,
+      },
       bubbles: true,
       cancelable: true,
     });

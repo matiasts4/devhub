@@ -5,8 +5,11 @@
 const mockGetTTYSessionsSnapshot = jest.fn();
 const mockEnsureTTYServer = jest.fn(() => Promise.resolve({ port: 4077, wsPath: '/terminal' }));
 
-jest.mock('@/lib/terminal/ttyServer', () => ({
+jest.mock('@/lib/terminal/ttySessionSnapshot', () => ({
   getTTYSessionsSnapshot: mockGetTTYSessionsSnapshot,
+}));
+
+jest.mock('@/lib/terminal/ttyServer', () => ({
   ensureTTYServer: mockEnsureTTYServer,
 }));
 

@@ -35,8 +35,23 @@ describe('open_terminal (terminalTool)', () => {
       command: 'ls',
       terminalId: expect.stringMatching(/^p\d+$/),
       displayName: expect.any(String),
+      focus: false,
       hint: expect.stringMatching(/list_terminals/i),
     });
+  });
+
+  test('multi open_terminal in one request mints unique displayNames', async () => {
+    const ctx = { workspace_terminals: [] };
+    const a = await terminalTool.execute({}, ctx);
+    const b = await terminalTool.execute({}, ctx);
+    const c = await terminalTool.execute({ program: 'grok' }, ctx);
+    expect(a.displayName).toBeTruthy();
+    expect(b.displayName).toBeTruthy();
+    expect(c.displayName).toBeTruthy();
+    expect(new Set([a.displayName, b.displayName, c.displayName]).size).toBe(3);
+    expect(a.terminalId).not.toBe(b.terminalId);
+    expect(a.focus).toBe(false);
+    expect(c.program).toBe('grok');
   });
 
   test('supports explicit agent program= (opencode) by building launch command and returning it as command_sent', async () => {
@@ -114,6 +129,23 @@ describe('open_terminal (terminalTool)', () => {
     expect(result.displayName).toBe('Chase');
     expect(typeof result.terminalId).toBe('string');
     expect(result.terminalId).toMatch(/^p\d+$/);
+  });
+
+  test('open_terminal mints an id above the highest client-reported panel (avoids UI panelCounterRef collision)', async () => {
+    // Simulates a client that has accumulated more manual splits (p1..p5)
+    // than Zed's own module-local counter knows about — minting blindly
+    // from the local counter could hand back an id (e.g. p1) that already
+    // belongs to a live panel.
+    const context = {
+      workspace_terminals: [
+        { terminalId: 'p1', displayName: 'Chase' },
+        { terminalId: 'p5', displayName: 'Nova' },
+      ],
+    };
+    const result = await terminalTool.execute({ command: 'ls' }, context);
+    const n = Number(/^p(\d+)$/.exec(result.terminalId)?.[1]);
+    expect(Number.isFinite(n)).toBe(true);
+    expect(n).toBeGreaterThan(5);
   });
 
   test('open_terminal({name:"Maverick"}) still returns a valid shape when name is not in the default pool', async () => {

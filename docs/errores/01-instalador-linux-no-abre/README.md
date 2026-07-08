@@ -71,3 +71,4 @@ El instalador DEB de DevHub para Linux presentaba **5 fallos encadenados** que i
 ## Incidentes relacionados (post-instalador)
 
 - [05 — `.deb`: "This page couldn't load" (puerto 3400 zombie, SQLite invites, WebKit terminales/swarm)](../05-deb-webkit-page-couldnt-load/README.md) — Jun 2026
+- [08 — `tauri dev` cierra terminales de la app instalada (coexistencia 3100/4001 vs 3400/4000)](../08-dev-instalado-coexistencia-terminales/README.md) — Jul 2026

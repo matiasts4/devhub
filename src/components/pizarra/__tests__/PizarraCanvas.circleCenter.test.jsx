@@ -52,7 +52,13 @@ function extractCircleBranch(source) {
   const raw = source.slice(start, end);
   // Strip `// …` line comments — the fix's explanatory comment
   // intentionally mentions the legacy `x: startX, y: startY` math.
+  // Normalize CRLF → LF first so the `//…$` regex matches on Windows
+  // checkouts (autocrlf=true leaves \r at end of each line, which
+  // otherwise breaks the `$` anchor and leaves the legacy-math
+  // comment text in the extracted branch, tripping the negative
+  // assertions below).
   return raw
+    .replace(/\r\n/g, '\n')
     .split('\n')
     .map((line) => line.replace(/\/\/.*$/, ''))
     .join('\n');

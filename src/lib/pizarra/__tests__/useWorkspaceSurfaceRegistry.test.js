@@ -103,6 +103,26 @@ describe('useWorkspaceSurfaceRegistry — flag OFF (legacy)', () => {
     expect(result.current.surfaces[0].label).toBe('dock');
     restore();
   });
+
+  // pizarra-editing-ux Phase 4: zIndex + locked ride under surface.pizarra.
+  // splitPizarraLayout (shared by the legacy + shared registry paths) must
+  // route them into pizarra, not root, so they persist + hydrate correctly.
+  test('updatePizarraLayout routes zIndex + locked into pizarra (Phase 4)', async () => {
+    const { mod, restore } = loadModules('0');
+    const { result } = renderHook(() => mod.useWorkspaceSurfaceRegistry('p', 'w'));
+
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    act(() => {
+      result.current.addSurface({ id: 's1', type: 'terminal' });
+      result.current.updatePizarraLayout('s1', { locked: true, zIndex: 5, label: 'ops' });
+    });
+
+    expect(result.current.surfaces[0].pizarra).toEqual({ locked: true, zIndex: 5 });
+    expect(result.current.surfaces[0].pizarra.locked).toBe(true);
+    expect(result.current.surfaces[0].label).toBe('ops');
+    restore();
+  });
 });
 
 describe('useWorkspaceSurfaceRegistry — flag ON (shared registry)', () => {

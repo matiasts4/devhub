@@ -1,0 +1,2856 @@
+﻿[
+  {
+    "filePath": "D:\\devhub\\src\\components\\TerminalTTY.jsx",
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'motion' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 4,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 4,
+        "endColumn": 16,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "motion" },
+            "fix": { "range": [98, 137], "text": "" },
+            "desc": "Remove unused variable 'motion'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'ClipboardPaste' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 24,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "ClipboardPaste" },
+            "fix": { "range": [147, 162], "text": "" },
+            "desc": "Remove unused variable 'ClipboardPaste'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'Copy' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 26,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 30,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "Copy" },
+            "fix": { "range": [161, 167], "text": "" },
+            "desc": "Remove unused variable 'Copy'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'Loader2' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 32,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "Loader2" },
+            "fix": { "range": [167, 176], "text": "" },
+            "desc": "Remove unused variable 'Loader2'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'RotateCcw' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 41,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 50,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "RotateCcw" },
+            "fix": { "range": [176, 187], "text": "" },
+            "desc": "Remove unused variable 'RotateCcw'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'Wifi' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 52,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 56,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "Wifi" },
+            "fix": { "range": [187, 193], "text": "" },
+            "desc": "Remove unused variable 'Wifi'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'WifiOff' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 58,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 65,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "WifiOff" },
+            "fix": { "range": [193, 202], "text": "" },
+            "desc": "Remove unused variable 'WifiOff'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'X' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 5,
+        "column": 67,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 5,
+        "endColumn": 68,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "X" },
+            "fix": { "range": [202, 205], "text": "" },
+            "desc": "Remove unused variable 'X'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalTheme' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 6,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 6,
+        "endColumn": 26,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalTheme" },
+            "fix": { "range": [229, 304], "text": "" },
+            "desc": "Remove unused variable 'getTerminalTheme'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'WebglErrorSection' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 13,
+        "column": 8,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 13,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "WebglErrorSection" },
+            "fix": { "range": [498, 521], "text": "" },
+            "desc": "Remove unused variable 'WebglErrorSection'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'readClipboardImage' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 37,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 37,
+        "endColumn": 21,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "readClipboardImage" },
+            "fix": { "range": [2439, 2458], "text": "" },
+            "desc": "Remove unused variable 'readClipboardImage'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'readClipboardText' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 38,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 38,
+        "endColumn": 20,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "readClipboardText" },
+            "fix": { "range": [2457, 2478], "text": "" },
+            "desc": "Remove unused variable 'readClipboardText'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'saveClipboardImageToTempFile' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 39,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 39,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "saveClipboardImageToTempFile" },
+            "fix": { "range": [2478, 2510], "text": "" },
+            "desc": "Remove unused variable 'saveClipboardImageToTempFile'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'terminalClipboardEventBelongsToPanel' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 40,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 40,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "terminalClipboardEventBelongsToPanel" },
+            "fix": { "range": [2510, 2550], "text": "" },
+            "desc": "Remove unused variable 'terminalClipboardEventBelongsToPanel'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalRendererFallbackCopy' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 43,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 43,
+        "endColumn": 34,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalRendererFallbackCopy" },
+            "fix": { "range": [2606, 2638], "text": "" },
+            "desc": "Remove unused variable 'getTerminalRendererFallbackCopy'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalRendererOptionLabel' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 44,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 44,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalRendererOptionLabel" },
+            "fix": { "range": [2637, 2671], "text": "" },
+            "desc": "Remove unused variable 'getTerminalRendererOptionLabel'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalRendererWebglFallbackCopy' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 45,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 45,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalRendererWebglFallbackCopy" },
+            "fix": { "range": [2671, 2711], "text": "" },
+            "desc": "Remove unused variable 'getTerminalRendererWebglFallbackCopy'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveRendererSelection' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 46,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 46,
+        "endColumn": 27,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveRendererSelection" },
+            "fix": { "range": [2711, 2739], "text": "" },
+            "desc": "Remove unused variable 'resolveRendererSelection'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_SPLIT_WEBGL_PANEL_LIMIT' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 47,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 47,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_SPLIT_WEBGL_PANEL_LIMIT" },
+            "fix": { "range": [2739, 2775], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_SPLIT_WEBGL_PANEL_LIMIT'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalFontOptions' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 49,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 49,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalFontOptions" },
+            "fix": { "range": [2838, 2919], "text": "" },
+            "desc": "Remove unused variable 'getTerminalFontOptions'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'containsTerminalResponseNoise' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 52,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 52,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "containsTerminalResponseNoise" },
+            "fix": { "range": [3012, 3042], "text": "" },
+            "desc": "Remove unused variable 'containsTerminalResponseNoise'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'filterTerminalInputForSession' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 53,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 53,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "filterTerminalInputForSession" },
+            "fix": { "range": [3041, 3074], "text": "" },
+            "desc": "Remove unused variable 'filterTerminalInputForSession'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'filterTerminalOutputForSession' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 54,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 54,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "filterTerminalOutputForSession" },
+            "fix": { "range": [3074, 3108], "text": "" },
+            "desc": "Remove unused variable 'filterTerminalOutputForSession'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTuiAdapter' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 56,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 56,
+        "endColumn": 23,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTuiAdapter" },
+            "fix": { "range": [3155, 3213], "text": "" },
+            "desc": "Remove unused variable 'getTuiAdapter'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'detectOpenCodeTuiReady' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 58,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 58,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "detectOpenCodeTuiReady" },
+            "fix": { "range": [3225, 3248], "text": "" },
+            "desc": "Remove unused variable 'detectOpenCodeTuiReady'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldDiscardOpenCodeCatchupReplay' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 59,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 59,
+        "endColumn": 37,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldDiscardOpenCodeCatchupReplay" },
+            "fix": { "range": [3247, 3285], "text": "" },
+            "desc": "Remove unused variable 'shouldDiscardOpenCodeCatchupReplay'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'detectKimiReadyFromTerminalBuffer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 62,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 62,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "detectKimiReadyFromTerminalBuffer" },
+            "fix": { "range": [3343, 3377], "text": "" },
+            "desc": "Remove unused variable 'detectKimiReadyFromTerminalBuffer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'detectKimiTuiReady' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 63,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 63,
+        "endColumn": 21,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "detectKimiTuiReady" },
+            "fix": { "range": [3376, 3398], "text": "" },
+            "desc": "Remove unused variable 'detectKimiTuiReady'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isKimiLaunchCommand' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 64,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 64,
+        "endColumn": 22,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isKimiLaunchCommand" },
+            "fix": { "range": [3398, 3421], "text": "" },
+            "desc": "Remove unused variable 'isKimiLaunchCommand'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isKimiTuiLive' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 65,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 65,
+        "endColumn": 16,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isKimiTuiLive" },
+            "fix": { "range": [3421, 3438], "text": "" },
+            "desc": "Remove unused variable 'isKimiTuiLive'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldFreezeKimiTuiViewportOnWorkspaceShow' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 66,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 66,
+        "endColumn": 45,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldFreezeKimiTuiViewportOnWorkspaceShow" },
+            "fix": { "range": [3438, 3484], "text": "" },
+            "desc": "Remove unused variable 'shouldFreezeKimiTuiViewportOnWorkspaceShow'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldSkipKimiTuiPtyResize' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 67,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 67,
+        "endColumn": 29,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldSkipKimiTuiPtyResize" },
+            "fix": { "range": [3484, 3514], "text": "" },
+            "desc": "Remove unused variable 'shouldSkipKimiTuiPtyResize'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'detectAgentTypeFromCommand' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 69,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 69,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "detectAgentTypeFromCommand" },
+            "fix": { "range": [3557, 3634], "text": "" },
+            "desc": "Remove unused variable 'detectAgentTypeFromCommand'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'createPanelActivityTracker' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 70,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 70,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "createPanelActivityTracker" },
+            "fix": { "range": [3635, 3729], "text": "" },
+            "desc": "Remove unused variable 'createPanelActivityTracker'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'clearPanelActivity' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 71,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 71,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "clearPanelActivity" },
+            "fix": { "range": [3730, 3814], "text": "" },
+            "desc": "Remove unused variable 'clearPanelActivity'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalLayoutSettledGeneration' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 74,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 74,
+        "endColumn": 44,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalLayoutSettledGeneration" },
+            "fix": { "range": [3983, 4075], "text": "" },
+            "desc": "Remove unused variable 'getTerminalLayoutSettledGeneration'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'usesLegacyTerminalSurvivorRecovery' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 75,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 75,
+        "endColumn": 44,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "usesLegacyTerminalSurvivorRecovery" },
+            "fix": { "range": [4076, 4175], "text": "" },
+            "desc": "Remove unused variable 'usesLegacyTerminalSurvivorRecovery'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'graveyardHasSurface' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 86,
+        "column": 17,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 86,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "graveyardHasSurface" },
+            "fix": { "range": [4477, 4511], "text": "" },
+            "desc": "Remove unused variable 'graveyardHasSurface'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'graveyardRestoreSurface' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 87,
+        "column": 21,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 87,
+        "endColumn": 44,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "graveyardRestoreSurface" },
+            "fix": { "range": [4510, 4555], "text": "" },
+            "desc": "Remove unused variable 'graveyardRestoreSurface'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'graveyardStashSurface' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 88,
+        "column": 19,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 88,
+        "endColumn": 40,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "graveyardStashSurface" },
+            "fix": { "range": [4555, 4596], "text": "" },
+            "desc": "Remove unused variable 'graveyardStashSurface'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'buildTerminalLifecycleEvent' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 90,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 90,
+        "endColumn": 37,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "buildTerminalLifecycleEvent" },
+            "fix": { "range": [4635, 4719], "text": "" },
+            "desc": "Remove unused variable 'buildTerminalLifecycleEvent'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'readPanelSessionExit' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 91,
+        "column": 33,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 91,
+        "endColumn": 53,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "readPanelSessionExit" },
+            "fix": { "range": [4750, 4772], "text": "" },
+            "desc": "Remove unused variable 'readPanelSessionExit'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'attachTerminalRendererAddons' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 95,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 95,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "attachTerminalRendererAddons" },
+            "fix": { "range": [4833, 4865], "text": "" },
+            "desc": "Remove unused variable 'attachTerminalRendererAddons'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveColdMountStaggerMs' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 98,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 98,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveColdMountStaggerMs" },
+            "fix": { "range": [4930, 4959], "text": "" },
+            "desc": "Remove unused variable 'resolveColdMountStaggerMs'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resetTerminalModesForReattach' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 101,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 101,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resetTerminalModesForReattach" },
+            "fix": { "range": [5025, 5058], "text": "" },
+            "desc": "Remove unused variable 'resetTerminalModesForReattach'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'normalizeTuiInitialCommand' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 102,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 102,
+        "endColumn": 29,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "normalizeTuiInitialCommand" },
+            "fix": { "range": [5058, 5088], "text": "" },
+            "desc": "Remove unused variable 'normalizeTuiInitialCommand'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'detectGrokTuiReady' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 105,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 105,
+        "endColumn": 21,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "detectGrokTuiReady" },
+            "fix": { "range": [5144, 5166], "text": "" },
+            "desc": "Remove unused variable 'detectGrokTuiReady'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'detectGrokSessionFromOutput' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 106,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 106,
+        "endColumn": 30,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "detectGrokSessionFromOutput" },
+            "fix": { "range": [5166, 5197], "text": "" },
+            "desc": "Remove unused variable 'detectGrokSessionFromOutput'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldPassthroughNativeTuiWheel' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 107,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 107,
+        "endColumn": 34,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldPassthroughNativeTuiWheel" },
+            "fix": { "range": [5197, 5232], "text": "" },
+            "desc": "Remove unused variable 'shouldPassthroughNativeTuiWheel'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalWheelScrollPrefer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 108,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 108,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalWheelScrollPrefer" },
+            "fix": { "range": [5232, 5268], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalWheelScrollPrefer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldInjectGrokWheelSgr' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 109,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 109,
+        "endColumn": 27,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldInjectGrokWheelSgr" },
+            "fix": { "range": [5268, 5296], "text": "" },
+            "desc": "Remove unused variable 'shouldInjectGrokWheelSgr'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldScrollKimiWheelLocally' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 110,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 110,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldScrollKimiWheelLocally" },
+            "fix": { "range": [5296, 5328], "text": "" },
+            "desc": "Remove unused variable 'shouldScrollKimiWheelLocally'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveGrokWheelSgrCoords' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 111,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 111,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveGrokWheelSgrCoords" },
+            "fix": { "range": [5328, 5357], "text": "" },
+            "desc": "Remove unused variable 'resolveGrokWheelSgrCoords'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'buildGrokWheelScrollPayload' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 112,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 112,
+        "endColumn": 30,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "buildGrokWheelScrollPayload" },
+            "fix": { "range": [5357, 5388], "text": "" },
+            "desc": "Remove unused variable 'buildGrokWheelScrollPayload'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'buildTerminalWheelArrowSequence' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 113,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 113,
+        "endColumn": 34,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "buildTerminalWheelArrowSequence" },
+            "fix": { "range": [5388, 5423], "text": "" },
+            "desc": "Remove unused variable 'buildTerminalWheelArrowSequence'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'buildTerminalWheelScrollPayload' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 114,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 114,
+        "endColumn": 34,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "buildTerminalWheelScrollPayload" },
+            "fix": { "range": [5423, 5458], "text": "" },
+            "desc": "Remove unused variable 'buildTerminalWheelScrollPayload'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'buildTerminalWheelSgrSequence' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 115,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 115,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "buildTerminalWheelSgrSequence" },
+            "fix": { "range": [5458, 5491], "text": "" },
+            "desc": "Remove unused variable 'buildTerminalWheelSgrSequence'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalPointerElement' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 116,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 116,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalPointerElement" },
+            "fix": { "range": [5491, 5524], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalPointerElement'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isForwardedTerminalWheelEvent' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 117,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 117,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isForwardedTerminalWheelEvent" },
+            "fix": { "range": [5524, 5557], "text": "" },
+            "desc": "Remove unused variable 'isForwardedTerminalWheelEvent'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'forwardTerminalWheelToXterm' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 118,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 118,
+        "endColumn": 30,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "forwardTerminalWheelToXterm" },
+            "fix": { "range": [5557, 5588], "text": "" },
+            "desc": "Remove unused variable 'forwardTerminalWheelToXterm'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isWebglAddonContextLost' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 124,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 124,
+        "endColumn": 26,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isWebglAddonContextLost" },
+            "fix": { "range": [5735, 5762], "text": "" },
+            "desc": "Remove unused variable 'isWebglAddonContextLost'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldLogTerminalViewportDiagnostic' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 127,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 127,
+        "endColumn": 38,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldLogTerminalViewportDiagnostic" },
+            "fix": { "range": [5827, 5866], "text": "" },
+            "desc": "Remove unused variable 'shouldLogTerminalViewportDiagnostic'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalConnectionCloseState' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 129,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 129,
+        "endColumn": 38,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalConnectionCloseState" },
+            "fix": { "range": [5908, 5947], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalConnectionCloseState'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalClipboardShortcut' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 130,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 130,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalClipboardShortcut" },
+            "fix": { "range": [5947, 5983], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalClipboardShortcut'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getClipboardApi' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 131,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 131,
+        "endColumn": 18,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getClipboardApi" },
+            "fix": { "range": [5983, 6002], "text": "" },
+            "desc": "Remove unused variable 'getClipboardApi'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'sendTerminalPasteInput' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 132,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 132,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "sendTerminalPasteInput" },
+            "fix": { "range": [6002, 6028], "text": "" },
+            "desc": "Remove unused variable 'sendTerminalPasteInput'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldUseTerminalScrollbackWheel' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 135,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 135,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldUseTerminalScrollbackWheel" },
+            "fix": { "range": [6090, 6126], "text": "" },
+            "desc": "Remove unused variable 'shouldUseTerminalScrollbackWheel'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldInjectTerminalWheelIntoPty' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 136,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 136,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldInjectTerminalWheelIntoPty" },
+            "fix": { "range": [6126, 6162], "text": "" },
+            "desc": "Remove unused variable 'shouldInjectTerminalWheelIntoPty'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'scrollTerminalViewport' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 137,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 137,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "scrollTerminalViewport" },
+            "fix": { "range": [6162, 6188], "text": "" },
+            "desc": "Remove unused variable 'scrollTerminalViewport'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalWheelScrollDirection' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 138,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 138,
+        "endColumn": 38,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalWheelScrollDirection" },
+            "fix": { "range": [6188, 6227], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalWheelScrollDirection'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalWheelPageSteps' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 139,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 139,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalWheelPageSteps" },
+            "fix": { "range": [6227, 6260], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalWheelPageSteps'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'buildTerminalWheelPageSequence' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 140,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 140,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "buildTerminalWheelPageSequence" },
+            "fix": { "range": [6260, 6294], "text": "" },
+            "desc": "Remove unused variable 'buildTerminalWheelPageSequence'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalScreenElement' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 141,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 141,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalScreenElement" },
+            "fix": { "range": [6294, 6326], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalScreenElement'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldRouteWheelToTranscript' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 142,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 142,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldRouteWheelToTranscript" },
+            "fix": { "range": [6326, 6358], "text": "" },
+            "desc": "Remove unused variable 'shouldRouteWheelToTranscript'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldRunPanelClickViewportRecovery' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 143,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 143,
+        "endColumn": 38,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldRunPanelClickViewportRecovery" },
+            "fix": { "range": [6358, 6397], "text": "" },
+            "desc": "Remove unused variable 'shouldRunPanelClickViewportRecovery'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldClearWebglAtlasOnPanelActivation' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 144,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 144,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldClearWebglAtlasOnPanelActivation" },
+            "fix": { "range": [6397, 6439], "text": "" },
+            "desc": "Remove unused variable 'shouldClearWebglAtlasOnPanelActivation'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldSkipReactivateViewportOnPanelActivation' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 145,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 145,
+        "endColumn": 48,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldSkipReactivateViewportOnPanelActivation" },
+            "fix": { "range": [6439, 6488], "text": "" },
+            "desc": "Remove unused variable 'shouldSkipReactivateViewportOnPanelActivation'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldAttachWebglRenderer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 146,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 146,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldAttachWebglRenderer" },
+            "fix": { "range": [6488, 6517], "text": "" },
+            "desc": "Remove unused variable 'shouldAttachWebglRenderer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldBlockV2WebglRecovery' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 147,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 147,
+        "endColumn": 29,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldBlockV2WebglRecovery" },
+            "fix": { "range": [6517, 6547], "text": "" },
+            "desc": "Remove unused variable 'shouldBlockV2WebglRecovery'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldUseLegacySurvivorRecovery' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 148,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 148,
+        "endColumn": 34,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldUseLegacySurvivorRecovery" },
+            "fix": { "range": [6547, 6582], "text": "" },
+            "desc": "Remove unused variable 'shouldUseLegacySurvivorRecovery'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldFreezeSingleWebglViewportOnWorkspaceShow' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 149,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 149,
+        "endColumn": 49,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldFreezeSingleWebglViewportOnWorkspaceShow" },
+            "fix": { "range": [6582, 6632], "text": "" },
+            "desc": "Remove unused variable 'shouldFreezeSingleWebglViewportOnWorkspaceShow'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldAttachCanvasRenderer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 150,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 150,
+        "endColumn": 29,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldAttachCanvasRenderer" },
+            "fix": { "range": [6632, 6662], "text": "" },
+            "desc": "Remove unused variable 'shouldAttachCanvasRenderer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldMountCanvasAddon' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 151,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 151,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldMountCanvasAddon" },
+            "fix": { "range": [6662, 6688], "text": "" },
+            "desc": "Remove unused variable 'shouldMountCanvasAddon'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldUseGpuTerminalRenderer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 152,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 152,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldUseGpuTerminalRenderer" },
+            "fix": { "range": [6688, 6720], "text": "" },
+            "desc": "Remove unused variable 'shouldUseGpuTerminalRenderer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'needsGpuRendererReattach' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 153,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 153,
+        "endColumn": 27,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "needsGpuRendererReattach" },
+            "fix": { "range": [6720, 6748], "text": "" },
+            "desc": "Remove unused variable 'needsGpuRendererReattach'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldSkipGpuVisibilityReveal' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 154,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 154,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldSkipGpuVisibilityReveal" },
+            "fix": { "range": [6748, 6781], "text": "" },
+            "desc": "Remove unused variable 'shouldSkipGpuVisibilityReveal'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldSoftGpuWorkspaceReveal' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 155,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 155,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldSoftGpuWorkspaceReveal" },
+            "fix": { "range": [6781, 6813], "text": "" },
+            "desc": "Remove unused variable 'shouldSoftGpuWorkspaceReveal'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveWorkspaceLayoutShowRevealMode' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 156,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 156,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveWorkspaceLayoutShowRevealMode" },
+            "fix": { "range": [6813, 6853], "text": "" },
+            "desc": "Remove unused variable 'resolveWorkspaceLayoutShowRevealMode'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'performSoftGpuVisibilityReveal' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 157,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 157,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "performSoftGpuVisibilityReveal" },
+            "fix": { "range": [6853, 6887], "text": "" },
+            "desc": "Remove unused variable 'performSoftGpuVisibilityReveal'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldRefitVisibleInactiveSplitPanel' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 159,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 159,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldRefitVisibleInactiveSplitPanel" },
+            "fix": { "range": [6923, 6963], "text": "" },
+            "desc": "Remove unused variable 'shouldRefitVisibleInactiveSplitPanel'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveConnectInitialCommandState' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 161,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 161,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveConnectInitialCommandState" },
+            "fix": { "range": [7005, 7042], "text": "" },
+            "desc": "Remove unused variable 'resolveConnectInitialCommandState'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isWorkspaceLayoutSwitchReason' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 162,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 162,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isWorkspaceLayoutSwitchReason" },
+            "fix": { "range": [7042, 7075], "text": "" },
+            "desc": "Remove unused variable 'isWorkspaceLayoutSwitchReason'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isWorkspaceSurvivorRecoverLayoutReason' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 163,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 163,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isWorkspaceSurvivorRecoverLayoutReason" },
+            "fix": { "range": [7075, 7117], "text": "" },
+            "desc": "Remove unused variable 'isWorkspaceSurvivorRecoverLayoutReason'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldFreezeDomViewportOnAppResume' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 164,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 164,
+        "endColumn": 37,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldFreezeDomViewportOnAppResume" },
+            "fix": { "range": [7117, 7155], "text": "" },
+            "desc": "Remove unused variable 'shouldFreezeDomViewportOnAppResume'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldFreezeDomViewportOnWorkspaceShow' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 165,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 165,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldFreezeDomViewportOnWorkspaceShow" },
+            "fix": { "range": [7155, 7197], "text": "" },
+            "desc": "Remove unused variable 'shouldFreezeDomViewportOnWorkspaceShow'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldSkipRedundantLayoutSettleViewportSync' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 166,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 166,
+        "endColumn": 46,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldSkipRedundantLayoutSettleViewportSync" },
+            "fix": { "range": [7197, 7244], "text": "" },
+            "desc": "Remove unused variable 'shouldSkipRedundantLayoutSettleViewportSync'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldSkipTerminalOutputWhileLayoutHidden' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 167,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 167,
+        "endColumn": 44,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldSkipTerminalOutputWhileLayoutHidden" },
+            "fix": { "range": [7244, 7289], "text": "" },
+            "desc": "Remove unused variable 'shouldSkipTerminalOutputWhileLayoutHidden'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'appendHiddenTerminalOutputBuffer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 168,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 168,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "appendHiddenTerminalOutputBuffer" },
+            "fix": { "range": [7289, 7325], "text": "" },
+            "desc": "Remove unused variable 'appendHiddenTerminalOutputBuffer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'takeHiddenTerminalOutputBuffer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 169,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 169,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "takeHiddenTerminalOutputBuffer" },
+            "fix": { "range": [7325, 7359], "text": "" },
+            "desc": "Remove unused variable 'takeHiddenTerminalOutputBuffer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'terminalBufferHasRenderableContent' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 171,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 171,
+        "endColumn": 37,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "terminalBufferHasRenderableContent" },
+            "fix": { "range": [7395, 7433], "text": "" },
+            "desc": "Remove unused variable 'terminalBufferHasRenderableContent'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'chunkTerminalOutputForCatchup' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 172,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 172,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "chunkTerminalOutputForCatchup" },
+            "fix": { "range": [7433, 7466], "text": "" },
+            "desc": "Remove unused variable 'chunkTerminalOutputForCatchup'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldClearAtlasForSplitCanvas' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 174,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 174,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldClearAtlasForSplitCanvas" },
+            "fix": { "range": [7492, 7526], "text": "" },
+            "desc": "Remove unused variable 'shouldClearAtlasForSplitCanvas'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldClearGpuAtlasOnWorkspaceShow' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 175,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 175,
+        "endColumn": 37,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldClearGpuAtlasOnWorkspaceShow" },
+            "fix": { "range": [7526, 7564], "text": "" },
+            "desc": "Remove unused variable 'shouldClearGpuAtlasOnWorkspaceShow'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldReleaseWebglRendererOnLayoutHide' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 176,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 176,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldReleaseWebglRendererOnLayoutHide" },
+            "fix": { "range": [7564, 7606], "text": "" },
+            "desc": "Remove unused variable 'shouldReleaseWebglRendererOnLayoutHide'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldReleaseCanvasRendererOnLayoutHide' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 177,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 177,
+        "endColumn": 42,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldReleaseCanvasRendererOnLayoutHide" },
+            "fix": { "range": [7606, 7649], "text": "" },
+            "desc": "Remove unused variable 'shouldReleaseCanvasRendererOnLayoutHide'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalRendererStatusCopy' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 180,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 180,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalRendererStatusCopy" },
+            "fix": { "range": [7706, 7739], "text": "" },
+            "desc": "Remove unused variable 'getTerminalRendererStatusCopy'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'getTerminalRendererRecoveryActionLabel' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 181,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 181,
+        "endColumn": 41,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "getTerminalRendererRecoveryActionLabel" },
+            "fix": { "range": [7739, 7781], "text": "" },
+            "desc": "Remove unused variable 'getTerminalRendererRecoveryActionLabel'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldReinitializeTerminalForRenderer' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 182,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 182,
+        "endColumn": 40,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldReinitializeTerminalForRenderer" },
+            "fix": { "range": [7781, 7822], "text": "" },
+            "desc": "Remove unused variable 'shouldReinitializeTerminalForRenderer'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveTerminalFontFamily' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 186,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 186,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveTerminalFontFamily" },
+            "fix": { "range": [7940, 7969], "text": "" },
+            "desc": "Remove unused variable 'resolveTerminalFontFamily'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_PROJECTION_READY_TIMEOUT_MS' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 188,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 188,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_PROJECTION_READY_TIMEOUT_MS" },
+            "fix": { "range": [8002, 8042], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_PROJECTION_READY_TIMEOUT_MS'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_COLD_MOUNT_STAGGER_MS' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 189,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 189,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_COLD_MOUNT_STAGGER_MS" },
+            "fix": { "range": [8042, 8076], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_COLD_MOUNT_STAGGER_MS'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_DISABLE_FOCUS_REPORTING_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 190,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 190,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_DISABLE_FOCUS_REPORTING_SEQ" },
+            "fix": { "range": [8076, 8116], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_DISABLE_FOCUS_REPORTING_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_DISABLE_MOUSE_REPORTING_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 191,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 191,
+        "endColumn": 39,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_DISABLE_MOUSE_REPORTING_SEQ" },
+            "fix": { "range": [8116, 8156], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_DISABLE_MOUSE_REPORTING_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 192,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 192,
+        "endColumn": 42,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ" },
+            "fix": { "range": [8156, 8199], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 193,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 193,
+        "endColumn": 49,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ" },
+            "fix": { "range": [8199, 8249], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_SYNC_OUTPUT_START_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 194,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 194,
+        "endColumn": 33,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_SYNC_OUTPUT_START_SEQ" },
+            "fix": { "range": [8249, 8283], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_SYNC_OUTPUT_START_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_SYNC_OUTPUT_END_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 195,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 195,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_SYNC_OUTPUT_END_SEQ" },
+            "fix": { "range": [8283, 8315], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_SYNC_OUTPUT_END_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 196,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 196,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS" },
+            "fix": { "range": [8315, 8351], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 197,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 197,
+        "endColumn": 38,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME" },
+            "fix": { "range": [8351, 8390], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_OUTPUT_BACKLOG_THRESHOLD' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 198,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 198,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_OUTPUT_BACKLOG_THRESHOLD" },
+            "fix": { "range": [8390, 8427], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_OUTPUT_BACKLOG_THRESHOLD'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_SNAPSHOT_THRESHOLD_BYTES' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 199,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 199,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_SNAPSHOT_THRESHOLD_BYTES" },
+            "fix": { "range": [8427, 8464], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_SNAPSHOT_THRESHOLD_BYTES'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_SNAPSHOT_MAX_INTERVAL_MS' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 200,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 200,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_SNAPSHOT_MAX_INTERVAL_MS" },
+            "fix": { "range": [8464, 8501], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_SNAPSHOT_MAX_INTERVAL_MS'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_GROK_INPUT_ZONE_ROWS' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 201,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 201,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_GROK_INPUT_ZONE_ROWS" },
+            "fix": { "range": [8501, 8534], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_GROK_INPUT_ZONE_ROWS'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_WHEEL_FORWARD_FLAG' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 202,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 202,
+        "endColumn": 30,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_WHEEL_FORWARD_FLAG" },
+            "fix": { "range": [8534, 8565], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_WHEEL_FORWARD_FLAG'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_PAGE_UP_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 203,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 203,
+        "endColumn": 23,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_PAGE_UP_SEQ" },
+            "fix": { "range": [8565, 8589], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_PAGE_UP_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_PAGE_DOWN_SEQ' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 204,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 204,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_PAGE_DOWN_SEQ" },
+            "fix": { "range": [8589, 8615], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_PAGE_DOWN_SEQ'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'TERMINAL_DEFAULT_INPUT_ZONE_ROWS' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 205,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 205,
+        "endColumn": 35,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "TERMINAL_DEFAULT_INPUT_ZONE_ROWS" },
+            "fix": { "range": [8615, 8651], "text": "" },
+            "desc": "Remove unused variable 'TERMINAL_DEFAULT_INPUT_ZONE_ROWS'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 206,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 206,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX" },
+            "fix": { "range": [8651, 8688], "text": "" },
+            "desc": "Remove unused variable 'HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 207,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 207,
+        "endColumn": 38,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES" },
+            "fix": { "range": [8688, 8727], "text": "" },
+            "desc": "Remove unused variable 'HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 208,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 208,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES" },
+            "fix": { "range": [8727, 8764], "text": "" },
+            "desc": "Remove unused variable 'HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'isTerminalViewportUndersized' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 209,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 209,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "isTerminalViewportUndersized" },
+            "fix": { "range": [8764, 8796], "text": "" },
+            "desc": "Remove unused variable 'isTerminalViewportUndersized'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'shouldDeferTerminalConnectUntilViewportFitted' is defined but never used. Allowed unused vars must match /^_/u.",
+        "line": 210,
+        "column": 3,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 210,
+        "endColumn": 48,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "shouldDeferTerminalConnectUntilViewportFitted" },
+            "fix": { "range": [8796, 8845], "text": "" },
+            "desc": "Remove unused variable 'shouldDeferTerminalConnectUntilViewportFitted'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'nativeWheelPassthrough' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 305,
+        "column": 10,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 305,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "nativeWheelPassthrough" },
+            "fix": { "range": [13108, 13130], "text": "" },
+            "desc": "Remove unused variable 'nativeWheelPassthrough'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'rendererCapabilities' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 348,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 348,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "rendererCapabilities" },
+            "fix": { "range": [15070, 15096], "text": "" },
+            "desc": "Remove unused variable 'rendererCapabilities'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'webglProbeResult' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 350,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 350,
+        "endColumn": 21,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "webglProbeResult" },
+            "fix": { "range": [15115, 15137], "text": "" },
+            "desc": "Remove unused variable 'webglProbeResult'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'initTimeoutRef' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 499,
+        "column": 9,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 499,
+        "endColumn": 23,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "initTimeoutRef" },
+            "fix": { "range": [21903, 21939], "text": "" },
+            "desc": "Remove unused variable 'initTimeoutRef'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'enqueueOutput' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 513,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 513,
+        "endColumn": 18,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "enqueueOutput" },
+            "fix": { "range": [22505, 22519], "text": "" },
+            "desc": "Remove unused variable 'enqueueOutput'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'flushOutput' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 514,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 514,
+        "endColumn": 16,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "flushOutput" },
+            "fix": { "range": [22518, 22535], "text": "" },
+            "desc": "Remove unused variable 'flushOutput'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'clearSyncOutputTimeout' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 516,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 516,
+        "endColumn": 27,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "clearSyncOutputTimeout" },
+            "fix": { "range": [22557, 22585], "text": "" },
+            "desc": "Remove unused variable 'clearSyncOutputTimeout'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveSwarmTmuxSessionName' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 572,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 572,
+        "endColumn": 32,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveSwarmTmuxSessionName" },
+            "fix": { "range": [24037, 24065], "text": "" },
+            "desc": "Remove unused variable 'resolveSwarmTmuxSessionName'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'skipRedundantInitialCommandSend' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 576,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 576,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "skipRedundantInitialCommandSend" },
+            "fix": { "range": [24136, 24173], "text": "" },
+            "desc": "Remove unused variable 'skipRedundantInitialCommandSend'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'resolveInjectCommand' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 578,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 578,
+        "endColumn": 25,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "resolveInjectCommand" },
+            "fix": { "range": [24213, 24239], "text": "" },
+            "desc": "Remove unused variable 'resolveInjectCommand'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useCallback has a missing dependency: 'effectiveRendererModeRef'. Either include it or remove the dependency array.",
+        "line": 777,
+        "column": 5,
+        "nodeType": "ArrayExpression",
+        "endLine": 777,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "desc": "Update the dependencies array to be: [effectiveRendererModeRef, webglFallback?.reason]",
+            "fix": {
+              "range": [30748, 30771],
+              "text": "[effectiveRendererModeRef, webglFallback?.reason]"
+            }
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useCallback received a function whose dependencies are unknown. Pass an inline function instead.",
+        "line": 780,
+        "column": 33,
+        "nodeType": "Identifier",
+        "endLine": 780,
+        "endColumn": 44
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'reason' is assigned a value but never used. Allowed unused args must match /^_/u.",
+        "line": 801,
+        "column": 6,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 801,
+        "endColumn": 12,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "reason" },
+            "fix": { "range": [31300, 31324], "text": "" },
+            "desc": "Remove unused variable 'reason'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useCallback has a missing dependency: 'setConnectionState'. Either include it or remove the dependency array.",
+        "line": 823,
+        "column": 5,
+        "nodeType": "ArrayExpression",
+        "endLine": 823,
+        "endColumn": 43,
+        "suggestions": [
+          {
+            "desc": "Update the dependencies array to be: [clearTimers, disposeXtermRuntime, id, setConnectionState]",
+            "fix": {
+              "range": [32167, 32205],
+              "text": "[clearTimers, disposeXtermRuntime, id, setConnectionState]"
+            }
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'closeNativeLease' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 842,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 842,
+        "endColumn": 21,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "closeNativeLease" },
+            "fix": { "range": [32607, 32624], "text": "" },
+            "desc": "Remove unused variable 'closeNativeLease'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'handlePasteIntoTerminal' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 855,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 855,
+        "endColumn": 28,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "handlePasteIntoTerminal" },
+            "fix": { "range": [32879, 32908], "text": "" },
+            "desc": "Remove unused variable 'handlePasteIntoTerminal'."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 1,
+        "message": "'handleWebglContextLoss' is assigned a value but never used. Allowed unused vars must match /^_/u.",
+        "line": 925,
+        "column": 5,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 925,
+        "endColumn": 27,
+        "suggestions": [
+          {
+            "messageId": "removeVar",
+            "data": { "varName": "handleWebglContextLoss" },
+            "fix": { "range": [34637, 34665], "text": "" },
+            "desc": "Remove unused variable 'handleWebglContextLoss'."
+          }
+        ]
+      },
+      {
+        "ruleId": "react-hooks/exhaustive-deps",
+        "severity": 1,
+        "message": "React Hook useCallback has missing dependencies: 'id', 'setConnectionState', and 'setSessionExitReason'. Either include them or remove the dependency array.",
+        "line": 1421,
+        "column": 6,
+        "nodeType": "ArrayExpression",
+        "endLine": 1421,
+        "endColumn": 54,
+        "suggestions": [
+          {
+            "desc": "Update the dependencies array to be: [autoFocus, connect, id, initialCommand, sendResize, setConnectionState, setSessionExitReason]",
+            "fix": {
+              "range": [50662, 50710],
+              "text": "[autoFocus, connect, id, initialCommand, sendResize, setConnectionState, setSessionExitReason]"
+            }
+          }
+        ]
+      }
+    ],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 150,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "source": "'use client';\n\nimport { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';\nimport { motion } from 'framer-motion';\nimport { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';\nimport { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';\nimport {\n  getTerminalAppShellStyle,\n  getTerminalFloatingControlStyle,\n  getTerminalTitleBarStyle,\n  getTerminalViewportFrameStyle,\n} from '@/components/terminal/terminalChromeStyles';\nimport WebglErrorSection from './terminal/components/WebglErrorSection';\nimport useTerminalOutputQueue from './terminal/hooks/useTerminalOutputQueue';\nimport useTerminalClipboard from './terminal/hooks/useTerminalClipboard';\nimport useTerminalWheelRouter from './terminal/hooks/useTerminalWheelRouter';\nimport useTerminalV2Session from './terminal/hooks/useTerminalV2Session';\nimport useTerminalRendererController from './terminal/hooks/useTerminalRendererController';\nimport useTerminalViewportSync from './terminal/hooks/useTerminalViewportSync';\nimport useTerminalWorkspaceShowRecovery from './terminal/hooks/useTerminalWorkspaceShowRecovery';\nimport useTerminalLayoutChurnRecovery from './terminal/hooks/useTerminalLayoutChurnRecovery';\nimport useTerminalEngine from './terminal/hooks/useTerminalEngine';\nimport useTerminalRendererState from './terminal/hooks/useTerminalRendererState';\nimport useTerminalStatusState from './terminal/hooks/useTerminalStatusState';\nimport useTerminalFontSize from './terminal/hooks/useTerminalFontSize';\nimport useTerminalViewportPointer from './terminal/hooks/useTerminalViewportPointer';\nimport useTerminalScrollPreserve from './terminal/hooks/useTerminalScrollPreserve';\nimport useTerminalSearchAndZedInput from './terminal/hooks/useTerminalSearchAndZedInput';\nimport useTerminalPanelActivationRecovery from './terminal/hooks/useTerminalPanelActivationRecovery';\nimport useTerminalAutoReconnect from './terminal/hooks/useTerminalAutoReconnect';\nimport useTerminalWindowEventRouter from './terminal/hooks/useTerminalWindowEventRouter';\nimport useTerminalSessionExit from './terminal/hooks/useTerminalSessionExit';\nimport useTerminalInitialCommandLifecycle from './terminal/hooks/useTerminalInitialCommandLifecycle';\nimport useTerminalNativeVteLifecycle from './terminal/hooks/useTerminalNativeVteLifecycle';\nimport useTerminalRendererMigration from './terminal/hooks/useTerminalRendererMigration';\nimport {\n  readClipboardImage,\n  readClipboardText,\n  saveClipboardImageToTempFile,\n  terminalClipboardEventBelongsToPanel,\n} from '@/lib/terminal/terminalClipboard';\nimport {\n  getTerminalRendererFallbackCopy,\n  getTerminalRendererOptionLabel,\n  getTerminalRendererWebglFallbackCopy,\n  resolveRendererSelection,\n  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,\n} from '@/components/terminal/terminalRendererCapabilities';\nimport { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';\nimport { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';\nimport {\n  containsTerminalResponseNoise,\n  filterTerminalInputForSession,\n  filterTerminalOutputForSession,\n} from '@/lib/terminal/terminalNoiseFilter';\nimport { getTuiAdapter } from '@/lib/terminal/tuiAdapter';\nimport {\n  detectOpenCodeTuiReady,\n  shouldDiscardOpenCodeCatchupReplay,\n} from '@/lib/terminal/opencodeReadyMarker';\nimport {\n  detectKimiReadyFromTerminalBuffer,\n  detectKimiTuiReady,\n  isKimiLaunchCommand,\n  isKimiTuiLive,\n  shouldFreezeKimiTuiViewportOnWorkspaceShow,\n  shouldSkipKimiTuiPtyResize,\n} from '@/lib/terminal/kimiReadyMarker';\nimport { detectAgentTypeFromCommand } from '@/lib/terminal/agentTuiMetadata';\nimport { createPanelActivityTracker } from '@/components/terminal/utils/panelActivityTracker';\nimport { clearPanelActivity } from '@/components/terminal/utils/panelActivityStore';\nimport { clearPanelInitialCommandLifecycle } from '@/lib/terminal/panelInitialCommandLifecycle';\nimport { logTerminalSession } from '@/lib/debug/terminalSessionDebug';\nimport { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';\nimport { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';\nimport {\n  cancelNativeVteLayoutHide,\n  clearNativeVteLease,\n} from '@/lib/terminal/nativeVteLayoutLifecycle';\nimport { NATIVE_VTE_STUBS } from '@/lib/terminal/nativeVteNoopStubs';\nimport {\n  takeTerminalPanelBridge,\n  stashTerminalPanelBridge,\n} from '@/lib/terminal/terminalPanelBridge';\nimport {\n  hasSurface as graveyardHasSurface,\n  restoreSurface as graveyardRestoreSurface,\n  stashSurface as graveyardStashSurface,\n} from '@/lib/terminal/v2Graveyard';\nimport { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';\nimport { clearPanelSessionExit, readPanelSessionExit } from '@/lib/terminal/agentSessionExit';\n\nimport {\n  cliLog,\n  attachTerminalRendererAddons,\n  neutralizeWebglAddonForDisposal,\n  getXtermContainerAnimProps,\n  resolveColdMountStaggerMs,\n  disableTerminalFocusReporting,\n  prepareActiveTuiTerminalFocus,\n  resetTerminalModesForReattach,\n  normalizeTuiInitialCommand,\n  isLikelyTuiInitialCommand,\n  isGrokTuiInitialCommand,\n  detectGrokTuiReady,\n  detectGrokSessionFromOutput,\n  shouldPassthroughNativeTuiWheel,\n  resolveTerminalWheelScrollPrefer,\n  shouldInjectGrokWheelSgr,\n  shouldScrollKimiWheelLocally,\n  resolveGrokWheelSgrCoords,\n  buildGrokWheelScrollPayload,\n  buildTerminalWheelArrowSequence,\n  buildTerminalWheelScrollPayload,\n  buildTerminalWheelSgrSequence,\n  resolveTerminalPointerElement,\n  isForwardedTerminalWheelEvent,\n  forwardTerminalWheelToXterm,\n  refreshTerminalViewport,\n  forceTerminalViewportRepaint,\n  nudgeTerminalViewportRepaint,\n  stabilizeTerminalRenderer,\n  isTerminalRendererReady,\n  isWebglAddonContextLost,\n  fitTerminalViewport,\n  buildTerminalViewportDiagnosticPayload,\n  shouldLogTerminalViewportDiagnostic,\n  createTerminalViewportDiagnosticLogger,\n  resolveTerminalConnectionCloseState,\n  resolveTerminalClipboardShortcut,\n  getClipboardApi,\n  sendTerminalPasteInput,\n  getTerminalRuntimePlatform,\n  isTerminalViewportNearBottom,\n  shouldUseTerminalScrollbackWheel,\n  shouldInjectTerminalWheelIntoPty,\n  scrollTerminalViewport,\n  resolveTerminalWheelScrollDirection,\n  resolveTerminalWheelPageSteps,\n  buildTerminalWheelPageSequence,\n  resolveTerminalScreenElement,\n  shouldRouteWheelToTranscript,\n  shouldRunPanelClickViewportRecovery,\n  shouldClearWebglAtlasOnPanelActivation,\n  shouldSkipReactivateViewportOnPanelActivation,\n  shouldAttachWebglRenderer,\n  shouldBlockV2WebglRecovery,\n  shouldUseLegacySurvivorRecovery,\n  shouldFreezeSingleWebglViewportOnWorkspaceShow,\n  shouldAttachCanvasRenderer,\n  shouldMountCanvasAddon,\n  shouldUseGpuTerminalRenderer,\n  needsGpuRendererReattach,\n  shouldSkipGpuVisibilityReveal,\n  shouldSoftGpuWorkspaceReveal,\n  resolveWorkspaceLayoutShowRevealMode,\n  performSoftGpuVisibilityReveal,\n  flushHiddenTerminalCatchupToTerm,\n  shouldRefitVisibleInactiveSplitPanel,\n  shouldSyncTerminalViewportOnLayoutShow,\n  resolveConnectInitialCommandState,\n  isWorkspaceLayoutSwitchReason,\n  isWorkspaceSurvivorRecoverLayoutReason,\n  shouldFreezeDomViewportOnAppResume,\n  shouldFreezeDomViewportOnWorkspaceShow,\n  shouldSkipRedundantLayoutSettleViewportSync,\n  shouldSkipTerminalOutputWhileLayoutHidden,\n  appendHiddenTerminalOutputBuffer,\n  takeHiddenTerminalOutputBuffer,\n  shouldDiscardHiddenOutputCatchup,\n  terminalBufferHasRenderableContent,\n  chunkTerminalOutputForCatchup,\n  nudgeTerminalPtyResize,\n  shouldClearAtlasForSplitCanvas,\n  shouldClearGpuAtlasOnWorkspaceShow,\n  shouldReleaseWebglRendererOnLayoutHide,\n  shouldReleaseCanvasRendererOnLayoutHide,\n  resolveTerminalRuntimePhase,\n  shouldBootXtermRuntime,\n  getTerminalRendererStatusCopy,\n  getTerminalRendererRecoveryActionLabel,\n  shouldReinitializeTerminalForRenderer,\n  shouldBlockTerminalViewportForWebglFallback,\n  TERMINAL_VIEWPORT_SHELL_STYLE,\n  TERMINAL_NATIVE_CONTENT_BODY_STYLE,\n  resolveTerminalFontFamily,\n  TERMINAL_CONNECT_DEFER_MAX_MS,\n  TERMINAL_PROJECTION_READY_TIMEOUT_MS,\n  TERMINAL_COLD_MOUNT_STAGGER_MS,\n  TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,\n  TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,\n  TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,\n  TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ,\n  TERMINAL_SYNC_OUTPUT_START_SEQ,\n  TERMINAL_SYNC_OUTPUT_END_SEQ,\n  TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS,\n  TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME,\n  TERMINAL_OUTPUT_BACKLOG_THRESHOLD,\n  TERMINAL_SNAPSHOT_THRESHOLD_BYTES,\n  TERMINAL_SNAPSHOT_MAX_INTERVAL_MS,\n  TERMINAL_GROK_INPUT_ZONE_ROWS,\n  TERMINAL_WHEEL_FORWARD_FLAG,\n  TERMINAL_PAGE_UP_SEQ,\n  TERMINAL_PAGE_DOWN_SEQ,\n  TERMINAL_DEFAULT_INPUT_ZONE_ROWS,\n  HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX,\n  HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES,\n  HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES,\n  isTerminalViewportUndersized,\n  shouldDeferTerminalConnectUntilViewportFitted,\n} from './terminal/TerminalTTY.helpers';\n\nexport * from './terminal/TerminalTTY.helpers';\n\n/**\n * Bump this string whenever you need to PROVE the running dev server picked up a\n * new edit to this file ÔÇö it re-fires on every fresh module evaluation (full\n * restart, or a Fast-Refresh full-reload of this module). Read it two ways:\n *   1. Watch the `pnpm tauri dev` terminal for `[devhub-log] [BUILD] ...` on startup.\n *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY\n * If the marker you see does NOT match the one below, the running window is on stale code.\n */\nconst TERMINAL_TTY_BUILD_MARKER = '2026-07-04-window-switch-tui-safe-recover-v2';\nif (typeof window !== 'undefined') {\n  window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};\n  if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {\n    window.__DEVHUB_BUILD_MARKERS__.terminalTTY = TERMINAL_TTY_BUILD_MARKER;\n    cliLog('BUILD', `TerminalTTY.jsx loaded ÔÇö marker=${TERMINAL_TTY_BUILD_MARKER}`);\n  }\n}\nexport default function TerminalTTY({\n  id,\n  onClose,\n  onActivatePanel,\n  cwd,\n  autoFocus,\n  hideTitleBar,\n  initialCommand,\n  restored,\n  // Enforced: we only ever activate xterm-webgl (with plain xterm fallback on webgl failure).\n  // Legacy 'vte-experimental' requests are normalized upstream; we still accept the prop\n  // for compatibility but force the webgl path and skip all native VTE mounting.\n  requestedRendererMode = 'xterm-webgl',\n  onResetRendererToXterm,\n  visibleTerminalPanelCount = 1,\n  isActivePanel = autoFocus,\n  isVisibleInLayout = true,\n  isWorkspaceShellVisible = true,\n  suspendNativeSurface = false,\n  nativeSurfacePolicy = 'live',\n  runtimePlatform,\n  showQuickCopyButton = true,\n  swarmContext = null,\n  connectionState: externalConnectionState,\n  onConnectionStateChange,\n  surfaceHost = 'workspace',\n  coldMountOrdinal = 0,\n  isEngineV2 = false,\n}) {\n  const terminalRootRef = useRef(null);\n  const containerRef = useRef(null);\n  const viewportShellRef = useRef(null);\n\n  // We keep the root bg in sync with the terminal theme so there are no\n  // \"letterbox\" flashes or thin frames when the TUI draws full-bleed boxes.\n  // The real content (xterm canvas) now starts closer to the panel edges.\n  const nativePlaceholderRef = useRef(null);\n  const termRef = useRef(null);\n  const fitRef = useRef(null);\n  // True only while disposeXtermRuntime is tearing the runtime down. Async\n  // callbacks queued before teardown (fit rAFs, resize observers, ws onmessage,\n  // font-size refit) re-check this and bail, so they cannot touch a terminal\n  // whose renderer slot is being cleared ÔÇö the WebKitGTK `_renderer.value\n  // .handleResize` stale-renderer race (docs/errores/03-*). A.4.\n  const isDisposingRef = useRef(false);\n  const panelActivityTrackerRef = useRef(null);\n  const resizeObserverRef = useRef(null);\n  const nativeResizeObserverRef = useRef(null);\n  const nativeResizeRafRef = useRef(null);\n  const nativeResizeSettleTimersRef = useRef([]);\n  const wsRef = useRef(null);\n  const connectInFlightRef = useRef(false);\n  const connectEpochRef = useRef(0);\n  const connectAbortRef = useRef(null);\n  const sessionClosingRef = useRef(false);\n  const searchRef = useRef(null);\n  const transportRef = useRef('json');\n  const lastViewportDiagnosticRef = useRef(null);\n  const connectionStateRef = useRef('idle');\n  const requestedRendererModeRef = useRef(requestedRendererMode);\n  const nativeLeaseRef = useRef(false);\n  const nativeVteProbeRetryCountRef = useRef(0);\n  const nativeVteProbeRetryTimerRef = useRef(null);\n  const nativeVteProbeRetryDelayRef = useRef(null);\n  const shouldRetryNativeVteProbeRef = useRef(false);\n  const hideTimerRef = useRef(null);\n  const prevRequestedRendererModeRef = useRef(requestedRendererMode);\n  const restoredHiddenLeaseThisMountRef = useRef(false);\n  const lastViewportYRef = useRef(null);\n  const lastPointerZoneRef = useRef('transcript');\n  const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));\n  const tuiSessionFooterConfirmedRef = useRef(false);\n  const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));\n  const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));\n  const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(false);\n\n  const FONT_SIZE_KEY = 'devhub:terminalFontSize';\n  const [fontSize, setFontSize] = useState(() => {\n    try {\n      // Simple local per-device size (persisted via the +/- buttons).\n      // Base default (14) balances density in multi-panel grids with legibility.\n      const stored = typeof window !== 'undefined' && window.localStorage.getItem(FONT_SIZE_KEY);\n      const parsed = stored ? parseInt(stored, 10) : NaN;\n      if (Number.isFinite(parsed) && parsed >= 8 && parsed <= 24) return parsed;\n      return 14;\n    } catch {\n      return 14;\n    }\n  });\n\n  const [isInitializing, setIsInitializing] = useState(true);\n  const isInitializingRef = useRef(false);\n  const [initError, setInitError] = useState(null);\n  const [internalConnectionState, setInternalConnectionState] = useState('idle');\n  const connectionState =\n    externalConnectionState !== undefined ? externalConnectionState : internalConnectionState;\n  const setConnectionState =\n    externalConnectionState !== undefined ? () => {} : setInternalConnectionState;\n  const [restoredToast, setRestoredToast] = useState(false);\n  const [nativeVteProbeResult, setNativeVteProbeResult] = useState(null);\n  const [nativeVteOpenFailure, setNativeVteOpenFailure] = useState(null);\n  const [nativeVteOpened, setNativeVteOpened] = useState(false);\n  const [nativeVteProbeAttempt, setNativeVteProbeAttempt] = useState(0);\n  const [nativeVteRecoveryAttempt, setNativeVteRecoveryAttempt] = useState(0);\n  const [xtermBootNonce, setXtermBootNonce] = useState(0);\n  const webglAddonRef = useRef(null);\n  const canvasAddonRef = useRef(null);\n  const terminalBlurCleanupRef = useRef(null);\n  const tauriAvailable = false;\n\n  const { focusNativeVtePanel, pasteNativeVtePanel } = NATIVE_VTE_STUBS;\n\n  const resolvedRuntimePlatform = getTerminalRuntimePlatform(runtimePlatform);\n\n  const {\n    operationalRendererMode,\n    rendererViewModel,\n    rendererCapabilities,\n    webglFallback,\n    webglProbeResult,\n    handleSwitchToXterm,\n    handleRetryProbe,\n    effectiveRendererModeRef,\n    operationalRendererModeRef,\n    webglFallbackRef,\n    setWebglFallback,\n  } = useTerminalRendererState({\n    requestedRendererMode,\n    visibleTerminalPanelCount,\n    resolvedRuntimePlatform,\n    nativeVteProbeResult,\n    nativeVteOpenFailure,\n    nativeVteOpened,\n    onResetRendererToXterm,\n    setXtermBootNonce,\n  });\n\n  const hasSentInitialCommand = useRef(false);\n  const sessionReattachedRef = useRef(false);\n  // True once the server's `ready` message arrives. Initial commands must never be\n  // sent before this (the server may report `reattached: true`, meaning the tmux pane\n  // already has a live TUI ÔÇö typing the launch command into it injects it into the\n  // conversation as visible text). See Bug B: resume-command injection on reload.\n  const serverReadyReceivedRef = useRef(false);\n  const initialCommandConnectSnapshotRef = useRef(null);\n  const viewportFitConfirmedRef = useRef(false);\n  // Fresh panels created from the workspace modal must wait until the host layout has\n  // projected the surface before injecting the launch command; sending too early can\n  // leave the terminal blank because xterm has not rendered the viewport yet.\n  const projectionReadyRef = useRef(false);\n  const panelCreatedAtRef = useRef(Date.now());\n  const opencodeReadyNotifiedRef = useRef(false);\n  const kimiReadyNotifiedRef = useRef(false);\n  const tuiOutputTailRef = useRef('');\n  const lastViewportReadyPostedRef = useRef({ cols: 0, rows: 0 });\n  const viewportReadyNotifyTimerRef = useRef(null);\n  const initialCommandDelayTimerRef = useRef(null);\n  const initialCommandDelayScheduledRef = useRef(false);\n  const initialCommandProjectionRetryTimerRef = useRef(null);\n  const lastPtySizeRef = useRef({ cols: 0, rows: 0 });\n  const serverTermsizeRef = useRef({ cols: 0, rows: 0 });\n  const hasConnectedOnceRef = useRef(false);\n  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);\n  const isEngineV2Ref = useRef(isEngineV2);\n  const connectRef = useRef(null);\n  const sendResizeRef = useRef(null);\n  const isActivePanelRef = useRef(isActivePanel);\n  const isVisibleInLayoutRef = useRef(isVisibleInLayout);\n  const isWorkspaceShellVisibleRef = useRef(isWorkspaceShellVisible);\n  const prevWorkspaceShellVisibleRef = useRef(isWorkspaceShellVisible);\n  const prevVisibleInLayoutRef = useRef(isVisibleInLayout);\n  const needsViewportSyncOnShowRef = useRef(false);\n  // Set by layout-settled/survivor-recover events that arrive while the panel\n  // is hidden (e.g. split/close in another workspace). When the panel is shown\n  // again we must run the heavy recovery path instead of the soft/skip paths,\n  // because the GPU framebuffer may have been discarded while the shell was\n  // opacity-hidden even though the addon stayed attached.\n  const layoutChurnedWhileHiddenRef = useRef(false);\n  // Snapshot of the global layout-settled generation taken when this panel\n  // becomes hidden. On reveal we compare it against the current generation to\n  // detect churn that happened in *other* workspaces whose panelIds filter\n  // prevented the layout-settled event from reaching this panel.\n  const layoutHiddenGenerationRef = useRef(0);\n  const survivorGpuRecycleAtRef = useRef(0);\n  const containerWasZeroSizedOnShowRef = useRef(false);\n  const syncTerminalViewportOnWorkspaceShowRef = useRef(null);\n  const workspaceShowSyncTimerRef = useRef(null);\n  const workspaceShowRecoverTimerRef = useRef(null);\n  const workspaceShowZeroSizeObserverRef = useRef(null);\n  const inactiveRepaintRafRef = useRef(null);\n  const pendingWebglRecoveryRef = useRef(false);\n  const webglReleasedOnLayoutHideRef = useRef(false);\n  const canvasReleasedOnLayoutHideRef = useRef(false);\n  const webglRecoveryTimerRef = useRef(null);\n  const handleWebglContextLossRef = useRef(null);\n  const scheduleWorkspaceShowRecoveryRef = useRef(null);\n  // handleWebglContextLoss is declared before scheduleBoundedFitRepaint/\n  // scheduleBoundedGpuRecover further down this component ÔÇö calling those\n  // consts directly in handleWebglContextLoss's body is fine (deferred), but\n  // putting them in its useCallback deps array reads them in the same TDZ\n  // block before their own declaration runs, throwing \"Cannot access ... before\n  // initialization\" on EVERY render. Route the calls through refs instead.\n  const scheduleBoundedFitRepaintRef = useRef(null);\n  const scheduleBoundedGpuRecoverRef = useRef(null);\n  // Viewport force-repaint coalescing: the first second after a workspace/window\n  // switch can fire 4+ forced repaints (layout-show, scheduleWorkspaceShowRecovery,\n  // bounded force/fit/GPU retries, survivor-recover events). Each clear()+resize\n  // nudge produces a visible blink. Coalescing repeats inside a short window keeps\n  // the recovery robust but removes redundant frames.\n  const viewportForceRepaintAtRef = useRef(0);\n  const rendererWasReadyAtLastRepaintRef = useRef(false);\n  const windowSwitchTuiRecoverAtRef = useRef(0);\n  const softRevealNudgeAtRef = useRef(0);\n  const prevIsActivePanelRef = useRef(false);\n  const reactivateTerminalViewportRef = useRef(null);\n  const reactivateCoalesceTimerRef = useRef(null);\n  const tryReattachWebglAddonRef = useRef(null);\n  const tryReattachCanvasAddonRef = useRef(null);\n  const outputPendingRef = useRef({ value: '' });\n  const hiddenOutputBufferRef = useRef({ value: '' });\n  const hiddenOutputCatchupPendingRef = useRef(false);\n  const terminalOutputQueueRef = useRef([]);\n  const terminalOutputFlushRafRef = useRef(null);\n  const syncOutputActiveRef = useRef(false);\n  const syncOutputBufferRef = useRef('');\n  const syncOutputTimeoutRef = useRef(null);\n  const outputRefs = useRef({\n    outputPendingRef,\n    hiddenOutputBufferRef,\n    hiddenOutputCatchupPendingRef,\n    terminalOutputQueueRef,\n    terminalOutputFlushRafRef,\n    syncOutputActiveRef,\n    syncOutputBufferRef,\n    syncOutputTimeoutRef,\n  });\n  const lifecycleRefs = useRef({\n    isDisposingRef,\n    isActivePanelRef,\n    isVisibleInLayoutRef,\n    tuiSessionActiveRef,\n    isGrokSessionRef,\n    kimiReadyNotifiedRef,\n    grokTuiReadyRef,\n    tuiSessionFooterConfirmedRef,\n    lastPointerZoneRef,\n  });\n  const rendererRefsBag = useRef({\n    termRef,\n    webglAddonRef,\n    canvasAddonRef,\n  });\n  const sessionRefs = useRef({\n    wsRef,\n    transportRef,\n  });\n  const viewportRefs = useRef({\n    terminalRootRef,\n    containerRef,\n    viewportShellRef,\n  });\n  const onFlushWriteRef = useRef(null);\n  const surfaceHostRef = useRef(surfaceHost);\n  const connectPendingUntilFitRef = useRef(false);\n  const connectDeferTimerRef = useRef(null);\n  const processExitedRef = useRef(false);\n  const rafRef = useRef(null);\n  const timeoutRef = useRef(null);\n  const initTimeoutRef = useRef(null);\n  const autoScrollRafRef = useRef(null);\n  const tuiResizeDebounceTimerRef = useRef(null);\n  const visibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);\n  const prevVisibleTerminalPanelCountRef = useRef(visibleTerminalPanelCount);\n\n  // Phase 3 terminal-engine-v2: snapshot + rehydration refs.\n  const serializeAddonRef = useRef(null);\n  const dataProcessedSinceSnapshotRef = useRef(0);\n  const snapshotIntervalRef = useRef(null);\n  const rehydrationRef = useRef({ loaded: false, heldData: [] });\n  const currentPtyOffsetRef = useRef(0);\n\n  const {\n    enqueueOutput,\n    flushOutput,\n    clearOutputQueue,\n    clearSyncOutputTimeout,\n    writeTerminalOutput,\n  } = useTerminalOutputQueue({\n    outputRefs,\n    lifecycleRefs,\n    rendererRefs: rendererRefsBag,\n    panelId: id,\n    onFlushWriteRef,\n    isActivePanelRef,\n    isVisibleInLayoutRef,\n    operationalRendererModeRef,\n  });\n\n  const runtimePhase = resolveTerminalRuntimePhase({\n    isActivePanel,\n    isVisibleInLayout,\n    suspendNativeSurface,\n    nativeSurfacePolicy,\n    nativeVteOpenFailure,\n    nativeVteOpened,\n    nativeVteProbe: nativeVteProbeResult,\n    requestedRendererMode,\n    runtimePlatform: resolvedRuntimePlatform,\n    tauriAvailable,\n  });\n  const shouldUseNativeRenderer =\n    rendererViewModel.effectiveMode === 'vte-experimental' && runtimePhase !== 'fallback-xterm';\n  const shouldBootXterm =\n    shouldBootXtermRuntime({\n      isActivePanel,\n      isVisibleInLayout,\n      suspendNativeSurface,\n      nativeSurfacePolicy,\n      nativeVteOpenFailure,\n      nativeVteOpened,\n      nativeVteProbe: nativeVteProbeResult,\n      requestedRendererMode,\n      runtimePlatform: resolvedRuntimePlatform,\n      tauriAvailable,\n    }) && connectionState !== 'suspended';\n\n  const slice1CtxRef = useRef(null);\n  const slice2CtxRef = useRef(null);\n  const slice3CtxRef = useRef(null);\n\n  const {\n    sessionExitReason,\n    setSessionExitReason,\n    applyTerminalSessionExit,\n    handleSessionRecoveryClick,\n  } = useTerminalSessionExit({\n    ctxRef: slice3CtxRef,\n    shouldUseNativeRenderer,\n  });\n\n  const {\n    resolveSwarmTmuxSessionName,\n    notifyAgentReady,\n    notifyOpencodeReady,\n    notifyViewportReady,\n    skipRedundantInitialCommandSend,\n    restoreInitialCommandDispatchGuard,\n    resolveInjectCommand,\n    sendInitialCommandIfReady,\n    scheduleInitialCommandAfterViewport,\n  } = useTerminalInitialCommandLifecycle({\n    ctxRef: slice3CtxRef,\n    id,\n    initialCommand,\n    swarmContext,\n  });\n\n  const { adjustFontSize } = useTerminalFontSize({ ctxRef: slice1CtxRef });\n  const { handleViewportMouseDown } = useTerminalViewportPointer({ ctxRef: slice1CtxRef });\n  useTerminalSearchAndZedInput({ ctxRef: slice1CtxRef });\n  const {\n    isConnected,\n    showTerminalViewport,\n    showTerminalLoadingOverlay,\n    showTerminalStatusOverlay,\n    exitOverlayCopy,\n    statusLabel,\n  } = useTerminalStatusState({\n    isInitializing,\n    initError,\n    connectionState,\n    hasConnectedOnce,\n    sessionExitReason,\n    initialCommand,\n    webglFallback,\n    requestedRendererMode,\n    shouldUseNativeRenderer,\n  });\n\n  const clearTimers = useCallback(() => {\n    if (rafRef.current) {\n      cancelAnimationFrame(rafRef.current);\n      rafRef.current = null;\n    }\n\n    if (timeoutRef.current) {\n      clearTimeout(timeoutRef.current);\n      timeoutRef.current = null;\n    }\n\n    if (nativeVteProbeRetryTimerRef.current) {\n      clearTimeout(nativeVteProbeRetryTimerRef.current);\n      nativeVteProbeRetryTimerRef.current = null;\n      nativeVteProbeRetryDelayRef.current = null;\n    }\n\n    if (viewportReadyNotifyTimerRef.current) {\n      clearTimeout(viewportReadyNotifyTimerRef.current);\n      viewportReadyNotifyTimerRef.current = null;\n    }\n\n    if (initialCommandDelayTimerRef.current) {\n      clearTimeout(initialCommandDelayTimerRef.current);\n      initialCommandDelayTimerRef.current = null;\n    }\n\n    if (initialCommandProjectionRetryTimerRef.current) {\n      clearTimeout(initialCommandProjectionRetryTimerRef.current);\n      initialCommandProjectionRetryTimerRef.current = null;\n    }\n\n    if (autoScrollRafRef.current) {\n      cancelAnimationFrame(autoScrollRafRef.current);\n      autoScrollRafRef.current = null;\n    }\n    if (tuiResizeDebounceTimerRef.current) {\n      clearTimeout(tuiResizeDebounceTimerRef.current);\n      tuiResizeDebounceTimerRef.current = null;\n    }\n\n    if (webglRecoveryTimerRef.current) {\n      clearTimeout(webglRecoveryTimerRef.current);\n      webglRecoveryTimerRef.current = null;\n    }\n\n    if (workspaceShowRecoverTimerRef.current) {\n      clearTimeout(workspaceShowRecoverTimerRef.current);\n      workspaceShowRecoverTimerRef.current = null;\n    }\n\n    if (inactiveRepaintRafRef.current) {\n      cancelAnimationFrame(inactiveRepaintRafRef.current);\n      inactiveRepaintRafRef.current = null;\n    }\n\n    if (snapshotIntervalRef.current) {\n      clearInterval(snapshotIntervalRef.current);\n      snapshotIntervalRef.current = null;\n    }\n  }, []);\n\n  const clearConnectDeferTimer = useCallback(() => {\n    if (connectDeferTimerRef.current) {\n      clearTimeout(connectDeferTimerRef.current);\n      connectDeferTimerRef.current = null;\n    }\n  }, []);\n\n  const scheduleConnectDeferForce = useCallback(() => {\n    if (hasConnectedOnceRef.current || connectDeferTimerRef.current) return;\n    connectDeferTimerRef.current = setTimeout(() => {\n      connectDeferTimerRef.current = null;\n      if (\n        hasConnectedOnceRef.current ||\n        sessionClosingRef.current ||\n        !termRef.current ||\n        !containerRef.current\n      ) {\n        return;\n      }\n      connectPendingUntilFitRef.current = false;\n      cliLog(`CLIENT:${id}`, 'connect defer timeout ÔÇö forcing connect', {\n        maxMs: TERMINAL_CONNECT_DEFER_MAX_MS,\n      });\n      connectRef.current?.();\n    }, TERMINAL_CONNECT_DEFER_MAX_MS);\n  }, [id]);\n\n  const engineCtxRef = useRef(null);\n  const disposeXtermRuntimeRef = useRef(() => {});\n  const disposeXtermRuntime = useCallback((opts) => disposeXtermRuntimeRef.current?.(opts), []);\n\n  useLayoutEffect(() => {\n    isVisibleInLayoutRef.current = isVisibleInLayout;\n    isWorkspaceShellVisibleRef.current = isWorkspaceShellVisible;\n  }, [isVisibleInLayout, isWorkspaceShellVisible]);\n\n  useEffect(() => {\n    connectionStateRef.current = connectionState;\n    if (typeof onConnectionStateChange === 'function') {\n      onConnectionStateChange(id, connectionState);\n    }\n  }, [connectionState, id, onConnectionStateChange]);\n\n  useEffect(() => {\n    requestedRendererModeRef.current = requestedRendererMode;\n  }, [requestedRendererMode]);\n\n  useEffect(() => {\n    isEngineV2Ref.current = isEngineV2;\n  }, [isEngineV2]);\n\n  // Phase 3 terminal-engine-v2: push a final snapshot when the page unloads so\n  // the sidecar has the latest state for the next restore.\n  useEffect(() => {\n    if (!isEngineV2 || typeof window === 'undefined') return;\n\n    const handleBeforeUnload = () => {\n      if (\n        serializeAddonRef.current &&\n        termRef.current &&\n        wsRef.current?.readyState === WebSocket.OPEN\n      ) {\n        try {\n          const serialized = serializeAddonRef.current.serialize();\n          wsRef.current.send(\n            JSON.stringify({\n              type: 'save-snapshot',\n              serialized,\n              ptyOffset: currentPtyOffsetRef.current,\n              termsize: { cols: termRef.current.cols, rows: termRef.current.rows },\n            })\n          );\n        } catch {\n          // ignore snapshot send errors during unload\n        }\n      }\n    };\n\n    window.addEventListener('beforeunload', handleBeforeUnload);\n    return () => window.removeEventListener('beforeunload', handleBeforeUnload);\n  }, [isEngineV2]);\n\n  useLayoutEffect(() => {\n    visibleTerminalPanelCountRef.current = visibleTerminalPanelCount;\n  }, [visibleTerminalPanelCount]);\n\n  const buildViewportSnapshot = useCallback(\n    (reason) =>\n      buildTerminalViewportDiagnosticPayload({\n        reason,\n        containerRect: containerRef.current?.getBoundingClientRect?.(),\n        term: termRef.current,\n        documentVisibilityState:\n          typeof document !== 'undefined' ? document.visibilityState : 'unknown',\n        connectionState: connectionStateRef.current,\n        transport: transportRef.current,\n        devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : 1,\n        requestedRendererMode: requestedRendererModeRef.current,\n        effectiveRendererMode: effectiveRendererModeRef.current,\n        isActivePanel: isActivePanelRef.current,\n        isVisibleInLayout: isVisibleInLayoutRef.current,\n        webglAttached: Boolean(webglAddonRef.current),\n        webglFallbackReason: webglFallback?.reason || null,\n        pendingWebglRecovery: Boolean(pendingWebglRecoveryRef.current),\n      }),\n    [webglFallback?.reason]\n  );\n\n  const logViewportDiagnostic = useCallback(\n    createTerminalViewportDiagnosticLogger({\n      id,\n      cliLog,\n      lastSnapshotRef: lastViewportDiagnosticRef,\n      getSnapshot: buildViewportSnapshot,\n    }),\n    [buildViewportSnapshot, id]\n  );\n\n  const logRenderHealth = useCallback(\n    (event, extra = {}) => {\n      cliLog(`RENDER:${id}`, event, {\n        ...buildViewportSnapshot(event),\n        ...extra,\n      });\n    },\n    [buildViewportSnapshot, id]\n  );\n\n  const tearDownClientSession = useCallback(\n    (reason = 'session-close') => {\n      sessionClosingRef.current = true;\n      cancelNativeVteLayoutHide(id);\n      clearNativeVteLease(id);\n      clearPanelInitialCommandLifecycle(id);\n      clearTimers();\n      if (wsRef.current) {\n        const stale = wsRef.current;\n        stale.onopen = null;\n        stale.onmessage = null;\n        stale.onerror = null;\n        stale.onclose = null;\n        stale.close();\n        wsRef.current = null;\n      }\n      // Phase 4 terminal-engine-v2: explicit panel close stashes the surface in\n      // the graveyard. Real disposal happens on LRU eviction (Phase 5) or user\n      // hard-close, not on normal close.\n      disposeXtermRuntime({ stashForV2: isEngineV2Ref.current });\n      // Native GTK teardown is owned by handleClosePanel ÔåÆ closeNativeVtePanel (single close).\n      setConnectionState('terminated');\n    },\n    [clearTimers, disposeXtermRuntime, id]\n  );\n\n  const nativeVteApi = useTerminalNativeVteLifecycle({\n    ctxRef: slice3CtxRef,\n    isActivePanel,\n    isVisibleInLayout,\n    requestedRendererMode,\n    suspendNativeSurface,\n    nativeSurfacePolicy,\n    resolvedRuntimePlatform,\n    autoFocus,\n    nativeVteOpened,\n    nativeVteOpenFailure,\n    nativeVteProbeResult,\n    nativeVteProbeAttempt,\n    nativeVteRecoveryAttempt,\n  });\n  const {\n    closeNativeLease,\n    hideNativeLease,\n    showAndResizeNativeLease,\n    handleNativeLeaseCommandError,\n    queueNativeVteProbeRetry,\n    clearNativeVteProbeRetryTimer,\n  } = nativeVteApi;\n\n  const {\n    copied,\n    contextMenu,\n    setContextMenu,\n    handleCopySelection,\n    handlePasteIntoTerminal,\n    handleContextMenu,\n    handleCopyFromMenu,\n    handlePasteFromMenu,\n    handleViewportPaste,\n  } = useTerminalClipboard({\n    rendererRefs: rendererRefsBag,\n    sessionRefs,\n    lifecycleRefs,\n    viewportRefs,\n    panelId: id,\n    isActivePanel,\n    shouldUseNativeRenderer,\n    focusNativeVtePanel,\n    pasteNativeVtePanel,\n    handleNativeLeaseCommandError,\n  });\n\n  useTerminalWheelRouter({\n    lifecycleRefs,\n    rendererRefs: rendererRefsBag,\n    sessionRefs,\n    viewportRefs,\n    initialCommand,\n    shouldUseNativeRenderer,\n  });\n\n  const scrollTerminalToBottom = useCallback((force = false) => {\n    if (!termRef.current) return;\n    if (!force && !isTerminalViewportNearBottom(termRef.current)) return;\n\n    if (autoScrollRafRef.current) {\n      cancelAnimationFrame(autoScrollRafRef.current);\n    }\n\n    autoScrollRafRef.current = requestAnimationFrame(() => {\n      autoScrollRafRef.current = null;\n      termRef.current?.scrollToBottom?.();\n    });\n  }, []);\n\n  useTerminalScrollPreserve({\n    ctxRef: slice1CtxRef,\n    initialCommand,\n    isVisibleInLayout,\n    isActivePanel,\n    scrollTerminalToBottom,\n  });\n\n  const viewportCtxRef = useRef(null);\n  const {\n    waitForVisibleDimensions,\n    confirmViewportFit,\n    maybeConnectAfterViewportFit,\n    fitAndResize,\n    sendResize,\n    reactivateTerminalViewport,\n  } = useTerminalViewportSync({ ctxRef: viewportCtxRef });\n\n  const scrollIfActivePanel = useCallback(() => {\n    if (isActivePanelRef.current) scrollTerminalToBottom();\n  }, [scrollTerminalToBottom]);\n\n  const rendererCtxRef = useRef(null);\n  const {\n    disposeWebglAddonForContextLoss,\n    tryReattachWebglAddon,\n    tryReattachCanvasAddon,\n    releaseCanvasAddon,\n    scheduleWebglRecovery,\n    handleWebglContextLoss,\n  } = useTerminalRendererController({ ctxRef: rendererCtxRef });\n\n  tryReattachWebglAddonRef.current = tryReattachWebglAddon;\n  tryReattachCanvasAddonRef.current = tryReattachCanvasAddon;\n\n  const releaseWebglAddonForInactivePanel = useCallback(\n    (reason = 'panel-inactive-dom-fallback') => {\n      if (isEngineV2Ref.current) return false;\n      const addon = webglAddonRef.current;\n      if (!addon) return false;\n\n      if (webglRecoveryTimerRef.current) {\n        clearTimeout(webglRecoveryTimerRef.current);\n        webglRecoveryTimerRef.current = null;\n      }\n\n      cliLog(`RENDER:${id}`, 'webgl-released-inactive-panel', buildViewportSnapshot(reason));\n\n      neutralizeWebglAddonForDisposal(addon);\n      try {\n        addon.dispose?.();\n      } catch {\n        // ignore double dispose\n      }\n      webglAddonRef.current = null;\n      pendingWebglRecoveryRef.current = true;\n      webglReleasedOnLayoutHideRef.current = true;\n\n      stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });\n      return true;\n    },\n    [buildViewportSnapshot, id]\n  );\n\n  /**\n   * Execute a forced viewport repaint only if enough time has passed since the\n   * last one. This prevents the visual strobe that happens when layout-show,\n   * survivor-recover events and bounded retries all queue repaints within the\n   * same ~100 ms window. The coalesce window is short so legitimate delayed\n   * recovery (e.g. async GPU reattach) still gets a fresh repaint.\n   */\n  const coalescedForceRepaint = useCallback(\n    (term, { minMs = 200, reason = '' } = {}) => {\n      if (!term) return false;\n      const rendererReady = isTerminalRendererReady(term);\n      const wasReady = rendererWasReadyAtLastRepaintRef.current;\n      rendererWasReadyAtLastRepaintRef.current = rendererReady;\n      if (!rendererReady) return false;\n      const now = performance.now();\n      const elapsed = now - viewportForceRepaintAtRef.current;\n      // If the renderer just became ready after being unavailable (e.g. async GPU\n      // reattach after a window switch), paint immediately instead of waiting for\n      // the coalesce window. This prevents the black-screen window while keeping\n      // redundant repaints from the same ready state coalesced.\n      if (elapsed < minMs && wasReady) {\n        logViewportDiagnostic('force-repaint-coalesced', { reason, elapsed });\n        return false;\n      }\n      const ok = forceTerminalViewportRepaint(term);\n      if (ok) viewportForceRepaintAtRef.current = performance.now();\n      return ok;\n    },\n    [logViewportDiagnostic]\n  );\n\n  /**\n   * Soft GPU reveal (flush catchup + refresh + 1-cell nudge) with nudge\n   * coalescing. The deferred rAF soft-reveal in the layout-show effect was\n   * queueing a second nudge a few frames after the first, creating an extra\n   * micro-flicker. We still flush output and refresh, but we skip the resize\n   * nudge if one already ran recently.\n   */\n  const coalescedSoftGpuVisibilityReveal = useCallback(\n    (term, bufferRef, catchupPendingRef, { reason = '', minMs = 200 } = {}) => {\n      flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupPendingRef);\n      if (!term || !isTerminalRendererReady(term)) return;\n      refreshTerminalViewport(term);\n      const now = performance.now();\n      const elapsed = now - softRevealNudgeAtRef.current;\n      if (elapsed < minMs) {\n        logViewportDiagnostic('soft-reveal-nudge-coalesced', { reason, elapsed });\n        return;\n      }\n      softRevealNudgeAtRef.current = now;\n      nudgeTerminalViewportRepaint(term);\n    },\n    [logViewportDiagnostic]\n  );\n\n  const {\n    scheduleBoundedForceRepaint,\n    scheduleBoundedFitRepaint,\n    scheduleBoundedGpuRecover,\n    scheduleInactiveViewportRepaint,\n    syncTerminalViewportOnWorkspaceShow,\n    scheduleWorkspaceShowRecovery,\n  } = useTerminalWorkspaceShowRecovery({\n    ctxRef: viewportCtxRef,\n    isVisibleInLayout,\n    isWorkspaceShellVisible,\n    operationalRendererMode,\n    shouldUseNativeRenderer,\n    nativeVteOpened,\n  });\n\n  useTerminalLayoutChurnRecovery({ ctxRef: viewportCtxRef, isEngineV2 });\n\n  useTerminalRendererMigration({\n    ctxRef: viewportCtxRef,\n    isActivePanel,\n    isVisibleInLayout,\n    operationalRendererMode,\n    shouldUseNativeRenderer,\n    visibleTerminalPanelCount,\n  });\n\n  // When we leave vte-experimental, also make sure any partial xterm runtime is cleaned\n  // and we (re)boot the web layer for the new requested mode. This complements the\n  // existing initialize effect (which may not always re-fire on prop change alone).\n  //\n  // We cannot call the inner `initializeTerminal` (it is scoped inside the main xterm boot effect).\n  // Instead we dispose here and increment a nonce that is part of the main boot effect's deps.\n  // That forces the main effect body to re-execute and call its local initializeTerminal()\n  // (which contains the full xterm + webgl dynamic import + banner logic).\n  const lastRequestedModeRef = useRef(requestedRendererMode);\n  const lastIdRef = useRef(id);\n  useEffect(() => {\n    if (lastRequestedModeRef.current === requestedRendererMode && lastIdRef.current === id) {\n      return undefined;\n    }\n    lastRequestedModeRef.current = requestedRendererMode;\n    const idChanged = lastIdRef.current !== id;\n    lastIdRef.current = id;\n    if (idChanged) {\n      projectionReadyRef.current = false;\n      panelCreatedAtRef.current = Date.now();\n    }\n\n    if (requestedRendererMode === 'vte-experimental') {\n      disposeXtermRuntime();\n      return undefined;\n    }\n\n    disposeXtermRuntime();\n    setXtermBootNonce((n) => n + 1);\n\n    return undefined;\n  }, [requestedRendererMode, disposeXtermRuntime, id]);\n\n  useEffect(() => {\n    const handleSessionClosing = (event) => {\n      if (event.detail?.panelId !== id) return;\n      tearDownClientSession('session-close');\n    };\n\n    window.addEventListener('devhub:terminal-session-closing', handleSessionClosing);\n    return () => {\n      window.removeEventListener('devhub:terminal-session-closing', handleSessionClosing);\n    };\n  }, [id, tearDownClientSession]);\n\n  useEffect(() => {\n    surfaceHostRef.current = surfaceHost;\n  }, [surfaceHost]);\n\n  useLayoutEffect(() => {\n    restoreInitialCommandDispatchGuard();\n  }, [restoreInitialCommandDispatchGuard]);\n\n  useEffect(() => {\n    if (isEngineV2) return;\n    const bridge = takeTerminalPanelBridge(id);\n    if (!bridge) return;\n    if (bridge.buffer) {\n      const crossHostRemount = bridge.host && surfaceHost && bridge.host !== surfaceHost;\n      if (\n        crossHostRemount ||\n        shouldDiscardHiddenOutputCatchup({ bufferedBytes: bridge.buffer.length })\n      ) {\n        hiddenOutputBufferRef.current.value = '';\n        hiddenOutputCatchupPendingRef.current = false;\n      } else {\n        hiddenOutputBufferRef.current.value = bridge.buffer;\n        hiddenOutputCatchupPendingRef.current = bridge.catchupPending || true;\n      }\n    }\n    if (bridge.outputPending) {\n      outputPendingRef.current.value = bridge.outputPending;\n    }\n    if (bridge.lastPtySize?.cols > 0 && bridge.lastPtySize?.rows > 0) {\n      lastPtySizeRef.current = {\n        cols: bridge.lastPtySize.cols,\n        rows: bridge.lastPtySize.rows,\n      };\n    }\n  }, [id, isEngineV2, surfaceHost]);\n\n  viewportCtxRef.current = {\n    id,\n    cwd,\n    initialCommand,\n    autoFocus,\n    coldMountOrdinal,\n    restored,\n    termRef,\n    fitRef,\n    containerRef,\n    wsRef,\n    rafRef,\n    timeoutRef,\n    isDisposingRef,\n    isActivePanelRef,\n    isVisibleInLayoutRef,\n    operationalRendererModeRef,\n    visibleTerminalPanelCountRef,\n    lastPtySizeRef,\n    connectPendingUntilFitRef,\n    connectDeferTimerRef,\n    connectRef,\n    sessionClosingRef,\n    hasConnectedOnceRef,\n    needsViewportSyncOnShowRef,\n    layoutChurnedWhileHiddenRef,\n    layoutHiddenGenerationRef,\n    containerWasZeroSizedOnShowRef,\n    workspaceShowRecoverTimerRef,\n    workspaceShowZeroSizeObserverRef,\n    inactiveRepaintRafRef,\n    pendingWebglRecoveryRef,\n    webglReleasedOnLayoutHideRef,\n    canvasReleasedOnLayoutHideRef,\n    hiddenOutputBufferRef,\n    hiddenOutputCatchupPendingRef,\n    sessionReattachedRef,\n    tuiSessionActiveRef,\n    kimiReadyNotifiedRef,\n    isEngineV2Ref,\n    webglFallbackRef,\n    webglAddonRef,\n    canvasAddonRef,\n    viewportFitConfirmedRef,\n    lastViewportReadyPostedRef,\n    hasSentInitialCommand,\n    isGrokSessionRef,\n    clearTimers,\n    clearConnectDeferTimer,\n    scheduleConnectDeferForce,\n    sendResizeRef,\n    tryReattachWebglAddonRef,\n    tryReattachCanvasAddonRef,\n    syncTerminalViewportOnWorkspaceShowRef,\n    scheduleWorkspaceShowRecoveryRef,\n    reactivateTerminalViewportRef,\n    scheduleBoundedFitRepaintRef,\n    scheduleBoundedGpuRecoverRef,\n    notifyViewportReady,\n    restoreInitialCommandDispatchGuard,\n    scheduleInitialCommandAfterViewport,\n    logViewportDiagnostic,\n    scrollTerminalToBottom,\n    scrollIfActivePanel,\n    disposeWebglAddonForContextLoss,\n    scheduleWebglRecovery,\n    coalescedForceRepaint,\n    scheduleBoundedGpuRecover,\n    scheduleBoundedFitRepaint,\n    scheduleBoundedForceRepaint,\n    buildViewportSnapshot,\n    confirmViewportFit,\n    maybeConnectAfterViewportFit,\n    fitTerminalViewport,\n    stabilizeTerminalRenderer,\n    nudgeTerminalPtyResize,\n    fitAndResize,\n    scheduleInactiveViewportRepaint,\n    syncTerminalViewportOnWorkspaceShow,\n    scheduleWorkspaceShowRecovery,\n    sendResize,\n    reactivateTerminalViewport,\n    windowSwitchTuiRecoverAtRef,\n    survivorGpuRecycleAtRef,\n    projectionReadyRef,\n    sendInitialCommandIfReady,\n    releaseWebglAddonForInactivePanel,\n    releaseCanvasAddon,\n    prevVisibleInLayoutRef,\n    prevWorkspaceShellVisibleRef,\n    workspaceShowSyncTimerRef,\n    prevVisibleTerminalPanelCountRef,\n    showAndResizeNativeLease,\n  };\n\n  rendererCtxRef.current = {\n    id,\n    initialCommand,\n    termRef,\n    fitRef,\n    containerRef,\n    wsRef,\n    webglAddonRef,\n    canvasAddonRef,\n    webglFallbackRef,\n    pendingWebglRecoveryRef,\n    webglReleasedOnLayoutHideRef,\n    canvasReleasedOnLayoutHideRef,\n    webglRecoveryTimerRef,\n    isEngineV2Ref,\n    isVisibleInLayoutRef,\n    isActivePanelRef,\n    operationalRendererModeRef,\n    visibleTerminalPanelCountRef,\n    lastPtySizeRef,\n    tuiSessionActiveRef,\n    kimiReadyNotifiedRef,\n    hasConnectedOnceRef,\n    handleWebglContextLossRef,\n    setWebglFallback,\n    buildViewportSnapshot,\n    scheduleInactiveViewportRepaint,\n    scheduleBoundedGpuRecoverRef,\n    scheduleBoundedFitRepaintRef,\n    scheduleWorkspaceShowRecoveryRef,\n  };\n\n  const connectCtxRef = useRef(null);\n  connectCtxRef.current = {\n    id,\n    cwd,\n    initialCommand,\n    restored,\n    swarmContext,\n    autoFocus,\n    connectInFlightRef,\n    sessionClosingRef,\n    wsRef,\n    transportRef,\n    connectEpochRef,\n    connectAbortRef,\n    hasConnectedOnceRef,\n    initialCommandDelayScheduledRef,\n    sessionReattachedRef,\n    serverReadyReceivedRef,\n    hasSentInitialCommand,\n    processExitedRef,\n    isEngineV2Ref,\n    isDisposingRef,\n    termRef,\n    serializeAddonRef,\n    rehydrationRef,\n    dataProcessedSinceSnapshotRef,\n    snapshotIntervalRef,\n    currentPtyOffsetRef,\n    serverTermsizeRef,\n    panelActivityTrackerRef,\n    hiddenOutputBufferRef,\n    hiddenOutputCatchupPendingRef,\n    tuiOutputTailRef,\n    tuiSessionActiveRef,\n    kimiReadyNotifiedRef,\n    isGrokSessionRef,\n    grokTuiReadyRef,\n    tuiSessionFooterConfirmedRef,\n    initialCommandConnectSnapshotRef,\n    setConnectionState,\n    setHasConnectedOnce,\n    setRestoredToast,\n    setNativeWheelPassthrough,\n    clearConnectDeferTimer,\n    sendResize,\n    writeTerminalOutput,\n    scrollIfActivePanel,\n    sendInitialCommandIfReady,\n    applyTerminalSessionExit,\n    notifyAgentReady,\n    notifyOpencodeReady,\n    onFlushWriteRef,\n    sendResizeRef,\n  };\n\n  const { connect } = useTerminalV2Session({ ctxRef: connectCtxRef });\n\n  connectRef.current = connect;\n  sendResizeRef.current = sendResize;\n\n  // When the user switches away from this panel (isActivePanel becomes false),\n  // disable \"reporting\" modes (focus events, mouse tracking) that many TUIs (like opencode)\n  // use to \"wake up\" and re-query the terminal (sending DA1/DA2 queries like ^[[c ^[[>c).\n  // If those queries happen in a background panel while the user is clicking other panels,\n  // their responses can leak as visible text (the \"1;2c0;276;0c...\" garbage) and accumulate\n  // in the prompt of the panels.\n  // useLayoutEffect runs before paint so blur/focus churn cannot beat us to the PTY.\n  useLayoutEffect(() => {\n    isActivePanelRef.current = isActivePanel;\n\n    const term = termRef.current;\n    if (!term) return;\n\n    if (!isActivePanel) {\n      // Cancel active-panel resize debounces so a stale RAF cannot clear GPU atlases\n      // after the user switched away. Still refit if the container geometry changed.\n      clearTimers();\n      disableTerminalFocusReporting(term, { disableMouse: true });\n      try {\n        if (term.element?.contains(document.activeElement)) {\n          term.blur?.();\n        }\n      } catch {\n        // intentional: terminal may already be disposed during unmount\n      }\n      return;\n    }\n\n    prepareActiveTuiTerminalFocus(term, {\n      tuiSessionActive: tuiSessionActiveRef.current,\n    });\n  }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);\n\n  useLayoutEffect(() => {\n    if (\n      connectionState !== 'error' &&\n      connectionState !== 'disconnected' &&\n      connectionState !== 'terminated' &&\n      connectionState !== 'agent-exited'\n    ) {\n      return;\n    }\n    tuiSessionActiveRef.current = false;\n    isGrokSessionRef.current = false;\n    grokTuiReadyRef.current = false;\n    tuiSessionFooterConfirmedRef.current = false;\n    setNativeWheelPassthrough(false);\n    disableTerminalFocusReporting(termRef.current, { disableMouse: true });\n  }, [connectionState]);\n\n  useLayoutEffect(() => {\n    if (!isVisibleInLayout || !termRef.current) return;\n    if (!hasConnectedOnceRef.current) {\n      const fitWorked = fitTerminalViewport({\n        container: containerRef.current,\n        fitAddon: fitRef.current,\n        term: termRef.current,\n        socket: wsRef.current,\n        clearAtlas: false,\n        lastPtySizeRef: lastPtySizeRef.current,\n      });\n      maybeConnectAfterViewportFit(fitWorked);\n      if (!hasConnectedOnceRef.current) return;\n    }\n    clearConnectDeferTimer();\n    connectPendingUntilFitRef.current = false;\n\n    // Layout-show useLayoutEffect owns falseÔåÆtrue recovery (route / workspace /\n    // window switches). Skip a second sync pass that duplicated fit+PTY churn.\n    if (shouldSyncTerminalViewportOnLayoutShow(prevVisibleInLayoutRef.current, isVisibleInLayout)) {\n      return;\n    }\n\n    const raf = requestAnimationFrame(() => {\n      if (!isVisibleInLayoutRef.current || !termRef.current) return;\n      syncTerminalViewportOnWorkspaceShow('projection-host-ready', {\n        clearAtlas: webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,\n      });\n    });\n    return () => cancelAnimationFrame(raf);\n  }, [\n    clearConnectDeferTimer,\n    isVisibleInLayout,\n    maybeConnectAfterViewportFit,\n    syncTerminalViewportOnWorkspaceShow,\n  ]);\n\n  const reconnect = useCallback(() => {\n    processExitedRef.current = false;\n    setSessionExitReason(null);\n    clearPanelSessionExit(id);\n    if (wsRef.current?.readyState === WebSocket.OPEN) {\n      cliLog(`CLIENT:${id}`, 'reconnect() skipped ÔÇö socket already open');\n      setConnectionState('connected');\n      sendResize();\n      if (autoFocus) {\n        prepareActiveTuiTerminalFocus(termRef.current, {\n          tuiSessionActive: tuiSessionActiveRef.current,\n        });\n        termRef.current?.focus?.();\n      }\n      return;\n    }\n    cliLog(`CLIENT:${id}`, 'reconnect() called');\n    logTerminalSession('terminal-reconnect', {\n      panelId: id,\n      connectionState: connectionStateRef.current,\n      initialCommand,\n    });\n    termRef.current?.clear();\n    connect();\n  }, [autoFocus, connect, initialCommand, sendResize]);\n\n  useTerminalPanelActivationRecovery({\n    ctxRef: slice2CtxRef,\n    autoFocus,\n    isActivePanel,\n    operationalRendererMode,\n    shouldUseNativeRenderer,\n    syncTerminalViewportOnWorkspaceShow,\n    logRenderHealth,\n  });\n  useTerminalAutoReconnect({\n    ctxRef: slice2CtxRef,\n    autoFocus,\n    connectionState,\n    initError,\n    id,\n    reconnect,\n  });\n  useTerminalWindowEventRouter({\n    ctxRef: slice2CtxRef,\n    isActivePanel,\n    isVisibleInLayout,\n    id,\n    autoFocus,\n  });\n\n  const { disposeXtermRuntime: disposeXtermRuntimeImpl } = useTerminalEngine({\n    ctxRef: engineCtxRef,\n    requestedRendererMode,\n    runtimePhase,\n    shouldBootXterm,\n    xtermBootNonce,\n    coldMountOrdinal,\n    id,\n    initialCommand,\n  });\n  disposeXtermRuntimeRef.current = disposeXtermRuntimeImpl;\n\n  engineCtxRef.current = {\n    id,\n    cwd,\n    autoFocus,\n    coldMountOrdinal,\n    fontSize,\n    restored,\n    initialCommand,\n    isDisposingRef,\n    connectEpochRef,\n    panelActivityTrackerRef,\n    connectAbortRef,\n    requestedRendererModeRef,\n    isVisibleInLayoutRef,\n    termRef,\n    resizeObserverRef,\n    clearTimers,\n    clearConnectDeferTimer,\n    clearOutputQueue,\n    wsRef,\n    isEngineV2Ref,\n    serializeAddonRef,\n    currentPtyOffsetRef,\n    terminalBlurCleanupRef,\n    webglAddonRef,\n    canvasAddonRef,\n    fitRef,\n    searchRef,\n    containerRef,\n    outputPendingRef,\n    hiddenOutputBufferRef,\n    hiddenOutputCatchupPendingRef,\n    connectPendingUntilFitRef,\n    connectDeferTimerRef,\n    surfaceHostRef,\n    lastPtySizeRef,\n    stashTerminalPanelBridge,\n    setInitError,\n    setIsInitializing,\n    setConnectionState,\n    setWebglFallback,\n    rendererViewModel,\n    operationalRendererModeRef,\n    visibleTerminalPanelCountRef,\n    isActivePanelRef,\n    tuiSessionActiveRef,\n    isGrokSessionRef,\n    grokTuiReadyRef,\n    tuiSessionFooterConfirmedRef,\n    isInitializingRef,\n    handleWebglContextLossRef,\n    pendingWebglRecoveryRef,\n    tuiResizeDebounceTimerRef,\n    needsViewportSyncOnShowRef,\n    nativeResizeObserverRef,\n    nativeResizeRafRef,\n    connectRef,\n    sendResizeRef,\n    tryReattachWebglAddonRef,\n    tryReattachCanvasAddonRef,\n    writeTerminalOutput,\n    transportRef,\n    waitForVisibleDimensions,\n    maybeConnectAfterViewportFit,\n    coalescedSoftGpuVisibilityReveal,\n    scheduleInactiveViewportRepaint,\n    logViewportDiagnostic,\n    shouldBootXterm,\n    runtimePhase,\n    requestedRendererMode,\n    xtermBootNonce,\n    reconnect,\n    hasSentInitialCommand,\n    disposeXtermRuntime: disposeXtermRuntimeImpl,\n  };\n\n  useEffect(() => {\n    reactivateTerminalViewportRef.current = reactivateTerminalViewport;\n  }, [reactivateTerminalViewport]);\n\n  useEffect(() => {\n    tryReattachWebglAddonRef.current = tryReattachWebglAddon;\n  }, [tryReattachWebglAddon]);\n\n  useEffect(() => {\n    tryReattachCanvasAddonRef.current = tryReattachCanvasAddon;\n  }, [tryReattachCanvasAddon]);\n\n  slice1CtxRef.current = {\n    FONT_SIZE_KEY,\n    setFontSize,\n    termRef,\n    fitRef,\n    isDisposingRef,\n    id,\n    initialCommand,\n    shouldUseNativeRenderer,\n    nativeVteOpened,\n    onActivatePanel,\n    viewportShellRef,\n    isGrokSessionRef,\n    grokTuiReadyRef,\n    kimiReadyNotifiedRef,\n    tuiSessionActiveRef,\n    tuiSessionFooterConfirmedRef,\n    lastPointerZoneRef,\n    wsRef,\n    transportRef,\n    isVisibleInLayoutRef,\n    focusNativeVtePanel,\n    handleNativeLeaseCommandError,\n    searchRef,\n    lastViewportYRef,\n  };\n\n  slice2CtxRef.current = {\n    prevIsActivePanelRef,\n    termRef,\n    webglAddonRef,\n    canvasAddonRef,\n    containerRef,\n    fitRef,\n    tuiSessionActiveRef,\n    hiddenOutputCatchupPendingRef,\n    tryReattachWebglAddonRef,\n    tryReattachCanvasAddonRef,\n    reactivateTerminalViewportRef,\n    sessionClosingRef,\n    requestedRendererModeRef,\n    isVisibleInLayoutRef,\n    nativeLeaseRef,\n    showAndResizeNativeLease,\n    queueNativeVteProbeRetry,\n    operationalRendererModeRef,\n    disposeWebglAddonForContextLoss,\n    syncTerminalViewportOnWorkspaceShowRef,\n    isDisposingRef,\n    needsViewportSyncOnShowRef,\n    scheduleInactiveViewportRepaint,\n    sendResize,\n    fitAndResize,\n    reactivateCoalesceTimerRef,\n    logViewportDiagnostic,\n  };\n\n  slice3CtxRef.current = {\n    id,\n    cwd,\n    initialCommand,\n    connectionState,\n    reconnect,\n    setConnectionState,\n    setNativeWheelPassthrough,\n    processExitedRef,\n    tuiSessionActiveRef,\n    isGrokSessionRef,\n    grokTuiReadyRef,\n    tuiSessionFooterConfirmedRef,\n    termRef,\n    requestedRendererModeRef,\n    prevRequestedRendererModeRef,\n    nativeLeaseRef,\n    containerRef,\n    nativePlaceholderRef,\n    setNativeVteOpened,\n    setNativeVteProbeResult,\n    setNativeVteProbeAttempt,\n    setNativeVteOpenFailure,\n    setNativeVteRecoveryAttempt,\n    setSessionExitReason,\n    setIsInitializing,\n    restoredHiddenLeaseThisMountRef,\n    isEngineV2Ref,\n    wsRef,\n    hideTimerRef,\n    sessionClosingRef,\n    hideNativeLease,\n    isVisibleInLayoutRef,\n    isDisposingRef,\n    onActivatePanel,\n    nativeVteProbeRetryCountRef,\n    nativeVteProbeRetryTimerRef,\n    nativeVteProbeRetryDelayRef,\n    shouldRetryNativeVteProbeRef,\n    clearNativeVteProbeRetryTimer,\n    nativeResizeObserverRef,\n    nativeResizeRafRef,\n    nativeResizeSettleTimersRef,\n    opencodeReadyNotifiedRef,\n    kimiReadyNotifiedRef,\n    lastViewportReadyPostedRef,\n    viewportReadyNotifyTimerRef,\n    sessionReattachedRef,\n    hasConnectedOnceRef,\n    serverReadyReceivedRef,\n    viewportFitConfirmedRef,\n    panelCreatedAtRef,\n    projectionReadyRef,\n    initialCommandProjectionRetryTimerRef,\n    transportRef,\n    initialCommandConnectSnapshotRef,\n    hasSentInitialCommand,\n    initialCommandDelayScheduledRef,\n    initialCommandDelayTimerRef,\n  };\n\n  return (\n    <div\n      ref={terminalRootRef}\n      className=\"flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative\"\n      style={getTerminalAppShellStyle()}\n    >\n      {!hideTitleBar && (\n        <div\n          className=\"devhub-drag-handle h-9 flex items-center justify-between px-3 shrink-0 border-b select-none transition-colors group/handle cursor-pointer\"\n          style={getTerminalTitleBarStyle()}\n        >\n          <div className=\"flex items-center gap-2 font-mono text-[11px] font-bold text-gray-300 pointer-events-none\">\n            <svg\n              className=\"w-4 h-4 text-gray-400\"\n              viewBox=\"0 0 24 24\"\n              fill=\"none\"\n              stroke=\"currentColor\"\n              strokeWidth={2}\n              strokeLinecap=\"round\"\n              strokeLinejoin=\"round\"\n            >\n              <polyline points=\"4 17 10 11 4 5\" />\n              <line x1={12} y1={19} x2={20} y2={19} />\n            </svg>\n            <span className=\"text-gray-400\">Terminal Integrada</span>\n          </div>\n\n          <div className=\"absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 opacity-60\">\n            {isConnected ? (\n              <Wifi className=\"w-3 h-3 text-[#3fb950]\" strokeWidth={2} />\n            ) : (\n              <WifiOff className=\"w-3 h-3 text-[#ff7b72]\" strokeWidth={2} />\n            )}\n            <span\n              className={`text-xs font-sans tracking-wide uppercase font-semibold ${isConnected ? 'text-[#3fb950]' : 'text-[#ff7b72]'}`}\n            >\n              {statusLabel}\n            </span>\n          </div>\n\n          <div className=\"flex items-center gap-2\">\n            <button\n              onClick={() => adjustFontSize(-1)}\n              title=\"Reducir tama├▒o de fuente\"\n              className=\"w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer\"\n            >\n              <span className=\"text-[9px] font-bold text-gray-400 hover:text-white leading-none select-none\">\n                A-\n              </span>\n            </button>\n            <button\n              onClick={() => adjustFontSize(1)}\n              title=\"Aumentar tama├▒o de fuente\"\n              className=\"w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer\"\n            >\n              <span className=\"text-[11px] font-bold text-gray-400 hover:text-white leading-none select-none\">\n                A+\n              </span>\n            </button>\n            <button\n              onClick={reconnect}\n              className=\"w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer\"\n            >\n              <RotateCcw className=\"w-3 h-3 text-gray-400 group-hover:text-white\" strokeWidth={2} />\n            </button>\n            {connectionState === 'suspended' && (\n              <button\n                data-testid=\"terminal-settings-gear-btn\"\n                onClick={() =>\n                  window.dispatchEvent(\n                    new CustomEvent('devhub:terminal-settings-modal-requested', {\n                      detail: { panelId: id },\n                    })\n                  )\n                }\n                className=\"w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer\"\n                title=\"Configuraci├│n\"\n              >\n                <svg\n                  className=\"w-3.5 h-3.5 text-yellow-500 group-hover:text-yellow-400\"\n                  viewBox=\"0 0 24 24\"\n                  fill=\"none\"\n                  stroke=\"currentColor\"\n                  strokeWidth={2}\n                >\n                  <circle cx=\"12\" cy=\"12\" r=\"3\" />\n                  <path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z\" />\n                </svg>\n              </button>\n            )}\n            {onClose && (\n              <button\n                onClick={onClose}\n                className=\"w-5 h-5 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group cursor-pointer\"\n              >\n                <X\n                  className=\"w-3.5 h-3.5 text-gray-400 group-hover:text-[#ff7b72]\"\n                  strokeWidth={2}\n                />\n              </button>\n            )}\n          </div>\n        </div>\n      )}\n\n      {/* Terminal View */}\n      <div\n        className=\"flex min-h-0 flex-1 flex-col bg-[var(--surface-app)]\"\n        data-testid=\"terminal-root-body\"\n      >\n        <div\n          ref={viewportShellRef}\n          className=\"relative flex-1 bg-[var(--surface-app)]\"\n          onContextMenu={handleContextMenu}\n          onMouseDown={handleViewportMouseDown}\n          onPaste={handleViewportPaste}\n          data-testid=\"terminal-viewport-shell\"\n          style={{\n            ...TERMINAL_VIEWPORT_SHELL_STYLE,\n            ...getTerminalViewportFrameStyle(),\n            ...(hideTitleBar ? { borderWidth: 0 } : {}),\n          }}\n        >\n          <div\n            ref={nativePlaceholderRef}\n            className=\"relative h-full w-full overflow-hidden\"\n            data-testid=\"terminal-content-body\"\n            style={TERMINAL_NATIVE_CONTENT_BODY_STYLE}\n          >\n            {shouldUseNativeRenderer && (\n              <div\n                className=\"absolute inset-0 z-10 rounded-md bg-[var(--surface-app)]\"\n                data-testid=\"terminal-native-placeholder\"\n                style={getTerminalViewportFrameStyle()}\n              >\n                <div className=\"h-full w-full\" aria-hidden=\"true\" />\n              </div>\n            )}\n\n            {shouldBlockTerminalViewportForWebglFallback(webglFallback) &&\n            requestedRendererMode === 'xterm-webgl' ? (\n              <WebglErrorSection\n                id={id}\n                reason={webglFallback.reason}\n                onSwitchToXterm={handleSwitchToXterm}\n                onRetry={handleRetryProbe}\n              />\n            ) : (\n              <motion.div\n                ref={containerRef}\n                className=\"devhub-xterm-container h-full w-full p-0\"\n                data-operational-renderer={operationalRendererMode}\n                /* Reduced padding (was p-2.5) so TUI-drawn boxes, the bottom \"Build\" bar,\n                   side warnings, ASCII banners and overall layout have widths, heights and\n                   internal spacing much closer to a native Kali terminal.\n                   Extra padding was making \"las cajas de texto\" and art look off. */\n                {...getXtermContainerAnimProps(showTerminalViewport)}\n              />\n            )}\n          </div>\n          {/* Restored session toast */}\n          {restoredToast && (\n            <div\n              className=\"absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-md border text-xs font-mono pointer-events-none\"\n              style={{\n                background:\n                  'color-mix(in oklch, var(--accent-primary) 15%, var(--surface-elevated))',\n                borderColor: 'var(--accent-primary)',\n                color: 'var(--accent-primary)',\n              }}\n            >\n              Ôå║ Restored shell at {cwd}\n            </div>\n          )}\n\n          {/* Loading overlay ÔÇö first boot only; panel switches keep the live terminal interactive */}\n          {showTerminalLoadingOverlay && (\n            <div className=\"pointer-events-none absolute inset-0 bg-[var(--surface-app)]/80 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-10 backdrop-blur-sm\">\n              <Loader2 className=\"w-6 h-6 animate-spin text-[#388bfd]\" />\n              {connectionState === 'connecting' ? 'Conectando...' : 'Iniciando terminal...'}\n            </div>\n          )}\n\n          {/* Error/Disconnected overlay */}\n          {showTerminalStatusOverlay && connectionState !== 'suspended' && (\n            <div\n              className=\"absolute inset-0 bg-[var(--surface-app)]/90 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto\"\n              data-testid={\n                connectionState === 'agent-exited'\n                  ? 'terminal-agent-exited-overlay'\n                  : 'terminal-status-overlay'\n              }\n            >\n              <WifiOff className=\"w-8 h-8 text-red-400\" />\n              <span className=\"text-red-400 font-semibold text-center px-4\">\n                {exitOverlayCopy.title}\n              </span>\n              <span className=\"text-gray-500 text-center max-w-sm px-4\">\n                {exitOverlayCopy.body}\n              </span>\n              <button\n                onClick={handleSessionRecoveryClick}\n                className=\"mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300\"\n              >\n                <RotateCcw className=\"w-3.5 h-3.5\" />\n                {exitOverlayCopy.actionLabel}\n              </button>\n            </div>\n          )}\n\n          {/* Suspended state overlay */}\n          {showTerminalStatusOverlay && connectionState === 'suspended' && (\n            <div\n              className=\"absolute inset-0 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 font-mono z-[60] backdrop-blur-sm pointer-events-auto\"\n              style={{ background: 'var(--surface-app)' }}\n              data-testid=\"terminal-suspended-overlay\"\n            >\n              <svg\n                className=\"w-8 h-8 text-yellow-500\"\n                viewBox=\"0 0 24 24\"\n                fill=\"none\"\n                stroke=\"currentColor\"\n                strokeWidth={2}\n              >\n                <circle cx=\"12\" cy=\"12\" r=\"10\" />\n                <line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\" />\n                <line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\" />\n              </svg>\n              <span className=\"text-yellow-500 font-semibold\">Sesi├│n suspendida</span>\n              <span className=\"text-gray-500 text-center max-w-xs\">\n                {extractOpenCodeSessionId(initialCommand)\n                  ? `OpenCode en pausa${cwd ? ` ÔÇö ${cwd}` : ''}`\n                  : cwd\n                    ? `Shell en pausa ÔÇö ${cwd}`\n                    : 'Panel en pausa ÔÇö puls├í Continuar para reconectar'}\n              </span>\n              <button\n                data-testid=\"terminal-suspended-continue-btn\"\n                onClick={() => {\n                  const sessionId = extractOpenCodeSessionId(initialCommand) || id;\n                  window.dispatchEvent(\n                    new CustomEvent('devhub:manual-revive-requested', {\n                      detail: { panelId: id, sessionId },\n                    })\n                  );\n                }}\n                className=\"mt-2 flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e1e1e] border border-white/10 hover:bg-white/10 transition-colors text-gray-300\"\n              >\n                <RotateCcw className=\"w-3.5 h-3.5\" />\n                Continuar\n              </button>\n            </div>\n          )}\n\n          {/* Copy button ÔÇö top-right corner */}\n          {isConnected && showQuickCopyButton && (\n            <button\n              onClick={async () => {\n                await handleCopySelection();\n              }}\n              className=\"absolute top-2 right-2 z-20 p-1.5 rounded-md border transition-colors\"\n              style={getTerminalFloatingControlStyle({ active: true })}\n              title=\"Copiar selecci├│n\"\n            >\n              <Copy className={`w-3.5 h-3.5 ${copied ? 'text-[#3fb950]' : 'text-gray-400'}`} />\n            </button>\n          )}\n\n          {/* Custom context menu */}\n          {contextMenu && (\n            <div\n              className=\"fixed z-50 min-w-[160px] rounded-lg border shadow-xl animate-in fade-in zoom-in-95 duration-100\"\n              style={{\n                left: contextMenu.x,\n                top: contextMenu.y,\n                ...getTerminalFloatingControlStyle({ active: true }),\n              }}\n            >\n              <button\n                data-testid=\"terminal-context-menu-paste\"\n                onClick={handlePasteFromMenu}\n                className=\"w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors rounded-t-lg\"\n              >\n                <ClipboardPaste className=\"w-3.5 h-3.5 text-gray-400\" />\n                Pegar\n                <span className=\"ml-auto text-[10px] text-gray-500 font-mono\">\n                  Ctrl+V / Ctrl+Shift+V\n                </span>\n              </button>\n              <div className=\"h-px bg-[#3a3a3a] mx-2 my-1\" />\n              <button\n                data-testid=\"terminal-context-menu-copy\"\n                onClick={handleCopyFromMenu}\n                disabled={!contextMenu.canCopy}\n                className=\"w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-[#2a2a2a] transition-colors disabled:cursor-not-allowed disabled:opacity-50\"\n              >\n                <Copy className=\"w-3.5 h-3.5 text-gray-400\" />\n                Copiar selecci├│n\n                <span className=\"ml-auto text-[10px] text-gray-500 font-mono\">Ctrl+Shift+C</span>\n              </button>\n              <div className=\"h-px bg-[#3a3a3a] mx-2 my-1\" />\n              <button\n                onClick={() => setContextMenu(null)}\n                className=\"w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-[#2a2a2a] transition-colors rounded-b-lg\"\n              >\n                Cerrar\n              </button>\n            </div>\n          )}\n        </div>\n      </div>\n    </div>\n  );\n}\n",
+    "usedDeprecatedRules": []
+  }
+]

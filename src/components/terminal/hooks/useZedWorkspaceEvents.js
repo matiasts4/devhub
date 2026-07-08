@@ -39,6 +39,7 @@ export default function useZedWorkspaceEvents({
   updateBrowserWindowState,
   setWorkspaces,
   setRestoreSettingsModal,
+  switchWindowInWorkspace,
 }) {
   const lastZedOpenUrlRef = useRef({ url: null, label: null });
   const rightDockStateRef = useRef(rightDockState);
@@ -209,7 +210,7 @@ export default function useZedWorkspaceEvents({
       }
     };
 
-    const handleZedWorkspaceAction = ({ action, section }) => {
+    const handleZedWorkspaceAction = ({ action, section, window_id }) => {
       if (action === 'open_restore_settings') {
         setRestoreSettingsModal({ open: true, section });
       } else if (action === 'close_restore_settings') {
@@ -243,6 +244,11 @@ export default function useZedWorkspaceEvents({
         window.setTimeout(dispatchArrangeFit, 400);
         window.setTimeout(dispatchArrangeFit, 720);
         window.setTimeout(dispatchArrangeFit, 1200);
+      } else if (action === 'switch_workspace_window') {
+        const wsId = activeWsIdRef.current || activeWsId;
+        if (wsId && typeof window_id === 'string' && window_id.length > 0) {
+          switchWindowInWorkspace?.(wsId, window_id);
+        }
       }
     };
 
@@ -277,5 +283,6 @@ export default function useZedWorkspaceEvents({
     activePanelIdsRef,
     activeWsIdRef,
     workspacesRef,
+    switchWindowInWorkspace,
   ]);
 }

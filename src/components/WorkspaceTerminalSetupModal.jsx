@@ -334,6 +334,8 @@ export default function WorkspaceTerminalSetupModal({
       className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-8 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
+      data-devhub-modal="true"
+      data-state="open"
       aria-label="Configurar terminales del workspace"
       data-testid="workspace-terminal-setup-modal"
       style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}

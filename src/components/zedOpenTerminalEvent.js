@@ -6,9 +6,10 @@
  *   same panel flow as Split right (`p1`, `p2`, …) — not orphan `term-*`
  *   ids from a headless POST PTY.
  *
- * Consumer: `TerminalWorkspacesManager.jsx` calls `handleSplit` (vertical
- *   when the workspace already has 2+ columns, else horizontal) with a
- *   normal panel id. Legacy events may still pass `session_id` for reattach.
+ * Consumer: `useZedWorkspaceEvents.js` (extracted from
+ *   `TerminalWorkspacesManager.jsx`) calls `handleSplit('horizontal', …)`
+ *   with a normal panel id. Legacy events may still pass `session_id` for
+ *   reattach.
  *
  * Extracted here as a pure function so it can be unit-tested without
  * mounting the full TerminalWorkspacesManager (4380 lines, heavy
@@ -53,9 +54,10 @@ export function resolveZedOpenTerminalPanelId(detail, fallback) {
         ? detail.terminalId
         : null;
     if (terminalId) return terminalId;
-    const sid = typeof detail.session_id === 'string' && detail.session_id.length > 0
-      ? detail.session_id
-      : null;
+    const sid =
+      typeof detail.session_id === 'string' && detail.session_id.length > 0
+        ? detail.session_id
+        : null;
     if (sid) return sid;
   }
   return fallback;

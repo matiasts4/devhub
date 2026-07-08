@@ -102,6 +102,9 @@ export const TRANSITION = {
   /** Spring — active pill, drag feedback, toggle. Uses the approved preset. */
   spring: spring.toggle.transition,
 
+  /** 500ms pure opacity crossfade — ambient overlays with no directional motion. */
+  fade: { duration: 0.5, ease: EASE.inOut },
+
   /** Reduced motion fallback — opacity only, 50ms max. */
   reduced: { duration: 0.05, ease: EASE.linear },
 };
@@ -111,12 +114,13 @@ export { spring, amplified };
 /**
  * Returns the transition object for a given animation intent and motion mode.
  *
- * @param {'toggle'|'open'|'nav'|'sheet'|'drag'|'settle'} intent
+ * @param {'toggle'|'open'|'nav'|'sheet'|'drag'|'settle'|'fade'} intent
  * @param {'reduced'|'normal'|'amplified'} mode
  * @returns {object} framer-motion transition object
  */
 export function getTransition(intent, mode) {
   if (mode === 'reduced') return TRANSITION.reduced;
+  if (intent === 'fade') return TRANSITION.fade;
   const source = mode === 'amplified' ? amplified : spring;
   return source[intent]?.transition || spring[intent]?.transition || TRANSITION.base;
 }

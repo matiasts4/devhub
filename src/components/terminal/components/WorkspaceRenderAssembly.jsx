@@ -61,6 +61,7 @@ import { renderWorkspacePanel } from './renderWorkspacePanel';
 import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
 import { DEFAULT_RIGHT_DOCK_STATE } from '../../workspace/rightDockState';
 import { applyWorkspaceWindowSelectDockState } from '../../workspace/rightDockLayout';
+import { getTauriMainWindow } from '@/lib/tauri/mainWindow';
 
 export default function WorkspaceRenderAssembly(props) {
   const {
@@ -113,6 +114,7 @@ export default function WorkspaceRenderAssembly(props) {
     reopenOpenCodeSession,
     workspaceGridAreaRef,
     heavySurfacesReady,
+    rightDockMeasuredBounds,
     isFullscreenBrowser,
     hideRightDockPanel,
     updateRightDockState,
@@ -178,17 +180,11 @@ export default function WorkspaceRenderAssembly(props) {
     createWorkspaceWithTerminalCount,
     getActiveWorkspaceTerminalPanelCount,
     getWorkspaceTerminals,
+    getWorkspaceWindows,
     showWorkspacePathChip,
   } = props;
 
-  const getTauriWindow = useCallback(async () => {
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      return getCurrentWindow();
-    } catch {
-      return null;
-    }
-  }, []);
+  const getTauriWindow = useCallback(async () => getTauriMainWindow(), []);
 
   const [isWinMaximized, setIsWinMaximized] = useState(false);
 
@@ -222,7 +218,13 @@ export default function WorkspaceRenderAssembly(props) {
 
   const handleWinToggleMaximize = useCallback(async () => {
     const win = await getTauriWindow();
-    await win?.toggleMaximize().catch(() => {});
+    if (!win) return;
+    const current = await win.isMaximized().catch(() => false);
+    if (current) {
+      await win.unmaximize().catch(() => {});
+    } else {
+      await win.maximize().catch(() => {});
+    }
   }, [getTauriWindow]);
 
   const handleWinClose = useCallback(async () => {
@@ -292,12 +294,13 @@ export default function WorkspaceRenderAssembly(props) {
                   type="button"
                   data-testid="panel-tab-browser"
                   onClick={() => {
-                    updateWsDockState({
+                    updateWsDockState((current) => ({
                       visible: true,
                       activeTab: 'browser',
                       maximized: true,
                       maximizedView: 'browser',
-                    });
+                      browserLayoutEpoch: (Number(current.browserLayoutEpoch) || 0) + 1,
+                    }));
                   }}
                   className={`h-6 shrink-0 px-2.5 rounded-sm text-[11px] font-mono font-semibold border flex items-center gap-1.5 transition-colors ${
                     isBrowserFullscreen
@@ -434,398 +437,437 @@ export default function WorkspaceRenderAssembly(props) {
       <div
         key="workspace-top-tab-bar"
         data-testid="workspace-top-tab-bar"
-        className="flex items-center min-h-[42px] bg-[var(--surface-app)] select-none shrink-0 px-2 gap-1.5"
+        className="relative z-[120] flex items-center min-h-[42px] bg-[var(--surface-app)] select-none shrink-0 px-2 gap-1.5 devhub-titlebar-no-drag"
         style={{
           ...getWorkspaceShellChromeStyle(),
           ...getWorkspaceTopBarStyle(),
+          WebkitAppRegion: 'no-drag',
+          appRegion: 'no-drag',
         }}
       >
-        <WorkspaceWindowTabBar
-          workspaces={workspaces}
-          activeWsId={activeWsId}
-          draggedWsId={draggedWsId}
-          dragOverWsId={dragOverWsId}
-          browserWindowStates={browserWindowStates}
-          switchWorkspace={switchWorkspace}
-          handleWorkspaceTabPointerDown={handleWorkspaceTabPointerDown}
-          handleWorkspaceTabPointerMove={handleWorkspaceTabPointerMove}
-          endWorkspaceTabDrag={endWorkspaceTabDrag}
-          addWorkspace={addWorkspace}
-          removeWorkspace={removeWorkspace}
-          closeWorkspaceBrowserWindow={closeWorkspaceBrowserWindow}
-          getWorkspaceDisplayLabel={getWorkspaceDisplayLabel}
-          getAllPanelIds={getAllPanelIds}
-        />
-
-        <WorkspaceWindowSwitcher
-          variant="header"
-          views={workspaceWindows[activeWsId] || []}
-          activeViewId={
-            pizarraPendingViewId ||
-            activeWindowIds[activeWsId] ||
-            workspaceWindows[activeWsId]?.[0]?.id
-          }
-          visible={isVisible}
-          onSelectView={(windowId) => {
-            const pizarraUiActive =
-              pizarraOwnsLiveSurfaces ||
-              (effectiveRightDockState.visible && effectiveRightDockState.activeTab === 'pizarra');
-            if (pizarraUiActive) {
-              setPizarraPendingViewId(windowId);
-              window.dispatchEvent(
-                new CustomEvent('devhub:pizarra-select-view', {
-                  detail: { windowId, workspaceId: activeWsId },
-                })
-              );
-              return;
-            }
-            switchWindowInWorkspace(activeWsId, windowId);
-          }}
-          onAddView={() => addWindowToWorkspace(activeWsId)}
-        />
-
-        {countPanelsInColumns(activeWorkspace?.columns || []) === 0 ? (
-          <button
-            type="button"
-            data-testid="header-add-terminal"
-            onClick={() => handleSplit('horizontal')}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-2.5 text-[11px] font-mono font-semibold text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
-            title="Nueva terminal"
-            aria-label="Nueva terminal"
-          >
-            <Terminal className="h-3.5 w-3.5" />
-            Terminal
-          </button>
-        ) : null}
-
-        <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
-
-        {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          {/* Grid Launcher */}
-          <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                data-testid="workspace-grid-launcher-trigger"
-                className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                title="Lanzar Cuadrícula"
-              >
-                <Grip className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
-              data-testid="workspace-grid-launcher-content"
-            >
-              <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
-                Grillas Predefinidas
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/10" />
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {[
-                  { label: '2 Paneles', cols: 2, rows: 1 },
-                  { label: '4 Paneles', cols: 2, rows: 2 },
-                  { label: '6 Paneles', cols: 3, rows: 2 },
-                ].map((layout) => (
-                  <button
-                    key={layout.label}
-                    onClick={() => handleApplyGrid(layout.cols, layout.rows)}
-                    className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                  >
-                    <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
-                    <span className="text-[10px] font-semibold">{layout.label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-3 px-1 mb-1">
-                <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
-                  Comando Inicial
-                </label>
-                <input
-                  type="text"
-                  value={gridCommand}
-                  onChange={(e) => setGridCommand(e.target.value)}
-                  placeholder="ej. opencode"
-                  className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
-                />
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <button
-            type="button"
-            data-testid="right-dock-tab-browser"
-            data-pizarra-active-tab={
-              rightDockState.activeTab === 'browser' && rightDockState.visible ? 'true' : 'false'
-            }
-            onClick={() => handleRightDockTabSelect('browser')}
-            className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'browser' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Browser (Ctrl+Shift+B)"
-          >
-            <Globe className="w-4 h-4" />
-            {activeBrowserWindowState?.open ? (
-              <span
-                className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                data-testid="right-dock-tab-browser-indicator"
-                title="Ventana browser activa en segundo plano"
-              />
-            ) : null}
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-editor"
-            data-pizarra-active-tab={
-              rightDockState.activeTab === 'editor' && rightDockState.visible ? 'true' : 'false'
-            }
-            onClick={() => handleRightDockTabSelect('editor')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'editor' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Editor / archivos (Ctrl+Shift+E)"
-          >
-            <FileCode2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-swarm"
-            data-pizarra-active-tab={
-              rightDockState.activeTab === 'swarm' && rightDockState.visible ? 'true' : 'false'
-            }
-            onClick={() => handleRightDockTabSelect('swarm')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'swarm' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Show swarm topology"
-          >
-            <Bot className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-zed"
-            onClick={() => dispatchZedOverlayToggle()}
-            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 transition-all hover:text-gray-200 hover:bg-white/[0.05]"
-            title="Zed asistente (Ctrl+Shift+Z)"
-          >
-            <span className="text-xs font-bold" style={{ color: 'inherit' }}>
-              Z
-            </span>
-          </button>
-          <label
-            className="relative inline-flex items-center cursor-pointer select-none"
-            title="Pizarra canvas"
-          >
-            <input
-              type="checkbox"
-              data-testid="pizarra-mode-switch"
-              checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
-              onChange={() => handleRightDockTabSelect('pizarra')}
-              className="sr-only"
-            />
-            <div
-              className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
-                rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                  ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
-                  : 'bg-[rgba(255,255,255,0.15)]'
-              }`}
-            >
-              <div
-                className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
-                  rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                    ? 'translate-x-4 bg-[var(--accent-primary)]'
-                    : 'translate-x-0.5 bg-gray-400'
-                }`}
-                style={{ transition: 'transform 200ms ease' }}
-              />
-            </div>
-            <LayoutGrid
-              className={`ml-2 w-4 h-4 ${
-                rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                  ? 'text-[var(--accent-primary)]'
-                  : 'text-gray-500'
-              }`}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={openTerminalSwarmLauncher}
-            className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
-            title="Lanzar swarm desde terminales"
-            aria-label="Lanzar swarm desde terminales"
-            data-testid="workspace-swarm-launch-button"
-          >
-            <Wand2 className="h-4 w-4" />
-          </button>
-          {activeSwarmLaunchSummary?.launchId ? (
-            <span
-              className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
-              data-testid="workspace-swarm-active-summary"
-              title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles · cerrá el workspace para finalizar`}
-            >
-              {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
-            </span>
-          ) : null}
-
-          <div className="w-px h-5 bg-white/10 mx-1" />
-
-          <NotificationCenter projectId={projectId} variant="topbar" />
-
-          <button
-            type="button"
-            onClick={() => setRestoreSettingsModal({ open: true })}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-            title="Configuración de restauración de terminales"
-            aria-label="Configuración de restauración de terminales"
-            data-testid="terminal-restore-settings-btn"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
-                title="Reopen sessions"
-                aria-label="Reopen sessions"
-              >
-                <History className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
-              <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
-                <span>Agent Sessions</span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    refreshResumableSessions();
-                  }}
-                  className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
-                >
-                  <RefreshCw
-                    className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
-                  />
-                  Refresh
-                </button>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/10" />
-
-              {isLoadingResumableSessions && (
-                <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
-                  <Clock3 className="w-3.5 h-3.5 animate-pulse" />
-                  Loading recent sessions...
-                </div>
-              )}
-
-              {!isLoadingResumableSessions && resumableStatus === 'error' && resumableError && (
-                <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
-                  <span>{resumableError.message}</span>
-                  {resumableError.retryable !== false ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        refreshResumableSessions();
-                      }}
-                      className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Retry
-                    </button>
-                  ) : null}
-                </div>
-              )}
-
-              {reopenActionError && (
-                <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
-              )}
-
-              {!isLoadingResumableSessions &&
-                resumableStatus !== 'error' &&
-                resumableSessions.length === 0 && (
-                  <div className="px-2 py-3 text-xs text-gray-400">No recent sessions found.</div>
-                )}
-
-              {!isLoadingResumableSessions &&
-                resumableSessions.map((session) => (
-                  <DropdownMenuItem
-                    key={session.sessionId}
-                    className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
-                    onSelect={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      try {
-                        await reopenOpenCodeSession(session);
-                      } catch (err) {
-                        setReopenActionError(String(err?.message || err || 'Reopen failed'));
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="text-xs font-medium text-gray-200 truncate">
-                        {session.title || session.sessionId}
-                      </span>
-                      <span className="text-[10px] text-gray-500 ml-auto">
-                        {session.lastActiveAt
-                          ? new Date(session.lastActiveAt).toLocaleTimeString()
-                          : ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="text-[10px] text-gray-500 truncate">
-                        {session.workspaceId}
-                      </span>
-                      <span className="text-[10px] text-gray-600">·</span>
-                      <span className="text-[10px] text-gray-500 truncate">{session.agentId}</span>
-                    </div>
-                  </DropdownMenuItem>
-                ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div
+          className="flex min-w-0 items-center overflow-hidden devhub-titlebar-no-drag"
+          style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
+          data-testid="workspace-top-tab-bar-controls"
+        >
+          <WorkspaceWindowTabBar
+            workspaces={workspaces}
+            activeWsId={activeWsId}
+            draggedWsId={draggedWsId}
+            dragOverWsId={dragOverWsId}
+            browserWindowStates={browserWindowStates}
+            switchWorkspace={switchWorkspace}
+            handleWorkspaceTabPointerDown={handleWorkspaceTabPointerDown}
+            handleWorkspaceTabPointerMove={handleWorkspaceTabPointerMove}
+            endWorkspaceTabDrag={endWorkspaceTabDrag}
+            addWorkspace={addWorkspace}
+            removeWorkspace={removeWorkspace}
+            closeWorkspaceBrowserWindow={closeWorkspaceBrowserWindow}
+            getWorkspaceDisplayLabel={getWorkspaceDisplayLabel}
+            getAllPanelIds={getAllPanelIds}
+          />
         </div>
 
-        {/* Window Controls */}
         <div
-          className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)]"
-          style={{ WebkitAppRegion: 'no-drag' }}
+          className="flex-1 self-stretch min-w-[12px] min-h-[34px] cursor-default"
+          data-testid="workspace-window-drag-strip"
+          data-tauri-drag-region
+          onDoubleClick={handleWinToggleMaximize}
+          style={{ WebkitAppRegion: 'drag', appRegion: 'drag' }}
+          aria-label="Arrastrar ventana"
+          title="Arrastrar ventana (doble click maximiza)"
+        />
+
+        <div
+          className="flex items-center gap-1.5 shrink-0 devhub-titlebar-no-drag"
+          style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
+          data-testid="workspace-top-tab-bar-actions"
         >
-          <button
-            onClick={handleWinMinimize}
-            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
-            title="Minimize"
+          <WorkspaceWindowSwitcher
+            variant="header"
+            views={workspaceWindows[activeWsId] || []}
+            activeViewId={
+              pizarraPendingViewId ||
+              activeWindowIds[activeWsId] ||
+              workspaceWindows[activeWsId]?.[0]?.id
+            }
+            visible={isVisible}
+            onSelectView={(windowId) => {
+              const pizarraUiActive =
+                pizarraOwnsLiveSurfaces ||
+                (effectiveRightDockState.visible &&
+                  effectiveRightDockState.activeTab === 'pizarra');
+              if (pizarraUiActive) {
+                setPizarraPendingViewId(windowId);
+                window.dispatchEvent(
+                  new CustomEvent('devhub:pizarra-select-view', {
+                    detail: { windowId, workspaceId: activeWsId },
+                  })
+                );
+                return;
+              }
+              switchWindowInWorkspace(activeWsId, windowId);
+            }}
+            onAddView={() => addWindowToWorkspace(activeWsId)}
+          />
+
+          {countPanelsInColumns(activeWorkspace?.columns || []) === 0 ? (
+            <button
+              type="button"
+              data-testid="header-add-terminal"
+              onClick={() => handleSplit('horizontal')}
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-2.5 text-[11px] font-mono font-semibold text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+              title="Nueva terminal"
+              aria-label="Nueva terminal"
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              Terminal
+            </button>
+          ) : null}
+
+          <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
+
+          {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* Grid Launcher */}
+            <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  data-testid="workspace-grid-launcher-trigger"
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                  title="Lanzar Cuadrícula"
+                >
+                  <Grip className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-[280px] bg-[#0d1320] border-[#273146] text-gray-100 p-2 z-50"
+                data-testid="workspace-grid-launcher-content"
+              >
+                <DropdownMenuLabel className="text-xs uppercase tracking-wide text-gray-400">
+                  Grillas Predefinidas
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/10" />
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  {[
+                    { label: '2 Paneles', cols: 2, rows: 1 },
+                    { label: '4 Paneles', cols: 2, rows: 2 },
+                    { label: '6 Paneles', cols: 3, rows: 2 },
+                  ].map((layout) => (
+                    <button
+                      key={layout.label}
+                      onClick={() => handleApplyGrid(layout.cols, layout.rows)}
+                      className="flex flex-col items-center justify-center p-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                    >
+                      <LayoutGrid className="w-6 h-6 mb-1 text-gray-400" />
+                      <span className="text-[10px] font-semibold">{layout.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 px-1 mb-1">
+                  <label className="text-[10px] uppercase text-gray-400 font-semibold mb-1 block">
+                    Comando Inicial
+                  </label>
+                  <input
+                    type="text"
+                    value={gridCommand}
+                    onChange={(e) => setGridCommand(e.target.value)}
+                    placeholder="ej. opencode"
+                    className="w-full bg-[#111826] border border-[#273146] rounded-md px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[var(--accent-primary)]"
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <button
+              type="button"
+              data-testid="right-dock-tab-browser"
+              data-pizarra-active-tab={
+                rightDockState.activeTab === 'browser' && rightDockState.visible ? 'true' : 'false'
+              }
+              onClick={() => handleRightDockTabSelect('browser')}
+              className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                rightDockState.activeTab === 'browser' && rightDockState.visible
+                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+              }`}
+              title="Browser (Ctrl+Shift+B)"
+            >
+              <Globe className="w-4 h-4" />
+              {activeBrowserWindowState?.open ? (
+                <span
+                  className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                  data-testid="right-dock-tab-browser-indicator"
+                  title="Ventana browser activa en segundo plano"
+                />
+              ) : null}
+            </button>
+            <button
+              type="button"
+              data-testid="right-dock-tab-editor"
+              data-pizarra-active-tab={
+                rightDockState.activeTab === 'editor' && rightDockState.visible ? 'true' : 'false'
+              }
+              onClick={() => handleRightDockTabSelect('editor')}
+              className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                rightDockState.activeTab === 'editor' && rightDockState.visible
+                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+              }`}
+              title="Editor / archivos (Ctrl+Shift+E)"
+            >
+              <FileCode2 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              data-testid="right-dock-tab-swarm"
+              data-pizarra-active-tab={
+                rightDockState.activeTab === 'swarm' && rightDockState.visible ? 'true' : 'false'
+              }
+              onClick={() => handleRightDockTabSelect('swarm')}
+              className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+                rightDockState.activeTab === 'swarm' && rightDockState.visible
+                  ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+              }`}
+              title="Show swarm topology"
+            >
+              <Bot className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              data-testid="right-dock-tab-zed"
+              onClick={() => dispatchZedOverlayToggle()}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 transition-all hover:text-gray-200 hover:bg-white/[0.05]"
+              title="Zed asistente (Ctrl+Shift+Z)"
+            >
+              <span className="text-xs font-bold" style={{ color: 'inherit' }}>
+                Z
+              </span>
+            </button>
+            <label
+              className="relative inline-flex items-center cursor-pointer select-none"
+              title="Pizarra canvas"
+            >
+              <input
+                type="checkbox"
+                data-testid="pizarra-mode-switch"
+                checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
+                onChange={() => handleRightDockTabSelect('pizarra')}
+                className="sr-only"
+              />
+              <div
+                className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
+                  rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
+                    : 'bg-[rgba(255,255,255,0.15)]'
+                }`}
+              >
+                <div
+                  className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+                    rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                      ? 'translate-x-4 bg-[var(--accent-primary)]'
+                      : 'translate-x-0.5 bg-gray-400'
+                  }`}
+                  style={{ transition: 'transform 200ms ease' }}
+                />
+              </div>
+              <LayoutGrid
+                className={`ml-2 w-4 h-4 ${
+                  rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
+                    ? 'text-[var(--accent-primary)]'
+                    : 'text-gray-500'
+                }`}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={openTerminalSwarmLauncher}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
+              title="Lanzar swarm desde terminales"
+              aria-label="Lanzar swarm desde terminales"
+              data-testid="workspace-swarm-launch-button"
+            >
+              <Wand2 className="h-4 w-4" />
+            </button>
+            {activeSwarmLaunchSummary?.launchId ? (
+              <span
+                className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
+                data-testid="workspace-swarm-active-summary"
+                title={`${activeSwarmLaunchSummary.title} · ${activeSwarmLaunchSummary.count} paneles · cerrá el workspace para finalizar`}
+              >
+                {activeSwarmLaunchSummary.title} · {activeSwarmLaunchSummary.count}
+              </span>
+            ) : null}
+
+            <div className="w-px h-5 bg-white/10 mx-1" />
+
+            <NotificationCenter projectId={projectId} variant="topbar" />
+
+            <button
+              type="button"
+              onClick={() => setRestoreSettingsModal({ open: true })}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+              title="Configuración de restauración de terminales"
+              aria-label="Configuración de restauración de terminales"
+              data-testid="terminal-restore-settings-btn"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] transition-all cursor-pointer select-none"
+                  title="Reopen sessions"
+                  aria-label="Reopen sessions"
+                >
+                  <History className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-[380px] max-h-[420px] overflow-y-auto bg-[#0d1320] border-[#273146] text-gray-100">
+                <DropdownMenuLabel className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-gray-400">
+                  <span>Agent Sessions</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      refreshResumableSessions();
+                    }}
+                    className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                  >
+                    <RefreshCw
+                      className={`w-3 h-3 ${isLoadingResumableSessions ? 'animate-spin' : ''}`}
+                    />
+                    Refresh
+                  </button>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/10" />
+
+                {isLoadingResumableSessions && (
+                  <div className="px-2 py-3 text-xs text-gray-400 flex items-center gap-2">
+                    <Clock3 className="w-3.5 h-3.5 animate-pulse" />
+                    Loading recent sessions...
+                  </div>
+                )}
+
+                {!isLoadingResumableSessions && resumableStatus === 'error' && resumableError && (
+                  <div className="px-2 py-3 text-xs text-red-300 flex items-center justify-between gap-3">
+                    <span>{resumableError.message}</span>
+                    {resumableError.retryable !== false ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          refreshResumableSessions();
+                        }}
+                        className="inline-flex items-center gap-1 text-xs text-red-200 hover:text-white"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Retry
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+
+                {reopenActionError && (
+                  <div className="px-2 py-3 text-xs text-red-300">{reopenActionError}</div>
+                )}
+
+                {!isLoadingResumableSessions &&
+                  resumableStatus !== 'error' &&
+                  resumableSessions.length === 0 && (
+                    <div className="px-2 py-3 text-xs text-gray-400">No recent sessions found.</div>
+                  )}
+
+                {!isLoadingResumableSessions &&
+                  resumableSessions.map((session) => (
+                    <DropdownMenuItem
+                      key={session.sessionId}
+                      className="flex flex-col items-start gap-1 px-2 py-2 cursor-pointer"
+                      onSelect={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                          await reopenOpenCodeSession(session);
+                        } catch (err) {
+                          setReopenActionError(String(err?.message || err || 'Reopen failed'));
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="text-xs font-medium text-gray-200 truncate">
+                          {session.title || session.sessionId}
+                        </span>
+                        <span className="text-[10px] text-gray-500 ml-auto">
+                          {session.lastActiveAt
+                            ? new Date(session.lastActiveAt).toLocaleTimeString()
+                            : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="text-[10px] text-gray-500 truncate">
+                          {session.workspaceId}
+                        </span>
+                        <span className="text-[10px] text-gray-600">·</span>
+                        <span className="text-[10px] text-gray-500 truncate">
+                          {session.agentId}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Window Controls */}
+          <div
+            className="flex items-center h-full shrink-0 gap-2.5 ml-2 pl-2 border-l border-[rgba(255,255,255,0.07)] devhub-titlebar-no-drag"
+            style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
           >
-            <Minus
-              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-              strokeWidth={3}
-            />
-          </button>
-          <button
-            onClick={handleWinToggleMaximize}
-            className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
-            title={isWinMaximized ? 'Restore' : 'Maximize'}
-          >
-            <Plus
-              className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
-              strokeWidth={3}
-            />
-          </button>
-          <button
-            onClick={handleWinClose}
-            className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
-            title="Close"
-          >
-            <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
-          </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleWinMinimize();
+              }}
+              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2f323e] hover:bg-[#434857] transition-colors"
+              title="Minimize"
+            >
+              <Minus
+                className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                strokeWidth={3}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleWinToggleMaximize();
+              }}
+              className="group flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#464a57] hover:bg-[#5b6070] transition-colors"
+              title={isWinMaximized ? 'Restore' : 'Maximize'}
+            >
+              <Plus
+                className="w-2.5 h-2.5 text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                strokeWidth={3}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleWinClose();
+              }}
+              className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#B80096] hover:bg-[#D600AE] transition-colors"
+              title="Close"
+            >
+              <X className="w-2.5 h-2.5 text-black stroke-[3px]" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -980,9 +1022,7 @@ export default function WorkspaceRenderAssembly(props) {
                 ...rightDockLayerChromeStyle,
                 ...resolveRightDockTakeoverChromeStyle(isFullscreenBrowser),
                 zIndex: isFullscreenBrowser ? 200 : 50,
-                willChange: isDraggingDock
-                  ? 'left, width, transform, opacity'
-                  : 'transform, opacity',
+                willChange: isDraggingDock ? 'left, width, opacity' : 'opacity',
               }}
             >
               <WorkspaceRightDock
@@ -990,6 +1030,11 @@ export default function WorkspaceRenderAssembly(props) {
                 workspaceId={activeWorkspace.id}
                 dockState={effectiveRightDockState}
                 onDockStateChange={updateRightDockState}
+                layoutReady={
+                  Boolean(heavySurfacesReady) &&
+                  (Boolean(rightDockMeasuredBounds) || Boolean(isFullscreenBrowser))
+                }
+                layoutSyncKey={effectiveRightDockState.browserLayoutEpoch ?? 0}
                 browserWindowState={browserWindowStates?.[activeWorkspace.id] || null}
                 onBrowserWindowStateChange={updateBrowserWindowState}
                 workspaceWindows={workspaceWindows?.[activeWorkspace.id] || []}
@@ -1070,6 +1115,7 @@ export default function WorkspaceRenderAssembly(props) {
         sessionKey={`devhub-zed-chat-${projectId || 'default'}`}
         getTerminalPanelCount={getActiveWorkspaceTerminalPanelCount}
         getWorkspaceTerminals={getWorkspaceTerminals}
+        getWorkspaceWindows={getWorkspaceWindows}
       />
     </motion.div>
   );

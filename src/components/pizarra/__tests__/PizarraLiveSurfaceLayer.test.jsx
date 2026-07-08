@@ -199,4 +199,136 @@ describe('PizarraLiveSurfaceLayer', () => {
     expect(onUpdateRendererMode).toHaveBeenCalledTimes(1);
     expect(onUpdateRendererMode).toHaveBeenCalledWith('terminal-1', 'vte-experimental');
   });
+
+  // pizarra-editing-ux Phase 4: unified z-index space + lock passthrough +
+  // composite context-menu routing. The wrapper style.zIndex is now
+  // `shape.zIndex + (selected||active ? 1000 : 0)` (replaces the prior
+  // selected→100 / 5 split), `locked` threads through to the consumer so
+  // its drag hook bails, and right-click on the wrapper resolves to the
+  // surface id + client coords for the shared Radix menu.
+  test('unified zIndex: stored + 1000 when selected/active, stored otherwise', () => {
+    const { default: PizarraLiveSurfaceLayer } = require('../PizarraLiveSurfaceLayer');
+    const elements = [
+      {
+        id: 'A',
+        type: 'terminal',
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 120,
+        zIndex: 7,
+      },
+      {
+        id: 'B',
+        type: 'browser',
+        x: 50,
+        y: 50,
+        width: 300,
+        height: 200,
+        zIndex: 3,
+      },
+    ];
+
+    flushSync(() => {
+      root.render(
+        React.createElement(PizarraLiveSurfaceLayer, {
+          elements,
+          selectedElementIds: ['A'],
+          activeTerminalId: 'A',
+        })
+      );
+    });
+
+    // Mock CanvasTerminal renders data-testid=`terminal-${terminalId}` and
+    // terminalId = shape.panelId || shape.id, so bare ids → terminal-A.
+    const termWrapper = document.querySelector('[data-testid="terminal-A"]').parentElement;
+    const browserWrapper = document.querySelector('[data-testid="browser-B"]').parentElement;
+    // selected/active terminal → 7 + 1000
+    expect(termWrapper.style.zIndex).toBe('1007');
+    // non-selected browser → 3
+    expect(browserWrapper.style.zIndex).toBe('3');
+  });
+
+  test('threads locked through to the surface consumer', () => {
+    const { default: PizarraLiveSurfaceLayer } = require('../PizarraLiveSurfaceLayer');
+    const elements = [
+      {
+        id: 'terminal-locked',
+        type: 'terminal',
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 120,
+        locked: true,
+      },
+      {
+        id: 'browser-locked',
+        type: 'browser',
+        x: 50,
+        y: 50,
+        width: 300,
+        height: 200,
+        locked: true,
+      },
+    ];
+
+    flushSync(() => {
+      root.render(
+        React.createElement(PizarraLiveSurfaceLayer, {
+          elements,
+          selectedElementIds: [],
+          activeTerminalId: null,
+        })
+      );
+    });
+
+    expect(terminalCalls[0].locked).toBe(true);
+    expect(browserCalls[0].locked).toBe(true);
+  });
+
+  test('onSurfaceContextMenu fires with the surface id + client coords on right-click', () => {
+    const { default: PizarraLiveSurfaceLayer } = require('../PizarraLiveSurfaceLayer');
+    const onSurfaceContextMenu = jest.fn();
+    const elements = [
+      {
+        id: 'ctx',
+        type: 'browser',
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 200,
+        url: 'http://localhost:3100/',
+      },
+    ];
+
+    flushSync(() => {
+      root.render(
+        React.createElement(PizarraLiveSurfaceLayer, {
+          elements,
+          selectedElementIds: [],
+          activeTerminalId: null,
+          onSurfaceContextMenu,
+        })
+      );
+    });
+
+    const wrapper = document.querySelector('[data-testid="browser-ctx"]').parentElement;
+    flushSync(() => {
+      wrapper.dispatchEvent(
+        new window.MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 120,
+          clientY: 80,
+        })
+      );
+    });
+
+    expect(onSurfaceContextMenu).toHaveBeenCalledTimes(1);
+    expect(onSurfaceContextMenu).toHaveBeenCalledWith({
+      id: 'ctx',
+      clientX: 120,
+      clientY: 80,
+    });
+  });
 });

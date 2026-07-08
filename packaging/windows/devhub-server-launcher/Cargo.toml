@@ -7,3 +7,8 @@ edition = "2021"
 strip = true
 lto = true
 codegen-units = 1
+
+[profile.release-fast]
+inherits = "release"
+lto = false
+codegen-units = 16

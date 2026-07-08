@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { validateCopilotOAuth } from '@/lib/copilot-token';
+import { isXaiOAuthMode, resolveXaiOAuthAccessToken, validateXaiOAuth } from '@/lib/xai-oauth';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -12,6 +13,16 @@ export async function POST(request) {
     // Test based on provider type
     let result;
     switch (provider) {
+      case 'xai':
+        result = await testXai(config || {});
+        break;
+      case 'kimi_code':
+        result = await testOpenAICompatible(
+          'https://api.kimi.com/coding/v1',
+          (config.KIMI_CODE_API_KEY || '').trim(),
+          config.KIMI_CODE_MODEL || 'kimi-for-coding'
+        );
+        break;
       case 'openrouter':
         result = await testOpenAICompatible(
           'https://openrouter.ai/api/v1',
@@ -78,6 +89,36 @@ async function testOpenAICompatible(baseUrl, apiKey, model) {
   }
 }
 
+/**
+ * xAI supports two auth modes:
+ * - api_key: classic console XAI_API_KEY
+ * - oauth / SuperGrok subscription tokens (device-code login)
+ */
+async function testXai(config) {
+  const model = config.XAI_MODEL || 'grok-4.20-0309-non-reasoning';
+  const wantsOauth =
+    isXaiOAuthMode(config) ||
+    config.XAI_AUTH_MODE === 'oauth' ||
+    Boolean((config.XAI_OAUTH_REFRESH_TOKEN || '').trim());
+
+  if (wantsOauth) {
+    const oauth = await resolveXaiOAuthAccessToken(config);
+    const token = oauth.accessToken || (config.XAI_OAUTH_ACCESS_TOKEN || '').trim();
+    const validation = await validateXaiOAuth({
+      accessToken: token,
+      refreshToken: (config.XAI_OAUTH_REFRESH_TOKEN || '').trim(),
+    });
+    if (!validation.valid) return validation;
+    // Optional live chat probe when we have a fresh token.
+    if (token) {
+      return testOpenAICompatible('https://api.x.ai/v1', token, model);
+    }
+    return validation;
+  }
+
+  return testOpenAICompatible('https://api.x.ai/v1', (config.XAI_API_KEY || '').trim(), model);
+}
+
 async function testCopilot(oauthToken) {
   if (!oauthToken) {
     return {
@@ -93,7 +134,7 @@ async function testCopilot(oauthToken) {
   return { valid: false, error: result.error };
 }
 
-async function testOpenCode(model) {
+async function testOpenCode() {
   try {
     // Just try to get models list as a connectivity test
     await execAsync('opencode models');

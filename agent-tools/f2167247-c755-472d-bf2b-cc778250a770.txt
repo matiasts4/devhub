@@ -1,0 +1,211 @@
+warning: in the working copy of 'src/components/TerminalTTY.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/terminal/v2Graveyard.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/TerminalTTY.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/terminal/v2Graveyard.js', LF will be replaced by CRLF the next time Git touches it
+git : [STARTED] Backing up original state...
+En l�nea: 1 Car�cter: 147
++ ... engine-v2/; git commit -m "feat(terminal): complete terminal-engine-v ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([STARTED] Backing up original state...:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[COMPLETED] Backed up original state in git stash (9b3df2d)
+[STARTED] Running tasks for staged files...
+[STARTED] package.json — 22 files
+[STARTED] *.{js,jsx,ts,tsx} — 18 files
+[STARTED] *.{css,json,md} — 4 files
+[STARTED] eslint --fix --max-warnings 200 --no-warn-ignored
+[STARTED] prettier --write
+[COMPLETED] prettier --write
+[COMPLETED] *.{css,json,md} — 4 files
+[FAILED] eslint --fix --max-warnings 200 --no-warn-ignored [FAILED]
+[FAILED] eslint --fix --max-warnings 200 --no-warn-ignored [FAILED]
+[COMPLETED] Running tasks for staged files...
+[STARTED] Applying modifications from tasks...
+[SKIPPED] Skipped because of errors from tasks.
+[STARTED] Reverting to original state because of errors...
+[COMPLETED] Reverting to original state because of errors...
+[STARTED] Cleaning up temporary files...
+[COMPLETED] Cleaning up temporary files...
+× eslint --fix --max-warnings 200 --no-warn-ignored:
+(node:18316) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///D:/devhub/eslint.config.js?mtime=1782258700556 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to D:\devhub\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+D:\devhub\src\components\TerminalTTY.jsx
+     4:10  warning  'motion' is defined but never used. Allowed unused vars must match /^_/u                           
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:10  warning  'ClipboardPaste' is defined but never used. Allowed unused vars must match /^_/u                   
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:26  warning  'Copy' is defined but never used. Allowed unused vars must match /^_/u                             
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:32  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u                          
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:41  warning  'RotateCcw' is defined but never used. Allowed unused vars must match /^_/u                        
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:52  warning  'Wifi' is defined but never used. Allowed unused vars must match /^_/u                             
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:58  warning  'WifiOff' is defined but never used. Allowed unused vars must match /^_/u                          
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+     5:67  warning  'X' is defined but never used. Allowed unused vars must match /^_/u                                
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+    13:8   warning  'WebglErrorSection' is defined but never used. Allowed unused vars must match /^_/u                
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+    24:3   warning  'getTerminalRendererWebglFallbackCopy' is defined but never used. Allowed unused vars must match 
+/^_/u                                                                                                                  
+                                                                                                                       
+                                                     no-unused-vars
+   380:66  warning  'steps' is assigned a value but never used. Allowed unused args must match /^_/u                   
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+  1586:3   warning  'isActivePanel' is assigned a value but never used. Allowed unused args must match /^_/u           
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+  1588:3   warning  'canvasAttached' is assigned a value but never used. Allowed unused args must match /^_/u          
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+  1960:9   warning  The 'setConnectionState' conditional could make the dependencies of useCallback Hook (at line 
+2883) change on every render. To fix this, wrap the initialization of 'setConnectionState' in its own useMemo() Hook   
+                                                                                                                       
+                                                        react-hooks/exhaustive-deps
+  1983:9   warning  The 'setNativeVtePanelVisibility' function makes the dependencies of useEffect Hook (at line 5302) 
+change on every render. To fix this, wrap the definition of 'setNativeVtePanelVisibility' in its own useCallback() 
+Hook                                                                                                                   
+                                                       react-hooks/exhaustive-deps
+  1989:9   warning  'subscribeNativeVteEvents' is assigned a value but never used. Allowed unused vars must match 
+/^_/u                                                                                                                  
+                                                                                                                       
+                                                        no-unused-vars
+  2120:9   warning  'initTimeoutRef' is assigned a value but never used. Allowed unused vars must match /^_/u          
+                                                                                                                       
+                                                                                                                       
+                                                   no-unused-vars
+  2524:6   warning  React Hook useCallback has a missing dependency: 'clearConnectDeferTimer'. Either include it or 
+remove the dependency array
+
+... (output truncated) ...
+
+no-unused-vars
+   246:8   warning  'WorkspaceSurfaceRegistryProvider' is defined but never used. Allowed unused vars must match /^_/u 
+                                                                                                                       
+                                          no-unused-vars
+   251:10  warning  'SharedDockStoreProvider' is defined but never used. Allowed unused vars must match /^_/u          
+                                                                                                                       
+                                          no-unused-vars
+   252:8   warning  'RightDockSharedMirror' is defined but never used. Allowed unused vars must match /^_/u            
+                                                                                                                       
+                                          no-unused-vars
+   258:8   warning  'SharedSurfacesProvider' is defined but never used. Allowed unused vars must match /^_/u           
+                                                                                                                       
+                                          no-unused-vars
+   382:10  warning  'collectSwarmTerminateHints' is defined but never used. Allowed unused vars must match /^_/u       
+                                                                                                                       
+                                          no-unused-vars
+   676:10  warning  'getSessionRenderKey' is defined but never used. Allowed unused vars must match /^_/u              
+                                                                                                                       
+                                          no-unused-vars
+   749:10  warning  'getSwarmRoleOrder' is defined but never used. Allowed unused vars must match /^_/u                
+                                                                                                                       
+                                          no-unused-vars
+  1495:10  warning  'isGridLauncherOpen' is assigned a value but never used. Allowed unused vars must match /^_/u      
+                                                                                                                       
+                                          no-unused-vars
+  1605:12  warning  'retryResumableSessions' is assigned a value but never used. Allowed unused vars must match /^_/u  
+                                                                                                                       
+                                          no-unused-vars
+  1631:23  warning  'setIsMaximized' is assigned a value but never used. Allowed unused vars must match /^_/u          
+                                                                                                                       
+                                          no-unused-vars
+  1885:37  warning  'prev' is defined but never used. Allowed unused args must match /^_/u                             
+                                                                                                                       
+                                          no-unused-vars
+  2357:6   warning  React Hook useEffect has missing dependencies: 'agentRunsByPanel' and 'workspaces'. Either include 
+them or remove the dependency array                                                                                    
+                                          react-hooks/exhaustive-deps
+  2718:9   warning  'requestedRendererMode' is assigned a value but never used. Allowed unused vars must match /^_/u   
+                                                                                                                       
+                                          no-unused-vars
+  3351:5   warning  React Hook useCallback has an unnecessary dependency: 'getPanelIdsFromColumns'. Either exclude it 
+or remove the dependency array. Outer scope values like 'getPanelIdsFromColumns' aren't valid dependencies because 
+mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  3550:9   warning  'findPanelInWorkspace' is assigned a value but never used. Allowed unused vars must match /^_/u    
+                                                                                                                       
+                                          no-unused-vars
+  3718:15  warning  'nextPanelId' is assigned a value but never used. Allowed unused vars must match /^_/u             
+                                                                                                                       
+                                          no-unused-vars
+  3761:13  warning  'nextPanelId' is assigned a value but never used. Allowed unused vars must match /^_/u             
+                                                                                                                       
+                                          no-unused-vars
+  3940:5   warning  React Hook useCallback has a missing dependency: 'getAllPanelIds'. Either include it or remove the 
+dependency array                                                                                                       
+                                          react-hooks/exhaustive-deps
+  4339:5   warning  React Hook useMemo has a missing dependency: 'getAllPanelIds'. Either include it or remove the 
+dependency array                                                                                                       
+                                              react-hooks/exhaustive-deps
+  4538:11  warning  'pending' is assigned a value but never used. Allowed unused vars must match /^_/u                 
+                                                                                                                       
+                                          no-unused-vars
+  4711:5   warning  React Hook useCallback has a missing dependency: 'cwd'. Either include it or remove the dependency 
+array. If 'setWorkspaces' needs the current value of 'cwd', you can also switch to useReducer instead of useState and 
+read 'cwd' in the reducer                  react-hooks/exhaustive-deps
+  5302:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the 
+dependency array                                                                                                       
+                                                react-hooks/exhaustive-deps
+  5323:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the 
+dependency array                                                                                                       
+                                                react-hooks/exhaustive-deps
+  5346:5   warning  React Hook useCallback has a missing dependency: 'registry'. Either include it or remove the 
+dependency array                                                                                                       
+                                                react-hooks/exhaustive-deps
+  5516:6   warning  React Hook useEffect has a missing dependency: 'registry'. Either include it or remove the 
+dependency array                                                                                                       
+                                                  react-hooks/exhaustive-deps
+  5707:6   warning  React Hook useEffect has a missing dependency: 'activePanelId'. Either include it or remove the 
+dependency array                                                                                                       
+                                             react-hooks/exhaustive-deps
+  6152:7   warning  Unexpected console statement. Only these console methods are allowed: error, warn                  
+                                                                                                                       
+                                          no-console
+  6361:6   warning  React Hook useEffect has missing dependencies: 'activateWorkspacePanel', 'activePanelId', 
+'getAllPanelIds', 'handleSplit', and 'rightDockState?.maximizedView'. Either include them or remove the dependency 
+array                                                  react-hooks/exhaustive-deps
+  6423:9   warning  'activeWorkspacePanelCount' is assigned a value but never used. Allowed unused vars must match 
+/^_/u                                                                                                                  
+                                              no-unused-vars
+  6440:20  warning  'err' is defined but never used                                                                    
+                                                                                                                       
+                                          no-unused-vars
+  6482:38  warning  'wsIndex' is defined but never used. Allowed unused args must match /^_/u                          
+                                                                                                                       
+                                          no-unused-vars
+  7018:41  warning  'wsIndex' is defined but never used. Allowed unused args must match /^_/u                          
+                                                                                                                       
+                                          no-unused-vars
+D:\devhub\src\lib\terminal\v2Graveyard.js
+  25:16  error  'document' is not defined  no-undef
+  38:3   error  'document' is not defined  no-undef
+✖ 130 problems (2 errors, 128 warnings)
+husky - pre-commit script failed (code 1)

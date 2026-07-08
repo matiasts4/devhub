@@ -230,6 +230,11 @@ body {
 }
 
 /* ─── Tauri custom titlebar drag region ─── */
+.devhub-titlebar-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
   app-region: drag;
@@ -243,9 +248,20 @@ body {
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] a,
 [data-tauri-drag-region] input,
+[data-tauri-drag-region] label,
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] textarea,
+[data-tauri-drag-region] [role='button'],
+[data-tauri-drag-region] [role='menuitem'],
+[data-tauri-drag-region] [data-tauri-drag-region='no'],
+[data-tauri-drag-region] .devhub-titlebar-no-drag,
 [data-tauri-drag-region] [style*='no-drag'] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.devhub-drag-handle[data-tauri-drag-region] {
+  cursor: default;
 }
 
 /* ─── No scrollbar utility ─── */

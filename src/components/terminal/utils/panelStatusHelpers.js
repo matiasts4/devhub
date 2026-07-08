@@ -133,6 +133,9 @@ export function derivePanelStatus({
   if (agentTuiStateFresh && BLOCKED_STATUSES.has(semanticState)) {
     return PANEL_STATUS.BLOCKED;
   }
+  if (agentTuiStateFresh && WAITING_STATUSES.has(semanticState)) {
+    return PANEL_STATUS.WAITING;
+  }
   if (agentTuiStateFresh && IN_PROGRESS_STATUSES.has(semanticState)) {
     return PANEL_STATUS.RUNNING;
   }
@@ -143,11 +146,13 @@ export function derivePanelStatus({
   const semanticBlocksByteFallback =
     agentTuiStateFresh && semanticState && semanticState !== 'unknown';
 
-  if (!semanticBlocksByteFallback && liveActivity === 'running') {
+  // Byte-level WS activity is only meaningful for agent/TUI panels (not plain shell).
+  if (!semanticBlocksByteFallback && isAgentPanel && liveActivity === 'running') {
     return PANEL_STATUS.RUNNING;
   }
   if (
     !semanticBlocksByteFallback &&
+    isAgentPanel &&
     liveActivity === 'idle' &&
     (liveActivityAgeMs === null || liveActivityAgeMs <= LIVE_ACTIVITY_FALLBACK_MS)
   ) {
@@ -204,7 +209,7 @@ export function getPanelStatusLabel(status) {
     case PANEL_STATUS.BLOCKED:
       return 'Bloqueado';
     case PANEL_STATUS.IDLE:
-      return 'Inactivo';
+      return 'Idle';
     case PANEL_STATUS.ERROR:
       return 'Error';
     case PANEL_STATUS.COMPLETED:

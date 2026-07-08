@@ -15,6 +15,16 @@ const CONFIG_PATH = path.join(process.cwd(), 'data', 'llm-providers-config.json'
 let _cache = null;
 
 /**
+ * Drop the in-memory cache so the next read reflects the file on disk.
+ * Call this after writing `data/llm-providers-config.json` from an API route
+ * (e.g. Settings UI saves) so Zed/agent callers pick up new keys/models
+ * without a server restart.
+ */
+export function invalidateLlmProviderConfigCache() {
+  _cache = null;
+}
+
+/**
  * Load the full config from disk (cached after first read).
  * @returns {Promise<object>}
  */
@@ -118,6 +128,39 @@ export function deriveSchemaForUnknown(key) {
  * @param {string} providerKey
  * @returns {{ ANTHROPIC_BASE_URL?: string; MINIMAX_MODEL?: string; enabled?: boolean } | null}
  */
+export function getLlmFullConfigSync() {
+  if (_cache) return _cache;
+  try {
+    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    _cache = JSON.parse(raw);
+    return _cache;
+  } catch {
+    return { providers: {}, modelOptions: {}, zed: {} };
+  }
+}
+
+/**
+ * Provider row from config, including when `enabled: false` (for Zed settings UI).
+ *
+ * @param {string} providerKey
+ * @returns {object|null}
+ */
+export function getRawLlmProviderSync(providerKey) {
+  if (!providerKey) return null;
+  const config = getLlmFullConfigSync();
+  return config?.providers?.[providerKey] ?? null;
+}
+
+/**
+ * Zed assistant provider preference (`config.zed.provider`).
+ *
+ * @returns {{ provider?: string }}
+ */
+export function getZedSettingsSync() {
+  const config = getLlmFullConfigSync();
+  return config?.zed && typeof config.zed === 'object' ? config.zed : {};
+}
+
 export function getLlmProviderConfigSync(providerKey) {
   if (!providerKey) return null;
   // Try cache first

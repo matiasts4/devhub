@@ -124,6 +124,7 @@ function _buildDigest({ terminalId, displayName, program, cleanTail, capturedAt 
     displayName,
     ...(program ? { program } : {}),
     status: 'unknown',
+    tail: cleanTail ? cleanTail.slice(-600) : '',
     capturedAt,
   };
 }

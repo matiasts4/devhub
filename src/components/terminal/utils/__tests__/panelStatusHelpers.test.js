@@ -224,6 +224,20 @@ describe('panelStatusHelpers', () => {
       ).toBe(PANEL_STATUS.UNKNOWN);
     });
 
+    test('liveActivity running on shell panel does not show Running (ls, etc.)', () => {
+      expect(
+        derivePanelStatus({
+          connectionState: 'connected',
+          agentRun: null,
+          initialCommand: null,
+          apiStatus: null,
+          terminalActivity: null,
+          liveActivity: 'running',
+          liveActivityAgeMs: 50,
+        })
+      ).toBe(PANEL_STATUS.UNKNOWN);
+    });
+
     test('recent PTY activity wins over completed api status', () => {
       expect(
         derivePanelStatus({
@@ -281,7 +295,7 @@ describe('panelStatusHelpers', () => {
       [PANEL_STATUS.RUNNING, 'Running'],
       [PANEL_STATUS.ACTIVE, 'Activo'],
       [PANEL_STATUS.WAITING, 'Esperando'],
-      [PANEL_STATUS.IDLE, 'Inactivo'],
+      [PANEL_STATUS.IDLE, 'Idle'],
       [PANEL_STATUS.ERROR, 'Error'],
       [PANEL_STATUS.COMPLETED, 'Completado'],
       [PANEL_STATUS.UNKNOWN, 'Desconocido'],

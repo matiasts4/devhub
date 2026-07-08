@@ -1,6 +1,15 @@
+'use strict';
+
 const { spawnSync } = require('child_process');
 
 jest.mock('child_process', () => ({
+  spawn: jest.fn(() => {
+    const child = {
+      unref: jest.fn(),
+      on: jest.fn(),
+    };
+    return child;
+  }),
   spawnSync: jest.fn(() => ({ status: 0 })),
 }));
 
@@ -14,7 +23,11 @@ const {
   killPanelTmuxSessionBestEffort,
   abortOpenCodeSessionBestEffort,
   teardownPanelSessionProcesses,
+  resolveSessionKillPid,
+  killProcessTreeBestEffort,
 } = require('../panelSessionTeardown.js');
+
+const { spawn } = require('child_process');
 
 describe('panelSessionTeardown', () => {
   beforeEach(() => {
@@ -30,37 +43,29 @@ describe('panelSessionTeardown', () => {
     expect(resolvePanelTmuxSessionName({ id: 'p12' })).toBe('devhub-p12');
   });
 
-  test('killPanelTmuxSessionBestEffort issues tmux kill-session', () => {
+  test('resolveSessionKillPid prefers ptyPid then nested pids', () => {
+    expect(resolveSessionKillPid({ ptyPid: 42 })).toBe(42);
+    expect(resolveSessionKillPid({ pty: { pid: 99 } })).toBe(99);
+    expect(resolveSessionKillPid({ ptyProcess: { pid: 7 } })).toBe(7);
+    expect(resolveSessionKillPid({})).toBeNull();
+  });
+
+  test('killPanelTmuxSessionBestEffort issues non-blocking tmux kill-session', () => {
     const killed = killPanelTmuxSessionBestEffort(
       { id: 'p3', tmuxSession: 'devhub-p3' },
-      { hasTmux: () => true, spawnSyncImpl: spawnSync }
+      { hasTmux: () => true, spawnImpl: spawn }
     );
-
     expect(killed).toBe(true);
-    expect(spawnSync).toHaveBeenCalledWith('tmux', ['kill-session', '-t', 'devhub-p3'], {
+    expect(spawn).toHaveBeenCalledWith('tmux', ['kill-session', '-t', 'devhub-p3'], {
       stdio: 'ignore',
-      timeout: 5000,
+      detached: true,
     });
   });
 
   test('abortOpenCodeSessionBestEffort posts to the local OpenCode abort endpoint', () => {
     abortOpenCodeSessionBestEffort('oc-panel-1', { fetchImpl: global.fetch });
-
     expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:4154/session/oc-panel-1/abort', {
       method: 'POST',
-    });
-  });
-
-  test('teardownPanelSessionProcesses aborts OpenCode and kills tmux', () => {
-    teardownPanelSessionProcesses(
-      { id: 'p7', tmuxSession: 'devhub-p7', opencodeSessionId: 'oc-7' },
-      { hasTmux: () => true, spawnSyncImpl: spawnSync, fetchImpl: global.fetch }
-    );
-
-    expect(global.fetch).toHaveBeenCalled();
-    expect(spawnSync).toHaveBeenCalledWith('tmux', ['kill-session', '-t', 'devhub-p7'], {
-      stdio: 'ignore',
-      timeout: 5000,
     });
   });
 
@@ -71,14 +76,30 @@ describe('panelSessionTeardown', () => {
       { hasTmux: () => true, spawnSyncImpl: spawnSync, fetchImpl: global.fetch }
     );
     const elapsed = Date.now() - start;
-
-    // The function must return immediately; the async grace-period sleep
-    // happens in the background and must not freeze this call.
+    // Must return immediately; tmux + process-tree kill run on setImmediate.
     expect(elapsed).toBeLessThan(50);
-    // Only tmux kill should have run synchronously, not pgrep/process kill.
-    const tmuxCalls = spawnSync.mock.calls.filter(([cmd]) => cmd === 'tmux');
-    expect(tmuxCalls.length).toBeGreaterThanOrEqual(1);
-    const processTreeCalls = spawnSync.mock.calls.filter(([cmd]) => cmd === 'pgrep');
+    expect(global.fetch).toHaveBeenCalled();
+    // Nothing synchronous for process tree / tmux at call time.
+    const processTreeCalls = spawnSync.mock.calls.filter(
+      ([cmd]) => cmd === 'pgrep' || cmd === 'taskkill'
+    );
     expect(processTreeCalls.length).toBe(0);
+  });
+
+  test('killProcessTreeBestEffort hard-kills with SIGKILL on Unix', () => {
+    const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+    spawnSync.mockImplementation((cmd) => {
+      if (cmd === 'pgrep') return { status: 1, stdout: '' };
+      return { status: 0 };
+    });
+
+    const ok = killProcessTreeBestEffort(4242, { spawnSyncImpl: spawnSync });
+    expect(ok).toBe(true);
+    expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL');
+    expect(killSpy).toHaveBeenCalledWith(4242, 'SIGKILL');
+    // No SIGTERM path — immediate hard kill only.
+    expect(killSpy.mock.calls.some(([, signal]) => signal === 'SIGTERM')).toBe(false);
+
+    killSpy.mockRestore();
   });
 });

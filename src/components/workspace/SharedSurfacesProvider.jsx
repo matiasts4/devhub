@@ -195,7 +195,11 @@ function createRegistry() {
         if (preferredHostId === 'pizarra-canvas') {
           const pizarraTarget = nonZeroTargets.find(({ hostId }) => hostId === 'pizarra-canvas');
           if (pizarraTarget) return pizarraTarget.el;
-          return undefined;
+          // Preferred pizarra host is registered but still 0×0 (first paint /
+          // transition). Keep the portal attached to it so ResizeObserver can
+          // promote layout — returning undefined parked the TTY in the hidden
+          // mount while the workspace shell was already opacity:0 → black board.
+          return preferredTarget;
         }
         return nonZeroTargets[0]?.el;
       }

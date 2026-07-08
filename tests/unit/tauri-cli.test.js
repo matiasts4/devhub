@@ -13,8 +13,30 @@ describe('tauri cli wrapper', () => {
 
   test('package scripts route tauri commands through the wrapper', () => {
     expect(packageJson.scripts.tauri).toBe('node scripts/tauri-cli.cjs');
-    expect(packageJson.scripts['tauri:dev']).toBe('npm run tauri -- dev');
-    expect(packageJson.scripts['tauri:build']).toBe('npm run generate-icon && npm run tauri -- build');
+    expect(packageJson.scripts['tauri:dev']).toBe('node scripts/tauri-dev.cjs');
+    expect(packageJson.scripts['tauri:build']).toBe(
+      'node scripts/generate-icon-if-needed.cjs && node scripts/tauri-cli.cjs build'
+    );
+    expect(packageJson.scripts['tauri:build:fast']).toContain('--skip-frontend');
+    expect(packageJson.scripts.build).toBe('node scripts/build-with-standalone-cache.cjs');
+  });
+
+  test('resolveTauriBuildOptimizations can skip frontend and use release-fast profile', () => {
+    const args = api.resolveTauriBuildOptimizations({
+      args: ['build'],
+      buildConfig: { beforeBuildCommand: 'pnpm run build' },
+      skipFrontend: true,
+      fastRust: true,
+    });
+
+    expect(args).toEqual([
+      'build',
+      '-c',
+      JSON.stringify({ build: { beforeBuildCommand: '' } }),
+      '--',
+      '--profile',
+      'release-fast',
+    ]);
   });
 
   test('buildTauriEnv prefers system pkg-config on linux when PATH pkg-config misses required webkit packages', () => {
@@ -117,11 +139,7 @@ describe('tauri cli wrapper', () => {
       devUrlReady: true,
     });
 
-    expect(args).toEqual([
-      'dev',
-      '-c',
-      JSON.stringify({ build: { beforeDevCommand: '' } }),
-    ]);
+    expect(args).toEqual(['dev', '-c', JSON.stringify({ build: { beforeDevCommand: '' } })]);
   });
 
   test('buildDevReadyProbeUrl targets a stable JSON readiness route', () => {

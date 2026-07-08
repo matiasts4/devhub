@@ -41,6 +41,7 @@ describe('POST /api/assistant/chat — history (T-033)', () => {
     stubPrompt();
     process.env.MINIMAX_API_KEY = 'test-api-key-valid-001';
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.XAI_API_KEY;
     POST = require('../route').POST;
   });
   afterAll(() => {
