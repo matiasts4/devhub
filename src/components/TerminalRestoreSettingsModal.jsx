@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RotateCcw, Terminal, Palette, Mic, Keyboard, Bot, X } from 'lucide-react';
+import { RotateCcw, Terminal, Palette, Mic, Keyboard, Bot, Sparkles, X } from 'lucide-react';
 
 import {
   panelStyle,
@@ -26,6 +26,8 @@ import {
 import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
 import PizarraSettings from '@/components/settings/PizarraSettings';
 import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
+import ZedOverlaySettings from '@/components/settings/ZedOverlaySettings';
+import ZedModelSettings from '@/components/settings/ZedModelSettings';
 import TerminalShortcutsSettings from '@/components/settings/TerminalShortcutsSettings';
 import TerminalAgentsSettings from '@/components/settings/TerminalAgentsSettings';
 
@@ -33,6 +35,7 @@ const SECTIONS = [
   { key: 'restore', label: 'Restauración', icon: RotateCcw },
   { key: 'terminal', label: 'Terminal', icon: Terminal },
   { key: 'pizarra', label: 'Pizarra', icon: Palette },
+  { key: 'zed', label: 'Zed', icon: Sparkles },
   { key: 'voice', label: 'Voz', icon: Mic },
   { key: 'shortcuts', label: 'Atajos', icon: Keyboard },
   { key: 'agents', label: 'Agentes', icon: Bot },
@@ -194,7 +197,7 @@ function RestoreSection() {
   );
 }
 
-function SectionContent({ section }) {
+function SectionContent({ section, onNavigateToZed }) {
   switch (section) {
     case 'restore':
       return <RestoreSection />;
@@ -202,8 +205,15 @@ function SectionContent({ section }) {
       return <TerminalSettingsSection includeRestorePolicies={false} />;
     case 'pizarra':
       return <PizarraSettings />;
+    case 'zed':
+      return (
+        <div className="space-y-6">
+          <ZedModelSettings />
+          <ZedOverlaySettings />
+        </div>
+      );
     case 'voice':
-      return <ZedVoiceSettings />;
+      return <ZedVoiceSettings onNavigateToZed={onNavigateToZed} />;
     case 'shortcuts':
       return <TerminalShortcutsSettings />;
     case 'agents':
@@ -249,6 +259,8 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
       className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-6 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
+      data-devhub-modal="true"
+      data-state="open"
       aria-label="Configuración del workspace de terminales"
       style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
       onClick={(event) => {
@@ -342,7 +354,10 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <SectionContent section={activeSection} />
+            <SectionContent
+              section={activeSection}
+              onNavigateToZed={() => setActiveSection('zed')}
+            />
           </div>
         </div>
       </div>

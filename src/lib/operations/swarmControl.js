@@ -215,7 +215,7 @@ function buildSwarmTemplateCatalog() {
       category: 'recovery',
       swarm_type_id: 'recovery-swarm',
       default_team_id: 'amber-recovery-cell',
-      default_provider_id: 'claude-opus-4-20250514',
+      default_provider_id: 'opencode/claude-sonnet-4.6',
       default_mission:
         'Resolver checkpoints pendientes, recuperar runs degradados y devolver la cola durable a un estado operable.',
       topology: {
@@ -233,7 +233,7 @@ function buildSwarmTemplateCatalog() {
       category: 'delivery',
       swarm_type_id: 'delivery-swarm',
       default_team_id: 'amber-delivery-pod',
-      default_provider_id: 'claude-sonnet-4-20250514',
+      default_provider_id: 'opencode-go/qwen3.6-plus',
       default_mission:
         'Tomar el siguiente foco durable, coordinar ejecución y dejar handoff claro para QA.',
       topology: {
@@ -251,7 +251,7 @@ function buildSwarmTemplateCatalog() {
       category: 'delivery',
       swarm_type_id: 'delivery-swarm',
       default_team_id: 'feature-delivery-team',
-      default_provider_id: 'github-copilot/gpt-4o-mini',
+      default_provider_id: 'opencode-go/deepseek-v4-flash',
       default_mission:
         'Lanzar un swarm de feature delivery con Director, Coder, Auditor, DevOps y Architect; validar que cada terminal abra en el workspace correcto y dejar evidencia de handoff.',
       topology: {
@@ -291,7 +291,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['handoff-first', 'checkpoint-safe'],
       category: 'delivery',
       default_team_id: 'feature-delivery-team',
-      default_provider_id: 'github-copilot/gpt-4o-mini',
+      default_provider_id: 'opencode-go/deepseek-v4-flash',
       topology: {
         label: 'Director → Coder / Auditor / DevOps / Architect',
         roles: ['Director', 'Coder', 'Auditor', 'DevOps', 'Architect'],
@@ -312,7 +312,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['approval-aware', 'durable-refresh'],
       category: 'recovery',
       default_team_id: 'amber-recovery-cell',
-      default_provider_id: 'claude-opus-4-20250514',
+      default_provider_id: 'opencode/claude-sonnet-4.6',
       topology: {
         label: 'Director → Recovery Ops → Evidence → QA',
         roles: ['Director', 'Recovery Ops', 'Evidence', 'QA'],
@@ -332,7 +332,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['context-first', 'evidence-trace'],
       category: 'research',
       default_team_id: 'launchpad-scout-team',
-      default_provider_id: 'github-copilot/gpt-4o-mini',
+      default_provider_id: 'opencode-go/qwen3.5-plus',
       topology: {
         label: 'Director → Scout → Analyst → Director',
         roles: ['Director', 'Scout', 'Analyst'],
@@ -367,63 +367,61 @@ function buildSwarmLaunchCategories() {
   ];
 }
 
+/**
+ * Default-model presets used as draft.providerId (legacy field name).
+ * IDs MUST exist in buildSwarmLaunchModels() so TUI model selects and summary stay aligned.
+ */
 function buildSwarmLaunchProviders() {
-  return [
-    {
-      id: 'minimax-coding-plan/MiniMax-M3',
-      label: 'MiniMax M3',
-      summary: 'Modelo por defecto para ZED Orchestrator Pod y swarms DevHub.',
-    },
-    {
-      id: 'claude-sonnet-4-20250514',
-      label: 'Claude Sonnet 4',
-      summary: 'Balanceado para delivery y handoff corto.',
-    },
-    {
-      id: 'claude-opus-4-20250514',
-      label: 'Claude Opus 4',
-      summary: 'Mayor criterio para recovery, approvals y decisiones delicadas.',
-    },
-    {
-      id: 'github-copilot/gpt-4o-mini',
-      label: 'GPT-4o mini (OpenAI)',
-      summary: 'Modo pruebas: menor consumo por request para swarms y validación rápida.',
-    },
-    {
-      id: 'github-copilot/gpt-4o',
-      label: 'GPT-4o (OpenAI)',
-      summary: 'Bueno para planning, scouting y coordinación de launchpad.',
-    },
-  ];
+  return buildSwarmLaunchModels().map((model) => ({
+    id: model.id,
+    label: model.label,
+    summary: model.summary,
+    stack: model.stack || null,
+  }));
 }
 
+/**
+ * Launchable agent TUIs — must match agentLaunchCommand / AGENT_PROGRAM_EXECUTABLES
+ * and agentTuiMetadata AGENT_TUI_TYPES (subset that can actually be spawned).
+ * `zed` is a role/skill profile, not a program id — keep it out of this list.
+ */
 function buildSwarmLaunchPrograms() {
   return [
     {
-      id: 'kimi',
-      label: 'Kimi',
-      summary:
-        'Cliente Kimi Code CLI — modo YOLO, TUI nativa, menos fricción que OpenCode para agentes autónomos.',
-    },
-    {
       id: 'opencode',
       label: 'OpenCode',
-      summary: 'Cliente recomendado para ejecución snapshot-first dentro de DevHub.',
+      tui_type: 'opencode',
+      supports_model: true,
+      summary: 'Cliente principal DevHub — modelos OpenCode / MiniMax / suscripción.',
+    },
+    {
+      id: 'kimi',
+      label: 'Kimi Code',
+      tui_type: 'kimi',
+      supports_model: true,
+      summary:
+        'TUI Kimi CLI (YOLO/auto) — ideal para ZED y workers con skills gentle-orchestrator.',
     },
     {
       id: 'codex',
       label: 'Codex',
-      summary: 'Buen fit para dirección y revisión puntual con contexto acotado.',
+      tui_type: 'codex',
+      supports_model: false,
+      summary: 'OpenAI Codex CLI — sandbox workspace-write; sin selector de modelo en launch.',
     },
     {
       id: 'hermes',
       label: 'Hermes',
-      summary: 'Cliente alternativo para flujos simples o apoyo operativo.',
+      tui_type: 'hermes',
+      supports_model: false,
+      summary: 'Cliente ligero para chat puntual / apoyo operativo.',
     },
     {
-      id: 'zed',
-      label: 'Zed / OpenCode + MiniMax M2.7',
-      summary: 'Zed — Senior Architect con MiniMax M2.7 via OpenCode subscription.',
+      id: 'grok',
+      label: 'Grok',
+      tui_type: 'grok',
+      supports_model: false,
+      summary: 'Grok CLI — TUI detectada en terminales; spawn sin --model en el launcher actual.',
     },
   ];
 }
@@ -1892,32 +1890,19 @@ export function createSwarmLaunchDraft({
   const sddPhase = draft.phase || null;
 
   const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M3';
-  const SWARM_ROLE_DEFAULT_MODELS = Object.freeze({
-    director: 'minimax-coding-plan/MiniMax-M3',
-    coder: 'minimax-coding-plan/MiniMax-M3',
-    builder: 'minimax-coding-plan/MiniMax-M3',
-    qa: 'minimax-coding-plan/MiniMax-M3',
-    auditor: 'minimax-coding-plan/MiniMax-M3',
-    reviewer: 'minimax-coding-plan/MiniMax-M3',
-    devops: 'minimax-coding-plan/MiniMax-M3',
-    recovery_ops: 'minimax-coding-plan/MiniMax-M3',
-    architect: 'minimax-coding-plan/MiniMax-M3',
-    scout: 'minimax-coding-plan/MiniMax-M3',
-    analyst: 'minimax-coding-plan/MiniMax-M3',
-    evidence: 'minimax-coding-plan/MiniMax-M3',
-    zed: 'minimax-coding-plan/MiniMax-M3',
-    sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
-    sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
-    sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
-    sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
-  });
+  const resolvedDefaultModel = provider?.id || DEFAULT_SWARM_MODEL;
   const defaultRoleModels = topology?.roles
     ? topology.roles.reduce((acc, role) => {
         const key = slugifyRoleKey(role);
-        if (key) acc[key] = SWARM_ROLE_DEFAULT_MODELS[key] || DEFAULT_SWARM_MODEL;
+        if (key) acc[key] = resolvedDefaultModel;
         return acc;
       }, {})
     : {};
+  // Prefer explicit per-role models; otherwise seed from default model (providerId).
+  const roleModels =
+    Object.keys(draft.roleModels || {}).length > 0
+      ? { ...defaultRoleModels, ...draft.roleModels }
+      : defaultRoleModels;
 
   return {
     mode: draft.mode || 'template',
@@ -1932,8 +1917,7 @@ export function createSwarmLaunchDraft({
       draft.spawnStrategy || launchDefaults.spawnStrategy || SWARM_SPAWN_STRATEGY_AUTOMATIC,
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
-    roleModels:
-      Object.keys(draft.roleModels || {}).length > 0 ? draft.roleModels : defaultRoleModels,
+    roleModels,
     workerCount: isZedPodTemplate ? workerCount : draft.workerCount,
     mission:
       draft.mission ?? (bootstrapMode?.id === 'standby' ? '' : (template?.default_mission ?? '')),
@@ -2092,13 +2076,18 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
 
 /**
  * Catálogo de modelos disponibles para selección por rol en el wizard.
+ * IDs are OpenCode-compatible model refs used by buildAgentLaunchCommand(--model).
+ * `compatible_programs`: TUIs that accept --model on launch (others hide model select).
  */
 export function buildSwarmLaunchModels() {
+  const OPENCODE_KIMI = ['opencode', 'kimi'];
   return [
     {
       id: 'minimax-coding-plan/MiniMax-M3',
       label: 'MiniMax M3',
+      stack: 'minimax',
       summary: 'Modelo por token plan — mismo stack que SDD/asistente; recomendado para swarm.',
+      compatible_programs: OPENCODE_KIMI,
       recommended_for: [
         'director',
         'coder',
@@ -2112,39 +2101,65 @@ export function buildSwarmLaunchModels() {
         'scout',
         'analyst',
         'evidence',
+        'zed',
+        'sdd_worker_1',
+        'sdd_worker_2',
+        'sdd_worker_3',
+        'sdd_worker_4',
       ],
     },
     {
       id: 'minimax-coding-plan/MiniMax-M2.7',
       label: 'MiniMax M2.7',
+      stack: 'minimax',
       summary: 'Alternativa M2.7 — útil si M3 no está disponible en el plan.',
+      compatible_programs: OPENCODE_KIMI,
       recommended_for: [],
     },
     {
       id: 'opencode-go/deepseek-v4-flash',
       label: 'DeepSeek V4 Flash',
+      stack: 'opencode',
       summary: 'Mayor cantidad de requests — ideal para workers intensivos.',
+      compatible_programs: OPENCODE_KIMI,
       recommended_for: ['coder', 'builder', 'qa', 'devops', 'recovery_ops'],
     },
     {
       id: 'opencode-go/qwen3.6-plus',
       label: 'Qwen 3.6 Plus',
+      stack: 'opencode',
       summary: 'Balanceado para tareas generales de código.',
+      compatible_programs: OPENCODE_KIMI,
       recommended_for: ['director', 'auditor', 'reviewer'],
     },
     {
       id: 'opencode-go/qwen3.5-plus',
       label: 'Qwen 3.5 Plus',
+      stack: 'opencode',
       summary: 'Alternativa con buen ratio de requests.',
+      compatible_programs: OPENCODE_KIMI,
       recommended_for: ['explorer', 'scout', 'analyst'],
     },
     {
       id: 'opencode/claude-sonnet-4.6',
       label: 'Claude Sonnet 4.6',
+      stack: 'opencode',
       summary: 'Mayor criterio para decisiones complejas.',
-      recommended_for: ['director', 'architect'],
+      compatible_programs: OPENCODE_KIMI,
+      recommended_for: ['director', 'architect', 'zed'],
     },
   ];
+}
+
+/** Models visible for a given program id (TUI). */
+export function filterModelsForProgram(models = [], programId = null) {
+  const list = asArray(models);
+  if (!programId) return list;
+  return list.filter((model) => {
+    const compatible = model.compatible_programs;
+    if (!Array.isArray(compatible) || compatible.length === 0) return true;
+    return compatible.includes(programId);
+  });
 }
 
 export function selectSwarmControlPrimarySurface(snapshot = {}) {

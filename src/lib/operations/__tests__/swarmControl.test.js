@@ -24,6 +24,7 @@ const {
   buildRoleAgentProfile,
   resolveLaunchKickoffBodySummary,
   buildSwarmLaunchModels,
+  filterModelsForProgram,
   resolveWorkerBootstrapDelayMs,
   SWARM_WORKER_FANOUT_BASE_DELAY_MS,
   SWARM_WORKER_FANOUT_STAGGER_MS,
@@ -1661,39 +1662,41 @@ describe('composeControlRoomSnapshot', () => {
         catalog,
         project: { id: 'project-1', local_path: '/home/matias/ArxonLabs/devhub' },
       })
-    ).toEqual({
-      mode: 'template',
-      category: 'orchestration',
-      templateId: 'zed-orchestrator-pod',
-      swarmTypeId: 'zed-orchestration-swarm',
-      teamId: 'zed-sdd-pod',
-      providerId: 'minimax-coding-plan/MiniMax-M3',
-      launchStrategy: 'director_first',
-      bootstrapMode: 'standby',
-      workspacePath: '/home/matias/ArxonLabs/devhub',
-      workerCount: 4,
-      rolePrograms: {
-        zed: 'opencode',
-        sdd_worker_1: 'opencode',
-        sdd_worker_2: 'opencode',
-        sdd_worker_3: 'opencode',
-        sdd_worker_4: 'opencode',
-      },
-      roleModels: {
-        zed: 'minimax-coding-plan/MiniMax-M3',
-        sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
-        sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
-        sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
-        sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
-      },
-      sddEnabled: false,
-      sddOptions: {
+    ).toEqual(
+      expect.objectContaining({
+        mode: 'template',
+        category: 'orchestration',
+        templateId: 'zed-orchestrator-pod',
+        swarmTypeId: 'zed-orchestration-swarm',
+        teamId: 'zed-sdd-pod',
+        providerId: 'minimax-coding-plan/MiniMax-M3',
+        launchStrategy: 'director_first',
+        bootstrapMode: 'standby',
+        workspacePath: '/home/matias/ArxonLabs/devhub',
+        workerCount: 4,
+        rolePrograms: {
+          zed: 'kimi',
+          sdd_worker_1: 'kimi',
+          sdd_worker_2: 'kimi',
+          sdd_worker_3: 'kimi',
+          sdd_worker_4: 'kimi',
+        },
+        roleModels: {
+          zed: 'minimax-coding-plan/MiniMax-M3',
+          sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
+          sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
+          sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
+          sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
+        },
         sddEnabled: false,
-        phase: null,
-        changeName: null,
-      },
-      mission: '',
-    });
+        sddOptions: {
+          sddEnabled: false,
+          phase: null,
+          changeName: null,
+        },
+        mission: '',
+      })
+    );
   });
 
   test('selectSwarmLaunchCatalog exposes supported launch clients from existing runtime options', () => {
@@ -1701,11 +1704,19 @@ describe('composeControlRoomSnapshot', () => {
 
     expect(catalog.programs).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'opencode', label: 'OpenCode' }),
-        expect.objectContaining({ id: 'codex', label: 'Codex' }),
-        expect.objectContaining({ id: 'hermes', label: 'Hermes' }),
+        expect.objectContaining({ id: 'opencode', label: 'OpenCode', tui_type: 'opencode' }),
+        expect.objectContaining({ id: 'kimi', label: 'Kimi Code', tui_type: 'kimi' }),
+        expect.objectContaining({ id: 'codex', label: 'Codex', tui_type: 'codex' }),
+        expect.objectContaining({ id: 'hermes', label: 'Hermes', tui_type: 'hermes' }),
+        expect.objectContaining({ id: 'grok', label: 'Grok', tui_type: 'grok' }),
       ])
     );
+    expect(catalog.programs.map((p) => p.id)).not.toContain('zed');
+    // Default model presets must align with the model catalog (no stale provider-only IDs).
+    const modelIds = new Set(catalog.models.map((m) => m.id));
+    catalog.providers.forEach((provider) => {
+      expect(modelIds.has(provider.id)).toBe(true);
+    });
   });
 
   test('deriveSwarmLaunchPreview returns summary lines and topology for the current draft', () => {
@@ -1718,7 +1729,7 @@ describe('composeControlRoomSnapshot', () => {
         templateId: 'approval-recovery',
         swarmTypeId: 'recovery-swarm',
         teamId: 'amber-recovery-cell',
-        providerId: 'claude-opus-4-20250514',
+        providerId: 'opencode/claude-sonnet-4.6',
         workspacePath: '/tmp/devhub-recovery',
         rolePrograms: {
           director: 'codex',
@@ -1744,7 +1755,7 @@ describe('composeControlRoomSnapshot', () => {
         summaryLines: expect.arrayContaining([
           'Equipo personalizado · Recovery',
           'Resolver aprobaciones y destrabar · Recovery swarm',
-          'Amber Recovery Cell · Claude Opus 4',
+          'Amber Recovery Cell · Claude Sonnet 4.6',
           '/tmp/devhub-recovery',
           'Recuperar approvals y normalizar workspaces antes del próximo handoff.',
         ]),
@@ -1868,6 +1879,7 @@ describe('buildSwarmLaunchModels', () => {
       expect(model).toHaveProperty('summary');
       expect(model).toHaveProperty('recommended_for');
       expect(Array.isArray(model.recommended_for)).toBe(true);
+      expect(Array.isArray(model.compatible_programs)).toBe(true);
     });
   });
 
@@ -1875,6 +1887,14 @@ describe('buildSwarmLaunchModels', () => {
     const catalog = selectSwarmLaunchCatalog({});
     expect(catalog.models).toBeDefined();
     expect(catalog.models).toHaveLength(6);
+  });
+
+  test('filterModelsForProgram keeps model-capable TUIs and drops incompatible program ids', () => {
+    const models = buildSwarmLaunchModels();
+    expect(filterModelsForProgram(models, 'opencode').length).toBe(6);
+    expect(filterModelsForProgram(models, 'kimi').length).toBe(6);
+    expect(filterModelsForProgram(models, 'codex').length).toBe(0);
+    expect(filterModelsForProgram(models, 'grok').length).toBe(0);
   });
 });
 

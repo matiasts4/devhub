@@ -8,6 +8,7 @@ import { encodeZedSseEvent } from './zedStreamProtocol';
 import { labelForZedToolStart, labelForZedToolDone } from './zedToolLabels';
 import { zedLog } from './utils/zed-logger';
 import { recordFastPath } from './zedMetrics';
+import { mergeOpensIntoRequestContext } from './runZedChatLoop';
 
 function toolResultOk(result) {
   const r = result && typeof result === 'object' ? result : null;
@@ -105,6 +106,8 @@ export async function tryZedFastPath({
       result = { error: err.message };
     }
     toolResults.push({ tool: step.tool, input: step.input, result });
+    // Keep catalog + display-name pool in sync across multi open_terminal steps.
+    mergeOpensIntoRequestContext(requestContext, [{ tool: step.tool, result }]);
     zedLog.toolResult(step.tool, result, Date.now() - started);
   }
 
@@ -117,6 +120,14 @@ export async function tryZedFastPath({
     steps: resolved.steps.length,
     hit: true,
     needsConfirmation: false,
+  });
+
+  zedLog.orchestration('fast_path_done', {
+    msgId,
+    intent: resolved.intent,
+    matched: resolved.matched,
+    steps: resolved.steps.length,
+    duration_ms: duration,
   });
 
   return {
@@ -136,6 +147,7 @@ export async function tryZedFastPath({
         confidence: resolved.confidence,
         duration_ms: duration,
         steps: resolved.steps.length,
+        matched: resolved.matched,
       },
     },
   };

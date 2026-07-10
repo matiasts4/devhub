@@ -23,6 +23,7 @@
 const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
+
 const { JSDOM } = require('jsdom');
 
 let lastCanvasProps = null;
@@ -99,6 +100,8 @@ function fireClick(element) {
   element.dispatchEvent(ev);
 }
 
+const PIZARRA_PANE_TEST_PROPS = { initialHudRevealed: true };
+
 describe('PizarraPane — pizarra-add-terminal-bugfix full add flow', () => {
   let dom;
   let container;
@@ -128,7 +131,7 @@ describe('PizarraPane — pizarra-add-terminal-bugfix full add flow', () => {
   test('clicking Add Terminal dispatches ADD_ELEMENT with a terminal shape', () => {
     const { default: PizarraPane } = require('../PizarraPane');
     flushSync(() => {
-      root.render(React.createElement(PizarraPane));
+      root.render(React.createElement(PizarraPane, PIZARRA_PANE_TEST_PROPS));
     });
 
     const terminalButton = container.querySelector('[data-testid="pizarra-add-terminal"]');
@@ -151,7 +154,7 @@ describe('PizarraPane — pizarra-add-terminal-bugfix full add flow', () => {
   test('clicking Add Browser dispatches ADD_ELEMENT with a browser shape', () => {
     const { default: PizarraPane } = require('../PizarraPane');
     flushSync(() => {
-      root.render(React.createElement(PizarraPane));
+      root.render(React.createElement(PizarraPane, PIZARRA_PANE_TEST_PROPS));
     });
 
     const browserButton = container.querySelector('[data-testid="pizarra-add-browser"]');

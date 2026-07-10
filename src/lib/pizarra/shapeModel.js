@@ -59,6 +59,11 @@ export function createShape(type, props = {}) {
     strokeWidth: props.strokeWidth ?? SHAPE_DEFAULTS.strokeWidth,
     opacity: props.opacity ?? SHAPE_DEFAULTS.opacity,
     rotation: 0,
+    // pizarra-editing-ux: layer order + lock. Shapes are in-memory only
+    // (not persisted), so no migration is needed when these fields are
+    // absent on legacy objects — consumers default via `?? 0` / `?? false`.
+    zIndex: props.zIndex ?? 0,
+    locked: props.locked ?? false,
   };
 
   switch (type) {
@@ -144,4 +149,34 @@ export function deserializeShape(json) {
     throw new Error('Invalid shape: missing id or type');
   }
   return parsed;
+}
+
+/**
+ * Clone a shape with a fresh id, merging optional overrides.
+ * Used by duplicate / clipboard paste. Always mints a new id so the
+ * clone is a distinct element; array-valued fields (points) are copied
+ * so the clone does not alias the original's array.
+ * @param {object} shape
+ * @param {object} [overrides]
+ * @returns {object}
+ */
+export function cloneShape(shape, overrides = {}) {
+  const clone = { ...shape, ...overrides, id: generateId() };
+  if (Array.isArray(shape.points)) clone.points = [...shape.points];
+  return clone;
+}
+
+/**
+ * Order shapes by zIndex ascending, with selected shapes bumped to the
+ * end so the active edit paints/floats on top of its siblings. Pure —
+ * used by PizarraPane's mergedElements and unit-tested in isolation.
+ * Equal zIndex keeps insertion order (Array.sort is stable in V8).
+ * @param {object[]} shapes
+ * @param {string[]} selectedIds
+ * @returns {object[]}
+ */
+export function orderByZIndexWithSelectionBump(shapes, selectedIds) {
+  const sorted = [...shapes].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+  const sel = new Set(selectedIds);
+  return [...sorted.filter((el) => !sel.has(el.id)), ...sorted.filter((el) => sel.has(el.id))];
 }

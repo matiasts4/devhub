@@ -1792,6 +1792,10 @@ code {
   --accent-file: #f0b54a;
 }
 
+/* --zed-aura-speed: multiplier set inline by ZedAmbientOverlay.jsx from the
+   personalization settings (ZedOverlaySettings.jsx). 1 = default duration,
+   <1 = faster, >1 = slower. Falls back to 1 when unset. */
+
 @keyframes zed-aura-pulse-terminal {
   0%,
   100% {
@@ -1833,15 +1837,15 @@ code {
 
 @media (prefers-reduced-motion: no-preference) {
   .zed-aura-pulse-terminal {
-    animation: zed-aura-pulse-terminal 4s ease-in-out infinite;
+    animation: zed-aura-pulse-terminal calc(4s * var(--zed-aura-speed, 1)) ease-in-out infinite;
   }
 
   .zed-aura-pulse-browser {
-    animation: zed-aura-pulse-browser 4s ease-in-out infinite;
+    animation: zed-aura-pulse-browser calc(4s * var(--zed-aura-speed, 1)) ease-in-out infinite;
   }
 
   .zed-aura-pulse-file {
-    animation: zed-aura-pulse-file 4s ease-in-out infinite;
+    animation: zed-aura-pulse-file calc(4s * var(--zed-aura-speed, 1)) ease-in-out infinite;
   }
 }
 
@@ -1916,7 +1920,7 @@ code {
 }
 
 .zed-aura-outcome-success {
-  animation: zed-aura-flash-success 0.9s ease-out forwards;
+  animation: zed-aura-flash-success calc(0.9s * var(--zed-aura-speed, 1)) ease-out forwards;
   background: radial-gradient(
     ellipse 60% 50% at 50% 100%,
     color-mix(in srgb, #4ad3c0 22%, transparent) 0%,
@@ -1925,7 +1929,7 @@ code {
 }
 
 .zed-aura-outcome-error {
-  animation: zed-aura-flash-error 0.9s ease-out forwards;
+  animation: zed-aura-flash-error calc(0.9s * var(--zed-aura-speed, 1)) ease-out forwards;
   background: radial-gradient(
     ellipse 60% 50% at 50% 100%,
     color-mix(in srgb, #ef4444 18%, transparent) 0%,
@@ -1971,11 +1975,11 @@ code {
 
 @media (prefers-reduced-motion: no-preference) {
   .zed-aura-sweep-processing {
-    animation: zed-aura-spin 14s linear infinite;
+    animation: zed-aura-spin calc(14s * var(--zed-aura-speed, 1)) linear infinite;
   }
 
   .zed-aura-sweep-speaking {
-    animation: zed-aura-spin 7s linear infinite;
+    animation: zed-aura-spin calc(7s * var(--zed-aura-speed, 1)) linear infinite;
   }
 }
 
@@ -2173,6 +2177,33 @@ code {
     opacity: 1;
     transform: none;
   }
+}
+
+/* Zed CSS-driven animations (aura pulse/sweep/flash, pill glow, equalizer) only
+   ever respect the OS-level `prefers-reduced-motion` media query above — they
+   are plain CSS and can't read the app's own MotionModeContext. This gate
+   makes them also honor DevHub's in-app motion-mode preference
+   (Ajustes → Apariencia, or ZedOverlaySettings) via the `data-motion-mode`
+   attribute that `applyMotionModeToDocument()` sets on <html>, independent of
+   what the OS reports. */
+html[data-motion-mode='reduced'] .zed-aura-pulse-terminal,
+html[data-motion-mode='reduced'] .zed-aura-pulse-browser,
+html[data-motion-mode='reduced'] .zed-aura-pulse-file,
+html[data-motion-mode='reduced'] .zed-aura-pulse,
+html[data-motion-mode='reduced'] .zed-aura-outcome-success,
+html[data-motion-mode='reduced'] .zed-aura-outcome-error,
+html[data-motion-mode='reduced'] .zed-aura-sweep-processing,
+html[data-motion-mode='reduced'] .zed-aura-sweep-speaking,
+html[data-motion-mode='reduced'] .zed-aura-speaking-animate,
+html[data-motion-mode='reduced'] .zed-pill-surface,
+html[data-motion-mode='reduced'] .zed-pill-topline-active,
+html[data-motion-mode='reduced'] .zed-pill-avatar,
+html[data-motion-mode='reduced'] .zed-eq-bar {
+  animation: none !important;
+}
+
+html[data-motion-mode='reduced'] .zed-eq-bar {
+  height: 60%;
 }
 
 /* ─── Semantic accent escape hatch (FR-D06) ───

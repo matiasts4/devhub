@@ -144,7 +144,7 @@ export function isLayoutPlacementPlaceholder(el) {
 /**
  * Compute bounding box of all elements for pan clamping.
  */
-export function computeElementsBounds(elements = []) {
+export function computeElementsBounds(elements = [], { padding: pad = 40 } = {}) {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -163,12 +163,43 @@ export function computeElementsBounds(elements = []) {
 
   if (!isFinite(minX)) return null;
 
-  const pad = 40;
+  const margin = typeof pad === 'number' ? pad : 40;
   return {
-    x: minX - pad,
-    y: minY - pad,
-    width: maxX - minX + pad * 2,
-    height: maxY - minY + pad * 2,
+    x: minX - margin,
+    y: minY - margin,
+    width: maxX - minX + margin * 2,
+    height: maxY - minY + margin * 2,
+  };
+}
+
+/** Tight bbox from layout slots (used right after auto-fit, before React re-renders). */
+export function computeLayoutsBounds(layouts = [], padding = 8) {
+  if (!Array.isArray(layouts) || layouts.length === 0) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const layout of layouts) {
+    if (typeof layout.x !== 'number' || typeof layout.y !== 'number') continue;
+    const w = layout.width ?? 0;
+    const h = layout.height ?? 0;
+    if (w <= 0 || h <= 0) continue;
+    if (layout.x < minX) minX = layout.x;
+    if (layout.y < minY) minY = layout.y;
+    if (layout.x + w > maxX) maxX = layout.x + w;
+    if (layout.y + h > maxY) maxY = layout.y + h;
+  }
+
+  if (!isFinite(minX)) return null;
+
+  const margin = typeof padding === 'number' ? padding : 8;
+  return {
+    x: minX - margin,
+    y: minY - margin,
+    width: maxX - minX + margin * 2,
+    height: maxY - minY + margin * 2,
   };
 }
 
@@ -301,13 +332,14 @@ export function resolveZoneSnap(
   const cx = x + width / 2;
   const cy = y + height / 2;
 
-  const entries = Array.isArray(zones.slots) && zones.slots.length > 0
-    ? zones.slots.map((slot) => [slot.id, slot.rect])
-    : [
-        ['left', zones.left],
-        ['right', zones.right],
-        ['center', zones.center],
-      ];
+  const entries =
+    Array.isArray(zones.slots) && zones.slots.length > 0
+      ? zones.slots.map((slot) => [slot.id, slot.rect])
+      : [
+          ['left', zones.left],
+          ['right', zones.right],
+          ['center', zones.center],
+        ];
 
   const candidates = [];
   for (const [name, zone] of entries) {

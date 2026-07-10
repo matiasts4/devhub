@@ -46,6 +46,10 @@ import {
   setPanelRendererPreference,
   TERMINAL_RENDERER_INHERIT_MODE,
 } from '@/components/terminal/terminalRendererPreferences';
+import {
+  clearWorkspaceScopedStorage,
+  seedFreshWorkspaceDockState,
+} from '@/components/workspace/workspaceScopedStorage';
 
 export default function useWorkspaceLifecycle({
   wsCounterRef,
@@ -134,6 +138,10 @@ export default function useWorkspaceLifecycle({
       windowCounterRef.current += 1;
       const newWindowId = `v${windowCounterRef.current}`;
 
+      // Recycled sequential ids (ws3 after close+restart) must not inherit
+      // zombie dock/browser/pizarra state from a previous life of that id.
+      seedFreshWorkspaceDockState(storage, projectId, newWsId);
+
       let newColumns = [];
       let firstPanelId = null;
 
@@ -202,6 +210,8 @@ export default function useWorkspaceLifecycle({
       collectSiblingPanelNames,
       cwd,
       maybeRandomizeCountersForFreshWorkspace,
+      projectId,
+      storage,
       syncPanelLifecycleLayout,
       colCounterRef,
       panelCounterRef,
@@ -291,6 +301,10 @@ export default function useWorkspaceLifecycle({
     await closeTerminalSessions(panelIdsToClean);
     await new Promise((resolve) => setTimeout(resolve, 200));
     await closeWorkspaceBrowserWindow(idToRemove);
+
+    // Purge dock / browser / pizarra keys so a later workspace reusing this
+    // sequential id cannot resurrect old dock mode or browser URL.
+    clearWorkspaceScopedStorage(storage, projectId, idToRemove);
 
     setWorkspaces((prev) => {
       const newWs = prev.filter((w) => w.id !== idToRemove);

@@ -79,6 +79,9 @@ export default function CanvasTerminal({
   suspendDuringCanvasPan = false,
   skipEnterAnimation = false,
   isShown = true,
+  // pizarra-editing-ux Phase 4: locked surfaces skip drag (the hook bails)
+  // and resize (the layer guards onResize). Selection still works.
+  locked = false,
 }) {
   // Canvas terminal surfaces now use the web xterm renderer only.
   // The native VTE path has been removed; requestedRendererMode is
@@ -333,6 +336,7 @@ export default function CanvasTerminal({
     bounds: resolvedBounds,
     onSelect: handleSurfaceSelect,
     onMove,
+    locked,
     // pizarra-shared-view-state (Phase 1 — flicker fix): the hook
     // exposes onDragStart / onDragMove / onDragEnd so the consumer
     // (CanvasTerminal) can run the 3px threshold gate before flipping

@@ -2,7 +2,10 @@ import { useState, useLayoutEffect, useCallback, useMemo, useEffect } from 'reac
 import { isPizarraSharedViewEnabled } from './featureFlag';
 import { createSharedSurfaceRegistry } from './useSharedSurfaceRegistry';
 
-const PIZARRA_LAYOUT_KEYS = ['x', 'y', 'width', 'height', 'visible'];
+// pizarra-editing-ux Phase 4: zIndex + locked live under `pizarra` and
+// are routed there by splitPizarraLayout so updatePizarraLayout({ zIndex,
+// locked }) merges into surface.pizarra on both the legacy + shared paths.
+const PIZARRA_LAYOUT_KEYS = ['x', 'y', 'width', 'height', 'visible', 'zIndex', 'locked'];
 
 function buildStorageKey(projectId, workspaceId) {
   return `devhub_pizarra_surfaces_${projectId || 'default'}_${workspaceId || 'default'}`;
@@ -143,10 +146,7 @@ export function useWorkspaceSurfaceRegistry(projectId, workspaceId) {
   const sharedEnabled = isPizarraSharedViewEnabled();
 
   const registry = useMemo(
-    () =>
-      sharedEnabled
-        ? createSharedSurfaceRegistry({ projectId, workspaceId })
-        : null,
+    () => (sharedEnabled ? createSharedSurfaceRegistry({ projectId, workspaceId }) : null),
     [sharedEnabled, projectId, workspaceId]
   );
 
@@ -231,9 +231,7 @@ export function useWorkspaceSurfaceRegistry(projectId, workspaceId) {
       if (sharedEnabled && registry) {
         const existing = registry
           .list()
-          .find(
-            (s) => s.id === surface.id || (surface.panelId && s.panelId === surface.panelId)
-          );
+          .find((s) => s.id === surface.id || (surface.panelId && s.panelId === surface.panelId));
         const payload = existing
           ? {
               ...existing,

@@ -36,7 +36,7 @@ export function RectRenderer({ shape, konva, onSelect, onTransformEnd }) {
       cornerRadius={shape.cornerRadius}
       opacity={shape.opacity}
       rotation={shape.rotation || 0}
-      draggable
+      draggable={!shape.locked}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}
@@ -64,7 +64,7 @@ export function CircleRenderer({ shape, konva, onSelect, onTransformEnd }) {
       strokeWidth={shape.strokeWidth}
       opacity={shape.opacity}
       rotation={shape.rotation || 0}
-      draggable
+      draggable={!shape.locked}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}
@@ -94,7 +94,7 @@ export function LineRenderer({ shape, konva, onSelect, onTransformEnd }) {
       opacity={shape.opacity}
       lineCap="round"
       lineJoin="round"
-      draggable
+      draggable={!shape.locked}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}
@@ -127,7 +127,7 @@ export function ArrowRenderer({ shape, konva, onSelect, onTransformEnd }) {
       pointerWidth={shape.pointerWidth || 8}
       lineCap="round"
       lineJoin="round"
-      draggable
+      draggable={!shape.locked}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}
@@ -157,7 +157,7 @@ export function TextboxRenderer({ shape, konva, onSelect, onTransformEnd }) {
       wrap="word"
       opacity={shape.opacity}
       rotation={shape.rotation || 0}
-      draggable
+      draggable={!shape.locked}
       onClick={handleClick}
       onTap={handleClick}
       onTransformEnd={onTransformEnd}

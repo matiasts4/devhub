@@ -125,3 +125,58 @@ describe('globals.css — Zed live-state visuals (processing/speaking)', () => {
     expect(joined).toMatch(/\.zed-eq-bar/);
   });
 });
+
+describe('globals.css — Zed aura speed multiplier (--zed-aura-speed)', () => {
+  let css;
+  beforeAll(() => {
+    css = loadGlobals();
+  });
+
+  test('pulse, sweep, and flash animations scale their duration by --zed-aura-speed', () => {
+    expect(css).toMatch(
+      /\.zed-aura-pulse-terminal\s*\{[^}]*animation:\s*zed-aura-pulse-terminal\s+calc\(4s\s*\*\s*var\(--zed-aura-speed,\s*1\)\)/s
+    );
+    expect(css).toMatch(
+      /\.zed-aura-sweep-processing\s*\{[^}]*animation:\s*zed-aura-spin\s+calc\(14s\s*\*\s*var\(--zed-aura-speed,\s*1\)\)/s
+    );
+    expect(css).toMatch(
+      /\.zed-aura-sweep-speaking\s*\{[^}]*animation:\s*zed-aura-spin\s+calc\(7s\s*\*\s*var\(--zed-aura-speed,\s*1\)\)/s
+    );
+    expect(css).toMatch(
+      /\.zed-aura-outcome-success\s*\{[^}]*animation:\s*zed-aura-flash-success\s+calc\(0\.9s\s*\*\s*var\(--zed-aura-speed,\s*1\)\)/s
+    );
+    expect(css).toMatch(
+      /\.zed-aura-outcome-error\s*\{[^}]*animation:\s*zed-aura-flash-error\s+calc\(0\.9s\s*\*\s*var\(--zed-aura-speed,\s*1\)\)/s
+    );
+  });
+});
+
+describe('globals.css — data-motion-mode reduced gate (in-app motion preference)', () => {
+  let css;
+  beforeAll(() => {
+    css = loadGlobals();
+  });
+
+  test('html[data-motion-mode="reduced"] disables the zed CSS animations regardless of OS prefers-reduced-motion', () => {
+    const selectors = [
+      '.zed-aura-pulse-terminal',
+      '.zed-aura-pulse-browser',
+      '.zed-aura-pulse-file',
+      '.zed-aura-pulse',
+      '.zed-aura-outcome-success',
+      '.zed-aura-outcome-error',
+      '.zed-aura-sweep-processing',
+      '.zed-aura-sweep-speaking',
+      '.zed-aura-speaking-animate',
+      '.zed-pill-surface',
+      '.zed-pill-topline-active',
+      '.zed-pill-avatar',
+      '.zed-eq-bar',
+    ];
+    for (const selector of selectors) {
+      const escaped = selector.replace(/[.[\]]/g, '\\$&');
+      const pattern = new RegExp(`html\\[data-motion-mode='reduced'\\]\\s+${escaped}\\b[^,{]*[,{]`);
+      expect(css).toMatch(pattern);
+    }
+  });
+});

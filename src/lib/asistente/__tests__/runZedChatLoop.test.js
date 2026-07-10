@@ -12,8 +12,12 @@ import { ToolRegistry } from '../tools/registry';
 jest.mock('../streamMinimax', () => ({
   streamMinimax: jest.fn(),
 }));
+jest.mock('../streamGrok', () => ({
+  streamGrok: jest.fn(),
+}));
 
 const { streamMinimax } = require('../streamMinimax');
+const { streamGrok } = require('../streamGrok');
 
 describe('toolHasRequiredSchema', () => {
   test('detects required parameter', () => {
@@ -55,6 +59,11 @@ describe('mergeOpensIntoRequestContext', () => {
 });
 
 describe('runZedChatLoop', () => {
+  beforeEach(() => {
+    streamMinimax.mockClear();
+    streamGrok.mockClear();
+  });
+
   function buildRegistry(tools = {}) {
     const registry = new ToolRegistry();
     for (const [name, execute] of Object.entries(tools)) {
@@ -325,5 +334,111 @@ describe('runZedChatLoop', () => {
     expect(allToolResults[0].tool).toBe('echo');
     expect(allToolResults[0].result).toEqual({ echoed: 'streamed' });
     expect(allToolResults[0].id).toBe('tu-stream');
+  });
+
+  test('provider=kimi_code uses streamGrok with kimi base URL', async () => {
+    streamGrok.mockResolvedValue({
+      text: 'Hola kimi',
+      toolCalls: [],
+      stopReason: 'stop',
+      usage: {},
+      messageId: 'm1',
+      model: 'kimi-for-coding',
+    });
+
+    await runZedChatLoop({
+      systemPrompt: 'sys',
+      conversation: [{ role: 'user', content: 'hola' }],
+      registry: buildRegistry(),
+      anthropicTools: [],
+      apiKey: 'kimi-key',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax: jest.fn(),
+      model: 'kimi-for-coding',
+      enableStreaming: true,
+      provider: 'kimi_code',
+      baseUrl: 'https://api.kimi.com/coding/v1/chat/completions',
+    });
+
+    expect(streamGrok).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: 'https://api.kimi.com/coding/v1/chat/completions',
+      })
+    );
+    expect(streamMinimax).not.toHaveBeenCalled();
+  });
+
+  test('provider=xai uses streamGrok (not streamMinimax) when streaming', async () => {
+    streamGrok.mockResolvedValue({
+      text: 'Hola desde Grok',
+      toolCalls: [],
+      stopReason: 'stop',
+    });
+
+    const registry = buildRegistry();
+    const { finalText } = await runZedChatLoop({
+      systemPrompt: '',
+      conversation: [],
+      registry,
+      anthropicTools: registry.toAnthropicTools(),
+      apiKey: 'test',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax: jest.fn(),
+      model: 'grok-4.20-0309-non-reasoning',
+      enableStreaming: true,
+      provider: 'xai',
+    });
+
+    expect(finalText).toBe('Hola desde Grok');
+    expect(streamGrok).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'grok-4.20-0309-non-reasoning', apiKey: 'test' })
+    );
+    expect(streamMinimax).not.toHaveBeenCalled();
+  });
+
+  test('provider defaults to minimax when omitted (streaming)', async () => {
+    streamMinimax.mockResolvedValue({ text: 'Hola default', toolCalls: [], stopReason: 'stop' });
+
+    const registry = buildRegistry();
+    const { finalText } = await runZedChatLoop({
+      systemPrompt: '',
+      conversation: [],
+      registry,
+      anthropicTools: registry.toAnthropicTools(),
+      apiKey: 'test',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax: jest.fn(),
+      model: 'test-model',
+      enableStreaming: true,
+    });
+
+    expect(finalText).toBe('Hola default');
+    expect(streamGrok).not.toHaveBeenCalled();
+  });
+
+  test('provider=xai uses the injected callMinimax slot (route.js injects callGrok there) for non-streaming turns', async () => {
+    const callGrok = jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: 'Hola bloqueante' }],
+    });
+    const registry = buildRegistry();
+
+    const { finalText } = await runZedChatLoop({
+      systemPrompt: '',
+      conversation: [],
+      registry,
+      anthropicTools: registry.toAnthropicTools(),
+      apiKey: 'test',
+      requestContext: {},
+      maxTurns: 1,
+      callMinimax: callGrok,
+      model: 'grok-4.20-0309-non-reasoning',
+      provider: 'xai',
+    });
+
+    expect(finalText).toBe('Hola bloqueante');
+    expect(callGrok).toHaveBeenCalledTimes(1);
   });
 });

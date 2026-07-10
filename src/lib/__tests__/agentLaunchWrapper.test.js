@@ -30,7 +30,9 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('DEVHUB_AGENT_ID="launch-abc-coder"');
       expect(result).toContain('DEVHUB_MISSION_ID="launch-abc"');
       expect(result).toContain('DEVHUB_ROLE="coder"');
-      expect(result).toContain('DEVHUB_WORKSPACE_PATH="/repo/.devhub/worktrees/launch-abc/coder"');
+      expect(result).toContain(
+        "export DEVHUB_WORKSPACE_PATH='/repo/.devhub/worktrees/launch-abc/coder'"
+      );
       expect(result).toContain('DEVHUB_WORKSPACE_ID="ws-123"');
       expect(result).toContain('DEVHUB_RUN_ID="run-456"');
     });

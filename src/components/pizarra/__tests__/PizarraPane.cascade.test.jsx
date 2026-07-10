@@ -14,6 +14,7 @@
 const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
+
 const { JSDOM } = require('jsdom');
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -94,6 +95,8 @@ function click(element) {
   element.click();
 }
 
+const PIZARRA_PANE_TEST_PROPS = { initialHudRevealed: true };
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
@@ -124,7 +127,7 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
   test('PizarraPane root carries data-testid="pizarra-canvas"', () => {
     const { default: PizarraPane } = require('../PizarraPane');
     flushSync(() => {
-      root.render(React.createElement(PizarraPane));
+      root.render(React.createElement(PizarraPane, PIZARRA_PANE_TEST_PROPS));
     });
     const wrapper = container.querySelector('[data-testid="pizarra-canvas"]');
     expect(wrapper).toBeTruthy();
@@ -133,7 +136,7 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
   test('tool palette exposes pizarra-add-terminal and pizarra-add-browser testids', () => {
     const { default: PizarraPane } = require('../PizarraPane');
     flushSync(() => {
-      root.render(React.createElement(PizarraPane));
+      root.render(React.createElement(PizarraPane, PIZARRA_PANE_TEST_PROPS));
     });
     const terminalButton = container.querySelector('[data-testid="pizarra-add-terminal"]');
     const browserButton = container.querySelector('[data-testid="pizarra-add-browser"]');
@@ -144,7 +147,7 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
   test('two handleAddElement calls produce non-overlapping bounds', () => {
     const { default: PizarraPane } = require('../PizarraPane');
     flushSync(() => {
-      root.render(React.createElement(PizarraPane));
+      root.render(React.createElement(PizarraPane, PIZARRA_PANE_TEST_PROPS));
     });
 
     // First add: terminal. The PizarraPane applies a canvasCenter
@@ -217,7 +220,7 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
   test('add buttons dispatch CASCADE_OFFSET then ADD_ELEMENT', () => {
     const { default: PizarraPane } = require('../PizarraPane');
     flushSync(() => {
-      root.render(React.createElement(PizarraPane));
+      root.render(React.createElement(PizarraPane, PIZARRA_PANE_TEST_PROPS));
     });
 
     const terminalButton = container.querySelector('[data-testid="pizarra-add-terminal"]');

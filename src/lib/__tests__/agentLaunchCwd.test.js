@@ -19,27 +19,36 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
 
     test('wrapper includes directory existence check before cd', () => {
       const result = buildAgentLaunchWrapper(baseParams);
-      expect(result).toContain(`if [ ! -d "${wp}" ]; then`);
+      expect(result).toContain('if [ ! -d "$DEVHUB_WORKSPACE_PATH" ]; then');
       expect(result).toContain('Worktree path does not exist');
       expect(result).toContain('exit 1');
+      expect(result).toContain(`DEVHUB_WORKSPACE_PATH_RAW='${wp}'`);
+      expect(result).toContain('_devhub_to_bash_path');
     });
 
     test('path validation appears BEFORE cd command', () => {
       const result = buildAgentLaunchWrapper(baseParams);
-      const validationIdx = result.indexOf(`if [ ! -d "${wp}" ]; then`);
-      const cdIdx = result.indexOf(`cd "${wp}"`);
+      const validationIdx = result.indexOf('if [ ! -d "$DEVHUB_WORKSPACE_PATH" ]; then');
+      const cdIdx = result.indexOf('cd "$DEVHUB_WORKSPACE_PATH"');
       expect(validationIdx).toBeGreaterThan(-1);
       expect(cdIdx).toBeGreaterThan(-1);
       expect(validationIdx).toBeLessThan(cdIdx);
     });
+
+    test('Windows worktree paths are resolved for WSL/Git Bash at runtime', () => {
+      const winPath = 'D:\\devhub\\.devhub\\worktrees\\launch-abc\\coder';
+      const result = buildAgentLaunchWrapper({ ...baseParams, workspacePath: winPath });
+      expect(result).toContain('_devhub_to_bash_path');
+      expect(result).toContain('/mnt/');
+      expect(result).toContain('DEVHUB_WORKSPACE_PATH_RAW=');
+      expect(result).not.toContain(`if [ ! -d "${winPath}" ]`);
+    });
   });
 
   describe('REQ-CWD-1: Explicit cd in agent wrapper', () => {
-    const wp = '/repo/.devhub/worktrees/launch-abc/coder';
-
-    test('wrapper includes cd to workspacePath', () => {
+    test('wrapper includes cd to resolved DEVHUB_WORKSPACE_PATH', () => {
       const result = buildAgentLaunchWrapper(baseParams);
-      expect(result).toContain(`cd "${wp}"`);
+      expect(result).toContain('cd "$DEVHUB_WORKSPACE_PATH"');
     });
 
     test('cd includes fallback error on failure', () => {
@@ -49,7 +58,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
 
     test('cd appears BEFORE identity verification block', () => {
       const result = buildAgentLaunchWrapper(baseParams);
-      const cdIdx = result.indexOf(`cd "${wp}"`);
+      const cdIdx = result.indexOf('cd "$DEVHUB_WORKSPACE_PATH"');
       const identityIdx = result.indexOf('==========');
       expect(cdIdx).toBeGreaterThan(-1);
       expect(identityIdx).toBeGreaterThan(-1);
@@ -58,8 +67,8 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
 
     test('order is: path validation → cd → identity verification', () => {
       const result = buildAgentLaunchWrapper(baseParams);
-      const validationIdx = result.indexOf(`if [ ! -d "${wp}" ]; then`);
-      const cdIdx = result.indexOf(`cd "${wp}"`);
+      const validationIdx = result.indexOf('if [ ! -d "$DEVHUB_WORKSPACE_PATH" ]; then');
+      const cdIdx = result.indexOf('cd "$DEVHUB_WORKSPACE_PATH"');
       const identityIdx = result.indexOf('==========');
       expect(validationIdx).toBeLessThan(cdIdx);
       expect(cdIdx).toBeLessThan(identityIdx);
@@ -181,18 +190,21 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
   });
 
   describe('Single-quote escaping in HEARTBEAT_PAYLOAD (zsh:44 fix)', () => {
-    test('HEARTBEAT_PAYLOAD escapes single quotes in workspacePath', () => {
+    test('HEARTBEAT_PAYLOAD uses cwd placeholder; workspace apostrophes live in RAW export', () => {
       const paramsWithQuote = {
         ...baseParams,
         workspacePath: "/repo/.devhub/worktrees/launch-abc/coder's-workspace",
         role: 'coder',
       };
       const result = buildAgentLaunchWrapper(paramsWithQuote);
-      // The heartbeat line must exist and contain the escaped quote
       const heartbeatLine = result.split('\n').find((l) => l.startsWith('HEARTBEAT_PAYLOAD='));
       expect(heartbeatLine).toBeDefined();
-      // In the JSON representation, \' appears as \\' (backslash escaped)
-      expect(heartbeatLine).toContain("\\'");
+      expect(heartbeatLine).toContain('__DEVHUB_CWD__');
+      expect(result).toContain('sed "s|__DEVHUB_CWD__|$DEVHUB_WORKSPACE_PATH|g"');
+      // Apostrophe path is single-quote-escaped in the bootstrap RAW assignment
+      expect(result).toContain(
+        "DEVHUB_WORKSPACE_PATH_RAW='/repo/.devhub/worktrees/launch-abc/coder'\\''s-workspace'"
+      );
     });
 
     test('HEARTBEAT_PAYLOAD escapes single quotes in role', () => {

@@ -90,8 +90,12 @@ export function formatZedFastPathReply(tool, result) {
  */
 export function formatZedToolResultsReply(toolResults) {
   if (!Array.isArray(toolResults) || toolResults.length === 0) return 'Listo.';
-  const parts = toolResults.map((entry) => formatZedFastPathReply(entry.tool, entry.result));
-  return parts.filter(Boolean).join(' ');
+  const parts = toolResults
+    .map((entry) => formatZedFastPathReply(entry.tool, entry.result))
+    .filter(Boolean);
+  if (parts.length <= 1) return parts[0] || 'Listo.';
+  // Multi-step compound (open + close, etc.): keep each action visible.
+  return parts.join(' ');
 }
 
 export default formatZedFastPathReply;

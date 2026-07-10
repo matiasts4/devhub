@@ -109,4 +109,62 @@ describe('useVoiceTts', () => {
 
     expect(invoke).not.toHaveBeenCalledWith('voice_speak', expect.anything());
   });
+
+  test('strips headers and list bullets so they are not read literally', async () => {
+    const invoke = require('@tauri-apps/api/core').invoke;
+    const { result } = renderHook(() => useVoiceTts({ enabled: true }));
+
+    await act(async () => {
+      await result.current.speak('# Resumen\n- Primero\n- Segundo\nListo.');
+    });
+
+    expect(invoke).toHaveBeenCalledWith('voice_speak', {
+      text: 'Resumen. Primero. Segundo. Listo.',
+    });
+  });
+
+  test('strips emoji before speaking', async () => {
+    const invoke = require('@tauri-apps/api/core').invoke;
+    const { result } = renderHook(() => useVoiceTts({ enabled: true }));
+
+    await act(async () => {
+      await result.current.speak('Listo 🚀 che');
+    });
+
+    expect(invoke).toHaveBeenCalledWith('voice_speak', { text: 'Listo che' });
+  });
+
+  test('forwards voice and rate as options merged into the SPEAK payload', async () => {
+    const invoke = require('@tauri-apps/api/core').invoke;
+    const { result } = renderHook(() =>
+      useVoiceTts({ enabled: true, voice: 'es_AR-daniela-high', rate: 'slow' })
+    );
+
+    await act(async () => {
+      await result.current.speak('hola');
+    });
+
+    expect(invoke).toHaveBeenCalledWith('voice_speak', {
+      text: 'hola',
+      options: { voice: 'es_AR-daniela-high', length_scale: 1.15 },
+    });
+  });
+
+  test('clips very long replies at a sentence boundary instead of mid-word', async () => {
+    const invoke = require('@tauri-apps/api/core').invoke;
+    const { result } = renderHook(() => useVoiceTts({ enabled: true }));
+
+    const sentence = 'Esta es una oracion de prueba bastante larga para forzar el recorte. ';
+    const longText = sentence.repeat(12);
+
+    await act(async () => {
+      await result.current.speak(longText);
+    });
+
+    const [, callArgs] = invoke.mock.calls.find((call) => call[0] === 'voice_speak');
+    expect(callArgs.text.length).toBeLessThan(longText.length);
+    expect(callArgs.text.length).toBeLessThanOrEqual(600);
+    // Ends on a real sentence boundary (a period), never mid-word.
+    expect(callArgs.text.endsWith('.')).toBe(true);
+  });
 });

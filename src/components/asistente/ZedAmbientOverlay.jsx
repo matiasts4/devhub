@@ -15,12 +15,20 @@ import {
   ZED_AURA_OUTCOME_EVENT,
 } from '@/lib/asistente/zedOverlayEvents';
 import { clampZedAuraIntensity } from '@/lib/asistente/zedAuraBudget';
+import {
+  readZedOverlaySettings,
+  ZED_OVERLAY_SETTINGS_EVENT,
+  ZED_AURA_INTENSITY_SCALE,
+  ZED_AURA_SPEED_SCALE,
+  ZED_DRAWER_WIDTH_PX,
+} from '@/lib/asistente/zedOverlaySettings';
 import ZedActivityDrawer from './ZedActivityDrawer';
 import ZedVoiceButton from './ZedVoiceButton';
 import { useVoiceCapture } from '@/lib/voice/useVoiceCapture';
 import { useVoiceTts } from '@/lib/voice/useVoiceTts';
 import { isVoiceFeatureEnabled } from '@/lib/voice/voiceFeatureFlag';
 import { useZedVoiceShortcut } from '@/lib/voice/useZedVoiceShortcut';
+import { buildVoiceEngineConfig } from '@/lib/voice/resolveVoiceEngineConfig';
 
 const STATUS_VISIBLE_MS = 4000;
 const STATUS_EXIT_MS = 320;
@@ -65,18 +73,24 @@ function ZedEqualizer({ className = '', bars = 4 }) {
 function ZedAuraFrame({
   phase,
   reducedMotion,
+  motionMode,
   toolType,
   outcomeFlash = null,
   speaking = false,
   listening = false,
   vuLevel = 0,
+  intensityScale = 1,
+  speedScale = 1,
 }) {
   const baseIntensity = clampZedAuraIntensity(phase);
-  const intensity = speaking
-    ? Math.max(baseIntensity, 0.42)
-    : listening
-      ? Math.max(baseIntensity, 0.34)
-      : baseIntensity;
+  const intensity = Math.min(
+    1,
+    (speaking
+      ? Math.max(baseIntensity, 0.42)
+      : listening
+        ? Math.max(baseIntensity, 0.34)
+        : baseIntensity) * intensityScale
+  );
 
   const pulseClass =
     !reducedMotion && toolType && toolType !== 'null' ? `zed-aura-pulse-${toolType}` : '';
@@ -107,10 +121,11 @@ function ZedAuraFrame({
     <motion.div
       data-testid="zed-ambient-aura"
       className="pointer-events-none fixed inset-0 z-[248]"
+      style={{ '--zed-aura-speed': speedScale }}
       initial={{ opacity: 0 }}
       animate={{ opacity: intensity }}
       exit={{ opacity: 0 }}
-      transition={{ duration: reducedMotion ? 0.01 : 0.5, ease: [0.22, 1, 0.36, 1] }}
+      transition={getTransition('fade', motionMode)}
       aria-hidden="true"
     >
       <div
@@ -139,12 +154,17 @@ function ZedAuraFrame({
 const ZedAuraContainer = memo(function ZedAuraContainer({
   phase,
   reducedMotion,
+  motionMode,
   toolType,
   outcomeFlash,
   speaking,
   recording,
   vuLevel,
+  enabled = true,
+  intensityScale = 1,
+  speedScale = 1,
 }) {
+  if (!enabled) return null;
   if (!shouldShowZedAura(phase) && !speaking && !recording) return null;
   return (
     <AnimatePresence>
@@ -152,11 +172,14 @@ const ZedAuraContainer = memo(function ZedAuraContainer({
         key="zed-aura"
         phase={phase}
         reducedMotion={reducedMotion}
+        motionMode={motionMode}
         toolType={toolType}
         outcomeFlash={outcomeFlash}
         speaking={speaking}
         listening={recording}
         vuLevel={vuLevel}
+        intensityScale={intensityScale}
+        speedScale={speedScale}
       />
     </AnimatePresence>
   );
@@ -360,6 +383,7 @@ export default function ZedAmbientOverlay({
   sessionKey = 'devhub-zed-chat-default',
   getTerminalPanelCount = null,
   getWorkspaceTerminals = null,
+  getWorkspaceWindows = null,
 }) {
   const motionMode = useMotionMode();
   const isReduced = motionMode === 'reduced';
@@ -392,11 +416,13 @@ export default function ZedAmbientOverlay({
     planState,
     planControls,
     pendingStepApproval,
-  } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals });
+  } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals, getWorkspaceWindows });
 
   const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings?.voiceEnabled;
   const { speak, speaking, stopSpeaking, ttsError, clearTtsError } = useVoiceTts({
     enabled: voiceSettings?.ttsEnabled,
+    voice: voiceSettings?.ttsVoice,
+    rate: voiceSettings?.ttsRate,
   });
 
   const onFinalTranscript = useCallback(
@@ -439,12 +465,7 @@ export default function ZedAmbientOverlay({
         if (cancelled) return;
         await invoke('voice_set_enabled', { enabled: true });
         await invoke('voice_set_settings', {
-          settings: {
-            model: voiceSettings?.sttModel,
-            backend: 'auto',
-            language: 'es',
-            microphone: voiceSettings?.selectedMicId || 'default',
-          },
+          settings: await buildVoiceEngineConfig(voiceSettings),
         });
         await startEngine();
       } catch {
@@ -455,7 +476,13 @@ export default function ZedAmbientOverlay({
     return () => {
       cancelled = true;
     };
-  }, [voiceEnabled, voiceSettings?.sttModel, voiceSettings?.selectedMicId, startEngine]);
+  }, [
+    voiceEnabled,
+    voiceSettings?.sttModel,
+    voiceSettings?.sttBackend,
+    voiceSettings?.selectedMicId,
+    startEngine,
+  ]);
 
   const handleVoiceToggle = useCallback(async () => {
     return toggleRecording();
@@ -468,6 +495,21 @@ export default function ZedAmbientOverlay({
   }, [voiceEnabled, isOpen, open, handleVoiceToggle]);
 
   useZedVoiceShortcut({ enabled: voiceEnabled && available, onToggle: handleVoiceShortcut });
+
+  const [overlaySettings, setOverlaySettings] = useState(() => readZedOverlaySettings());
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onSettingsChange = () => setOverlaySettings(readZedOverlaySettings());
+    window.addEventListener(ZED_OVERLAY_SETTINGS_EVENT, onSettingsChange);
+    window.addEventListener('storage', onSettingsChange);
+    return () => {
+      window.removeEventListener(ZED_OVERLAY_SETTINGS_EVENT, onSettingsChange);
+      window.removeEventListener('storage', onSettingsChange);
+    };
+  }, []);
+  const auraIntensityScale = ZED_AURA_INTENSITY_SCALE[overlaySettings.auraIntensity] ?? 1;
+  const auraSpeedScale = ZED_AURA_SPEED_SCALE[overlaySettings.auraSpeed] ?? 1;
+  const drawerWidthPx = ZED_DRAWER_WIDTH_PX[overlaySettings.drawerWidth] ?? 400;
 
   const [overlayToolType, setOverlayToolType] = useState(lastToolType);
   const [outcomeFlash, setOutcomeFlash] = useState(null);
@@ -742,11 +784,15 @@ export default function ZedAmbientOverlay({
       <ZedAuraContainer
         phase={phase}
         reducedMotion={isReduced}
+        motionMode={motionMode}
         toolType={overlayToolType}
         outcomeFlash={outcomeFlash}
         speaking={speaking}
         recording={recording}
         vuLevel={vuLevel}
+        enabled={overlaySettings.auraEnabled}
+        intensityScale={auraIntensityScale}
+        speedScale={auraSpeedScale}
       />
 
       <AnimatePresence>
@@ -757,6 +803,8 @@ export default function ZedAmbientOverlay({
             role="region"
             aria-label="Zed asistente"
             aria-busy={isLoading}
+            aria-modal={isOpen ? 'true' : undefined}
+            data-devhub-modal={isOpen ? 'true' : undefined}
             className="fixed inset-x-0 bottom-6 z-[260] flex justify-center pointer-events-none"
             initial={
               isReduced
@@ -780,6 +828,7 @@ export default function ZedAmbientOverlay({
             >
               <ZedActivityDrawer
                 expanded={activityExpanded}
+                widthPx={drawerWidthPx}
                 onToggle={onToggleActivity}
                 messages={displayMessages}
                 currentStep={currentStep}

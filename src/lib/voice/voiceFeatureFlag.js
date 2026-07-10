@@ -2,41 +2,51 @@
  * DevHub voice feature flags and settings keys.
  */
 
+import {
+  DEFAULT_TTS_VOICE,
+  DEFAULT_TTS_RATE,
+  isKnownTtsVoice,
+  isKnownTtsRate,
+} from './ttsVoiceCatalog';
+
 export const VOICE_SETTINGS_KEY = 'devhub-zed-voice-settings';
+
+export const STT_BACKENDS = ['auto', 'faster-whisper', 'whispercpp', 'grok'];
+
+const DEFAULTS = {
+  ttsEnabled: true,
+  voiceEnabled: true,
+  sttModel: 'large-v3-turbo',
+  sttBackend: 'auto',
+  selectedMicId: '',
+  ttsVoice: DEFAULT_TTS_VOICE,
+  ttsRate: DEFAULT_TTS_RATE,
+};
+
+function normalize(parsed) {
+  return {
+    ttsEnabled: parsed?.ttsEnabled !== false,
+    voiceEnabled: parsed?.voiceEnabled !== false,
+    sttModel: parsed?.sttModel || DEFAULTS.sttModel,
+    sttBackend: STT_BACKENDS.includes(parsed?.sttBackend) ? parsed.sttBackend : DEFAULTS.sttBackend,
+    selectedMicId: parsed?.selectedMicId || '',
+    ttsVoice: isKnownTtsVoice(parsed?.ttsVoice) ? parsed.ttsVoice : DEFAULTS.ttsVoice,
+    ttsRate: isKnownTtsRate(parsed?.ttsRate) ? parsed.ttsRate : DEFAULTS.ttsRate,
+  };
+}
 
 export function readVoiceSettings() {
   if (typeof window === 'undefined') {
-    return {
-      ttsEnabled: true,
-      voiceEnabled: true,
-      sttModel: 'large-v3-turbo',
-      selectedMicId: '',
-    };
+    return { ...DEFAULTS };
   }
   try {
     const raw = window.localStorage.getItem(VOICE_SETTINGS_KEY);
     if (!raw) {
-      return {
-        ttsEnabled: true,
-        voiceEnabled: true,
-        sttModel: 'large-v3-turbo',
-        selectedMicId: '',
-      };
+      return { ...DEFAULTS };
     }
-    const parsed = JSON.parse(raw);
-    return {
-      ttsEnabled: parsed.ttsEnabled !== false,
-      voiceEnabled: parsed.voiceEnabled !== false,
-      sttModel: parsed.sttModel || 'large-v3-turbo',
-      selectedMicId: parsed.selectedMicId || '',
-    };
+    return normalize(JSON.parse(raw));
   } catch {
-    return {
-      ttsEnabled: true,
-      voiceEnabled: true,
-      sttModel: 'large-v3-turbo',
-      selectedMicId: '',
-    };
+    return { ...DEFAULTS };
   }
 }
 

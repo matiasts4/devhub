@@ -895,6 +895,57 @@ export function getClipboardApi() {
   return globalThis?.navigator?.clipboard || null;
 }
 
+/**
+ * xterm joins selected buffer rows with CRLF on Windows. Grok and other TUIs can
+ * treat each CR/LF as a separate submit when that text is pasted back. LF-only
+ * matches what most native terminals put on the system clipboard.
+ */
+export function normalizeTerminalSelectionForClipboard(text) {
+  if (typeof text !== 'string' || text.length === 0) return text;
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/** True when clipboard text contains line breaks (multi-line paste). */
+export function isMultilineTerminalPaste(text) {
+  return typeof text === 'string' && /[\r\n]/.test(text);
+}
+
+/** Bracketed paste markers — insert as one edit buffer (native terminal behavior). */
+export const TERMINAL_BRACKETED_PASTE_START = '\x1b[200~';
+export const TERMINAL_BRACKETED_PASTE_END = '\x1b[201~';
+
+/**
+ * Agent TUIs (Grok, OpenCode, Kimi) treat raw CR/LF as submit when pasted via PTY.
+ * Bracketed paste inserts the whole clipboard as one edit buffer.
+ */
+export function shouldBracketTerminalTextPaste(lifecycleRefs, text, initialCommand) {
+  if (!isMultilineTerminalPaste(text)) return false;
+  if (isGrokTuiInitialCommand(initialCommand)) return true;
+  if (isLikelyTuiInitialCommand(initialCommand)) return true;
+  const lifecycle = lifecycleRefs?.current;
+  if (!lifecycle) return true;
+  if (lifecycle.isGrokSessionRef?.current === true || lifecycle.grokTuiReadyRef?.current === true) {
+    return true;
+  }
+  if (lifecycle.kimiReadyNotifiedRef?.current === true) return true;
+  if (lifecycle.tuiSessionActiveRef?.current === true) return true;
+  // Prefer bracketed paste for multi-line when session hints are incomplete.
+  return true;
+}
+
+export function wrapTerminalBracketedPaste(text) {
+  if (typeof text !== 'string') return text;
+  return `${TERMINAL_BRACKETED_PASTE_START}${text}${TERMINAL_BRACKETED_PASTE_END}`;
+}
+
+export function formatTerminalPastePayload(text, lifecycleRefs, initialCommand) {
+  const normalized = normalizeTerminalSelectionForClipboard(text);
+  if (shouldBracketTerminalTextPaste(lifecycleRefs, normalized, initialCommand)) {
+    return wrapTerminalBracketedPaste(normalized);
+  }
+  return normalized;
+}
+
 export function resolveTerminalClipboardShortcut(event) {
   if (!event || event.altKey) return null;
 

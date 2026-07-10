@@ -13,6 +13,7 @@ import { buildTmuxPanelAttachCommand } from './tmuxStatusBar.js';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { detectKimiTuiReady } from './kimiReadyMarker.js';
+import { detectGrokSessionFromOutput } from './grokReadyMarker.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 import {
@@ -1110,6 +1111,10 @@ function handleSessionOutput(sessions, session, chunk) {
         applyAgentTuiDetection(session, 'opencode');
       }
       maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
+    } else if (detectGrokSessionFromOutput(filtered)) {
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'grok');
+      }
     }
 
     session._lastAgentStateEvent = ingestAgentDetectionFromFilteredOutput(

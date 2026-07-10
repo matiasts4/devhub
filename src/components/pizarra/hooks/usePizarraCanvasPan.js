@@ -4,7 +4,10 @@ import { useEffect, useRef } from 'react';
 
 const PAN_THRESHOLD_PX = 3;
 
-function isEditableTarget(target) {
+// pizarra-editing-ux: exported so the global keyboard handler in
+// PizarraPane can reuse the same editable-target guard (inputs,
+// textareas, selects, contenteditable) without duplicating it.
+export function isEditableTarget(target) {
   if (!target || typeof target.closest !== 'function') return false;
   const tag = target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
@@ -23,6 +26,7 @@ export default function usePizarraCanvasPan({
   enabled = true,
   onPanStart,
   onPanEnd,
+  onUserViewportAdjust,
 }) {
   const spacePressedRef = useRef(false);
   const panSessionRef = useRef(null);
@@ -108,6 +112,7 @@ export default function usePizarraCanvasPan({
             session.originPanY = currentPan.y ?? 0;
             container.setAttribute('data-pizarra-canvas-panning', 'true');
             onPanStart?.();
+            onUserViewportAdjust?.();
           }
 
           setPan({
@@ -160,5 +165,14 @@ export default function usePizarraCanvasPan({
       }
       teardown?.();
     };
-  }, [containerRef, panRef, enabled, setPan, cancelPanAnimation, onPanStart, onPanEnd]);
+  }, [
+    containerRef,
+    panRef,
+    enabled,
+    setPan,
+    cancelPanAnimation,
+    onPanStart,
+    onPanEnd,
+    onUserViewportAdjust,
+  ]);
 }

@@ -3,6 +3,7 @@ import {
   clampElementRect,
   clampPanToContent,
   computeElementsBounds,
+  computeLayoutsBounds,
   computeLayoutZones,
   computeViewportFitToBounds,
   detectZoneAtPoint,
@@ -28,10 +29,7 @@ describe('canvasBounds', () => {
   });
 
   test('clampElementPosition keeps card inside visible area', () => {
-    const clamped = clampElementPosition(
-      { x: -900, y: -700, width: 640, height: 400 },
-      bounds
-    );
+    const clamped = clampElementPosition({ x: -900, y: -700, width: 640, height: 400 }, bounds);
     expect(clamped.x).toBeGreaterThan(-900);
     expect(clamped.y).toBeGreaterThan(-700);
     expect(clamped.x + 640).toBeGreaterThan(bounds.x);
@@ -39,10 +37,7 @@ describe('canvasBounds', () => {
   });
 
   test('clampElementRect limits oversized resize', () => {
-    const clamped = clampElementRect(
-      { x: 0, y: 0, width: 2000, height: 1200 },
-      bounds
-    );
+    const clamped = clampElementRect({ x: 0, y: 0, width: 2000, height: 1200 }, bounds);
     expect(clamped.width).toBeLessThanOrEqual(bounds.width);
     expect(clamped.height).toBeLessThanOrEqual(bounds.height);
   });
@@ -116,6 +111,29 @@ describe('canvasBounds', () => {
     );
     expect(zoom).toBeGreaterThan(0.5);
     expect(zoom).toBeLessThanOrEqual(1.25);
+  });
+
+  test('computeLayoutsBounds matches union of layout slots', () => {
+    const bbox = computeLayoutsBounds(
+      [
+        { x: 10, y: 20, width: 400, height: 300 },
+        { x: 420, y: 20, width: 400, height: 300 },
+      ],
+      4
+    );
+    expect(bbox).toEqual({ x: 6, y: 16, width: 818, height: 308 });
+  });
+
+  test('viewport-sized layout bbox auto-fit reaches near 100% zoom', () => {
+    const layouts = [{ x: 0, y: 0, width: 1280, height: 720 }];
+    const bounds = computeLayoutsBounds(layouts, 4);
+    const { zoom } = computeViewportFitToBounds(bounds, 1280, 720, {
+      padding: 6,
+      maxZoom: 4,
+      minZoom: 0.25,
+    });
+    expect(zoom).toBeGreaterThan(0.95);
+    expect(zoom).toBeLessThanOrEqual(1.05);
   });
 
   test('resolveFitBoundsForView rejects outlier layout bounds', () => {

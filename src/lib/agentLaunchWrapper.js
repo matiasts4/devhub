@@ -20,6 +20,81 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /**
+ * Single-quote a string for safe embedding in bash.
+ * @param {string} value
+ * @returns {string}
+ */
+export function shellSingleQuote(value) {
+  return `'${String(value ?? '').replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Bash helpers to map Windows host paths into WSL (/mnt/d/...) or Git Bash (/d/...).
+ * PowerShell launches `bash` which on many machines is WSL2 — bare `D:\\...` fails `[ -d ]`.
+ * @returns {string}
+ */
+export function buildBashHostPathHelpers() {
+  // Keep this pure POSIX sh-compatible; avoid case patterns with backslashes
+  // (they break `bash -n` / runtime parse on both WSL and Git Bash).
+  return [
+    '# Resolve Windows host paths for WSL2 (/mnt/d/...) and Git Bash/MSYS (/d/...).',
+    '_devhub_to_bash_path() {',
+    '  local raw="$1"',
+    '  local drive rest candidate',
+    '  [ -z "$raw" ] && return 1',
+    '  # Already valid in this shell (Linux native or pre-converted)',
+    '  if [ -d "$raw" ] || [ -e "$raw" ]; then',
+    '    printf %s "$raw"',
+    '    return 0',
+    '  fi',
+    '  # Windows drive path? e.g. D:\\foo or D:/foo',
+    '  if printf %s "$raw" | grep -qE "^[A-Za-z]:"; then',
+    '    drive=$(printf %s "$raw" | cut -c1 | tr "A-Z" "a-z")',
+    // sed in single quotes so backslash stays a real path separator for WSL mapping
+    "    rest=$(printf %s \"$raw\" | sed -e 's/^[A-Za-z]://' -e 's#\\\\#/#g')",
+    '    for candidate in "/mnt/${drive}${rest}" "/${drive}${rest}" "/cygdrive/${drive}${rest}"; do',
+    '      if [ -d "$candidate" ] || [ -e "$candidate" ]; then',
+    '        printf %s "$candidate"',
+    '        return 0',
+    '      fi',
+    '    done',
+    '    # Default guess: WSL layout (System32\\\\bash.exe is usually WSL2)',
+    '    printf %s "/mnt/${drive}${rest}"',
+    '    return 0',
+    '  fi',
+    '  printf %s "$raw"',
+    '  return 0',
+    '}',
+  ].join('\n');
+}
+
+/**
+ * Resolve + validate + cd into agent worktree (portable across Linux / WSL / Git Bash).
+ * @param {string} workspacePath
+ * @returns {string}
+ */
+export function buildWorkspaceBootstrapBlock(workspacePath) {
+  const rawQuoted = shellSingleQuote(workspacePath || '');
+  return [
+    buildBashHostPathHelpers(),
+    `DEVHUB_WORKSPACE_PATH_RAW=${rawQuoted}`,
+    'DEVHUB_WORKSPACE_PATH="$(_devhub_to_bash_path "$DEVHUB_WORKSPACE_PATH_RAW")"',
+    'export DEVHUB_WORKSPACE_PATH',
+    '# Validate worktree path exists',
+    'if [ ! -d "$DEVHUB_WORKSPACE_PATH" ]; then',
+    '  echo "ERROR: Worktree path does not exist: $DEVHUB_WORKSPACE_PATH_RAW" >&2',
+    '  echo "ERROR: Resolved as: $DEVHUB_WORKSPACE_PATH" >&2',
+    '  exit 1',
+    'fi',
+    "# Change to agent's isolated worktree",
+    'cd "$DEVHUB_WORKSPACE_PATH" || {',
+    '  echo "ERROR: Failed to cd into worktree: $DEVHUB_WORKSPACE_PATH" >&2',
+    '  exit 1',
+    '}',
+  ].join('\n');
+}
+
+/**
  * Build the environment variables block for an agent.
  * If agentId and workspaceId are provided, provisions an HMAC auth token
  * and injects the secret as DEVHUB_AGENT_TOKEN (never logged or echoed).
@@ -52,7 +127,9 @@ export function buildAgentEnvExports({
     `export DEVHUB_AGENT_ID="${agentId}"`,
     `export DEVHUB_MISSION_ID="${missionId}"`,
     `export DEVHUB_ROLE="${role}"`,
-    `export DEVHUB_WORKSPACE_PATH="${workspacePath}"`,
+    // Prefer path already resolved by buildWorkspaceBootstrapBlock (WSL/Git Bash).
+    // Fall back to raw host path on pure Linux.
+    `if [ -z "\${DEVHUB_WORKSPACE_PATH:-}" ]; then export DEVHUB_WORKSPACE_PATH=${shellSingleQuote(workspacePath || '')}; fi`,
     `export DEVHUB_WORKSPACE_ID="${workspaceId || ''}"`,
     `export DEVHUB_PROJECT_ID="${projectId || ''}"`,
     `export DEVHUB_RUN_ID="${runId || ''}"`,
@@ -66,8 +143,11 @@ export function buildAgentEnvExports({
 
   // T-003 — DEVHUB_DB_PATH gives bus helpers an absolute path to the SQLite bus.
   // Required for _devhub_chat / _devhub_event / _devhub_presence / _devhub_inbox_check.
+  // Resolve Windows host paths the same way as the worktree (WSL needs /mnt/d/...).
   if (dbPath) {
-    exports.push(`export DEVHUB_DB_PATH="${dbPath}"`);
+    exports.push(
+      `export DEVHUB_DB_PATH="$(_devhub_to_bash_path ${shellSingleQuote(dbPath)} 2>/dev/null || printf '%s' ${shellSingleQuote(dbPath)})"`
+    );
   }
 
   // OpenCode/bash tool subprocesses are non-interactive; BASH_ENV sources persisted helpers.
@@ -154,6 +234,8 @@ export function buildAgentEnvExports({
  * @returns {string} Shell commands
  */
 export function buildIdentityVerificationBlock({ agentId, missionId, role, workspacePath }) {
+  // Compare against shell-resolved $DEVHUB_WORKSPACE_PATH (WSL /mnt/d/...), not raw Windows path.
+  void workspacePath;
   return [
     'DEVHUB_LOG_FILE="/tmp/devhub-swarm-${DEVHUB_ROLE:-agent}.log"',
     '{',
@@ -161,17 +243,17 @@ export function buildIdentityVerificationBlock({ agentId, missionId, role, works
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_AGENT_ID=${agentId}"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_MISSION_ID=${missionId}"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_ROLE=${role}"`,
-    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_WORKSPACE_PATH=${workspacePath}"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVHUB_WORKSPACE_PATH=$DEVHUB_WORKSPACE_PATH"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] =========================================="`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- Identity verified ---"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] Current directory: $(pwd)"`,
-    // Verify cwd matches workspace path
-    `if [ "$(pwd)" != "${workspacePath}" ]; then`,
-    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: cwd mismatch! Expected ${workspacePath}, got $(pwd)"`,
+    // Verify cwd matches resolved workspace path
+    `if [ "$(pwd)" != "$DEVHUB_WORKSPACE_PATH" ]; then`,
+    `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: cwd mismatch! Expected $DEVHUB_WORKSPACE_PATH, got $(pwd)"`,
     `  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ABORTING: Agent will not start in the wrong workspace."`,
     `  exit 1`,
     `fi`,
-    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- CWD verified: $(pwd) === ${workspacePath} ---"`,
+    `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- CWD verified: $(pwd) === $DEVHUB_WORKSPACE_PATH ---"`,
     `echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- Log file: /tmp/devhub-swarm-${role}.log ---"`,
     '} >> "$DEVHUB_LOG_FILE" 2>&1',
   ].join('\n');
@@ -810,21 +892,20 @@ export function buildInitialHeartbeatCommand({
     return '# Heartbeat skipped (no supervisor URL)';
   }
 
-  const payload = JSON.stringify({
+  // cwd uses shell-resolved $DEVHUB_WORKSPACE_PATH (not raw Windows path).
+  void workspacePath;
+  const payloadTemplate = JSON.stringify({
     agent_id: agentId,
     mission_id: missionId,
     role,
-    cwd: workspacePath,
+    cwd: '__DEVHUB_CWD__',
     state: 'idle',
     status_summary: 'Agent booted, waiting for tasks',
   });
-
-  // Escape single quotes for safe embedding in single-quoted shell variable.
-  // Single quote in payload would break: HEARTBEAT_PAYLOAD='{"role":"it's"}'
-  // Fix: replace ' with '\'' (end quote, escaped quote, restart quote)
-  const escapedPayload = payload.replace(/'/g, "'\\''");
+  const escapedPayload = payloadTemplate.replace(/'/g, "'\\''");
 
   return `HEARTBEAT_PAYLOAD='${escapedPayload}'
+HEARTBEAT_PAYLOAD=$(printf '%s' "$HEARTBEAT_PAYLOAD" | sed "s|__DEVHUB_CWD__|$DEVHUB_WORKSPACE_PATH|g")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 BODY_HASH=$(printf '%s' "$HEARTBEAT_PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
 SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
@@ -853,16 +934,16 @@ export function buildHeartbeatLoopCommand({
     return '# Heartbeat loop skipped (no supervisor URL)';
   }
 
-  const payload = JSON.stringify({
+  void workspacePath;
+  const payloadTemplate = JSON.stringify({
     agent_id: agentId,
     mission_id: missionId,
     role,
-    cwd: workspacePath,
+    cwd: '__DEVHUB_CWD__',
     state: 'idle',
     status_summary: 'Agent idle, listening for directives',
   });
-
-  const escapedPayload = payload.replace(/'/g, "'\\''");
+  const escapedPayload = payloadTemplate.replace(/'/g, "'\\''");
 
   return `(_devhub_heartbeat_loop() {
   local _backoff=120
@@ -870,6 +951,7 @@ export function buildHeartbeatLoopCommand({
   while true; do
     sleep $_backoff
     HEARTBEAT_PAYLOAD='${escapedPayload}'
+    HEARTBEAT_PAYLOAD=$(printf '%s' "$HEARTBEAT_PAYLOAD" | sed "s|__DEVHUB_CWD__|$DEVHUB_WORKSPACE_PATH|g")
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
     BODY_HASH=$(printf '%s' "$HEARTBEAT_PAYLOAD" | openssl dgst -sha256 | awk '{print $NF}')
     SIGNATURE=$(printf '%s' "\${TIMESTAMP}.\${BODY_HASH}" | openssl dgst -sha256 -hmac "$DEVHUB_AGENT_TOKEN" | awk '{print $NF}')
@@ -1363,21 +1445,8 @@ export function buildAgentLaunchWrapper({
 }) {
   const effectiveProgramId =
     programId || (String(innerCommand || '').includes('kimi') ? 'kimi' : 'opencode');
-  const pathValidationBlock = [
-    '# Validate worktree path exists',
-    `if [ ! -d "${workspacePath}" ]; then`,
-    `  echo "ERROR: Worktree path does not exist: ${workspacePath}" >&2`,
-    `  exit 1`,
-    `fi`,
-  ].join('\n');
-
-  const cdBlock = [
-    `# Change to agent's isolated worktree`,
-    `cd "${workspacePath}" || {`,
-    `  echo "ERROR: Failed to cd into worktree: ${workspacePath}" >&2`,
-    `  exit 1`,
-    `}`,
-  ].join('\n');
+  // Resolve Windows host paths for WSL (/mnt/d/...) and Git Bash (/d/...), then cd.
+  const workspaceBootstrapBlock = buildWorkspaceBootstrapBlock(workspacePath);
 
   // T-016.4 — transcript pipe-pane commands (attach at startup, detach
   // on exit). The detach command is injected into the exit trap below.
@@ -1427,17 +1496,19 @@ export function buildAgentLaunchWrapper({
     '# DevHub Agent Launch Wrapper',
     '# Generated by DevHub — does NOT use Plyrium runtime',
     '',
-    pathValidationBlock,
-    cdBlock,
+    workspaceBootstrapBlock,
     '',
     ...(tmuxSessionName
       ? [
-          '# Hide tmux status bar (green band) — reclaim one terminal row.',
+          '# Hide tmux status bar when a server is available (ignore missing socket on Windows/WSL cold start).',
           'if command -v tmux >/dev/null 2>&1; then',
-          '  tmux set -g status off 2>/dev/null || true',
-          '  tmux set -g status-interval 0 2>/dev/null || true',
-          `  tmux set-option -t "${tmuxSessionName}" status off 2>/dev/null || true`,
-          `  tmux set-option -t "${tmuxSessionName}" status-interval 0 2>/dev/null || true`,
+          '  tmux start-server >/dev/null 2>&1 || true',
+          '  tmux set -g status off >/dev/null 2>&1 || true',
+          '  tmux set -g status-interval 0 >/dev/null 2>&1 || true',
+          `  tmux has-session -t "${tmuxSessionName}" >/dev/null 2>&1 && {`,
+          `    tmux set-option -t "${tmuxSessionName}" status off >/dev/null 2>&1 || true`,
+          `    tmux set-option -t "${tmuxSessionName}" status-interval 0 >/dev/null 2>&1 || true`,
+          '  } || true',
           'fi',
           '',
         ]

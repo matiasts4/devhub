@@ -44,6 +44,7 @@ import {
   shouldRunStartupRestoreThisPageLoad,
 } from '@/lib/terminal/startupRestoreRunner';
 import { writeBrowserWindowStates } from '@/components/workspace/browserWindowState';
+import { pruneOrphanWorkspaceScopedStorage } from '@/components/workspace/workspaceScopedStorage';
 
 export default function useWorkspaceBootstrapEffect({
   projectId,
@@ -219,6 +220,21 @@ export default function useWorkspaceBootstrapEffect({
       bootPanelIdsRef.current = new Set();
       logTerminalSession('boot-hydration-empty', { panelIds: [] });
     }
+
+    // Drop zombie dock/browser/pizarra keys for sequential ids no longer live.
+    const liveWorkspaces =
+      workspacesRef.current?.length > 0
+        ? workspacesRef.current
+        : createDefaultWorkspaceState().workspaces;
+    const liveWorkspaceIds = liveWorkspaces.map((ws) => ws.id).filter(Boolean);
+    const pruneResult = pruneOrphanWorkspaceScopedStorage(storage, projectId, liveWorkspaceIds);
+    if (pruneResult.removedKeys?.length) {
+      logTerminalSession('boot-prune-orphan-workspace-storage', {
+        removedCount: pruneResult.removedKeys.length,
+        liveWorkspaceIds,
+      });
+    }
+
     const initialDockWorkspaceId =
       (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
       createDefaultWorkspaceState().activeWsId;

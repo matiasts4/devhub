@@ -12,6 +12,11 @@ export default function usePizarraSurfaceDrag({
   onDragMove,
   moveMeta,
   onNativeSync,
+  // pizarra-editing-ux Phase 4: when true, the surface is locked and the
+  // drag handle becomes a no-op (no move, no select-via-drag side effects).
+  // Selection still happens through the surface's own click path so a
+  // locked surface remains selectable to unlock it.
+  locked = false,
 }) {
   const cleanupRef = useRef(null);
   const frameRef = useRef(null);
@@ -25,6 +30,13 @@ export default function usePizarraSurfaceDrag({
   // at RAF-flush time. We capture it via a ref so mid-drag zoom changes
   // (wheel events) are picked up by the next flush, not the mousedown.
   const resolvedZoomRef = useRef(1);
+  // pizarra-editing-ux Phase 4: lock is read via ref so the stable
+  // handleDragStart identity does not churn when the consumer toggles
+  // locked (the mousedown handler is attached once per render).
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
 
   useEffect(() => {
     boundsRef.current = bounds;
@@ -94,6 +106,10 @@ export default function usePizarraSurfaceDrag({
   const handleDragStart = useCallback(
     (event) => {
       if (event.button !== 0) return;
+      // pizarra-editing-ux Phase 4: locked surfaces do not drag. Bail
+      // before stopPropagation/preventDefault so the event reaches the
+      // surface's click-to-select path normally.
+      if (lockedRef.current) return;
 
       event.stopPropagation();
       event.preventDefault();

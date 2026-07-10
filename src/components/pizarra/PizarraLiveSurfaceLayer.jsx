@@ -6,7 +6,11 @@ import PizarraBrowserSurface from './PizarraBrowserSurface';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { getSurfaceViewId } from '@/lib/pizarra/pizarraViewLayout';
-import { resizeNativeBrowser, setNativeBrowserVisibility } from '@/lib/browser/nativeBrowserBridge';
+import {
+  scheduleNativeBrowserResize,
+  flushNativeBrowserResize,
+  setNativeBrowserVisibility,
+} from '@/lib/browser/nativeBrowserBridge';
 
 export function resolvePizarraOwnsLiveSurfaces(dockState) {
   return Boolean(
@@ -50,6 +54,10 @@ export default function PizarraLiveSurfaceLayer({
   // the paired resize when a divider is dragged.
   layoutDividers = [],
   onDividerMouseDown,
+  // pizarra-editing-ux Phase 4: right-click on a composite surface —
+  // { id, clientX, clientY } — so PizarraPane can open the context menu
+  // over the surface (same menu as shapes, with the surface selected).
+  onSurfaceContextMenu,
 }) {
   const { projectRect, zoom } = useCanvasViewport();
   const pizarraOwnsLiveSurfaces = resolvePizarraOwnsLiveSurfaces(dockState);
@@ -108,7 +116,11 @@ export default function PizarraLiveSurfaceLayer({
         });
         const selected = selectedElementIds.includes(shape.id);
         const isActiveTerminal = shape.id === activeTerminalId;
-        const zIndex = selected || isActiveTerminal ? 100 : 5;
+        // pizarra-editing-ux Phase 4: unified z-index space with simple
+        // shapes. Stored zIndex (default 0) + 1000 when selected/active so
+        // the edited surface floats above its siblings while preserving the
+        // established order. Replaces the prior selected→100 / 5 split.
+        const zIndex = (shape.zIndex ?? 0) + (selected || isActiveTerminal ? 1000 : 0);
 
         // pizarra-workspace-switch: hide surfaces that have no resolved layout
         // yet (off-screen placeholder) so the stacked-corner flash never shows.
@@ -158,6 +170,7 @@ export default function PizarraLiveSurfaceLayer({
             surfaceOpacity={surfaceOpacity}
             suspendDuringViewTransition={isViewTransitioning && isShown}
             suspendDuringCanvasPan={suspendDuringCanvasPan}
+            onSurfaceContextMenu={onSurfaceContextMenu}
           />
         );
       })}
@@ -213,6 +226,7 @@ function LiveSurfaceItem({
   surfaceOpacity = 1,
   suspendDuringViewTransition = false,
   suspendDuringCanvasPan = false,
+  onSurfaceContextMenu,
 }) {
   const shapeRef = useRef(shape);
   useEffect(() => {
@@ -283,6 +297,11 @@ function LiveSurfaceItem({
 
   const handleMove = useCallback(
     ({ deltaX = 0, deltaY = 0 }) => {
+      // pizarra-editing-ux Phase 4: locked surfaces do not move. The hook
+      // (usePizarraSurfaceDrag) already bails on mousedown, but group drag
+      // can reach handleMove via a selected sibling — guard here too so a
+      // locked member never shifts when a group is dragged.
+      if (shapeRef.current?.locked) return;
       const zoom = resolvedZoomRef.current || 1;
       // Capture drag-start position + group membership on the first tick only.
       if (!dragStartBoundsRef.current) {
@@ -325,6 +344,39 @@ function LiveSurfaceItem({
         wrapperRef.current.style.top = start.y + offsetY + 'px';
       }
 
+      // WebView2 HWND is screen-positioned. ResizeObserver does not fire on
+      // left/top-only moves, so push live bounds every drag tick or the child
+      // stays frozen while the React chrome slides underneath.
+      const syncBrowserHwnd = (sid, entry) => {
+        const movedShape = entry?.shape;
+        if (!movedShape || movedShape.type !== SHAPE_TYPES.BROWSER) return;
+        const el = entry?.el;
+        if (!el) return;
+        try {
+          const shell = el.querySelector?.('[data-testid="browser-viewport-shell"]');
+          const rect = (shell || el).getBoundingClientRect();
+          if (rect.width <= 10 || rect.height <= 10) return;
+          const bounds = {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
+          const panelId =
+            movedShape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || sid}`;
+          scheduleNativeBrowserResize({ panelId, bounds });
+        } catch {
+          /* ignore mid-drag measure failures */
+        }
+      };
+      if (group) {
+        for (const [sid] of group) {
+          syncBrowserHwnd(sid, registryRef.current.get(sid));
+        }
+      } else {
+        syncBrowserHwnd(shapeRef.current?.id, registryRef.current.get(shapeRef.current?.id));
+      }
+
       const canvasDeltaX = deltaX;
       const canvasDeltaY = deltaY;
       const currentShape = shapeRef.current;
@@ -335,11 +387,18 @@ function LiveSurfaceItem({
         });
       }
     },
-    [onSurfaceDragMove, onSurfaceDragStart, registryRef]
+    [onSurfaceDragMove, onSurfaceDragStart, projectId, registryRef, workspaceId]
   );
 
   const handleDragEnd = useCallback(
     ({ totalDeltaX = 0, totalDeltaY = 0 }) => {
+      // pizarra-editing-ux Phase 4: no commit when locked (see handleMove).
+      if (shapeRef.current?.locked) {
+        dragStartedRef.current = false;
+        dragStartBoundsRef.current = null;
+        groupDragStartRef.current = null;
+        return;
+      }
       if (dragStartedRef.current) {
         dragStartedRef.current = false;
         onSurfaceDragEnd?.();
@@ -387,29 +446,45 @@ function LiveSurfaceItem({
         const el = entry?.el;
         if (!el) continue;
         try {
-          const rect = el.getBoundingClientRect();
+          const shell = el.querySelector?.('[data-testid="browser-viewport-shell"]');
+          const rect = (shell || el).getBoundingClientRect();
           const bounds = {
-            x: Number(rect.x) || 0,
-            y: Number(rect.y) || 0,
-            width: Math.max(1, Number(rect.width) || 0),
-            height: Math.max(1, Number(rect.height) || 0),
+            x: Math.round(Number(rect.left) || 0),
+            y: Math.round(Number(rect.top) || 0),
+            width: Math.max(1, Math.round(Number(rect.width) || 0)),
+            height: Math.max(1, Math.round(Number(rect.height) || 0)),
           };
-          const panelId = movedShape.panelId || `pizarra-browser-${sid}`;
-          // fire-and-forget; errors are non-fatal (normal path will recover)
-          resizeNativeBrowser({ panelId, bounds }).catch(() => {});
+          // Must match PizarraBrowserSurface nativePanelId (not pizarra-browser-*).
+          const panelId =
+            movedShape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || sid}`;
+          flushNativeBrowserResize({ panelId, bounds }).catch(() => {});
           setNativeBrowserVisibility({ panelId, visible: true, bounds }).catch(() => {});
         } catch {
           // ignore; the hook's normal sync on next render will handle
         }
       }
     },
-    [
-      onMoveElementRef,
-      onSurfaceDragEnd,
-      registryRef,
-      resizeNativeBrowser,
-      setNativeBrowserVisibility,
-    ]
+    [onMoveElementRef, onSurfaceDragEnd, projectId, registryRef, workspaceId]
+  );
+
+  // pizarra-editing-ux Phase 4: right-click on a composite resolves to the
+  // surface id + native clientX/Y. The layer lives inside the Radix
+  // ContextMenuTrigger, so Radix opens the menu automatically; this handler
+  // only records the target surface (for mode/locked/actions) and the
+  // world-space anchor (for "Pegar aquí") before the menu renders. Bubble
+  // phase: if a terminal's xterm swallows contextmenu, this gracefully
+  // no-ops and the terminal keeps its own clipboard menu.
+  const handleContextMenu = useCallback(
+    (event) => {
+      onSurfaceContextMenu?.({
+        id: shapeRef.current?.id,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      // Suppress the native browser menu so only Radix opens.
+      event.preventDefault();
+    },
+    [onSurfaceContextMenu]
   );
 
   // pizarra-multi-select: upgrade the surface's single-arg onSelect(id) into
@@ -462,6 +537,7 @@ function LiveSurfaceItem({
         onMouseDownCapture={(e) => {
           modifierRef.current = e.shiftKey;
         }}
+        onContextMenu={handleContextMenu}
         style={{
           position: 'absolute',
           left: bounds.x,
@@ -481,10 +557,14 @@ function LiveSurfaceItem({
           bounds={localBounds}
           selected={selected}
           zoom={resolvedZoom}
+          locked={shape.locked}
           onSelect={handleSelectWithModifier}
           onMove={handleMove}
           onDragEnd={handleDragEnd}
-          onResize={(newBounds) => onUpdateElement?.(shape.id, newBounds)}
+          onResize={(newBounds) => {
+            if (shape.locked) return;
+            onUpdateElement?.(shape.id, newBounds);
+          }}
           onActivatePanel={() => onActivateTerminal?.(shape.id)}
           cwd={shape.cwd}
           initialCommand={shape.initialCommand}
@@ -510,6 +590,7 @@ function LiveSurfaceItem({
       onMouseDownCapture={(e) => {
         modifierRef.current = e.shiftKey;
       }}
+      onContextMenu={handleContextMenu}
       style={{
         position: 'absolute',
         left: bounds.x,
@@ -528,10 +609,14 @@ function LiveSurfaceItem({
         bounds={localBounds}
         selected={selected}
         zoom={resolvedZoom}
+        locked={shape.locked}
         onSelect={handleSelectWithModifier}
         onMove={handleMove}
         onDragEnd={handleDragEnd}
-        onUpdateElement={onUpdateElement}
+        onUpdateElement={(id, patch) => {
+          if (shape.locked) return;
+          onUpdateElement?.(id, patch);
+        }}
         onClose={() => onRemoveElement?.(shape.id)}
         projectId={projectId}
         workspaceId={workspaceId}

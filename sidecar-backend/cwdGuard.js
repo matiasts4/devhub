@@ -21,13 +21,23 @@ function isUsableDirectory(candidate, { fsImpl = fs } = {}) {
 }
 
 /**
+ * Normalize path separators for portable substring checks (Windows uses `\`).
+ * @param {string} filePath
+ * @returns {string}
+ */
+function toPosixPath(filePath) {
+  return String(filePath || '').replace(/\\/g, '/');
+}
+
+/**
  * Check if a path is under the DevHub worktrees directory.
+ * Accepts both `.devhub/worktrees` and `.devhub\worktrees` (Windows).
  * @param {string} cwdPath
  * @returns {boolean}
  */
 function isDevHubWorktreePath(cwdPath) {
   if (!cwdPath) return false;
-  return cwdPath.includes('.devhub/worktrees');
+  return toPosixPath(cwdPath).includes('.devhub/worktrees');
 }
 
 /**
@@ -37,7 +47,7 @@ function isDevHubWorktreePath(cwdPath) {
  */
 function isPlyriumWorktreePath(cwdPath) {
   if (!cwdPath) return false;
-  return cwdPath.includes('.plyrium-forge');
+  return toPosixPath(cwdPath).includes('.plyrium-forge');
 }
 
 /**

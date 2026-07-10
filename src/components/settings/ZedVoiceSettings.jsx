@@ -3,14 +3,31 @@
 import { useEffect, useState } from 'react';
 import { Mic } from 'lucide-react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
-import { readVoiceSettings, writeVoiceSettings } from '@/lib/voice/voiceFeatureFlag';
+import { readVoiceSettings, writeVoiceSettings, STT_BACKENDS } from '@/lib/voice/voiceFeatureFlag';
+import {
+  TTS_VOICE_OPTIONS,
+  TTS_RATE_OPTIONS,
+  rateToLengthScale,
+} from '@/lib/voice/ttsVoiceCatalog';
+import {
+  buildVoiceEngineConfig,
+  fetchXaiKeyConfigured,
+} from '@/lib/voice/resolveVoiceEngineConfig';
 
 const STT_MODELS = ['small', 'base', 'medium', 'large-v3', 'large-v3-turbo'];
 
-export default function ZedVoiceSettings() {
+const STT_BACKEND_LABELS = {
+  auto: 'Automático',
+  'faster-whisper': 'Faster-Whisper (local)',
+  whispercpp: 'whisper.cpp (local)',
+  grok: 'Grok STT (nube, xAI)',
+};
+
+export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
   const [settings, setSettings] = useState(() => readVoiceSettings());
   const [audioDevices, setAudioDevices] = useState([]);
   const [audioPermission, setAudioPermission] = useState('prompt');
+  const [xaiKeyConfigured, setXaiKeyConfigured] = useState(null);
 
   useEffect(() => {
     writeVoiceSettings(settings);
@@ -20,12 +37,7 @@ export default function ZedVoiceSettings() {
         await invoke('voice_set_enabled', { enabled: settings.voiceEnabled });
         if (settings.voiceEnabled) {
           await invoke('voice_set_settings', {
-            settings: {
-              model: settings.sttModel,
-              backend: 'auto',
-              language: 'es',
-              microphone: settings.selectedMicId || 'default',
-            },
+            settings: await buildVoiceEngineConfig(settings),
           });
         }
       } catch {
@@ -34,6 +46,17 @@ export default function ZedVoiceSettings() {
     }
     syncTauri();
   }, [settings]);
+
+  useEffect(() => {
+    if (settings.sttBackend !== 'grok') return;
+    let cancelled = false;
+    fetchXaiKeyConfigured().then((configured) => {
+      if (!cancelled) setXaiKeyConfigured(configured);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.sttBackend]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
@@ -152,7 +175,8 @@ export default function ZedVoiceSettings() {
               <select
                 value={settings.sttModel}
                 onChange={(e) => setSettings((s) => ({ ...s, sttModel: e.target.value }))}
-                className="rounded border border-[var(--border-subtle)] bg-transparent px-2 py-1 text-xs"
+                className="h-10 w-[160px] rounded-xl border px-3 text-sm"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
               >
                 {STT_MODELS.map((m) => (
                   <option key={m} value={m}>
@@ -162,13 +186,93 @@ export default function ZedVoiceSettings() {
               </select>
             </label>
 
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>Backend de transcripción</span>
+              <select
+                value={settings.sttBackend}
+                onChange={(e) => setSettings((s) => ({ ...s, sttBackend: e.target.value }))}
+                data-testid="zed-stt-backend-select"
+                className="h-10 w-[220px] rounded-xl border px-3 text-sm"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
+              >
+                {STT_BACKENDS.map((backend) => (
+                  <option key={backend} value={backend}>
+                    {STT_BACKEND_LABELS[backend] || backend}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {settings.sttBackend === 'grok' ? (
+              <div
+                className="flex items-center justify-between gap-4 rounded-xl border px-3 py-2 text-[11px]"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
+              >
+                <span
+                  style={{ color: xaiKeyConfigured ? 'var(--text-secondary)' : 'var(--danger)' }}
+                >
+                  API key de xAI:{' '}
+                  {xaiKeyConfigured === null
+                    ? 'verificando…'
+                    : xaiKeyConfigured
+                      ? 'configurada'
+                      : 'falta configurar'}
+                </span>
+                {onNavigateToZed ? (
+                  <button
+                    type="button"
+                    onClick={onNavigateToZed}
+                    data-testid="zed-voice-goto-zed-tab"
+                    className="shrink-0 rounded border border-[var(--border-subtle)] px-2 py-1 font-medium text-[var(--text-secondary)] hover:bg-white/5"
+                  >
+                    Configurar en Zed →
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>Voz de Zed (Piper)</span>
+              <select
+                value={settings.ttsVoice}
+                onChange={(e) => setSettings((s) => ({ ...s, ttsVoice: e.target.value }))}
+                data-testid="zed-tts-voice-select"
+                className="h-10 w-[220px] rounded-xl border px-3 text-sm"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
+              >
+                {TTS_VOICE_OPTIONS.map((voice) => (
+                  <option key={voice.id} value={voice.id}>
+                    {voice.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>Velocidad de habla</span>
+              <select
+                value={settings.ttsRate}
+                onChange={(e) => setSettings((s) => ({ ...s, ttsRate: e.target.value }))}
+                data-testid="zed-tts-rate-select"
+                className="h-10 w-[160px] rounded-xl border px-3 text-sm"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
+              >
+                {TTS_RATE_OPTIONS.map((rate) => (
+                  <option key={rate.id} value={rate.id}>
+                    {rate.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               Atajo micrófono: <strong>Ctrl+Shift+M</strong> (mismo atajo inicia y detiene escucha).
               Abrir Zed: <strong>Ctrl+Shift+Z</strong>. Requiere <code>piper</code> en PATH o en el
-              venv de voz.
+              venv de voz. Las voces que no son la de por defecto se descargan una vez con{' '}
+              <code>npm run voice:add-voice -- &lt;id&gt;</code>.
             </p>
 
-            <TtsTestButton />
+            <TtsTestButton voice={settings.ttsVoice} rate={settings.ttsRate} />
           </div>
         </div>
       </ChromeSurface>
@@ -178,7 +282,7 @@ export default function ZedVoiceSettings() {
 
 const TTS_TEST_PHRASE = 'Hola. Esta es una prueba de voz de Zed. Si me escuchas, el TTS funciona.';
 
-function TtsTestButton() {
+function TtsTestButton({ voice, rate }) {
   const [status, setStatus] = useState('');
 
   const runTest = async () => {
@@ -198,7 +302,10 @@ function TtsTestButton() {
       unlistenDone = await listen('tts-done', () => {
         setStatus('Listo — ¿escuchaste la frase de prueba?');
       });
-      await invoke('voice_speak', { text: TTS_TEST_PHRASE });
+      await invoke('voice_speak', {
+        text: TTS_TEST_PHRASE,
+        options: { voice, length_scale: rateToLengthScale(rate) },
+      });
     } catch (error) {
       setStatus(`Error: ${String(error?.message || error || 'solo disponible en Tauri')}`);
     } finally {

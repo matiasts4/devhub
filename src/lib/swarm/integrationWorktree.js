@@ -8,7 +8,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { getDb } = require('./core');
+const { getDb } = require('../db/core');
 
 function safeExec(cmd, cwd = undefined) {
   try {
@@ -70,7 +70,7 @@ function createIntegrationWorktree({ repoRoot, launchId, baseBranch = 'main' }, 
   // Create worktree
   const addWorktree = safeExec(
     `git worktree add "${integrationPath}" ${integrationBranch}`,
-    repoRoot,
+    repoRoot
   );
 
   if (typeof addWorktree === 'object' && addWorktree.error) {
@@ -114,7 +114,10 @@ function mergeRoleBranch({ integrationPath, roleBranch, roleKey }, options = {})
   }
 
   // Attempt merge
-  const mergeResult = safeExec(`git merge --no-ff -m "Merge ${roleKey} (${roleBranch})" ${roleBranch}`, integrationPath);
+  const mergeResult = safeExec(
+    `git merge --no-ff -m "Merge ${roleKey} (${roleBranch})" ${roleBranch}`,
+    integrationPath
+  );
 
   if (typeof mergeResult === 'string') {
     return {

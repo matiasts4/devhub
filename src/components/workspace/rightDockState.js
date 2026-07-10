@@ -225,19 +225,29 @@ function rightDockStatesEqual(a, b) {
   );
 }
 
+/** Fresh dock state for a new workspace id (avoids zombie keys after close/recreate). */
+function buildFreshRightDockState() {
+  return {
+    ...DEFAULT_RIGHT_DOCK_STATE,
+    browserUrl: DEFAULT_BROWSER_URL,
+    browserHistory: [DEFAULT_BROWSER_URL],
+    browserHistoryIndex: 0,
+  };
+}
+
 function readRightDockState(storage, projectId, wsId) {
   if (!storage || typeof storage.getItem !== 'function') {
-    return { ...DEFAULT_RIGHT_DOCK_STATE };
+    return buildFreshRightDockState();
   }
 
   try {
     const raw = storage.getItem(buildRightDockStorageKey(projectId, wsId));
-    if (!raw) return { ...DEFAULT_RIGHT_DOCK_STATE };
+    if (!raw) return buildFreshRightDockState();
     const state = sanitizeRightDockState(JSON.parse(raw));
     writeRightDockState(storage, projectId, wsId, state);
     return state;
   } catch {
-    return { ...DEFAULT_RIGHT_DOCK_STATE };
+    return buildFreshRightDockState();
   }
 }
 
@@ -259,6 +269,7 @@ module.exports = {
   DEFAULT_RIGHT_DOCK_STATE,
   MAX_RIGHT_DOCK_SIZE,
   MIN_RIGHT_DOCK_SIZE,
+  buildFreshRightDockState,
   buildRightDockStorageKey,
   normalizeBrowserUrl,
   readRightDockState,

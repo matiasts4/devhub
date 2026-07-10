@@ -19,14 +19,14 @@ function shellQuote(value = '') {
  * Read minimax config lazily — only runs in Node.js (server-side).
  * Uses process.mainModule.require to access fs without triggering Turbopack static analysis.
  */
-function getMinimaxConfig() {
+function _getMinimaxConfig() {
   if (typeof process === 'undefined' || !process.stdout) return null;
   try {
     // process.mainModule.require is available in Node.js and bypasses Turbopack static analysis
-    const require = process.mainModule?.require;
-    if (!require) return null;
-    const path = require('path');
-    const fs = require('fs');
+    const nodeRequire = process.mainModule?.require;
+    if (typeof nodeRequire !== 'function') return null;
+    const path = nodeRequire('path');
+    const fs = nodeRequire('fs');
     const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
     const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw);
@@ -35,26 +35,194 @@ function getMinimaxConfig() {
     return null;
   }
 }
+// Keep a silent reference so tree-shaking does not drop a helper still used by future inject paths.
+void _getMinimaxConfig;
 
+/**
+ * Legacy Linux defaults (kept for documentation / non-Node fallbacks).
+ * Prefer `resolveAgentProgramExecutable` which probes the real host.
+ */
 export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
-  opencode: '/home/matias/.opencode/bin/opencode',
-  codex: '/home/matias/.nvm/versions/node/v24.14.0/bin/codex',
-  hermes: '/home/matias/.local/bin/hermes',
-  kimi: '/home/matias/.kimi-code/bin/kimi',
+  opencode: 'opencode',
+  codex: 'codex',
+  hermes: 'hermes',
+  kimi: 'kimi',
+  grok: 'grok',
 });
 
+/** Skill folder names under ~/.kimi-code/skills (or peers). */
+export const KIMI_SKILL_NAMES = Object.freeze({
+  zed: 'devhub-zed-orchestrator',
+  director: 'devhub-zed-orchestrator',
+  sdd_worker_1: 'devhub-gentle-orchestrator',
+  sdd_worker_2: 'devhub-gentle-orchestrator',
+  sdd_worker_3: 'devhub-gentle-orchestrator',
+  sdd_worker_4: 'devhub-gentle-orchestrator',
+  default: 'devhub-gentle-orchestrator',
+});
+
+/** @deprecated use KIMI_SKILL_NAMES + resolveKimiSkillDir */
 export const KIMI_SKILL_DIRS = Object.freeze({
-  zed: '/home/matias/.kimi-code/skills/devhub-zed-orchestrator',
-  director: '/home/matias/.kimi-code/skills/devhub-zed-orchestrator',
-  sdd_worker_1: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  sdd_worker_2: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  sdd_worker_3: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  sdd_worker_4: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
-  default: '/home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
+  zed: '',
+  director: '',
+  sdd_worker_1: '',
+  sdd_worker_2: '',
+  sdd_worker_3: '',
+  sdd_worker_4: '',
+  default: '',
 });
 
+function isNodeRuntime() {
+  return typeof process !== 'undefined' && Boolean(process.versions?.node);
+}
+
+function getUserHome() {
+  if (!isNodeRuntime()) return '';
+  return process.env.HOME || process.env.USERPROFILE || process.env.HOMEPATH || '';
+}
+
+function tryRequireNode(moduleId) {
+  if (!isNodeRuntime()) return null;
+  try {
+    // Prefer process.mainModule.require so browser bundlers never see bare `require`.
+    const req = process.mainModule?.require;
+    if (typeof req !== 'function') return null;
+    return req(moduleId);
+  } catch {
+    return null;
+  }
+}
+
+function pathExists(filePath) {
+  if (!filePath) return false;
+  const fs = tryRequireNode('fs');
+  if (!fs) return false;
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Convert a host absolute path so WSL bash can open it.
+ * Windows: `C:\Users\...` → `/mnt/c/Users/...`
+ * Linux/macOS: unchanged.
+ * @param {string} hostPath
+ * @returns {string}
+ */
+export function toShellExecutablePath(hostPath) {
+  if (!hostPath || typeof hostPath !== 'string') return hostPath;
+  // Bare command names (no path separators) stay as-is for PATH lookup
+  if (!/[\\/]/.test(hostPath) && !/^[A-Za-z]:/.test(hostPath)) {
+    return hostPath;
+  }
+  if (!isNodeRuntime() || process.platform !== 'win32') {
+    return hostPath;
+  }
+  const path = tryRequireNode('path');
+  const resolved = path ? path.resolve(hostPath) : hostPath;
+  const withSlashes = String(resolved).replace(/\\/g, '/');
+  const driveMatch = withSlashes.match(/^([A-Za-z]):\/(.*)$/);
+  if (driveMatch) {
+    return `/mnt/${driveMatch[1].toLowerCase()}/${driveMatch[2]}`;
+  }
+  return withSlashes;
+}
+
+function candidateBins(programId, home) {
+  const path = tryRequireNode('path');
+  const join = path ? path.join.bind(path) : (...parts) => parts.join('/');
+  const appData = process.env.APPDATA || '';
+  const localAppData = process.env.LOCALAPPDATA || '';
+
+  switch (programId) {
+    case 'kimi':
+      return [
+        process.env.DEVHUB_AGENT_KIMI_BIN,
+        home && join(home, '.kimi-code', 'bin', 'kimi.exe'),
+        home && join(home, '.kimi-code', 'bin', 'kimi'),
+        home && join(home, '.local', 'bin', 'kimi'),
+        'kimi.exe',
+        'kimi',
+      ].filter(Boolean);
+    case 'opencode':
+      // Prefer POSIX/sh wrappers over .cmd — launch scripts run under bash/WSL.
+      return [
+        process.env.DEVHUB_AGENT_OPENCODE_BIN,
+        home && join(home, '.opencode', 'bin', 'opencode'),
+        home && join(home, '.opencode', 'bin', 'opencode.exe'),
+        appData && join(appData, 'npm', 'opencode'),
+        localAppData && join(localAppData, 'npm', 'opencode'),
+        // .cmd last (not executable from WSL bash)
+        appData && join(appData, 'npm', 'opencode.cmd'),
+        localAppData && join(localAppData, 'npm', 'opencode.cmd'),
+        'opencode',
+      ].filter(Boolean);
+    case 'codex':
+      return [
+        process.env.DEVHUB_AGENT_CODEX_BIN,
+        home && join(home, '.local', 'bin', 'codex'),
+        'codex',
+      ].filter(Boolean);
+    case 'hermes':
+      return [
+        process.env.DEVHUB_AGENT_HERMES_BIN,
+        home && join(home, '.local', 'bin', 'hermes'),
+        'hermes',
+      ].filter(Boolean);
+    case 'grok':
+      return [
+        process.env.DEVHUB_AGENT_GROK_BIN,
+        home && join(home, '.grok', 'bin', 'grok.exe'),
+        home && join(home, '.grok', 'bin', 'grok'),
+        'grok.exe',
+        'grok',
+      ].filter(Boolean);
+    default:
+      return [programId, 'hermes'];
+  }
+}
+
+/**
+ * Resolve the agent CLI to embed in launch wrappers.
+ * Probes the real host (Windows/Linux) and returns a path bash/WSL can execute.
+ * @param {string} [programId]
+ * @returns {string}
+ */
 export function resolveAgentProgramExecutable(programId = 'hermes') {
-  return AGENT_PROGRAM_EXECUTABLES[programId] || AGENT_PROGRAM_EXECUTABLES.hermes;
+  const id = String(programId || 'hermes').trim() || 'hermes';
+
+  // Env override always wins (absolute or bare)
+  const envKey = `DEVHUB_AGENT_${id.toUpperCase()}_BIN`;
+  if (isNodeRuntime() && process.env[envKey]) {
+    return toShellExecutablePath(process.env[envKey]);
+  }
+
+  if (!isNodeRuntime()) {
+    return AGENT_PROGRAM_EXECUTABLES[id] || id;
+  }
+
+  const home = getUserHome();
+  const candidates = candidateBins(id, home);
+
+  for (const candidate of candidates) {
+    // Bare names (PATH lookup inside bash/WSL) — accept as last-resort after absolutes
+    if (!/[\\/]/.test(candidate) && !/^[A-Za-z]:/.test(candidate)) {
+      continue;
+    }
+    // Never embed Windows batch files into bash wrappers (WSL cannot exec .cmd)
+    if (/\.(cmd|bat)$/i.test(candidate)) {
+      continue;
+    }
+    if (pathExists(candidate)) {
+      return toShellExecutablePath(candidate);
+    }
+  }
+
+  // Prefer bare command name so WSL/Git Bash can resolve via PATH / Windows interop
+  const bare = candidates.find((c) => !/[\\/]/.test(c) && !/^[A-Za-z]:/.test(c));
+  return bare || AGENT_PROGRAM_EXECUTABLES[id] || id;
 }
 
 function slugifyRoleKey(role = '') {
@@ -65,9 +233,40 @@ function slugifyRoleKey(role = '') {
     .replace(/^_+|_+$/g, '');
 }
 
+/**
+ * Resolve Kimi --skills-dir for a role. Returns empty string when missing
+ * so the launcher can omit the flag instead of pointing at a dead path.
+ * @param {string} [roleKey]
+ * @returns {string}
+ */
 export function resolveKimiSkillDir(roleKey = '') {
   const key = slugifyRoleKey(roleKey);
-  return KIMI_SKILL_DIRS[key] || KIMI_SKILL_DIRS.default;
+  const skillName = KIMI_SKILL_NAMES[key] || KIMI_SKILL_NAMES.default;
+
+  if (!isNodeRuntime()) {
+    return '';
+  }
+
+  const path = tryRequireNode('path');
+  const join = path ? path.join.bind(path) : (...parts) => parts.join('/');
+  const home = getUserHome();
+  if (!home) return '';
+
+  const candidates = [
+    process.env.DEVHUB_KIMI_SKILLS_ROOT && join(process.env.DEVHUB_KIMI_SKILLS_ROOT, skillName),
+    join(home, '.kimi-code', 'skills', skillName),
+    join(home, '.kimi', 'skills', skillName),
+    join(home, '.grok', 'skills', skillName),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (pathExists(candidate)) {
+      return toShellExecutablePath(candidate);
+    }
+  }
+
+  // Skill pack not installed — omit --skills-dir rather than hard-fail in WSL
+  return '';
 }
 
 /**
@@ -204,6 +403,9 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       }
       break;
     }
+    case 'grok':
+      innerCommand = executable;
+      break;
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;

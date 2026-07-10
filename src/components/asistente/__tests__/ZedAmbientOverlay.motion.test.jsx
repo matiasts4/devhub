@@ -32,6 +32,11 @@ describe('ZedAmbientOverlay — motion preset migration', () => {
     expect(source).toMatch(/transition=\{getTransition\(['"]toggle['"],\s*motionMode\)\}/);
   });
 
+  test('aura frame transition uses the fade preset instead of a hardcoded duration', () => {
+    expect(source).toMatch(/transition=\{getTransition\(['"]fade['"],\s*motionMode\)\}/);
+    expect(source).not.toMatch(/duration:\s*reducedMotion\s*\?\s*0\.01\s*:\s*0\.5/);
+  });
+
   test('no longer hardcodes inline spring stiffness/damping/mass', () => {
     expect(source).not.toMatch(/stiffness:\s*360/);
     expect(source).not.toMatch(/damping:\s*30/);

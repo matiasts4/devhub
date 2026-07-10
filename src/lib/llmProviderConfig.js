@@ -139,3 +139,53 @@ export function getLlmProviderConfigSync(providerKey) {
     return null;
   }
 }
+
+/**
+ * Raw sync provider lookup — returns the provider entry even if disabled.
+ * Used by callers that need to inspect OAuth flags or other metadata
+ * regardless of the `enabled` switch.
+ *
+ * @param {string} providerKey
+ * @returns {object | null}
+ */
+export function getRawLlmProviderSync(providerKey) {
+  if (!providerKey) return null;
+  if (_cache) {
+    return _cache?.providers?.[providerKey] || null;
+  }
+  try {
+    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed?.providers?.[providerKey] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sync Zed assistant settings. Currently surfaced from the LLM providers
+ * config under `settings.zed`; falls back to an empty object so callers
+ * can safely read `provider`.
+ *
+ * @returns {{ provider?: string }}
+ */
+export function getZedSettingsSync() {
+  if (_cache) {
+    return _cache?.settings?.zed || {};
+  }
+  try {
+    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed?.settings?.zed || {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Drop the in-memory config cache so the next read hits disk again.
+ * Call after persisting provider changes.
+ */
+export function invalidateLlmProviderConfigCache() {
+  _cache = null;
+}

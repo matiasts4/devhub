@@ -4,6 +4,7 @@ const {
   getWizardStepIndexStyle,
   getWizardPrimaryActionStyle,
   getWizardSecondaryActionStyle,
+  getWizardHeaderActionStyle,
   getWizardInsetPanelStyle,
   getWizardFieldStyle,
   getWizardDangerBannerStyle,
@@ -80,6 +81,20 @@ describe('SwarmLaunchWizardModal morphology chrome', () => {
     expect(dangerBanner.boxShadow).toContain('var(--chrome-shadow-control)');
     expect(JSON.stringify({ fieldStyle, secondaryAction })).not.toContain('var(--surface-app)');
   });
+
+  test('header/action styles do not force width 100% (prevents crushing title beside Cerrar)', () => {
+    const primary = getWizardPrimaryActionStyle();
+    const secondary = getWizardSecondaryActionStyle();
+    const headerAction = getWizardHeaderActionStyle();
+    const step = getWizardStepButtonStyle({ active: false });
+
+    // Step rail stays full-width; header/actions must not.
+    expect(step.width).toBe('100%');
+    expect(primary.width).toBe('auto');
+    expect(secondary.width).toBe('auto');
+    expect(headerAction.width).toBe('auto');
+    expect(headerAction.flexShrink).toBe(0);
+  });
 });
 
 // =========================================================================
@@ -122,5 +137,23 @@ describe('T-018 hook: SwarmLaunchWizardModal spawnStrategy field', () => {
     // verify by checking the modal has at least one place where the
     // full draft is sent (e.g. onLaunch or the JSON payload preview).
     expect(source).toMatch(/JSON\.stringify\(draft|JSON\.stringify\([\s\S]*?draft/);
+  });
+
+  test('modal labels TUI clients and default model distinctly and filters models by program', () => {
+    const source = readModalSource();
+    expect(source).toMatch(/Cliente TUI/);
+    expect(source).toMatch(/Modelo por defecto/);
+    expect(source).toMatch(/filterModelsForProgram/);
+    expect(source).toMatch(/supports_model/);
+    expect(source).toMatch(/Runtime por rol/);
+  });
+
+  test('modal uses responsive shell breakpoints for steps and sticky actions', () => {
+    const source = readModalSource();
+    expect(source).toMatch(/lg:grid-cols-\[200px_minmax\(0,1fr\)\]/);
+    expect(source).toMatch(/xl:grid-cols-\[210px_minmax\(0,1fr\)_280px\]/);
+    expect(source).toMatch(/xl:hidden/);
+    expect(source).toMatch(/CompactStepRail|lg:hidden/);
+    expect(source).toMatch(/getWizardHeaderActionStyle/);
   });
 });

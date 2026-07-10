@@ -9,7 +9,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { getDb } = require('./core');
+const { getDb } = require('../db/core');
 
 function safeExec(cmd) {
   try {
@@ -76,9 +76,9 @@ function reconcileSwarmState(options = {}) {
   };
 
   // 1. Get active missions
-  const activeMissions = db.prepare(
-    "SELECT * FROM swarm_missions WHERE status IN ('active', 'paused')"
-  ).all();
+  const activeMissions = db
+    .prepare("SELECT * FROM swarm_missions WHERE status IN ('active', 'paused')")
+    .all();
   report.missions_checked = activeMissions.length;
 
   // 2. Get disk evidence
@@ -86,9 +86,9 @@ function reconcileSwarmState(options = {}) {
   const tmuxSessions = getTmuxSessions();
 
   // 3. Check each active workspace
-  const workspaces = db.prepare(
-    "SELECT * FROM agent_workspaces WHERE status IN ('ready', 'active', 'busy')"
-  ).all();
+  const workspaces = db
+    .prepare("SELECT * FROM agent_workspaces WHERE status IN ('ready', 'active', 'busy')")
+    .all();
   report.workspaces_checked = workspaces.length;
 
   for (const ws of workspaces) {
@@ -108,12 +108,7 @@ function reconcileSwarmState(options = {}) {
       if (!dryRun) {
         db.prepare(
           "UPDATE agent_workspaces SET status = 'orphaned', last_error = ?, last_error_class = ?, updated_at = ? WHERE id = ?"
-        ).run(
-          `Worktree not found on disk: ${ws.worktree_path}`,
-          'worktree_missing',
-          now,
-          ws.id,
-        );
+        ).run(`Worktree not found on disk: ${ws.worktree_path}`, 'worktree_missing', now, ws.id);
         report.changes.push({ type: 'workspace_orphaned', workspace_id: ws.id });
       }
     }
@@ -134,21 +129,16 @@ function reconcileSwarmState(options = {}) {
       if (!dryRun) {
         db.prepare(
           "UPDATE agent_workspaces SET status = 'failed', last_error = ?, last_error_class = ?, updated_at = ? WHERE id = ?"
-        ).run(
-          `tmux session not found: ${expectedSession}`,
-          'tmux_missing',
-          now,
-          ws.id,
-        );
+        ).run(`tmux session not found: ${expectedSession}`, 'tmux_missing', now, ws.id);
         report.changes.push({ type: 'workspace_crashed', workspace_id: ws.id });
       }
     }
   }
 
   // 4. Check presence — mark stale agents as offline
-  const presence = db.prepare(
-    "SELECT * FROM agent_presence WHERE expires_at <= ? AND presence_state != 'offline'"
-  ).all(now);
+  const presence = db
+    .prepare("SELECT * FROM agent_presence WHERE expires_at <= ? AND presence_state != 'offline'")
+    .all(now);
   report.presence_checked = presence.length;
 
   for (const p of presence) {

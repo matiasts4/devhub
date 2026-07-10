@@ -7,6 +7,22 @@
 export const VIEW_WORLD_WIDTH = 1680;
 export const VIEW_WORLD_HEIGHT = 960;
 export const VIEW_WORLD_GAP = 120;
+
+/** Auto-fit: layout surfaces in a world rect matching the pizarra pane (1px ≈ 1 world unit at zoom 1). */
+export function getViewportAnchoredLayoutRegion(viewOrigin, canvasWidth = 800, canvasHeight = 600) {
+  return {
+    x: viewOrigin?.x ?? 0,
+    y: viewOrigin?.y ?? 0,
+    width: Math.max(320, Math.round(canvasWidth)),
+    height: Math.max(240, Math.round(canvasHeight)),
+  };
+}
+
+export const PIZARRA_AUTOFIT_LAYOUT = { gap: 10, pad: 4 };
+// maxZoom stays near 1: adaptive layout already sizes cards to the pane
+// (viewport-anchored). A high maxZoom (was 4) blew up terminals when the
+// camera fit ran against provisional/small bounds before the real layout.
+export const PIZARRA_AUTOFIT_CAMERA = { padding: 8, maxZoom: 1.05, minZoom: 0.35 };
 export const BROWSER_ZONE_RATIO = 0.62;
 /** Browser share when auto-layout mixes browser + terminal(s) — not 50/50. */
 export const BROWSER_PRIMARY_WIDTH_RATIO = 0.58;
@@ -459,7 +475,11 @@ export function accumulateHorizontalWheelNav(accumState, deltaX, now = Date.now(
 /** Resolve which workspace window a surface belongs to. */
 export function getSurfaceViewId(surface, views = [], fallbackViewId = null) {
   const stored = surface?.pizarra?.viewId;
-  if (stored && views.some((v) => v.id === stored)) return stored;
+  // Trust a stored viewId when the views list is empty (first paint / tests)
+  // or when it matches a known window.
+  if (stored && (views.length === 0 || views.some((v) => v.id === stored))) {
+    return stored;
+  }
   if (fallbackViewId != null) return fallbackViewId;
   return null;
 }

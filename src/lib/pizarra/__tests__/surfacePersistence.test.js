@@ -46,7 +46,8 @@ describe('surfacePersistence', () => {
       type: 'terminal',
       panelId: 'p1',
       label: 'opencode',
-      pizarra: { x: 10, y: 20, width: 800, height: 500, visible: true },
+      // pizarra-editing-ux Phase 4: zIndex + locked are now persistable.
+      pizarra: { x: 10, y: 20, width: 800, height: 500, visible: true, zIndex: 9 },
     });
   });
 
@@ -77,6 +78,9 @@ describe('surfacePersistence', () => {
       width: 640,
       height: 400,
       visible: true,
+      // pizarra-editing-ux Phase 4: hydrate defaults for layer order + lock.
+      zIndex: 0,
+      locked: false,
     });
   });
 

@@ -16,7 +16,12 @@ export function SurfaceCard({ children, className = '', emphasized = false }) {
 
 export function SurfacePill({ children, tone = 'neutral' }) {
   return (
-    <ChromeSurface as="span" className="px-2.5 py-1 text-xs" surface="pill" tone={tone}>
+    <ChromeSurface
+      as="span"
+      className="inline-flex max-w-full items-center whitespace-nowrap px-2.5 py-1 text-xs"
+      surface="pill"
+      tone={tone}
+    >
       {children}
     </ChromeSurface>
   );

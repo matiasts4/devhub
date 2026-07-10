@@ -196,6 +196,7 @@ export default function PizarraToolPalette({
   onRevealChange,
   revealed: revealedProp,
   onRevealRequest,
+  dockOffsetLeft = 0,
 }) {
   const { viewportToCanvas, canvasRect } = useCanvasViewport();
   const [layoutsCollapsed, setLayoutsCollapsed] = useState(true);
@@ -264,52 +265,54 @@ export default function PizarraToolPalette({
       onMouseLeave={isControlled ? undefined : scheduleHide}
       style={{
         position: 'absolute',
-        left: 0,
+        left: dockOffsetLeft,
         top: 0,
         bottom: 0,
-        width: revealed ? RAIL_WIDTH + 18 : EDGE_WIDTH,
-        pointerEvents: isControlled ? 'none' : 'auto',
-        zIndex: 10003,
+        width: revealed ? RAIL_WIDTH + 18 : isControlled ? 0 : EDGE_WIDTH,
+        pointerEvents: isControlled ? (revealed ? 'auto' : 'none') : 'auto',
+        zIndex: 10006,
       }}
     >
-      <div
-        data-testid="pizarra-tool-palette-hover-zone"
-        aria-hidden={revealed ? 'true' : 'false'}
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: EDGE_WIDTH,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerEvents: revealed ? 'none' : 'auto',
-        }}
-      >
-        {!revealed ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 6,
-              opacity: 0.55,
-            }}
-          >
+      {!isControlled ? (
+        <div
+          data-testid="pizarra-tool-palette-hover-zone"
+          aria-hidden={revealed ? 'true' : 'false'}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: EDGE_WIDTH,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: revealed ? 'none' : 'auto',
+          }}
+        >
+          {!revealed ? (
             <div
               style={{
-                width: 3,
-                height: 48,
-                borderRadius: 4,
-                background:
-                  'linear-gradient(180deg, transparent, rgba(88,166,255,0.5) 18%, rgba(88,166,255,0.5) 82%, transparent)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 6,
+                opacity: 0.55,
               }}
-            />
-            <ChevronRight size={10} color="rgba(88,166,255,0.65)" strokeWidth={2.5} />
-          </div>
-        ) : null}
-      </div>
+            >
+              <div
+                style={{
+                  width: 3,
+                  height: 48,
+                  borderRadius: 4,
+                  background:
+                    'linear-gradient(180deg, transparent, rgba(88,166,255,0.5) 18%, rgba(88,166,255,0.5) 82%, transparent)',
+                }}
+              />
+              <ChevronRight size={10} color="rgba(88,166,255,0.65)" strokeWidth={2.5} />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className="pizarra-tool-palette"
@@ -317,7 +320,7 @@ export default function PizarraToolPalette({
         data-testid="pizarra-tool-palette"
         style={{
           position: 'absolute',
-          left: 8,
+          left: dockOffsetLeft > 0 ? 6 : 8,
           top: 0,
           bottom: 0,
           width: RAIL_WIDTH,
@@ -444,8 +447,8 @@ export default function PizarraToolPalette({
                   e,
                   isViewLocked ? 'Liberar vista' : 'Fijar vista',
                   isViewLocked
-                    ? 'Bloquea auto-ajuste; Espacio + arrastrar (o botón central) mueve la vista sobre las tarjetas'
-                    : 'Permite que la pizarra auto-ajuste tarjetas al cambiar de ventana o agregar elementos'
+                    ? 'Vista fija: sin auto-recentrar. Arrastra el fondo vacío, o Espacio / botón central del ratón para desplazarte (también sobre tarjetas)'
+                    : 'Auto-ajusta tarjetas al agregar o cambiar ventana. Si mueves la cámara a mano, no se recentra sola hasta pulsar «Ajustar todo»'
                 )
               }
               onMouseLeave={() => setTooltip(null)}

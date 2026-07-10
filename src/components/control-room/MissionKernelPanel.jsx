@@ -20,7 +20,7 @@ const STATUS_LABELS = Object.freeze({
   directive: 'directiva',
   online: 'en línea',
   busy: 'ocupado',
-  idle: 'inactivo',
+  idle: 'idle',
   waiting: 'en espera',
   offline: 'fuera de línea',
   stale: 'vencida',
@@ -53,7 +53,9 @@ function PresenceGroup({ label, entries = [] }) {
               style={panelShellStyle()}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-medium text-sm break-all">{entry.agent_id || 'Agente sin id'}</div>
+                <div className="font-medium text-sm break-all">
+                  {entry.agent_id || 'Agente sin id'}
+                </div>
                 <div className="text-xs" style={metaTextStyle()}>
                   {formatMissionToken(entry.effective_state)}
                 </div>
@@ -254,11 +256,7 @@ function RecentMessagesSection({ recentMessages }) {
         {recentMessages.length === 0
           ? renderEmptyCopy('Sin mensajes recientes en este snapshot.')
           : recentMessages.map((message) => (
-              <article
-                key={message.message_id}
-                className="border p-3"
-                style={panelShellStyle()}
-              >
+              <article key={message.message_id} className="border p-3" style={panelShellStyle()}>
                 <div className="font-medium">{message.body_summary || 'Mensaje sin resumen'}</div>
                 <p className="mt-1 text-xs" style={metaTextStyle()}>
                   {formatMissionToken(message.message_kind)} ·{' '}

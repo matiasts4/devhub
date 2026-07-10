@@ -18,9 +18,9 @@
  *      phase, then entering, then idle, with the data attribute
  *      reflecting the current phase.
  *   5. The shell does NOT unmount its children when the
- *      maximizedView changes; framer-motion's AnimatePresence
- *      keeps the previous content mounted until the exit
- *      animation finishes.
+ *      maximizedView changes; a single stable motion layer
+ *      animates opacity without AnimatePresence remount (blank-
+ *      pizarra hardening).
  */
 
 const React = require('react');
