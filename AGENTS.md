@@ -17,7 +17,7 @@ Recommended flow:
 
 1. Use Engram first for durable memory/context from previous sessions.
 2. Use DevHub MCP for the current operational state: projects, tasks, milestones, execution queue, claims, and agent status.
-3. Use Graphify/code graph tools for structural code exploration when available.
+3. For structural code exploration: **Graphify first** (`graphify query` / `path` / `explain` against `graphify-out/graph.json`). Only then fall back to codegraph, lean-ctx, or targeted grep on the `source_file`s the graph returned.
 4. Save durable learnings/decisions back to Engram; save execution state/progress back to DevHub MCP.
 
 ## Tool intent
@@ -32,6 +32,7 @@ Recommended flow:
 
 The following skills are shipped inside this repo and should be loaded when the task context matches their trigger:
 
+- `graphify` — `.agents/skills/graphify/SKILL.md`: Trigger on `/graphify`, rebuilds/updates, or any architecture / “how does X work?” / relationship question when `graphify-out/` exists (query first; see ## graphify).
 - `devhub-morphology` — `skills/devhub-morphology/SKILL.md`: Trigger when adding, removing, or modifying a DevHub morphology (registry entry, CSS token block, selector wiring, factory usage, tests, and common pitfalls).
 
 ## Safety
@@ -43,3 +44,28 @@ The following skills are shipped inside this repo and should be loaded when the 
 - `commit=none` is valid only for analysis/investigation tasks with zero file changes.
 - Do not push automatically; push only when a human asks or when publishing the task branch is operationally necessary for QA/handoff.
 - Keep Engram and DevHub distinct: Engram is memory; DevHub is planning/execution state.
+
+## graphify
+
+This project has a **large** knowledge graph under `graphify-out/` (~tens of thousands of nodes). Using it correctly saves tokens and finds symbols faster than broad grep/read.
+
+Skill (full pipeline / rebuilds): `.agents/skills/graphify/SKILL.md` (also user: `~/.grok/skills/graphify/`).  
+CLI (Windows): `graphify` on PATH (`%USERPROFILE%\.local\bin\graphify.exe`).  
+Interpreter pointer: `graphify-out/.graphify_python` (uv tool `graphifyy`).
+
+When the user types `/graphify`, load the graphify skill before doing anything else.
+
+### Always-on rules (token-cheap navigation)
+
+1. **Graph first for codebase questions.** If `graphify-out/graph.json` exists and the user asks about architecture, “how does X work?”, “what calls Y?”, data flow, ownership, or where something lives — run Graphify **before** broad grep, full-file reads, or loading large reports.
+2. **Prefer CLI over MCP.** Default tools (lightweight, no extra process):
+   - `graphify query "<question>"` — broad neighborhood (BFS). Add `--dfs` for deep chains. Cap size with `--budget 800`–`2000` on this repo (default can still be large).
+   - `graphify path "<A>" "<B>"` — shortest relationship path.
+   - `graphify explain "<concept>"` — one node + neighbors.
+3. **Never** open or stream `graphify-out/graph.json` whole into context (~40MB). Never dump the full `GRAPH_REPORT.md` unless the user asked for an architecture audit; if needed, read only God Nodes / Surprising Connections / Suggested Questions (head of report or targeted sections).
+4. **Answer from the subgraph only.** Cite `source_file` + `source_location` and edge confidence (`EXTRACTED` / `INFERRED` / `AMBIGUOUS`). Do not invent edges. If the graph is thin, say so, then open only the files the graph pointed to.
+5. **Query wording.** Graph matching is literal/substring on labels (no synonyms inside the binary). Prefer **code identifiers and English labels** present in the repo (`rightDockState`, `TerminalWorkspacesManager`, `claim_next_task`). For Spanish questions, expand to those tokens before querying. If zero hits, rephrase with identifiers from a second query or a narrow path/explain — do not fall back to whole-repo grep as the first retry.
+6. **Skip Graphify only when:** the task is pure formatting/typo, the user forbids it, or the work is only about fixing a broken/stale graph. Dirty `graphify-out/` after hooks/updates is normal and **not** a reason to skip.
+7. **After meaningful code edits** (new modules, renames, wiring changes): run `graphify update .` (AST-only, no API cost) so the graph stays usable. Do not rebuild the full corpus unless asked or the graph is missing.
+8. **Optional wiki:** if `graphify-out/wiki/index.md` exists later, use it for broad navigation before raw source walks.
+9. **MCP is optional.** `graphify-mcp` / `python -m graphify.serve` exists but is heavier. Prefer CLI unless MCP is already connected and the task needs fine-grained tools (`get_neighbors`, etc.).
