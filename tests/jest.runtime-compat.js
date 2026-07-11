@@ -8,6 +8,14 @@ function defineIfMissing(target, key, value) {
   }
 }
 
+// Force a test-environment NODE_ENV before any module is transformed or
+// executed. The host shell may run with NODE_ENV=production, which causes
+// production-only gates (e.g. heavy-surface deferral) to activate during
+// tests and hides the rendered workspace surface.
+if (process.env.NODE_ENV !== 'test') {
+  process.env.NODE_ENV = 'test';
+}
+
 // Polyfill TextEncoder/TextDecoder before any fetch implementation is loaded.
 // Jest's jsdom environment does not always expose these globals during
 // setupFiles, but some dependencies (e.g. Next.js compiled fetch primitives)

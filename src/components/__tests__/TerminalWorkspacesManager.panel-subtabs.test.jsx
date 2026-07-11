@@ -273,11 +273,9 @@ function getSplitDownButton(container) {
 }
 
 function getVisibleWorkspaceShell(container) {
-  return (
-    Array.from(container.querySelectorAll('[data-testid^="workspace-shell-"]')).find(
-      (node) => node.getAttribute('data-ws-active') === 'true'
-    ) || null
-  );
+  // The active workspace shell may also contain parked (inactive) windows that
+  // are kept mounted for window-switcher parity. Narrow to the active window.
+  return container.querySelector('[data-testid^="workspace-window-active-"]') || null;
 }
 
 function getTerminalRendererValues(container) {
@@ -734,7 +732,7 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
       'active'
     );
     expect(getLatestTerminalTTYProps('p1')).toEqual(
-      expect.objectContaining({ isActivePanel: true })
+      expect.objectContaining({ isActivePanel: false })
     );
     expect(getLatestTerminalTTYProps('p2')).toEqual(
       expect.objectContaining({ isActivePanel: true })
@@ -748,6 +746,8 @@ describe('TerminalWorkspacesManager — panel sub-tabs bar', () => {
     expect(getLatestTerminalTTYProps('p1')).toEqual(
       expect.objectContaining({ isActivePanel: true })
     );
-    expect(container.querySelector('[data-testid="terminal-p2"]')).toBeNull();
+    expect(getLatestTerminalTTYProps('p2')).toEqual(
+      expect.objectContaining({ isActivePanel: false })
+    );
   });
 });

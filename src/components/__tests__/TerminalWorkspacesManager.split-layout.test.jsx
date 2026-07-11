@@ -399,10 +399,9 @@ describe('TerminalWorkspacesManager split layout', () => {
       '[data-testid="split-column-resize-handle-ws1-c1"]'
     );
     expect(handle).not.toBeNull();
-    expect(handle?.className).toEqual(expect.stringContaining('w-3'));
-    expect(handle?.className).toEqual(expect.stringContaining('bg-[#0f1724]'));
-    expect(handle?.className).toEqual(expect.stringContaining('border-l'));
-    expect(handle?.className).toEqual(expect.stringContaining('border-r'));
+    expect(handle?.className).toEqual(expect.stringContaining('w-[3px]'));
+    expect(handle?.className).toEqual(expect.stringContaining('cursor-col-resize'));
+    expect(handle?.className).toEqual(expect.stringContaining('relative z-30'));
   });
 
   test('renders vertical splits as stacked panels inside the same column', async () => {
@@ -448,10 +447,9 @@ describe('TerminalWorkspacesManager split layout', () => {
       '[data-testid="workspace-row-resize-handle-c1-p1"]'
     );
     expect(handle).not.toBeNull();
-    expect(handle?.className).toEqual(expect.stringContaining('h-3'));
-    expect(handle?.className).toEqual(expect.stringContaining('bg-[#0f1724]'));
-    expect(handle?.className).toEqual(expect.stringContaining('border-t'));
-    expect(handle?.className).toEqual(expect.stringContaining('border-b'));
+    expect(handle?.className).toEqual(expect.stringContaining('h-[3px]'));
+    expect(handle?.className).toEqual(expect.stringContaining('cursor-row-resize'));
+    expect(handle?.className).toEqual(expect.stringContaining('relative z-30'));
   });
 
   test('keeps two visible split native panels mounted at the same time while focus stays panel-scoped', async () => {
