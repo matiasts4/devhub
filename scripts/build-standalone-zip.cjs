@@ -16,6 +16,138 @@ function removeIfExists(targetPath) {
   fs.rmSync(targetPath, { recursive: true, force: true });
 }
 
+function walkDir(dir, callback) {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkDir(fullPath, callback);
+      callback(fullPath, entry);
+    } else {
+      callback(fullPath, entry);
+    }
+  }
+}
+
+function pruneSourceMapsAndSymbols() {
+  const extensions = new Set(['.map', '.pdb', '.tsbuildinfo']);
+  walkDir(STANDALONE_DIR, (filePath, entry) => {
+    if (!entry.isFile()) return;
+    const ext = path.extname(filePath).toLowerCase();
+    if (extensions.has(ext)) {
+      fs.rmSync(filePath, { force: true });
+    }
+  });
+}
+
+function pruneTestFiles() {
+  walkDir(STANDALONE_DIR, (filePath, entry) => {
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name === '__mocks__' || entry.name === 'test' || entry.name === 'tests') {
+        removeIfExists(filePath);
+      }
+      return;
+    }
+    const base = path.basename(filePath);
+    if (/\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$/.test(base)) {
+      fs.rmSync(filePath, { force: true });
+    }
+  });
+}
+
+function pruneSharpFromStandalone() {
+  // sharp is only used at build-time for icon generation; it is not imported
+  // by the runtime server, so it can be removed from the standalone payload.
+  const roots = [
+    path.join(STANDALONE_DIR, 'node_modules', '@img'),
+    path.join(STANDALONE_DIR, 'node_modules', '.pnpm', 'node_modules', '@img'),
+    path.join(STANDALONE_DIR, '.next', 'node_modules', '@img'),
+  ];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root)) {
+      if (entry.startsWith('sharp-')) {
+        removeIfExists(path.join(root, entry));
+      }
+    }
+  }
+  const sharpPackageRoots = [
+    path.join(STANDALONE_DIR, 'node_modules', 'sharp'),
+    path.join(STANDALONE_DIR, '.next', 'node_modules', 'sharp'),
+  ];
+  for (const sharpRoot of sharpPackageRoots) {
+    if (fs.existsSync(sharpRoot)) {
+      removeIfExists(sharpRoot);
+    }
+  }
+}
+
+function pruneBetterSqlite3DevFiles() {
+  // better-sqlite3 ships a full copy of sqlite3.c and build objects that are
+  // not needed at runtime once the native binding is built.
+  const roots = [
+    path.join(STANDALONE_DIR, 'node_modules', 'better-sqlite3'),
+    path.join(STANDALONE_DIR, '.next', 'node_modules'),
+  ];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    if (path.basename(root) === 'better-sqlite3') {
+      removeIfExists(path.join(root, 'deps'));
+      removeIfExists(path.join(root, 'src'));
+      removeIfExists(path.join(root, 'build', 'Release', 'obj.target'));
+      continue;
+    }
+    // .next/node_modules contains hashed copies like better-sqlite3-XXXX.
+    for (const entry of fs.readdirSync(root)) {
+      if (entry.startsWith('better-sqlite3-')) {
+        const pkgDir = path.join(root, entry);
+        removeIfExists(path.join(pkgDir, 'deps'));
+        removeIfExists(path.join(pkgDir, 'src'));
+        removeIfExists(path.join(pkgDir, 'build', 'Release', 'obj.target'));
+      }
+    }
+  }
+}
+
+function pruneNodePtySymbols() {
+  // node-pty prebuilds include debug symbols that are not required in production.
+  const roots = [
+    path.join(STANDALONE_DIR, 'node_modules', 'node-pty'),
+    path.join(STANDALONE_DIR, '.next', 'node_modules', 'node-pty'),
+  ];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    walkDir(path.join(root, 'prebuilds'), (filePath, entry) => {
+      if (entry.isFile() && filePath.endsWith('.pdb')) {
+        fs.rmSync(filePath, { force: true });
+      }
+    });
+  }
+}
+
+function dedupeNodePtyOpenConsole() {
+  // node-pty bundles OpenConsole.exe in multiple locations; keep only the
+  // prebuild copy that is loaded at runtime.
+  const keep = path.join(STANDALONE_DIR, 'node_modules', 'node-pty', 'prebuilds', 'win32-x64', 'conpty', 'OpenConsole.exe');
+  const duplicates = [
+    path.join(STANDALONE_DIR, 'node_modules', 'node-pty', 'build', 'Release', 'conpty', 'OpenConsole.exe'),
+    path.join(STANDALONE_DIR, 'node_modules', 'node-pty', 'third_party', 'conpty', '1.23.251008001', 'win10-x64', 'OpenConsole.exe'),
+    path.join(STANDALONE_DIR, 'node_modules', 'node-pty', 'third_party', 'conpty', '1.23.251008001', 'win10-arm64', 'OpenConsole.exe'),
+  ];
+  for (const dup of duplicates) {
+    if (fs.existsSync(dup) && dup !== keep) {
+      fs.rmSync(dup, { force: true });
+    }
+  }
+}
+
+function pruneDataDirectory() {
+  // data/ contains runtime SQLite databases and backups that should not be
+  // distributed with the installer.
+  removeIfExists(path.join(STANDALONE_DIR, 'data'));
+}
+
 function pruneLinuxMuslSharp() {
   if (process.platform !== 'linux') return;
   const nm = path.join(STANDALONE_DIR, 'node_modules');
@@ -112,6 +244,15 @@ function main() {
   // Prune after materialization because injectPackageFromProject copies the full package tree.
   pruneNodePtyPrebuilds();
   pruneUnusedSharpPrebuilds();
+
+  // Additional pruning to reduce installer size without affecting runtime.
+  pruneDataDirectory();
+  pruneSharpFromStandalone();
+  pruneSourceMapsAndSymbols();
+  pruneTestFiles();
+  pruneBetterSqlite3DevFiles();
+  pruneNodePtySymbols();
+  dedupeNodePtyOpenConsole();
 
   createZipArchive(STANDALONE_DIR, ZIP_PATH);
   console.log(`[build:standalone] Wrote ${ZIP_PATH}`);

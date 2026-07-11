@@ -18,6 +18,22 @@
       "MINIMAX_MODEL": "minimax-coding-plan/MiniMax-M2.7",
       "MINIMAX_API_KEY": "sk-cp-h6_Tw_RcCRP_fHhFdcxZWjysfpl9LriVaR4z0X-pRK3sAL9GU0mU7TgSIjOQvrehLvQv1GxsyH8HDJktt9dT8hU6BW2AXyYLoL4rr6V5giXaV9HNiPVFwLE",
       "enabled": true
+    },
+    "xai": {
+      "XAI_AUTH_MODE": "oauth",
+      "XAI_OAUTH_ACCESS_TOKEN": "eyJ0eXAiOiJhdCtqd3QiLCJhbGciOiJFUzI1NiIsImtpZCI6Im9hdXRoMi1wcm9kdWN0aW9uLTIwMjYtMDItMTkifQ.eyJpc3MiOiJodHRwczovL2F1dGgueC5haSIsInN1YiI6ImQxNmE4NGJkLTFlOWYtNDBlMC1hYjM2LTI3ZjcyNmRhMjM1YSIsImF1ZCI6ImIxYTAwNDkyLTA3M2EtNDdlYS04MTZmLTRjMzI5MjY0YTgyOCIsImV4cCI6MTc4Mzc0MTUwOCwiaWF0IjoxNzgzNzE5OTA4LCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIG9mZmxpbmVfYWNjZXNzIGdyb2stY2xpOmFjY2VzcyBhcGk6YWNjZXNzIiwicHJpbmNpcGFsX3R5cGUiOiJVc2VyIiwicHJpbmNpcGFsX2lkIjoiZDE2YTg0YmQtMWU5Zi00MGUwLWFiMzYtMjdmNzI2ZGEyMzVhIiwiY2xpZW50X2lkIjoiYjFhMDA0OTItMDczYS00N2VhLTgxNmYtNGMzMjkyNjRhODI4IiwianRpIjoiNThjNjY1MzktNjk4OC00OGZkLTliMjItMjQ2ZDU1ZTc3OTY1IiwidGllciI6MSwidGVhbV9pZCI6Ijc4MzkxYmMzLTI2MTktNDI0ZS04ZmRmLTgwODczN2NkNzlmMyJ9.zrS--_V3L11qamMuLNXtZNcTuSd_5vo17YAux5aivy0YlOFLjIAc9qs0YmXS1P-RRnRWws7F1r8nKMAZRplKaQ",
+      "XAI_OAUTH_REFRESH_TOKEN": "sF4J7Laa3KxKR7xvhDClrP4KDX4pHXT8OjMROyn6BSi6dIBgkPoWabFdkv3jXesv0A5HxkJ86aWKmhscpjP4Kg",
+      "XAI_OAUTH_EXPIRES_AT": 1783741507108,
+      "XAI_OAUTH_USERNAME": "matitobar1404@gmail.com",
+      "enabled": true,
+      "XAI_BASE_URL": "https://api.x.ai/v1/chat/completions",
+      "XAI_MODEL": "grok-4.5",
+      "XAI_API_KEY": ""
+    },
+    "kimi_code": {
+      "KIMI_CODE_API_KEY": "",
+      "KIMI_CODE_MODEL": "kimi-for-coding",
+      "enabled": true
     }
   },
   "priorityOrder": ["copilot", "minimax", "opencode", "openrouter", "zen", "direct"],
@@ -518,7 +534,17 @@
       "text-embedding-3-small",
       "text-embedding-3-small-inference"
     ],
-    "minimax": ["minimax-coding-plan/MiniMax-M2.7", "minimax-coding-plan/MiniMax-M3"]
+    "minimax": ["minimax-coding-plan/MiniMax-M2.7", "minimax-coding-plan/MiniMax-M3"],
+    "xai": [
+      "grok-4.5",
+      "grok-composer-2.5-fast",
+      "grok-build-0.1",
+      "grok-4.3",
+      "grok-4.20-0309-non-reasoning",
+      "grok-4.20-0309-reasoning",
+      "grok-4.20-multi-agent-0309"
+    ],
+    "kimi_code": ["kimi-for-coding"]
   },
   "favoriteModels": {
     "openrouter": ["qwen/qwen3.6-plus-preview:free", "qwen/qwen3.6-plus:free"],

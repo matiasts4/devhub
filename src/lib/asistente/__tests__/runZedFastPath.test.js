@@ -7,7 +7,7 @@ jest.mock('../utils/zed-logger', () => ({
   },
 }));
 
-const { tryZedFastPath } = require('../runZedFastPath');
+const { tryZedFastPath, shouldDeferAgentIntentToLlm } = require('../runZedFastPath');
 
 function mockRegistry(results = {}) {
   return {
@@ -113,5 +113,37 @@ describe('tryZedFastPath', () => {
 
     expect(result).toEqual({ hit: false });
     expect(registry.execute).not.toHaveBeenCalled();
+  });
+
+  test('defers agent TUI launches (grok/opencode) to the connected LLM', async () => {
+    process.env.ZED_FAST_PATH = '1';
+    const registry = mockRegistry();
+
+    const result = await tryZedFastPath({
+      message: 'abre una nueva terminal con grok',
+      registry,
+      requestContext: SINGLE_TERMINAL_CTX,
+      msgId: 'msg-grok',
+    });
+
+    expect(result.hit).toBe(false);
+    expect(registry.execute).not.toHaveBeenCalled();
+  });
+
+  test('shouldDeferAgentIntentToLlm flags program opens and launch_agent', () => {
+    expect(
+      shouldDeferAgentIntentToLlm({
+        intent: 'open_terminal_agent',
+        matched: 'open_terminal:grokx1',
+        steps: [{ tool: 'open_terminal', input: { program: 'grok' } }],
+      })
+    ).toBe(true);
+    expect(
+      shouldDeferAgentIntentToLlm({
+        intent: 'list_terminals',
+        matched: 'list_terminals',
+        steps: [{ tool: 'list_terminals', input: {} }],
+      })
+    ).toBe(false);
   });
 });

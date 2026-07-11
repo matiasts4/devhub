@@ -302,7 +302,10 @@ export default function TerminalTTY({
   const lastPointerZoneRef = useRef('transcript');
   const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
   const tuiSessionFooterConfirmedRef = useRef(false);
-  const grokTuiReadyRef = useRef(isGrokTuiInitialCommand(initialCommand));
+  // Do not mark grokTuiReady from launch command alone — native wheel passthrough
+  // before DECSET 1000/1006 is live swallows cold-start scroll (first session only).
+  // Ready flips true after chrome detection or reconcileGrokTuiWheelReadiness.
+  const grokTuiReadyRef = useRef(false);
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
   const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(false);
 
@@ -1175,6 +1178,7 @@ export default function TerminalTTY({
     lastViewportReadyPostedRef,
     hasSentInitialCommand,
     isGrokSessionRef,
+    grokTuiReadyRef,
     clearTimers,
     clearConnectDeferTimer,
     scheduleConnectDeferForce,

@@ -106,6 +106,72 @@ function mapCommandBarIntent(cmd, context = {}) {
  * @param {object} context
  * @returns {{ steps: Array, intent: string, confidence: number, matched: string } | null}
  */
+/**
+ * Collapse "open empty terminal + launch agent" into a single open_terminal with program.
+ * Avoids a useless empty panel and fixes phrases like:
+ * "abre una nueva terminal y en ella abre grok".
+ *
+ * @param {Array<{ tool: string, input?: Record<string, unknown> }>} steps
+ * @returns {Array<{ tool: string, input?: Record<string, unknown> }>}
+ */
+export function mergeOpenTerminalWithAgentLaunch(steps) {
+  if (!Array.isArray(steps) || steps.length < 2) return steps;
+
+  const out = [];
+  for (let i = 0; i < steps.length; i++) {
+    const cur = steps[i];
+    const next = steps[i + 1];
+    const curOpenEmpty =
+      cur?.tool === 'open_terminal' &&
+      !cur?.input?.program &&
+      !cur?.input?.command &&
+      !cur?.input?.cmd;
+    const nextLaunch =
+      next?.tool === 'launch_agent_session' &&
+      typeof next?.input?.program === 'string' &&
+      next.input.program.trim();
+    const nextOpenAgent =
+      next?.tool === 'open_terminal' &&
+      typeof next?.input?.program === 'string' &&
+      next.input.program.trim();
+
+    if (curOpenEmpty && nextLaunch) {
+      const program = String(next.input.program).trim().toLowerCase();
+      const prompt =
+        typeof next.input.prompt === 'string' && next.input.prompt.trim()
+          ? next.input.prompt.trim()
+          : null;
+      const merged = {
+        tool: 'open_terminal',
+        input: {
+          program,
+          ...(next.input.name ? { name: next.input.name } : {}),
+          ...(next.input.cwd ? { cwd: next.input.cwd } : {}),
+        },
+      };
+      // Grok is interactive; keep reserved text for client inject after open.
+      if (program === 'grok' && prompt) {
+        merged.input.bootstrap_input = prompt.endsWith('\n') ? prompt : `${prompt}\n`;
+      }
+      out.push(merged);
+      i += 1;
+      continue;
+    }
+
+    if (curOpenEmpty && nextOpenAgent) {
+      out.push({
+        tool: 'open_terminal',
+        input: { ...next.input },
+      });
+      i += 1;
+      continue;
+    }
+
+    out.push(cur);
+  }
+  return out;
+}
+
 function resolveTwoStepIntent(message, context = {}) {
   const text = typeof message === 'string' ? message.trim() : '';
   if (!text || !TWO_STEP_SPLIT.test(text)) return null;
@@ -122,8 +188,9 @@ function resolveTwoStepIntent(message, context = {}) {
   if (first.tier === 'llm' || second.tier === 'llm') return null;
 
   const confidence = Math.min(first.confidence, second.confidence);
+  const steps = mergeOpenTerminalWithAgentLaunch([...first.steps, ...second.steps]);
   return {
-    steps: [...first.steps, ...second.steps],
+    steps,
     intent: `${first.intent}+${second.intent}`,
     confidence,
     matched: `two-step:${first.matched}+${second.matched}`,

@@ -18,6 +18,39 @@ function toolResultOk(result) {
   return !r.error;
 }
 
+/** Tools / intents that must not short-circuit the connected LLM. */
+const AGENT_OR_PROGRAM_TOOLS = new Set([
+  'launch_agent_session',
+  'launch_swarm',
+  'create_plan',
+  'execute_plan_step',
+]);
+
+/**
+ * True when the local intent router would open/run an external agent TUI
+ * (Grok, OpenCode, …) or multi-step agent work — those belong to the LLM path.
+ *
+ * @param {{ intent?: string, matched?: string, steps?: Array<{ tool?: string, input?: Record<string, unknown> }> }} resolved
+ */
+export function shouldDeferAgentIntentToLlm(resolved) {
+  if (!resolved || !Array.isArray(resolved.steps)) return false;
+  const intent = String(resolved.intent || '');
+  const matched = String(resolved.matched || '');
+  if (
+    /launch_agent|open_terminal_agent|execute_agent|create_plan|launch_swarm/i.test(intent) ||
+    /launch_agent|open_terminal_agent|execute_agent|create_plan/i.test(matched)
+  ) {
+    return true;
+  }
+  for (const step of resolved.steps) {
+    if (!step) continue;
+    if (AGENT_OR_PROGRAM_TOOLS.has(step.tool)) return true;
+    if (step.tool === 'open_terminal' && step.input?.program) return true;
+    if (step.tool === 'execute_in_terminal' && step.input?.program) return true;
+  }
+  return false;
+}
+
 function buildConfirmationPreview(resolved) {
   const stepSummary = (resolved.steps || [])
     .map((s) => `${s.tool}${s.input?.name ? ` (${s.input.name})` : ''}`)
@@ -41,10 +74,30 @@ export async function tryZedFastPath({
   msgId = '',
   confirmed = false,
 }) {
-  if (process.env.ZED_FAST_PATH === '0') return { hit: false };
+  if (process.env.ZED_FAST_PATH === '0') {
+    zedLog.orchestration('fast_path_disabled', {
+      msgId,
+      reason: 'ZED_FAST_PATH=0 — routing to connected LLM',
+    });
+    return { hit: false };
+  }
 
   const resolved = resolveZedIntent(message, requestContext);
   if (resolved.tier === 'llm' || !resolved.steps?.length) {
+    return { hit: false };
+  }
+
+  // Agent TUIs / multi-step agent launches must go through the connected model.
+  // Fast-path is only for cheap local workspace ops (list/close/open empty shell/URL).
+  // Spec: docs/designs/ZED-ARCHITECTURE-01-asistente-vs-agente.md §2–5
+  // ("abre OpenCode" may open a panel, but orchestrating agent sessions is LLM/Agent mode).
+  if (shouldDeferAgentIntentToLlm(resolved)) {
+    zedLog.orchestration('fast_path_defer_llm', {
+      msgId,
+      intent: resolved.intent,
+      matched: resolved.matched,
+      reason: 'agent_or_program_launch',
+    });
     return { hit: false };
   }
 

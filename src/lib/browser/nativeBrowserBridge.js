@@ -115,6 +115,49 @@ export async function resizeNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_resize', payload, {});
 }
 
+const pendingResizeByPanelId = new Map();
+
+/**
+ * Coalesce rapid browser resize updates (e.g. during a pizarra drag) into a
+ * single next-animation-frame call to the native bridge.
+ */
+export function scheduleNativeBrowserResize({ panelId, bounds }) {
+  if (!isNativeBrowserRuntimeAvailable()) return Promise.resolve();
+  const pending = pendingResizeByPanelId.get(panelId);
+  if (pending) {
+    pending.bounds = bounds;
+    return pending.promise;
+  }
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  const schedule =
+    typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
+  const rafId = schedule(() => {
+    pendingResizeByPanelId.delete(panelId);
+    resizeNativeBrowser({ panelId, bounds }).then(resolve).catch(reject);
+  });
+  pendingResizeByPanelId.set(panelId, { rafId, bounds, promise, resolve, reject });
+  return promise;
+}
+
+/**
+ * Cancel any pending scheduled resize for the panel and execute it immediately.
+ */
+export function flushNativeBrowserResize({ panelId, bounds }) {
+  if (!isNativeBrowserRuntimeAvailable()) return Promise.resolve();
+  const pending = pendingResizeByPanelId.get(panelId);
+  if (pending) {
+    const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+    cancel(pending.rafId);
+    pendingResizeByPanelId.delete(panelId);
+  }
+  return resizeNativeBrowser({ panelId, bounds });
+}
+
 export async function focusNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_focus', payload, {});
 }

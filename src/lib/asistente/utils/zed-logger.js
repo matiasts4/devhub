@@ -6,6 +6,18 @@ const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 const ZED_LOG_FILE = path.join(LOG_DIR, 'zed-assistant.log');
 const ZED_JSON_FILE = path.join(LOG_DIR, `zed-chat-${new Date().toISOString().slice(0, 10)}.log`);
 
+/**
+ * Mirror human-readable Zed lines to the process that runs Next (tauri:dev terminal).
+ * Default ON in development so tool verification is visible without tailing logs/.
+ * Opt out: ZED_LOG_CONSOLE=0 · force on: ZED_LOG_CONSOLE=1
+ */
+function shouldMirrorToConsole() {
+  const flag = process.env.ZED_LOG_CONSOLE;
+  if (flag === '0' || flag === 'false') return false;
+  if (flag === '1' || flag === 'true') return true;
+  return process.env.NODE_ENV === 'development' || process.env.DEVHUB_RUNTIME === 'development';
+}
+
 function ensureLogDir() {
   if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -43,6 +55,10 @@ function writeZedLog(message) {
     });
     const line = `[${timestamp}] ${message}\n`;
     fs.appendFileSync(ZED_LOG_FILE, line);
+    if (shouldMirrorToConsole()) {
+      // Prefix so it stands out among Next/Tauri noise in the same terminal.
+      process.stdout.write(`[ZED] ${line}`);
+    }
   } catch (err) {
     // ignore
   }

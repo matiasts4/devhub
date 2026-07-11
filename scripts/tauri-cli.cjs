@@ -2,6 +2,7 @@
 
 const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const REQUIRED_GTK_PACKAGES = ['javascriptcoregtk-4.1', 'libsoup-3.0', 'webkit2gtk-4.1'];
@@ -10,6 +11,14 @@ const TAURI_CLI_ENTRY = path.join(__dirname, '..', 'node_modules', '@tauri-apps'
 const TAURI_CONF_PATH = path.join(__dirname, '..', 'src-tauri', 'tauri.conf.json');
 const DEFAULT_LINUX_PKG_CONFIG_PATHS = ['/usr/lib/x86_64-linux-gnu/pkgconfig', '/usr/share/pkgconfig'];
 const DEV_URL_READY_PATH = '/api/agenthub/config';
+const PACKAGING_SIDECAR_WRAPPER = path.join(__dirname, '..', 'packaging', 'devhub-server.cjs');
+const DEV_ISOLATION = {
+  DEVHUB_HOME: path.join(os.homedir(), '.devhub-dev'),
+  DEVHUB_RUNTIME: 'development',
+  SIDECAR_PORT: '4001',
+  DEVHUB_TTY_PORT: '4078',
+  DEVHUB_WS_PORT: '3402',
+};
 
 function mergePkgConfigPath(existingValue, platform = process.platform) {
   if (platform !== 'linux') {
@@ -59,13 +68,58 @@ function shouldPreferSystemPkgConfig({
   }
 }
 
+/**
+ * Force disjoint runtime from the installed app. Shells often inherit
+ * DEVHUB_HOME=~/.devhub and SIDECAR_PORT=4000 from a running install; without
+ * this, `pnpm tauri dev` adopts/kills production PTY/Next.
+ */
+function applyDevIsolationEnv(env = {}) {
+  const nextEnv = { ...env, ...DEV_ISOLATION };
+  // Next.js warns and behaves inconsistently when NODE_ENV=production under `next dev`.
+  if (!nextEnv.NODE_ENV || nextEnv.NODE_ENV === 'production') {
+    nextEnv.NODE_ENV = 'development';
+  }
+  return nextEnv;
+}
+
+/**
+ * Keep the debug-tree wrapper in sync with packaging/ so tauri dev never runs a
+ * stale cjs that pre-kills :3400 (coexistence regression).
+ */
+function syncDevhubServerWrapperForDev({
+  existsSync = fs.existsSync,
+  copyFileSync = fs.copyFileSync,
+  mkdirSync = fs.mkdirSync,
+} = {}) {
+  if (!existsSync(PACKAGING_SIDECAR_WRAPPER)) {
+    return;
+  }
+  const targets = [
+    path.join(__dirname, '..', 'src-tauri', 'resources', 'devhub-server.cjs'),
+    path.join(__dirname, '..', 'src-tauri', 'target', 'debug', 'devhub-server.cjs'),
+  ];
+  for (const target of targets) {
+    try {
+      mkdirSync(path.dirname(target), { recursive: true });
+      copyFileSync(PACKAGING_SIDECAR_WRAPPER, target);
+    } catch (_error) {
+      // non-fatal: cargo/tauri may recreate resources later
+    }
+  }
+}
+
 function buildTauriEnv({
   env = process.env,
   platform = process.platform,
   execFileSync: exec = execFileSync,
   existsSync = fs.existsSync,
+  forDev = false,
 } = {}) {
-  const nextEnv = { ...env };
+  let nextEnv = { ...env };
+
+  if (forDev) {
+    nextEnv = applyDevIsolationEnv(nextEnv);
+  }
 
   if (platform === 'linux') {
     nextEnv.PKG_CONFIG_PATH = mergePkgConfigPath(nextEnv.PKG_CONFIG_PATH, platform);
@@ -225,24 +279,32 @@ function normalizeTauriCliArgs(args = []) {
 
 function runTauriCli({
   args = normalizeTauriCliArgs(process.argv.slice(2)),
-  env = buildTauriEnv(),
+  env,
   spawnSync: spawn = spawnSync,
 } = {}) {
+  const isDev = args[0] === 'dev';
+  const resolvedEnv = env || buildTauriEnv({ forDev: isDev });
   const buildConfig = readTauriBuildConfig();
   const cliArgs = resolveTauriCliArgs({
     args,
     buildConfig,
-    devUrlReady: args[0] === 'dev' ? isDevUrlReady(buildConfig?.devUrl, { spawnSync: spawn }) : false,
+    devUrlReady: isDev ? isDevUrlReady(buildConfig?.devUrl, { spawnSync: spawn }) : false,
   });
 
   const isBuild = args.includes('build');
   if (isBuild) {
     syncDevhubServerSidecar();
   }
+  if (isDev) {
+    syncDevhubServerWrapperForDev();
+    console.log(
+      `[tauri-cli] Dev isolation: DEVHUB_HOME=${resolvedEnv.DEVHUB_HOME} SIDECAR_PORT=${resolvedEnv.SIDECAR_PORT} DEVHUB_RUNTIME=${resolvedEnv.DEVHUB_RUNTIME}`
+    );
+  }
 
   const result = spawn(process.execPath, [TAURI_CLI_ENTRY, ...cliArgs], {
     stdio: 'inherit',
-    env,
+    env: resolvedEnv,
   });
 
   if (result.error) {
@@ -275,8 +337,10 @@ if (require.main === module) {
 
 module.exports = {
   normalizeTauriCliArgs,
+  applyDevIsolationEnv,
   buildDevReadyProbeUrl,
   buildTauriEnv,
+  DEV_ISOLATION,
   DEV_URL_READY_PATH,
   DEFAULT_LINUX_PKG_CONFIG_PATHS,
   injectArgsBeforeAppArgs,
@@ -289,6 +353,7 @@ module.exports = {
   resolveTauriCliArgs,
   runTauriCli,
   shouldPreferSystemPkgConfig,
+  syncDevhubServerWrapperForDev,
   SYSTEM_PKG_CONFIG,
   TAURI_CLI_ENTRY,
   TAURI_CONF_PATH,

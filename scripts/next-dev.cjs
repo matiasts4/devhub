@@ -4,20 +4,37 @@ const { spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 
-if (!process.env.DEVHUB_HOME) {
-  process.env.DEVHUB_HOME = path.join(os.homedir(), '.devhub-dev');
+// Always isolate from the installed app — do not inherit ~/.devhub / :4000 / NODE_ENV=production.
+process.env.DEVHUB_HOME = path.join(os.homedir(), '.devhub-dev');
+process.env.DEVHUB_RUNTIME = 'development';
+process.env.DEVHUB_TTY_PORT = '4078';
+process.env.DEVHUB_WS_PORT = '3402';
+if (!process.env.SIDECAR_PORT || process.env.SIDECAR_PORT === '4000') {
+  process.env.SIDECAR_PORT = '4001';
 }
-if (!process.env.DEVHUB_RUNTIME) {
-  process.env.DEVHUB_RUNTIME = 'development';
+if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
+  process.env.NODE_ENV = 'development';
 }
 
-// Keep dev runtime ports disjoint from the installed app so both can run at the
-// same time without fighting over the same TTY WebSocket port.
-if (!process.env.DEVHUB_TTY_PORT) {
-  process.env.DEVHUB_TTY_PORT = '4078';
+// Dev default heap is ~0.5–1.5 GB and OOM kills Next mid-session (Failed to fetch /
+// ERR_CONNECTION_REFUSED in the WebView). Packaging uses 1024; give dev more headroom.
+const maxOldSpaceMb = String(process.env.DEVHUB_NEXT_MAX_OLD_SPACE_MB || '4096').trim() || '4096';
+const heapFlag = `--max-old-space-size=${maxOldSpaceMb}`;
+const existingNodeOptions = process.env.NODE_OPTIONS || '';
+if (!/--max-old-space-size=/.test(existingNodeOptions)) {
+  process.env.NODE_OPTIONS = existingNodeOptions
+    ? `${existingNodeOptions} ${heapFlag}`.trim()
+    : heapFlag;
 }
-if (!process.env.DEVHUB_WS_PORT) {
-  process.env.DEVHUB_WS_PORT = '3402';
+// Ensure Zed tool/session logs appear in the same terminal as `pnpm tauri dev`.
+if (process.env.ZED_LOG_CONSOLE == null) {
+  process.env.ZED_LOG_CONSOLE = '1';
+}
+// Fast-path is local regex→tools WITHOUT the connected LLM (see ZED-ARCHITECTURE-01).
+// Dev default OFF so "abre grok / open terminal" is decided by the real model.
+// Re-enable for latency experiments: ZED_FAST_PATH=1
+if (process.env.ZED_FAST_PATH == null) {
+  process.env.ZED_FAST_PATH = '0';
 }
 
 const nextBin = path.join(__dirname, '..', 'node_modules', 'next', 'dist', 'bin', 'next');

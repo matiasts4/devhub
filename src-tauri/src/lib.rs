@@ -65,37 +65,87 @@ fn nextjs_port() -> u16 {
     }
 }
 
+/// Production PTY port used by the installed app. Debug builds must never bind or kill it.
+const INSTALLED_SIDECAR_PORT: u16 = 4000;
+const INSTALLED_NEXT_PORT: u16 = 3400;
+
+fn is_production_devhub_home(path: &std::path::Path) -> bool {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    normalized.ends_with("/.devhub") && !normalized.ends_with("/.devhub-dev")
+}
+
+fn development_devhub_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".devhub-dev")
+}
+
+fn production_devhub_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".devhub")
+}
+
 fn sidecar_port() -> u16 {
-    std::env::var("SIDECAR_PORT")
+    let default = if cfg!(debug_assertions) { 4001 } else { INSTALLED_SIDECAR_PORT };
+    let port = std::env::var("SIDECAR_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or_else(|| if cfg!(debug_assertions) { 4001 } else { 4000 })
+        .unwrap_or(default);
+    // Shells that launched the installed app often leave SIDECAR_PORT=4000 in the
+    // environment. Adopting that from a debug binary would kill production PTYs.
+    if cfg!(debug_assertions) && port == INSTALLED_SIDECAR_PORT {
+        log::warn!(
+            "[DevHub] SIDECAR_PORT={} ignored in debug (installed-app port); using 4001 for coexistence.",
+            INSTALLED_SIDECAR_PORT
+        );
+        return 4001;
+    }
+    port
 }
 
 fn ws_port() -> u16 {
-    std::env::var("DEVHUB_WS_PORT")
+    let default = if cfg!(debug_assertions) { 3402 } else { 3401 };
+    let port = std::env::var("DEVHUB_WS_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or_else(|| if cfg!(debug_assertions) { 3402 } else { 3401 })
+        .unwrap_or(default);
+    if cfg!(debug_assertions) && port == 3401 {
+        return 3402;
+    }
+    port
 }
 
 fn tty_port() -> u16 {
-    std::env::var("DEVHUB_TTY_PORT")
+    let default = if cfg!(debug_assertions) { 4078 } else { 4077 };
+    let port = std::env::var("DEVHUB_TTY_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or_else(|| if cfg!(debug_assertions) { 4078 } else { 4077 })
+        .unwrap_or(default);
+    if cfg!(debug_assertions) && port == 4077 {
+        return 4078;
+    }
+    port
 }
 
 fn devhub_dir() -> PathBuf {
-    let p = std::env::var("DEVHUB_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            if cfg!(debug_assertions) {
-                dirs::home_dir().unwrap().join(".devhub-dev")
-            } else {
-                dirs::home_dir().unwrap().join(".devhub")
+    let p = if cfg!(debug_assertions) {
+        match std::env::var("DEVHUB_HOME") {
+            Ok(home) if !home.trim().is_empty() => {
+                let candidate = PathBuf::from(&home);
+                if is_production_devhub_home(&candidate) {
+                    log::warn!(
+                        "[DevHub] Ignoring production DEVHUB_HOME={} in debug; using .devhub-dev.",
+                        candidate.display()
+                    );
+                    development_devhub_dir()
+                } else {
+                    candidate
+                }
             }
-        });
+            _ => development_devhub_dir(),
+        }
+    } else {
+        std::env::var("DEVHUB_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| production_devhub_dir())
+    };
     if !p.exists() {
         let _ = fs::create_dir_all(&p);
     }
@@ -421,6 +471,7 @@ fn restore_main_window(app: &tauri::AppHandle) {
         let _ = window.reload();
         let _ = window.show();
         let _ = window.unminimize();
+        let _ = window.maximize();
         let _ = window.set_focus();
     }
 }
@@ -497,16 +548,23 @@ fn get_installed_build_id() -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
-/// Lee el PID guardado y comprueba si el sidecar ya está corriendo.
+/// True when a recorded sidecar port belongs to the installed app and must not
+/// be adopted or shut down by a debug/dev binary.
+fn is_installed_app_port(port: u16) -> bool {
+    port == INSTALLED_SIDECAR_PORT || port == INSTALLED_NEXT_PORT
+}
+
+/// Lee el PID guardado y comprueba si el sidecar ya esta corriendo.
 fn check_existing_sidecar() -> Option<u32> {
+    let expected_port = sidecar_port();
     let pid_file = get_sidecar_pid_file();
     if !pid_file.exists() {
-        if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
+        if let Some(pid) = find_devhub_pid_on_port(expected_port) {
             let _ = fs::write(&pid_file, pid.to_string());
-            let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
+            let _ = fs::write(get_sidecar_port_file(), expected_port.to_string());
             log::info!(
                 "[DevHub] Sidecar adoptado por puerto {} con PID {}.",
-                sidecar_port(),
+                expected_port,
                 pid
             );
             return Some(pid);
@@ -516,36 +574,67 @@ fn check_existing_sidecar() -> Option<u32> {
     if let Ok(content) = fs::read_to_string(&pid_file) {
         if let Ok(pid) = content.trim().parse::<u32>() {
             if is_sidecar_running(pid) {
-                // Comparar build-id del sidecar en ejecución vs el instalado actualmente.
-                // Si difieren, hay una nueva versión instalada → matar el sidecar viejo.
-                if let (Some(installed), Some(running)) =
-                    (get_installed_build_id(), get_running_build_id())
-                {
-                    if installed != running {
+                // Only adopt if the pid file's port matches *our* expected port
+                // and that port is actually listening. Prevents debug builds from
+                // treating the installed-app sidecar (e.g. :4000) as their own.
+                let recorded_port = fs::read_to_string(get_sidecar_port_file())
+                    .ok()
+                    .and_then(|s| s.trim().parse::<u16>().ok());
+                if let Some(port) = recorded_port {
+                    if port != expected_port
+                        || (cfg!(debug_assertions) && is_installed_app_port(port))
+                    {
                         log::info!(
-                            "[DevHub] Nueva versión detectada (build-id instalado: {} / corriendo: {}). Reiniciando sidecar...",
-                            installed, running
+                            "[DevHub] Ignoring sidecar PID {} (recorded port {}, expected {}); not adopting.",
+                            pid,
+                            port,
+                            expected_port
                         );
-                        shutdown_sidecar();
                         return None;
                     }
                 }
+                if !is_port_ready(expected_port) {
+                    log::info!(
+                        "[DevHub] Sidecar PID {} alive but :{} not ready; not adopting.",
+                        pid,
+                        expected_port
+                    );
+                    return None;
+                }
+
+                // Comparar build-id del sidecar en ejecucion vs el instalado actualmente.
+                // Si difieren, hay una nueva version instalada - matar el sidecar viejo.
+                // Never run build-id restart against the installed app from a debug binary.
+                if !cfg!(debug_assertions) {
+                    if let (Some(installed), Some(running)) =
+                        (get_installed_build_id(), get_running_build_id())
+                    {
+                        if installed != running {
+                            log::info!(
+                                "[DevHub] Nueva version detectada (build-id instalado: {} / corriendo: {}). Reiniciando sidecar...",
+                                installed, running
+                            );
+                            shutdown_sidecar();
+                            return None;
+                        }
+                    }
+                }
                 if !get_sidecar_port_file().exists() {
-                    let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
+                    let _ = fs::write(get_sidecar_port_file(), expected_port.to_string());
                 }
                 log::info!("[DevHub] Sidecar ya activo con PID {} (build-id OK).", pid);
                 return Some(pid);
             }
         }
     }
-    // PID file obsoleto — limpiarlo
+    // PID file obsoleto - limpiarlo (only under our own devhub_dir)
     let _ = fs::remove_file(&pid_file);
-    if let Some(pid) = find_devhub_pid_on_port(sidecar_port()) {
+    if let Some(pid) = find_devhub_pid_on_port(expected_port) {
         let _ = fs::write(&pid_file, pid.to_string());
-        let _ = fs::write(get_sidecar_port_file(), sidecar_port().to_string());
+        let _ = fs::write(get_sidecar_port_file(), expected_port.to_string());
         log::info!(
             "[DevHub] Sidecar readoptado por puerto {} con PID {}.",
-            sidecar_port(),
+            expected_port,
             pid
         );
         return Some(pid);
@@ -555,6 +644,27 @@ fn check_existing_sidecar() -> Option<u32> {
 
 /// Shutdown graceful del sidecar: primero HTTP POST /shutdown, luego SIGKILL si no responde.
 fn shutdown_sidecar() {
+    // Hard guard: never tear down the installed app from a debug binary.
+    if cfg!(debug_assertions) {
+        if is_production_devhub_home(&get_devhub_dir()) {
+            log::warn!(
+                "[DevHub] Refusing shutdown_sidecar under production DEVHUB_HOME in debug build."
+            );
+            return;
+        }
+        if let Ok(port_str) = fs::read_to_string(get_sidecar_port_file()) {
+            if let Ok(port) = port_str.trim().parse::<u16>() {
+                if is_installed_app_port(port) {
+                    log::warn!(
+                        "[DevHub] Refusing shutdown_sidecar on installed-app port :{} in debug build.",
+                        port
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
     let pid_file = get_sidecar_pid_file();
     let Ok(content) = fs::read_to_string(&pid_file) else {
         return;
@@ -570,9 +680,16 @@ fn shutdown_sidecar() {
     let port_file = get_sidecar_port_file();
     let mut closed_gracefully = false;
 
-    // Intentar shutdown vía HTTP
+    // Intentar shutdown via HTTP
     if let Ok(port_str) = fs::read_to_string(&port_file) {
         if let Ok(port) = port_str.trim().parse::<u16>() {
+            if cfg!(debug_assertions) && is_installed_app_port(port) {
+                log::warn!(
+                    "[DevHub] Refusing HTTP shutdown on installed-app port :{}.",
+                    port
+                );
+                return;
+            }
             let url = format!("http://127.0.0.1:{}/shutdown", port);
             let _ = std::process::Command::new("curl")
                 .args(["-s", "-X", "POST", &url, "--max-time", "3"])
@@ -590,14 +707,14 @@ fn shutdown_sidecar() {
     }
 
     if !closed_gracefully {
-        log::info!("[DevHub] Sidecar no respondió, enviando SIGKILL...");
+        log::info!("[DevHub] Sidecar no respondio, enviando SIGKILL...");
         let mut sys = System::new_all();
         sys.refresh_all();
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             process.kill();
         }
     } else {
-        log::info!("[DevHub] Sidecar terminado limpiamente ✅");
+        log::info!("[DevHub] Sidecar terminado limpiamente.");
     }
 
     let _ = fs::remove_file(pid_file);
@@ -606,42 +723,45 @@ fn shutdown_sidecar() {
 
 fn spawn_sidecar(app: &tauri::AppHandle) {
     log::info!("[DevHub] Spawneando nuevo sidecar...");
+    // Own the strings for the lifetime of Command (avoid temporary Cow drops).
+    let home = devhub_dir().to_string_lossy().into_owned();
+    let runtime = if cfg!(debug_assertions) {
+        "development"
+    } else {
+        "production"
+    };
+    let sidecar_port_s = sidecar_port().to_string();
+    let ws_port_s = ws_port().to_string();
+    let tty_port_s = tty_port().to_string();
+    let node_path = devhub_dir()
+        .join("standalone")
+        .join("node_modules")
+        .to_string_lossy()
+        .into_owned();
+    let node_bin = std::env::var("DEVHUB_NODE_BIN").unwrap_or_default();
+    let npm_bin = std::env::var("DEVHUB_NPM_BIN").unwrap_or_default();
+    let allow_node24 = std::env::var("DEVHUB_ALLOW_NODE24").unwrap_or_default();
+
+    log::info!(
+        "[DevHub] Sidecar env DEVHUB_HOME={} SIDECAR_PORT={} DEVHUB_RUNTIME={}",
+        home,
+        sidecar_port_s,
+        runtime
+    );
+
     let sidecar_command = app
         .shell()
         .sidecar("devhub-server")
-        .expect("No se encontró el sidecar 'devhub-server'")
-        .env("DEVHUB_HOME", devhub_dir().to_string_lossy().as_ref())
-        .env(
-            "DEVHUB_RUNTIME",
-            if cfg!(debug_assertions) {
-                "development"
-            } else {
-                "production"
-            },
-        )
-        .env("SIDECAR_PORT", sidecar_port().to_string())
-        .env("DEVHUB_WS_PORT", ws_port().to_string())
-        .env("DEVHUB_TTY_PORT", tty_port().to_string())
-        .env(
-            "NODE_PATH",
-            devhub_dir()
-                .join("standalone")
-                .join("node_modules")
-                .to_string_lossy()
-                .as_ref(),
-        )
-        .env(
-            "DEVHUB_NODE_BIN",
-            std::env::var("DEVHUB_NODE_BIN").unwrap_or_default(),
-        )
-        .env(
-            "DEVHUB_NPM_BIN",
-            std::env::var("DEVHUB_NPM_BIN").unwrap_or_default(),
-        )
-        .env(
-            "DEVHUB_ALLOW_NODE24",
-            std::env::var("DEVHUB_ALLOW_NODE24").unwrap_or_default(),
-        );
+        .expect("No se encontro el sidecar 'devhub-server'")
+        .env("DEVHUB_HOME", &home)
+        .env("DEVHUB_RUNTIME", runtime)
+        .env("SIDECAR_PORT", &sidecar_port_s)
+        .env("DEVHUB_WS_PORT", &ws_port_s)
+        .env("DEVHUB_TTY_PORT", &tty_port_s)
+        .env("NODE_PATH", &node_path)
+        .env("DEVHUB_NODE_BIN", &node_bin)
+        .env("DEVHUB_NPM_BIN", &npm_bin)
+        .env("DEVHUB_ALLOW_NODE24", &allow_node24);
 
     let (mut rx, _child) = sidecar_command.spawn().expect("Error al lanzar el sidecar");
 
@@ -715,9 +835,11 @@ fn ensure_runtime_ready(app: &tauri::AppHandle) -> tauri::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_devhub_runtime_process, is_ready_http_status, nextjs_route_is_ready,
-        parse_http_status_code,
+        is_devhub_runtime_process, is_installed_app_port, is_production_devhub_home,
+        is_ready_http_status, nextjs_route_is_ready, parse_http_status_code,
+        INSTALLED_NEXT_PORT, INSTALLED_SIDECAR_PORT,
     };
+    use std::path::PathBuf;
 
     #[test]
     fn nextjs_readiness_parses_http_ok_status_line() {
@@ -755,6 +877,26 @@ mod tests {
             "MainThread",
             "/usr/bin/python /tmp/other-app.py"
         ));
+    }
+
+    #[test]
+    fn production_home_detection_distinguishes_dev_home() {
+        assert!(is_production_devhub_home(PathBuf::from("/home/u/.devhub").as_path()));
+        assert!(is_production_devhub_home(PathBuf::from(r"C:\Users\u\.devhub").as_path()));
+        assert!(!is_production_devhub_home(
+            PathBuf::from("/home/u/.devhub-dev").as_path()
+        ));
+        assert!(!is_production_devhub_home(
+            PathBuf::from(r"C:\Users\u\.devhub-dev").as_path()
+        ));
+    }
+
+    #[test]
+    fn installed_app_ports_are_reserved() {
+        assert!(is_installed_app_port(INSTALLED_SIDECAR_PORT));
+        assert!(is_installed_app_port(INSTALLED_NEXT_PORT));
+        assert!(!is_installed_app_port(4001));
+        assert!(!is_installed_app_port(3100));
     }
 }
 
@@ -984,6 +1126,10 @@ pub fn run() {
                 // users saw gray/empty anyway; frontend now owns a branded loading UI.
                 let _ = window.show();
                 let _ = window.unminimize();
+                // Prefer maximized at launch so layout fills the available work area
+                // without requiring a manual maximize click (tauri.conf maximized:true
+                // is primary; this reinforces it after show on Windows/Linux).
+                let _ = window.maximize();
                 let _ = window.set_focus();
 
                 if !next_ready {

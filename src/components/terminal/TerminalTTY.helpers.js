@@ -18,6 +18,10 @@ import {
   isOpenCodeLaunchCommand,
   shouldDiscardOpenCodeCatchupReplay,
 } from '@/lib/terminal/opencodeReadyMarker';
+import {
+  detectGrokReadyFromTerminalBuffer,
+  isGrokLaunchCommand,
+} from '@/lib/terminal/grokReadyMarker';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import { getPanelInitialCommandDispatch } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
@@ -240,6 +244,41 @@ export function reconcileOpenCodeTuiWheelReadiness({
   if (!footerInBuffer && !assumeTuiIfReattached) return false;
   if (tuiSessionActiveRef) tuiSessionActiveRef.current = true;
   if (tuiSessionFooterConfirmedRef) tuiSessionFooterConfirmedRef.current = true;
+  if (typeof setNativeWheelPassthrough === 'function') {
+    setNativeWheelPassthrough(true);
+  }
+  if (term) {
+    prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
+  }
+  return true;
+}
+
+/**
+ * After reload/reattach/cold first session, Grok scroll needs mouse modes rebound on
+ * xterm. Unlike OpenCode, do NOT mark grokTuiReady from launch command alone —
+ * early native wheel passthrough without DECSET 1000/1006 swallows the wheel.
+ * Scans scrollback when live PTY output has not re-fired detectGrokSessionFromOutput.
+ */
+export function reconcileGrokTuiWheelReadiness({
+  term,
+  initialCommand = '',
+  tuiSessionActiveRef,
+  isGrokSessionRef,
+  grokTuiReadyRef,
+  setNativeWheelPassthrough,
+  assumeTuiIfReattached = false,
+} = {}) {
+  const isGrok = isGrokTuiInitialCommand(initialCommand) || isGrokLaunchCommand(initialCommand);
+  if (!isGrok) return false;
+
+  const readyInBuffer = term ? detectGrokReadyFromTerminalBuffer(term) : false;
+  if (!readyInBuffer && !assumeTuiIfReattached) return false;
+
+  if (tuiSessionActiveRef) tuiSessionActiveRef.current = true;
+  if (isGrokSessionRef) isGrokSessionRef.current = true;
+  // Only promote to native passthrough when chrome is visible in the buffer, or when
+  // reattach assumes a live TUI and we re-bind mouse modes below.
+  if (grokTuiReadyRef) grokTuiReadyRef.current = true;
   if (typeof setNativeWheelPassthrough === 'function') {
     setNativeWheelPassthrough(true);
   }

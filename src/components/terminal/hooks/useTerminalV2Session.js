@@ -25,9 +25,13 @@ import {
   detectOpenCodeTuiReady,
   isOpenCodeLaunchCommand,
 } from '@/lib/terminal/opencodeReadyMarker';
-import { reconcileOpenCodeTuiWheelReadiness } from '@/components/terminal/TerminalTTY.helpers';
+import {
+  reconcileGrokTuiWheelReadiness,
+  reconcileOpenCodeTuiWheelReadiness,
+  detectGrokSessionFromOutput,
+  isGrokTuiInitialCommand,
+} from '@/components/terminal/TerminalTTY.helpers';
 import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
-import { detectGrokSessionFromOutput } from '@/components/terminal/TerminalTTY.helpers';
 
 export default function useTerminalV2Session({ ctxRef }) {
   const stopV2Session = useCallback(() => {
@@ -359,13 +363,15 @@ export default function useTerminalV2Session({ ctxRef }) {
         if (grokReady) {
           isGrokSessionRef.current = true;
           grokTuiReadyRef.current = true;
-          setNativeWheelPassthrough(false);
+          setNativeWheelPassthrough(true);
         }
         if (footerReady) {
           tuiSessionFooterConfirmedRef.current = true;
           setNativeWheelPassthrough(true);
           void notifyOpencodeReady(null, 'client-tui-footer');
         }
+        // Always re-bind mouse modes once chrome is live so cold-start wheel
+        // passthrough (and post-Ctrl+R reattach) can emit SGR 64/65.
         prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
       };
 
@@ -449,6 +455,16 @@ export default function useTerminalV2Session({ ctxRef }) {
                     setNativeWheelPassthrough,
                     assumeTuiIfReattached: true,
                   });
+                } else if (isGrokTuiInitialCommand(initialCommand)) {
+                  reconcileGrokTuiWheelReadiness({
+                    term: termRef.current,
+                    initialCommand,
+                    tuiSessionActiveRef,
+                    isGrokSessionRef,
+                    grokTuiReadyRef,
+                    setNativeWheelPassthrough,
+                    assumeTuiIfReattached: true,
+                  });
                 }
               } else {
                 tuiSessionActiveRef.current = false;
@@ -498,6 +514,14 @@ export default function useTerminalV2Session({ ctxRef }) {
                   tuiSessionFooterConfirmedRef,
                   setNativeWheelPassthrough,
                 });
+                reconcileGrokTuiWheelReadiness({
+                  term: termRef.current,
+                  initialCommand,
+                  tuiSessionActiveRef,
+                  isGrokSessionRef,
+                  grokTuiReadyRef,
+                  setNativeWheelPassthrough,
+                });
               }
               try {
                 socket.send(
@@ -534,6 +558,14 @@ export default function useTerminalV2Session({ ctxRef }) {
                 initialCommand,
                 tuiSessionActiveRef,
                 tuiSessionFooterConfirmedRef,
+                setNativeWheelPassthrough,
+              });
+              reconcileGrokTuiWheelReadiness({
+                term: termRef.current,
+                initialCommand,
+                tuiSessionActiveRef,
+                isGrokSessionRef,
+                grokTuiReadyRef,
                 setNativeWheelPassthrough,
               });
               sendResizeRef.current?.();

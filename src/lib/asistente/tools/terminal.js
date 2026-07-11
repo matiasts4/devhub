@@ -42,12 +42,13 @@ function requireParam(params, name) {
   return null;
 }
 
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi']);
+/** Keep in sync with agentLauncher.js and zedFastPath.js AGENT_PROGRAMS. */
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok']);
 
 export const terminalTool = {
   name: 'open_terminal',
   description:
-    'Open a new workspace terminal panel (same shell as manual split) and optionally run a command visibly. Maximum 6 terminal panels per workspace (OpenCode, Codex, Hermes, Kimi, shells, etc.). If the limit is reached, returns terminal_panel_limit_reached — use list_terminals and close_terminal instead of opening more. Pass program=opencode (or codex/hermes/kimi) only when the user explicitly asks to launch that agent TUI in the new visible terminal; the tool will build the proper launch command. Optional `name` reserves a displayName from the pool and is returned in the response so the model can immediately target the new panel via `name` (ZTT-003).',
+    'Open a new workspace terminal panel (same shell as manual split) and optionally run a command visibly. Maximum 6 terminal panels per workspace (OpenCode, Codex, Hermes, Kimi, Grok, shells, etc.). If the limit is reached, returns terminal_panel_limit_reached — use list_terminals and close_terminal instead of opening more. Pass program=opencode (or codex/hermes/kimi/grok) only when the user explicitly asks to launch that agent TUI in the new visible terminal; the tool will build the proper launch command. Optional `name` reserves a displayName from the pool and is returned in the response so the model can immediately target the new panel via `name` (ZTT-003).',
   parameters: {
     name: {
       type: 'string',
@@ -57,7 +58,7 @@ export const terminalTool = {
     program: {
       type: 'string',
       description:
-        'Agent program to launch in the terminal (opencode, codex, hermes, kimi). Only when user explicitly requests the TUI. The tool will compute the correct command.',
+        'Agent program to launch in the terminal (opencode, codex, hermes, kimi, grok). Only when user explicitly requests the TUI. The tool will compute the correct command.',
     },
     cwd: { type: 'string', description: 'Working directory' },
     command: {
@@ -185,6 +186,16 @@ export const terminalTool = {
     if (normalizedProgram) {
       result.program = normalizedProgram;
       result.note = `Will launch ${normalizedProgram} TUI in the visible panel.`;
+    }
+    // Optional reserved text for agent TUIs that cannot take --prompt (e.g. Grok).
+    // Client may inject after the panel is ready.
+    const bootstrap =
+      typeof params?.bootstrap_input === 'string' && params.bootstrap_input.trim()
+        ? params.bootstrap_input
+        : null;
+    if (bootstrap) {
+      result.bootstrap_input = bootstrap.endsWith('\n') ? bootstrap : `${bootstrap}\n`;
+      result.note = `${result.note || ''} bootstrap_input reserved for post-open inject.`.trim();
     }
     return result;
   },
@@ -466,7 +477,7 @@ export const executeInTerminalTool = {
     program: {
       type: 'string',
       description:
-        'Launch opencode/codex/hermes TUI in the named existing panel (builds launch command).',
+        'Launch opencode/codex/hermes/kimi/grok TUI in the named existing panel (builds launch command).',
     },
     confirm: {
       type: 'boolean',

@@ -55,6 +55,25 @@ describe('zedIntentRouter', () => {
     expect(hit.steps.length).toBeGreaterThanOrEqual(1);
   });
 
+  test('two-step open new terminal and open grok merges into one open_terminal', () => {
+    const hit = resolveZedIntent(
+      'abre una nueva terminal y en ella abre grok, coloca en grok hola probando',
+      ctx
+    );
+    expect(hit.tier).toBe('local-high');
+    const hasGrokOpen = hit.steps.some(
+      (s) =>
+        (s.tool === 'launch_agent_session' && s.input?.program === 'grok') ||
+        (s.tool === 'open_terminal' && s.input?.program === 'grok')
+    );
+    expect(hasGrokOpen).toBe(true);
+    // Empty open_terminal + agent launch should collapse to a single program open.
+    const emptyOpens = hit.steps.filter(
+      (s) => s.tool === 'open_terminal' && !s.input?.program && !s.input?.command
+    );
+    expect(emptyOpens).toHaveLength(0);
+  });
+
   test('maps spanish ejecuta to terminal-run local-high', () => {
     const hit = resolveZedIntent('ejecuta npm test', ctx);
     expect(hit.tier).toBe('local-high');

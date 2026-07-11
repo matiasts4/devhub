@@ -26,6 +26,7 @@ import {
   shouldDiscardHiddenOutputCatchup,
   terminalBufferHasRenderableContent,
   reconcileOpenCodeTuiWheelReadiness,
+  reconcileGrokTuiWheelReadiness,
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
 } from '@/components/terminal/TerminalTTY.helpers';
 import {
@@ -79,6 +80,8 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         tuiSessionActiveRef,
         tuiSessionFooterConfirmedRef,
         kimiReadyNotifiedRef,
+        isGrokSessionRef,
+        grokTuiReadyRef,
         setNativeWheelPassthrough,
         isEngineV2Ref,
         webglFallbackRef,
@@ -87,7 +90,6 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         viewportFitConfirmedRef,
         lastViewportReadyPostedRef,
         hasSentInitialCommand,
-        isGrokSessionRef,
         clearTimers,
         clearConnectDeferTimer,
         scheduleConnectDeferForce,
@@ -285,6 +287,17 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
           initialCommand,
           tuiSessionActiveRef,
           tuiSessionFooterConfirmedRef,
+          setNativeWheelPassthrough,
+        });
+      }
+
+      if (!grokTuiReadyRef?.current && termRef.current) {
+        reconcileGrokTuiWheelReadiness({
+          term: termRef.current,
+          initialCommand,
+          tuiSessionActiveRef,
+          isGrokSessionRef,
+          grokTuiReadyRef,
           setNativeWheelPassthrough,
         });
       }

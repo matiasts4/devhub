@@ -122,6 +122,52 @@ function looksLikeDevRepo(ptyPath) {
   return false;
 }
 
+function isDevhubDevelopmentHome(dirPath) {
+  if (!dirPath) return false;
+  const normalized = path.resolve(dirPath).replace(/\\/g, '/');
+  return normalized.endsWith('/.devhub-dev');
+}
+
+/**
+ * True when this wrapper is running from a `cargo`/`tauri dev` output tree.
+ * Packaged installs live under e.g. AppData\Local\DevHub or /usr/lib/DevHub — never
+ * under src-tauri/target/debug. standalone.zip is also present in debug bundles, so
+ * path detection is required even when the shell inherits production env vars.
+ */
+function isRunningFromTauriDevTree(scriptDir = __dirname) {
+  const normalized = path.resolve(scriptDir).replace(/\\/g, '/').toLowerCase();
+  if (/\/src-tauri\/target\/debug(\/|$)/.test(normalized)) return true;
+  // Cargo may place the wrapper next to the externalBin without "debug" in some layouts.
+  if (
+    /\/src-tauri\/target\//.test(normalized) &&
+    (looksLikeDevRepo(scriptDir) ||
+      looksLikeDevRepo(path.join(scriptDir, 'sidecar-backend', 'server.js')))
+  ) {
+    // Only treat *debug* profile as tauri-dev coexistence. target/release is used for
+    // local package smoke tests and should keep system-install behavior.
+    return /\/src-tauri\/target\/debug(\/|$)/.test(normalized);
+  }
+  return false;
+}
+
+/**
+ * Tauri dev spawns this wrapper with DEVHUB_RUNTIME=development and SIDECAR_PORT=4001,
+ * but the debug bundle still ships standalone.zip. Without this guard we mis-detect
+ * "system install", pre-kill :3400/:4000, and take down the installed app's PTY/Next.
+ *
+ * Also true when the wrapper lives under src-tauri/target/debug (path-based), so a
+ * polluted shell (DEVHUB_HOME=~/.devhub, SIDECAR_PORT=4000 from the installed app)
+ * cannot reclassify the debug sidecar as production.
+ */
+function isPackagedDevelopmentRuntime(env = process.env, scriptDir = __dirname) {
+  if (env.DEVHUB_RUNTIME === 'development') return true;
+  if (isDevhubDevelopmentHome(env.DEVHUB_HOME)) return true;
+  if (String(env.SIDECAR_PORT || '') === '4001') return true;
+  if (String(env.PORT || '') === '3100') return true;
+  if (isRunningFromTauriDevTree(scriptDir)) return true;
+  return false;
+}
+
 function extractZip(zipPath, destinationDir) {
   ensureDir(destinationDir);
   if (process.platform === 'win32') {
@@ -341,8 +387,12 @@ function collectListenerPids(port) {
  * arbitrary listeners (coexistence with installed app on :4000/:3400).
  */
 function killListenersOnPort(port, { devLayout = false } = {}) {
-  if (devLayout && (port === 4000 || port === 3400)) {
-    logStep(`Skipping pre-kill on reserved installed port :${port} (dev layout)`);
+  const devCoexistence =
+    devLayout ||
+    isPackagedDevelopmentRuntime() ||
+    String(process.env.SIDECAR_PORT || '') === '4001';
+  if (devCoexistence && (port === 4000 || port === 3400)) {
+    logStep(`Skipping pre-kill on reserved installed port :${port} (dev coexistence)`);
     return;
   }
   for (const pid of collectListenerPids(port)) {
@@ -362,12 +412,36 @@ function killListenersOnPort(port, { devLayout = false } = {}) {
   }
 }
 
+function resolveDevCoexistenceLayout(scriptDir, devhubDirFromEnv) {
+  const root = findProjectRoot(scriptDir) || findProjectRoot(process.cwd()) || process.cwd();
+  // Never let a polluted shell pin dev layout onto production ~/.devhub.
+  const devhubDir = isDevhubDevelopmentHome(devhubDirFromEnv)
+    ? path.resolve(devhubDirFromEnv)
+    : path.join(os.homedir(), '.devhub-dev');
+  ensureDir(devhubDir);
+  logStep(
+    'Development runtime (coexistence): PTY on dev ports only; not touching installed :3400/:4000'
+  );
+  return {
+    devhubDir,
+    isSystemInstall: 0,
+    nextPath: '',
+    ptyPath: path.join(root, 'sidecar-backend', 'server.js'),
+    installPrefix: '',
+  };
+}
+
 function detectLayout() {
   // Use the script's directory, not process.execPath. When the Rust launcher
   // spawns `node <install-dir>/resources/devhub-server.cjs`, execPath points
   // to the Node binary, so we would never find the packaged standalone.zip.
   const scriptDir = __dirname;
   const devhubDirFromEnv = process.env.DEVHUB_HOME || '';
+
+  if (isPackagedDevelopmentRuntime(process.env, scriptDir)) {
+    return resolveDevCoexistenceLayout(scriptDir, devhubDirFromEnv);
+  }
+
   let devhubDir = devhubDirFromEnv || path.join(os.homedir(), '.devhub');
   let isSystemInstall = 0;
   let nextPath = '';
@@ -388,9 +462,17 @@ function detectLayout() {
     // Only treat a bare PTY sidecar as a system install if it does not live
     // inside the local development repository.
     const validSystemPty = ptyCandidate && !looksLikeDevRepo(ptyCandidate);
+    // Debug trees ship standalone.zip for bundle parity; never treat as installed app.
+    if ((zipPath || validSystemPty) && isRunningFromTauriDevTree(scriptDir)) {
+      return resolveDevCoexistenceLayout(scriptDir, devhubDirFromEnv);
+    }
     if (zipPath || validSystemPty) {
       isSystemInstall = 1;
       installPrefix = path.dirname(zipPath || ptyCandidate);
+      // Explicit DEVHUB_HOME=.devhub-dev must never be rewritten to production home.
+      if (isDevhubDevelopmentHome(devhubDirFromEnv)) {
+        return resolveDevCoexistenceLayout(scriptDir, devhubDirFromEnv);
+      }
       devhubDir = path.join(os.homedir(), '.devhub');
       ensureDir(devhubDir);
 
@@ -567,4 +649,11 @@ if (require.main === module) {
   }
 }
 
-module.exports = { detectLayout, main };
+module.exports = {
+  detectLayout,
+  isDevhubDevelopmentHome,
+  isPackagedDevelopmentRuntime,
+  isRunningFromTauriDevTree,
+  killListenersOnPort,
+  main,
+};

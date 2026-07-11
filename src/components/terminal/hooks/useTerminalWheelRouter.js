@@ -100,10 +100,14 @@ export function createTerminalWheelHandler({
       }) &&
       lifecycle.isActivePanelRef?.current
     ) {
-      forwardTerminalWheelToXterm(activeTerm, event);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
+      // Only consume the event when xterm accepted the forward. Cold-start Grok
+      // often has ready=false (inject path) or missing term.element — fall through
+      // to synthetic SGR so the wheel is not swallowed with preventDefault alone.
+      if (forwardTerminalWheelToXterm(activeTerm, event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
     }
 
     const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession, isKimiSession });

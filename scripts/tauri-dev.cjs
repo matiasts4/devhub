@@ -1,29 +1,19 @@
 #!/usr/bin/env node
 
 const { spawnSync } = require('child_process');
-const os = require('os');
 const path = require('path');
+const { applyDevIsolationEnv, buildTauriEnv } = require('./tauri-cli.cjs');
 
-if (!process.env.DEVHUB_HOME) {
-  process.env.DEVHUB_HOME = path.join(os.homedir(), '.devhub-dev');
-}
-if (!process.env.DEVHUB_RUNTIME) {
-  process.env.DEVHUB_RUNTIME = 'development';
-}
-if (!process.env.SIDECAR_PORT) {
-  process.env.SIDECAR_PORT = '4001';
-}
-if (!process.env.DEVHUB_TTY_PORT) {
-  process.env.DEVHUB_TTY_PORT = '4078';
-}
-if (!process.env.DEVHUB_WS_PORT) {
-  process.env.DEVHUB_WS_PORT = '3402';
-}
+// Always force isolation (do not soft-default over production shell env).
+const env = buildTauriEnv({
+  env: applyDevIsolationEnv(process.env),
+  forDev: true,
+});
 
 const tauriCli = path.join(__dirname, 'tauri-cli.cjs');
 const result = spawnSync(process.execPath, [tauriCli, 'dev'], {
   stdio: 'inherit',
-  env: process.env,
+  env,
   cwd: path.join(__dirname, '..'),
 });
 
