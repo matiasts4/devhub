@@ -115,6 +115,7 @@ data/audit-trails/
 
 # Research externals vendored locally, not tracked
 research/external/
+.research/
 devhub-cli/node_modules/
 vendor/ponytail/
 
