@@ -3,7 +3,10 @@
  *
  * Supports:
  *   regions: whole_recent, bottom_lines(N), bottom_non_empty_lines(N), osc_title,
- *            after_last_prompt_marker, after_last_horizontal_rule, prompt_box_body
+ *            after_last_prompt_marker, before_current_prompt_marker,
+ *            whole_recent_without_current_prompt_marker, current_prompt_block_marker,
+ *            after_current_prompt_block_marker, prompt_box_body, above_prompt_box,
+ *            last_non_empty_above_prompt_box, after_last_horizontal_rule, osc_progress
  *   matchers: contains, regex, lineRegex
  *   logic: all, any, not
  *   conflict resolution: highest priority wins
@@ -105,6 +108,81 @@ function promptBoxBody(content) {
   return content.slice(Math.min(startOffset, content.length), Math.min(endOffset, content.length));
 }
 
+function codexPromptLine(line) {
+  return line === '›' || line.startsWith('› ');
+}
+
+function codexBlockMarkerLine(line) {
+  return (
+    line.startsWith('•') || line.startsWith('■') || line.startsWith('✗') || line.startsWith('✓')
+  );
+}
+
+function currentCodexPromptIndex(lines) {
+  const promptIndex = lines.findLastIndex((line) => codexPromptLine(line));
+  if (promptIndex === -1) return -1;
+  // If there is a block marker after the prompt, the prompt is not the "current"
+  // interactive one (Codex draws block markers above the prompt).
+  if (lines.slice(promptIndex + 1).some((line) => codexBlockMarkerLine(line))) {
+    return -1;
+  }
+  return promptIndex;
+}
+
+function beforeCurrentPromptMarker(content) {
+  const lines = content.split('\n');
+  const index = currentCodexPromptIndex(lines);
+  if (index === -1) return content;
+  const byteOffset = lines.slice(0, index).reduce((sum, line) => sum + line.length + 1, 0);
+  return content.slice(0, Math.min(byteOffset, content.length));
+}
+
+function wholeRecentWithoutCurrentPromptMarker(content) {
+  const lines = content.split('\n');
+  return currentCodexPromptIndex(lines) === -1 ? content : '';
+}
+
+function currentPromptBlockMarker(content) {
+  const lines = content.split('\n');
+  const promptIndex = currentCodexPromptIndex(lines);
+  if (promptIndex === -1) return null;
+  for (let i = promptIndex - 1; i >= 0; i--) {
+    if (codexBlockMarkerLine(lines[i])) return lines[i];
+  }
+  return null;
+}
+
+function afterCurrentPromptBlockMarker(content) {
+  const lines = content.split('\n');
+  const promptIndex = currentCodexPromptIndex(lines);
+  if (promptIndex === -1) return null;
+  let blockIndex = -1;
+  for (let i = promptIndex - 1; i >= 0; i--) {
+    if (codexBlockMarkerLine(lines[i])) {
+      blockIndex = i;
+      break;
+    }
+  }
+  if (blockIndex === -1) return null;
+  return sliceFromLineIndex(content, lines, blockIndex);
+}
+
+function abovePromptBox(content) {
+  const lines = content.split('\n');
+  const top = promptBoxTopBorderIndex(lines);
+  if (top === -1) return content;
+  const byteOffset = lines.slice(0, top).reduce((sum, line) => sum + line.length + 1, 0);
+  return content.slice(0, Math.min(byteOffset, content.length));
+}
+
+function lastNonEmptyLine(content) {
+  const lines = content.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim().length > 0) return lines[i];
+  }
+  return '';
+}
+
 export function getRegion(input, spec) {
   const trimmed = spec.trim();
 
@@ -118,12 +196,28 @@ export function getRegion(input, spec) {
       return content;
     case 'after_last_prompt_marker':
       return afterLastPromptMarker(content);
+    case 'before_current_prompt_marker':
+      return beforeCurrentPromptMarker(content);
+    case 'whole_recent_without_current_prompt_marker':
+      return wholeRecentWithoutCurrentPromptMarker(content);
+    case 'current_prompt_block_marker': {
+      const marker = currentPromptBlockMarker(content);
+      return marker === null ? '' : marker;
+    }
+    case 'after_current_prompt_block_marker': {
+      const afterMarker = afterCurrentPromptBlockMarker(content);
+      return afterMarker === null ? '' : afterMarker;
+    }
     case 'after_last_horizontal_rule':
       return afterLastHorizontalRule(content);
     case 'prompt_box_body': {
       const body = promptBoxBody(content);
       return body === null ? '' : body;
     }
+    case 'above_prompt_box':
+      return abovePromptBox(content);
+    case 'last_non_empty_above_prompt_box':
+      return lastNonEmptyLine(abovePromptBox(content));
     default: {
       const parsed = parseRegionSpec(trimmed);
       if (parsed) {

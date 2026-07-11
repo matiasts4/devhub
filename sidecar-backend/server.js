@@ -152,6 +152,7 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     createdAt: Date.now(),
     lastSeenAt: new Date().toISOString(),
     lastActivityAt: Date.now(),
+    lastOutputAt: Date.now(),
     mode: 'shell',
     historyEnabled: true,
     opencodeSessionId: null,
@@ -181,6 +182,7 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     const now = Date.now();
     session.lastSeenAt = new Date().toISOString();
     session.lastActivityAt = now;
+    session.lastOutputAt = now;
 
     processOscTitle(session, data);
     processOscProgress(session, data);
@@ -310,6 +312,7 @@ app.get('/sessions/:id', (req, res) => {
     socketCount: session.clients?.size || 0,
     createdAt: session.createdAt || null,
     lastActivityAt: session.lastActivityAt || null,
+    lastOutputAt: session.lastOutputAt || null,
     lastSeenAt: session.lastSeenAt || null,
     cwd: session.cwd || null,
     shell: session.ptyProcess?.shell || null,

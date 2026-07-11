@@ -62,21 +62,24 @@ export function normalizePanelStatus(status) {
 }
 
 /**
- * Determine whether a PTY session has recent activity.
+ * Determine whether a PTY session has recent output from the child process.
+ *
+ * Uses `lastOutputAt` when available so user keystrokes (which update
+ * `lastActivityAt`) do not count as agent work. Falls back to `lastActivityAt`
+ * for backward compatibility with older session snapshots.
  *
  * @param {object} options
- * @param {string|null} options.lastActivityAt - ISO timestamp of last PTY input/output
+ * @param {string|null} options.lastOutputAt - ISO timestamp of last PTY output
+ * @param {string|null} options.lastActivityAt - ISO timestamp of last PTY input/output (legacy)
  * @param {number} [options.thresholdMs=3000] - activity freshness window
  */
 export function isTerminalRecentlyActive(activity, thresholdMs = DEFAULT_ACTIVITY_THRESHOLD_MS) {
-  const lastActivityAt = activity && typeof activity === 'object' ? activity.lastActivityAt : null;
-  if (!lastActivityAt) return false;
-  const last = new Date(lastActivityAt).getTime();
+  if (!activity || typeof activity !== 'object') return false;
+  const timestamp = activity.lastOutputAt || activity.lastActivityAt || null;
+  if (!timestamp) return false;
+  const last = new Date(timestamp).getTime();
   if (Number.isNaN(last)) return false;
-  const effectiveThreshold =
-    activity && typeof activity === 'object' && activity.thresholdMs != null
-      ? activity.thresholdMs
-      : thresholdMs;
+  const effectiveThreshold = activity.thresholdMs != null ? activity.thresholdMs : thresholdMs;
   return (
     Date.now() - last <= Math.max(500, Number(effectiveThreshold) || DEFAULT_ACTIVITY_THRESHOLD_MS)
   );
@@ -119,8 +122,7 @@ export function derivePanelStatus({
   const isAgentPanel = Boolean(
     terminalActivity?.agentType || agentRun || AGENT_TUI_PATTERN.test(String(initialCommand || ''))
   );
-  const hasRecentPtyActivity =
-    terminalActivity?.isActive || isTerminalRecentlyActive(terminalActivity);
+  const hasRecentPtyOutput = isTerminalRecentlyActive(terminalActivity);
 
   const agentTuiStateAgeMs = terminalActivity?.agentTuiStateAgeMs ?? null;
   const agentTuiStateFresh =
@@ -140,16 +142,15 @@ export function derivePanelStatus({
     return PANEL_STATUS.IDLE;
   }
 
-  const semanticBlocksByteFallback =
-    agentTuiStateFresh && semanticState && semanticState !== 'unknown';
+  const semanticStateKnown = agentTuiStateFresh && semanticState && semanticState !== 'unknown';
 
-  if (!semanticBlocksByteFallback && liveActivity === 'running') {
-    return PANEL_STATUS.RUNNING;
-  }
+  // Byte-level WebSocket activity is only a liveness signal, not evidence of
+  // real agent work. herdr-style manifests and API status are the authority.
   if (
-    !semanticBlocksByteFallback &&
+    !semanticStateKnown &&
     liveActivity === 'idle' &&
-    (liveActivityAgeMs === null || liveActivityAgeMs <= LIVE_ACTIVITY_FALLBACK_MS)
+    (liveActivityAgeMs === null || liveActivityAgeMs <= LIVE_ACTIVITY_FALLBACK_MS) &&
+    isAgentPanel
   ) {
     return PANEL_STATUS.IDLE;
   }
@@ -163,22 +164,25 @@ export function derivePanelStatus({
     return PANEL_STATUS.WAITING;
   }
 
-  // Real-time PTY activity means the agent is actually doing work right now.
-  if (hasRecentPtyActivity && isAgentPanel) {
-    return PANEL_STATUS.RUNNING;
-  }
-
-  // The PTY session is alive and associated with a known agent TUI → idle (waiting for input/work).
-  if (terminalActivity?.alive && isAgentPanel) {
-    return PANEL_STATUS.IDLE;
-  }
-
-  // API terminal statuses apply when PTY is not telling us otherwise.
+  // API terminal statuses (agenthub) are authoritative for the agent run state.
+  // They win over generic PTY activity so that, e.g., a completed run is not
+  // resurrected to running just because the user typed in the terminal.
   if (apiStatus) {
     const normalizedApi = normalizePanelStatus(apiStatus);
     if (normalizedApi !== PANEL_STATUS.UNKNOWN) {
       return normalizedApi;
     }
+  }
+
+  // Recent PTY output on an agent panel means the connection is alive, but it
+  // does not prove the agent is working — the manifest would have said so above.
+  if (hasRecentPtyOutput && isAgentPanel) {
+    return PANEL_STATUS.IDLE;
+  }
+
+  // The PTY session is alive and associated with a known agent TUI → idle.
+  if (terminalActivity?.alive && isAgentPanel) {
+    return PANEL_STATUS.IDLE;
   }
 
   // Transitional fallback: we know this is an agent panel but haven't received PTY evidence yet.

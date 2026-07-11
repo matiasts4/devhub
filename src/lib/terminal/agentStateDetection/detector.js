@@ -72,6 +72,15 @@ const UNKNOWN_DETECTION = {
   matchedRule: null,
 };
 
+const IDLE_FALLBACK_DETECTION = {
+  state: 'idle',
+  skipStateUpdate: false,
+  visibleIdle: false,
+  visibleWorking: false,
+  visibleBlocker: false,
+  matchedRule: null,
+};
+
 /**
  * Detect the agent state from terminal output.
  *
@@ -90,9 +99,18 @@ export function detectAgentState(agentType, screen, options = {}) {
     return UNKNOWN_DETECTION;
   }
 
-  return evaluateManifest(manifest, {
+  const detected = evaluateManifest(manifest, {
     screen: screen || '',
     oscTitle: options.oscTitle || '',
     oscProgress: options.oscProgress || '',
   });
+
+  // Known agent with no manifest match → assume idle, not unknown. This keeps
+  // generic PTY activity (including user keystrokes) from being interpreted as
+  // "running" just because the buffer did not match a working/blocked rule.
+  if (detected.state === 'unknown') {
+    return IDLE_FALLBACK_DETECTION;
+  }
+
+  return detected;
 }

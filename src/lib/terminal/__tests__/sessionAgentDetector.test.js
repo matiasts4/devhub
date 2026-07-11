@@ -34,4 +34,14 @@ describe('sessionAgentDetector', () => {
     expect(a.agentTuiState).toBe(b.agentTuiState);
     expect(a.agentTuiStateAt).toBe(b.agentTuiStateAt);
   });
+
+  test('known agent without manifest match falls back to idle', () => {
+    const session = ensureAgentDetectionSession({ agentType: 'kimi', title: '' });
+    const result = ingestAgentDetectionFromFilteredOutput(
+      session,
+      'plain unrelated output with no agent chrome',
+      3000
+    );
+    expect(result.agentTuiState).toBe('idle');
+  });
 });

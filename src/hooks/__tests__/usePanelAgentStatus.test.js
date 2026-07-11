@@ -284,10 +284,10 @@ describe('usePanelAgentStatus', () => {
     });
   });
 
-  test('updates status to running from recent PTY activity', async () => {
+  test('updates status to idle from recent PTY output without a running manifest', async () => {
     fetchSpy.mockResolvedValue({
       ok: true,
-      json: async () => ({ lastActivityAt: new Date().toISOString() }),
+      json: async () => ({ lastOutputAt: new Date().toISOString() }),
     });
 
     const view = await renderIntoDom(
@@ -305,10 +305,10 @@ describe('usePanelAgentStatus', () => {
 
     await waitFor(() => {
       expect(view.container.querySelector('[data-testid="status"]')?.textContent).toBe(
-        PANEL_STATUS.RUNNING
+        PANEL_STATUS.IDLE
       );
     });
-    expect(view.container.querySelector('[data-testid="pulsing"]')?.textContent).toBe('true');
+    expect(view.container.querySelector('[data-testid="pulsing"]')?.textContent).toBe('false');
   });
 
   test('uses terminal agentType when initialCommand is unavailable', async () => {
@@ -341,12 +341,12 @@ describe('usePanelAgentStatus', () => {
     });
   });
 
-  test('prioritizes recent PTY activity over completed API status', async () => {
+  test('lets completed API status win over recent PTY output', async () => {
     fetchSpy.mockImplementation((url) => {
       const isAgentHub = typeof url === 'string' && url.includes('/api/agenthub/');
       const response = isAgentHub
         ? { status: 'completed' }
-        : { lastActivityAt: new Date().toISOString(), alive: true, agentType: 'kimi' };
+        : { lastOutputAt: new Date().toISOString(), alive: true, agentType: 'kimi' };
       return Promise.resolve({
         ok: true,
         json: async () => response,
@@ -368,7 +368,7 @@ describe('usePanelAgentStatus', () => {
 
     await waitFor(() => {
       expect(view.container.querySelector('[data-testid="status"]')?.textContent).toBe(
-        PANEL_STATUS.RUNNING
+        PANEL_STATUS.COMPLETED
       );
     });
   });

@@ -189,6 +189,7 @@ function writeCrashDump(session, exitCode, signal, reason = 'unknown') {
       createdAt: session.createdAt,
       lastSeenAt: session.lastSeenAt,
       lastActivityAt: session.lastActivityAt,
+      lastOutputAt: session.lastOutputAt,
       socketCount: session.sockets?.size ?? 0,
       restored: session.restored,
       title: session.title,
@@ -935,6 +936,7 @@ export function createSession({
     createdAt: now,
     lastSeenAt: now,
     lastActivityAt: Date.now(),
+    lastOutputAt: Date.now(),
     cwd: resolvedCwd,
     shell: resolvedShell,
     title: null,
@@ -1060,6 +1062,7 @@ function sanitizeHistoryReplay(session, history) {
 function handleSessionOutput(sessions, session, chunk) {
   session.lastSeenAt = new Date().toISOString();
   session.lastActivityAt = Date.now();
+  session.lastOutputAt = Date.now();
   _debouncedSave(sessions, session);
 
   // Capture OSC 0/2 title changes directly from PTY output so we do not need
@@ -1748,6 +1751,7 @@ export async function ensureTTYServer() {
         createdAt: now,
         lastSeenAt: now,
         lastActivityAt: Date.now(),
+        lastOutputAt: Date.now(),
         id: terminalId,
         cwd,
         shell,
@@ -2185,6 +2189,7 @@ export function getTTYSessionsSnapshot() {
       socketCount: session.sockets?.size || 0,
       createdAt: session.createdAt || null,
       lastActivityAt: session.lastActivityAt || null,
+      lastOutputAt: session.lastOutputAt || null,
       lastSeenAt: session.lastSeenAt || null,
       cwd: session.cwd || null,
       shell: session.shell || null,

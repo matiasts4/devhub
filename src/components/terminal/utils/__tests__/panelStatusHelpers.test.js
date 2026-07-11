@@ -139,7 +139,7 @@ describe('panelStatusHelpers', () => {
       ).toBe(PANEL_STATUS.IDLE);
     });
 
-    test('recent PTY activity makes agent TUI running', () => {
+    test('recent PTY output on agent TUI without semantic state stays idle', () => {
       expect(
         derivePanelStatus({
           connectionState: 'connected',
@@ -147,11 +147,30 @@ describe('panelStatusHelpers', () => {
           initialCommand: 'kimi',
           apiStatus: null,
           terminalActivity: {
-            lastActivityAt: new Date().toISOString(),
+            lastOutputAt: new Date().toISOString(),
             isActive: true,
+            alive: true,
           },
         })
-      ).toBe(PANEL_STATUS.RUNNING);
+      ).toBe(PANEL_STATUS.IDLE);
+    });
+
+    test('user keystrokes do not mark agent TUI as running', () => {
+      expect(
+        derivePanelStatus({
+          connectionState: 'connected',
+          agentRun: null,
+          initialCommand: 'kimi',
+          apiStatus: null,
+          terminalActivity: {
+            // Only lastActivityAt (updated on input) and no lastOutputAt
+            lastActivityAt: new Date().toISOString(),
+            lastOutputAt: new Date(Date.now() - 30000).toISOString(),
+            isActive: false,
+            alive: true,
+          },
+        })
+      ).toBe(PANEL_STATUS.IDLE);
     });
 
     test('fresh semantic idle beats liveActivity running (spinner fallback)', () => {
@@ -224,7 +243,7 @@ describe('panelStatusHelpers', () => {
       ).toBe(PANEL_STATUS.UNKNOWN);
     });
 
-    test('recent PTY activity wins over completed api status', () => {
+    test('completed api status wins over recent generic PTY activity', () => {
       expect(
         derivePanelStatus({
           connectionState: 'connected',
@@ -232,11 +251,12 @@ describe('panelStatusHelpers', () => {
           initialCommand: 'kimi',
           apiStatus: 'completed',
           terminalActivity: {
-            lastActivityAt: new Date().toISOString(),
+            lastOutputAt: new Date().toISOString(),
             isActive: true,
+            alive: true,
           },
         })
-      ).toBe(PANEL_STATUS.RUNNING);
+      ).toBe(PANEL_STATUS.COMPLETED);
     });
 
     test('api status is used when PTY activity is absent', () => {

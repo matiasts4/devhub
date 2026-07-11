@@ -19,12 +19,12 @@ import {
 const DEFAULT_POLLING_INTERVAL_MS = 6000;
 const FETCH_TIMEOUT_MS = 3000;
 
-function resolveApiSessionId(agentRun, initialCommand, terminalActivity) {
+function resolveApiSessionId(agentRun, initialCommand, agentSessionId) {
   if (agentRun) {
     return agentRun.sessionId || agentRun.runId || null;
   }
-  if (terminalActivity?.agentSessionId) {
-    return terminalActivity.agentSessionId;
+  if (agentSessionId) {
+    return agentSessionId;
   }
   return extractOpenCodeSessionId(initialCommand);
 }
@@ -120,7 +120,11 @@ export default function usePanelAgentStatus(
   useEffect(() => {
     if (!enabled || !panelId) return undefined;
 
-    const sessionId = resolveApiSessionId(agentRun, initialCommand, terminalActivity);
+    const sessionId = resolveApiSessionId(
+      agentRun,
+      initialCommand,
+      terminalActivity?.agentSessionId
+    );
     if (!sessionId) {
       setApiStatus(null);
       return undefined;
@@ -227,12 +231,15 @@ export default function usePanelAgentStatus(
         if (cancelled || requestId !== tickRequestIdRef.current) return;
 
         const lastActivityAt = data?.lastActivityAt || null;
-        const lastActivityTime = lastActivityAt ? new Date(lastActivityAt).getTime() : 0;
-        const lastActivityAgoMs = lastActivityTime ? Date.now() - lastActivityTime : null;
+        const lastOutputAt = data?.lastOutputAt || null;
+        const activeTimestamp = lastOutputAt || lastActivityAt;
+        const activeTime = activeTimestamp ? new Date(activeTimestamp).getTime() : 0;
+        const lastActivityAgoMs = activeTime ? Date.now() - activeTime : null;
 
         const agentTuiStateAt = data?.agentTuiStateAt || null;
         setTerminalActivity({
           lastActivityAt,
+          lastOutputAt,
           lastActivityAgoMs,
           isActive: lastActivityAgoMs !== null && lastActivityAgoMs <= 3000,
           alive: Boolean(data?.alive),

@@ -46,9 +46,9 @@ describe('agentStateDetection', () => {
       expect(result.visibleBlocker).toBe(false);
     });
 
-    test('returns unknown when no rule matches', () => {
+    test('returns idle fallback for known agents with no rule match', () => {
       const result = detectAgentState('kimi', 'plain unrelated output');
-      expect(result.state).toBe('unknown');
+      expect(result.state).toBe('idle');
     });
 
     test('kimi detects approval blocker', () => {
