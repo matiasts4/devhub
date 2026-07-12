@@ -1,3 +1,19 @@
+// buildSidecarSpawnConfig branches on os.platform() and probes `tmux -V`.
+// Pin both to the Linux+tmux contract so the test is deterministic on any
+// host (on Windows the real code disables tmux entirely — that branch is
+// covered implicitly by production, not asserted here).
+jest.mock('os', () => {
+  const actual = jest.requireActual('os');
+  return { ...actual, platform: () => 'linux' };
+});
+jest.mock('child_process', () => {
+  const actual = jest.requireActual('child_process');
+  return {
+    ...actual,
+    spawnSync: (cmd, ...rest) => (cmd === 'tmux' ? { status: 0 } : actual.spawnSync(cmd, ...rest)),
+  };
+});
+
 const {
   buildSidecarSpawnConfig,
   buildSwarmTmuxSessionName,

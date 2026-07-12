@@ -57,13 +57,19 @@ describe('sidecar session transport contract', () => {
     expect(detectOpenCodeTuiReady('still loading...')).toBe(false);
   });
 
-  test('filters shell terminal response noise for shell sessions only', () => {
-    const session = { mode: 'shell', historyEnabled: true };
+  test('filters terminal response noise in all session modes', () => {
+    // Contract change (deliberate): filtering used to be shell-only, which
+    // leaked "1;2c0;276;0c" garbage into opencode/hermes TUI panels on focus.
+    // The regex only matches terminal response sequences, so it is safe to
+    // apply in tui mode too. See filterTerminalOutputForSession in
+    // sidecar-backend/sessionTransport.js.
     const noisy = 'prompt\u001b[?1;2c\u001b[>0;276;0c ok';
 
-    expect(filterTerminalOutputForSession(session, noisy)).toBe('prompt ok');
+    expect(filterTerminalOutputForSession({ mode: 'shell', historyEnabled: true }, noisy)).toBe(
+      'prompt ok'
+    );
     expect(filterTerminalOutputForSession({ mode: 'tui', historyEnabled: false }, noisy)).toBe(
-      noisy
+      'prompt ok'
     );
   });
 
@@ -80,7 +86,11 @@ describe('sidecar session transport contract', () => {
     ).toBe('');
   });
 
-  test('switches to tui mode conservatively for opencode and hermes commands', () => {
+  test('switches to tui mode per the shared agentTuiMetadata contract', () => {
+    // Detection delegates to sidecar-backend/agentTuiMetadata.js (mirror of
+    // src/lib/terminal/agentTuiMetadata.shared.js) which uses word-boundary
+    // matching: any input containing the standalone word "opencode" (including
+    // "opencode-docs", since "-" is a boundary) flips the session to tui.
     const shellSession = {
       mode: 'shell',
       historyEnabled: true,
@@ -99,7 +109,7 @@ describe('sidecar session transport contract', () => {
       history: ['shell'],
       pendingInput: '',
     };
-    updateSessionModeFromInput(untouchedSession, 'echo opencode-docs\r');
+    updateSessionModeFromInput(untouchedSession, 'git status\r');
 
     expect(untouchedSession.mode).toBe('shell');
     expect(untouchedSession.historyEnabled).toBe(true);

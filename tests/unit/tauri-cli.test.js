@@ -13,8 +13,10 @@ describe('tauri cli wrapper', () => {
 
   test('package scripts route tauri commands through the wrapper', () => {
     expect(packageJson.scripts.tauri).toBe('node scripts/tauri-cli.cjs');
-    expect(packageJson.scripts['tauri:dev']).toBe('npm run tauri -- dev');
-    expect(packageJson.scripts['tauri:build']).toBe('npm run generate-icon && npm run tauri -- build');
+    expect(packageJson.scripts['tauri:dev']).toBe('node scripts/tauri-dev.cjs');
+    expect(packageJson.scripts['tauri:build']).toBe(
+      'node scripts/generate-icon-if-needed.cjs && npm run build:sidecar && node scripts/tauri-cli.cjs build'
+    );
   });
 
   test('buildTauriEnv prefers system pkg-config on linux when PATH pkg-config misses required webkit packages', () => {
@@ -117,11 +119,7 @@ describe('tauri cli wrapper', () => {
       devUrlReady: true,
     });
 
-    expect(args).toEqual([
-      'dev',
-      '-c',
-      JSON.stringify({ build: { beforeDevCommand: '' } }),
-    ]);
+    expect(args).toEqual(['dev', '-c', JSON.stringify({ build: { beforeDevCommand: '' } })]);
   });
 
   test('buildDevReadyProbeUrl targets a stable JSON readiness route', () => {
@@ -143,18 +141,65 @@ describe('tauri cli wrapper', () => {
     expect(args).toEqual(['dev']);
   });
 
+  test('stopStaleWindowsDevSidecar kills only the exact debug sidecar process tree', () => {
+    const spawnSync = jest.fn(() => ({
+      status: 0,
+      stdout: '8712,9000',
+      stderr: '',
+    }));
+    const sidecarPath = 'D:\\devhub\\src-tauri\\target\\debug\\devhub-server.exe';
+
+    expect(
+      api.stopStaleWindowsDevSidecar({
+        platform: 'win32',
+        sidecarPath,
+        existsSync: jest.fn(() => true),
+        spawnSync,
+      })
+    ).toEqual([8712, 9000]);
+
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    expect(spawnSync).toHaveBeenCalledWith(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        expect.stringMatching(/Get-Process.+devhub-server.+taskkill\.exe.+\/T \/F/),
+      ],
+      expect.objectContaining({ encoding: 'utf8', windowsHide: true })
+    );
+    expect(spawnSync.mock.calls[0][1][3]).toContain(sidecarPath);
+    expect(spawnSync.mock.calls[0][1][3]).toContain('Remove-Item -LiteralPath $target -Force');
+  });
+
+  test('stopStaleWindowsDevSidecar is a no-op outside Windows', () => {
+    const spawnSync = jest.fn();
+    expect(
+      api.stopStaleWindowsDevSidecar({
+        platform: 'linux',
+        existsSync: jest.fn(() => true),
+        spawnSync,
+      })
+    ).toEqual([]);
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
   test('runTauriCli injects a config override instead of rerunning beforeDevCommand when devUrl already responds', () => {
     const spawnSync = jest
       .fn()
       .mockReturnValueOnce({ status: 0 })
       .mockReturnValueOnce({ status: 0 });
+    const stopStaleDevSidecar = jest.fn(() => []);
 
     api.runTauriCli({
       args: ['dev'],
       env: { PATH: '/usr/bin', PKG_CONFIG: '/usr/bin/pkg-config' },
       spawnSync,
+      stopStaleDevSidecar,
     });
 
+    expect(stopStaleDevSidecar).toHaveBeenCalledWith({ spawnSync });
     expect(spawnSync).toHaveBeenNthCalledWith(
       1,
       process.execPath,

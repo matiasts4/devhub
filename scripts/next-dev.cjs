@@ -6,6 +6,7 @@ const path = require('path');
 
 // Always isolate from the installed app — do not inherit ~/.devhub / :4000 / NODE_ENV=production.
 process.env.DEVHUB_HOME = path.join(os.homedir(), '.devhub-dev');
+process.env.DEVHUB_DB_PATH = path.join(__dirname, '..', 'data', 'devhub.db');
 process.env.DEVHUB_RUNTIME = 'development';
 process.env.DEVHUB_TTY_PORT = '4078';
 process.env.DEVHUB_WS_PORT = '3402';

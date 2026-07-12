@@ -51,6 +51,7 @@ assert.strictEqual(
 
 const isolated = applyDevIsolationEnv(polluted);
 assert.strictEqual(isolated.DEVHUB_HOME, DEV_ISOLATION.DEVHUB_HOME);
+assert.strictEqual(isolated.DEVHUB_DB_PATH, DEV_ISOLATION.DEVHUB_DB_PATH);
 assert.strictEqual(isolated.SIDECAR_PORT, '4001');
 assert.strictEqual(isolated.DEVHUB_RUNTIME, 'development');
 assert.strictEqual(isolated.NODE_ENV, 'development');

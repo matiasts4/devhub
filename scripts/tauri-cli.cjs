@@ -12,8 +12,17 @@ const TAURI_CONF_PATH = path.join(__dirname, '..', 'src-tauri', 'tauri.conf.json
 const DEFAULT_LINUX_PKG_CONFIG_PATHS = ['/usr/lib/x86_64-linux-gnu/pkgconfig', '/usr/share/pkgconfig'];
 const DEV_URL_READY_PATH = '/api/agenthub/config';
 const PACKAGING_SIDECAR_WRAPPER = path.join(__dirname, '..', 'packaging', 'devhub-server.cjs');
+const WINDOWS_DEBUG_SIDECAR_PATH = path.join(
+  __dirname,
+  '..',
+  'src-tauri',
+  'target',
+  'debug',
+  'devhub-server.exe'
+);
 const DEV_ISOLATION = {
   DEVHUB_HOME: path.join(os.homedir(), '.devhub-dev'),
+  DEVHUB_DB_PATH: path.join(__dirname, '..', 'data', 'devhub.db'),
   DEVHUB_RUNTIME: 'development',
   SIDECAR_PORT: '4001',
   DEVHUB_TTY_PORT: '4078',
@@ -108,6 +117,51 @@ function syncDevhubServerWrapperForDev({
   }
 }
 
+/**
+ * A crashed/closed Tauri dev process can leave its sidecar tree alive or its
+ * copied executable temporarily locked. Match by the exact debug path, kill
+ * that tree, then remove the generated copy with retries. Installed DevHub
+ * binaries are never matched.
+ */
+function stopStaleWindowsDevSidecar({
+  platform = process.platform,
+  sidecarPath = WINDOWS_DEBUG_SIDECAR_PATH,
+  existsSync = fs.existsSync,
+  spawnSync: spawn = spawnSync,
+} = {}) {
+  if (platform !== 'win32' || !existsSync(sidecarPath)) {
+    return [];
+  }
+
+  const targetLiteral = `'${String(sidecarPath).replace(/'/g, "''")}'`;
+  const script = [
+    `$target = [System.IO.Path]::GetFullPath(${targetLiteral})`,
+    "$processIds = @(Get-Process -Name 'devhub-server' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ([System.IO.Path]::GetFullPath($_.Path) -ieq $target) } | Select-Object -ExpandProperty Id)",
+    'foreach ($processId in $processIds) { & taskkill.exe /PID $processId /T /F | Out-Null }',
+    'for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $target); $attempt += 1) { try { Remove-Item -LiteralPath $target -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 100 } }',
+    'if (Test-Path -LiteralPath $target) { [Console]::Error.Write("debug sidecar remained locked: $target"); exit 1 }',
+    'if ($processIds.Count -gt 0) { [Console]::Out.Write(($processIds -join ",")) }',
+    'exit 0',
+  ].join('; ');
+  const result = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `[tauri-cli] Failed to stop stale debug sidecar: ${
+        result.error?.message || String(result.stderr || `exit ${result.status}`)
+      }`
+    );
+  }
+
+  return String(result.stdout || '')
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+}
+
 function buildTauriEnv({
   env = process.env,
   platform = process.platform,
@@ -178,11 +232,11 @@ function isDevUrlReady(url, { spawnSync: spawn = spawnSync } = {}) {
     'const target = process.argv[1];',
     'const parsed = new URL(target);',
     "const client = parsed.protocol === 'https:' ? require('https') : require('http');",
-    'const req = client.request(target, { method: \"GET\", timeout: 500 }, (res) => {',
+    "const req = client.request(target, { method: 'GET', timeout: 500 }, (res) => {",
     '  process.exit(res.statusCode >= 200 && res.statusCode < 400 ? 0 : 1);',
     '});',
-    'req.on(\"timeout\", () => { req.destroy(); process.exit(1); });',
-    'req.on(\"error\", () => process.exit(1));',
+    "req.on('timeout', () => { req.destroy(); process.exit(1); });",
+    "req.on('error', () => process.exit(1));",
     'req.end();',
   ].join(' ');
 
@@ -281,6 +335,7 @@ function runTauriCli({
   args = normalizeTauriCliArgs(process.argv.slice(2)),
   env,
   spawnSync: spawn = spawnSync,
+  stopStaleDevSidecar = stopStaleWindowsDevSidecar,
 } = {}) {
   const isDev = args[0] === 'dev';
   const resolvedEnv = env || buildTauriEnv({ forDev: isDev });
@@ -296,6 +351,12 @@ function runTauriCli({
     syncDevhubServerSidecar();
   }
   if (isDev) {
+    const stoppedPids = stopStaleDevSidecar({ spawnSync: spawn });
+    if (stoppedPids.length > 0) {
+      console.log(
+        `[tauri-cli] Stopped stale Windows debug sidecar tree (PID ${stoppedPids.join(', ')})`
+      );
+    }
     syncDevhubServerWrapperForDev();
     console.log(
       `[tauri-cli] Dev isolation: DEVHUB_HOME=${resolvedEnv.DEVHUB_HOME} SIDECAR_PORT=${resolvedEnv.SIDECAR_PORT} DEVHUB_RUNTIME=${resolvedEnv.DEVHUB_RUNTIME}`
@@ -353,8 +414,10 @@ module.exports = {
   resolveTauriCliArgs,
   runTauriCli,
   shouldPreferSystemPkgConfig,
+  stopStaleWindowsDevSidecar,
   syncDevhubServerWrapperForDev,
   SYSTEM_PKG_CONFIG,
   TAURI_CLI_ENTRY,
   TAURI_CONF_PATH,
+  WINDOWS_DEBUG_SIDECAR_PATH,
 };

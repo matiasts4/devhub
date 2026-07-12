@@ -1,3 +1,5 @@
+const os = require('os');
+const path = require('path');
 const { resolveSidecarSessionCwd } = require('../../sidecar-backend/sessionCwd');
 
 /**
@@ -9,9 +11,12 @@ const { resolveSidecarSessionCwd } = require('../../sidecar-backend/sessionCwd')
  *
  * Fix: sessionCwd.js now requires ./cwdGuard.js (local sibling), which is present in both
  * dev and packaged install paths.
+ *
+ * Paths below are built with path/os so assertions hold on both POSIX and Windows
+ * (resolveTerminalSpawnCwd normalizes via path.resolve, so '/tmp' becomes 'D:\tmp' on win32).
  */
 describe('sidecar cwd safeguard', () => {
-  test('.sessionCwd loads without ../src sibling path dependency', () => {
+  test('sessionCwd loads without ../src sibling path dependency', () => {
     // If sessionCwd.js previously referenced ../src/lib/terminal/cwdGuard.js,
     // this require would throw before any test runs:
     // Error: Cannot find module '../src/lib/terminal/cwdGuard'
@@ -21,15 +26,16 @@ describe('sidecar cwd safeguard', () => {
   });
 
   test('falls back to process cwd when requested cwd is missing', () => {
-    const result = resolveSidecarSessionCwd('/definitely/missing/devhub');
+    const missing = path.join(os.tmpdir(), 'definitely-missing-devhub-cwd-guard');
+    const result = resolveSidecarSessionCwd(missing);
 
-    expect(result.requestedCwd).toBe('/definitely/missing/devhub');
+    expect(result.requestedCwd).toBe(path.resolve(missing));
     expect(result.effectiveCwd).toBe(process.cwd());
     expect(result.usedFallback).toBe(true);
   });
 
   test('resolveSidecarSessionCwd returns valid shape for real directory', () => {
-    const result = resolveSidecarSessionCwd('/tmp');
+    const result = resolveSidecarSessionCwd(os.tmpdir());
     expect(result).toHaveProperty('requestedCwd');
     expect(result).toHaveProperty('effectiveCwd');
     expect(result).toHaveProperty('usedFallback');
@@ -38,10 +44,11 @@ describe('sidecar cwd safeguard', () => {
     expect(typeof result.usedFallback).toBe('boolean');
   });
 
-  test('returns /tmp unchanged when it exists', () => {
-    const result = resolveSidecarSessionCwd('/tmp');
-    expect(result.requestedCwd).toBe('/tmp');
-    expect(result.effectiveCwd).toBe('/tmp');
+  test('returns existing directory unchanged', () => {
+    const tmp = os.tmpdir();
+    const result = resolveSidecarSessionCwd(tmp);
+    expect(result.requestedCwd).toBe(path.resolve(tmp));
+    expect(result.effectiveCwd).toBe(path.resolve(tmp));
     expect(result.usedFallback).toBe(false);
   });
 });

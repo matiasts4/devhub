@@ -155,6 +155,7 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     lastOutputAt: Date.now(),
     mode: 'shell',
     historyEnabled: true,
+    outputTail: '', // Cola siempre activa (aunque history se apague en modo TUI) para /sessions/:id/output
     opencodeSessionId: null,
     agentType: null,
     agentSessionId: null,
@@ -203,6 +204,13 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     const totalLen = session.history.reduce((acc, s) => acc + s.length, 0);
     while (session.history.length > 1 && totalLen > 10000) {
       session.history.shift();
+    }
+
+    // Las TUIs de agentes apagan historyEnabled (para no re-pintar frames en el
+    // replay WS), pero Zed necesita leer el contenido igual vía /sessions/:id/output.
+    // ponytail: cola string de 32KB; si algún día duele el GC, pasar a ring buffer.
+    if (typeof filteredData === 'string') {
+      session.outputTail = (session.outputTail + filteredData).slice(-32768);
     }
 
     // Enviar a todos los clientes activos
@@ -335,7 +343,8 @@ app.get('/sessions/:id/output', (req, res) => {
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
-  const output = (session.history || []).join('');
+  // history se vacía al detectar una TUI de agente; outputTail sigue vivo siempre.
+  const output = (session.history || []).join('') || session.outputTail || '';
   res.json({
     output,
     session_id: req.params.id,

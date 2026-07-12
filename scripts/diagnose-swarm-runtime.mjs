@@ -214,12 +214,13 @@ const worktreeOutput = safeExec('git worktree list --porcelain', 'git worktree l
 const worktreeLines = worktreeOutput.split('\n').filter((l) => l.startsWith('worktree '));
 kv('total_worktrees', worktreeLines.length);
 
-// Count DevHub worktrees specifically
-const devhubWorktrees = worktreeLines.filter((l) => l.includes('.devhub/worktrees'));
+// Count DevHub worktrees specifically (normalize Windows `\` for substring match)
+const asPosix = (line) => String(line || '').replace(/\\/g, '/');
+const devhubWorktrees = worktreeLines.filter((l) => asPosix(l).includes('.devhub/worktrees'));
 kv('devhub_worktrees', devhubWorktrees.length);
 
 // Count Plyrium worktrees
-const plyriumWorktrees = worktreeLines.filter((l) => l.includes('.plyrium-forge'));
+const plyriumWorktrees = worktreeLines.filter((l) => asPosix(l).includes('.plyrium-forge'));
 kv('plyrium_worktrees', plyriumWorktrees.length);
 
 // ---------------------------------------------------------------------------
