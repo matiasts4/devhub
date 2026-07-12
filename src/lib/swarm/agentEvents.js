@@ -26,6 +26,17 @@ const DIRECTOR_FEED_EVENT_TYPES = new Set([
   'mission_left',
   'supervisor_action',
 ]);
+// Only events that are meaningless outside a mission require mission_id.
+// Lifecycle/enforcement events (agent_booted, supervisor_action, ...) can occur
+// with no mission (e.g. supervisor daemon enforcing a lease on a personal task);
+// they just won't show up in any mission's director feed.
+const MISSION_REQUIRED_EVENT_TYPES = new Set([
+  'task_completed',
+  'handoff_ready',
+  'mission_joined',
+  'mission_left',
+]);
+const TASK_CONTEXT_REQUIRED_EVENT_TYPES = new Set(['task_completed', 'handoff_ready']);
 const DIRECTOR_FEED_DELIVERY_STATUSES = new Set(['pending', 'sent', 'failed', 'binding_missing']);
 
 function buildValidationError(message) {
@@ -54,16 +65,14 @@ function normalizeDirectorFeedPayload(event) {
       ? { ...event.payload }
       : {};
   const missionId = normalizeOptionalString(event.mission_id);
-  if (!missionId) {
+  if (!missionId && MISSION_REQUIRED_EVENT_TYPES.has(event.event_type)) {
     throw buildValidationError(
       `${event.event_type} requires mission_id for durable director feed.`
     );
   }
 
-  // status_update is a general message — task_id is optional
-  const requiresTaskId = event.event_type !== 'status_update';
   const relatedTaskId = pickLinkedValue(payload.related_task_id, payload.task_id);
-  if (requiresTaskId && !relatedTaskId) {
+  if (!relatedTaskId && TASK_CONTEXT_REQUIRED_EVENT_TYPES.has(event.event_type)) {
     throw buildValidationError(
       `${event.event_type} requires task context (related_task_id or task_id).`
     );

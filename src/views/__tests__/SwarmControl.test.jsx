@@ -82,6 +82,10 @@ async function flushAsyncWork(cycles = 3) {
 }
 
 const TIMELINE_FETCH_PATTERN = /\/api\/agenthub\/operators\/timeline/;
+// useSwarmBusSnapshot polls this on mount/interval whenever a mission is
+// active. Like the timeline fetch, it is background noise for these tests:
+// auto-serve it so it never consumes queued responses meant for user actions.
+const BUS_SNAPSHOT_FETCH_PATTERN = /\/api\/agenthub\/swarm\/[^/]+\/bus-snapshot/;
 
 function timelineFetchResult() {
   return {
@@ -90,8 +94,23 @@ function timelineFetchResult() {
   };
 }
 
+function busSnapshotFetchResult() {
+  return {
+    ok: true,
+    json: async () => ({}),
+  };
+}
+
 function isTimelineFetch(url) {
   return TIMELINE_FETCH_PATTERN.test(String(url || ''));
+}
+
+function isBusSnapshotFetch(url) {
+  return BUS_SNAPSHOT_FETCH_PATTERN.test(String(url || ''));
+}
+
+function isBackgroundFetch(url) {
+  return isTimelineFetch(url) || isBusSnapshotFetch(url);
 }
 
 function wrapFetchMock(responses = []) {
@@ -101,6 +120,9 @@ function wrapFetchMock(responses = []) {
   return jest.fn((url, options) => {
     if (isTimelineFetch(url)) {
       return Promise.resolve(timelineFetchResult());
+    }
+    if (isBusSnapshotFetch(url)) {
+      return Promise.resolve(busSnapshotFetchResult());
     }
 
     const next = queue[queueIndex];
@@ -114,7 +136,7 @@ function wrapFetchMock(responses = []) {
 }
 
 function nonTimelineFetchCalls() {
-  return global.fetch.mock.calls.filter(([url]) => !isTimelineFetch(url));
+  return global.fetch.mock.calls.filter(([url]) => !isBackgroundFetch(url));
 }
 
 function findFetchCallByUrl(urlPart) {
@@ -928,7 +950,7 @@ describe('SwarmControl control room composition', () => {
     await changeField(coderProgram, 'hermes');
     await click(findLaunchWizardNextButton());
 
-    expect(document.body.textContent).toContain('Programas por rol');
+    expect(document.body.textContent).toContain('TUI por rol');
     expect(document.body.textContent).toContain('Director · Codex');
     expect(document.body.textContent).toContain('Coder · Hermes');
     expect(document.body.textContent).toContain('Auditor · OpenCode');

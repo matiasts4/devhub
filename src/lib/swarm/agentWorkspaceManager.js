@@ -10,15 +10,76 @@
  *   .devhub/worktrees/<launch-id>/<role>
  * Branch naming:
  *   devhub/swarm/<launch-id>/<role>
+ *
+ * Path checks are separator-safe: on Windows path.join yields
+ * `.devhub\worktrees` which must still pass validation.
  */
 
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// ---------------------------------------------------------------------------
 // Pure helpers (testable without git)
-// ---------------------------------------------------------------------------
+
+/**
+ * Normalize separators for portable substring / prefix checks.
+ * Windows path.join yields `.devhub\worktrees`; validation must accept that.
+ * @param {string} filePath
+ * @returns {string}
+ */
+function toPosixPath(filePath) {
+  return String(filePath || '').replace(/\\/g, '/');
+}
+
+/**
+ * Case-aware path equality (Windows drive letters / path case).
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function pathsEqual(a, b) {
+  const na = toPosixPath(a).replace(/\/+$/, '');
+  const nb = toPosixPath(b).replace(/\/+$/, '');
+  if (process.platform === 'win32') {
+    return na.toLowerCase() === nb.toLowerCase();
+  }
+  return na === nb;
+}
+
+/**
+ * Whether `full` is under `prefix` (or equal), separator-safe.
+ * @param {string} full
+ * @param {string} prefix
+ * @returns {boolean}
+ */
+function pathIsUnder(full, prefix) {
+  const nf = toPosixPath(full).replace(/\/+$/, '');
+  const np = toPosixPath(prefix).replace(/\/+$/, '');
+  if (!nf || !np) return false;
+  const left = process.platform === 'win32' ? nf.toLowerCase() : nf;
+  const right = process.platform === 'win32' ? np.toLowerCase() : np;
+  return left === right || left.startsWith(`${right}/`);
+}
+
+/**
+ * True when path is under DevHub's `.devhub/worktrees` (any OS separators).
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function isDevHubWorktreePath(filePath) {
+  if (!filePath) return false;
+  return toPosixPath(filePath).includes('.devhub/worktrees');
+}
+
+/**
+ * True when path is under Plyrium forge worktrees (rejected for DevHub swarm).
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function isPlyriumWorktreePath(filePath) {
+  if (!filePath) return false;
+  return toPosixPath(filePath).includes('.plyrium-forge');
+}
 
 /**
  * Build the root directory for a launch's worktrees.
@@ -27,7 +88,8 @@ const path = require('path');
  * @returns {string} Absolute path to .devhub/worktrees/<launch-id>
  */
 function buildLaunchWorkspaceRoot(repoRoot, launchId) {
-  const cleanRoot = repoRoot.replace(/\/+$/, '');
+  // Strip trailing / and \ so path.join does not leave empty segments on Windows.
+  const cleanRoot = String(repoRoot || '').replace(/[/\\]+$/, '');
   return path.join(cleanRoot, '.devhub', 'worktrees', launchId);
 }
 
@@ -60,8 +122,8 @@ function computeBranchName(launchId, roleKey) {
  * @returns {{ valid: boolean, error: string|null }}
  */
 function validateWorktreePath(worktreePath, fsImpl = fs) {
-  // Must be under .devhub/worktrees
-  if (!worktreePath.includes('.devhub/worktrees')) {
+  // Must be under .devhub/worktrees (accept Windows backslashes)
+  if (!isDevHubWorktreePath(worktreePath)) {
     return {
       valid: false,
       error: `Path is not under .devhub/worktrees: ${worktreePath}`,
@@ -69,7 +131,7 @@ function validateWorktreePath(worktreePath, fsImpl = fs) {
   }
 
   // Must NOT be under .plyrium-forge
-  if (worktreePath.includes('.plyrium-forge')) {
+  if (isPlyriumWorktreePath(worktreePath)) {
     return {
       valid: false,
       error: `Path is under .plyrium-forge (DevHub worktrees only): ${worktreePath}`,
@@ -127,9 +189,7 @@ function parseWorktreeInfo(porcelainOutput) {
   return worktrees;
 }
 
-// ---------------------------------------------------------------------------
 // Git operations (require real git)
-// ---------------------------------------------------------------------------
 
 /**
  * Execute a git command in the repo root.
@@ -171,11 +231,13 @@ function branchExists(repoRoot, branchName) {
 
 /**
  * Check if a worktree already exists for a given path.
+ * Git on Windows may print paths with `/` while path.join uses `\`.
  */
 function worktreeExists(repoRoot, worktreePath) {
   try {
     const output = gitExec(['worktree', 'list', '--porcelain'], repoRoot);
-    return output.includes(worktreePath);
+    const listed = parseWorktreeInfo(output);
+    return listed.some((wt) => pathsEqual(wt.path, worktreePath));
   } catch {
     return false;
   }
@@ -333,7 +395,7 @@ function listLaunchWorktrees(repoRoot, launchId) {
   const allWorktrees = parseWorktreeInfo(output);
 
   const launchRoot = buildLaunchWorkspaceRoot(repoRoot, launchId);
-  return allWorktrees.filter((wt) => wt.path.startsWith(launchRoot));
+  return allWorktrees.filter((wt) => pathIsUnder(wt.path, launchRoot));
 }
 
 /**
@@ -346,15 +408,18 @@ function listAllDevHubWorktrees(repoRoot) {
   const output = gitExec(['worktree', 'list', '--porcelain'], repoRoot);
   const allWorktrees = parseWorktreeInfo(output);
 
-  return allWorktrees.filter((wt) => wt.path.includes('.devhub/worktrees'));
+  return allWorktrees.filter((wt) => isDevHubWorktreePath(wt.path));
 }
 
-// ---------------------------------------------------------------------------
 // Exports
-// ---------------------------------------------------------------------------
 
 module.exports = {
   // Pure helpers (testable without git)
+  toPosixPath,
+  pathsEqual,
+  pathIsUnder,
+  isDevHubWorktreePath,
+  isPlyriumWorktreePath,
   buildLaunchWorkspaceRoot,
   computeWorktreePath,
   computeBranchName,

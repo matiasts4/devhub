@@ -69,32 +69,42 @@ export async function GET(request) {
     // --- Mission info ---
     let mission = null;
     if (missionId) {
-      mission = db.prepare('SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1').get(missionId);
+      mission = db
+        .prepare('SELECT * FROM swarm_missions WHERE mission_id = ? LIMIT 1')
+        .get(missionId);
     }
 
     // --- Active missions ---
-    const activeMissions = db.prepare(
-      "SELECT * FROM swarm_missions WHERE status IN ('active', 'paused') ORDER BY updated_at DESC"
-    ).all();
+    const activeMissions = db
+      .prepare(
+        "SELECT * FROM swarm_missions WHERE status IN ('active', 'paused') ORDER BY updated_at DESC"
+      )
+      .all();
 
     // --- Agent presence ---
-    const presence = db.prepare(
-      "SELECT * FROM agent_presence WHERE expires_at > ? ORDER BY last_seen_at DESC"
-    ).all(now);
+    const presence = db
+      .prepare('SELECT * FROM agent_presence WHERE expires_at > ? ORDER BY last_seen_at DESC')
+      .all(now);
 
     // --- Stale agents (expired TTL) ---
-    const staleAgents = db.prepare(
-      "SELECT * FROM agent_presence WHERE expires_at <= ? ORDER BY expires_at DESC"
-    ).all(now);
+    const staleAgents = db
+      .prepare('SELECT * FROM agent_presence WHERE expires_at <= ? ORDER BY expires_at DESC')
+      .all(now);
 
     // --- Agent workspaces ---
-    const workspaces = db.prepare(
-      "SELECT * FROM agent_workspaces WHERE status IN ('ready', 'active', 'busy') ORDER BY updated_at DESC"
-    ).all();
+    const workspaces = db
+      .prepare(
+        "SELECT * FROM agent_workspaces WHERE status IN ('ready', 'active', 'busy') ORDER BY updated_at DESC"
+      )
+      .all();
 
     // --- Worktrees on disk ---
     const diskWorktrees = getWorktreeList();
-    const devhubWorktrees = diskWorktrees.filter((wt) => wt.path.includes('.devhub/worktrees'));
+    const devhubWorktrees = diskWorktrees.filter((wt) =>
+      String(wt.path || '')
+        .replace(/\\/g, '/')
+        .includes('.devhub/worktrees')
+    );
 
     // --- tmux sessions ---
     const tmuxSessions = getTmuxSessions();

@@ -1,11 +1,21 @@
 /**
  * Route-level regression: visible swarm launch must materialize wrapper scripts
  * and expose only a one-line bash launcher to the terminal PTY.
+ *
+ * Expectations are derived from the same path/executable resolvers the route
+ * uses, so the test is portable across hosts (Linux /tmp vs Windows temp dir).
  */
 
 const fs = require('fs');
 
 const { buildLaunchCommand } = require('../../src/app/api/agenthub/operations/health/route');
+const {
+  resolveLaunchWrapperScriptPath,
+  toBashAccessiblePath,
+} = require('../../src/lib/operations/materializeLaunchWrapper');
+const { resolveAgentProgramExecutable } = require('../../src/lib/agentLaunchCommand.shared');
+
+const opencodeBin = resolveAgentProgramExecutable('opencode');
 
 describe('route buildLaunchCommand (visible swarm)', () => {
   const createdPaths = [];
@@ -32,11 +42,13 @@ describe('route buildLaunchCommand (visible swarm)', () => {
 
     createdPaths.push(launch.wrapperScriptPath);
 
-    expect(launch.command).toBe('bash /tmp/devhub-launch-launch-test1234-director.sh');
-    expect(launch.wrapper).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+    const expectedScriptPath = resolveLaunchWrapperScriptPath('launch-test1234', 'director');
+    expect(launch.wrapperScriptPath).toBe(expectedScriptPath);
+    expect(launch.command).toBe(`bash ${toBashAccessiblePath(expectedScriptPath)}`);
+    expect(launch.wrapper).toContain(`${opencodeBin} --agent swarm-director`);
     expect(launch.wrapper).not.toContain('tmux attach-session');
     expect(launch.wrapper).not.toContain('--prompt');
-    expect(launch.wrapper).toContain('_devhub_agent_pid=$!');
+    expect(launch.wrapper).toContain('DEVHUB_AGENT_PID');
     expect(launch.wrapper).toContain('_devhub_bootstrap_prompt');
 
     const script = fs.readFileSync(launch.wrapperScriptPath, 'utf8');
@@ -55,9 +67,9 @@ describe('route buildLaunchCommand (visible swarm)', () => {
 
     createdPaths.push(launch.wrapperScriptPath);
 
-    expect(launch.command).toBe('bash /tmp/devhub-launch-launch-test5678-coder.sh');
+    const expectedScriptPath = resolveLaunchWrapperScriptPath('launch-test5678', 'coder');
+    expect(launch.command).toBe(`bash ${toBashAccessiblePath(expectedScriptPath)}`);
     expect(launch.wrapper).toContain('DEVHUB_AGENT_ID="launch-test5678-coder"');
-    expect(launch.wrapper).toContain('/home/matias/.opencode/bin/opencode --agent swarm-coder');
+    expect(launch.wrapper).toContain(`${opencodeBin} --agent swarm-coder`);
   });
-
 });

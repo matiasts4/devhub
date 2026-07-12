@@ -15,7 +15,11 @@ const browserAppIgnores = [
   'src/**/__tests__/**',
 ];
 
-const nodeEsmFiles = ['src/app/api/**/*.js', 'src/lib/terminal/**/*.js'];
+const nodeEsmFiles = [
+  'src/app/api/**/*.js',
+  'src/lib/terminal/**/*.js',
+  'src/lib/swarm/openCodeProcesses.js',
+];
 
 const swarmCommonJsFiles = [
   'src/lib/swarm/agentWorkspaceManager.js',
@@ -142,9 +146,15 @@ export default [
     },
   },
 
-  // Terminal lib tests use ESM imports under Jest/Babel
+  // Terminal/swarm lib tests use ESM imports under Jest/Babel
   {
-    files: ['src/lib/terminal/**/*.test.js'],
+    files: [
+      'src/lib/terminal/**/*.test.js',
+      'src/lib/swarm/**/*.test.js',
+      'tests/unit/swarm-role-meta.test.js',
+      'tests/unit/swarm-launch-command.test.js',
+      'tests/unit/swarm-route-launch-command.test.js',
+    ],
     languageOptions: {
       sourceType: 'module',
       globals: {

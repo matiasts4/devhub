@@ -51,6 +51,9 @@ describe('runtimeStatus', () => {
   });
 
   it('marks registry entries as stale-registry when process is missing', () => {
+    // Contract: an ACTIVE run keeps the agent "active" even without a process
+    // (classifyRegistry checks hasActiveRun before stale). stale-registry only
+    // applies when there is no process AND no active run for the idle agent.
     const snapshot = createRuntimeDiagnosticsSnapshot({
       terminalSessions: [],
       swarmProcesses: [],
@@ -63,7 +66,7 @@ describe('runtimeStatus', () => {
       agentRuns: [
         {
           agent_id: 'auditor',
-          status: 'running',
+          status: 'completed',
         },
       ],
       swarmMissions: [],
@@ -74,6 +77,21 @@ describe('runtimeStatus', () => {
     expect(snapshot.registry).toHaveLength(1);
     expect(snapshot.registry[0].status).toBe(RUNTIME_STATUS.STALE_REGISTRY);
     expect(snapshot.anomalies.staleRegistryAgents).toEqual(['auditor']);
+  });
+
+  it('keeps registry entries active when the agent still has a running run', () => {
+    const snapshot = createRuntimeDiagnosticsSnapshot({
+      terminalSessions: [],
+      swarmProcesses: [],
+      agentRegistry: [{ agent_id: 'auditor', status: 'idle' }],
+      agentRuns: [{ agent_id: 'auditor', status: 'running' }],
+      swarmMissions: [],
+      crashDumps: [],
+      logSignals: { quotaBlocked: false, quotaMatches: [] },
+    });
+
+    expect(snapshot.registry[0].status).toBe(RUNTIME_STATUS.ACTIVE);
+    expect(snapshot.anomalies.staleRegistryAgents).toEqual([]);
   });
 
   it('promotes quota blocked status when 429 signal is present', () => {
@@ -205,7 +223,7 @@ describe('runtimeStatus', () => {
         terminalSessions: [],
         swarmProcesses: [],
         agentRegistry: [{ agent_id: 'stale-agent', status: 'idle' }],
-        agentRuns: [{ agent_id: 'stale-agent', status: 'running' }],
+        agentRuns: [{ agent_id: 'stale-agent', status: 'completed' }],
         swarmMissions: [],
         crashDumps: [],
         logSignals: { quotaBlocked: false, quotaMatches: [] },
@@ -277,7 +295,12 @@ describe('runtimeStatus', () => {
         agentRuns: [],
         swarmMissions: [],
         crashDumps: [
-          { file: 'crash-1.json', reason: 'pty_abnormal_exit', ts: '2026-05-23T00:00:00Z', pid: 1234 },
+          {
+            file: 'crash-1.json',
+            reason: 'pty_abnormal_exit',
+            ts: '2026-05-23T00:00:00Z',
+            pid: 1234,
+          },
         ],
         logSignals: { quotaBlocked: false, quotaMatches: [] },
         errorLines: [],
@@ -289,12 +312,8 @@ describe('runtimeStatus', () => {
     });
 
     it('includes agentWorkspaces and supervisorSnapshots in snapshot output', () => {
-      const workspaces = [
-        { id: 'ws-1', agent_id: 'w1', status: 'active' },
-      ];
-      const supervisors = [
-        { task_id: 't-1', supervisor_state: 'lease_active' },
-      ];
+      const workspaces = [{ id: 'ws-1', agent_id: 'w1', status: 'active' }];
+      const supervisors = [{ task_id: 't-1', supervisor_state: 'lease_active' }];
 
       const snapshot = createRuntimeDiagnosticsSnapshot({
         terminalSessions: [],

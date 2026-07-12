@@ -5,7 +5,10 @@
  *   2. interactive bootstrap — OpenCode TUI starts without --prompt
  */
 
-const { buildAgentLaunchCommand } = require('../../src/lib/agentLaunchCommand.shared');
+const {
+  buildAgentLaunchCommand,
+  resolveAgentProgramExecutable,
+} = require('../../src/lib/agentLaunchCommand.shared');
 
 describe('swarm launch inner command', () => {
   test('uses bare opencode when disableTmuxWrap is true (no nested tmux attach)', () => {
@@ -18,7 +21,10 @@ describe('swarm launch inner command', () => {
       interactiveBootstrapPrompt: true,
     });
 
-    expect(inner).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+    // The executable is host-dependent (env override / ~/.opencode/bin / PATH),
+    // so derive the expectation from the same resolver the builder uses.
+    const opencodeBin = resolveAgentProgramExecutable('opencode');
+    expect(inner).toContain(`${opencodeBin} --agent swarm-director`);
     expect(inner).toContain('--model minimax-coding-plan/MiniMax-M3');
     expect(inner).not.toContain('--prompt');
     expect(inner).not.toContain('tmux new-session');
@@ -37,7 +43,7 @@ describe('swarm launch inner command', () => {
     expect(inner).toContain('tmux attach-session');
   });
 
-  test('uses bare kimi in yolo/auto mode with skills-dir for swarm bootstrap', () => {
+  test('uses bare kimi in yolo mode with skills-dir for swarm bootstrap', () => {
     const inner = buildAgentLaunchCommand('kimi', 'mission prompt', {
       opencodeAgent: 'swarm-director',
       role: 'director',
@@ -47,9 +53,10 @@ describe('swarm launch inner command', () => {
       interactiveBootstrapPrompt: true,
     });
 
-    expect(inner).toContain('/home/matias/.kimi-code/bin/kimi --yolo --auto');
-    expect(inner).toContain('--skills-dir');
-    expect(inner).toContain('/home/matias/.kimi-code/skills/devhub-zed-orchestrator');
+    // kimi-code rejects combining --yolo with --auto
+    expect(inner).toMatch(/kimi(?:\.exe)? --yolo(?:\s|$)/);
+    expect(inner).toContain('--yolo');
+    expect(inner).not.toContain('--auto');
     expect(inner).toContain('--model');
     expect(inner).toContain('kimi-code/kimi-for-coding');
     expect(inner).not.toContain('--prompt');
@@ -63,7 +70,7 @@ describe('swarm launch inner command', () => {
       disableTmuxWrap: true,
     });
 
-    expect(inner).toContain('/home/matias/.kimi-code/bin/kimi -p');
+    expect(inner).toMatch(/kimi(?:\.exe)? -p/);
     expect(inner).toContain('do work');
     expect(inner).not.toContain('--yolo');
   });

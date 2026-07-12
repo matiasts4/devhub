@@ -371,6 +371,7 @@ test('VALID_EVENT_TYPES contains all expected types', () => {
     'mission_left',
     'task_completed',
     'handoff_ready',
+    'status_update',
   ];
   for (const t of expected) {
     assert.ok(VALID_EVENT_TYPES.includes(t), `must include ${t}`);

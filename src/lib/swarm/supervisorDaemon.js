@@ -34,21 +34,34 @@ function evaluateSupervisorTick(db) {
 
   // ── Orphan Detection ────────────────────────────────────────────────
   // Find active workspaces with heartbeat older than 90 seconds
-  const staleWorkspaces = db.prepare(
-    `SELECT id, agent_id FROM agent_workspaces
+  const staleWorkspaces = db
+    .prepare(
+      `SELECT id, agent_id FROM agent_workspaces
      WHERE status = 'active'
      AND last_heartbeat IS NOT NULL
      AND last_heartbeat < datetime('now', '-${STALE_HEARTBEAT_SECONDS} seconds')`
-  ).all();
+    )
+    .all();
 
   for (const ws of staleWorkspaces) {
     // CAS: only update if still active (another process may have changed it)
-    const updateResult = db.prepare(
-      `UPDATE agent_workspaces SET status = 'orphaned' WHERE id = ? AND status = 'active'`
-    ).run(ws.id);
+    const updateResult = db
+      .prepare(`UPDATE agent_workspaces SET status = 'orphaned' WHERE id = ? AND status = 'active'`)
+      .run(ws.id);
 
     if (updateResult.changes > 0) {
       result.orphaned.push({ id: ws.id, agent_id: ws.agent_id });
+
+      // Security enforcement first: revoking the orphan's token must never be
+      // skipped because event emission failed.
+      try {
+        revokeAuthToken(db, ws.agent_id);
+      } catch (e) {
+        console.error(
+          `[SupervisorDaemon] Failed to revoke auth token for ${ws.agent_id}:`,
+          e.message
+        );
+      }
 
       try {
         emitAgentEvent(db, {
@@ -72,10 +85,11 @@ function evaluateSupervisorTick(db) {
             target_id: ws.id,
           },
         });
-
-        revokeAuthToken(db, ws.agent_id);
       } catch (e) {
-        console.error(`[SupervisorDaemon] Failed to emit workspace_orphaned event for ${ws.id}:`, e.message);
+        console.error(
+          `[SupervisorDaemon] Failed to emit workspace_orphaned event for ${ws.id}:`,
+          e.message
+        );
       }
     }
   }
@@ -83,8 +97,9 @@ function evaluateSupervisorTick(db) {
   // ── Lease Expiry ─────────────────────────────────────────────────────
   // Find tasks with stale leases. Prefer lease_expires_at when present; keep started_at fallback
   // for rows created before lease expiry tracking existed.
-  const staleLeases = db.prepare(
-    `SELECT id, assigned_to FROM tasks
+  const staleLeases = db
+    .prepare(
+      `SELECT id, assigned_to FROM tasks
      WHERE status = 'in_progress'
      AND claim_token IS NOT NULL
      AND (
@@ -92,14 +107,17 @@ function evaluateSupervisorTick(db) {
        OR
        (lease_expires_at IS NULL AND started_at IS NOT NULL AND started_at < datetime('now', '-${STALE_LEASE_SECONDS} seconds'))
      )`
-  ).all();
+    )
+    .all();
 
   for (const task of staleLeases) {
     // CAS: only update if still in_progress
-    const updateResult = db.prepare(
-      `UPDATE tasks SET status = 'pending', claim_token = NULL, assigned_to = NULL, started_at = NULL
+    const updateResult = db
+      .prepare(
+        `UPDATE tasks SET status = 'pending', claim_token = NULL, assigned_to = NULL, started_at = NULL
        WHERE id = ? AND status = 'in_progress'`
-    ).run(task.id);
+      )
+      .run(task.id);
 
     if (updateResult.changes > 0) {
       result.expiredLeases.push({ id: task.id, assigned_to: task.assigned_to });
@@ -115,7 +133,10 @@ function evaluateSupervisorTick(db) {
           },
         });
       } catch (e) {
-        console.error(`[SupervisorDaemon] Failed to emit supervisor_action event for task ${task.id}:`, e.message);
+        console.error(
+          `[SupervisorDaemon] Failed to emit supervisor_action event for task ${task.id}:`,
+          e.message
+        );
       }
     }
   }

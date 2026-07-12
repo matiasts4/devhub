@@ -109,8 +109,11 @@ describe('getSwarmRoleOrder', () => {
   });
 
   test('returns index for known roles', () => {
-    expect(getSwarmRoleOrder('coder')).toBe(0);
-    expect(getSwarmRoleOrder('auditor')).toBe(1);
+    // Derive from SWARM_ROLE_ORDER so the test survives reordering
+    // (sdd_worker_1..4 were prepended ahead of coder/auditor).
+    expect(getSwarmRoleOrder('coder')).toBe(SWARM_ROLE_ORDER.indexOf('coder'));
+    expect(getSwarmRoleOrder('auditor')).toBe(SWARM_ROLE_ORDER.indexOf('auditor'));
+    expect(getSwarmRoleOrder('coder')).toBeLessThan(getSwarmRoleOrder('auditor'));
   });
 
   test('returns 500 for unknown roles', () => {

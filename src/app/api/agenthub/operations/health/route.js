@@ -1120,7 +1120,9 @@ function activatePreparedWorkspace(
     sessionId,
     status,
     branchName,
-    workspacePath.includes('.devhub/worktrees')
+    String(workspacePath || '')
+      .replace(/\\/g, '/')
+      .includes('.devhub/worktrees')
       ? workspacePath
       : `${workspacePath}/.worktrees/${branchName}`,
     branchName,
@@ -1162,6 +1164,18 @@ function configureLaunchRole({
   // The precompute happens in launchSwarmLocal before the write queue
   // opens, so no concurrency hazard.
   let worktreeResult;
+  if (precomputedWorktree?.error) {
+    console.error(
+      `[SWARM_LAUNCH] FAILED precomputed worktree for ${roleKey}: ${precomputedWorktree.error}`
+    );
+    return {
+      failure: {
+        roleKey,
+        roleLabel: roleEntry.role,
+        error: precomputedWorktree.error,
+      },
+    };
+  }
   if (precomputedWorktree) {
     worktreeResult = precomputedWorktree;
   } else {
@@ -1388,19 +1402,34 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
   // preserve the prior semantics when the draft didn't set a workspace.
   const roleEntriesForPrecompute = Array.isArray(preview.rolePrograms) ? preview.rolePrograms : [];
   const repoRootForPrecompute = resolvedDraft.workspacePath ?? process.cwd();
+  // Per-role try/catch: one worktree failure must not abort the whole Promise.all
+  // (otherwise zero agents launch and the UI only shows the first error).
   const precomputedWorktrees = new Map(
     await Promise.all(
       roleEntriesForPrecompute.map(async (entry) => {
         if (!entry || !entry.role_key) return null;
-        const result = await Promise.resolve().then(() =>
-          prepareAgentWorktree({
-            repoRoot: repoRootForPrecompute,
-            launchId,
-            roleKey: entry.role_key,
-            baseRef: 'HEAD',
-          })
-        );
-        return [entry.role_key, result];
+        try {
+          const result = await Promise.resolve().then(() =>
+            prepareAgentWorktree({
+              repoRoot: repoRootForPrecompute,
+              launchId,
+              roleKey: entry.role_key,
+              baseRef: 'HEAD',
+            })
+          );
+          return [entry.role_key, result];
+        } catch (err) {
+          console.error(
+            `[SWARM_LAUNCH] FAILED to precompute worktree for ${entry.role_key}: ${err?.message || err}`
+          );
+          return [
+            entry.role_key,
+            {
+              error: err?.message || 'No se pudo preparar worktree.',
+              roleKey: entry.role_key,
+            },
+          ];
+        }
       })
     ).then((entries) => entries.filter(Boolean))
   );
@@ -2607,7 +2636,11 @@ export const POST = withAuth(async function POST(request, _context, dependencies
       }
 
       const diskWorktrees = listWorktreesForPrune(repoRoot);
-      const devhubWorktrees = diskWorktrees.filter((wt) => wt.path.includes('.devhub/worktrees'));
+      const devhubWorktrees = diskWorktrees.filter((wt) =>
+        String(wt.path || '')
+          .replace(/\\/g, '/')
+          .includes('.devhub/worktrees')
+      );
 
       const removeResults = [];
       for (const wt of devhubWorktrees) {
