@@ -21,6 +21,8 @@ const DEFAULTS = {
   selectedMicId: '',
   ttsVoice: DEFAULT_TTS_VOICE,
   ttsRate: DEFAULT_TTS_RATE,
+  // Empty = auto-pick best Spanish Web Speech voice on Windows.
+  ttsSystemVoiceURI: '',
 };
 
 function normalize(parsed) {
@@ -32,6 +34,8 @@ function normalize(parsed) {
     selectedMicId: parsed?.selectedMicId || '',
     ttsVoice: isKnownTtsVoice(parsed?.ttsVoice) ? parsed.ttsVoice : DEFAULTS.ttsVoice,
     ttsRate: isKnownTtsRate(parsed?.ttsRate) ? parsed.ttsRate : DEFAULTS.ttsRate,
+    ttsSystemVoiceURI:
+      typeof parsed?.ttsSystemVoiceURI === 'string' ? parsed.ttsSystemVoiceURI.trim() : '',
   };
 }
 

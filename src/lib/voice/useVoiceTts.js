@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { rateToLengthScale } from './ttsVoiceCatalog';
+import { resolveSpeechSynthesisVoice } from './systemSpeechVoices';
 
 async function invokeVoice(cmd, args) {
   if (typeof window === 'undefined') {
@@ -50,6 +51,41 @@ function stripMarkdownForSpeech(text) {
 }
 
 const MAX_TTS_CHARS = 600;
+const MAX_MANUAL_TTS_CHARS = 2400;
+
+function browserRate(rate) {
+  if (rate === 'slow') return 0.85;
+  if (rate === 'fast') return 1.15;
+  return 1;
+}
+
+function browserLanguageFromVoiceId(voiceId) {
+  const locale = String(voiceId || '')
+    .split('-')[0]
+    .replace('_', '-');
+  return /^es(?:-|$)/i.test(locale) ? locale : 'es-ES';
+}
+
+function createBrowserUtterance(text, { voiceId, rate, systemVoiceURI } = {}) {
+  if (typeof window === 'undefined') return null;
+  const synth = window.speechSynthesis;
+  const Utterance = window.SpeechSynthesisUtterance || globalThis.SpeechSynthesisUtterance;
+  if (!synth || typeof synth.speak !== 'function' || typeof Utterance !== 'function') return null;
+
+  const language = browserLanguageFromVoiceId(voiceId);
+  const utterance = new Utterance(text);
+  utterance.lang = language;
+  utterance.rate = browserRate(rate);
+  const selected = resolveSpeechSynthesisVoice(synth, {
+    systemVoiceURI,
+    fallbackLang: language,
+  });
+  if (selected) {
+    utterance.voice = selected;
+    if (selected.lang) utterance.lang = selected.lang;
+  }
+  return { synth, utterance };
+}
 
 /** Clip long replies at a sentence boundary instead of mid-word, so Zed
  * never trails off on a chopped syllable. */
@@ -70,12 +106,13 @@ function clipForSpeech(text, maxLen = MAX_TTS_CHARS) {
 }
 
 /**
- * Speak Zed assistant replies via Piper (Tauri voice_speak).
+ * Speak Zed replies via Piper, with Web Speech as the Windows/WebView fallback.
  */
-export function useVoiceTts({ enabled = true, voice, rate } = {}) {
+export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' } = {}) {
   const [ttsError, setTtsError] = useState('');
   const [speaking, setSpeaking] = useState(false);
   const unlistenRef = useRef([]);
+  const browserUtteranceRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,34 +144,84 @@ export function useVoiceTts({ enabled = true, voice, rate } = {}) {
         if (typeof fn === 'function') fn();
       }
       unlistenRef.current = [];
+      if (browserUtteranceRef.current && typeof window !== 'undefined') {
+        window.speechSynthesis?.cancel?.();
+        browserUtteranceRef.current = null;
+      }
     };
   }, []);
 
   const speak = useCallback(
-    async (text) => {
+    async (text, { full = false } = {}) => {
       if (!enabled) return { ok: false, error: 'tts-disabled' };
       const cleaned = stripMarkdownForSpeech(text);
       if (!cleaned) return { ok: false, error: 'empty-text' };
-      const clipped = clipForSpeech(cleaned);
+      const clipped = clipForSpeech(cleaned, full ? MAX_MANUAL_TTS_CHARS : MAX_TTS_CHARS);
       setTtsError('');
       setSpeaking(true);
       await invokeVoice('voice_stop_speak');
-      const options = {};
-      if (voice) options.voice = voice;
-      if (rate) options.length_scale = rateToLengthScale(rate);
-      const args = Object.keys(options).length ? { text: clipped, options } : { text: clipped };
-      const result = await invokeVoice('voice_speak', args);
-      if (!result.ok) {
-        setTtsError(result.error || 'voice_speak failed');
-        setSpeaking(false);
+      if (typeof window !== 'undefined' && window.speechSynthesis?.cancel) {
+        window.speechSynthesis.cancel();
       }
-      return result;
+
+      const nativeOptions = {};
+      if (voice) nativeOptions.voice = voice;
+      if (rate) nativeOptions.length_scale = rateToLengthScale(rate);
+      const args = Object.keys(nativeOptions).length
+        ? { text: clipped, options: nativeOptions }
+        : { text: clipped };
+      const result = await invokeVoice('voice_speak', args);
+      if (result.ok) {
+        return { ...result, backend: 'piper' };
+      }
+
+      // Windows builds intentionally reject the Python/Piper command. WebView2
+      // already exposes the OS speech voices, so use the platform feature
+      // instead of requiring another native dependency.
+      const browserSpeech = createBrowserUtterance(clipped, {
+        voiceId: voice,
+        rate,
+        systemVoiceURI,
+      });
+      if (!browserSpeech) {
+        setTtsError(result.error || 'No hay un motor de voz disponible');
+        setSpeaking(false);
+        return result;
+      }
+
+      const { synth, utterance } = browserSpeech;
+      browserUtteranceRef.current = utterance;
+      utterance.onend = () => {
+        browserUtteranceRef.current = null;
+        setSpeaking(false);
+      };
+      utterance.onerror = (event) => {
+        browserUtteranceRef.current = null;
+        setSpeaking(false);
+        if (event?.error !== 'canceled' && event?.error !== 'interrupted') {
+          setTtsError(`No se pudo reproducir la voz de Windows (${event?.error || 'error'})`);
+        }
+      };
+      try {
+        synth.speak(utterance);
+      } catch (error) {
+        browserUtteranceRef.current = null;
+        setSpeaking(false);
+        const message = String(error?.message || error || 'error');
+        setTtsError(`No se pudo iniciar la voz de Windows (${message})`);
+        return { ok: false, error: message };
+      }
+      return { ok: true, backend: 'web-speech', fallbackFrom: result.error || null };
     },
-    [enabled, voice, rate]
+    [enabled, voice, rate, systemVoiceURI]
   );
 
   const stopSpeaking = useCallback(async () => {
     setSpeaking(false);
+    browserUtteranceRef.current = null;
+    if (typeof window !== 'undefined' && window.speechSynthesis?.cancel) {
+      window.speechSynthesis.cancel();
+    }
     await invokeVoice('voice_stop_speak');
   }, []);
 
@@ -142,3 +229,10 @@ export function useVoiceTts({ enabled = true, voice, rate } = {}) {
 
   return { speak, speaking, stopSpeaking, ttsError, clearTtsError };
 }
+
+export {
+  stripMarkdownForSpeech,
+  clipForSpeech,
+  browserLanguageFromVoiceId,
+  createBrowserUtterance,
+};

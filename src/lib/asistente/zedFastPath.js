@@ -449,7 +449,59 @@ function isSummarizeTerminalIntent(lower) {
     /\bqu[eé]\s+(?:está\s+)?pas/i.test(lower) || /\bque\s+(?:esta\s+)?pas/i.test(lower);
   const asksStatus = /\b(estado|status)\b/.test(lower);
   const asksResume = /\b(resume|resumí|resumen)\b/.test(lower);
-  return TERMINAL_NOUN_RE.test(lower) && (asksWhatHappens || asksStatus || asksResume);
+  const asksResponse = AGENT_RESPONSE_VERBS_RE.test(lower);
+  return (
+    TERMINAL_NOUN_RE.test(lower) && (asksWhatHappens || asksStatus || asksResume || asksResponse)
+  );
+}
+
+// "¿qué respondió/contestó/dijo…?" — note: `lower` is diacritics-stripped, so
+// patterns are written without accents (respondió → respondio).
+const AGENT_RESPONSE_VERBS_RE =
+  /\b(respondio|respondido|contesto|contestado|dijo|escribio|termino|acabo|hizo|resultado|avance|progreso)\b|\bcomo\s+(va|esta|anda|viene)\b/;
+
+/**
+ * "¿qué respondió el agente / kimi / opencode…?" → summarize_terminal (read-only).
+ * Resolves the target panel: explicit name ("en Chase") > panel running that
+ * program > panel literally named like the program > single-agent / single-panel
+ * fallback. Multiple candidates → null (LLM decides / asks).
+ *
+ * @param {string} text
+ * @param {string} lower normalized message
+ * @param {Array<{ terminalId: string, displayName?: string, program?: string }>} terminals
+ * @param {string|null} program
+ * @returns {ZedFastPathHit | null}
+ */
+export function resolveAgentResponseIntent(text, lower, terminals, program = null) {
+  if (!AGENT_RESPONSE_VERBS_RE.test(lower)) return null;
+  const mentionsAgent = Boolean(program) || /\bagentes?\b/.test(lower);
+  if (!mentionsAgent) return null;
+
+  const named = resolveExplicitExistingTerminalTarget(text, terminals);
+  if (named?.code === 'ambiguous') return null;
+  let target = named?.ok ? named.displayName : null;
+
+  if (!target && program) {
+    const byProgram = terminals.filter((t) => t.program === program);
+    if (byProgram.length === 1) target = byProgram[0].displayName;
+  }
+  if (!target && program) {
+    const byName = resolveTerminalByName(program, terminals);
+    if (byName.ok) target = byName.displayName;
+  }
+  if (!target) {
+    const withProgram = terminals.filter((t) => t.program);
+    if (withProgram.length === 1) target = withProgram[0].displayName;
+    else if (terminals.length === 1) target = terminals[0].displayName;
+  }
+  if (!target) return null;
+
+  return hit(
+    [{ tool: 'summarize_terminal', input: { name: target, ...(program ? { program } : {}) } }],
+    'summarize_terminal',
+    0.9,
+    'agent_response'
+  );
 }
 
 function isCloseUrlIntent(lower) {
@@ -785,6 +837,13 @@ export function resolveZedFastPathIntent(message, context = {}) {
     hasUnresolvedCloseTarget(text, terminals)
   ) {
     return null;
+  }
+
+  // --- "¿qué respondió el agente/kimi/opencode…?" (read-only; must run BEFORE
+  // extractAgentInTerminal, which would treat "kimi en Chase" as a launch) ---
+  if (!OPEN_VERBS.test(lower) && !CLOSE_VERBS.test(lower)) {
+    const agentResponse = resolveAgentResponseIntent(text, lower, terminals, program);
+    if (agentResponse) return agentResponse;
   }
 
   // --- open URL ---

@@ -13,6 +13,17 @@ function safeParse(result) {
   return result && typeof result === 'object' ? result : null;
 }
 
+/** Last non-empty lines of a text block, for quoting terminal content. */
+function lastLines(text, maxLines = 6, maxChars = 600) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0);
+  const tail = lines.slice(-maxLines).join('\n');
+  if (tail.length <= maxChars) return tail;
+  return `…${tail.slice(-maxChars)}`;
+}
+
 /**
  * @param {string} tool
  * @param {unknown} result
@@ -79,6 +90,25 @@ export function formatZedFastPathReply(tool, result) {
         return 'Listo. Comando enviado a la terminal.';
       }
       return 'Listo.';
+    case 'summarize_terminal': {
+      const label = r.displayName || r.terminalId || 'la terminal';
+      if (r.status === 'waiting_user_input') {
+        const waiting = r.waitingFor ? ` Está esperando tu input: ${r.waitingFor}` : '';
+        const excerpt = r.tail ? `\n\nÚltimo contenido:\n${lastLines(r.tail)}` : '';
+        return `${label} tiene un agente pidiendo confirmación.${waiting}${excerpt}`;
+      }
+      if (r.tail) {
+        return `Esto es lo último en ${label}:\n${lastLines(r.tail)}`;
+      }
+      return `No veo salida reciente en ${label}.`;
+    }
+    case 'review_terminal_output': {
+      const label = r.displayName || r.session_id || 'la terminal';
+      const excerpt = typeof r.output === 'string' ? lastLines(r.output, 10, 900) : '';
+      return excerpt
+        ? `Contenido reciente de ${label}:\n${excerpt}`
+        : `La terminal ${label} no tiene salida reciente.`;
+    }
     default:
       return 'Listo.';
   }

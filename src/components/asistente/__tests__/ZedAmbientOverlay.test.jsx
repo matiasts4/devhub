@@ -292,6 +292,24 @@ describe('ZedAmbientOverlay', () => {
     act(() => root.unmount());
   });
 
+  test('keeps a TTS error visible until it is cleared', () => {
+    jest.useFakeTimers();
+    mockUseVoiceTts.mockReturnValue(
+      defaultVoiceTtsMock({
+        ttsError: 'No hay un motor de voz disponible',
+      })
+    );
+
+    const { container, root } = renderOverlay();
+    expect(container.textContent).toContain('No hay un motor de voz disponible');
+
+    act(() => {
+      jest.advanceTimersByTime(8000);
+    });
+    expect(container.textContent).toContain('No hay un motor de voz disponible');
+    act(() => root.unmount());
+  });
+
   test('shows stop-speaking button when TTS is active', () => {
     mockUseVoiceTts.mockReturnValue(
       defaultVoiceTtsMock({
@@ -311,6 +329,58 @@ describe('ZedAmbientOverlay', () => {
       b.getAttribute('aria-label')?.includes('Detener voz')
     );
     expect(stopBtn).toBeTruthy();
+    act(() => root.unmount());
+  });
+
+  test('speaks a concise terminal digest automatically', () => {
+    const speak = jest.fn();
+    const message = {
+      role: 'assistant',
+      timestamp: 'terminal-turn-1',
+      content:
+        'En Kimi, lo último que veo es:\nPrimera línea extensa\nSegunda línea\nResultado final correcto',
+      tool_results: [{ tool: 'summarize_terminal', result: { status: 'idle' } }],
+    };
+    mockUseVoiceTts.mockReturnValue(defaultVoiceTtsMock({ speak }));
+    mockUseZedChat.mockReturnValue(
+      defaultZedChatMock({
+        voiceSettings: { ttsEnabled: true, voiceEnabled: false },
+        lastAssistantMessage: message,
+        messages: [message],
+      })
+    );
+
+    const { root } = renderOverlay();
+
+    expect(speak).toHaveBeenCalledWith(
+      'En Kimi, lo último que veo es: Segunda línea. Resultado final correcto.'
+    );
+    act(() => root.unmount());
+  });
+
+  test('replays the full latest response from the collapsed pill', () => {
+    const speak = jest.fn();
+    const message = {
+      role: 'assistant',
+      timestamp: 'turn-replay',
+      content: 'Esta es la respuesta completa para volver a escuchar.',
+    };
+    mockUseVoiceTts.mockReturnValue(defaultVoiceTtsMock({ speak }));
+    mockUseZedChat.mockReturnValue(
+      defaultZedChatMock({
+        voiceSettings: { ttsEnabled: true, voiceEnabled: false },
+        lastAssistantMessage: message,
+        messages: [message],
+      })
+    );
+
+    const { container, root } = renderOverlay();
+    speak.mockClear();
+    const replay = container.querySelector('[aria-label="Escuchar última respuesta"]');
+    expect(replay).not.toBeNull();
+
+    act(() => replay.click());
+    expect(speak).toHaveBeenCalledWith(message.content, { full: true });
     act(() => root.unmount());
   });
 });

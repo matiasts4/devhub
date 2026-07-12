@@ -1,18 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import { readVoiceSettings, writeVoiceSettings, STT_BACKENDS } from '@/lib/voice/voiceFeatureFlag';
-import {
-  TTS_VOICE_OPTIONS,
-  TTS_RATE_OPTIONS,
-  rateToLengthScale,
-} from '@/lib/voice/ttsVoiceCatalog';
+import { TTS_VOICE_OPTIONS, TTS_RATE_OPTIONS } from '@/lib/voice/ttsVoiceCatalog';
 import {
   buildVoiceEngineConfig,
   fetchXaiKeyConfigured,
 } from '@/lib/voice/resolveVoiceEngineConfig';
+import { useVoiceTts } from '@/lib/voice/useVoiceTts';
+import { listSystemSpeechVoices, rankSystemVoices } from '@/lib/voice/systemSpeechVoices';
 
 const STT_MODELS = ['small', 'base', 'medium', 'large-v3', 'large-v3-turbo'];
 
@@ -23,11 +21,35 @@ const STT_BACKEND_LABELS = {
   grok: 'Grok STT (nube, xAI)',
 };
 
+function useSystemSpeechVoices() {
+  const [voices, setVoices] = useState([]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return undefined;
+
+    const refresh = () => {
+      setVoices(rankSystemVoices(listSystemSpeechVoices(window.speechSynthesis)));
+    };
+
+    refresh();
+    window.speechSynthesis.addEventListener?.('voiceschanged', refresh);
+    // Some engines only populate voices after a tick.
+    const timer = window.setTimeout(refresh, 250);
+    return () => {
+      window.clearTimeout(timer);
+      window.speechSynthesis.removeEventListener?.('voiceschanged', refresh);
+    };
+  }, []);
+
+  return voices;
+}
+
 export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
   const [settings, setSettings] = useState(() => readVoiceSettings());
   const [audioDevices, setAudioDevices] = useState([]);
   const [audioPermission, setAudioPermission] = useState('prompt');
   const [xaiKeyConfigured, setXaiKeyConfigured] = useState(null);
+  const systemVoices = useSystemSpeechVoices();
 
   useEffect(() => {
     writeVoiceSettings(settings);
@@ -114,7 +136,7 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
                 Zed Voice
               </h3>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                Dictado push-to-talk y respuestas habladas (Piper local)
+                Dictado push-to-talk y respuestas habladas (Piper local o voz de Windows)
               </p>
             </div>
           </div>
@@ -130,9 +152,7 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
             </label>
 
             <label className="flex items-center justify-between gap-4 text-sm">
-              <span style={{ color: 'var(--text-secondary)' }}>
-                Zed habla respuestas (TTS Piper)
-              </span>
+              <span style={{ color: 'var(--text-secondary)' }}>Zed habla respuestas (TTS)</span>
               <input
                 type="checkbox"
                 checked={settings.ttsEnabled}
@@ -231,18 +251,20 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
               </div>
             ) : null}
 
-            <label className="flex items-center justify-between gap-4 text-sm">
-              <span style={{ color: 'var(--text-secondary)' }}>Voz de Zed (Piper)</span>
+            <label className="flex flex-col gap-2 text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>Voz del sistema (Windows)</span>
               <select
-                value={settings.ttsVoice}
-                onChange={(e) => setSettings((s) => ({ ...s, ttsVoice: e.target.value }))}
-                data-testid="zed-tts-voice-select"
-                className="h-10 w-[220px] rounded-xl border px-3 text-sm"
+                value={settings.ttsSystemVoiceURI}
+                onChange={(e) => setSettings((s) => ({ ...s, ttsSystemVoiceURI: e.target.value }))}
+                data-testid="zed-tts-system-voice-select"
+                className="h-10 w-full rounded-xl border px-3 text-sm"
                 style={chromeSurfaceStyle({ surface: 'pill' })}
               >
-                {TTS_VOICE_OPTIONS.map((voice) => (
-                  <option key={voice.id} value={voice.id}>
-                    {voice.label}
+                <option value="">Automática (mejor español)</option>
+                {systemVoices.map((voice) => (
+                  <option key={voice.voiceURI} value={voice.voiceURI}>
+                    {voice.name}
+                    {voice.lang ? ` · ${voice.lang}` : ''}
                   </option>
                 ))}
               </select>
@@ -265,14 +287,36 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
               </select>
             </label>
 
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>Voz Piper (Linux / opcional)</span>
+              <select
+                value={settings.ttsVoice}
+                onChange={(e) => setSettings((s) => ({ ...s, ttsVoice: e.target.value }))}
+                data-testid="zed-tts-voice-select"
+                className="h-10 w-[220px] rounded-xl border px-3 text-sm"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
+              >
+                {TTS_VOICE_OPTIONS.map((voice) => (
+                  <option key={voice.id} value={voice.id}>
+                    {voice.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              Atajo micrófono: <strong>Ctrl+Shift+M</strong> (mismo atajo inicia y detiene escucha).
-              Abrir Zed: <strong>Ctrl+Shift+Z</strong>. Requiere <code>piper</code> en PATH o en el
-              venv de voz. Las voces que no son la de por defecto se descargan una vez con{' '}
-              <code>npm run voice:add-voice -- &lt;id&gt;</code>.
+              Atajo micrófono: <strong>Ctrl+Shift+M</strong>. Abrir Zed:{' '}
+              <strong>Ctrl+Shift+Z</strong>. En Windows Zed usa las voces instaladas del sistema
+              (elegí una arriba y probala). Para mejor calidad, instalá voces Natural desde
+              Configuración → Hora e idioma → Voz. En Linux usa Piper (
+              <code>npm run voice:add-voice -- &lt;id&gt;</code>).
             </p>
 
-            <TtsTestButton voice={settings.ttsVoice} rate={settings.ttsRate} />
+            <TtsTestButton
+              voice={settings.ttsVoice}
+              rate={settings.ttsRate}
+              systemVoiceURI={settings.ttsSystemVoiceURI}
+            />
           </div>
         </div>
       </ChromeSurface>
@@ -282,37 +326,38 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
 
 const TTS_TEST_PHRASE = 'Hola. Esta es una prueba de voz de Zed. Si me escuchas, el TTS funciona.';
 
-function TtsTestButton({ voice, rate }) {
+function TtsTestButton({ voice, rate, systemVoiceURI }) {
   const [status, setStatus] = useState('');
+  const wasSpeakingRef = useRef(false);
+  const { speak, speaking, ttsError, clearTtsError } = useVoiceTts({
+    enabled: true,
+    voice,
+    rate,
+    systemVoiceURI,
+  });
+
+  useEffect(() => {
+    if (ttsError) {
+      setStatus(`Error: ${ttsError}`);
+      return;
+    }
+    if (speaking) {
+      wasSpeakingRef.current = true;
+      setStatus('Reproduciendo…');
+      return;
+    }
+    if (wasSpeakingRef.current) {
+      wasSpeakingRef.current = false;
+      setStatus('Listo — ¿escuchaste la frase de prueba?');
+    }
+  }, [speaking, ttsError]);
 
   const runTest = async () => {
     setStatus('Reproduciendo…');
-    let unlistenError = null;
-    let unlistenDone = null;
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const { listen } = await import('@tauri-apps/api/event');
-      unlistenError = await listen('tts-error', (event) => {
-        const msg =
-          typeof event.payload === 'string' && event.payload.trim()
-            ? event.payload.trim()
-            : 'Error TTS desconocido';
-        setStatus(`Error: ${msg}`);
-      });
-      unlistenDone = await listen('tts-done', () => {
-        setStatus('Listo — ¿escuchaste la frase de prueba?');
-      });
-      await invoke('voice_speak', {
-        text: TTS_TEST_PHRASE,
-        options: { voice, length_scale: rateToLengthScale(rate) },
-      });
-    } catch (error) {
-      setStatus(`Error: ${String(error?.message || error || 'solo disponible en Tauri')}`);
-    } finally {
-      window.setTimeout(() => {
-        if (typeof unlistenError === 'function') unlistenError();
-        if (typeof unlistenDone === 'function') unlistenDone();
-      }, 8000);
+    clearTtsError();
+    const result = await speak(TTS_TEST_PHRASE, { full: true });
+    if (!result.ok) {
+      setStatus(`Error: ${result.error || 'No hay un motor de voz disponible'}`);
     }
   };
 
@@ -326,7 +371,8 @@ function TtsTestButton({ voice, rate }) {
         Probar voz (TTS)
       </button>
       <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-        Reproduce: «{TTS_TEST_PHRASE}». Requiere app Tauri (no navegador web).
+        Reproduce: «{TTS_TEST_PHRASE}». En Windows usa la voz del sistema seleccionada; en Linux,
+        Piper.
       </p>
       {status ? (
         <p

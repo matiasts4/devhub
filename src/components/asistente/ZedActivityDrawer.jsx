@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Volume2, VolumeX, X } from 'lucide-react';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition } from '@/components/ui/system/motion-tokens';
 import ZedActionCard from './ZedActionCard';
@@ -35,16 +36,38 @@ function StatusPill({ status }) {
   );
 }
 
-const ZedActivityMessage = memo(function ZedActivityMessage({ msg, onFocusTerminal, onOpenUrl }) {
+const ZedActivityMessage = memo(function ZedActivityMessage({
+  msg,
+  onFocusTerminal,
+  onOpenUrl,
+  ttsEnabled,
+  speaking,
+  onSpeak,
+  onStopSpeaking,
+}) {
   return (
     <div key={msg.timestamp} className="space-y-1.5">
       {typeof msg.content === 'string' && msg.content && msg.content !== 'initial' ? (
-        <p
-          className={`text-[11px] leading-snug ${msg.partial ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}
-        >
-          {msg.content}
-          {msg.partial ? <span className="ml-0.5 inline-block animate-pulse">▌</span> : null}
-        </p>
+        <div className="group flex items-start gap-1.5">
+          <p
+            className={`min-w-0 flex-1 whitespace-pre-wrap text-[11px] leading-snug ${msg.partial ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}
+          >
+            {msg.content}
+            {msg.partial ? <span className="ml-0.5 inline-block animate-pulse">▌</span> : null}
+          </p>
+          {ttsEnabled && !msg.partial ? (
+            <button
+              type="button"
+              onClick={() => (speaking ? onStopSpeaking?.() : onSpeak?.(msg))}
+              className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded border border-[var(--border-subtle)] px-1.5 py-1 text-[9px] uppercase tracking-wide text-[var(--text-muted)] opacity-75 transition hover:text-[var(--accent-primary)] hover:opacity-100"
+              aria-label={speaking ? 'Detener voz' : 'Escuchar respuesta'}
+              title={speaking ? 'Detener voz' : 'Escuchar respuesta completa'}
+            >
+              {speaking ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+              {speaking ? 'Detener' : 'Escuchar'}
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {Array.isArray(msg.tool_results)
         ? msg.tool_results.map((entry, i) => (
@@ -76,6 +99,12 @@ export default function ZedActivityDrawer({
   planState = null,
   planControls = null,
   pendingStepApproval = null,
+  ttsEnabled = false,
+  speaking = false,
+  onSpeakMessage = null,
+  onStopSpeaking = null,
+  voiceError = '',
+  onClearVoiceError = null,
 }) {
   const motionMode = useMotionMode();
   const isReduced = motionMode === 'reduced';
@@ -178,6 +207,26 @@ export default function ZedActivityDrawer({
             )}
 
             <ZedAuditTrace entries={auditTrail} />
+
+            {voiceError ? (
+              <div
+                role="alert"
+                data-testid="zed-voice-error"
+                className="flex items-start gap-2 rounded-lg border border-[color-mix(in_srgb,var(--danger,#ef4444)_40%,transparent)] bg-[color-mix(in_srgb,var(--danger,#ef4444)_8%,transparent)] p-2 text-[10px] text-[var(--danger,#ef4444)]"
+              >
+                <span className="min-w-0 flex-1">
+                  Voz no disponible: {voiceError}. Podés reintentar con “Escuchar”.
+                </span>
+                <button
+                  type="button"
+                  onClick={onClearVoiceError}
+                  aria-label="Cerrar error de voz"
+                  className="shrink-0 opacity-70 hover:opacity-100"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : null}
 
             {currentStep ? (
               <div
@@ -312,6 +361,10 @@ export default function ZedActivityDrawer({
                 msg={msg}
                 onFocusTerminal={handleFocusTerminal}
                 onOpenUrl={handleOpenUrl}
+                ttsEnabled={ttsEnabled}
+                speaking={speaking}
+                onSpeak={onSpeakMessage}
+                onStopSpeaking={onStopSpeaking}
               />
             ))}
 

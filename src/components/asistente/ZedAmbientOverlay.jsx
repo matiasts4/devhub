@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Send, Square, VolumeX } from 'lucide-react';
+import { Send, Square, Volume2, VolumeX } from 'lucide-react';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition } from '@/components/ui/system/motion-tokens';
 import { useZedChat } from '@/lib/asistente/useZedChat';
@@ -32,6 +32,25 @@ import { buildVoiceEngineConfig } from '@/lib/voice/resolveVoiceEngineConfig';
 
 const STATUS_VISIBLE_MS = 4000;
 const STATUS_EXIT_MS = 320;
+const TERMINAL_SPEECH_TOOLS = new Set(['summarize_terminal', 'review_terminal_output']);
+
+export function buildAutomaticSpeechText(message) {
+  const content = typeof message?.content === 'string' ? message.content.trim() : '';
+  if (!content) return '';
+  const isTerminalReply = message?.tool_results?.some((entry) =>
+    TERMINAL_SPEECH_TOOLS.has(entry?.tool)
+  );
+  if (!isTerminalReply) return content;
+
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length <= 3) return content;
+  return [lines[0], ...lines.slice(-2)]
+    .map((line) => (/[.!?:]$/.test(line) ? line : `${line}.`))
+    .join(' ');
+}
 
 const ACCENT_HEX = Object.freeze({
   terminal: '#4ad3c0',
@@ -291,7 +310,10 @@ const ZedCollapsedPill = memo(function ZedCollapsedPill({
   quickSuggestions,
   suggestionIndex,
   voiceEnabled,
+  ttsEnabled,
+  hasSpeakableResponse,
   onVoiceToggle,
+  onReplayResponse,
   onStopSpeaking,
   onOpen,
 }) {
@@ -348,32 +370,48 @@ const ZedCollapsedPill = memo(function ZedCollapsedPill({
           </AnimatePresence>
         )}
       </span>
-      {voiceEnabled && !isLoading ? (
-        speaking ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStopSpeaking();
-            }}
-            aria-label="Detener voz"
-            className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--warning,#f0b54a)] transition-colors hover:text-[var(--accent-primary)]"
-          >
-            Detener
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onVoiceToggle();
-            }}
-            aria-label="Hablar con Zed"
-            className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
-          >
-            Mic
-          </button>
-        )
+      {!isLoading ? (
+        <div className="flex shrink-0 items-center gap-2">
+          {ttsEnabled && speaking ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onStopSpeaking();
+              }}
+              aria-label="Detener voz"
+              className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--warning,#f0b54a)] transition-colors hover:text-[var(--accent-primary)]"
+            >
+              Detener
+            </button>
+          ) : ttsEnabled && hasSpeakableResponse ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReplayResponse();
+              }}
+              aria-label="Escuchar última respuesta"
+              className="inline-flex shrink-0 items-center gap-1 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
+            >
+              <Volume2 className="h-3 w-3" />
+              Escuchar
+            </button>
+          ) : null}
+          {voiceEnabled && !speaking ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onVoiceToggle();
+              }}
+              aria-label="Hablar con Zed"
+              className="shrink-0 appearance-none border-none bg-transparent p-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)] transition-colors hover:text-[var(--accent-primary)]"
+            >
+              Mic
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -418,11 +456,14 @@ export default function ZedAmbientOverlay({
     pendingStepApproval,
   } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals, getWorkspaceWindows });
 
-  const voiceEnabled = isVoiceFeatureEnabled() && voiceSettings?.voiceEnabled;
+  const voiceFeatureEnabled = isVoiceFeatureEnabled();
+  const voiceEnabled = voiceFeatureEnabled && voiceSettings?.voiceEnabled;
+  const ttsEnabled = voiceFeatureEnabled && voiceSettings?.ttsEnabled;
   const { speak, speaking, stopSpeaking, ttsError, clearTtsError } = useVoiceTts({
-    enabled: voiceSettings?.ttsEnabled,
+    enabled: ttsEnabled,
     voice: voiceSettings?.ttsVoice,
     rate: voiceSettings?.ttsRate,
+    systemVoiceURI: voiceSettings?.ttsSystemVoiceURI || '',
   });
 
   const onFinalTranscript = useCallback(
@@ -612,15 +653,21 @@ export default function ZedAmbientOverlay({
   const lastVoicedErrorRef = useRef('');
   useEffect(() => {
     if (!errorText && !ttsError) {
+      if (lastVoicedErrorRef.current) hideStatus();
       lastVoicedErrorRef.current = '';
       return;
     }
     const voiceError = errorText || ttsError;
     if (voiceError === lastVoicedErrorRef.current) return;
     lastVoicedErrorRef.current = voiceError;
+    if (ttsError) {
+      clearStatusTimers();
+      setStatusExiting(false);
+      setStatusLine(voiceError);
+      return;
+    }
     showStatus(voiceError);
-    if (ttsError && clearTtsError) clearTtsError();
-  }, [errorText, ttsError, showStatus, clearTtsError]);
+  }, [clearStatusTimers, errorText, hideStatus, showStatus, ttsError]);
 
   const displayMessages = useMemo(
     () => (streamingMessage ? [...messages, streamingMessage] : messages),
@@ -633,6 +680,24 @@ export default function ZedAmbientOverlay({
   );
 
   const streamingText = streamingMessage?.content || '';
+  const hasSpeakableResponse = Boolean(
+    displayAssistantMessage?.content &&
+    displayAssistantMessage.timestamp !== 'initial' &&
+    !displayAssistantMessage.partial
+  );
+
+  const replayLastResponse = useCallback(() => {
+    if (!hasSpeakableResponse) return;
+    speak(displayAssistantMessage.content, { full: true });
+  }, [displayAssistantMessage, hasSpeakableResponse, speak]);
+
+  const speakActivityMessage = useCallback(
+    (message) => {
+      if (!message?.content) return;
+      speak(message.content, { full: true });
+    },
+    [speak]
+  );
 
   const phase = useMemo(
     () => resolveZedAmbientPhase(isLoading, isOpen, statusLine),
@@ -677,24 +742,24 @@ export default function ZedAmbientOverlay({
   }, [hideStatus, isLoading, displayAssistantMessage, lastTurnTimestamp, showStatus]);
 
   useEffect(() => {
-    if (isLoading || !voiceSettings?.ttsEnabled) return;
+    if (isLoading || !ttsEnabled) return;
     if (!displayAssistantMessage?.content || displayAssistantMessage.timestamp === 'initial')
       return;
     if (displayAssistantMessage.partial) return;
     if (lastSpokenRef.current === displayAssistantMessage.timestamp) return;
     lastSpokenRef.current = displayAssistantMessage.timestamp;
-    speak(displayAssistantMessage.content);
-  }, [isLoading, displayAssistantMessage, speak, voiceSettings?.ttsEnabled]);
+    speak(buildAutomaticSpeechText(displayAssistantMessage));
+  }, [isLoading, displayAssistantMessage, speak, ttsEnabled]);
 
   useEffect(() => {
-    if (!voiceSettings?.ttsEnabled || !pendingApproval?.preview) return;
+    if (!ttsEnabled || !pendingApproval?.preview) return;
     if (pendingApproval.kind !== 'local_intent') return;
     if (lastUserMessage?.source !== 'voice') return;
     const key = `${pendingApproval.message}::${pendingApproval.preview}`;
     if (lastSpokenApprovalRef.current === key) return;
     lastSpokenApprovalRef.current = key;
     speak(pendingApproval.preview);
-  }, [lastUserMessage, pendingApproval, speak, voiceSettings?.ttsEnabled]);
+  }, [lastUserMessage, pendingApproval, speak, ttsEnabled]);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
@@ -842,6 +907,12 @@ export default function ZedAmbientOverlay({
                 planState={planState}
                 planControls={planControls}
                 pendingStepApproval={pendingStepApproval}
+                ttsEnabled={ttsEnabled}
+                speaking={speaking}
+                onSpeakMessage={speakActivityMessage}
+                onStopSpeaking={stopSpeaking}
+                voiceError={ttsError}
+                onClearVoiceError={clearTtsError}
               />
               <div
                 data-zed-state={pillState}
@@ -892,7 +963,10 @@ export default function ZedAmbientOverlay({
                     quickSuggestions={quickSuggestions}
                     suggestionIndex={suggestionIndex}
                     voiceEnabled={voiceEnabled}
+                    ttsEnabled={ttsEnabled}
+                    hasSpeakableResponse={hasSpeakableResponse}
                     onVoiceToggle={handleVoiceToggle}
+                    onReplayResponse={replayLastResponse}
                     onStopSpeaking={stopSpeaking}
                     onOpen={onOpenCollapsed}
                   />

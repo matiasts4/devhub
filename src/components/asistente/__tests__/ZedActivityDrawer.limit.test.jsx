@@ -16,6 +16,12 @@ jest.mock('framer-motion', () => {
   };
 });
 
+jest.mock('lucide-react', () => {
+  const React = require('react');
+  const icon = (name) => (props) => React.createElement('svg', { ...props, 'data-icon': name });
+  return new Proxy({}, { get: (_, key) => icon(String(key)) });
+});
+
 jest.mock('../ZedActionCard', () => {
   const React = require('react');
   return function MockZedActionCard() {
@@ -131,6 +137,62 @@ describe('ZedActivityDrawer message list limits', () => {
     expect(partialP.className).toContain('text-[var(--text-muted)]');
     expect(partialP.textContent).toContain('▌');
 
+    unmount();
+  });
+
+  test('lets the user listen to or stop a completed response', () => {
+    const onSpeakMessage = jest.fn();
+    const onStopSpeaking = jest.fn();
+    const messages = [
+      { role: 'assistant', content: 'Bienvenido', timestamp: 'initial' },
+      { role: 'assistant', content: 'Respuesta completa', timestamp: 'turn-1' },
+    ];
+
+    const first = renderDrawer({
+      expanded: true,
+      onToggle: jest.fn(),
+      messages,
+      ttsEnabled: true,
+      speaking: false,
+      onSpeakMessage,
+      onStopSpeaking,
+    });
+    const listen = first.container.querySelector('[aria-label="Escuchar respuesta"]');
+    expect(listen).not.toBeNull();
+    act(() => listen.click());
+    expect(onSpeakMessage).toHaveBeenCalledWith(messages[1]);
+    first.unmount();
+
+    const second = renderDrawer({
+      expanded: true,
+      onToggle: jest.fn(),
+      messages,
+      ttsEnabled: true,
+      speaking: true,
+      onSpeakMessage,
+      onStopSpeaking,
+    });
+    const stop = second.container.querySelector('[aria-label="Detener voz"]');
+    expect(stop).not.toBeNull();
+    act(() => stop.click());
+    expect(onStopSpeaking).toHaveBeenCalledTimes(1);
+    second.unmount();
+  });
+
+  test('keeps voice errors visible until dismissed', () => {
+    const onClearVoiceError = jest.fn();
+    const { container, unmount } = renderDrawer({
+      expanded: true,
+      onToggle: jest.fn(),
+      voiceError: 'No hay voces instaladas',
+      onClearVoiceError,
+    });
+
+    expect(container.querySelector('[data-testid="zed-voice-error"]').textContent).toContain(
+      'No hay voces instaladas'
+    );
+    act(() => container.querySelector('[aria-label="Cerrar error de voz"]').click());
+    expect(onClearVoiceError).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
