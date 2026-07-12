@@ -269,7 +269,7 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         disposeWebglAddonForContextLoss,
         stabilizeTerminalRenderer,
         refreshTerminalViewport,
-        forceTerminalViewportRepaint,
+        // use imported forceTerminalViewportRepaint — not always on ctxRef
         nudgeTerminalPtyResize,
         scheduleWorkspaceShowRecovery,
         scheduleBoundedForceRepaint,

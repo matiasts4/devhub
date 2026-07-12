@@ -380,7 +380,19 @@ export default function SwarmControl({ snapshotInput = null }) {
   }, [directorQueue]);
 
   useEffect(() => {
-    setApprovalMutationState({ submittingKey: null, error: null, errorKey: null });
+    setApprovalMutationState((current) => {
+      if (
+        current.error &&
+        current.errorKey &&
+        approvals.some(
+          (approval) =>
+            approval.checkpoint_key === current.errorKey && approval.status === 'pending'
+        )
+      ) {
+        return { ...current, submittingKey: null };
+      }
+      return { submittingKey: null, error: null, errorKey: null };
+    });
   }, [approvals]);
 
   useEffect(() => {
@@ -651,15 +663,15 @@ export default function SwarmControl({ snapshotInput = null }) {
         setFetchedInput(nextInput);
       }
 
+      await loadSnapshot();
       setApprovalMutationState({ submittingKey: null, error: null, errorKey: null });
     } catch (error) {
+      await loadSnapshot();
       setApprovalMutationState({
         submittingKey: null,
         error: error?.message || 'No se pudo registrar la decisión del Director.',
         errorKey: approval.checkpoint_key,
       });
-    } finally {
-      await loadSnapshot();
     }
   };
 

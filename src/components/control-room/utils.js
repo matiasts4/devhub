@@ -15,7 +15,7 @@ const TOKEN_LABELS = Object.freeze({
   failed: 'fallido',
   aborted: 'abortado',
   running: 'en ejecución',
-  idle: 'idle',
+  idle: 'inactivo',
   online: 'en línea',
   offline: 'fuera de línea',
   current: 'actual',
