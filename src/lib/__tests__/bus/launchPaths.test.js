@@ -88,26 +88,31 @@ describe('T-011 — bus helper wiring in production launch path', () => {
     expect(wrapper).not.toMatch(/# Bus helpers skipped/);
   });
 
-  test('buildLaunchWrapperForRole wrapper passes bash -n syntax check (helpers block is well-formed)', () => {
-    const launchPaths = require('../../bus/launchPaths.js');
-    const { spawnSync } = require('child_process');
-    const wrapper = launchPaths.buildLaunchWrapperForRole({
-      agentId: 'launch-abc-coder',
-      missionId: 'launch-abc',
-      role: 'coder',
-      workspacePath: '/tmp/ws',
-      repoRoot: process.cwd(),
-      dbPath: '/tmp/ws/devhub.db',
-      innerCommand: 'sleep 1',
-    });
-    const tmp = path.join(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-bus-paths-')),
-      'wrapper.sh'
-    );
-    fs.writeFileSync(tmp, wrapper, { mode: 0o644 });
-    const r = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
-    expect(r.status).toBe(0);
-  });
+  const { hasBash, bashSyntaxCheck } = require('../../../test-support/bashTestUtils');
+  const testWithBash = hasBash ? test : test.skip;
+
+  testWithBash(
+    'buildLaunchWrapperForRole wrapper passes bash -n syntax check (helpers block is well-formed)',
+    () => {
+      const launchPaths = require('../../bus/launchPaths.js');
+      const wrapper = launchPaths.buildLaunchWrapperForRole({
+        agentId: 'launch-abc-coder',
+        missionId: 'launch-abc',
+        role: 'coder',
+        workspacePath: '/tmp/ws',
+        repoRoot: process.cwd(),
+        dbPath: '/tmp/ws/devhub.db',
+        innerCommand: 'sleep 1',
+      });
+      const tmp = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-bus-paths-')),
+        'wrapper.sh'
+      );
+      fs.writeFileSync(tmp, wrapper, { mode: 0o644 });
+      const r = bashSyntaxCheck(tmp);
+      expect(r.status).toBe(0);
+    }
+  );
 
   test('buildLaunchWrapperForRole injects MiniMax MCP env vars for zed role with modelProvider=minimax', () => {
     jest.resetModules();

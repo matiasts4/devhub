@@ -40,13 +40,27 @@ function installDom(url = 'https://devhub.test') {
     dom.window.requestAnimationFrame = (callback) => setTimeout(() => callback(Date.now()), 0);
     dom.window.cancelAnimationFrame = (id) => clearTimeout(id);
   }
+  // Components call requestAnimationFrame unprefixed (no window.), which in the
+  // node test runner resolves against global scope, not dom.window. Without
+  // this alias the call throws ReferenceError inside effects and gates like
+  // SwarmControl's double-rAF surfaceReady never open, rendering an empty view.
+  global.requestAnimationFrame = dom.window.requestAnimationFrame;
+  global.cancelAnimationFrame = dom.window.cancelAnimationFrame;
 
   return dom;
 }
 
 async function flushEffects() {
-  await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  // Several full event-loop turns (microtasks + setImmediate + timers):
+  // components that gate readiness behind a double requestAnimationFrame
+  // (e.g. SwarmControl's surfaceReady) need rAF#1, rAF#2 (both setTimeout(0)
+  // via the installDom shim), then React's concurrent re-render (scheduled on
+  // setImmediate/MessageChannel), then the effects of that re-render.
+  for (let i = 0; i < 4; i += 1) {
+    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 async function renderIntoDom(element, mountedRoots) {

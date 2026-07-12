@@ -400,6 +400,10 @@ export default function TerminalTTY({
   const serverTermsizeRef = useRef({ cols: 0, rows: 0 });
   const hasConnectedOnceRef = useRef(false);
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+  /** OS resume transport recovery (visibility/focus/pageshow) — coalesce + cooldown. */
+  const osResumeReconnectTimerRef = useRef(null);
+  const lastOsResumeReconnectAtRef = useRef(0);
+  const initErrorRef = useRef(null);
   const isEngineV2Ref = useRef(isEngineV2);
   const connectRef = useRef(null);
   const sendResizeRef = useRef(null);
@@ -720,6 +724,10 @@ export default function TerminalTTY({
       onConnectionStateChange(id, connectionState);
     }
   }, [connectionState, id, onConnectionStateChange]);
+
+  useEffect(() => {
+    initErrorRef.current = initError;
+  }, [initError]);
 
   useEffect(() => {
     requestedRendererModeRef.current = requestedRendererMode;
@@ -1444,6 +1452,7 @@ export default function TerminalTTY({
   useTerminalAutoReconnect({
     ctxRef: slice2CtxRef,
     autoFocus,
+    isVisibleInLayout,
     connectionState,
     initError,
     id,
@@ -1614,6 +1623,14 @@ export default function TerminalTTY({
     fitAndResize,
     reactivateCoalesceTimerRef,
     logViewportDiagnostic,
+    // OS resume transport recovery (additive; viewport paths unchanged)
+    reconnect,
+    connectionStateRef,
+    wsRef,
+    hasConnectedOnceRef,
+    initErrorRef,
+    osResumeReconnectTimerRef,
+    lastOsResumeReconnectAtRef,
   };
 
   slice3CtxRef.current = {

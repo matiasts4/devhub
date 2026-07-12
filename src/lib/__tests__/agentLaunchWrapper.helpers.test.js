@@ -13,6 +13,13 @@ const { execFileSync: _execFileSync, spawnSync } = require('child_process');
 const Database = require('better-sqlite3');
 
 const wrapper = require('../agentLaunchWrapper.js');
+const { hasBash, bashSyntaxCheck } = require('../../test-support/bashTestUtils');
+
+// Syntax checks only need any working bash. Execution tests run node +
+// better-sqlite3 from inside bash: on Windows the only bash is WSL/Git Bash,
+// whose node cannot load the Windows-built native module — skip there.
+const testWithBash = hasBash ? test : test.skip;
+const testBashExec = process.platform === 'win32' ? test.skip : test;
 
 function makeTempWorkspace() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-wrapper-'));
@@ -76,54 +83,57 @@ describe('T-003 — wrapper bus helpers', () => {
     expect(block).toContain('_devhub_provision_worker()');
   });
 
-  test('buildBusHelpersBlock output passes bash -n syntax check', () => {
+  testWithBash('buildBusHelpersBlock output passes bash -n syntax check', () => {
     const block = wrapper.buildBusHelpersBlock({ busBinaryPath: BUS_BIN, dbPath: '/tmp/x.db' });
     const tmp = path.join(makeTempWorkspace(), 'helpers.sh');
     fs.writeFileSync(tmp, block, { mode: 0o644 });
-    const r = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
+    const r = bashSyntaxCheck(tmp);
     expect(r.status).toBe(0);
   });
 
-  test('HELPER-S14: _devhub_chat is callable inside a bash subshell and inserts a team_chat row', () => {
-    const { dbPath, dir: dbDir } = makeTempDb();
-    const ws = makeTempWorkspace();
-    try {
-      const block = wrapper.buildBusHelpersBlock({ busBinaryPath: BUS_BIN, dbPath });
-      const script = path.join(ws, 'with-helpers.sh');
-      fs.writeFileSync(
-        script,
-        [
-          '#!/usr/bin/env bash',
-          'set -e',
-          'export DEVHUB_MISSION_ID="m1"',
-          'export DEVHUB_ROLE="auditor"',
-          'export DEVHUB_LAUNCH_ID="l-abc"',
-          'export DEVHUB_DB_PATH="' + dbPath + '"',
-          'export PATH="' + path.dirname(BUS_BIN) + ':$PATH"',
-          block,
-          '_devhub_chat "hello" --to director --kind chat',
-        ].join('\n'),
-        { mode: 0o755 }
-      );
-      const r = spawnSync('bash', [script], { encoding: 'utf-8' });
-      if (r.status !== 0) {
-        process.stderr.write(`STDOUT: ${r.stdout}\nSTDERR: ${r.stderr}\n`);
+  testBashExec(
+    'HELPER-S14: _devhub_chat is callable inside a bash subshell and inserts a team_chat row',
+    () => {
+      const { dbPath, dir: dbDir } = makeTempDb();
+      const ws = makeTempWorkspace();
+      try {
+        const block = wrapper.buildBusHelpersBlock({ busBinaryPath: BUS_BIN, dbPath });
+        const script = path.join(ws, 'with-helpers.sh');
+        fs.writeFileSync(
+          script,
+          [
+            '#!/usr/bin/env bash',
+            'set -e',
+            'export DEVHUB_MISSION_ID="m1"',
+            'export DEVHUB_ROLE="auditor"',
+            'export DEVHUB_LAUNCH_ID="l-abc"',
+            'export DEVHUB_DB_PATH="' + dbPath + '"',
+            'export PATH="' + path.dirname(BUS_BIN) + ':$PATH"',
+            block,
+            '_devhub_chat "hello" --to director --kind chat',
+          ].join('\n'),
+          { mode: 0o755 }
+        );
+        const r = spawnSync('bash', [script], { encoding: 'utf-8' });
+        if (r.status !== 0) {
+          process.stderr.write(`STDOUT: ${r.stdout}\nSTDERR: ${r.stderr}\n`);
+        }
+        expect(r.status).toBe(0);
+        const db = new Database(dbPath, { readonly: true });
+        const row = db.prepare('SELECT * FROM team_chat WHERE mission_id = ?').get('m1');
+        expect(row).toBeDefined();
+        expect(row.from_role).toBe('auditor');
+        expect(row.to_role).toBe('director');
+        expect(row.body).toBe('hello');
+        db.close();
+      } finally {
+        fs.rmSync(ws, { recursive: true, force: true });
+        fs.rmSync(dbDir, { recursive: true, force: true });
       }
-      expect(r.status).toBe(0);
-      const db = new Database(dbPath, { readonly: true });
-      const row = db.prepare('SELECT * FROM team_chat WHERE mission_id = ?').get('m1');
-      expect(row).toBeDefined();
-      expect(row.from_role).toBe('auditor');
-      expect(row.to_role).toBe('director');
-      expect(row.body).toBe('hello');
-      db.close();
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-      fs.rmSync(dbDir, { recursive: true, force: true });
     }
-  });
+  );
 
-  test('HELPER-S1: _devhub_chat reads body from --message-file', () => {
+  testBashExec('HELPER-S1: _devhub_chat reads body from --message-file', () => {
     const { dbPath, dir: dbDir } = makeTempDb();
     const ws = makeTempWorkspace();
     try {
@@ -158,7 +168,7 @@ describe('T-003 — wrapper bus helpers', () => {
     }
   });
 
-  test('HELPER-S10/11: _devhub_inbox_check consumes once and second call is empty', () => {
+  testBashExec('HELPER-S10/11: _devhub_inbox_check consumes once and second call is empty', () => {
     const { dbPath, dir: dbDir } = makeTempDb();
     const ws = makeTempWorkspace();
     try {
@@ -200,7 +210,7 @@ describe('T-003 — wrapper bus helpers', () => {
     }
   });
 
-  test('HELPER-S14c: PATH shims make helpers callable when BASH_ENV is unset', () => {
+  testBashExec('HELPER-S14c: PATH shims make helpers callable when BASH_ENV is unset', () => {
     const { dbPath, dir: dbDir } = makeTempDb();
     const ws = makeTempWorkspace();
     try {
@@ -243,43 +253,48 @@ describe('T-003 — wrapper bus helpers', () => {
     }
   });
 
-  test('HELPER-S14b: persisted BASH_ENV makes helpers callable from bash -c subshells', () => {
-    const { dbPath, dir: dbDir } = makeTempDb();
-    const ws = makeTempWorkspace();
-    try {
-      const persist = wrapper.buildBusHelpersPersistBlock({
-        missionId: 'launch-bash-env',
-        busBinaryPath: BUS_BIN,
-        dbPath,
-      });
-      const script = path.join(ws, 'bash-env.sh');
-      fs.writeFileSync(
-        script,
-        [
-          '#!/usr/bin/env bash',
-          'set -e',
-          'export DEVHUB_MISSION_ID="launch-bash-env"',
-          'export DEVHUB_ROLE="auditor"',
-          'export DEVHUB_DB_PATH="' + dbPath + '"',
-          persist,
-          `BASH_ENV="$DEVHUB_BUS_HELPERS_FILE" bash -c '_devhub_chat "via bash env" --to director --kind chat'`,
-        ].join('\n'),
-        { mode: 0o755 }
-      );
-      const r = spawnSync('bash', [script], { encoding: 'utf-8' });
-      if (r.status !== 0) {
-        process.stderr.write(`STDOUT: ${r.stdout}\nSTDERR: ${r.stderr}\n`);
+  testBashExec(
+    'HELPER-S14b: persisted BASH_ENV makes helpers callable from bash -c subshells',
+    () => {
+      const { dbPath, dir: dbDir } = makeTempDb();
+      const ws = makeTempWorkspace();
+      try {
+        const persist = wrapper.buildBusHelpersPersistBlock({
+          missionId: 'launch-bash-env',
+          busBinaryPath: BUS_BIN,
+          dbPath,
+        });
+        const script = path.join(ws, 'bash-env.sh');
+        fs.writeFileSync(
+          script,
+          [
+            '#!/usr/bin/env bash',
+            'set -e',
+            'export DEVHUB_MISSION_ID="launch-bash-env"',
+            'export DEVHUB_ROLE="auditor"',
+            'export DEVHUB_DB_PATH="' + dbPath + '"',
+            persist,
+            `BASH_ENV="$DEVHUB_BUS_HELPERS_FILE" bash -c '_devhub_chat "via bash env" --to director --kind chat'`,
+          ].join('\n'),
+          { mode: 0o755 }
+        );
+        const r = spawnSync('bash', [script], { encoding: 'utf-8' });
+        if (r.status !== 0) {
+          process.stderr.write(`STDOUT: ${r.stdout}\nSTDERR: ${r.stderr}\n`);
+        }
+        expect(r.status).toBe(0);
+        const db = new Database(dbPath, { readonly: true });
+        const row = db
+          .prepare('SELECT * FROM team_chat WHERE mission_id = ?')
+          .get('launch-bash-env');
+        expect(row?.body).toBe('via bash env');
+        db.close();
+      } finally {
+        fs.rmSync(ws, { recursive: true, force: true });
+        fs.rmSync(dbDir, { recursive: true, force: true });
       }
-      expect(r.status).toBe(0);
-      const db = new Database(dbPath, { readonly: true });
-      const row = db.prepare('SELECT * FROM team_chat WHERE mission_id = ?').get('launch-bash-env');
-      expect(row?.body).toBe('via bash env');
-      db.close();
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-      fs.rmSync(dbDir, { recursive: true, force: true });
     }
-  });
+  );
 
   test('DEVHUB_DB_PATH is exported in buildAgentEnvExports', () => {
     const params = {
@@ -296,7 +311,11 @@ describe('T-003 — wrapper bus helpers', () => {
       dbPath: '/abs/path/to/devhub.db',
     };
     const result = wrapper.buildAgentEnvExports(params);
-    expect(result).toContain('export DEVHUB_DB_PATH="/abs/path/to/devhub.db"');
+    // DEVHUB_DB_PATH is resolved through _devhub_to_bash_path at runtime so
+    // Windows host paths map to /mnt/<drive>/... under WSL.
+    expect(result).toContain(
+      `export DEVHUB_DB_PATH="$(_devhub_to_bash_path '/abs/path/to/devhub.db' 2>/dev/null || printf '%s' '/abs/path/to/devhub.db')"`
+    );
     expect(result).toContain('export BASH_ENV="/tmp/devhub-mission-launch-abc/bus-helpers.sh"');
   });
 });

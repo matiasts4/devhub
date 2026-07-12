@@ -20,7 +20,12 @@ const { spawnSync } = require('child_process');
 const Database = require('better-sqlite3');
 
 const wrapper = require('../agentLaunchWrapper.js');
+const { hasBash, bashSyntaxCheck } = require('../../test-support/bashTestUtils');
 const BUS_BIN = path.resolve(process.cwd(), 'devhub-cli/bin/devhub-bus.js');
+
+const testWithBash = hasBash ? test : test.skip;
+// Executes node + better-sqlite3 inside bash — not portable to WSL/Git Bash.
+const testBashExec = process.platform === 'win32' ? test.skip : test;
 
 function makeTmpDb() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-shim-'));
@@ -97,7 +102,7 @@ describe('T-006 — _devhub_tell_director shim', () => {
     expect(wrapper_str).not.toMatch(/_devhub_pending_deliveries_loop/);
   });
 
-  test('rendered wrapper passes bash -n syntax check', () => {
+  testWithBash('rendered wrapper passes bash -n syntax check', () => {
     const wrapper_str = wrapper.buildAgentLaunchWrapper({
       agentId: 'launch-abc-auditor',
       missionId: 'launch-abc',
@@ -110,61 +115,64 @@ describe('T-006 — _devhub_tell_director shim', () => {
     });
     const tmp = path.join(makeTmpScript(), 'wrapper.sh');
     fs.writeFileSync(tmp, wrapper_str, { mode: 0o644 });
-    const r = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
+    const r = bashSyntaxCheck(tmp);
     expect(r.status).toBe(0);
   });
 
-  test('calling rendered _devhub_tell_director inserts a team_chat row (regression: existing call sites)', () => {
-    const { dir, dbPath } = makeTmpDb();
-    const ws = makeTmpScript();
-    const workspacePath = path.join(ws, 'workspace');
-    fs.mkdirSync(workspacePath, { recursive: true });
-    try {
-      // Use the innerCommand to invoke _devhub_tell_director — the auto-restart loop
-      // runs the inner command and exits on success, so the script terminates after
-      // the shim runs once.
-      const wrapper_str = wrapper.buildAgentLaunchWrapper({
-        agentId: 'launch-abc-auditor',
-        missionId: 'launch-abc',
-        role: 'auditor',
-        workspacePath,
-        directorTmuxSession: 'devhub-swarm-abc-director',
-        innerCommand: '_devhub_tell_director "task done: <X>"',
-        busBinaryPath: BUS_BIN,
-        dbPath,
-      });
-      const script = path.join(ws, 'run.sh');
-      fs.writeFileSync(
-        script,
-        [
-          '#!/usr/bin/env bash',
-          'export DEVHUB_MISSION_ID="launch-abc"',
-          'export DEVHUB_ROLE="auditor"',
-          'export DEVHUB_AGENT_ID="launch-abc-auditor"',
-          'export DEVHUB_DB_PATH="' + dbPath + '"',
-          'export PATH="' + path.dirname(BUS_BIN) + ':$PATH"',
-          wrapper_str,
-        ].join('\n'),
-        { mode: 0o755 }
-      );
-      const r = spawnSync('bash', [script], { encoding: 'utf-8' });
-      if (r.status !== 0) {
-        process.stderr.write(`shim script STDOUT=${r.stdout}\nSTDERR=${r.stderr}\n`);
+  testBashExec(
+    'calling rendered _devhub_tell_director inserts a team_chat row (regression: existing call sites)',
+    () => {
+      const { dir, dbPath } = makeTmpDb();
+      const ws = makeTmpScript();
+      const workspacePath = path.join(ws, 'workspace');
+      fs.mkdirSync(workspacePath, { recursive: true });
+      try {
+        // Use the innerCommand to invoke _devhub_tell_director — the auto-restart loop
+        // runs the inner command and exits on success, so the script terminates after
+        // the shim runs once.
+        const wrapper_str = wrapper.buildAgentLaunchWrapper({
+          agentId: 'launch-abc-auditor',
+          missionId: 'launch-abc',
+          role: 'auditor',
+          workspacePath,
+          directorTmuxSession: 'devhub-swarm-abc-director',
+          innerCommand: '_devhub_tell_director "task done: <X>"',
+          busBinaryPath: BUS_BIN,
+          dbPath,
+        });
+        const script = path.join(ws, 'run.sh');
+        fs.writeFileSync(
+          script,
+          [
+            '#!/usr/bin/env bash',
+            'export DEVHUB_MISSION_ID="launch-abc"',
+            'export DEVHUB_ROLE="auditor"',
+            'export DEVHUB_AGENT_ID="launch-abc-auditor"',
+            'export DEVHUB_DB_PATH="' + dbPath + '"',
+            'export PATH="' + path.dirname(BUS_BIN) + ':$PATH"',
+            wrapper_str,
+          ].join('\n'),
+          { mode: 0o755 }
+        );
+        const r = spawnSync('bash', [script], { encoding: 'utf-8' });
+        if (r.status !== 0) {
+          process.stderr.write(`shim script STDOUT=${r.stdout}\nSTDERR=${r.stderr}\n`);
+        }
+        expect(r.status).toBe(0);
+        // Verify the row was inserted
+        const db = new Database(dbPath, { readonly: true });
+        const allRows = db.prepare('SELECT * FROM team_chat').all();
+        process.stderr.write(`DBG all rows: ${JSON.stringify(allRows)}\n`);
+        const rows = db.prepare('SELECT * FROM team_chat WHERE mission_id = ?').all('launch-abc');
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        // The shim writes to chat.jsonl via the binary — body should be present
+        const match = rows.find((r) => String(r.body).includes('task done'));
+        expect(match).toBeDefined();
+        db.close();
+      } finally {
+        fs.rmSync(ws, { recursive: true, force: true });
+        fs.rmSync(dir, { recursive: true, force: true });
       }
-      expect(r.status).toBe(0);
-      // Verify the row was inserted
-      const db = new Database(dbPath, { readonly: true });
-      const allRows = db.prepare('SELECT * FROM team_chat').all();
-      process.stderr.write(`DBG all rows: ${JSON.stringify(allRows)}\n`);
-      const rows = db.prepare('SELECT * FROM team_chat WHERE mission_id = ?').all('launch-abc');
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      // The shim writes to chat.jsonl via the binary — body should be present
-      const match = rows.find((r) => String(r.body).includes('task done'));
-      expect(match).toBeDefined();
-      db.close();
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-      fs.rmSync(dir, { recursive: true, force: true });
     }
-  });
+  );
 });

@@ -1,6 +1,10 @@
 /**
  * useTerminalAutoReconnect — exponential-backoff reconnect.
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 2).
+ *
+ * Visible-layout panels (split siblings) may reconnect without autoFocus so OS
+ * sleep / socket drops recover without Ctrl+R. Hidden workspace panels still
+ * skip until they become visible again.
  */
 import { useEffect, useRef } from 'react';
 import { shouldAutoReconnectTerminal } from '@/components/terminal/TerminalTTY.helpers';
@@ -10,6 +14,7 @@ import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 export default function useTerminalAutoReconnect({
   ctxRef,
   autoFocus,
+  isVisibleInLayout = false,
   connectionState,
   initError,
   id,
@@ -30,20 +35,24 @@ export default function useTerminalAutoReconnect({
     const { sessionClosingRef } = c;
     if (sessionClosingRef.current) return undefined;
 
-    if (shouldAutoReconnectTerminal(connectionState, autoFocus, initError)) {
-      if (!autoFocus) {
-        cliLog(`CLIENT:${id}`, 'auto-reconnect SKIPPED (not autoFocus)', { connectionState });
-        return;
-      }
+    if (
+      shouldAutoReconnectTerminal(connectionState, autoFocus, initError, {
+        isVisibleInLayout,
+      })
+    ) {
       const delay = Math.min(300 * 2 ** reconnectAttemptsRef.current, 5000);
       cliLog(`CLIENT:${id}`, 'auto-reconnect scheduled', {
         connectionState,
+        autoFocus,
+        isVisibleInLayout,
         attempt: reconnectAttemptsRef.current,
         delayMs: delay,
       });
       logTerminalSession('terminal-auto-reconnect-scheduled', {
         panelId: id,
         connectionState,
+        autoFocus,
+        isVisibleInLayout,
         attempt: reconnectAttemptsRef.current,
         delayMs: delay,
       });
@@ -57,5 +66,6 @@ export default function useTerminalAutoReconnect({
       cliLog(`CLIENT:${id}`, 'connected — resetting reconnect counter');
       reconnectAttemptsRef.current = 0;
     }
-  }, [ctxRef, autoFocus, connectionState, initError, id, reconnect]);
+    return undefined;
+  }, [ctxRef, autoFocus, isVisibleInLayout, connectionState, initError, id, reconnect]);
 }

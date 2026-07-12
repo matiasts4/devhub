@@ -37,7 +37,13 @@ export function buildTerminalSurfacesFromWindows({
   const activePanelIds = new Set();
   const terminals = [];
 
-  for (const win of windows) {
+  // Active live columns are the freshest ownership source. Process them first,
+  // then ignore duplicate panel ids from lagging inactive-window snapshots.
+  const orderedWindows = [...windows].sort(
+    (a, b) => Number(b?.id === activeWindowId) - Number(a?.id === activeWindowId)
+  );
+
+  for (const win of orderedWindows) {
     const viewId = win.id;
     const isActiveWindow = Boolean(activeWindowId && viewId === activeWindowId);
     const columns = resolveWindowColumnsForReconcile({
@@ -49,6 +55,7 @@ export function buildTerminalSurfacesFromWindows({
     for (const col of columns) {
       for (const p of col.panels || []) {
         if (!p?.id) continue;
+        if (activePanelIds.has(p.id)) continue;
         activePanelIds.add(p.id);
         terminals.push({
           id: `shape-term-${p.id}`,

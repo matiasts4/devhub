@@ -420,6 +420,7 @@ export const reviewTerminalTool = {
       return { error: lookup.error.code, message: lookup.error.message };
     }
     const session_id = lookup.sessionId;
+    const displayName = lookup.displayName || null;
 
     // ponytail: per-request map; upgrade to LRU if multi-session review loops persist
     if (context && typeof context === 'object') {
@@ -449,12 +450,26 @@ export const reviewTerminalTool = {
         return { error: `Failed to capture output: ${response.status}` };
       }
       const data = await response.json().catch(() => ({}));
-      return { output: data.output || '', session_id };
+      // TUI buffers are mostly ANSI redraw noise; strip locally and keep the
+      // tail so the model reads content, not escape codes.
+      const { stripAnsi } = await import('../zedAnsiStrip');
+      const clean = stripAnsi(data.output || '');
+      const capped =
+        clean.length > REVIEW_OUTPUT_CAP_CHARS ? clean.slice(-REVIEW_OUTPUT_CAP_CHARS) : clean;
+      return {
+        output: capped,
+        session_id,
+        ...(displayName ? { displayName } : {}),
+        ...(capped.length < clean.length ? { truncated: true } : {}),
+      };
     } catch (err) {
       return { error: `Failed to capture output: ${err.message}` };
     }
   },
 };
+
+// review_terminal_output feeds the model directly — cap the cleaned tail.
+const REVIEW_OUTPUT_CAP_CHARS = 6000;
 
 export const executeInTerminalTool = {
   name: 'execute_in_terminal',
@@ -564,7 +579,8 @@ export const executeInTerminalTool = {
         if (capRes.ok) {
           const cap = await capRes.json().catch(() => ({}));
           if (cap && cap.output) {
-            base.recent_output = String(cap.output).slice(-2000);
+            const { stripAnsi } = await import('../zedAnsiStrip');
+            base.recent_output = stripAnsi(String(cap.output)).slice(-2000);
           }
         }
       } catch {

@@ -29,6 +29,20 @@ export function shellSingleQuote(value) {
 }
 
 /**
+ * Sanitize a role for embedding in generated file names and `${VAR:-fallback}`
+ * bash defaults. Bash honors quote characters inside `${:-}` expansions even
+ * within double quotes, so a role like "tester's-role" would otherwise
+ * unbalance the generated script.
+ * @param {string} role
+ * @param {string} [fallback]
+ * @returns {string}
+ */
+export function safeRoleSegment(role, fallback = 'agent') {
+  const normalized = String(role || '').replace(/[^a-zA-Z0-9._-]/g, '-');
+  return normalized || fallback;
+}
+
+/**
  * Bash helpers to map Windows host paths into WSL (/mnt/d/...) or Git Bash (/d/...).
  * PowerShell launches `bash` which on many machines is WSL2 — bare `D:\\...` fails `[ -d ]`.
  * @returns {string}
@@ -1104,6 +1118,8 @@ export function buildWorkerInboxConsumerBlock({
   }
   const launchTag = missionId || 'launch-unknown';
   const roleTag = role || 'worker';
+  // File names and ${:-fallback} defaults must not contain quote characters.
+  const roleFileTag = safeRoleSegment(role, 'worker');
   const pollSeconds =
     Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0
       ? Math.max(5, Math.floor(pollIntervalSeconds))
@@ -1119,13 +1135,13 @@ export function buildWorkerInboxConsumerBlock({
     `  --poll-interval ${pollSeconds} \\`,
     `  >> "$AGENT_LOG" 2>&1 &`,
     `_worker_inbox_consume_pid=$!`,
-    `echo "$_worker_inbox_consume_pid" > "/tmp/devhub-worker-inbox-consume-${launchTag}-${roleTag}.pid"`,
-    `echo "[$(date -Iseconds 2>/dev/null || date)] inbox-consume pid=\$_worker_inbox_consume_pid poll=\${DEVHUB_INBOX_POLL_SEC:-5}s role=${roleTag}" >> "\${DEVHUB_TRANSCRIPT_FILE:-/tmp/devhub-swarm-${roleTag}.transcript}" 2>/dev/null || true`,
+    `echo "$_worker_inbox_consume_pid" > "/tmp/devhub-worker-inbox-consume-${launchTag}-${roleFileTag}.pid"`,
+    `echo "[$(date -Iseconds 2>/dev/null || date)] inbox-consume pid=\$_worker_inbox_consume_pid poll=\${DEVHUB_INBOX_POLL_SEC:-5}s role=${roleTag}" >> "\${DEVHUB_TRANSCRIPT_FILE:-/tmp/devhub-swarm-${roleFileTag}.transcript}" 2>/dev/null || true`,
   ].join('\n');
 }
 
 export function buildWorkerInboxConsumerCleanupBlock({ launchId, role } = {}) {
-  const tag = `${launchId || 'launch-unknown'}-${role || 'worker'}`;
+  const tag = `${launchId || 'launch-unknown'}-${safeRoleSegment(role, 'worker')}`;
   return [
     `  if [ -f "/tmp/devhub-worker-inbox-consume-${tag}.pid" ]; then`,
     `    kill "$(cat /tmp/devhub-worker-inbox-consume-${tag}.pid)" 2>/dev/null || true`,
@@ -1161,7 +1177,8 @@ export function buildWorkerInboxConsumerCleanupBlock({ launchId, role } = {}) {
  *                   exit trap.
  */
 export function buildTranscriptCaptureBlock({ role }) {
-  const transcriptPath = `/tmp/devhub-swarm-${role || 'agent'}.transcript`;
+  const roleSegment = safeRoleSegment(role);
+  const transcriptPath = `/tmp/devhub-swarm-${roleSegment}.transcript`;
   return [
     '# T-016.4 — per-agent transcript capture via tmux pipe-pane.',
     '# The transcript is the durable evidence trail of what the LLM',
@@ -1170,7 +1187,7 @@ export function buildTranscriptCaptureBlock({ role }) {
     '{',
     `  echo "# DevHub agent transcript"`,
     `  echo "# launch_id: \${DEVHUB_MISSION_ID:-unknown}"`,
-    `  echo "# role: \${DEVHUB_ROLE:-${role || 'agent'}}"`,
+    `  echo "# role: \${DEVHUB_ROLE:-${roleSegment}}"`,
     `  echo "# started: $(date -Iseconds)"`,
     `  echo "# ----"`,
     `} > "$DEVHUB_TRANSCRIPT_FILE" 2>/dev/null`,
@@ -1192,7 +1209,7 @@ export function buildTranscriptCaptureBlock({ role }) {
  * @returns {{ attach: string, detach: string }}
  */
 export function buildPipePaneCommands({ role }) {
-  const transcriptPath = `/tmp/devhub-swarm-${role || 'agent'}.transcript`;
+  const transcriptPath = `/tmp/devhub-swarm-${safeRoleSegment(role)}.transcript`;
   // Attach: tee every byte the LLM prints into the transcript.
   //   -o means "stdout only" (do not capture pane stderr separately)
   //   Use the literal transcript path (set by buildTranscriptCaptureBlock

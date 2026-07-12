@@ -93,6 +93,25 @@ function deriveWaitingFor(cleanTail) {
   return last.slice(0, 200) + '…';
 }
 
+// Cleaned-content excerpt included in every digest so the model (and the
+// fast path) can actually quote what the agent wrote — status alone cannot
+// answer "¿qué me respondió el agente?".
+const TAIL_EXCERPT_CHARS = 1500;
+
+/**
+ * Last TAIL_EXCERPT_CHARS of the cleaned text, blank lines collapsed.
+ *
+ * @param {string} cleanTail
+ * @returns {string}
+ */
+function deriveTailExcerpt(cleanTail) {
+  const compact = String(cleanTail || '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (compact.length <= TAIL_EXCERPT_CHARS) return compact;
+  return `…${compact.slice(-TAIL_EXCERPT_CHARS)}`;
+}
+
 /**
  * Build the digest object (no fetch, no cache). Pure function over the
  * cleaned text. status is one of:
@@ -106,6 +125,7 @@ function deriveWaitingFor(cleanTail) {
  * @returns {object}
  */
 function _buildDigest({ terminalId, displayName, program, cleanTail, capturedAt }) {
+  const tail = deriveTailExcerpt(cleanTail);
   const footerHits = detectOpencodeFooter(cleanTail);
   if (footerHits && footerHits.length > 0) {
     return {
@@ -116,6 +136,7 @@ function _buildDigest({ terminalId, displayName, program, cleanTail, capturedAt 
       waitingFor: deriveWaitingFor(cleanTail),
       suggestedActions: footerHits,
       tuiReady: true,
+      ...(tail ? { tail } : {}),
       capturedAt,
     };
   }
@@ -124,6 +145,7 @@ function _buildDigest({ terminalId, displayName, program, cleanTail, capturedAt 
     displayName,
     ...(program ? { program } : {}),
     status: 'unknown',
+    ...(tail ? { tail } : {}),
     capturedAt,
   };
 }
@@ -184,7 +206,7 @@ export const summarizeTerminalTool = {
   name: SUMMARIZE_TOOL_NAME,
   parallel: true,
   description:
-    'Resume en español (2 frases) lo que está pasando en una terminal: si el agente está esperando tu input, qué opciones ofrece, o un estado neutro. Usa la cola de cache de 2s para no capturar la misma terminal dos veces en una misma ráfaga. Acepta name (recomendado) o terminalId.',
+    'Resume en español (2 frases) lo que está pasando en una terminal: si el agente está esperando tu input, qué opciones ofrece, o un estado neutro. El digest incluye `tail` (último contenido limpio, sin ANSI) — usalo para citar qué respondió el agente. Usa la cola de cache de 2s para no capturar la misma terminal dos veces en una misma ráfaga. Acepta name (recomendado) o terminalId.',
   parameters: {
     name: {
       type: 'string',

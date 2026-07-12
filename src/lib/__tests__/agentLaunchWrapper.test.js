@@ -595,7 +595,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand:
-          '/home/matias/.kimi-code/bin/kimi --yolo --auto --skills-dir /home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
+          '/home/matias/.kimi-code/bin/kimi --yolo --skills-dir /home/matias/.kimi-code/skills/devhub-gentle-orchestrator',
       });
       expect(result).toContain('_devhub_wait_opencode_ready');
       expect(result).toContain('/tmp/devhub-agent-ready-kimi-${_tmux_session}');
@@ -639,8 +639,10 @@ describe('agentLaunchWrapper', () => {
       expect(result).toMatch(/_devhub_bootstrap_prompt/);
     });
 
-    test('wrapper with chunked bootstrap passes bash -n syntax check', () => {
-      const { spawnSync } = require('child_process');
+    const { hasBash, bashSyntaxCheck } = require('../../test-support/bashTestUtils');
+    const testWithBash = hasBash ? test : test.skip;
+
+    testWithBash('wrapper with chunked bootstrap passes bash -n syntax check', () => {
       const fs = require('fs');
       const os = require('os');
       const path = require('path');
@@ -655,7 +657,7 @@ describe('agentLaunchWrapper', () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-wrapper-syntax-'));
       const tmp = path.join(tmpDir, 'wrapper.sh');
       fs.writeFileSync(tmp, result, { mode: 0o644 });
-      const check = spawnSync('bash', ['-n', tmp], { encoding: 'utf-8' });
+      const check = bashSyntaxCheck(tmp);
       expect(check.status).toBe(0);
       expect(check.stderr).toBe('');
     });

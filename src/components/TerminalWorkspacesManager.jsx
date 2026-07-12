@@ -795,9 +795,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     for (const workspace of workspaces) {
       const windows = workspaceWindows?.[workspace.id] || [];
       const columnSources =
-        windows.length > 0
-          ? windows.flatMap((win) => win.columns || [])
-          : workspace.columns || [];
+        windows.length > 0 ? windows.flatMap((win) => win.columns || []) : workspace.columns || [];
       for (const column of columnSources) {
         for (const panel of column.panels || []) {
           if (panel?.id && ordinals[panel.id] === undefined) {
@@ -921,6 +919,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     if (normalized.includes('opencode')) return 'opencode';
     if (normalized.includes('codex')) return 'codex';
     if (normalized.includes('hermes')) return 'hermes';
+    if (normalized.includes('kimi')) return 'kimi';
+    if (normalized.includes('grok')) return 'grok';
     return null;
   }, []);
 

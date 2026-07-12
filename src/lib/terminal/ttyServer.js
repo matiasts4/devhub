@@ -599,11 +599,25 @@ function getOrInitSessions() {
 /**
  * getSessionOutput — read the accumulated output buffer of a session.
  * Returns the history string or null if the session is unknown.
+ *
+ * Agent TUIs (opencode/kimi/grok/…) disable `history` on detection so the
+ * WS replay never re-paints stale TUI frames — but external observers
+ * (Zed `review_terminal_output` / `summarize_terminal`) still need to read
+ * the panel. The scrollbackStore ring keeps appending regardless of
+ * `historyEnabled`, so serve its tail as fallback.
  */
+const CAPTURE_SCROLLBACK_TAIL_BYTES = 32 * 1024;
+
 export function getSessionOutput(id) {
   const sessions = getOrInitSessions();
   const session = sessions.get(id);
   if (!session) return null;
+  if (session.history) return session.history;
+  const store = session.scrollbackStore;
+  if (store && typeof store.read === 'function' && store.getSize() > 0) {
+    const from = Math.max(0, store.getOffset() - CAPTURE_SCROLLBACK_TAIL_BYTES);
+    return store.read(from);
+  }
   return session.history || '';
 }
 

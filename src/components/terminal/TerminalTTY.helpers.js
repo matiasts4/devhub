@@ -924,10 +924,68 @@ export function resolveTerminalConnectionCloseState(previousState, didReceivePro
   return previousState === 'error' ? 'error' : 'disconnected';
 }
 
-export function shouldAutoReconnectTerminal(connectionState, autoFocus, initError = null) {
-  if (!autoFocus) return false;
+/**
+ * Whether the panel should schedule exponential-backoff reconnect.
+ *
+ * Historically gated on autoFocus only (focused panel). Split siblings stayed
+ * dead after OS sleep until Ctrl+R. When `isVisibleInLayout` is true we also
+ * allow reconnect so visible inactive splits recover without stealing focus.
+ * Hidden workspace panels still skip — they reconnect when shown (effect re-runs).
+ *
+ * 4th arg accepts either a boolean (legacy isVisibleInLayout) or an options bag.
+ */
+export function shouldAutoReconnectTerminal(
+  connectionState,
+  autoFocus,
+  initError = null,
+  isVisibleInLayoutOrOptions = false
+) {
   if (initError) return false;
+  const isVisibleInLayout =
+    typeof isVisibleInLayoutOrOptions === 'object' && isVisibleInLayoutOrOptions !== null
+      ? Boolean(isVisibleInLayoutOrOptions.isVisibleInLayout)
+      : Boolean(isVisibleInLayoutOrOptions);
+  if (!autoFocus && !isVisibleInLayout) return false;
   return connectionState === 'disconnected' || connectionState === 'error';
+}
+
+/**
+ * OS resume (visibility/focus/pageshow) transport recovery.
+ * Separate from viewport/WebGL recovery so workspace-switch paths stay unchanged.
+ *
+ * Reconnect when the panel is visible in layout and either:
+ * - connectionState is disconnected/error, or
+ * - we had a live session but the socket is no longer OPEN (half-open after sleep).
+ *
+ * Never touches terminated/agent-exited/connecting/idle first-boot paths.
+ */
+export function shouldReconnectTerminalOnOsResume({
+  connectionState = 'idle',
+  isVisibleInLayout = false,
+  initError = null,
+  sessionClosing = false,
+  hasConnectedOnce = false,
+  socketReadyState = null,
+  websocketOpenState = typeof WebSocket !== 'undefined' ? WebSocket.OPEN : 1,
+} = {}) {
+  if (sessionClosing || initError || !isVisibleInLayout) return false;
+  if (!hasConnectedOnce) return false;
+  if (
+    connectionState === 'connecting' ||
+    connectionState === 'terminated' ||
+    connectionState === 'agent-exited' ||
+    connectionState === 'suspended' ||
+    connectionState === 'idle'
+  ) {
+    return false;
+  }
+  if (connectionState === 'disconnected' || connectionState === 'error') return true;
+  // Half-open / dropped transport while UI still thinks we are connected.
+  if (connectionState === 'connected') {
+    if (socketReadyState == null) return true;
+    if (socketReadyState !== websocketOpenState) return true;
+  }
+  return false;
 }
 
 export function getClipboardApi() {

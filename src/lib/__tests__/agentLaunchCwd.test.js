@@ -1,6 +1,29 @@
-const { buildAgentLaunchWrapper } = require('../agentLaunchWrapper');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 
-const { buildTmuxWrappedCommand, buildAgentLaunchCommand } = require('../agentLaunchCommand');
+const { buildAgentLaunchWrapper } = require('../agentLaunchWrapper');
+const { buildAgentLaunchCommand } = require('../agentLaunchCommand');
+// buildTmuxWrappedCommand lives in the browser-safe shared module now.
+const {
+  buildTmuxWrappedCommand,
+  resolveAgentProgramExecutable,
+} = require('../agentLaunchCommand.shared');
+const { toBashAccessiblePath } = require('../operations/materializeLaunchWrapper');
+
+// Host-dependent: env override / ~/.opencode/bin / bare PATH fallback.
+const OPENCODE_BIN = resolveAgentProgramExecutable('opencode');
+
+// bash may be missing on Windows hosts without WSL/Git Bash — skip syntax checks there.
+const hasBash = (() => {
+  try {
+    return spawnSync('bash', ['-c', 'true']).status === 0;
+  } catch {
+    return false;
+  }
+})();
+const testWithBash = hasBash ? test : test.skip;
 
 describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
   const baseParams = {
@@ -79,7 +102,10 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     test('buildTmuxWrappedCommand with cwd uses tmux -c start directory', () => {
       const cwd = '/repo/.devhub/worktrees/launch-abc/coder';
       const result = buildTmuxWrappedCommand('echo hello', 'sess-1', cwd);
-      expect(result).toContain(`tmux new-session -A -d -s 'sess-1' -c '${cwd}' 'echo hello'`);
+      // Inner command runs as a child + `exec zsh` keeps the session alive.
+      expect(result).toContain(
+        `tmux new-session -A -d -s 'sess-1' -c '${cwd}' '(echo hello); exec zsh'`
+      );
     });
 
     test('buildTmuxWrappedCommand without cwd remains backward compatible', () => {
@@ -112,7 +138,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
         disableTmuxWrap: true,
       });
 
-      expect(result).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+      expect(result).toContain(`${OPENCODE_BIN} --agent swarm-director`);
       expect(result).toContain('--model minimax-coding-plan/MiniMax-M3');
       expect(result).not.toContain('tmux new-session');
       expect(result).not.toContain('tmux attach-session');
@@ -125,7 +151,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
         interactiveBootstrapPrompt: true,
       });
 
-      expect(result).toContain('/home/matias/.opencode/bin/opencode --agent swarm-director');
+      expect(result).toContain(`${OPENCODE_BIN} --agent swarm-director`);
       expect(result).toContain('--model minimax-coding-plan/MiniMax-M3');
       expect(result).not.toContain('--prompt');
     });
@@ -184,8 +210,9 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
         "/tmp/agent's-worktree"
       );
       expect(result).toContain(`-s 'sess-quote'`);
-      expect(result).toContain(`-c '/tmp/agent'"'"'s-worktree'`);
-      expect(result).toContain(`'printf '"'"'%s\n'"'"' '"'"'hello'"'"''`);
+      // shellQuote escapes embedded quotes as '\'' (POSIX style).
+      expect(result).toContain(`-c '/tmp/agent'\\''s-worktree'`);
+      expect(result).toContain(`'(printf '\\''%s\n'\\'' '\\''hello'\\''); exec zsh'`);
     });
   });
 
@@ -218,7 +245,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
       expect(heartbeatLine).toContain("\\'");
     });
 
-    test('wrapper script is valid bash when payload has single quotes', () => {
+    testWithBash('wrapper script is valid bash when payload has single quotes', () => {
       const paramsWithQuote = {
         ...baseParams,
         workspacePath: "/tmp/agent's-space",
@@ -226,29 +253,38 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
         innerCommand: 'echo "hello"',
       };
       const result = buildAgentLaunchWrapper(paramsWithQuote);
-      // The script should have balanced quotes — parse it with bash -n
-      // This verifies the fix doesn't introduce new quoting issues
-      const { execSync } = require('child_process');
+      // The script should have balanced quotes — parse it with bash -n.
+      // Write to a temp file instead of inlining a heredoc on the command
+      // line (Windows cmd has an 8191-char limit and chokes on the wrapper).
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-cwd-test-'));
+      const tmpFile = path.join(tmpDir, 'wrapper.sh');
       try {
-        execSync(`bash -n <<'SCRIPT'\n${result}\nSCRIPT`, { encoding: 'utf8' });
-      } catch (err) {
-        throw new Error(`Generated wrapper is invalid bash: ${err.message}\nScript:\n${result}`);
+        fs.writeFileSync(tmpFile, result, { mode: 0o644 });
+        const check = spawnSync('bash', ['-n', toBashAccessiblePath(tmpFile)], {
+          encoding: 'utf8',
+        });
+        if (check.status !== 0) {
+          throw new Error(`Generated wrapper is invalid bash: ${check.stderr}\nScript:\n${result}`);
+        }
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     });
 
     test('wrapper can bootstrap the initial prompt into an interactive OpenCode session', () => {
       const result = buildAgentLaunchWrapper({
         ...baseParams,
-        innerCommand:
-          '/home/matias/.opencode/bin/opencode --agent swarm-director --model minimax-coding-plan/MiniMax-M3',
+        innerCommand: `${OPENCODE_BIN} --agent swarm-director --model minimax-coding-plan/MiniMax-M3`,
         bootstrapPrompt: 'Rol: Director\nMisión: prueba',
       });
 
+      // T2.2 contract: chunked single-shot paste targeting ${_tmux_target},
+      // gated behind the viewport-ready wait (no fixed sleep anymore).
       expect(result).toContain('_devhub_bootstrap_prompt()');
-      expect(result).toContain('sleep 3');
+      expect(result).toContain('_devhub_wait_viewport_ready');
       expect(result).toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");
-      expect(result).toContain('tmux paste-buffer -t "${DEVHUB_TMUX_SESSION}"');
-      expect(result).toContain('tmux send-keys -t "${DEVHUB_TMUX_SESSION}" C-m');
+      expect(result).toContain('tmux paste-buffer -d -t "${_tmux_target}"');
+      expect(result).toContain('tmux send-keys -t "${_tmux_target}" C-m');
       expect(result).toContain('Rol: Director\nMisión: prueba');
     });
   });

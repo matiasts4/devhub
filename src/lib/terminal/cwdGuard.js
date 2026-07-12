@@ -21,13 +21,23 @@ function isUsableDirectory(candidate, { fsImpl = fs } = {}) {
 }
 
 /**
+ * Normalize separators for portable substring checks (Windows uses `\`).
+ * @param {string} filePath
+ * @returns {string}
+ */
+function toPosixPath(filePath) {
+  return String(filePath || '').replace(/\\/g, '/');
+}
+
+/**
  * Check if a path is under the DevHub worktrees directory.
+ * Accepts both `.devhub/worktrees` and `.devhub\worktrees` (Windows).
  * @param {string} cwdPath
  * @returns {boolean}
  */
 function isDevHubWorktreePath(cwdPath) {
   if (!cwdPath) return false;
-  return cwdPath.includes('.devhub/worktrees');
+  return toPosixPath(cwdPath).includes('.devhub/worktrees');
 }
 
 /**
@@ -37,7 +47,7 @@ function isDevHubWorktreePath(cwdPath) {
  */
 function isPlyriumWorktreePath(cwdPath) {
   if (!cwdPath) return false;
-  return cwdPath.includes('.plyrium-forge');
+  return toPosixPath(cwdPath).includes('.plyrium-forge');
 }
 
 /**
@@ -57,12 +67,7 @@ function isPlyriumWorktreePath(cwdPath) {
  * @param {object} [fsImpl] - Optional fs override for testing
  * @returns {{ valid: boolean, error: string|null, effectiveCwd: string|null }}
  */
-function validateSwarmCwd({
-  requestedCwd,
-  roleKey,
-  isSwarmRole,
-  fsImpl = fs,
-}) {
+function validateSwarmCwd({ requestedCwd, roleKey, isSwarmRole, fsImpl = fs }) {
   const normalized = normalizeCwd(requestedCwd);
 
   if (!normalized) {
@@ -121,11 +126,7 @@ function validateSwarmCwd({
 
 function resolveTerminalSpawnCwd(
   requestedCwd,
-  {
-    fsImpl = fs,
-    processCwd = process.cwd(),
-    homeDir = os.homedir(),
-  } = {}
+  { fsImpl = fs, processCwd = process.cwd(), homeDir = os.homedir() } = {}
 ) {
   const normalizedRequestedCwd = normalizeCwd(requestedCwd);
 

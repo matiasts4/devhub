@@ -152,6 +152,7 @@ const {
   shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
+  shouldReconnectTerminalOnOsResume,
   shouldReinitializeTerminalForRenderer,
   shouldBlockTerminalViewportForWebglFallback,
   resolveTerminalFontFamily,
@@ -1785,6 +1786,106 @@ describe('shouldRunTerminalViewportReactivation()', () => {
         isActivePanel: true,
         isVisibleInLayout: true,
         documentVisibilityState: 'hidden',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldAutoReconnectTerminal()', () => {
+  test('legacy: only autoFocus panel reconnects when layout visibility omitted', () => {
+    expect(shouldAutoReconnectTerminal('disconnected', true, null)).toBe(true);
+    expect(shouldAutoReconnectTerminal('error', true, null)).toBe(true);
+    expect(shouldAutoReconnectTerminal('disconnected', false, null)).toBe(false);
+    expect(shouldAutoReconnectTerminal('connected', true, null)).toBe(false);
+    expect(shouldAutoReconnectTerminal('disconnected', true, 'no viewport')).toBe(false);
+  });
+
+  test('visible split sibling (no autoFocus) may reconnect', () => {
+    expect(
+      shouldAutoReconnectTerminal('disconnected', false, null, { isVisibleInLayout: true })
+    ).toBe(true);
+    expect(shouldAutoReconnectTerminal('error', false, null, true)).toBe(true);
+    expect(
+      shouldAutoReconnectTerminal('disconnected', false, null, { isVisibleInLayout: false })
+    ).toBe(false);
+    expect(
+      shouldAutoReconnectTerminal('terminated', false, null, { isVisibleInLayout: true })
+    ).toBe(false);
+  });
+});
+
+describe('shouldReconnectTerminalOnOsResume()', () => {
+  const base = {
+    isVisibleInLayout: true,
+    hasConnectedOnce: true,
+    sessionClosing: false,
+    initError: null,
+    websocketOpenState: 1,
+  };
+
+  test('reconnects disconnected/error visible panels after OS resume', () => {
+    expect(shouldReconnectTerminalOnOsResume({ ...base, connectionState: 'disconnected' })).toBe(
+      true
+    );
+    expect(shouldReconnectTerminalOnOsResume({ ...base, connectionState: 'error' })).toBe(true);
+  });
+
+  test('reconnects half-open sockets still marked connected', () => {
+    expect(
+      shouldReconnectTerminalOnOsResume({
+        ...base,
+        connectionState: 'connected',
+        socketReadyState: 3, // CLOSED
+      })
+    ).toBe(true);
+    expect(
+      shouldReconnectTerminalOnOsResume({
+        ...base,
+        connectionState: 'connected',
+        socketReadyState: null, // socket cleared
+      })
+    ).toBe(true);
+    expect(
+      shouldReconnectTerminalOnOsResume({
+        ...base,
+        connectionState: 'connected',
+        socketReadyState: 1, // OPEN
+      })
+    ).toBe(false);
+  });
+
+  test('does not touch terminated, suspended, connecting, hidden, or first-boot panels', () => {
+    expect(shouldReconnectTerminalOnOsResume({ ...base, connectionState: 'terminated' })).toBe(
+      false
+    );
+    expect(shouldReconnectTerminalOnOsResume({ ...base, connectionState: 'agent-exited' })).toBe(
+      false
+    );
+    expect(shouldReconnectTerminalOnOsResume({ ...base, connectionState: 'suspended' })).toBe(
+      false
+    );
+    expect(shouldReconnectTerminalOnOsResume({ ...base, connectionState: 'connecting' })).toBe(
+      false
+    );
+    expect(
+      shouldReconnectTerminalOnOsResume({
+        ...base,
+        connectionState: 'disconnected',
+        isVisibleInLayout: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldReconnectTerminalOnOsResume({
+        ...base,
+        connectionState: 'disconnected',
+        hasConnectedOnce: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldReconnectTerminalOnOsResume({
+        ...base,
+        connectionState: 'disconnected',
+        sessionClosing: true,
       })
     ).toBe(false);
   });

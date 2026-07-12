@@ -135,11 +135,13 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       break;
     }
     case 'kimi': {
+      // kimi-code rejects --yolo combined with --auto. Swarm uses --yolo only
+      // (auto-approve all actions). Bootstrap prompt is injected via tmux.
       const kimiSkillDir = resolveKimiSkillDir(options.role || opencodeAgent);
       const skillDirFlag = kimiSkillDir ? ` --skills-dir ${shellQuote(kimiSkillDir)}` : '';
       const modelFlag = modelId ? ` --model ${shellQuote(modelId)}` : '';
       if (interactiveBootstrapPrompt) {
-        innerCommand = `${executable} --yolo --auto${skillDirFlag}${modelFlag}`;
+        innerCommand = `${executable} --yolo${skillDirFlag}${modelFlag}`;
       } else {
         innerCommand = modelId
           ? `${executable} -p ${quotedPrompt}${modelFlag}`

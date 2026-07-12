@@ -14,7 +14,10 @@
  * `import` to `require` so jest can resolve it.
  */
 
-const { summarizeTerminalTool, _resetSummarizeCacheForTests } = require('../../tools/summarizeTerminal');
+const {
+  summarizeTerminalTool,
+  _resetSummarizeCacheForTests,
+} = require('../../tools/summarizeTerminal');
 
 const REAL_FETCH = global.fetch;
 
@@ -108,11 +111,7 @@ describe('summarize_terminal (summarizeTerminalTool) — ZTT-005', () => {
   });
 
   test("OpenCode footer 'y/n' / 'confirm' / 'waiting' → status:'waiting_user_input'", async () => {
-    for (const footer of [
-      'Continue? (y/n)',
-      'Please confirm to proceed',
-      'waiting for input…',
-    ]) {
+    for (const footer of ['Continue? (y/n)', 'Please confirm to proceed', 'waiting for input…']) {
       _resetSummarizeCacheForTests();
       mockFetch(async () => captureOk(`tail line\n${footer}\n> `, 'p3'));
       const result = await summarizeTerminalTool.execute({ terminalId: 'p3' }, {});
@@ -122,10 +121,7 @@ describe('summarize_terminal (summarizeTerminalTool) — ZTT-005', () => {
 
   test("non-OpenCode TUI (program:'bash', no footer) → status:'unknown'", async () => {
     mockFetch(async () => captureOk('user@host:~$ some-shell-prompt\n', 'p4'));
-    const result = await summarizeTerminalTool.execute(
-      { terminalId: 'p4', program: 'bash' },
-      {}
-    );
+    const result = await summarizeTerminalTool.execute({ terminalId: 'p4', program: 'bash' }, {});
     expect(result.status).toBe('unknown');
   });
 
@@ -193,6 +189,33 @@ describe('summarize_terminal (summarizeTerminalTool) — ZTT-005', () => {
     }
   });
 
+  // ----- tail excerpt: the digest must carry cleaned content so the model
+  // can answer "¿qué me respondió el agente?" -----
+
+  test('digest includes cleaned `tail` with the agent reply text', async () => {
+    const raw = 'welcome\n\u001b[32mEl agente dijo: terminé la tarea 14\u001b[0m\nlisto\n';
+    mockFetch(async () => captureOk(raw, 'p8'));
+    const result = await summarizeTerminalTool.execute({ terminalId: 'p8' }, {});
+    expect(typeof result.tail).toBe('string');
+    expect(result.tail).toContain('El agente dijo: terminé la tarea 14');
+    // eslint-disable-next-line no-control-regex
+    expect(result.tail).not.toMatch(/\u001b\[/);
+  });
+
+  test('tail is capped (~1500 chars) and keeps the END of the buffer', async () => {
+    const big = `${'x'.repeat(9000)}\nRESPUESTA FINAL DEL AGENTE`;
+    mockFetch(async () => captureOk(big, 'p9'));
+    const result = await summarizeTerminalTool.execute({ terminalId: 'p9' }, {});
+    expect(result.tail.length).toBeLessThanOrEqual(1501); // excerpt + leading ellipsis
+    expect(result.tail).toContain('RESPUESTA FINAL DEL AGENTE');
+  });
+
+  test('blank capture → no tail field', async () => {
+    mockFetch(async () => captureOk('\n \n', 'p10'));
+    const result = await summarizeTerminalTool.execute({ terminalId: 'p10' }, {});
+    expect(result.tail).toBeUndefined();
+  });
+
   test('name lookup: {name:"Chase"} resolves via /api/terminal/processes first', async () => {
     // First fetch → /api/terminal/processes for the list (resolver).
     // Second fetch → /api/terminal/session/p7/capture for the body.
@@ -204,9 +227,7 @@ describe('summarize_terminal (summarizeTerminalTool) — ZTT-005', () => {
           ok: true,
           status: 200,
           json: async () => ({
-            processes: [
-              { terminalId: 'p7', displayName: 'Chase' },
-            ],
+            processes: [{ terminalId: 'p7', displayName: 'Chase' }],
           }),
         };
       }

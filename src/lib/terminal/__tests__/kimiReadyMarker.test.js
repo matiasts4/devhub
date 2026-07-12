@@ -11,7 +11,7 @@ const {
 describe('kimiReadyMarker', () => {
   test('isKimiLaunchCommand matches kimi swarm inner commands', () => {
     expect(
-      isKimiLaunchCommand('/home/matias/.kimi-code/bin/kimi --yolo --auto --skills-dir /skills')
+      isKimiLaunchCommand('/home/matias/.kimi-code/bin/kimi --yolo --skills-dir /skills')
     ).toBe(true);
     expect(isKimiLaunchCommand('opencode --agent swarm-coder')).toBe(false);
   });
@@ -36,7 +36,7 @@ describe('kimiReadyMarker', () => {
   });
 
   test('isKimiTuiLive requires launch command and readiness or connected tui session', () => {
-    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
+    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo';
     expect(isKimiTuiLive({ initialCommand: kimiCmd, kimiReady: true })).toBe(true);
     expect(
       isKimiTuiLive({
@@ -58,7 +58,7 @@ describe('kimiReadyMarker', () => {
   });
 
   test('shouldFreezeKimiTuiViewportOnWorkspaceShow freezes only when dims match container', () => {
-    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
+    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo';
     expect(
       shouldFreezeKimiTuiViewportOnWorkspaceShow({
         initialCommand: kimiCmd,
@@ -75,7 +75,7 @@ describe('kimiReadyMarker', () => {
   });
 
   test('shouldSkipKimiTuiPtyResize requires connected kimi session', () => {
-    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo --auto';
+    const kimiCmd = '/home/matias/.kimi-code/bin/kimi --yolo';
     expect(
       shouldSkipKimiTuiPtyResize({
         initialCommand: kimiCmd,
