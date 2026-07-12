@@ -4,13 +4,20 @@ import assert from 'node:assert/strict';
 // We are testing launchPlanningAgent in isolation. The module under test reads
 // `globalThis.window.dispatchEvent` and `globalThis.localStorage` lazily (inside
 // the function body), so we attach stubs to globalThis before importing it.
-// The dispatch happens synchronously (no setTimeout race in this batch), so
-// window.dispatchEvent only needs to record — no fake timers required here.
+// `dispatchPlanningAgentRun` retries until ack — the stub auto-acks by default so
+// the async loop settles before Jest tears down the suite.
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const PROJECT_NAME = 'Demo Project';
 
-function makeWindowStub() {
+// ponytail: drain microtasks; Jest exposes afterEach as a global, not via node:test
+if (typeof afterEach === 'function') {
+  afterEach(async () => {
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+}
+
+function makeWindowStub({ autoAck = true } = {}) {
   const dispatched = [];
   const listeners = new Map(); // eventType -> [handler]
 
@@ -35,6 +42,15 @@ function makeWindowStub() {
         const handlers = listeners.get(type) || [];
         for (const h of handlers) {
           h.call(null, event);
+        }
+        // Stop dispatchPlanningAgentRun retry loop in tests (mirrors TWM ack).
+        if (autoAck && type === 'devhub:run-agent' && event?.detail?.taskId) {
+          const ackEvent = new CustomEvent('devhub:run-agent-accepted', {
+            detail: { taskId: event.detail.taskId },
+          });
+          for (const h of listeners.get('devhub:run-agent-accepted') || []) {
+            h.call(null, ackEvent);
+          }
         }
         return true;
       },
@@ -87,7 +103,6 @@ function withGlobals({ window, localStorage }, fn) {
 
 // Late import so the module reads the stubs from globalThis when called.
 function loadModule() {
-   
   return require('../launchPlanningAgent.js');
 }
 
@@ -96,7 +111,7 @@ test('launchPlanningAgent: returns object with { command, launchOrigin, projectI
   const ls = makeLocalStorageStub();
 
   const result = withGlobals({ window: win.stub, localStorage: ls }, () => {
-    const navigate = (() => {});
+    const navigate = () => {};
     const mod = loadModule();
     return mod.launchPlanningAgent(navigate, {
       projectId: UUID,
@@ -383,7 +398,7 @@ test('launchPlanningAgent: Fase 4 — uses dispatchPlanningAgentRun (ack-driven 
   // dispatch, the dispatcher should retry until it sees the matching ack, and
   // then stop. The test never touches the helper directly — only the
   // observable side effect (the ack stops the retry loop).
-  const win = makeWindowStub();
+  const win = makeWindowStub({ autoAck: false });
   const ls = makeLocalStorageStub();
   let ackFired = false;
   const originalDispatch = win.stub.dispatchEvent;
