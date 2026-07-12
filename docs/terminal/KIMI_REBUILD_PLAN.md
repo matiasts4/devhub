@@ -118,7 +118,7 @@ Cada fase termina con **commit checkpoint** nombrado: `[kimi-rebuild] fase-N: <d
 
 **Qué hace:**
 
-- Comando `kimi --yolo --auto --skills-dir … --model …`
+- Comando `kimi --yolo --skills-dir … --model …` (no combinar `--yolo` con `--auto`: la CLI lo rechaza)
 - `KIMI_SKILL_DIRS` por rol swarm
 - Marker `/tmp/devhub-agent-ready-kimi-<tmux>`
 - Bootstrap bash espera marker antes de `send-keys`
@@ -197,7 +197,7 @@ Cada fase = implementar → `pnpm tauri dev` → checklist manual → commit o r
 
 **Implementado (commit `[kimi-rebuild] fase-1`):**
 
-1. `case 'kimi'` en `agentLaunchCommand` + `agentLaunchCommand.shared` (`--yolo --auto`, `--skills-dir`, `-p`)
+1. `case 'kimi'` en `agentLaunchCommand` + `agentLaunchCommand.shared` (`--yolo`, `--skills-dir`, `-p`)
 2. `KIMI_SKILL_DIRS` + `resolveKimiSkillDir()`
 3. `resolveAgentReadyMarkerPath` / `writeAgentReadyMarker` (genérico + legacy opencode)
 4. `buildOpencodeReadyWaitBlock({ programId })` — poll `/tmp/devhub-agent-ready-kimi-*`
@@ -321,7 +321,7 @@ _(Actualizar esta tabla en cada intento.)_
 
 **Incluido y verificado:**
 
-- Capa A — lanzamiento kimi (`--yolo --auto`, skills-dir, marker `/tmp/devhub-agent-ready-kimi-*`)
+- Capa A — lanzamiento kimi (`--yolo`, skills-dir, marker `/tmp/devhub-agent-ready-kimi-*`)
 - Capa B — readiness mínima (detector + marker client/server; sin wheel/focus)
 - Terminales opencode/grok/shell sin regresión
 

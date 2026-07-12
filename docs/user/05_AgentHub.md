@@ -48,18 +48,20 @@ AgentHub expone **tres MCPs nativos** que el LLM puede invocar directamente medi
 
 ### MCP 1 — DevHub MCP (`execute_devhub`)
 
-Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **24-tool env-invariant surface** para proyectos, tareas, evidencia durable e inbox. Telegram runtime queda fuera del contrato MCP público.
+Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **superficie env-invariant de 32 tools** para proyectos, tareas, evidencia durable, inbox, operaciones y membresía de workspaces. Telegram runtime queda fuera del contrato MCP público.
 
 **Endpoint interno:** `POST /api/mcp/devhub`
 
-#### Herramientas disponibles (24 tools)
+#### Herramientas disponibles (32 tools)
 
 **Proyectos**
 | Tool | Descripción |
 |------|-------------|
 | `list_projects` | Lista todos los proyectos (filtrables por estado) |
 | `get_project` | Detalles completos: tasks + milestones incluidos |
+| `create_project` | Crea un proyecto |
 | `update_project` | Actualiza nombre, estado, progreso, color, planning_status |
+| `delete_project` | Elimina un proyecto con confirmación explícita |
 | `get_project_context` | Lee el planning_prompt y archivos adjuntos del proyecto |
 
 **Tareas**
@@ -67,6 +69,7 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **24-tool e
 |------|-------------|
 | `list_tasks` | Lista tareas filtradas por estado o prioridad |
 | `create_task` | Crea nueva tarea con título, descripción, prioridad, fecha |
+| `bulk_create_tasks` | Crea tareas idempotentes en lote |
 | `update_task` | Modifica estado, prioridad, título, asignación |
 | `add_task_comment` | Agrega comentario/nota técnica a una tarea |
 | `get_execution_queue` | Devuelve la cola priorizada con bloqueos |
@@ -76,6 +79,7 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **24-tool e
 |------|-------------|
 | `list_milestones` | Hitos del roadmap (filtro por estado) |
 | `create_milestone` | Crea un nuevo hito con fecha y descripción |
+| `bulk_create_milestones` | Crea hitos idempotentes en lote |
 | `update_milestone` | Actualiza estado, fecha, descripción de un hito |
 
 **Runs / artifacts / inbox**
@@ -93,6 +97,18 @@ Conectado al servidor MCP local (`devhub-mcp/server.js`). Expone una **24-tool e
 |------|-------------|
 | `list_agent_workspaces` | Lista workspaces y lifecycle del proyecto |
 | `get_agent_workspace` | Lee un workspace puntual por `workspace_id` |
+
+**Operaciones y membresía**
+| Tool | Descripción |
+|------|-------------|
+| `devhub_list_actions` | Lista acciones permitidas para el operador |
+| `devhub_operate` | Ejecuta una acción permitida por policy |
+| `workspace.list` | Lista workspaces del usuario |
+| `workspace.create` | Crea un workspace |
+| `workspace.members` | Lista miembros |
+| `workspace.add_member` | Añade un miembro directo |
+| `workspace.update_member_role` | Actualiza el rol de un miembro |
+| `workspace.remove_member` | Quita un miembro |
 
 Notas de contrato:
 

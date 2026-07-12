@@ -23,6 +23,8 @@ const expectedTools = [
   'create_project',
   'create_task',
   'delete_project',
+  'devhub_list_actions',
+  'devhub_operate',
   'dismiss_inbox_item',
   'get_agent_run',
   'get_agent_workspace',
@@ -40,6 +42,12 @@ const expectedTools = [
   'update_milestone',
   'update_project',
   'update_task',
+  'workspace.add_member',
+  'workspace.create',
+  'workspace.list',
+  'workspace.members',
+  'workspace.remove_member',
+  'workspace.update_member_role',
 ].sort();
 
 const messages = [

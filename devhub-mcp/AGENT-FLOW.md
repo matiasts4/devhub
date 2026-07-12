@@ -32,12 +32,16 @@ single-create calls when generating full plans.
 ## Recommended execution sequence
 
 1. Use `get_execution_queue` when the agent/user wants to inspect options.
-2. Use `add_task_comment` for decisions, QA notes, implementation summaries, or
+2. Claim the selected task with `devhub claim`; claims and leases are CLI
+   runtime operations, not public MCP tools.
+3. Use `add_task_comment` for decisions, QA notes, implementation summaries, or
    blockers that belong on the task.
-3. Use `update_task` for public task-state changes once evidence is ready.
-4. Handle runtime workspace/run/lease activity outside this public MCP surface.
+4. Use `update_task` for public task-state changes once evidence is ready.
+5. Release the lease with `devhub release --outcome ...`.
+6. Handle the remaining runtime workspace/run activity outside this public MCP
+   surface.
 
-### Git gate before `completed` or `qa-ready`
+### Git gate before `completed` or `qa_ready`
 
 Before an agent marks a task `completed` or leaves it `qa-ready`, the executor
 must handle Git outside DevHub MCP and then record the evidence back in DevHub:
@@ -54,6 +58,23 @@ must handle Git outside DevHub MCP and then record the evidence back in DevHub:
 
 Without that checkpoint evidence, the task should stay `in_progress`/`blocked`,
 not `completed`.
+
+## Daily cadence
+
+1. Start with `get_project_context` and `get_execution_queue`.
+2. Work on one claimed task at a time.
+3. Record scope changes, blockers, decisions, and checks as task comments.
+4. End with a truthful checkpoint, task status update, and lease release.
+5. Create or update a DevHub task before accepting significant untracked work.
+
+## Weekly review
+
+1. Review blocked and stale `in_progress` tasks.
+2. Check milestones with no recent task movement.
+3. Link each active OpenSpec change or planning document to a task or milestone.
+4. Archive superseded plans instead of bulk-importing historical work.
+5. Add new MCP/DocOps capabilities only when repeated operational friction
+   demonstrates the need.
 
 This is now durably enforced in the server mutation path: attempts to close a
 task or finalize a QA handoff without a valid `[git:checkpoint]` are rejected

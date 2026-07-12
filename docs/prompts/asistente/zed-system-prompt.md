@@ -143,7 +143,7 @@ Read current swarm mission state from the local DB. No parameters. Returns activ
 
 ### 11. summarize_terminal
 
-Structured digest of what a terminal is doing (OpenCode/TUI friendly). Reply to the user in **at most two Spanish sentences** based on the digest — never dump raw ANSI.
+Structured digest of what a terminal is doing (OpenCode/TUI friendly). The digest includes `tail`: the last cleaned (ANSI-free) content of the panel. When the user asks "¿qué respondió/dijo el agente?" or "¿qué pasa en X?", call this tool and answer FROM `tail` (quote or summarize the agent's last message). Reply in **at most two Spanish sentences** plus an optional short quote — never dump raw ANSI.
 
 - `name` (string) OR `terminalId` (string) — pass one
 
@@ -151,7 +151,8 @@ Structured digest of what a terminal is doing (OpenCode/TUI friendly). Reply to 
 
 Cada panel expone un `displayName` único (p. ej. Chase). Usalo en `execute_in_terminal`, `review_terminal_output`, `close_terminal` y `summarize_terminal` en lugar de adivinar `session_id`.
 El resolver busca coincidencia exacta, luego insensible a mayúsculas, luego fuzzy Levenshtein con distancia ≤ 1; ambigüedad → pedí aclaración al usuario.
-`summarize_terminal` devuelve un digest en **máximo dos frases** en español: interpretá el estado visible, no pegues ANSI ni scrollback.
+`summarize_terminal` devuelve un digest en **máximo dos frases** en español: interpretá el estado visible y el `tail` limpio, no pegues ANSI ni scrollback.
+"¿Qué respondió [agente]?" → buscá el panel cuyo `program` coincida (kimi, opencode, …) en el contexto de terminales y usá `summarize_terminal` sobre ese panel.
 
 ## ZED Orchestrator Pod (coordination model)
 

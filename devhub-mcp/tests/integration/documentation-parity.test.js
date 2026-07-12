@@ -58,7 +58,7 @@ const DEFERRED_ITEMS = [
 ];
 
 function readMarkdown(filePath) {
-  return readFileSync(filePath, 'utf8');
+  return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
 }
 
 function extractCliCommands(markdown) {
@@ -96,14 +96,14 @@ describe('Documentation parity baseline', () => {
     const mcpSpec = readMarkdown(MCP_SPEC_PATH);
     const cliSpec = readMarkdown(CLI_SPEC_PATH);
 
-    expect(inventory).toContain('Baseline soportado hoy: 24 tools MCP y 20 comandos CLI.');
+    expect(inventory).toContain('Baseline soportado hoy: 32 tools MCP y 20 comandos CLI.');
     expect(comparison).toContain('Backlog diferido explícito');
     expect(mcpPlan).toContain('Telegram MCP removal is complete');
     expect(cliPlan).toContain('20 implemented top-level CLI commands');
-    expect(roadmap).toContain('Supported baseline now: 24 MCP tools and 20 CLI commands.');
-    expect(mcpProtocol).toContain('24-tool env-invariant MCP contract');
-    expect(agentHubDoc).toContain('24-tool env-invariant surface');
-    expect(mcpSpec).toContain('The system SHALL publish one supported MCP contract of 24 tools');
+    expect(roadmap).toContain('Supported baseline now: 32 MCP tools and 20 CLI commands.');
+    expect(mcpProtocol).toContain('contrato MCP env-invariant de 32 tools');
+    expect(agentHubDoc).toContain('superficie env-invariant de 32 tools');
+    expect(mcpSpec).toContain('The system SHALL publish one supported MCP contract of 32 tools');
     expect(cliSpec).toContain(
       'The documentation SHALL describe 20 implemented top-level CLI commands'
     );

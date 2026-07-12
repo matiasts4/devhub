@@ -2,6 +2,16 @@
 
 const { Command } = require('commander');
 const pkg = require('./package.json');
+
+// Resolve the DB override before loading lib/db: getDb() is initialized by
+// ensureWriteSchema() during CLI startup and would otherwise cache the default.
+const dbArgIndex = process.argv.findIndex((arg) => arg === '--db' || arg.startsWith('--db='));
+if (dbArgIndex >= 0) {
+  const dbArg = process.argv[dbArgIndex];
+  const dbPath = dbArg === '--db' ? process.argv[dbArgIndex + 1] : dbArg.slice('--db='.length);
+  if (dbPath) process.env.DEVHUB_DB_PATH = dbPath;
+}
+
 const { ensureWriteSchema } = require('./lib/db');
 
 // Ensure writable schema columns exist before any command executes
@@ -17,12 +27,6 @@ program
     '--db <path>',
     'Override DEVHUB_DB_PATH (T-005: used by chat/events/status Bus commands)'
   );
-
-// Apply --db to env before any subcommand runs.
-const _programOpts = program.opts();
-if (_programOpts && _programOpts.db) {
-  process.env.DEVHUB_DB_PATH = _programOpts.db;
-}
 
 // Implemented commands
 const statusCommand = require('./commands/status.js');

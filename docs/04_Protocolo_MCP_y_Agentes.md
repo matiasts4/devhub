@@ -1,11 +1,12 @@
 ---
-Fecha de Modificación: 18 de mayo de 2026
+Fecha de Modificación: 12 de julio de 2026
 Changelog:
   - 2026-03-28 v1: Creación del documento base definiendo las reglas del Protocolo MCP.
   - 2026-03-28 v2: Actualización con herramientas completas implementadas. Añadido módulo Planning IA y tabla de tools actualizada con 13 herramientas.
   - 2026-05-14 v3: Alineación documental con Swarm Workspace: capas runtime, reuso de assets SDD y boundary del supervisor durable.
   - 2026-05-15 v4: MCP redefinido explícitamente como control plane. Git/filesystem/terminal pasan a capability del ejecutor y se actualiza el catálogo operativo real.
   - 2026-05-18 v5: Documentados `prepare_agent_workspace`/`report_agent_workspace`, checkpoints congelados SW-2.1/SW-3.1 y consumo downstream sin verbos Git.
+  - 2026-07-12 v6: Alineado el contrato público de 32 tools y separadas las operaciones runtime que pertenecen al CLI.
 ---
 
 # 04 Protocolo MCP y Agentes
@@ -16,7 +17,7 @@ Este documento describe la arquitectura y las reglas de integración del **Model
 
 ## 🤖 Arquitectura MCP en DevHub
 
-El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operacional** de DevHub. Hoy publica un **24-tool env-invariant MCP contract** para estado, roadmap, evidencia durable e inbox. Telegram runtime/storage queda fuera de esa surface pública.
+El Servidor MCP (`devhub-mcp/server.js`) funciona como el **control plane operacional** de DevHub. Hoy publica un **contrato MCP env-invariant de 32 tools** para estado, roadmap, evidencia durable, inbox, operator actions y membresía de workspaces. Telegram runtime/storage queda fuera de esa superficie pública.
 
 > **Boundary vigente:** Git, filesystem, terminal, tests y PRs **no** viven en el DevHub MCP general. Esas operaciones pertenecen a la capability/skill del ejecutor (OpenCode, Hermes, editor, runner, etc.).
 
@@ -36,8 +37,8 @@ El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 1. **Gestión de Proyectos:** CRUD y estado general del proyecto. ✅
 2. **Gestión de Tareas/Hitos:** backlog, comments y roadmap. ✅
 3. **Planning IA:** contexto completo del proyecto para planificación exhaustiva. ✅
-4. **Swarm Runtime State:** cola priorizada, claims, leases y release de tareas. ✅
-5. **Execution Tracking:** workspaces, runs, artifacts e inbox operator-friendly. ✅
+4. **Swarm Runtime State:** lectura de cola priorizada; claims, leases y releases se ejecutan por CLI. ✅
+5. **Execution Tracking:** lectura de workspaces, runs, artifacts e inbox operator-friendly. ✅
 
 ---
 
@@ -45,32 +46,40 @@ El alcance del Servidor MCP se divide en **cinco grandes módulos**:
 
 Esta tabla resume el catálogo real del DevHub MCP. La surface general de Git/filesystem/terminal queda fuera de este servidor.
 
-| Tool                     | Módulo         | Descripción                                                 |
-| ------------------------ | -------------- | ----------------------------------------------------------- |
-| `list_projects`          | Proyectos      | Lista todos los proyectos (filtro por estado)               |
-| `get_project`            | Proyectos      | Detalles completos + tareas + hitos                         |
-| `update_project`         | Proyectos      | Actualiza nombre, estado, progreso, color y planning_status |
-| `create_project`         | Proyectos      | Crea un nuevo proyecto                                      |
-| `delete_project`         | Proyectos      | Elimina un proyecto con confirmación explícita              |
-| `get_agent_workspace`    | Workspaces     | Lee un workspace puntual por `workspace_id`                 |
-| `list_tasks`             | Tareas         | Tareas de un proyecto (filtro estado/prioridad)             |
-| `create_task`            | Tareas         | Crea nueva tarea con milestone_id opcional                  |
-| `bulk_create_tasks`      | Tareas         | Crea tareas en lote de forma idempotente                    |
-| `update_task`            | Tareas         | Cambia estado, prioridad, milestone o asignación de tarea   |
-| `add_task_comment`       | Tareas         | Añade comentario técnico o de QA a una tarea                |
-| `get_execution_queue`    | Tareas/Swarm   | Devuelve cola scoreada de tareas y bloqueos                 |
-| `list_milestones`        | Hitos          | Hitos del roadmap                                           |
-| `create_milestone`       | Hitos          | Crea nuevo hito                                             |
-| `bulk_create_milestones` | Hitos          | Crea hitos en lote de forma idempotente                     |
-| `update_milestone`       | Hitos          | Actualiza estado/fecha/asignación de hito                   |
-| `get_project_context`    | Planning IA ⭐ | Lee planning_prompt + todos los project_files               |
-| `list_agent_workspaces`  | Workspaces     | Lista workspaces y estados lifecycle del control plane      |
-| `get_agent_run`          | Runs           | Lee un run puntual                                          |
-| `list_agent_runs`        | Runs           | Lista runs durables                                         |
-| `list_agent_artifacts`   | Artifacts      | Lista artifacts asociados a un run                          |
-| `get_workspace_evidence` | Artifacts      | Lee evidencia resumida de workspace/run                     |
-| `list_operator_inbox`    | Inbox          | Lista operator inbox durable                                |
-| `dismiss_inbox_item`     | Inbox          | Marca/dismiss item del inbox                                |
+| Tool                           | Módulo         | Descripción                                                 |
+| ------------------------------ | -------------- | ----------------------------------------------------------- |
+| `list_projects`                | Proyectos      | Lista todos los proyectos (filtro por estado)               |
+| `get_project`                  | Proyectos      | Detalles completos + tareas + hitos                         |
+| `update_project`               | Proyectos      | Actualiza nombre, estado, progreso, color y planning_status |
+| `create_project`               | Proyectos      | Crea un nuevo proyecto                                      |
+| `delete_project`               | Proyectos      | Elimina un proyecto con confirmación explícita              |
+| `get_agent_workspace`          | Workspaces     | Lee un workspace puntual por `workspace_id`                 |
+| `list_tasks`                   | Tareas         | Tareas de un proyecto (filtro estado/prioridad)             |
+| `create_task`                  | Tareas         | Crea nueva tarea con milestone_id opcional                  |
+| `bulk_create_tasks`            | Tareas         | Crea tareas en lote de forma idempotente                    |
+| `update_task`                  | Tareas         | Cambia estado, prioridad, milestone o asignación de tarea   |
+| `add_task_comment`             | Tareas         | Añade comentario técnico o de QA a una tarea                |
+| `get_execution_queue`          | Tareas/Swarm   | Devuelve cola scoreada de tareas y bloqueos                 |
+| `list_milestones`              | Hitos          | Hitos del roadmap                                           |
+| `create_milestone`             | Hitos          | Crea nuevo hito                                             |
+| `bulk_create_milestones`       | Hitos          | Crea hitos en lote de forma idempotente                     |
+| `update_milestone`             | Hitos          | Actualiza estado/fecha/asignación de hito                   |
+| `get_project_context`          | Planning IA ⭐ | Lee planning_prompt + todos los project_files               |
+| `list_agent_workspaces`        | Workspaces     | Lista workspaces y estados lifecycle del control plane      |
+| `get_agent_run`                | Runs           | Lee un run puntual                                          |
+| `list_agent_runs`              | Runs           | Lista runs durables                                         |
+| `list_agent_artifacts`         | Artifacts      | Lista artifacts asociados a un run                          |
+| `get_workspace_evidence`       | Artifacts      | Lee evidencia resumida de workspace/run                     |
+| `list_operator_inbox`          | Inbox          | Lista operator inbox durable                                |
+| `dismiss_inbox_item`           | Inbox          | Marca/dismiss item del inbox                                |
+| `devhub_list_actions`          | Operaciones    | Lista acciones disponibles para el operador                 |
+| `devhub_operate`               | Operaciones    | Ejecuta una acción permitida por policy                     |
+| `workspace.list`               | Membresía      | Lista workspaces del usuario                                |
+| `workspace.create`             | Membresía      | Crea un workspace                                           |
+| `workspace.members`            | Membresía      | Lista miembros de un workspace                              |
+| `workspace.add_member`         | Membresía      | Añade un miembro directo                                    |
+| `workspace.update_member_role` | Membresía      | Actualiza el rol de un miembro                              |
+| `workspace.remove_member`      | Membresía      | Quita un miembro                                            |
 
 > **Fuera del contrato MCP público actual:** Telegram MCP helpers, ghost tools duplicadas de CLI (`get_dashboard`, `get_next_task`, `register_agent`, `heartbeat_agent`, `unregister_agent`, `update_agent_status`) y mutaciones runtime (`claim_next_task`, `renew_task_lease`, `release_task`, `request_supervisor_approval`, `team_tell`, `prepare/create/update/report_agent_workspace`, `create/complete_agent_run`, `append_agent_artifact`). Si vuelven, debe ser mediante cambio de contrato explícito.
 
@@ -148,13 +157,15 @@ Cuando un usuario crea un proyecto con Planning IA habilitado, el flujo es:
 6. Antigravity ejecuta:
    a. get_project_context({ project_id })   → lee todo el contexto
    b. bulk_create_milestones() o create_milestone() × N → crea 5-8 hitos
-   c. bulk_create_tasks() o create_task() × 40-60+    → crea tareas exhaustivas
+   c. bulk_create_tasks() o create_task() × N         → crea el backlog mínimo revisable
    d. update_project({ project_id, planning_status: "completed" }) → marca completado
 7. Usuario ve Roadmap y Tareas poblados
 ```
 
 > [!IMPORTANT]
-> El planning exhaustivo debe generar **mínimo 40 tareas** distribuidas en los milestones. Si el proyecto es complejo, se deben hacer múltiples rondas de `create_task` hasta cubrir todas las áreas: Setup, Arquitectura, DB, Backend, Frontend (por pantalla), Integraciones, Testing, DevOps, Documentación, Performance, Seguridad, Monitoreo.
+> El planning debe generar el backlog mínimo que cubra el alcance activo. En una
+> adopción inicial se recomiendan 10–20 tareas revisables; solo se expande cuando
+> haya alcance y evidencia suficientes. No se crean tareas para cumplir una cuota.
 
 ### Gate de clasificación documental
 
@@ -181,14 +192,14 @@ Los docs legacy importados se archivan, no se sobrescriben.
 
 ### 1. **Planning Agent (Controller)**
 
-- **Responsabilidad:** Leer contexto completo con `get_project_context`, generar plan exhaustivo de 40-60+ tareas usando `create_milestone`/`bulk_create_milestones` y `create_task`/`bulk_create_tasks`, cerrar con `update_project({ planning_status: "completed" })`.
-- **Restricción:** No modifica código fuente — solo opera sobre Supabase vía MCP.
+- **Responsabilidad:** Leer contexto completo con `get_project_context`, generar hitos y el backlog mínimo revisable usando las operaciones bulk idempotentes, y cerrar con `update_project({ planning_status: "completed" })`.
+- **Restricción:** No modifica código fuente; solo opera el control plane configurado (SQLite local o Supabase) vía MCP.
 
 ### 2. **Worker Agent**
 
-- **Responsabilidad:** Ejecutar tareas individuales del plan usando la capability del ejecutor para código/docs/Git/tests y DevHub MCP para task state, comments, claims y leases.
+- **Responsabilidad:** Ejecutar tareas individuales del plan usando la capability del ejecutor para código/docs/Git/tests, DevHub MCP para task state y comments, y DevHub CLI para claims y leases.
 - **Regla obligatoria:** Debe actualizar la documentación relevante y registrar comments operativos (`[git:start]`, `[git:checkpoint]`, `[git:qa-ready]`).
-- **Ámbito:** Branch/workspace aislado + control plane DevHub. Git no sale del MCP general.
+- **Ámbito:** Branch/workspace aislado + control plane DevHub. Git permanece fuera del MCP general.
 
 ### 3. **QA Agent**
 

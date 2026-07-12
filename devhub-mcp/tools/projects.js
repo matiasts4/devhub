@@ -334,7 +334,7 @@ export function registerProjectTools(server, deps) {
     'Crea un nuevo hito en el roadmap de un proyecto.',
     {
       project_id: PROJECT_ID_SCHEMA,
-      user_id: z.string().uuid(),
+      user_id: z.string().uuid().optional().describe('UUID del propietario; default: actor actual'),
       title: z.string().min(1),
       description: z.string().optional(),
       status: z
@@ -371,7 +371,7 @@ export function registerProjectTools(server, deps) {
     'Crea múltiples hitos de roadmap de forma idempotente: si ya existe un hito con el mismo título en el proyecto, lo omite.',
     {
       project_id: PROJECT_ID_SCHEMA,
-      user_id: z.string().uuid(),
+      user_id: z.string().uuid().optional().describe('UUID del propietario; default: actor actual'),
       milestones: z
         .array(
           z.object({

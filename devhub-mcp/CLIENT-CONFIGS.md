@@ -10,6 +10,32 @@ for Node module ABI 137.
 }
 ```
 
+## Cursor
+
+En `.cursor/mcp.json` dentro del proyecto. En Windows preferí rutas absolutas
+(Node 24 + `better-sqlite3`) para evitar fallos de resolución de `node`/cwd:
+
+```json
+{
+  "mcpServers": {
+    "devhub": {
+      "type": "stdio",
+      "command": "C:/Program Files/nodejs/node.exe",
+      "args": ["D:/devhub/devhub-mcp/server.js"],
+      "env": {
+        "DEVHUB_DB_PATH": "D:/devhub/data/devhub.db",
+        "DEVHUB_MCP_DB_DRIVER": "sqlite"
+      }
+    }
+  }
+}
+```
+
+Reiniciá Cursor o usá **Settings → Tools & MCP → Refresh** después de guardar.
+Verificá que `devhub` liste 32 tools. Diagnóstico: **Output → MCP Logs**.
+Smoke local: `DEVHUB_DB_PATH=D:/devhub/data/devhub.db npm run mcp:smoke` desde
+`devhub-mcp/`.
+
 ## OpenCode
 
 In `opencode.json`:
@@ -70,6 +96,7 @@ mcp_servers:
 
 The DevHub MCP has been registered in:
 
+- `.cursor/mcp.json`
 - `~/.codex/config.toml`
 - `~/.config/opencode/opencode.json`
 - `~/opencode.json`

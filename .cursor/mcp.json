@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "devhub": {
+      "type": "stdio",
+
+      "command": "C:/Program Files/nodejs/node.exe",
+
+      "args": ["D:/devhub/devhub-mcp/server.js"],
+
+      "env": {
+        "DEVHUB_DB_PATH": "D:/devhub/data/devhub.db",
+
+        "DEVHUB_MCP_DB_DRIVER": "sqlite"
+      }
+    }
+  }
+}

@@ -153,6 +153,17 @@ describe('MCP Task Tools', () => {
       expect(second.skipped_count).toBe(1);
       expect(second.skipped[0].reason).toBe('duplicate-title');
     });
+
+    it('defaults ownership to the local actor when user_id is omitted', async () => {
+      if (!projectId) return;
+      const result = await harness.callTool('bulk_create_tasks', {
+        project_id: projectId,
+        tasks: [{ title: 'Local Actor Task' }],
+      });
+
+      expect(result.created_count).toBe(1);
+      expect(result.tasks[0].user_id).toBe('local-user');
+    });
   });
 
   describe('update_task', () => {

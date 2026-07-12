@@ -1018,7 +1018,11 @@ export function registerTaskTools(server, deps) {
     'Crea una nueva tarea en un proyecto de DevHub.',
     {
       project_id: PROJECT_ID_SCHEMA,
-      user_id: z.string().uuid().describe('UUID del usuario propietario'),
+      user_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('UUID del usuario propietario; default: actor actual'),
       title: z.string().min(1).describe('Título de la tarea'),
       description: z.string().optional(),
       status: z
@@ -1073,7 +1077,11 @@ export function registerTaskTools(server, deps) {
     'Crea múltiples tareas de planning de forma idempotente: si ya existe una tarea con el mismo título en el proyecto, la omite.',
     {
       project_id: PROJECT_ID_SCHEMA,
-      user_id: z.string().uuid().describe('UUID del usuario propietario'),
+      user_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('UUID del usuario propietario; default: actor actual'),
       tasks: z
         .array(
           z.object({

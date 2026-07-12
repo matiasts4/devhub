@@ -47,19 +47,23 @@ Este documento formaliza el Camino A (implementacion incremental sobre DevHub ac
 
 ## Inventario MCP actual (base real disponible)
 
-Fuente: devhub-mcp/server.js
+Fuente canónica: `devhub-mcp/README.md` y
+`devhub-mcp/tests/integration/tools-list.test.js` (32 tools).
 
 ### Ya disponible
 
 - Proyectos: create_project, list_projects, get_project, update_project, delete_project
 - Tareas: create_task, bulk_create_tasks, list_tasks, update_task, add_task_comment
-- Cola/leases: get_next_task, get_execution_queue, claim_next_task, renew_task_lease, release_task
+- Cola: get_execution_queue
 - Hitos: create_milestone, bulk_create_milestones, list_milestones, update_milestone
-- Dashboard: get_dashboard
 - Planning: get_project_context, update_project(planning_status)
-- Swarm: register_agent, heartbeat_agent, unregister_agent, update_agent_status
+- Evidencia: list_agent_workspaces, get_agent_workspace, get_agent_run, list_agent_runs, list_agent_artifacts, get_workspace_evidence
+- Inbox: list_operator_inbox, dismiss_inbox_item
+- Operaciones: devhub_list_actions, devhub_operate
+- Membresía: workspace.list, workspace.create, workspace.members, workspace.add_member, workspace.update_member_role, workspace.remove_member
 - Memoria durable: Engram (fuera de DevHub MCP)
 - Git/Files/Terminal: capability del ejecutor (fuera de DevHub MCP)
+- Claims, leases, presencia y Swarm: CLI `devhub` (fuera del contrato MCP público)
 
 ### Gap funcional para DocOps largo plazo
 
@@ -67,6 +71,7 @@ Fuente: devhub-mcp/server.js
 - No hay relacion de reemplazo entre versiones documentales.
 - No hay tools MCP dedicadas a ciclo de vida documental.
 - La cronologia Git/documental todavia depende de comments, artifacts y disciplina del ejecutor mientras Swarm Workspace formaliza workspaces, runs y evidence packs.
+- Las dependencias entre tareas se mantienen desde la UI; el MCP público aún no expone una mutación para `task_dependencies`.
 
 ### Telemetria operativa viva
 

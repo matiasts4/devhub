@@ -2,7 +2,7 @@
 
 const path = require('path');
 const pkg = require('./package.json');
-const { createTempDb } = require('./tests/fixtures/seed-factory');
+const { cleanupDb, createTempDb, writeDb } = require('./tests/fixtures/seed-factory');
 
 // Set DB path BEFORE any require() that loads lib/db
 const dbPath = createTempDb();
@@ -49,6 +49,28 @@ describe('CLI unknown command', () => {
   it('exits 2 for unrecognized command', () => {
     const result = spawnSync('node', [CLI, 'nonexistent'], { encoding: 'utf8' });
     expect(result.status).toBe(2);
+  });
+});
+
+describe('CLI --db override', () => {
+  it('selects the requested database before command modules initialize', () => {
+    const overrideDbPath = createTempDb();
+    writeDb(
+      overrideDbPath,
+      'INSERT INTO agent_registry (agent_id, project_id, nombre, status) VALUES (?, ?, ?, ?)',
+      ['db-override-agent', 'override-project', 'Override Agent', 'idle']
+    );
+
+    try {
+      const result = spawnSync('node', [CLI, '--db', overrideDbPath, 'agents'], {
+        encoding: 'utf8',
+        env: { ...process.env, DEVHUB_DB_PATH: dbPath },
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('db-override-agent');
+    } finally {
+      cleanupDb(overrideDbPath);
+    }
   });
 });
 

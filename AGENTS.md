@@ -1,6 +1,6 @@
 # DevHub agent operating guide
 
-Use this guide when working in `/home/matias/ArxonLabs/devhub`.
+Use this guide when working in this DevHub repository.
 
 ## DevHub MCP routing
 
@@ -15,18 +15,34 @@ Do **not** call DevHub MCP blindly for every coding turn. For small isolated cod
 
 Recommended flow:
 
-1. Use Engram first for durable memory/context from previous sessions.
-2. Use DevHub MCP for the current operational state: projects, tasks, milestones, execution queue, claims, and agent status.
+1. Use Engram first for durable memory/context from previous sessions when it is available.
+2. Use DevHub MCP for the current operational state: projects, tasks, milestones, execution queue, comments, and evidence.
 3. For structural code exploration: **Graphify first** (`graphify query` / `path` / `explain` against `graphify-out/graph.json`). Only then fall back to codegraph, lean-ctx, or targeted grep on the `source_file`s the graph returned.
 4. Save durable learnings/decisions back to Engram; save execution state/progress back to DevHub MCP.
+5. Use the `devhub` CLI for runtime coordination: claims, leases, heartbeats, presence, and swarm operations.
 
 ## Tool intent
 
-- `list_projects`, `get_project`, `get_dashboard`, `get_project_context`: orient before planning.
+- `list_projects`, `get_project`, `get_project_context`: orient before planning.
 - `bulk_create_tasks`, `bulk_create_milestones`: turn plans/roadmaps into structured work.
-- `get_execution_queue`, `claim_next_task`: select and claim the next executable task.
+- `get_execution_queue`: select the next executable task.
 - `update_task`, `add_task_comment`, `update_milestone`: report progress and outcomes.
-- `register_agent`, `heartbeat_agent`, `update_agent_status`, `unregister_agent`: coordinate multi-agent runs.
+- `devhub claim` / `devhub release`: claim and release execution leases.
+- `devhub heartbeat`, `devhub update-status`, `devhub presence`, `devhub swarm-launch`: coordinate multi-agent runs.
+
+The supported public MCP catalog is defined by `devhub-mcp/README.md` and enforced
+by `devhub-mcp/tests/integration/tools-list.test.js`. Do not infer tools from
+legacy harnesses or old planning documents.
+
+## Daily / weekly cadence
+
+Canonical detail lives in `devhub-mcp/AGENT-FLOW.md`. Minimum loop for this repo:
+
+1. Orient with `get_project_context` / `get_execution_queue` (or `devhub queue`).
+2. Claim one task (`devhub claim`), leave an intent comment, do the work.
+3. Record decisions/blockers with `add_task_comment`; close only with `[git:checkpoint]`.
+4. Release the lease (`devhub release`). Do not accept significant work without a DevHub task.
+5. Weekly: review blocked/stale tasks, idle milestones, and plans without a linked task.
 
 ## Project Skills
 

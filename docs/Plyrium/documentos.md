@@ -2,7 +2,7 @@
 
 Esta carpeta ahora usa una baseline reality-first.
 
-**Baseline soportado hoy: 24 tools MCP y 20 comandos CLI.** Telegram queda fuera del contrato público MCP. Los gaps grandes de paridad siguen diferidos y NO bloquean esta baseline.
+**Baseline soportado hoy: 32 tools MCP y 20 comandos CLI.** Telegram queda fuera del contrato público MCP. Los gaps grandes de paridad siguen diferidos y NO bloquean esta baseline.
 
 ## Quick path
 
@@ -14,7 +14,7 @@ Esta carpeta ahora usa una baseline reality-first.
 
 | Superficie       | Estado actual | Nota                                           |
 | ---------------- | ------------- | ---------------------------------------------- |
-| MCP público      | 24 tools      | Env-invariant; Telegram MCP removido           |
+| MCP público      | 32 tools      | Env-invariant; Telegram MCP removido           |
 | CLI top-level    | 20 comandos   | Documentados como superficie ejecutable actual |
 | Runtime Telegram | Interno       | Storage/runtime queda fuera del contrato MCP   |
 
@@ -25,6 +25,7 @@ Las categorías vigentes del MCP público son:
 - `crud`
 - `portable-contract`
 - `external-integration`
+- `workspace-membership`
 
 Las mutaciones runtime de leases, approvals, workspaces, runs, artifacts y team messaging quedan fuera del contrato público MCP.
 

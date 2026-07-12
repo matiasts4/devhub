@@ -38,16 +38,26 @@ Si ves `✅ DevHub MCP Server iniciado (stdio)`, el servidor arrancó bien.
 
 ## Configuración en clientes MCP
 
+Cursor usa `.cursor/mcp.json` en la raíz del proyecto:
+
 ```json
 {
   "mcpServers": {
     "devhub": {
+      "type": "stdio",
       "command": "node",
-      "args": ["/ruta/a/devhub/devhub-mcp/server.js"]
+      "args": ["${workspaceFolder}/devhub-mcp/server.js"],
+      "env": {
+        "DEVHUB_DB_PATH": "${workspaceFolder}/data/devhub.db",
+        "DEVHUB_MCP_DB_DRIVER": "sqlite"
+      }
     }
   }
 }
 ```
+
+Reiniciá Cursor después de guardar la configuración y verificá `devhub` en
+**Settings → Tools & MCP**. Consultá `CLIENT-CONFIGS.md` para otros clientes.
 
 ---
 
@@ -126,7 +136,8 @@ Si estás construyendo un cliente portable, esta es la parte más estable del co
 1. Orientarte con `list_projects` o `get_project_context`.
 2. Revisar la cola con `get_execution_queue`.
 3. Elegir trabajo desde `get_execution_queue`.
-4. Ejecutar mutaciones runtime por CLI/capability del ejecutor, no por este MCP público.
+4. Reclamar/liberar trabajo con `devhub claim` / `devhub release`; ejecutar el
+   resto de mutaciones runtime por CLI/capability del ejecutor.
 5. Reportar progreso con `add_task_comment` y `update_task`.
 
 La registración runtime del agente, heartbeats y cualquier integración Telegram viven fuera de este contrato MCP público.
@@ -145,5 +156,5 @@ npm run mcp:smoke
 ## Notas
 
 - El servidor usa `src/lib/db/localDb.js` como capa compartida.
-- El smoke test valida el catálogo exacto de 24 tools.
+- El smoke test valida el catálogo exacto de 32 tools.
 - El contrato público es env-invariant: `TELEGRAM_BOT_TOKEN` ya no cambia `tools/list`.
