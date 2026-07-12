@@ -480,6 +480,22 @@ export function getSurfaceViewId(surface, views = [], fallbackViewId = null) {
   if (stored && (views.length === 0 || views.some((v) => v.id === stored))) {
     return stored;
   }
+
+  const panelId =
+    surface?.type === 'terminal'
+      ? surface?.panelId || String(surface?.id || '').replace(/^shape-term-/, '')
+      : null;
+  if (panelId && views.length > 0) {
+    const owningViews = views.filter((view) =>
+      (view?.columns || []).some((column) =>
+        (column?.panels || []).some((panel) => String(panel?.id) === String(panelId))
+      )
+    );
+    // Recover legacy/orphan terminal ownership without assigning it to the
+    // currently active view by fallback.
+    if (owningViews.length === 1) return owningViews[0].id;
+  }
+
   if (fallbackViewId != null) return fallbackViewId;
   return null;
 }

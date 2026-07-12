@@ -42,9 +42,12 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
   default: (props) => {
     const ReactLocal = require('react');
     capturedWorkspacePaneProps = props;
-    return ReactLocal.createElement('div', {
-      'data-testid': 'workspace-browser-pane',
-    });
+    return ReactLocal.createElement(
+      'div',
+      { 'data-testid': 'workspace-browser-pane' },
+      props.toolbarLeadingContent,
+      props.toolbarTrailingContent
+    );
   },
 }));
 

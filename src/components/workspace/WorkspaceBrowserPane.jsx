@@ -41,9 +41,8 @@ import { reloadBrowserRuntime } from './browserRuntimeReload';
 // pizarra-shared-view-state Phase 3: opt-in tab strip shared with
 // the pizarra browser surface. When `tabsMode === 'multi'` we read
 // from useBrowserTabs (which delegates to the TWM-owned
-// useSharedDockState) and render the BrowserTabStrip above the
-// existing toolbar chrome. Default 'single' preserves the
-// pre-Phase-3 UX exactly.
+// useSharedDockState). The right dock renders the strip above its
+// toolbar; pizarra folds it into the compact toolbar row.
 import { useBrowserTabs } from './hooks/useBrowserTabs';
 import BrowserTabStrip from './BrowserTabStrip';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
@@ -79,6 +78,8 @@ function WorkspaceBrowserPane({
   suspendNativeSurface = false,
   tabsMode = 'single',
   isPizarraContext = false,
+  toolbarLeadingContent = null,
+  toolbarTrailingContent = null,
   nativePanelId: nativePanelIdProp = null,
 }) {
   const viewportShellRef = useRef(null);
@@ -123,9 +124,7 @@ function WorkspaceBrowserPane({
     const dockVisible = dockState.visible !== false;
     const maximizedView = dockState.maximizedView || 'browser';
     const takeoverBlocksWorkspaceBrowser =
-      dockState.maximized === true &&
-      maximizedView !== 'browser' &&
-      maximizedView !== 'window';
+      dockState.maximized === true && maximizedView !== 'browser' && maximizedView !== 'window';
     const browserOwnsLayout = !dockState.maximized || maximizedView === 'browser';
 
     return (
@@ -280,6 +279,7 @@ function WorkspaceBrowserPane({
   // UX is preserved by default.
   const tabStripApi = useBrowserTabs({ projectId, workspaceId });
   const showTabStrip = tabsMode === 'multi';
+  const showToolbarTabStrip = isPizarraContext && showTabStrip;
   const { nativeRuntimeReady, nativeError, retryNative } = useNativeBrowserSurface({
     panelId: nativePanelId,
     url: dockState.browserUrl,
@@ -415,7 +415,7 @@ function WorkspaceBrowserPane({
       data-testid="workspace-browser-pane"
       data-tabs-mode={tabsMode}
     >
-      {showTabStrip ? (
+      {showTabStrip && !showToolbarTabStrip ? (
         <BrowserTabStrip
           tabs={tabStripApi.tabs}
           activeTabId={tabStripApi.activeTabId}
@@ -429,7 +429,27 @@ function WorkspaceBrowserPane({
         className={`flex ${isPizarraContext ? 'h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-2' : 'px-3'}`}
         onSubmit={handleSubmit}
         data-testid="workspace-browser-toolbar"
+        data-layout={isPizarraContext ? 'single-row' : 'default'}
       >
+        {toolbarLeadingContent || showToolbarTabStrip ? (
+          <div
+            className="order-1 flex min-w-0 shrink items-center gap-1 overflow-hidden"
+            style={isPizarraContext ? { maxWidth: 'min(38%, 360px)' } : undefined}
+          >
+            {toolbarLeadingContent}
+            {showToolbarTabStrip ? (
+              <BrowserTabStrip
+                tabs={tabStripApi.tabs}
+                activeTabId={tabStripApi.activeTabId}
+                onSelectTab={tabStripApi.selectTab}
+                onCloseTab={tabStripApi.closeTab}
+                onAddTab={tabStripApi.addTab}
+                currentUrl={dockState.browserUrl}
+                variant="toolbar"
+              />
+            ) : null}
+          </div>
+        ) : null}
         {showFullscreenWorkspaceTabs ? (
           <div
             className="order-1 flex min-w-0 max-w-[min(40vw,34rem)] shrink items-center gap-2 overflow-x-auto pr-1"
@@ -530,7 +550,7 @@ function WorkspaceBrowserPane({
             placeholder={
               isPizarraContext ? 'URL' : 'Escribí una URL, localhost:3200 o una búsqueda'
             }
-            className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-16 text-[10px]' : 'h-8 pl-9 pr-36 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
+            className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-20 text-[10px]' : 'h-8 pl-9 pr-36 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
           />
           <div className="absolute inset-y-0 right-1 flex items-center gap-1">
             <button
@@ -613,7 +633,9 @@ function WorkspaceBrowserPane({
             {/* Show runtime/edit status chip even in pizarra (useful for inspector/reviews on page).
                 Was hidden before; now visible in browser cards for the "preguntas/reviews" functionality. */}
             <div
-              className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-semibold ${
+              className={`inline-flex h-6 items-center rounded-full border text-[10px] font-semibold ${
+                isPizarraContext ? 'w-6 justify-center px-0' : 'gap-1 px-2'
+              } ${
                 nativeRuntimeActive
                   ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
                   : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
@@ -638,7 +660,12 @@ function WorkspaceBrowserPane({
                       : 'bg-white/35'
                 }`}
               />
-              <span data-testid="browser-runtime-status">{runtimeStatusCopy}</span>
+              <span
+                data-testid="browser-runtime-status"
+                className={isPizarraContext ? 'sr-only' : undefined}
+              >
+                {runtimeStatusCopy}
+              </span>
             </div>
 
             {dedicatedBrowserOpen ? (
@@ -668,6 +695,9 @@ function WorkspaceBrowserPane({
             ) : null}
           </div>
         </label>
+        {toolbarTrailingContent ? (
+          <div className="order-4 inline-flex shrink-0 items-center">{toolbarTrailingContent}</div>
+        ) : null}
       </form>
 
       <div

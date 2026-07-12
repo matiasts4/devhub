@@ -42,6 +42,7 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
       ReactLocal.createElement(
         'form',
         { 'data-testid': 'workspace-browser-toolbar' },
+        props.toolbarLeadingContent,
         ReactLocal.createElement('input', {
           'data-testid': 'browser-url-input',
           defaultValue: browserUrl,
@@ -69,7 +70,8 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
               { 'data-testid': 'browser-loading-spinner' },
               'Loading'
             )
-          : ReactLocal.createElement('span', { 'data-testid': 'browser-loading-idle' })
+          : ReactLocal.createElement('span', { 'data-testid': 'browser-loading-idle' }),
+        props.toolbarTrailingContent
       ),
       ReactLocal.createElement('iframe', {
         'data-testid': 'pizarra-mock-iframe',
@@ -332,6 +334,19 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     const urlInput = container.querySelector('[data-testid="browser-url-input"]');
     expect(urlInput).toBeTruthy();
     expect(urlInput.value).toContain('localhost:3100');
+  });
+
+  test('places pizarra drag and close controls in the single browser toolbar', () => {
+    mockUseNativeBrowserCapability = () => null;
+    renderSurface();
+
+    const toolbar = container.querySelector('[data-testid="workspace-browser-toolbar"]');
+    const dragHandle = container.querySelector('[data-testid="pizarra-drag-handle"]');
+    const closeButton = container.querySelector('[data-testid="pizarra-browser-close"]');
+
+    expect(capturedWorkspacePaneProps.tabsMode).toBe('multi');
+    expect(toolbar.contains(dragHandle)).toBe(true);
+    expect(toolbar.contains(closeButton)).toBe(true);
   });
 
   test('Enter in address bar calls commitBrowserNavigation', () => {

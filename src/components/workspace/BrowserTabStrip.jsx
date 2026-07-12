@@ -23,7 +23,7 @@
 import { memo } from 'react';
 import { Plus, X } from 'lucide-react';
 
-function BrowserTabItemImpl({ tab, isActive, onSelect, onClose }) {
+function BrowserTabItemImpl({ tab, isActive, onSelect, onClose, compact = false }) {
   const handleClose = (event) => {
     // Stop propagation so a close click does not also fire
     // the tab's onSelect handler.
@@ -50,19 +50,19 @@ function BrowserTabItemImpl({ tab, isActive, onSelect, onClose }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '4px 8px',
-        borderRadius: 8,
+        gap: compact ? 4 : 6,
+        padding: compact ? '2px 5px' : '4px 8px',
+        borderRadius: compact ? 6 : 8,
         border: isActive
           ? '1px solid var(--accent-primary, #58a6ff)'
           : '1px solid rgba(255,255,255,0.08)',
         background: isActive ? 'rgba(88,166,255,0.12)' : 'rgba(8,14,24,0.6)',
         color: isActive ? '#f0ece4' : '#9fb5d1',
         cursor: 'pointer',
-        maxWidth: 200,
+        maxWidth: compact ? 112 : 200,
         minWidth: 0,
         fontFamily: 'inherit',
-        fontSize: 12,
+        fontSize: compact ? 10 : 12,
         lineHeight: 1.2,
         userSelect: 'none',
       }}
@@ -87,8 +87,9 @@ function BrowserTabItemImpl({ tab, isActive, onSelect, onClose }) {
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 18,
-            height: 18,
+            width: compact ? 16 : 18,
+            height: compact ? 16 : 18,
+            flexShrink: 0,
             padding: 0,
             border: 'none',
             background: 'transparent',
@@ -114,8 +115,10 @@ function BrowserTabStripImpl({
   onAddTab,
   currentUrl = '',
   tabCap = 20,
+  variant = 'standalone',
 }) {
   const atCap = tabs.length >= tabCap;
+  const inToolbar = variant === 'toolbar';
   const handleAdd = () => {
     onAddTab(currentUrl);
   };
@@ -124,14 +127,17 @@ function BrowserTabStripImpl({
     <div
       role="tablist"
       data-testid="browser-tab-strip"
+      data-variant={variant}
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '6px 8px',
-        overflowX: 'auto',
-        background: 'rgba(8, 14, 24, 0.7)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        gap: inToolbar ? 4 : 6,
+        minWidth: 0,
+        flex: inToolbar ? '1 1 auto' : undefined,
+        padding: inToolbar ? 0 : '6px 8px',
+        overflowX: inToolbar ? 'hidden' : 'auto',
+        background: inToolbar ? 'transparent' : 'rgba(8, 14, 24, 0.7)',
+        borderBottom: inToolbar ? 'none' : '1px solid rgba(255,255,255,0.06)',
       }}
     >
       {tabs.map((tab) => (
@@ -141,6 +147,7 @@ function BrowserTabStripImpl({
           isActive={tab.id === activeTabId}
           onSelect={onSelectTab}
           onClose={onCloseTab}
+          compact={inToolbar}
         />
       ))}
       <button
@@ -157,6 +164,7 @@ function BrowserTabStripImpl({
           justifyContent: 'center',
           width: 26,
           height: 24,
+          flexShrink: 0,
           padding: 0,
           borderRadius: 6,
           border: '1px solid rgba(255,255,255,0.08)',

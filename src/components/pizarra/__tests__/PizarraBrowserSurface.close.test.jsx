@@ -34,10 +34,16 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
     return ReactLocal.createElement(
       'div',
       { 'data-testid': 'workspace-browser-pane' },
-      ReactLocal.createElement('input', {
-        'data-testid': 'browser-url-input',
-        defaultValue: browserUrl,
-      }),
+      ReactLocal.createElement(
+        'form',
+        { 'data-testid': 'workspace-browser-toolbar' },
+        props.toolbarLeadingContent,
+        ReactLocal.createElement('input', {
+          'data-testid': 'browser-url-input',
+          defaultValue: browserUrl,
+        }),
+        props.toolbarTrailingContent
+      ),
       ReactLocal.createElement('iframe', {
         'data-testid': 'pizarra-mock-iframe',
         src: browserUrl,

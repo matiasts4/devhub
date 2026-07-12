@@ -141,6 +141,44 @@ describe('WorkspaceBrowserPane pizarra browser background', () => {
     expect(iframe.style.backgroundColor).toBe('rgb(5, 8, 20)');
   });
 
+  test('keeps tabs, add, navigation, and surface controls in one pizarra toolbar row', () => {
+    const view = renderIntoDom(
+      React.createElement(WorkspaceBrowserPane, {
+        dockState: makeDockState(),
+        onDockStateChange: jest.fn(),
+        isPizarraContext: true,
+        tabsMode: 'multi',
+        toolbarLeadingContent: React.createElement('div', {
+          'data-testid': 'pizarra-drag-handle',
+        }),
+        toolbarTrailingContent: React.createElement('button', {
+          type: 'button',
+          'data-testid': 'pizarra-browser-close',
+        }),
+      })
+    );
+
+    const toolbar = view.container.querySelector('[data-testid="workspace-browser-toolbar"]');
+    expect(toolbar.getAttribute('data-layout')).toBe('single-row');
+    [
+      'pizarra-drag-handle',
+      'browser-tab-strip',
+      'browser-tab-strip-add',
+      'browser-back',
+      'browser-forward',
+      'browser-reload',
+      'browser-url-input',
+      'pizarra-browser-close',
+    ].forEach((testId) => {
+      expect(toolbar.contains(view.container.querySelector(`[data-testid="${testId}"]`))).toBe(
+        true
+      );
+    });
+    expect(
+      view.container.querySelector('[data-testid="browser-tab-strip"]').getAttribute('data-variant')
+    ).toBe('toolbar');
+  });
+
   test('keeps the default white iframe placeholder outside pizarra context', () => {
     const view = renderIntoDom(
       React.createElement(WorkspaceBrowserPane, {

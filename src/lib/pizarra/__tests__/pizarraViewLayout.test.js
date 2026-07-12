@@ -62,6 +62,23 @@ describe('pizarraViewLayout', () => {
     expect(surfaceBelongsToView(surface, 'v1', views)).toBe(false);
   });
 
+  test('terminal ownership recovers from workspace columns when viewId is missing', () => {
+    const views = [
+      { id: 'v1', columns: [{ panels: [{ id: 'p1' }] }] },
+      { id: 'v2', columns: [{ panels: [{ id: 'p2' }] }] },
+    ];
+    const surface = {
+      id: 'shape-term-p2',
+      type: 'terminal',
+      panelId: 'p2',
+      pizarra: {},
+    };
+
+    expect(getSurfaceViewId(surface, views, 'v1')).toBe('v2');
+    expect(surfaceBelongsToView(surface, 'v2', views, 'v1')).toBe(true);
+    expect(surfaceBelongsToView(surface, 'v1', views, 'v1')).toBe(false);
+  });
+
   test('getSurfaceViewId returns null without stored viewId or fallback', () => {
     const views = [{ id: 'v1' }, { id: 'v2' }];
     expect(getSurfaceViewId({ pizarra: {} }, views)).toBeNull();

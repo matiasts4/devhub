@@ -15,7 +15,6 @@
 const React = require('react');
 const { installDom, renderIntoDom, cleanupMountedRoots } = require('@/test-support/domHarness');
 const { fireEvent } = require('@testing-library/react');
-require('@testing-library/jest-dom');
 
 const BrowserTabStrip = require('../BrowserTabStrip').default;
 
@@ -162,8 +161,28 @@ describe('BrowserTabStrip — rendering', () => {
       mountedRoots
     );
     const addBtn = document.querySelector('[data-testid="browser-tab-strip-add"]');
-    expect(addBtn).toBeDisabled();
+    expect(addBtn.disabled).toBe(true);
     expect(addBtn.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  test('toolbar variant removes standalone row chrome', async () => {
+    await renderIntoDom(
+      React.createElement(BrowserTabStrip, {
+        tabs: [],
+        activeTabId: null,
+        onSelectTab: () => {},
+        onCloseTab: () => {},
+        onAddTab: () => {},
+        variant: 'toolbar',
+      }),
+      mountedRoots
+    );
+
+    const strip = document.querySelector('[data-testid="browser-tab-strip"]');
+    expect(strip.getAttribute('data-variant')).toBe('toolbar');
+    expect(strip.style.padding).toBe('0px');
+    expect(strip.style.borderBottom).not.toContain('1px');
+    expect(strip.style.background).toBe('transparent');
   });
 
   test('does not render a close button for a non-closeable tab', async () => {

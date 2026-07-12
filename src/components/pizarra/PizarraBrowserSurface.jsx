@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 // eslint-disable-next-line no-unused-vars -- false positive: these icon names are JSX-tag references (lucide-react proxies)
-import { RefreshCw, X } from 'lucide-react';
+import { GripVertical, RefreshCw, X } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars -- false positive: WorkspaceBrowserPane is rendered inside the JSX below; eslint-plugin-react v7.37.5 + ESLint 9.23.0 fails to track the JSX usage
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
@@ -28,11 +28,6 @@ import {
   resizeNativeBrowser,
   setNativeBrowserVisibility,
 } from '@/lib/browser/nativeBrowserBridge';
-// pizarra-shared-view-state Phase 3: same tab strip as the
-// workspace right-dock (single source of truth). Pizarra is
-// always opt-in: tabsMode defaults to 'multi' on this surface.
-import { useBrowserTabs } from '@/components/workspace/hooks/useBrowserTabs';
-import BrowserTabStrip from '@/components/workspace/BrowserTabStrip';
 import {
   ensureSurfaceMotionKeyframes,
   resolveFrameVisual,
@@ -40,9 +35,7 @@ import {
   FRAME_TRANSITION,
   SURFACE_ENTER_OPACITY_ONLY,
   PIZARRA_SURFACE_FRAME_INSET,
-  PIZARRA_SURFACE_HEADER_HEIGHT,
   PIZARRA_SURFACE_BORDER_RADIUS,
-  PIZARRA_SURFACE_HEADER_STYLE,
   PIZARRA_SURFACE_FRAME_BG,
 } from '@/lib/pizarra/surfaceMotion';
 import { normalizeBrowserUrl } from '@/components/workspace/rightDockState';
@@ -192,18 +185,6 @@ export default function PizarraBrowserSurface({
   // The hook is optional in the codebase; we import it dynamically so
   // the module graph stays valid even if it is not yet present.
   const nativeCapability = useNativeBrowserCapabilitySafe();
-
-  // pizarra-shared-view-state: use the *workspace* key for tabs so the browser
-  // tabs/state ("la misma") are identical between pizarra cards and the normal
-  // right-dock WorkspaceBrowserPane. Multiple pizarra browser shapes currently
-  // share the single ws browser tabs list (the "one browser per workspace" model
-  // with internal tabs; multi-surface browser is future per shared-dock comment).
-  // This makes switch pizarra<->normal preserve the live tabs/urls without loss.
-  const tabStripApi = useBrowserTabs({
-    projectId: projectId || 'pizarra',
-    workspaceId: workspaceId || shape.id,
-  });
-  const showTabStrip = tabsMode === 'multi';
 
   useEffect(() => {
     const nextUrl = canonicalBrowserUrl(shape.url);
@@ -581,7 +562,6 @@ export default function PizarraBrowserSurface({
     hovered: isHovered,
     dragging: isManipulating,
   });
-  const headerHeight = PIZARRA_SURFACE_HEADER_HEIGHT;
   const handleSizing = resolveHandleSizing(zoom);
   // pizarra-motion-polish (P-MP-6): apply the opacity-only enter
   // animation to the inner chrome frame (not the positioned wrapper,
@@ -641,52 +621,6 @@ export default function PizarraBrowserSurface({
         }}
       >
         <div
-          data-testid="pizarra-drag-handle"
-          data-pizarra-browser-surface-header="true"
-          data-pizarra-surface-drag-handle="true"
-          onMouseDown={handleDragStart}
-          style={{
-            height: headerHeight,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 8px',
-            cursor: 'move',
-            userSelect: 'none',
-            ...PIZARRA_SURFACE_HEADER_STYLE,
-          }}
-        >
-          <span>{shape.label || 'Browser'}</span>
-          <button
-            type="button"
-            data-testid="pizarra-browser-close"
-            data-pizarra-close-button="true"
-            title="Cerrar ventana del navegador (en pizarra)"
-            aria-label="Cerrar ventana del navegador"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose?.(shape.id);
-            }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 18,
-              height: 18,
-              padding: 0,
-              borderRadius: 4,
-              border: 'none',
-              background: 'transparent',
-              color: '#9fb5d1',
-              cursor: 'pointer',
-            }}
-          >
-            <X size={12} />
-          </button>
-        </div>
-        <div
           style={{
             position: 'relative',
             flex: '1 1 auto',
@@ -696,18 +630,6 @@ export default function PizarraBrowserSurface({
           }}
           data-tabs-mode={tabsMode}
         >
-          {showTabStrip ? (
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <BrowserTabStrip
-                tabs={tabStripApi.tabs}
-                activeTabId={tabStripApi.activeTabId}
-                onSelectTab={tabStripApi.selectTab}
-                onCloseTab={tabStripApi.closeTab}
-                onAddTab={tabStripApi.addTab}
-                currentUrl={resolvedDockState.browserUrl}
-              />
-            </div>
-          ) : null}
           <WorkspaceBrowserPane
             projectId={projectId || 'pizarra'}
             workspaceId={workspaceId || shape.id}
@@ -731,10 +653,59 @@ export default function PizarraBrowserSurface({
               isDragging || suspendDuringViewTransition || suspendDuringCanvasPan
             }
             isPizarraContext={true}
-            // pizarra-shared-view-state Phase 3: pass tabsMode through
-            // so the inner WorkspaceBrowserPane does not render a
-            // duplicate strip. Pizarra owns the strip at this layer.
-            tabsMode={showTabStrip ? 'single' : 'single'}
+            tabsMode={tabsMode}
+            toolbarLeadingContent={
+              <div
+                data-testid="pizarra-drag-handle"
+                data-pizarra-browser-surface-header="true"
+                data-pizarra-surface-drag-handle="true"
+                title={`Mover ${shape.label || 'navegador'}`}
+                onMouseDown={handleDragStart}
+                style={{
+                  width: 22,
+                  height: 24,
+                  flexShrink: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRight: '1px solid rgba(88, 166, 255, 0.14)',
+                  color: '#9fb5d1',
+                  cursor: 'move',
+                  userSelect: 'none',
+                }}
+              >
+                <GripVertical size={13} />
+              </div>
+            }
+            toolbarTrailingContent={
+              <button
+                type="button"
+                data-testid="pizarra-browser-close"
+                data-pizarra-close-button="true"
+                title="Cerrar navegador"
+                aria-label="Cerrar navegador"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose?.(shape.id);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 24,
+                  height: 24,
+                  padding: 0,
+                  borderRadius: 6,
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#9fb5d1',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={12} />
+              </button>
+            }
           />
         </div>
 

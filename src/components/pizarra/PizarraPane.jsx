@@ -1066,11 +1066,13 @@ function PizarraInner({
       if (el.pizarra?.visible === false) return false;
       // No real views: include every live surface.
       if (views.length === 0) return true;
-      return visibleViewIds.some((viewId) =>
-        surfaceBelongsToView(el, viewId, views, fallbackViewId)
-      );
+      // Layout and snap operations are scoped to the active view, even while
+      // a transition temporarily renders both views. Terminal ownership is
+      // strict; only legacy workspace browsers may use the active fallback.
+      const membershipFallback = el.type === SHAPE_TYPES.BROWSER ? fallbackViewId : null;
+      return surfaceBelongsToView(el, fallbackViewId, views, membershipFallback);
     });
-  }, [mergedElements, views, fallbackViewId, visibleViewIds]);
+  }, [mergedElements, views, fallbackViewId]);
 
   const activeSnapZones = useMemo(() => {
     if (liveSurfacesForZones.length === 0) return null;
@@ -1460,6 +1462,7 @@ function PizarraInner({
   );
 
   const handleFitAllView = useCallback(() => {
+    if (isViewTransitioning) return;
     userAdjustedViewportRef.current = false;
     if (liveSurfacesForZones.length === 0) {
       centerActiveView(1);
@@ -1494,12 +1497,13 @@ function PizarraInner({
     onUpdateElement,
     registry,
     fitCameraToBounds,
+    isViewTransitioning,
   ]);
 
   // Single entry/settle auto-fit: wait for a real measured pane, then layout
   // cards to that rect + camera at zoom≈1 in one shot. Avoids the old cascade
   // (fake 800×600 → delay 60–350ms → camera-only zoom with maxZoom 4 → second resize).
-  const entryFitKeyRef = useRef('');
+  const entryFitKeysByViewRef = useRef(new Map());
   const autoFitTimerRef = useRef(null);
 
   const collectTerminalPanelIds = useCallback((surfaces = []) => {
@@ -1556,20 +1560,25 @@ function PizarraInner({
       .sort()
       .join('|');
     const fitKey = `${workspaceId}|${Math.round(canvasSize.width)}x${Math.round(canvasSize.height)}|${idsKey}`;
-    if (fitKey === entryFitKeyRef.current) return;
+    const entryViewId = activeWorkspaceWindowId || fallbackViewId || '__default__';
+    const previousFitKey = entryFitKeysByViewRef.current.get(entryViewId) || '';
+    if (fitKey === previousFitKey) return;
 
-    const prevKey = entryFitKeyRef.current;
+    const prevKey = previousFitKey;
     const prevIds = prevKey.includes('|') ? prevKey.split('|').slice(2).join('|') : '';
     const surfacesChanged = prevKey !== '' && prevIds !== idsKey;
     const canvasChanged = prevKey !== '' && prevIds === idsKey && prevKey !== fitKey;
     const firstSurfaces = (prevIds === '' || prevKey === '') && idsKey !== '';
+    const previousSurfaceCount = prevIds ? prevIds.split('|').filter(Boolean).length : 0;
+    const currentSurfaceCount = idsKey ? idsKey.split('|').filter(Boolean).length : 0;
+    const surfaceRemoved = surfacesChanged && currentSurfaceCount < previousSurfaceCount;
 
     if (userAdjustedViewportRef.current && !surfacesChanged && !firstSurfaces && prevKey !== '') {
-      entryFitKeyRef.current = fitKey;
+      entryFitKeysByViewRef.current.set(entryViewId, fitKey);
       return;
     }
 
-    entryFitKeyRef.current = fitKey;
+    entryFitKeysByViewRef.current.set(entryViewId, fitKey);
 
     const hasUnpositioned = liveSurfacesForZones.some((s) => !isLiveElementPositioned(s));
     // Full layout: unpositioned carried terminals, first appearance of unpositioned
@@ -1578,7 +1587,8 @@ function PizarraInner({
       hasUnpositioned ||
       canvasChanged ||
       (firstSurfaces && hasUnpositioned) ||
-      (firstSurfaces && liveSurfacesForZones.some((s) => s._layoutProvisional));
+      (firstSurfaces && liveSurfacesForZones.some((s) => s._layoutProvisional)) ||
+      (surfaceRemoved && !isViewLocked);
     const cameraOnly =
       !forceLayout &&
       (firstSurfaces || surfacesChanged) &&
@@ -1601,6 +1611,9 @@ function PizarraInner({
     liveSurfacesForZones,
     isViewTransitioning,
     runEntryAutoFit,
+    activeWorkspaceWindowId,
+    fallbackViewId,
+    isViewLocked,
   ]);
 
   const scheduleAutoFitView = useCallback(
@@ -2289,9 +2302,7 @@ function PizarraInner({
       // Arrange actions (non-destructive, operate on live surfaces)
       if (presetType.startsWith('arrange-')) {
         const mode = presetType.slice('arrange-'.length); // fit | h | v | equal | grid
-        const live = (mergedElements || []).filter(
-          (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
-        );
+        const live = liveSurfacesForZones;
         if (live.length === 0) return;
 
         // Targets: prefer current multi-selection if it contains live items
@@ -2481,7 +2492,7 @@ function PizarraInner({
       getVisibleCanvasRegion,
       setActiveTerminalId,
       registry,
-      mergedElements,
+      liveSurfacesForZones,
       state.selectedElementIds,
       onUpdateElement,
       onSelect,
@@ -2496,11 +2507,7 @@ function PizarraInner({
   // Pure computation: find pairs of live surfaces whose edges are close and
   // overlapping; these become the thin draggable bars the user can pull to
   // auto-resize the two sides of the "zone".
-  const liveSurfacesForDividers = useMemo(() => {
-    return (mergedElements || []).filter(
-      (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
-    );
-  }, [mergedElements]);
+  const liveSurfacesForDividers = liveSurfacesForZones;
 
   const layoutDividers = useMemo(() => {
     const live = liveSurfacesForDividers;
@@ -2732,9 +2739,7 @@ function PizarraInner({
   React.useEffect(() => {
     if (canvasSize.width < 200 || canvasSize.height < 200) return;
 
-    const liveSurfaces = (mergedElements || []).filter(
-      (el) => el.type === SHAPE_TYPES.TERMINAL || el.type === SHAPE_TYPES.BROWSER
-    );
+    const liveSurfaces = liveSurfacesForZones;
     const count = liveSurfaces.length;
     const idsKey = liveSurfaces
       .map((s) => s.id)
@@ -2760,7 +2765,7 @@ function PizarraInner({
       // covers unlocked boards when the user adds another card.
       scheduleAutoFitView(0);
     }
-  }, [canvasSize, mergedElements, scheduleAutoFitView, isViewLocked]);
+  }, [canvasSize, liveSurfacesForZones, scheduleAutoFitView, isViewLocked]);
 
   // Listen for deferred auto-refit events dispatched by handleAddElement
   // when a new card is added while others already exist.
