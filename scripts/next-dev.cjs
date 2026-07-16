@@ -19,10 +19,15 @@ if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
 
 // Dev default heap is ~0.5–1.5 GB and OOM kills Next mid-session (Failed to fetch /
 // ERR_CONNECTION_REFUSED in the WebView). Packaging uses 1024; give dev more headroom.
+// When this command runs from a terminal inside the installed app, the shell may
+// inherit a restrictive --max-old-space-size (e.g. 384 MB from the PTY sidecar).
+// Always replace it with the dev heap size so Next.js dev does not OOM.
 const maxOldSpaceMb = String(process.env.DEVHUB_NEXT_MAX_OLD_SPACE_MB || '4096').trim() || '4096';
 const heapFlag = `--max-old-space-size=${maxOldSpaceMb}`;
 const existingNodeOptions = process.env.NODE_OPTIONS || '';
-if (!/--max-old-space-size=/.test(existingNodeOptions)) {
+if (/--max-old-space-size=/.test(existingNodeOptions)) {
+  process.env.NODE_OPTIONS = existingNodeOptions.replace(/--max-old-space-size=[^\s]+/g, heapFlag).trim();
+} else {
   process.env.NODE_OPTIONS = existingNodeOptions
     ? `${existingNodeOptions} ${heapFlag}`.trim()
     : heapFlag;

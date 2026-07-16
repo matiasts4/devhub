@@ -303,7 +303,8 @@ function WorkspaceLayout() {
 
           {/* Main Routed Content */}
           <main
-            className={`flex-1 w-full min-h-0 overflow-y-auto ${isTerminalRoute ? 'hidden' : ''}`}
+            className={`flex min-h-0 w-full flex-1 flex-col ${isTerminalRoute ? 'hidden' : 'overflow-hidden'}`}
+            data-testid="project-main-scroll"
             style={{
               scrollbarWidth: 'thin',
               scrollbarColor: 'var(--border-subtle) transparent',
@@ -317,7 +318,9 @@ function WorkspaceLayout() {
                 animate="center"
                 exit="exit"
                 transition={routeTransition}
+                className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
                 style={{ width: '100%' }}
+                data-testid="project-route-scroll"
               >
                 <Outlet context={{ project }} />
               </motion.div>
@@ -330,6 +333,9 @@ function WorkspaceLayout() {
             data-terminal-container
             data-terminal-view={isTerminalRoute ? 'true' : undefined}
             aria-hidden={terminalManagerEverMounted && !isTerminalRoute ? 'true' : undefined}
+            // inert blocks focus + pointer/wheel on the whole subtree while warm-mounted
+            // off-route — CSS pointer-events:none alone is not enough when children set auto.
+            inert={terminalManagerEverMounted && !isTerminalRoute ? true : undefined}
             style={terminalContainerStyle}
           >
             {/* Drag region for the Tauri window is provided by the

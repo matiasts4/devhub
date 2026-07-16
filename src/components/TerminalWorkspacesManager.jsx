@@ -773,6 +773,7 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     isDraggingDock,
     isDraggingDockRef,
     isDraggingInternalSplit,
+    isVisible,
     nudgeBrowserNativeLiveRef,
     projectId,
     rightDockLayerRef,

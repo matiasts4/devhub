@@ -169,7 +169,7 @@ async function changeInput(element, value) {
   await flushEffects();
 }
 
-async function waitForElement(getElement, attempts = 5) {
+async function waitForElement(getElement, attempts = 20) {
   for (let index = 0; index < attempts; index += 1) {
     const element = getElement();
     if (element) return element;
@@ -204,10 +204,87 @@ describe('FileExplorerEditorPane', () => {
     window.localStorage.clear();
 
     global.fetch = jest.fn((url) => {
-      if (String(url).startsWith('/api/fs/tree')) {
+      const href = String(url);
+
+      if (href.startsWith('/api/fs/tree')) {
+        const parsed = new URL(href, 'https://devhub.test');
+        const dir = parsed.searchParams.get('dir') || '';
+        const query = (parsed.searchParams.get('q') || '').toLowerCase();
+
+        if (query) {
+          if (query.includes('missing')) {
+            return Promise.resolve({
+              ok: true,
+              json: async () => ({ tree: [], mode: 'search' }),
+            });
+          }
+
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              mode: 'search',
+              tree: [
+                {
+                  name: 'src',
+                  path: 'src',
+                  type: 'directory',
+                  children: [
+                    {
+                      name: 'components',
+                      path: 'src/components',
+                      type: 'directory',
+                      children: [
+                        {
+                          name: 'TerminalDock.jsx',
+                          path: 'src/components/TerminalDock.jsx',
+                          type: 'file',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            }),
+          });
+        }
+
+        if (dir === 'src') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              mode: 'shallow',
+              tree: [
+                {
+                  name: 'components',
+                  path: 'src/components',
+                  type: 'directory',
+                  children: null,
+                },
+              ],
+            }),
+          });
+        }
+
+        if (dir === 'src/components') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              mode: 'shallow',
+              tree: [
+                {
+                  name: 'TerminalDock.jsx',
+                  path: 'src/components/TerminalDock.jsx',
+                  type: 'file',
+                },
+              ],
+            }),
+          });
+        }
+
         return Promise.resolve({
           ok: true,
           json: async () => ({
+            mode: 'shallow',
             tree: [
               { name: 'paper.tex', path: 'paper.tex', type: 'file' },
               { name: 'README.md', path: 'README.md', type: 'file' },
@@ -215,20 +292,7 @@ describe('FileExplorerEditorPane', () => {
                 name: 'src',
                 path: 'src',
                 type: 'directory',
-                children: [
-                  {
-                    name: 'components',
-                    path: 'src/components',
-                    type: 'directory',
-                    children: [
-                      {
-                        name: 'TerminalDock.jsx',
-                        path: 'src/components/TerminalDock.jsx',
-                        type: 'file',
-                      },
-                    ],
-                  },
-                ],
+                children: null,
               },
             ],
           }),
@@ -336,7 +400,7 @@ describe('FileExplorerEditorPane', () => {
     expect(expandedPrefs.editorFileTreeCollapsed).toBe(false);
   });
 
-  test('filters the loaded tree in memory, keeps ancestor folders visible, and opens nested matches', async () => {
+  test('searches via /api/fs/tree?q=, keeps ancestor folders visible, and opens nested matches', async () => {
     const view = await renderIntoDom(
       React.createElement(FileExplorerEditorPane, {
         project: { id: 'project-3', local_path: '/workspace/devhub' },
@@ -355,13 +419,20 @@ describe('FileExplorerEditorPane', () => {
       'terminaldock'
     );
 
+    await waitForElement(() =>
+      view.container.querySelector('[data-path="src/components/TerminalDock.jsx"]')
+    );
+
     expect(view.container.textContent).toContain('src');
     expect(view.container.textContent).toContain('components');
     expect(view.container.textContent).toContain('TerminalDock.jsx');
     expect(view.container.textContent).not.toContain('README.md');
     expect(
-      global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/tree'))
-    ).toHaveLength(treeFetchCallsBeforeSearch);
+      global.fetch.mock.calls.filter(([url]) => String(url).includes('q=terminaldock'))
+    ).not.toHaveLength(0);
+    expect(
+      global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/tree')).length
+    ).toBeGreaterThan(treeFetchCallsBeforeSearch);
 
     await click(view.container.querySelector('[data-path="src/components/TerminalDock.jsx"]'));
     expect(view.container.querySelector('[data-testid="monaco-editor"]')?.textContent).toContain(
@@ -408,6 +479,10 @@ describe('FileExplorerEditorPane', () => {
       'missing-file'
     );
 
+    await waitForElement(() =>
+      view.container.querySelector('[data-testid="editor-tree-empty-search"]')
+    );
+
     expect(view.container.querySelector('[data-testid="editor-tree-empty-search"]')).not.toBeNull();
     expect(view.container.textContent).toContain('missing-file');
   });
@@ -429,14 +504,42 @@ describe('FileExplorerEditorPane', () => {
 
     const treeScroll = view.container.querySelector('[data-testid="editor-tree-scroll-region"]');
     expect(treeScroll.classList.contains('overscroll-contain')).toBe(true);
+    expect(treeScroll.classList.contains('overflow-y-auto')).toBe(true);
+    expect(treeScroll.classList.contains('min-h-0')).toBe(true);
+    expect(treeScroll.style.touchAction).toBe('pan-y');
 
-    const readmeNode = await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+    const readmeNode = await waitForElement(() =>
+      view.container.querySelector('[data-path="README.md"]')
+    );
     await click(readmeNode);
 
     const previewScroll = await waitForElement(() =>
       view.container.querySelector('[data-testid="editor-preview-scroll-region"]')
     );
     expect(previewScroll.classList.contains('overscroll-contain')).toBe(true);
+  });
+
+  test('embedded mode uses a fixed pixel tree split instead of nested percent panels', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-embedded-split', local_path: '/workspace/devhub' },
+        workspaceId: 'ws-embedded-split',
+        embedded: true,
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+
+    expect(view.container.querySelector('[data-testid="embedded-editor-split"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="embedded-tree-resize-handle"]')
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="mock-handle"]')).toBeNull();
+
+    const treePanel = view.container.querySelector('[data-testid="editor-tree-panel"]');
+    expect(treePanel.style.width).toBe('220px');
+    expect(treePanel.style.maxWidth).toBe('300px');
+    expect(treePanel.style.minWidth).toBe('160px');
   });
 
   test('embedded markdown preview exposes a horizontal document rail for narrow docks', async () => {
@@ -448,7 +551,9 @@ describe('FileExplorerEditorPane', () => {
       })
     );
 
-    const readmeNode = await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+    const readmeNode = await waitForElement(() =>
+      view.container.querySelector('[data-path="README.md"]')
+    );
     await click(readmeNode);
 
     const previewScroll = await waitForElement(() =>

@@ -99,6 +99,20 @@ describe('resolveWorkspaceWindowVisibilityStyle', () => {
       pointerEvents: 'none',
     });
   });
+
+  test('warm-mounted manager off-route keeps active window pointer-events none', () => {
+    // Descendant pointer-events:auto would otherwise steal wheel scroll on
+    // Kanban/roadmap while the terminal shell stays opacity:0 keep-alive.
+    expect(
+      resolveWorkspaceWindowVisibilityStyle({
+        isActiveWindow: true,
+        isManagerVisible: false,
+      })
+    ).toMatchObject({
+      opacity: 0,
+      pointerEvents: 'none',
+    });
+  });
 });
 
 describe('resolveRightDockTakeoverChromeStyle', () => {

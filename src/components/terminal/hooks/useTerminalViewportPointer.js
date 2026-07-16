@@ -1,9 +1,12 @@
 /**
  * useTerminalViewportPointer — mouse-down zone detection + TUI mouse injection.
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 1).
+ *
+ * TUI transcript clicks are deferred to short-click (mouseup without drag) so
+ * selection drags are not stolen by PTY mouse injection.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
   sendTerminalPasteInput,
@@ -11,11 +14,25 @@ import {
   isTerminalTranscriptCell,
   buildTerminalMousePressSequence,
   resolveTerminalWheelInputZoneRows,
-  prepareActiveTuiTerminalFocus,
+  prepareActiveTuiTerminalFocusRespectingSelection,
+  scheduleTuiTranscriptMouseInjection,
   isGrokTuiInitialCommand,
 } from '@/components/terminal/TerminalTTY.helpers';
 
 export default function useTerminalViewportPointer({ ctxRef }) {
+  const pendingInjectionCleanupRef = useRef(null);
+  const pendingFocusCleanupRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      pendingInjectionCleanupRef.current?.();
+      pendingInjectionCleanupRef.current = null;
+      pendingFocusCleanupRef.current?.();
+      pendingFocusCleanupRef.current = null;
+    },
+    []
+  );
+
   const handleViewportMouseDown = useCallback(
     (event) => {
       const c = ctxRef.current;
@@ -72,23 +89,38 @@ export default function useTerminalViewportPointer({ ctxRef }) {
         lastPointerZoneRef.current = 'input';
       }
 
-      prepareActiveTuiTerminalFocus(term, {
+      const tuiActive = Boolean(tuiSessionActiveRef.current || grokSession);
+      pendingFocusCleanupRef.current?.();
+      pendingFocusCleanupRef.current = prepareActiveTuiTerminalFocusRespectingSelection(term, {
         tuiSessionActive: tuiSessionActiveRef.current,
+        deferMouseUntilPointerUp: tuiActive,
       });
       term?.focus?.();
 
       const tuiReady = grokSession
         ? grokTuiReadyRef.current === true
         : tuiSessionFooterConfirmedRef.current === true;
-      const tuiActive = tuiSessionActiveRef.current || grokSession;
-      if (inTranscript && cell && tuiActive && tuiReady && isVisibleInLayoutRef.current === true) {
-        const payload = buildTerminalMousePressSequence(cell.col, cell.row);
-        sendTerminalPasteInput({
-          socket: wsRef.current,
-          transport: transportRef.current,
-          text: payload,
-        });
-      }
+      const eligible =
+        Boolean(inTranscript) &&
+        Boolean(cell) &&
+        tuiActive &&
+        tuiReady &&
+        isVisibleInLayoutRef.current === true;
+
+      pendingInjectionCleanupRef.current?.();
+      pendingInjectionCleanupRef.current = scheduleTuiTranscriptMouseInjection({
+        event,
+        cell,
+        eligible,
+        inject: (clickCell) => {
+          const payload = buildTerminalMousePressSequence(clickCell.col, clickCell.row);
+          sendTerminalPasteInput({
+            socket: wsRef.current,
+            transport: transportRef.current,
+            text: payload,
+          });
+        },
+      });
     },
     [ctxRef]
   );

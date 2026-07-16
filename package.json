@@ -89,6 +89,7 @@
   "scripts": {
     "native:ensure": "node scripts/ensure-native-runtime.cjs",
     "voice:ensure": "node scripts/ensure-voice-runtime.cjs",
+    "voice:add-voice": "node scripts/voice-add-voice.cjs",
     "predev": "npm run native:ensure && npm run voice:ensure",
     "prebuild": "npm run native:ensure && npm run voice:ensure",
     "start": "node scripts/next-dev.cjs",

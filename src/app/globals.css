@@ -301,6 +301,14 @@ body > div:first-child {
   border-radius: inherit;
 }
 
+/* Warm-mounted terminal keep-alive sits absolute inset-0 over project pages.
+   Descendants often re-enable pointer-events:auto (window shells, Zed pill, dock).
+   Without this, an invisible terminal layer eats wheel scroll on editor/kanban/etc. */
+[data-terminal-container][aria-hidden='true'],
+[data-terminal-container][aria-hidden='true'] * {
+  pointer-events: none !important;
+}
+
 #__next::-webkit-scrollbar,
 body > div:first-child::-webkit-scrollbar {
   display: none;

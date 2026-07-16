@@ -30,15 +30,13 @@ import LatexDocumentPreview from './LatexDocumentPreview';
 import {
   DEFAULT_EDITOR_PANE_CONTENT,
   DEFAULT_EDITOR_PANE_STATE,
+  EMBEDDED_TREE_DEFAULT_WIDTH_PX,
+  EMBEDDED_TREE_MAX_WIDTH_PX,
+  EMBEDDED_TREE_MIN_WIDTH_PX,
   readEditorPaneState,
   writeEditorPaneState,
 } from './editorPaneState';
-import {
-  panelStyle,
-  pillStyle,
-  btnSecondaryStyle,
-  inputStyle,
-} from '@/chrome/morphology';
+import { panelStyle, pillStyle, btnSecondaryStyle, inputStyle } from '@/chrome/morphology';
 import 'highlight.js/styles/github-dark.css';
 
 const DOCUMENT_VIEW_MODES = {
@@ -120,7 +118,9 @@ function buildForcedExpandedPaths(nodes, collector = new Set()) {
 }
 
 function filterTreeNodes(nodes, query) {
-  const normalizedQuery = String(query || '').trim().toLowerCase();
+  const normalizedQuery = String(query || '')
+    .trim()
+    .toLowerCase();
   if (!normalizedQuery) return nodes;
 
   return nodes.reduce((result, node) => {
@@ -161,12 +161,113 @@ function mapScrollOffset(offset, sourceMax, targetMax) {
   return (offset / sourceMax) * targetMax;
 }
 
-const TreeNode = memo(function TreeNode({ node, level, expanded, onToggle, onSelect, selectedPath }) {
+function clampEmbeddedTreeWidth(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return EMBEDDED_TREE_DEFAULT_WIDTH_PX;
+  return Math.min(
+    EMBEDDED_TREE_MAX_WIDTH_PX,
+    Math.max(EMBEDDED_TREE_MIN_WIDTH_PX, Math.round(numeric))
+  );
+}
+
+/** Pixel resize for embedded dock — nested % PanelGroups fight the outer dock drag. */
+function EmbeddedTreeResizeHandle({ treeWidthPx, onWidthChange }) {
+  const onPointerDown = useCallback(
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const handle = event.currentTarget;
+      const startX = event.clientX;
+      const startWidth = clampEmbeddedTreeWidth(treeWidthPx);
+      handle.setPointerCapture?.(event.pointerId);
+
+      const onPointerMove = (moveEvent) => {
+        onWidthChange(clampEmbeddedTreeWidth(startWidth + (moveEvent.clientX - startX)));
+      };
+
+      const onPointerUp = (upEvent) => {
+        handle.releasePointerCapture?.(upEvent.pointerId);
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    },
+    [onWidthChange, treeWidthPx]
+  );
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize file tree"
+      data-testid="embedded-tree-resize-handle"
+      onPointerDown={onPointerDown}
+      className="relative z-20 w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-[color-mix(in_srgb,var(--accent-primary)_35%,transparent)]"
+    >
+      <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[var(--border-subtle)]" />
+    </div>
+  );
+}
+
+function findNodeByPath(nodes, targetPath) {
+  for (const node of nodes || []) {
+    if (node.path === targetPath) return node;
+    if (node.type === 'directory' && Array.isArray(node.children)) {
+      const found = findNodeByPath(node.children, targetPath);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function setDirectoryChildren(nodes, dirPath, children) {
+  return (nodes || []).map((node) => {
+    if (node.path === dirPath && node.type === 'directory') {
+      return { ...node, children };
+    }
+    if (
+      node.type === 'directory' &&
+      Array.isArray(node.children) &&
+      (dirPath === node.path || dirPath.startsWith(`${node.path}/`))
+    ) {
+      return {
+        ...node,
+        children: setDirectoryChildren(node.children, dirPath, children),
+      };
+    }
+    return node;
+  });
+}
+
+function buildFsTreeUrl({ basePath, dir, query, fresh, recursive } = {}) {
+  const params = new URLSearchParams();
+  if (basePath) params.set('base', basePath);
+  if (dir) params.set('dir', dir);
+  if (query) params.set('q', query);
+  if (fresh) params.set('fresh', '1');
+  if (recursive) params.set('recursive', '1');
+  const qs = params.toString();
+  return qs ? `/api/fs/tree?${qs}` : '/api/fs/tree';
+}
+
+const TreeNode = memo(function TreeNode({
+  node,
+  level,
+  expanded,
+  onToggle,
+  onSelect,
+  selectedPath,
+  loadingDirs,
+}) {
   const isDir = node.type === 'directory';
   const isExpanded = isDir && expanded.has(node.path);
   const isSelected = selectedPath === node.path;
   const indent = level * 12;
   const { Icon: FileIcon, color } = getFileIconMeta(node);
+  const isLoadingChildren = isDir && loadingDirs?.has(node.path);
+  const childrenLoaded = Array.isArray(node.children);
 
   return (
     <div>
@@ -222,35 +323,58 @@ const TreeNode = memo(function TreeNode({ node, level, expanded, onToggle, onSel
         </button>
       </div>
 
-      {isDir && isExpanded && node.children && (
+      {isDir && isExpanded ? (
         <div>
-          {node.children.map((child) => (
-            <TreeNode
-              key={child.path}
-              node={child}
-              level={level + 1}
-              expanded={expanded}
-              onToggle={onToggle}
-              onSelect={onSelect}
-              selectedPath={selectedPath}
-            />
-          ))}
+          {isLoadingChildren || !childrenLoaded ? (
+            <div
+              className="flex items-center gap-2 py-1 text-[11px] text-text-muted"
+              style={{ paddingLeft: `${indent + 28}px` }}
+              data-testid={`tree-loading-${node.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Cargando…
+            </div>
+          ) : (
+            node.children.map((child) => (
+              <TreeNode
+                key={child.path}
+                node={child}
+                level={level + 1}
+                expanded={expanded}
+                onToggle={onToggle}
+                onSelect={onSelect}
+                selectedPath={selectedPath}
+                loadingDirs={loadingDirs}
+              />
+            ))
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 });
 
-export default function FileExplorerEditorPane({ project, workspaceId = 'default', embedded = false, onContextChange }) {
+export default function FileExplorerEditorPane({
+  project,
+  workspaceId = 'default',
+  embedded = false,
+  onContextChange,
+}) {
   const explorerPanelRef = useRef(null);
   const previewScrollRegionRef = useRef(null);
   const documentPreviewRailRef = useRef(null);
   const embeddedHorizontalScrollRef = useRef(null);
   const scrollSyncSourceRef = useRef(null);
   const workspaceSnapshotsRef = useRef(new Map());
+  const treeRef = useRef([]);
+  const expandedRef = useRef(new Set());
+  const loadingDirsRef = useRef(new Set());
   const [tree, setTree] = useState([]);
   const [treeLoading, setTreeLoading] = useState(true);
   const [treeError, setTreeError] = useState('');
+  const [loadingDirs, setLoadingDirs] = useState(() => new Set());
+  const [searchTree, setSearchTree] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [expanded, setExpanded] = useState(new Set(DEFAULT_EDITOR_PANE_STATE.expandedPaths));
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(DEFAULT_EDITOR_PANE_STATE.isTreeCollapsed);
   const [selectedPath, setSelectedPath] = useState(DEFAULT_EDITOR_PANE_STATE.selectedPath);
@@ -260,15 +384,18 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   const [markdownViewMode, setMarkdownViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
   const [latexViewMode, setLatexViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
   const [searchInputValue, setSearchInputValue] = useState(DEFAULT_EDITOR_PANE_STATE.searchQuery);
+  const [embeddedTreeWidthPx, setEmbeddedTreeWidthPx] = useState(
+    DEFAULT_EDITOR_PANE_STATE.embeddedTreeWidthPx
+  );
   const [embeddedDocumentSurfaceWidth, setEmbeddedDocumentSurfaceWidth] = useState(0);
   const deferredSearchQuery = useDeferredValue(searchInputValue);
 
+  treeRef.current = tree;
+  expandedRef.current = expanded;
+
   const language = useMemo(() => detectLanguage(selectedPath || ''), [selectedPath]);
   const selectedPathLower = useMemo(() => (selectedPath || '').toLowerCase(), [selectedPath]);
-  const isMarkdown = useMemo(
-    () => selectedPathLower.endsWith('.md'),
-    [selectedPathLower]
-  );
+  const isMarkdown = useMemo(() => selectedPathLower.endsWith('.md'), [selectedPathLower]);
   const isLatex = useMemo(
     () => Boolean(selectedPathLower.match(/\.(tex|latex|ltx)$/)),
     [selectedPathLower]
@@ -303,7 +430,8 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   const embeddedHorizontalScrollbarSpacerClassName = shouldUseEmbeddedDocumentRail
     ? 'filesystem-document-surface filesystem-document-surface--embedded'
     : 'filesystem-document-surface';
-  const resolvedEmbeddedDocumentSurfaceWidth = embeddedDocumentSurfaceWidth || EMBEDDED_DOCUMENT_MIN_WIDTH_PX;
+  const resolvedEmbeddedDocumentSurfaceWidth =
+    embeddedDocumentSurfaceWidth || EMBEDDED_DOCUMENT_MIN_WIDTH_PX;
   const embeddedDocumentSurfaceStyle = shouldUseEmbeddedDocumentRail
     ? {
         minWidth: `${resolvedEmbeddedDocumentSurfaceWidth}px`,
@@ -316,11 +444,12 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     : undefined;
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   const workspaceStateKey = `${project?.id || 'global'}:${workspaceId || 'default'}`;
-  const appliedSearchQuery = deferredSearchQuery.trim();
-  const filteredTree = useMemo(
-    () => filterTreeNodes(tree, deferredSearchQuery),
-    [deferredSearchQuery, tree]
-  );
+  const appliedSearchQuery = searchInputValue.trim();
+  const filteredTree = useMemo(() => {
+    if (searchTree !== null) return searchTree;
+    // While the server search catches up, filter whatever is already loaded.
+    return filterTreeNodes(tree, deferredSearchQuery);
+  }, [deferredSearchQuery, searchTree, tree]);
   const forcedExpandedPaths = useMemo(
     () => (appliedSearchQuery ? buildForcedExpandedPaths(filteredTree) : new Set()),
     [appliedSearchQuery, filteredTree]
@@ -330,6 +459,8 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     return new Set([...expanded, ...forcedExpandedPaths]);
   }, [appliedSearchQuery, expanded, forcedExpandedPaths]);
   const currentFileBreadcrumb = useMemo(() => normalizePathSegments(selectedPath), [selectedPath]);
+  const showTreeBusy =
+    treeLoading || (Boolean(appliedSearchQuery) && searchLoading && searchTree === null);
 
   const persistLegacyTreeCollapsedPref = useCallback(
     (nextValue) => {
@@ -340,23 +471,88 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     [project?.id]
   );
 
-  const loadTree = useCallback(async () => {
-    setTreeLoading(true);
-    setTreeError('');
-    try {
-      const baseParam = project?.local_path ? `?base=${encodeURIComponent(project.local_path)}` : '';
-      const response = await fetch(`/api/fs/tree${baseParam}`);
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'No se pudo cargar el árbol de archivos.');
+  const markDirLoading = useCallback((dirPath, isLoading) => {
+    if (isLoading) loadingDirsRef.current.add(dirPath);
+    else loadingDirsRef.current.delete(dirPath);
+    setLoadingDirs(new Set(loadingDirsRef.current));
+  }, []);
+
+  const fetchDirectoryChildren = useCallback(
+    async (dirPath, { fresh = false } = {}) => {
+      if (!dirPath) return [];
+      if (loadingDirsRef.current.has(dirPath)) return null;
+
+      markDirLoading(dirPath, true);
+      try {
+        const response = await fetch(
+          buildFsTreeUrl({
+            basePath: project?.local_path,
+            dir: dirPath,
+            fresh,
+          })
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || 'No se pudo cargar la carpeta.');
+        }
+        const children = Array.isArray(data.tree) ? data.tree : [];
+        setTree((previous) => setDirectoryChildren(previous, dirPath, children));
+        return children;
+      } catch (error) {
+        setTreeError(error.message || 'No se pudo cargar la carpeta.');
+        return [];
+      } finally {
+        markDirLoading(dirPath, false);
       }
-      setTree(Array.isArray(data.tree) ? data.tree : []);
-    } catch (error) {
-      setTreeError(error.message || 'No se pudo cargar el árbol de archivos.');
-    } finally {
-      setTreeLoading(false);
-    }
-  }, [project?.local_path]);
+    },
+    [markDirLoading, project?.local_path]
+  );
+
+  const hydrateExpandedDirectories = useCallback(
+    async (rootNodes, expandedPaths) => {
+      const ordered = [...expandedPaths].sort(
+        (left, right) => left.split('/').length - right.split('/').length
+      );
+      let current = rootNodes;
+      for (const dirPath of ordered) {
+        const node = findNodeByPath(current, dirPath);
+        if (!node || node.type !== 'directory' || Array.isArray(node.children)) continue;
+        const children = await fetchDirectoryChildren(dirPath);
+        if (children) {
+          current = setDirectoryChildren(current, dirPath, children);
+        }
+      }
+    },
+    [fetchDirectoryChildren]
+  );
+
+  const loadTree = useCallback(
+    async ({ fresh = false } = {}) => {
+      setTreeLoading(true);
+      setTreeError('');
+      try {
+        const response = await fetch(
+          buildFsTreeUrl({
+            basePath: project?.local_path,
+            fresh,
+          })
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || 'No se pudo cargar el árbol de archivos.');
+        }
+        const nextTree = Array.isArray(data.tree) ? data.tree : [];
+        setTree(nextTree);
+        treeRef.current = nextTree;
+        await hydrateExpandedDirectories(nextTree, Array.from(expandedRef.current));
+      } catch (error) {
+        setTreeError(error.message || 'No se pudo cargar el árbol de archivos.');
+      } finally {
+        setTreeLoading(false);
+      }
+    },
+    [hydrateExpandedDirectories, project?.local_path]
+  );
 
   const loadFile = useCallback(
     async (path) => {
@@ -367,7 +563,9 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
       setFileError('');
 
       try {
-        const baseParam = project?.local_path ? `&base=${encodeURIComponent(project.local_path)}` : '';
+        const baseParam = project?.local_path
+          ? `&base=${encodeURIComponent(project.local_path)}`
+          : '';
         const lower = path.toLowerCase();
         const isMedia = lower.match(/\.(png|jpe?g|gif|webp|svg|pdf|mp3|mp4|docx?|xlsx?)$/i);
 
@@ -400,19 +598,25 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
       ...persistedSnapshot,
       ...(inMemorySnapshot || {}),
       expandedPaths:
-        (inMemorySnapshot?.expandedPaths && inMemorySnapshot.expandedPaths.length > 0)
+        inMemorySnapshot?.expandedPaths && inMemorySnapshot.expandedPaths.length > 0
           ? inMemorySnapshot.expandedPaths
-          : (hasUIPref(project?.id, 'editorExpandedPaths') ? legacyPrefs.editorExpandedPaths : persistedSnapshot.expandedPaths),
+          : hasUIPref(project?.id, 'editorExpandedPaths')
+            ? legacyPrefs.editorExpandedPaths
+            : persistedSnapshot.expandedPaths,
       isTreeCollapsed:
         typeof inMemorySnapshot?.isTreeCollapsed === 'boolean'
           ? inMemorySnapshot.isTreeCollapsed
           : Boolean(legacyPrefs.editorFileTreeCollapsed ?? persistedSnapshot.isTreeCollapsed),
       markdownViewMode:
         inMemorySnapshot?.markdownViewMode ||
-        (legacyPrefs.editorMarkdownViewMode === DOCUMENT_VIEW_MODES.RAW ? DOCUMENT_VIEW_MODES.RAW : persistedSnapshot.markdownViewMode),
+        (legacyPrefs.editorMarkdownViewMode === DOCUMENT_VIEW_MODES.RAW
+          ? DOCUMENT_VIEW_MODES.RAW
+          : persistedSnapshot.markdownViewMode),
       latexViewMode:
         inMemorySnapshot?.latexViewMode ||
-        (legacyPrefs.editorLatexViewMode === DOCUMENT_VIEW_MODES.RAW ? DOCUMENT_VIEW_MODES.RAW : persistedSnapshot.latexViewMode),
+        (legacyPrefs.editorLatexViewMode === DOCUMENT_VIEW_MODES.RAW
+          ? DOCUMENT_VIEW_MODES.RAW
+          : persistedSnapshot.latexViewMode),
     };
 
     setExpanded(new Set(nextState.expandedPaths || DEFAULT_EDITOR_PANE_STATE.expandedPaths));
@@ -422,6 +626,11 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     setFileError(inMemorySnapshot?.fileError || '');
     setFileLoading(false);
     setSearchInputValue(nextState.searchQuery || '');
+    setEmbeddedTreeWidthPx(
+      clampEmbeddedTreeWidth(
+        nextState.embeddedTreeWidthPx ?? DEFAULT_EDITOR_PANE_STATE.embeddedTreeWidthPx
+      )
+    );
     setMarkdownViewMode(nextState.markdownViewMode || DOCUMENT_VIEW_MODES.PREVIEW);
     setLatexViewMode(nextState.latexViewMode || DOCUMENT_VIEW_MODES.PREVIEW);
   }, [project?.id, storage, workspaceId, workspaceStateKey]);
@@ -429,6 +638,46 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
   useEffect(() => {
     loadTree();
   }, [loadTree]);
+
+  useEffect(() => {
+    const query = searchInputValue.trim();
+    if (!query) {
+      setSearchTree(null);
+      setSearchLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+
+    (async () => {
+      try {
+        const response = await fetch(
+          buildFsTreeUrl({
+            basePath: project?.local_path,
+            query,
+          })
+        );
+        const data = await response.json();
+        if (cancelled) return;
+        if (!response.ok) {
+          throw new Error(data?.error || 'No se pudo buscar archivos.');
+        }
+        setSearchTree(Array.isArray(data.tree) ? data.tree : []);
+      } catch (error) {
+        if (!cancelled) {
+          setTreeError(error.message || 'No se pudo buscar archivos.');
+          setSearchTree([]);
+        }
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.local_path, searchInputValue]);
 
   useEffect(() => {
     const snapshot = {
@@ -463,9 +712,11 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
       searchQuery: deferredSearchQuery,
       markdownViewMode,
       latexViewMode,
+      embeddedTreeWidthPx,
     });
   }, [
     deferredSearchQuery,
+    embeddedTreeWidthPx,
     expanded,
     isTreeCollapsed,
     latexViewMode,
@@ -475,6 +726,10 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     storage,
     workspaceId,
   ]);
+
+  const handleEmbeddedTreeWidthChange = useCallback((nextWidth) => {
+    setEmbeddedTreeWidthPx(clampEmbeddedTreeWidth(nextWidth));
+  }, []);
 
   useEffect(() => {
     onContextChange?.({
@@ -488,8 +743,15 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     (path) => {
       setExpanded((prev) => {
         const next = new Set(prev);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+          const node = findNodeByPath(treeRef.current, path);
+          if (node?.type === 'directory' && !Array.isArray(node.children)) {
+            void fetchDirectoryChildren(path);
+          }
+        }
 
         if (project?.id) {
           saveUIPref(project.id, 'editorExpandedPaths', Array.from(next));
@@ -498,7 +760,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
         return next;
       });
     },
-    [project?.id]
+    [fetchDirectoryChildren, project?.id]
   );
 
   const handleDocumentViewModeChange = useCallback(
@@ -557,9 +819,10 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
           onToggle={toggleNode}
           onSelect={loadFile}
           selectedPath={selectedPath}
+          loadingDirs={loadingDirs}
         />
       )),
-    [filteredTree, loadFile, selectedPath, toggleNode, visibleExpandedPaths]
+    [filteredTree, loadFile, loadingDirs, selectedPath, toggleNode, visibleExpandedPaths]
   );
 
   const measureEmbeddedDocumentSurfaceWidth = useCallback(() => {
@@ -581,45 +844,39 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     );
   }, [shouldUseEmbeddedDocumentRail]);
 
-  const syncBottomScrollbarToPreview = useCallback(
-    (previewScrollLeft) => {
-      const previewRegion = previewScrollRegionRef.current;
-      const bottomScrollbar = embeddedHorizontalScrollRef.current;
-      if (!previewRegion || !bottomScrollbar) return;
+  const syncBottomScrollbarToPreview = useCallback((previewScrollLeft) => {
+    const previewRegion = previewScrollRegionRef.current;
+    const bottomScrollbar = embeddedHorizontalScrollRef.current;
+    if (!previewRegion || !bottomScrollbar) return;
 
-      const previewMaxScrollLeft = getScrollableDistance(previewRegion);
-      const bottomMaxScrollLeft = getScrollableDistance(bottomScrollbar);
-      const nextScrollLeft = mapScrollOffset(
-        previewScrollLeft,
-        previewMaxScrollLeft,
-        bottomMaxScrollLeft
-      );
+    const previewMaxScrollLeft = getScrollableDistance(previewRegion);
+    const bottomMaxScrollLeft = getScrollableDistance(bottomScrollbar);
+    const nextScrollLeft = mapScrollOffset(
+      previewScrollLeft,
+      previewMaxScrollLeft,
+      bottomMaxScrollLeft
+    );
 
-      if (Math.abs(bottomScrollbar.scrollLeft - nextScrollLeft) < 1) return;
-      bottomScrollbar.scrollLeft = nextScrollLeft;
-    },
-    []
-  );
+    if (Math.abs(bottomScrollbar.scrollLeft - nextScrollLeft) < 1) return;
+    bottomScrollbar.scrollLeft = nextScrollLeft;
+  }, []);
 
-  const syncPreviewToBottomScrollbar = useCallback(
-    (bottomScrollLeft) => {
-      const previewRegion = previewScrollRegionRef.current;
-      const bottomScrollbar = embeddedHorizontalScrollRef.current;
-      if (!previewRegion || !bottomScrollbar) return;
+  const syncPreviewToBottomScrollbar = useCallback((bottomScrollLeft) => {
+    const previewRegion = previewScrollRegionRef.current;
+    const bottomScrollbar = embeddedHorizontalScrollRef.current;
+    if (!previewRegion || !bottomScrollbar) return;
 
-      const bottomMaxScrollLeft = getScrollableDistance(bottomScrollbar);
-      const previewMaxScrollLeft = getScrollableDistance(previewRegion);
-      const nextScrollLeft = mapScrollOffset(
-        bottomScrollLeft,
-        bottomMaxScrollLeft,
-        previewMaxScrollLeft
-      );
+    const bottomMaxScrollLeft = getScrollableDistance(bottomScrollbar);
+    const previewMaxScrollLeft = getScrollableDistance(previewRegion);
+    const nextScrollLeft = mapScrollOffset(
+      bottomScrollLeft,
+      bottomMaxScrollLeft,
+      previewMaxScrollLeft
+    );
 
-      if (Math.abs(previewRegion.scrollLeft - nextScrollLeft) < 1) return;
-      previewRegion.scrollLeft = nextScrollLeft;
-    },
-    []
-  );
+    if (Math.abs(previewRegion.scrollLeft - nextScrollLeft) < 1) return;
+    previewRegion.scrollLeft = nextScrollLeft;
+  }, []);
 
   const syncEmbeddedHorizontalScrollState = useCallback(() => {
     if (!shouldUseEmbeddedDocumentRail) return;
@@ -695,7 +952,9 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
 
       const isBottomScrollbar = event.currentTarget === bottomScrollbar;
       const hasHorizontalIntent =
-        Math.abs(event.deltaX) > 0.5 || event.shiftKey || (isBottomScrollbar && Math.abs(event.deltaY) > 0.5);
+        Math.abs(event.deltaX) > 0.5 ||
+        event.shiftKey ||
+        (isBottomScrollbar && Math.abs(event.deltaY) > 0.5);
 
       if (!hasHorizontalIntent) return;
 
@@ -713,11 +972,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
 
       event.preventDefault();
     },
-    [
-      shouldUseEmbeddedDocumentRail,
-      syncBottomScrollbarToPreview,
-      syncPreviewToBottomScrollbar,
-    ]
+    [shouldUseEmbeddedDocumentRail, syncBottomScrollbarToPreview, syncPreviewToBottomScrollbar]
   );
 
   useEffect(() => {
@@ -756,7 +1011,12 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     const previewRegion = previewScrollRegionRef.current;
     const previewRail = documentPreviewRailRef.current;
     const bottomScrollbar = embeddedHorizontalScrollRef.current;
-    if (!previewRegion || !previewRail || !bottomScrollbar || typeof ResizeObserver === 'undefined') {
+    if (
+      !previewRegion ||
+      !previewRail ||
+      !bottomScrollbar ||
+      typeof ResizeObserver === 'undefined'
+    ) {
       return undefined;
     }
 
@@ -778,13 +1038,361 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
     syncEmbeddedHorizontalScrollState,
   ]);
 
+  const treeBrowser = (
+    <>
+      <div className="flex-shrink-0 border-b border-borders-subtle px-2 py-2">
+        <div
+          className="flex items-center gap-2 border border-borders-subtle px-2.5 py-2"
+          style={inputStyle()}
+        >
+          <input
+            type="search"
+            value={searchInputValue}
+            onInput={handleSearchQueryChange}
+            onChange={handleSearchQueryChange}
+            placeholder="Search files or paths"
+            className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
+            data-testid="editor-tree-search-input"
+            aria-label="Search files"
+          />
+          {searchInputValue ? (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="inline-flex h-5 items-center rounded-md px-1.5 text-[11px] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+              aria-label="Clear file search"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+        data-testid="editor-tree-scroll-region"
+        style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+      >
+        {showTreeBusy ? (
+          <div className="space-y-3 p-2" data-testid="editor-tree-loading">
+            <div className="flex items-center gap-2 text-[11px] text-text-muted">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-primary" />
+              {appliedSearchQuery ? 'Buscando archivos…' : 'Cargando archivos del workspace…'}
+            </div>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div
+                  className="h-3.5 w-3.5 animate-pulse rounded-sm"
+                  style={{
+                    background: 'color-mix(in srgb, var(--text-muted) 28%, transparent)',
+                  }}
+                />
+                <div
+                  className={`h-3 animate-pulse rounded ${i % 2 === 0 ? 'w-28' : 'w-20'}`}
+                  style={{
+                    background: 'color-mix(in srgb, var(--text-muted) 22%, transparent)',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : treeError ? (
+          <div className="text-xs text-danger p-2 rounded-md border border-[#F778BA33] bg-[#F778BA11]">
+            {treeError}
+          </div>
+        ) : filteredTree.length === 0 ? (
+          appliedSearchQuery ? (
+            <div
+              className="rounded-md border border-borders-subtle bg-surface-elevated px-3 py-2 text-xs text-text-muted"
+              data-testid="editor-tree-empty-search"
+            >
+              No files match “{appliedSearchQuery}”.
+            </div>
+          ) : (
+            <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
+          )
+        ) : (
+          renderedTree
+        )}
+      </div>
+    </>
+  );
+
+  const previewSection = (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-borders-subtle bg-surface-app flex items-center justify-between gap-3">
+        <div className="min-w-0 flex items-center gap-2 flex-1">
+          <button
+            type="button"
+            onClick={handleTreeToggle}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-borders-subtle text-text-muted transition-colors hover:text-text-primary cursor-pointer flex-shrink-0"
+            title={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
+            aria-label={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
+            data-testid="editor-tree-toggle"
+            style={btnSecondaryStyle({ size: 'xs' })}
+          >
+            {isTreeCollapsed ? (
+              <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+            ) : (
+              <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.8} />
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
+            <p
+              className="truncate text-[11px] font-medium text-text-primary"
+              title={selectedPath || 'Ningún archivo seleccionado'}
+            >
+              {selectedPath || 'Ningún archivo seleccionado'}
+            </p>
+            <p
+              className="truncate text-[10px] uppercase tracking-[0.14em] text-text-muted"
+              title={currentFileBreadcrumb.join(' / ') || project?.local_path || ''}
+              data-testid="editor-current-breadcrumb"
+            >
+              {currentFileBreadcrumb.length > 0
+                ? currentFileBreadcrumb.join(' / ')
+                : project?.local_path || 'Workspace context'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {showPreviewToggle && (
+            <div
+              className="inline-flex rounded-md border border-borders-subtle p-0.5"
+              style={{ background: 'var(--chrome-control-fill)' }}
+            >
+              <button
+                type="button"
+                onClick={() => handleDocumentViewModeChange(DOCUMENT_VIEW_MODES.PREVIEW)}
+                className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDocumentViewModeChange(DOCUMENT_VIEW_MODES.RAW)}
+                className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.RAW ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
+              >
+                Raw
+              </button>
+            </div>
+          )}
+          {fileLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-primary" />}
+        </div>
+      </div>
+
+      {!selectedPath ? (
+        <div
+          className="flex h-full items-center justify-center px-6 text-center"
+          data-testid="editor-empty-state"
+          style={{ background: 'var(--chrome-panel-fill)' }}
+        >
+          <div className="max-w-sm space-y-3">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-borders-subtle bg-surface-elevated text-text-muted">
+              <FileText className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-text-primary">
+                Select a file to start browsing
+              </p>
+              <p className="text-xs text-text-muted">
+                The file tree and the preview area now scroll independently inside this panel.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : fileError ? (
+        <div className="m-4 p-4 border border-[#F778BA33] bg-[#F778BA11] text-danger text-xs flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{fileError}</span>
+        </div>
+      ) : (
+        <div
+          ref={previewScrollRegionRef}
+          onScroll={shouldUseEmbeddedDocumentRail ? handlePreviewRegionScroll : undefined}
+          onWheel={shouldUseEmbeddedDocumentRail ? handleEmbeddedHorizontalWheel : undefined}
+          className={`relative flex-1 min-h-0 overflow-y-auto overscroll-contain ${shouldUseEmbeddedDocumentRail ? 'overflow-x-auto filesystem-document-viewport--embedded' : ''}`}
+          data-testid="editor-preview-scroll-region"
+          style={{ background: 'var(--chrome-panel-fill)' }}
+        >
+          {isPdf ? (
+            <div
+              ref={documentPreviewRailRef}
+              className={`h-full ${embeddedDocumentSurfaceClass}`}
+              style={embeddedDocumentSurfaceStyle}
+              data-testid="editor-document-preview-rail"
+            >
+              <iframe
+                src={content}
+                className="block h-full w-full border-none relative z-10"
+                style={{ background: 'var(--chrome-panel-fill)' }}
+                title="PDF Viewer"
+              />
+            </div>
+          ) : isImage ? (
+            <div className="flex items-center justify-center h-full bg-surface-base/50 p-8 overflow-auto">
+              <img
+                src={content}
+                className="max-w-full max-h-full object-contain shadow-xl rounded pointer-events-none"
+                alt={selectedPath}
+              />
+            </div>
+          ) : isOfficeDocument ? (
+            <div className="flex flex-col items-center justify-center h-full bg-surface-base text-text-secondary gap-4 p-8 text-center">
+              <FileText className="w-16 h-16 opacity-30" />
+              <h3 className="text-text-primary text-lg font-medium">Archivo Office Detectado</h3>
+              <p className="text-sm">
+                Para ver documentos Word o Excel fluidamente, descárgalo o ábrelo en sus editores
+                nativos.
+              </p>
+              <a
+                href={content}
+                download
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 px-4 py-2 bg-surface-elevated hover:bg-surface-hover rounded-md text-sm transition-colors border border-borders-subtle flex items-center gap-2 cursor-pointer"
+              >
+                <FolderOpen className="w-4 h-4" /> Descargar / Abrir Nativo
+              </a>
+            </div>
+          ) : isMarkdown && markdownViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
+            fileLoading ? (
+              <div className="flex-1 flex items-center justify-center h-full">
+                <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div
+                ref={documentPreviewRailRef}
+                className={`h-full ${embeddedDocumentSurfaceClass}`}
+                style={embeddedDocumentSurfaceStyle}
+                data-testid="editor-document-preview-rail"
+              >
+                <div className={markdownShellClassName}>
+                  <div className={markdownPreviewClassName}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
+                      components={{
+                        code: InlineCode,
+                        pre: BlockCode,
+                      }}
+                    >
+                      {content || ''}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            )
+          ) : isLatex && latexViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
+            fileLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div
+                ref={documentPreviewRailRef}
+                className={`h-full ${embeddedDocumentSurfaceClass}`}
+                style={embeddedDocumentSurfaceStyle}
+                data-testid="editor-document-preview-rail"
+              >
+                <LatexDocumentPreview content={content} filePath={selectedPath} />
+              </div>
+            )
+          ) : (
+            <div className="h-full min-h-0 min-w-0 w-full overflow-hidden">
+              <Editor
+                height="100%"
+                language={language}
+                theme="vs-dark"
+                value={content}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  fontFamily: 'Consolas, "Courier New", monospace',
+                  wordWrap: 'on',
+                  wrappingIndent: 'indent',
+                  scrollBeyondLastLine: false,
+                  padding: { top: 16 },
+                }}
+                loading={
+                  <div
+                    className="flex h-full w-full flex-col"
+                    style={{
+                      background: 'var(--chrome-panel-fill)',
+                      borderTop: 'var(--chrome-border-width) solid var(--chrome-border-color)',
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-between px-4 py-3"
+                      style={{
+                        background: 'var(--chrome-panel-fill-emphasis)',
+                        borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)',
+                        boxShadow: 'var(--chrome-shadow-control)',
+                      }}
+                    >
+                      <div className="h-3 w-28" style={pillStyle()} />
+                      <div className="flex items-center gap-2">
+                        <div className="h-3 w-12" style={pillStyle()} />
+                        <Loader2 className="w-4 h-4 animate-spin text-accent-primary" />
+                      </div>
+                    </div>
+                    <div className="flex-1 p-4" style={{ background: 'var(--chrome-panel-fill)' }}>
+                      <div
+                        className="h-full w-full p-4"
+                        style={{
+                          ...panelStyle(),
+                          borderRadius: 'var(--chrome-radius-panel)',
+                          boxShadow: 'var(--chrome-shadow-panel)',
+                        }}
+                      >
+                        <div className="space-y-3">
+                          <div className="h-3 w-11/12" style={pillStyle()} />
+                          <div className="h-3 w-10/12" style={pillStyle()} />
+                          <div className="h-3 w-9/12" style={pillStyle()} />
+                          <div className="h-3 w-7/12" style={pillStyle()} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {shouldUseEmbeddedDocumentRail ? (
+        <div
+          ref={embeddedHorizontalScrollRef}
+          onScroll={handleBottomScrollbarScroll}
+          onWheel={handleEmbeddedHorizontalWheel}
+          className="filesystem-embedded-horizontal-scrollbar"
+          data-testid="editor-preview-horizontal-scrollbar"
+          aria-label="Document horizontal scroll"
+        >
+          <div
+            className={`${embeddedHorizontalScrollbarSpacerClassName} h-px`}
+            style={embeddedScrollbarSpacerStyle}
+            aria-hidden="true"
+          />
+        </div>
+      ) : null}
+    </section>
+  );
+
   return (
     <div
       data-testid="shared-editor-pane"
       className={`flex h-full w-full min-h-0 flex-col overflow-hidden ${embedded ? '' : 'flex-1'}`}
       style={{ background: embedded ? 'var(--chrome-panel-fill)' : undefined }}
     >
-      <div className="px-4 py-2 border-b border-borders-subtle flex items-center justify-between gap-3" style={{ background: 'var(--chrome-panel-fill-emphasis)', borderBottomColor: 'var(--chrome-border-color)' }}>
+      <div
+        className="px-4 py-2 border-b border-borders-subtle flex items-center justify-between gap-3"
+        style={{
+          background: 'var(--chrome-panel-fill-emphasis)',
+          borderBottomColor: 'var(--chrome-border-color)',
+        }}
+      >
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted font-semibold">
             Workspace files
@@ -792,7 +1400,7 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
         </div>
         <button
           type="button"
-          onClick={loadTree}
+          onClick={() => loadTree({ fresh: true })}
           className="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-md hover:bg-surface-elevated cursor-pointer"
           title="Recargar árbol de archivos"
           aria-label="Recargar árbol de archivos"
@@ -802,340 +1410,86 @@ export default function FileExplorerEditorPane({ project, workspaceId = 'default
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal" className="h-full min-h-0">
-          <ResizablePanel
-            ref={explorerPanelRef}
-            defaultSize={embedded ? 34 : 26}
-            minSize={18}
-            maxSize={45}
-            collapsible
-            collapsedSize={0}
-            onCollapse={() => {
-              setIsTreeCollapsed(true);
-              persistLegacyTreeCollapsedPref(true);
-            }}
-            onExpand={() => {
-              setIsTreeCollapsed(false);
-              persistLegacyTreeCollapsedPref(false);
-            }}
-            className="flex flex-col h-full"
-            style={{ overflow: 'clip' }}
-          >
+      <div
+        className="flex-1 min-h-0 min-w-0 overflow-hidden"
+        data-embedded={embedded ? 'true' : 'false'}
+      >
+        {embedded ? (
+          <div className="flex h-full min-h-0 min-w-0" data-testid="embedded-editor-split">
             {!isTreeCollapsed ? (
-              <aside
-                className="h-full flex flex-col overflow-hidden border-r border-borders-subtle bg-surface-app"
-                data-testid="editor-tree-panel"
-              >
-                <div className="flex-shrink-0 border-b border-borders-subtle px-2 py-2">
-                  <div className="flex items-center gap-2 border border-borders-subtle px-2.5 py-2" style={inputStyle()}>
-                    <input
-                      type="search"
-                      value={searchInputValue}
-                      onInput={handleSearchQueryChange}
-                      onChange={handleSearchQueryChange}
-                      placeholder="Search files or paths"
-                      className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
-                      data-testid="editor-tree-search-input"
-                      aria-label="Search files"
-                    />
-                    {searchInputValue ? (
-                      <button
-                        type="button"
-                        onClick={clearSearch}
-                        className="inline-flex h-5 items-center rounded-md px-1.5 text-[11px] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
-                        aria-label="Clear file search"
-                      >
-                        Clear
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto p-2" style={{ overscrollBehavior: 'contain' }}>
-                  {treeLoading ? (
-                    <div className="p-2 space-y-3">
-                      {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <div key={i} className="flex items-center gap-2" style={{ animationDelay: `${i * 80}ms` }}>
-                          <div className="w-3.5 h-3.5 rounded-sm animate-pulse" style={{ background: 'var(--chrome-control-fill)' }} />
-                          <div
-                            className={`h-3 rounded animate-pulse ${i % 2 === 0 ? 'w-28' : 'w-20'}`}
-                            style={{ background: 'var(--chrome-control-fill)' }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : treeError ? (
-                    <div className="text-xs text-danger p-2 rounded-md border border-[#F778BA33] bg-[#F778BA11]">
-                      {treeError}
-                    </div>
-                  ) : filteredTree.length === 0 ? (
-                    appliedSearchQuery ? (
-                      <div
-                        className="rounded-md border border-borders-subtle bg-surface-elevated px-3 py-2 text-xs text-text-muted"
-                        data-testid="editor-tree-empty-search"
-                      >
-                        No files match “{appliedSearchQuery}”.
-                      </div>
-                    ) : (
-                      <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
-                    )
-                  ) : tree.length === 0 ? (
-                    <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
-                  ) : (
-                    renderedTree
-                  )}
-                </div>
-              </aside>
-            ) : (
-              <div className="h-full w-0 overflow-hidden" aria-hidden="true" />
-            )}
-          </ResizablePanel>
-
-          {!isTreeCollapsed && <ResizableHandle className="bg-surface-elevated" />}
-
-          <ResizablePanel defaultSize={embedded ? 66 : 74} minSize={45} className="flex h-full min-h-0 flex-col" style={{ overflow: 'clip' }}>
-            <section className="flex h-full min-h-0 flex-col overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-borders-subtle bg-surface-app flex items-center justify-between gap-3">
-                <div className="min-w-0 flex items-center gap-2 flex-1">
-                  <button
-                    type="button"
-                    onClick={handleTreeToggle}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-borders-subtle text-text-muted transition-colors hover:text-text-primary cursor-pointer flex-shrink-0"
-                    title={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
-                    aria-label={isTreeCollapsed ? 'Mostrar árbol de archivos' : 'Ocultar árbol de archivos'}
-                    data-testid="editor-tree-toggle"
-                    style={btnSecondaryStyle({ size: 'xs' })}
-                  >
-                    {isTreeCollapsed ? (
-                      <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
-                    ) : (
-                      <ChevronLeft className="w-3.5 h-3.5" strokeWidth={1.8} />
-                    )}
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[11px] font-medium text-text-primary" title={selectedPath || 'Ningún archivo seleccionado'}>
-                      {selectedPath || 'Ningún archivo seleccionado'}
-                    </p>
-                    <p
-                      className="truncate text-[10px] uppercase tracking-[0.14em] text-text-muted"
-                      title={currentFileBreadcrumb.join(' / ') || project?.local_path || ''}
-                      data-testid="editor-current-breadcrumb"
-                    >
-                      {currentFileBreadcrumb.length > 0 ? currentFileBreadcrumb.join(' / ') : (project?.local_path || 'Workspace context')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {showPreviewToggle && (
-                    <div className="inline-flex rounded-md border border-borders-subtle p-0.5" style={{ background: 'var(--chrome-control-fill)' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleDocumentViewModeChange(DOCUMENT_VIEW_MODES.PREVIEW)}
-                        className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
-                      >
-                        Preview
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDocumentViewModeChange(DOCUMENT_VIEW_MODES.RAW)}
-                        className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${activeDocumentViewMode === DOCUMENT_VIEW_MODES.RAW ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
-                      >
-                        Raw
-                      </button>
-                    </div>
-                  )}
-                  {fileLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-primary" />}
-                </div>
-              </div>
-
-              {!selectedPath ? (
-                <div
-                  className="flex h-full items-center justify-center px-6 text-center"
-                  data-testid="editor-empty-state"
-                  style={{ background: 'var(--chrome-panel-fill)' }}
+              <>
+                <aside
+                  className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-borders-subtle bg-surface-app"
+                  data-testid="editor-tree-panel"
+                  style={{
+                    width: `${embeddedTreeWidthPx}px`,
+                    minWidth: `${EMBEDDED_TREE_MIN_WIDTH_PX}px`,
+                    maxWidth: `${EMBEDDED_TREE_MAX_WIDTH_PX}px`,
+                  }}
                 >
-                  <div className="max-w-sm space-y-3">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-borders-subtle bg-surface-elevated text-text-muted">
-                      <FileText className="h-5 w-5" strokeWidth={1.8} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-sm font-medium text-text-primary">
-                        Select a file to start browsing
-                      </p>
-                      <p className="text-xs text-text-muted">
-                        The file tree and the preview area now scroll independently inside this panel.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : fileError ? (
-                <div className="m-4 p-4 border border-[#F778BA33] bg-[#F778BA11] text-danger text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>{fileError}</span>
-                </div>
+                  {treeBrowser}
+                </aside>
+                <EmbeddedTreeResizeHandle
+                  treeWidthPx={embeddedTreeWidthPx}
+                  onWidthChange={handleEmbeddedTreeWidthChange}
+                />
+              </>
+            ) : null}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              {previewSection}
+            </div>
+          </div>
+        ) : (
+          <ResizablePanelGroup direction="horizontal" className="h-full min-h-0 min-w-0">
+            <ResizablePanel
+              ref={explorerPanelRef}
+              id="standalone-fs-tree"
+              defaultSize={26}
+              minSize={18}
+              maxSize={40}
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => {
+                setIsTreeCollapsed(true);
+                persistLegacyTreeCollapsedPref(true);
+              }}
+              onExpand={() => {
+                setIsTreeCollapsed(false);
+                persistLegacyTreeCollapsedPref(false);
+              }}
+              className="flex h-full min-h-0 min-w-0 flex-col"
+              style={{ overflow: 'hidden' }}
+            >
+              {!isTreeCollapsed ? (
+                <aside
+                  className="flex h-full min-h-0 flex-col overflow-hidden border-r border-borders-subtle bg-surface-app"
+                  data-testid="editor-tree-panel"
+                >
+                  {treeBrowser}
+                </aside>
               ) : (
-                <div
-                  ref={previewScrollRegionRef}
-                  onScroll={shouldUseEmbeddedDocumentRail ? handlePreviewRegionScroll : undefined}
-                  onWheel={shouldUseEmbeddedDocumentRail ? handleEmbeddedHorizontalWheel : undefined}
-                  className={`relative flex-1 min-h-0 overflow-y-auto overscroll-contain ${shouldUseEmbeddedDocumentRail ? 'overflow-x-auto filesystem-document-viewport--embedded' : ''}`}
-                  data-testid="editor-preview-scroll-region"
-                  style={{ background: 'var(--chrome-panel-fill)' }}
-                >
-                  {isPdf ? (
-                    <div
-                      ref={documentPreviewRailRef}
-                      className={`h-full ${embeddedDocumentSurfaceClass}`}
-                      style={embeddedDocumentSurfaceStyle}
-                      data-testid="editor-document-preview-rail"
-                    >
-                      <iframe src={content} className="block h-full w-full border-none relative z-10" style={{ background: 'var(--chrome-panel-fill)' }} title="PDF Viewer" />
-                    </div>
-                  ) : isImage ? (
-                    <div className="flex items-center justify-center h-full bg-surface-base/50 p-8 overflow-auto">
-                      <img src={content} className="max-w-full max-h-full object-contain shadow-xl rounded pointer-events-none" alt={selectedPath} />
-                    </div>
-                  ) : isOfficeDocument ? (
-                    <div className="flex flex-col items-center justify-center h-full bg-surface-base text-text-secondary gap-4 p-8 text-center">
-                      <FileText className="w-16 h-16 opacity-30" />
-                      <h3 className="text-text-primary text-lg font-medium">Archivo Office Detectado</h3>
-                      <p className="text-sm">
-                        Para ver documentos Word o Excel fluidamente, descárgalo o ábrelo en sus editores nativos.
-                      </p>
-                      <a
-                        href={content}
-                        download
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-4 px-4 py-2 bg-surface-elevated hover:bg-surface-hover rounded-md text-sm transition-colors border border-borders-subtle flex items-center gap-2 cursor-pointer"
-                      >
-                        <FolderOpen className="w-4 h-4" /> Descargar / Abrir Nativo
-                      </a>
-                    </div>
-                  ) : isMarkdown && markdownViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
-                    fileLoading ? (
-                      <div className="flex-1 flex items-center justify-center h-full">
-                        <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
-                      </div>
-                    ) : (
-                      <div
-                        ref={documentPreviewRailRef}
-                        className={`h-full ${embeddedDocumentSurfaceClass}`}
-                        style={embeddedDocumentSurfaceStyle}
-                        data-testid="editor-document-preview-rail"
-                      >
-                        <div className={markdownShellClassName}>
-                          <div className={markdownPreviewClassName}>
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              rehypePlugins={[[safeHighlight, { ignoreMissing: true }]]}
-                              components={{
-                                code: InlineCode,
-                                pre: BlockCode,
-                              }}
-                            >
-                              {content || ''}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  ) : isLatex && latexViewMode === DOCUMENT_VIEW_MODES.PREVIEW ? (
-                    fileLoading ? (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="w-8 h-8 border-2 border-t-[var(--accent-primary)] rounded-full animate-spin" />
-                      </div>
-                    ) : (
-                      <div
-                        ref={documentPreviewRailRef}
-                        className={`h-full ${embeddedDocumentSurfaceClass}`}
-                        style={embeddedDocumentSurfaceStyle}
-                        data-testid="editor-document-preview-rail"
-                      >
-                        <LatexDocumentPreview content={content} filePath={selectedPath} />
-                      </div>
-                    )
-                  ) : (
-                    <Editor
-                      height="100%"
-                      language={language}
-                      theme="vs-dark"
-                      value={content}
-                      options={{
-                        readOnly: true,
-                        minimap: { enabled: false },
-                        fontSize: 13,
-                        fontFamily: 'Consolas, "Courier New", monospace',
-                        wordWrap: 'on',
-                        wrappingIndent: 'indent',
-                        scrollBeyondLastLine: false,
-                        padding: { top: 16 },
-                      }}
-                      loading={
-                        <div
-                          className="flex h-full w-full flex-col"
-                          style={{
-                            background: 'var(--chrome-panel-fill)',
-                            borderTop: 'var(--chrome-border-width) solid var(--chrome-border-color)',
-                          }}
-                        >
-                          <div
-                            className="flex items-center justify-between px-4 py-3"
-                            style={{
-                              background: 'var(--chrome-panel-fill-emphasis)',
-                              borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)',
-                              boxShadow: 'var(--chrome-shadow-control)',
-                            }}
-                          >
-                            <div className="h-3 w-28" style={pillStyle()} />
-                            <div className="flex items-center gap-2">
-                              <div className="h-3 w-12" style={pillStyle()} />
-                              <Loader2 className="w-4 h-4 animate-spin text-accent-primary" />
-                            </div>
-                          </div>
-                          <div className="flex-1 p-4" style={{ background: 'var(--chrome-panel-fill)' }}>
-                            <div
-                              className="h-full w-full p-4"
-                              style={{
-                                ...panelStyle(),
-                                borderRadius: 'var(--chrome-radius-panel)',
-                                boxShadow: 'var(--chrome-shadow-panel)',
-                              }}
-                            >
-                              <div className="space-y-3">
-                                <div className="h-3 w-11/12" style={pillStyle()} />
-                                <div className="h-3 w-10/12" style={pillStyle()} />
-                                <div className="h-3 w-9/12" style={pillStyle()} />
-                                <div className="h-3 w-7/12" style={pillStyle()} />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      }
-                    />
-                  )}
-                </div>
+                <div className="h-full w-0 overflow-hidden" aria-hidden="true" />
               )}
+            </ResizablePanel>
 
-              {shouldUseEmbeddedDocumentRail ? (
-                <div
-                  ref={embeddedHorizontalScrollRef}
-                  onScroll={handleBottomScrollbarScroll}
-                  onWheel={handleEmbeddedHorizontalWheel}
-                  className="filesystem-embedded-horizontal-scrollbar"
-                  data-testid="editor-preview-horizontal-scrollbar"
-                  aria-label="Document horizontal scroll"
-                >
-                  <div
-                    className={`${embeddedHorizontalScrollbarSpacerClassName} h-px`}
-                    style={embeddedScrollbarSpacerStyle}
-                    aria-hidden="true"
-                  />
-                </div>
-              ) : null}
-            </section>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            {!isTreeCollapsed && (
+              <ResizableHandle
+                className="bg-surface-elevated"
+                onPointerDown={(event) => event.stopPropagation()}
+              />
+            )}
+
+            <ResizablePanel
+              id="standalone-fs-preview"
+              defaultSize={74}
+              minSize={45}
+              className="flex h-full min-h-0 min-w-0 flex-col"
+              style={{ overflow: 'hidden' }}
+            >
+              {previewSection}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        )}
       </div>
     </div>
   );

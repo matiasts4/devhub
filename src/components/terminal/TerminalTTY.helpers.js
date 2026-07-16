@@ -1247,6 +1247,156 @@ export function buildTerminalMousePressSequence(col, row) {
   return `\x1b[?1006h\x1b[?1000h\x1b[<0;${x};${y}M\x1b[?1000l\x1b[?1006l`;
 }
 
+/** Movement past this cancels deferred TUI transcript click injection (selection drag). */
+export const TERMINAL_TUI_CLICK_DRAG_THRESHOLD_PX = 4;
+
+/** Shift/alt/meta or non-primary button → xterm/OS selection, not TUI click. */
+export function shouldSkipTuiMouseInjectionForSelectionGesture(event) {
+  if (!event) return true;
+  if (typeof event.button === 'number' && event.button !== 0) return true;
+  if (event.shiftKey || event.altKey || event.metaKey) return true;
+  return false;
+}
+
+export function terminalHasActiveSelection(term) {
+  if (!term) return false;
+  try {
+    if (typeof term.hasSelection === 'function' && term.hasSelection()) return true;
+    if (typeof term.getSelection === 'function') {
+      return Boolean(String(term.getSelection() || '').length);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * prepareActiveTuiTerminalFocus that does not re-enable TUI mouse modes while the
+ * user is selecting text (or still holding the pointer after panel activate).
+ * Returns a cleanup that cancels a pending deferred enable.
+ */
+export function prepareActiveTuiTerminalFocusRespectingSelection(
+  term,
+  { tuiSessionActive = false, deferMouseUntilPointerUp = false } = {},
+  { documentRef = typeof document !== 'undefined' ? document : null } = {}
+) {
+  if (!term || typeof term.write !== 'function') return () => {};
+
+  const writeFocusSilence = () => {
+    try {
+      term.write(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+    } catch {
+      // terminal may be mid-dispose
+    }
+  };
+  const writeMouse = (enable) => {
+    try {
+      term.write(
+        enable ? TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ : TERMINAL_DISABLE_MOUSE_REPORTING_SEQ
+      );
+    } catch {
+      // terminal may be mid-dispose
+    }
+  };
+
+  writeFocusSilence();
+
+  if (!tuiSessionActive) {
+    writeMouse(false);
+    return () => {};
+  }
+
+  const shouldDefer = Boolean(deferMouseUntilPointerUp) || terminalHasActiveSelection(term);
+  if (!shouldDefer) {
+    writeMouse(true);
+    return () => {};
+  }
+
+  let done = false;
+  let selectionDisposable = null;
+  let safetyTimer = null;
+
+  const enable = () => {
+    if (done) return;
+    if (terminalHasActiveSelection(term)) return;
+    done = true;
+    cleanup();
+    writeMouse(true);
+  };
+
+  const onPointerUp = () => {
+    // Let xterm finalize selection from this gesture before re-binding mouse modes.
+    setTimeout(enable, 0);
+  };
+
+  const cleanup = () => {
+    documentRef?.removeEventListener?.('mouseup', onPointerUp, true);
+    selectionDisposable?.dispose?.();
+    selectionDisposable = null;
+    if (safetyTimer != null) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
+  };
+
+  documentRef?.addEventListener?.('mouseup', onPointerUp, true);
+  if (typeof term.onSelectionChange === 'function') {
+    selectionDisposable = term.onSelectionChange(() => {
+      if (!terminalHasActiveSelection(term)) enable();
+    });
+  }
+  // ponytail: leak ceiling if mouseup never fires (programmatic activate); upgrade = pointer capture
+  safetyTimer = setTimeout(() => {
+    if (!terminalHasActiveSelection(term)) enable();
+  }, 10000);
+
+  return cleanup;
+}
+
+/**
+ * Inject TUI transcript mouse press only for a short click (mouseup without drag).
+ * Skips selection gestures (Shift/alt/meta / non-primary).
+ */
+export function scheduleTuiTranscriptMouseInjection({
+  event,
+  cell,
+  eligible = false,
+  inject,
+  dragThresholdPx = TERMINAL_TUI_CLICK_DRAG_THRESHOLD_PX,
+  windowRef = typeof window !== 'undefined' ? window : null,
+} = {}) {
+  if (!eligible || !cell || typeof inject !== 'function') return () => {};
+  if (shouldSkipTuiMouseInjectionForSelectionGesture(event)) return () => {};
+
+  if (!windowRef?.addEventListener) {
+    inject(cell);
+    return () => {};
+  }
+
+  const startX = Number(event?.clientX) || 0;
+  const startY = Number(event?.clientY) || 0;
+  let dragged = false;
+
+  const onMove = (e) => {
+    const dx = (Number(e?.clientX) || 0) - startX;
+    const dy = (Number(e?.clientY) || 0) - startY;
+    if (Math.hypot(dx, dy) > dragThresholdPx) dragged = true;
+  };
+  const onUp = () => {
+    cleanup();
+    if (!dragged) inject(cell);
+  };
+  const cleanup = () => {
+    windowRef.removeEventListener('mousemove', onMove, true);
+    windowRef.removeEventListener('mouseup', onUp, true);
+  };
+
+  windowRef.addEventListener('mousemove', onMove, true);
+  windowRef.addEventListener('mouseup', onUp, true);
+  return cleanup;
+}
+
 export function shouldRouteWheelToTranscript({
   shiftKey = false,
   cell,

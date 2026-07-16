@@ -14,6 +14,7 @@ import {
   stabilizeTerminalRenderer,
   refreshTerminalViewport,
   prepareActiveTuiTerminalFocus,
+  prepareActiveTuiTerminalFocusRespectingSelection,
   shouldAttachWebglRenderer,
   shouldAttachCanvasRenderer,
   shouldMountCanvasAddon,
@@ -824,12 +825,17 @@ export default function useTerminalEngine({
           terminalBlurCleanupRef.current = null;
         }
         const blurTarget = terminal.element || containerRef.current;
-        const handleTerminalBlur = () =>
-          prepareActiveTuiTerminalFocus(terminal, {
+        let pendingBlurFocusCleanup = null;
+        const handleTerminalBlur = () => {
+          pendingBlurFocusCleanup?.();
+          pendingBlurFocusCleanup = prepareActiveTuiTerminalFocusRespectingSelection(terminal, {
             tuiSessionActive: tuiSessionActiveRef.current,
           });
+        };
         blurTarget?.addEventListener('focusout', handleTerminalBlur);
         terminalBlurCleanupRef.current = () => {
+          pendingBlurFocusCleanup?.();
+          pendingBlurFocusCleanup = null;
           blurTarget?.removeEventListener('focusout', handleTerminalBlur);
         };
 

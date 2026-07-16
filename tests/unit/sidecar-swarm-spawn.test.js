@@ -58,4 +58,34 @@ describe('sidecar swarm tmux spawn', () => {
     expect(config.args).toEqual([]);
     expect(config.env.DEVHUB_TMUX_SESSION).toBeUndefined();
   });
+
+  test('shell env strips sidecar --max-old-space-size but keeps other NODE_OPTIONS', () => {
+    const config = buildSidecarSpawnConfig({
+      sessionId: 'p10204',
+      cwd: '/home/tester',
+      isSwarmRole: false,
+      env: {
+        SHELL: '/usr/bin/zsh',
+        HOME: '/home/tester',
+        NODE_OPTIONS: '--max-old-space-size=384 --trace-warnings',
+      },
+    });
+
+    expect(config.env.NODE_OPTIONS).toBe('--trace-warnings');
+  });
+
+  test('shell env removes NODE_OPTIONS entirely when only --max-old-space-size was set', () => {
+    const config = buildSidecarSpawnConfig({
+      sessionId: 'p10205',
+      cwd: '/home/tester',
+      isSwarmRole: false,
+      env: {
+        SHELL: '/usr/bin/zsh',
+        HOME: '/home/tester',
+        NODE_OPTIONS: '--max-old-space-size=384',
+      },
+    });
+
+    expect(config.env.NODE_OPTIONS).toBeUndefined();
+  });
 });

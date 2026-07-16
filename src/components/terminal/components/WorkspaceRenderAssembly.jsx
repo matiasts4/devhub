@@ -417,7 +417,7 @@ export default function WorkspaceRenderAssembly(props) {
   return (
     <motion.div
       ref={managerRootRef}
-      className="relative flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden"
+      className={`relative flex flex-col h-full w-full bg-[var(--surface-app)] overflow-hidden ${isVisible ? '' : 'pointer-events-none'}`}
       style={getWorkspaceShellChromeStyle()}
       {...getWorkspaceAnimProps(isMaximized)}
     >

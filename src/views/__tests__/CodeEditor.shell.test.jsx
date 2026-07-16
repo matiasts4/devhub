@@ -193,7 +193,9 @@ describe('CodeEditor route shell', () => {
 
     expect(view.container.textContent).toContain('/workspace/devhub');
     expect(view.container.querySelector('[data-testid="code-editor-current-file"]')).toBeNull();
-    expect(view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="code-editor-current-breadcrumb"]')
+    ).toBeNull();
     expect(view.container.textContent).toContain('Editor de Código');
     expect(view.container.textContent).toContain('DevHub');
   });
@@ -203,13 +205,15 @@ describe('CodeEditor route shell', () => {
 
     const shell = view.container.querySelector('.core-page-shell');
     expect(shell.classList.contains('min-h-0')).toBe(true);
+    expect(shell.classList.contains('flex-1')).toBe(true);
     expect(shell.classList.contains('overflow-hidden')).toBe(true);
     expect(shell.classList.contains('min-h-screen')).toBe(false);
 
     const paneHost = view.container.querySelector(
       '[data-testid="shared-editor-pane"]'
     )?.parentElement;
-    expect(paneHost.classList.contains('h-full')).toBe(true);
+    expect(paneHost.classList.contains('min-h-0')).toBe(true);
+    expect(paneHost.classList.contains('flex-1')).toBe(true);
     expect(paneHost.classList.contains('w-full')).toBe(true);
     expect(paneHost.classList.contains('overflow-hidden')).toBe(true);
   });

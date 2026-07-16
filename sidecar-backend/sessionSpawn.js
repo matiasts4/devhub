@@ -83,6 +83,25 @@ function buildSidecarSpawnConfig({
     HUSHLOGIN: 'true',
   };
 
+  // The PTY sidecar is a Node process and may have been launched with a
+  // restrictive --max-old-space-size (e.g. 384 MB). Shells spawned through it
+  // must not inherit that flag, or arbitrary Node commands run by the user
+  // (pnpm tauri dev, npm scripts, etc.) will OOM. Keep any other NODE_OPTIONS
+  // the user/system may have set.
+  const sidecarNodeOptions = env.NODE_OPTIONS || '';
+  if (sidecarNodeOptions) {
+    const cleanedNodeOptions = sidecarNodeOptions
+      .split(' ')
+      .filter((part) => !/^--max-old-space-size=/.test(part))
+      .join(' ')
+      .trim();
+    if (cleanedNodeOptions) {
+      spawnEnv.NODE_OPTIONS = cleanedNodeOptions;
+    } else {
+      delete spawnEnv.NODE_OPTIONS;
+    }
+  }
+
   if (tmuxSession) {
     spawnEnv.DEVHUB_TMUX_SESSION = tmuxSession;
   }

@@ -395,7 +395,7 @@ export default function Scaffolding() {
     setLoadingTree(true);
     setTreeError('');
     try {
-      const response = await fetch('/api/fs/tree', { cache: 'no-store' });
+      const response = await fetch('/api/fs/tree?recursive=1', { cache: 'no-store' });
       const data = await response.json();
 
       if (!response.ok) {
@@ -500,10 +500,7 @@ export default function Scaffolding() {
         <div className="fade-in-up grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Templates card */}
           <div className="lg:col-span-2">
-            <div
-              className="rounded-2xl overflow-hidden"
-              style={panelStyle()}
-            >
+            <div className="rounded-2xl overflow-hidden" style={panelStyle()}>
               <CardHeader
                 icon={Layers}
                 iconColor="#D2A8FF"
@@ -638,10 +635,7 @@ export default function Scaffolding() {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Stack Detectado */}
-            <div
-              className="rounded-2xl overflow-hidden"
-              style={panelStyle()}
-            >
+            <div className="rounded-2xl overflow-hidden" style={panelStyle()}>
               <CardHeader
                 icon={Check}
                 iconColor="#3FB950"
@@ -680,10 +674,7 @@ export default function Scaffolding() {
             </div>
 
             {/* Sugerencias IA */}
-            <div
-              className="rounded-2xl overflow-hidden"
-              style={panelStyle()}
-            >
+            <div className="rounded-2xl overflow-hidden" style={panelStyle()}>
               <CardHeader
                 icon={Rocket}
                 iconColor="#58A6FF"
@@ -722,10 +713,7 @@ export default function Scaffolding() {
             </div>
 
             {/* Ultima Generacion */}
-            <div
-              className="rounded-2xl overflow-hidden"
-              style={panelStyle()}
-            >
+            <div className="rounded-2xl overflow-hidden" style={panelStyle()}>
               <CardHeader
                 icon={Cpu}
                 iconColor="#E3B341"

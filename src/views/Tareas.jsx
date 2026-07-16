@@ -38,8 +38,8 @@ import {
   kanbanColumnHeaderStyle,
   kanbanColumnStyle,
   panelHeaderStripStyle,
+  panelStyle,
   pillStyle,
-  sectionSurfaceStyle,
 } from '@/chrome/morphology';
 import {
   getWorkspaceFilterBarStyle,
@@ -118,9 +118,10 @@ function resolveAccent(accent = 'var(--accent-primary)', accentVar) {
 function getTaskFieldChromeStyle() {
   return {
     background: 'var(--chrome-control-fill)',
-    borderColor: 'var(--chrome-border-color)',
     borderWidth: 'var(--chrome-border-width)',
-    borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+    borderStyle: 'solid',
+    borderColor: 'var(--chrome-border-color)',
+    borderRadius: 'var(--chrome-radius-control)',
     color: 'var(--text-primary)',
     boxShadow: 'var(--chrome-shadow-control)',
   };
@@ -130,9 +131,10 @@ function getTaskIconBadgeStyle(accent = 'var(--accent-primary)') {
   const resolvedAccent = resolveAccent(accent);
   return {
     ...chromeSurfaceStyle({ surface: 'pill', tone: 'accent' }),
-    width: '1.9rem',
-    height: '1.9rem',
-    borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+    borderStyle: 'solid',
+    width: '2rem',
+    height: '2rem',
+    borderRadius: 'var(--chrome-radius-control)',
     background: `color-mix(in srgb, ${resolvedAccent} 12%, var(--chrome-control-fill-hover))`,
     borderColor: mixChromeAccent(resolvedAccent, 28),
     color: resolvedAccent,
@@ -141,11 +143,25 @@ function getTaskIconBadgeStyle(accent = 'var(--accent-primary)') {
 
 export function getTaskModalShellStyle() {
   return {
-    ...chromeSurfaceStyle({ surface: 'panel', emphasized: true }),
-    background: 'var(--chrome-panel-fill-emphasis)',
+    ...panelStyle({ emphasized: true }),
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
     backdropFilter: 'none',
-    boxShadow: 'var(--chrome-shadow-panel)',
   };
+}
+
+function TaskFieldLabel({ children, hint }) {
+  return (
+    <label className="mb-2 flex items-baseline justify-between gap-3">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+        {children}
+      </span>
+      {hint ? (
+        <span className="text-[10px] text-text-muted/80 normal-case tracking-normal">{hint}</span>
+      ) : null}
+    </label>
+  );
 }
 
 export function getToolbarToggleRailStyle() {
@@ -321,16 +337,12 @@ function StyledSelect({ label, value, onChange, options, placeholder }) {
 
   return (
     <div>
-      {label && (
-        <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-          {label}
-        </label>
-      )}
+      {label ? <TaskFieldLabel>{label}</TaskFieldLabel> : null}
       <div className="relative">
         <select
           value={value}
           onChange={onChange}
-          className="w-full appearance-none bg-surface-app border border-borders-strong px-3 py-2 pr-8 text-sm text-text-primary focus:outline-none focus:border-[var(--accent-primary)]/50 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors cursor-pointer"
+          className="w-full appearance-none px-3 py-2.5 pr-9 text-sm text-text-primary focus:outline-none transition-colors cursor-pointer"
           style={fieldStyle}
         >
           {placeholder && <option value="">{placeholder}</option>}
@@ -456,86 +468,123 @@ function TaskModal({
   const modalShellStyle = getTaskModalShellStyle();
   const iconBadgeStyle = getTaskIconBadgeStyle();
   const fieldStyle = getTaskFieldChromeStyle();
+  const statusMeta = COLUMNS.find((c) => c.id === form.status);
+  const priorityMeta = PRIORITY[form.priority] || PRIORITY.medium;
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.62))' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg flex flex-col max-h-[92vh]"
+        className="flex w-full max-w-2xl max-h-[min(92vh,880px)] flex-col"
         data-testid="task-modal-shell"
         style={modalShellStyle}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-5 py-4"
+          className="flex shrink-0 items-start justify-between gap-4 px-6 py-4"
           style={panelHeaderStripStyle()}
         >
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 border flex items-center justify-center" style={iconBadgeStyle}>
+          <div className="flex min-w-0 items-start gap-3">
+            <div
+              className="mt-0.5 flex shrink-0 items-center justify-center"
+              style={iconBadgeStyle}
+            >
               <ListTodo
-                className="w-3.5 h-3.5"
+                className="h-3.5 w-3.5"
                 strokeWidth={1.5}
                 style={{ color: 'var(--accent-primary)' }}
               />
             </div>
-            <h2 className="font-mono font-bold text-text-primary text-sm">
-              {existingTask ? 'Editar Tarea' : 'Nueva Tarea'}
-            </h2>
+            <div className="min-w-0">
+              <h2 className="font-mono text-sm font-bold uppercase tracking-[0.16em] text-text-primary">
+                {existingTask ? 'Editar Tarea' : 'Nueva Tarea'}
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-text-muted">
+                {existingTask
+                  ? 'Revisá título, descripción y metadatos sin perder el contexto de la tarjeta.'
+                  : 'Definí el trabajo con título claro y una descripción usable por el equipo.'}
+              </p>
+              {existingTask ? (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <span
+                    className="px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em]"
+                    style={{
+                      ...getKanbanDetailPillStyle({ accent: statusMeta?.color }),
+                      color: statusMeta?.color,
+                    }}
+                  >
+                    {statusMeta?.label || form.status}
+                  </span>
+                  <span
+                    className="px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em]"
+                    style={{
+                      ...getKanbanDetailPillStyle({ accent: priorityMeta.color }),
+                      color: priorityMeta.color,
+                    }}
+                  >
+                    {priorityMeta.label}
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center text-text-muted hover:text-white transition-colors cursor-pointer"
+            aria-label="Cerrar"
+            className="flex h-8 w-8 shrink-0 items-center justify-center transition-colors"
             style={{
               ...btnSecondaryStyle({ size: 'xs' }),
-              width: '1.75rem',
-              minWidth: '1.75rem',
+              width: '2rem',
+              minWidth: '2rem',
+              height: '2rem',
               padding: 0,
               color: 'var(--text-muted)',
             }}
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto p-5 flex-1">
-          <form id="task-form" className="space-y-4" onSubmit={handleSubmit}>
-            {/* Title */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <form id="task-form" className="space-y-5" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-                Título *
-              </label>
+              <TaskFieldLabel hint="obligatorio">Título</TaskFieldLabel>
               <input
                 required
                 value={form.title}
                 onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                placeholder="Describe la tarea brevemente..."
-                className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]/50 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors cursor-pointer"
+                placeholder="Qué hay que hacer, en una línea clara…"
+                className="w-full px-3.5 py-3 text-[15px] font-medium leading-snug text-text-primary placeholder:text-text-muted focus:outline-none"
                 style={fieldStyle}
               />
             </div>
 
-            {/* Description */}
             <div>
-              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-                Descripción
-              </label>
+              <TaskFieldLabel hint="contexto, criterios, notas">Descripción</TaskFieldLabel>
               <textarea
-                rows={3}
+                rows={8}
                 value={form.description}
                 onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                placeholder="Contexto, criterios de aceptación..."
-                className="w-full bg-surface-app border border-borders-strong px-3 py-2.5 text-sm text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]/50 focus:ring-1 focus:ring-[var(--accent-primary)]/10 transition-colors resize-none leading-relaxed cursor-pointer"
-                style={fieldStyle}
+                placeholder={
+                  'Contexto, criterios de aceptación, links y notas.\n\nEjemplo:\n- Qué quedó pendiente\n- Cómo verificar que está listo\n- Riesgos o dependencias'
+                }
+                className="w-full min-h-[11rem] resize-y px-3.5 py-3 text-[13px] leading-7 text-text-primary placeholder:text-text-muted focus:outline-none"
+                style={{
+                  ...fieldStyle,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+                data-testid="task-modal-description"
               />
             </div>
 
-            {/* Status + Milestone */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <StyledSelect
                 label="Estado"
                 value={form.status}
@@ -551,110 +600,105 @@ function TaskModal({
               />
             </div>
 
-            {/* Priority + Business Value */}
-            <div className="grid grid-cols-2 gap-3">
-              {/* Priority — colored pills */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-                  Prioridad
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <TaskFieldLabel>Prioridad</TaskFieldLabel>
+                <div className="grid grid-cols-2 gap-2">
                   {Object.entries(PRIORITY).map(([k, v]) => (
                     <button
                       key={k}
                       type="button"
                       onClick={() => setForm((p) => ({ ...p, priority: k }))}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border transition-all"
+                      className="flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold transition-all"
                       style={
                         form.priority === k
                           ? {
                               ...pillStyle(),
+                              borderStyle: 'solid',
                               background: `color-mix(in srgb, ${v.color} 12%, var(--chrome-control-fill))`,
                               borderColor: mixChromeAccent(v.color, 30),
-                              borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                              borderRadius: 'var(--chrome-radius-control)',
                               color: v.color,
                             }
                           : {
                               ...pillStyle(),
-                              borderRadius: 'calc(var(--chrome-radius-control) - 2px)',
+                              borderStyle: 'solid',
+                              borderRadius: 'var(--chrome-radius-control)',
                               color: 'var(--text-muted)',
                             }
                       }
                     >
-                      <Flag className="w-3 h-3" />
+                      <Flag className="h-3 w-3 shrink-0" />
                       {v.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Business Value */}
-              <div>
-                <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-                  Valor Negocio: <span className="text-white font-mono">{form.business_value}</span>
-                </label>
-                <div className="pt-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={form.business_value}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, business_value: parseInt(e.target.value) }))
-                    }
-                    className="w-full accent-[var(--accent-primary)] cursor-pointer"
-                    style={{ accentColor: 'var(--accent-primary)' }}
-                  />
-                  <div className="flex justify-between text-[11px] text-text-muted mt-1">
-                    <span>Mínimo (1)</span>
-                    <span>Core (10)</span>
+              <div className="space-y-4">
+                <div>
+                  <TaskFieldLabel hint={`${form.business_value}/10`}>
+                    Valor de negocio
+                  </TaskFieldLabel>
+                  <div className="pt-1">
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={form.business_value}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, business_value: parseInt(e.target.value, 10) }))
+                      }
+                      className="w-full cursor-pointer"
+                      style={{ accentColor: 'var(--accent-primary)' }}
+                    />
+                    <div className="mt-1 flex justify-between text-[11px] text-text-muted">
+                      <span>Mínimo</span>
+                      <span>Core</span>
+                    </div>
                   </div>
+                </div>
+                <div>
+                  <TaskFieldLabel>Fecha límite</TaskFieldLabel>
+                  <DatePicker
+                    value={form.due_date}
+                    onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))}
+                  />
                 </div>
               </div>
             </div>
 
-            {/* Due date */}
-            <div>
-              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-                Fecha Límite
-              </label>
-              <DatePicker
-                value={form.due_date}
-                onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))}
-              />
-            </div>
-
-            {/* Dependencies */}
             <div
-              className="pt-1"
+              className="pt-4"
               style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}
             >
-              <label className="block text-xs text-text-muted font-semibold uppercase tracking-wider mb-1.5">
-                Depende de (Bloqueada por)
-              </label>
+              <TaskFieldLabel hint="bloqueada por">Dependencias</TaskFieldLabel>
               <Select
                 isMulti
                 options={taskOptions}
                 value={selectedDeps}
                 onChange={setSelectedDeps}
                 styles={selectStyles}
-                placeholder="Seleccionar tareas dependientes..."
+                placeholder="Seleccionar tareas de las que depende…"
               />
             </div>
 
             {blocksTasks.length > 0 && (
               <div
-                className="p-3"
-                style={getTaskCardChromeStyle({ accent: 'var(--accent-primary)' })}
+                className="px-4 py-3"
+                style={{
+                  ...getTaskCardChromeStyle({ accent: 'var(--accent-primary)' }),
+                  borderStyle: 'solid',
+                }}
               >
-                <p className="text-xs text-text-muted mb-1.5 font-semibold uppercase tracking-wider">
-                  Bloquea a ({blocksTasks.length}):
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+                  Bloquea a ({blocksTasks.length})
                 </p>
-                <ul className="text-xs text-white space-y-1">
+                <ul className="space-y-1.5 text-sm leading-relaxed text-text-primary">
                   {blocksTasks.map((t, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <ChevronRight className="w-3 h-3 text-text-muted shrink-0" />
-                      {t}
+                    <li key={i} className="flex items-start gap-2">
+                      <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" />
+                      <span>{t}</span>
                     </li>
                   ))}
                 </ul>
@@ -664,7 +708,7 @@ function TaskModal({
 
           {existingTask && (
             <div
-              className="mt-6 pt-6"
+              className="mt-6 pt-5"
               style={{ borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)` }}
             >
               <TaskComments taskId={existingTask.id} />
@@ -674,20 +718,16 @@ function TaskModal({
 
         {/* Footer */}
         <div
-          className="px-5 py-4 flex gap-2"
+          className="flex shrink-0 gap-2 px-6 py-4"
           style={{
-            ...sectionSurfaceStyle(),
-            borderLeft: 'none',
-            borderRight: 'none',
-            borderBottom: 'none',
-            borderRadius: 0,
-            boxShadow: 'none',
+            background: 'var(--chrome-panel-fill)',
+            borderTop: `var(--chrome-border-width) solid var(--chrome-border-color)`,
           }}
         >
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2.5 border border-borders-strong text-text-muted text-sm hover:text-white hover:border-borders-strong transition-all"
+            className="px-4 py-2.5 text-sm transition-all"
             style={btnSecondaryStyle({ size: 'md' })}
           >
             Cancelar
@@ -696,11 +736,11 @@ function TaskModal({
             type="submit"
             form="task-form"
             disabled={saving}
-            className="flex-1 py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+            className="flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-semibold transition-all disabled:opacity-50"
             style={{ ...btnPrimaryStyle({ size: 'md' }), flex: 1 }}
           >
-            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {saving ? 'Guardando...' : 'Guardar Tarea'}
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {saving ? 'Guardando…' : 'Guardar Tarea'}
           </button>
         </div>
       </div>
@@ -1026,7 +1066,7 @@ export default function Tareas() {
   const activeFiltersCount = [fMilestone, fSearch, fUnlocked, fMyTasks].filter(Boolean).length;
 
   return (
-    <div className="h-full flex flex-col" style={getWorkspacePageShellStyle()}>
+    <div className="flex h-full min-h-0 flex-1 flex-col" style={getWorkspacePageShellStyle()}>
       {/* Content */}
       <div
         className="flex-1 overflow-hidden flex flex-col gap-5 min-h-0"
@@ -1255,17 +1295,17 @@ export default function Tareas() {
           />
         ) : (
           <div
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:overflow-hidden"
+            className="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden"
             data-testid="kanban-board"
           >
-            <div className="grid min-h-0 grid-cols-1 gap-5 xl:h-full xl:grid-cols-4">
+            <div className="grid min-h-0 h-full min-w-[72rem] grid-cols-5 gap-3 xl:min-w-0">
               {COLUMNS.map((col) => {
                 const colTasks = visibleTasks.filter((t) => t.status === col.id);
                 return (
                   <div
                     key={col.id}
                     data-testid={`kanban-column-${col.id}`}
-                    className="flex min-h-0 flex-col overflow-hidden xl:h-full"
+                    className="flex min-h-0 min-w-0 flex-col overflow-hidden h-full"
                     style={getKanbanColumnShellStyle({ accent: col.color })}
                   >
                     {/* Column header */}

@@ -100,6 +100,7 @@ import {
   resolveColdMountStaggerMs,
   disableTerminalFocusReporting,
   prepareActiveTuiTerminalFocus,
+  prepareActiveTuiTerminalFocusRespectingSelection,
   resetTerminalModesForReattach,
   normalizeTuiInitialCommand,
   isLikelyTuiInitialCommand,
@@ -1338,7 +1339,7 @@ export default function TerminalTTY({
     isActivePanelRef.current = isActivePanel;
 
     const term = termRef.current;
-    if (!term) return;
+    if (!term) return undefined;
 
     if (!isActivePanel) {
       // Cancel active-panel resize debounces so a stale RAF cannot clear GPU atlases
@@ -1352,11 +1353,14 @@ export default function TerminalTTY({
       } catch {
         // intentional: terminal may already be disposed during unmount
       }
-      return;
+      return undefined;
     }
 
-    prepareActiveTuiTerminalFocus(term, {
-      tuiSessionActive: tuiSessionActiveRef.current,
+    const tuiActive = Boolean(tuiSessionActiveRef.current);
+    return prepareActiveTuiTerminalFocusRespectingSelection(term, {
+      tuiSessionActive: tuiActive,
+      // Defer mouse-mode rebind until pointer up so mid-drag selection on activate works.
+      deferMouseUntilPointerUp: tuiActive,
     });
   }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
 

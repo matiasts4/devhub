@@ -163,8 +163,8 @@ function WorkspaceTerminalSurface({
                 return (
                   <div
                     key={`${ws.id}-view-${window.id}`}
-                    className={`absolute inset-0 min-h-0 min-w-0 ${isActiveWindow ? '' : 'pointer-events-none'}`}
-                    aria-hidden={!isActiveWindow}
+                    className={`absolute inset-0 min-h-0 min-w-0 ${isActiveWindow && isVisible ? '' : 'pointer-events-none'}`}
+                    aria-hidden={!isActiveWindow || !isVisible}
                     data-testid={
                       isActiveWindow
                         ? `workspace-window-active-${window.id}`
@@ -175,6 +175,7 @@ function WorkspaceTerminalSurface({
                       ...resolveWorkspaceWindowVisibilityStyle({
                         isActiveWindow,
                         isFullscreenTakeover: isFullscreenBrowser,
+                        isManagerVisible: isVisible,
                       }),
                     }}
                   >

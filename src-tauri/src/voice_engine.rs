@@ -284,6 +284,7 @@ pub async fn voice_speak<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, VoiceState>,
     text: String,
+    options: Option<serde_json::Value>,
 ) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
@@ -309,7 +310,12 @@ pub async fn voice_speak<R: Runtime>(
         format!("{}:{}", venv_bin.to_string_lossy(), path_env)
     };
 
-    let payload = serde_json::json!({ "text": text }).to_string();
+    let payload = if let Some(opts) = options {
+        serde_json::json!({ "text": text, "options": opts })
+    } else {
+        serde_json::json!({ "text": text })
+    }
+    .to_string();
     let child = std::process::Command::new(&python_exe)
         .arg(&tts_script)
         .env("PATH", merged_path)

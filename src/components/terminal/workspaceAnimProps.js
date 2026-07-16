@@ -98,12 +98,19 @@ export function resolveWorkspaceShellVisibilityStyle({
  * the WebGL compositor, producing a black frame on switch-back. Keeping the
  * surface compositor-alive (opacity:0, visibility:visible) lets the canvas keep
  * its bitmap so the window reappears instantly.
+ *
+ * When the terminal manager is warm-mounted but not on the terminal route
+ * (`isManagerVisible: false`), active windows MUST keep pointer-events:none.
+ * CSS lets a descendant with pointer-events:auto receive hits even when an
+ * ancestor is none — that invisible full-bleed window was eating wheel scroll
+ * on Kanban / roadmap / other project pages.
  */
 export function resolveWorkspaceWindowVisibilityStyle({
   isActiveWindow,
   isFullscreenTakeover = false,
+  isManagerVisible = true,
 } = {}) {
-  if (!isActiveWindow || isFullscreenTakeover) {
+  if (!isActiveWindow || isFullscreenTakeover || !isManagerVisible) {
     return {
       opacity: 0,
       pointerEvents: 'none',

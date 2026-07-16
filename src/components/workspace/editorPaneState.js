@@ -2,6 +2,10 @@
 
 export const DEFAULT_EDITOR_PANE_CONTENT = '// Selecciona un archivo del árbol para verlo aquí.';
 
+export const EMBEDDED_TREE_DEFAULT_WIDTH_PX = 220;
+export const EMBEDDED_TREE_MIN_WIDTH_PX = 160;
+export const EMBEDDED_TREE_MAX_WIDTH_PX = 300;
+
 export const DEFAULT_EDITOR_PANE_STATE = {
   expandedPaths: ['src'],
   selectedPath: '',
@@ -9,11 +13,21 @@ export const DEFAULT_EDITOR_PANE_STATE = {
   isTreeCollapsed: false,
   markdownViewMode: 'preview',
   latexViewMode: 'preview',
+  embeddedTreeWidthPx: EMBEDDED_TREE_DEFAULT_WIDTH_PX,
 };
 
 function normalizeStringArray(value, fallback = []) {
   if (!Array.isArray(value)) return [...fallback];
   return value.filter((entry) => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+function clampEmbeddedTreeWidth(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return EMBEDDED_TREE_DEFAULT_WIDTH_PX;
+  return Math.min(
+    EMBEDDED_TREE_MAX_WIDTH_PX,
+    Math.max(EMBEDDED_TREE_MIN_WIDTH_PX, Math.round(numeric))
+  );
 }
 
 export function buildEditorPaneStateStorageKey(projectId, workspaceId) {
@@ -22,14 +36,22 @@ export function buildEditorPaneStateStorageKey(projectId, workspaceId) {
 
 export function sanitizeEditorPaneState(rawState = {}) {
   return {
-    expandedPaths: normalizeStringArray(rawState.expandedPaths, DEFAULT_EDITOR_PANE_STATE.expandedPaths),
+    expandedPaths: normalizeStringArray(
+      rawState.expandedPaths,
+      DEFAULT_EDITOR_PANE_STATE.expandedPaths
+    ),
     selectedPath:
-      typeof rawState.selectedPath === 'string' ? rawState.selectedPath : DEFAULT_EDITOR_PANE_STATE.selectedPath,
+      typeof rawState.selectedPath === 'string'
+        ? rawState.selectedPath
+        : DEFAULT_EDITOR_PANE_STATE.selectedPath,
     searchQuery:
-      typeof rawState.searchQuery === 'string' ? rawState.searchQuery : DEFAULT_EDITOR_PANE_STATE.searchQuery,
+      typeof rawState.searchQuery === 'string'
+        ? rawState.searchQuery
+        : DEFAULT_EDITOR_PANE_STATE.searchQuery,
     isTreeCollapsed: rawState.isTreeCollapsed === true,
     markdownViewMode: rawState.markdownViewMode === 'raw' ? 'raw' : 'preview',
     latexViewMode: rawState.latexViewMode === 'raw' ? 'raw' : 'preview',
+    embeddedTreeWidthPx: clampEmbeddedTreeWidth(rawState.embeddedTreeWidthPx),
   };
 }
 

@@ -19,6 +19,7 @@ export default function useWorkspaceRightDockSync({
   isDraggingDock,
   isDraggingDockRef,
   isDraggingInternalSplit,
+  isVisible = true,
   nudgeBrowserNativeLiveRef,
   projectId,
   rightDockLayerRef,
@@ -225,7 +226,10 @@ export default function useWorkspaceRightDockSync({
     effectiveRightDockState.maximizedView === 'pizarra';
   const hideRightDockPanel =
     effectiveRightDockState.maximized && effectiveRightDockState.maximizedView === 'window';
-  const dockLayerVisible = effectiveRightDockState.visible && !hideRightDockPanel;
+  // Manager warm-mount keep-alive: when not on the terminal route, the dock
+  // must not keep pointer-events (it sits above project pages and steals wheel).
+  const dockLayerVisible =
+    Boolean(isVisible) && effectiveRightDockState.visible && !hideRightDockPanel;
   const rightDockAnimProps = getRightDockAnimProps({
     isVisible: dockLayerVisible,
     isDragging: isDraggingDock,

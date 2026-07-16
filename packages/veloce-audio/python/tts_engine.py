@@ -31,7 +31,14 @@ def find_piper() -> str | None:
     return shutil.which("piper") or shutil.which("piper-tts")
 
 
-def default_voice_model() -> str | None:
+def resolve_voice_model(voice_id: str | None = None) -> str | None:
+    if voice_id:
+        candidate = Path(voice_id)
+        if candidate.exists():
+            return str(candidate)
+        voice_path = VOICES_DIR / f"{voice_id}.onnx"
+        if voice_path.exists():
+            return str(voice_path)
     env_voice = os.environ.get("PIPER_VOICE", "").strip()
     if env_voice and Path(env_voice).exists():
         return env_voice
@@ -59,7 +66,7 @@ def play_wav(path: Path) -> bool:
     return False
 
 
-def speak(text: str, voice: str | None = None) -> None:
+def speak(text: str, voice: str | None = None, length_scale: float | None = None) -> None:
     cleaned = (text or "").strip()
     if not cleaned:
         emit({"type": "tts-done", "ok": True, "skipped": True})
@@ -70,7 +77,7 @@ def speak(text: str, voice: str | None = None) -> None:
         emit({"type": "tts-error", "error": "piper binary not found; run pnpm voice:ensure"})
         return
 
-    model = voice or default_voice_model()
+    model = resolve_voice_model(voice)
     if not model:
         emit(
             {
@@ -84,6 +91,8 @@ def speak(text: str, voice: str | None = None) -> None:
         out_path = Path(tmp.name)
 
     cmd = [piper, "-m", model, "-f", str(out_path)]
+    if length_scale is not None:
+        cmd.extend(["--length-scale", str(length_scale)])
 
     try:
         proc = subprocess.run(
@@ -140,7 +149,12 @@ def main() -> None:
             except json.JSONDecodeError:
                 emit({"type": "tts-error", "error": "invalid SPEAK json"})
                 continue
-            speak(str(payload.get("text", "")), payload.get("voice"))
+            options = payload.get("options") or {}
+            speak(
+                str(payload.get("text", "")),
+                voice=options.get("voice") or payload.get("voice"),
+                length_scale=options.get("length_scale"),
+            )
 
 
 if __name__ == "__main__":

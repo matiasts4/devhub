@@ -225,6 +225,8 @@ describe('Tareas brutalist morphology chrome', () => {
 
     expect(modalStyle.background).toContain('var(--chrome-panel-fill-emphasis)');
     expect(modalStyle.borderColor).toBe('var(--chrome-border-color)');
+    expect(modalStyle.borderStyle).toBe('solid');
+    expect(modalStyle.overflow).toBe('hidden');
     expect(toolbarStyle.borderColor).toBe('var(--chrome-border-color)');
     expect(activeFilterStyle.background).toContain('#58A6FF');
     expect(idleFilterStyle.background).toContain('var(--chrome-control-fill)');
@@ -290,6 +292,12 @@ describe('Tareas brutalist morphology chrome', () => {
     expect(modalShell).not.toBeNull();
     expect(modalShell.textContent).toContain('Editar Tarea');
     expect(modalShell.getAttribute('style')).toContain('var(--chrome-shadow-panel)');
+    expect(modalShell.className).toContain('max-w-2xl');
+
+    const description = view.container.querySelector('[data-testid="task-modal-description"]');
+    expect(description).not.toBeNull();
+    expect(description.value).toContain('Migrar chrome del tablero de tareas');
+    expect(description.getAttribute('rows')).toBe('8');
 
     const agentViewButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Cola Agente')
