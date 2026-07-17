@@ -441,4 +441,92 @@ describe('runZedChatLoop', () => {
     expect(finalText).toBe('Hola bloqueante');
     expect(callGrok).toHaveBeenCalledTimes(1);
   });
+
+  test('ZED_LLM_SHORT_CIRCUIT=0 skips canned reply and continues LLM turns', async () => {
+    const prev = process.env.ZED_LLM_SHORT_CIRCUIT;
+    process.env.ZED_LLM_SHORT_CIRCUIT = '0';
+    try {
+      const registry = buildRegistry({
+        list_terminals: async () => ({
+          processes: [{ displayName: 'Chase', terminalId: 'p1' }],
+        }),
+      });
+      const callMinimax = jest
+        .fn()
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'tool_use',
+              name: 'list_terminals',
+              input: {},
+              id: 'tu-list',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: [{ type: 'text', text: 'Tenés Chase abierta ahora.' }],
+        });
+
+      const { finalText, meta } = await runZedChatLoop({
+        systemPrompt: '',
+        conversation: [],
+        registry,
+        anthropicTools: registry.toAnthropicTools(),
+        apiKey: 'test',
+        requestContext: {},
+        maxTurns: 3,
+        callMinimax,
+        model: 'test-model',
+      });
+
+      expect(callMinimax).toHaveBeenCalledTimes(2);
+      expect(meta.short_circuited).toBeUndefined();
+      expect(finalText).toBe('Tenés Chase abierta ahora.');
+      expect(finalText).not.toMatch(/Hay 1 terminal abierta/);
+    } finally {
+      if (prev === undefined) delete process.env.ZED_LLM_SHORT_CIRCUIT;
+      else process.env.ZED_LLM_SHORT_CIRCUIT = prev;
+    }
+  });
+
+  test('short-circuit still applies when ZED_LLM_SHORT_CIRCUIT is unset', async () => {
+    const prev = process.env.ZED_LLM_SHORT_CIRCUIT;
+    delete process.env.ZED_LLM_SHORT_CIRCUIT;
+    try {
+      const registry = buildRegistry({
+        list_terminals: async () => ({
+          processes: [{ displayName: 'Chase', terminalId: 'p1' }],
+        }),
+      });
+      const callMinimax = jest.fn().mockResolvedValue({
+        content: [
+          {
+            type: 'tool_use',
+            name: 'list_terminals',
+            input: {},
+            id: 'tu-list',
+          },
+        ],
+      });
+
+      const { finalText, meta } = await runZedChatLoop({
+        systemPrompt: '',
+        conversation: [],
+        registry,
+        anthropicTools: registry.toAnthropicTools(),
+        apiKey: 'test',
+        requestContext: {},
+        maxTurns: 3,
+        callMinimax,
+        model: 'test-model',
+      });
+
+      expect(callMinimax).toHaveBeenCalledTimes(1);
+      expect(meta.short_circuited).toBe(true);
+      expect(finalText).toMatch(/Hay 1 terminal abierta: Chase/);
+    } finally {
+      if (prev === undefined) delete process.env.ZED_LLM_SHORT_CIRCUIT;
+      else process.env.ZED_LLM_SHORT_CIRCUIT = prev;
+    }
+  });
 });

@@ -147,6 +147,36 @@ Structured digest of what a terminal is doing (OpenCode/TUI friendly). The diges
 
 - `name` (string) OR `terminalId` (string) — pass one
 
+### 12. Planning (DevHub MCP)
+
+Use these when the user asks about projects, tasks, milestones, or the execution queue. Never invent IDs — only use values returned by tools.
+
+- `list_projects` — list known projects
+- `get_project` / `get_project_context` — project detail + planning context
+- `list_tasks` — tasks (optional `status`, `milestone_id`)
+- `get_execution_queue` — next executable work
+- `create_task` / `bulk_create_tasks` — create tasks (require a clear title)
+- `create_milestone` / `bulk_create_milestones` — create milestones
+
+### 13. launch_agent_session
+
+Launch an external agent TUI (OpenCode, Codex, Kimi, Hermes, Grok) in a **new** workspace panel with a detailed `prompt`. Prefer this over raw `open_terminal({ program })` when the user wants the agent to work on a task/objective.
+
+- `program` (required): `opencode` | `codex` | `hermes` | `kimi` | `grok`
+- `prompt` (required except `grok`): task text pasted after the TUI is ready
+- `name` (optional): display name for the new panel
+
+### 14. launch_swarm / get_swarm_status / list_agent_runs / get_agent_run
+
+- `get_swarm_status` — read active swarm mission (also listed above as tool 10)
+- `launch_swarm` — only when the user explicitly asks to launch a swarm
+- `list_agent_runs` / `get_agent_run` — inspect recent agent runs
+
+### 15. create_plan / execute_plan
+
+- `create_plan({ objective })` — propose multi-step tool plan; requires user confirmation before execution
+- `execute_plan({ plan })` — run a confirmed plan step by step
+
 ### Terminales nombradas
 
 Cada panel expone un `displayName` único (p. ej. Chase). Usalo en `execute_in_terminal`, `review_terminal_output`, `close_terminal` y `summarize_terminal` en lugar de adivinar `session_id`.

@@ -1,5 +1,8 @@
 /**
  * Decide whether to skip the 2nd LLM turn after tool execution.
+ *
+ * Kill-switch: ZED_LLM_SHORT_CIRCUIT=0 forces a full LLM final reply
+ * (diagnostic / LLM-only mode). Default remains on.
  */
 
 function safeParse(result) {
@@ -39,13 +42,28 @@ function isShortCircuitableToolResult(tool, result) {
   }
 }
 
+/** @returns {boolean} false when ZED_LLM_SHORT_CIRCUIT=0 */
+export function isLlmShortCircuitEnabled() {
+  return process.env.ZED_LLM_SHORT_CIRCUIT !== '0';
+}
+
+/**
+ * Pattern match only — ignores the kill-switch (for orchestration logs).
+ * @param {Array<{ tool: string, result: unknown }>} toolResults
+ * @returns {boolean}
+ */
+export function matchesShortCircuitableResults(toolResults) {
+  if (!Array.isArray(toolResults) || toolResults.length === 0) return false;
+  return toolResults.every((entry) => isShortCircuitableToolResult(entry.tool, entry.result));
+}
+
 /**
  * @param {Array<{ tool: string, result: unknown }>} toolResults
  * @returns {boolean}
  */
 export function shouldShortCircuitAfterTools(toolResults) {
-  if (!Array.isArray(toolResults) || toolResults.length === 0) return false;
-  return toolResults.every((entry) => isShortCircuitableToolResult(entry.tool, entry.result));
+  if (!isLlmShortCircuitEnabled()) return false;
+  return matchesShortCircuitableResults(toolResults);
 }
 
 export default shouldShortCircuitAfterTools;

@@ -99,6 +99,10 @@ function appendExecutionIntentHint(systemPrompt, message) {
   const newTerminalWithAgent =
     /\b(nueva|nuevo|otra|otro|una\s+terminal)\b/.test(lower) &&
     /\b(opencode|open\s+code|codex|hermes)\b/.test(lower);
+  const reviewOutput =
+    /\b(qu[eé]\s+respondi[oó]|qu[eé]\s+dijo|resum[ií]|resume|summarize|revisa\s+(el\s+)?output|qu[eé]\s+pasa\s+en)\b/.test(
+      lower
+    );
   let hint = '';
   if (runVerbs) {
     hint +=
@@ -108,7 +112,29 @@ function appendExecutionIntentHint(systemPrompt, message) {
     hint +=
       '\n\n### Turn hint\nThe user asked for a NEW terminal with an agent TUI. Use `open_terminal({ program })` — do NOT `execute_in_terminal` into an existing panel unless they named one with "en [nombre]".';
   }
+  if (reviewOutput) {
+    hint +=
+      '\n\n### Turn hint\nThe user asked what a terminal/agent said. Call `summarize_terminal` (or `review_terminal_output`) with the panel `name` from the open-terminals snapshot — answer from `tail`/`digest`, do not invent output.';
+  }
   return hint ? `${systemPrompt}${hint}` : systemPrompt;
+}
+
+/** Inject client terminal snapshot so the LLM can resolve names without an extra list turn. */
+export function appendWorkspaceTerminalsHint(systemPrompt, terminals) {
+  if (!Array.isArray(terminals) || terminals.length === 0) {
+    return `${systemPrompt}\n\n### Open workspace terminals\nNone reported by the client. Call \`list_terminals\` if you need current state.`;
+  }
+  const lines = terminals
+    .map((t) => {
+      if (!t || typeof t !== 'object') return null;
+      const name = t.displayName || t.terminalId || '?';
+      const id = t.terminalId ? ` id=${t.terminalId}` : '';
+      const program = t.program ? ` program=${t.program}` : '';
+      return `- ${name}${id}${program}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+  return `${systemPrompt}\n\n### Open workspace terminals (client snapshot)\n${lines}\nPrefer these display names with \`close_terminal\` / \`execute_in_terminal\` / \`summarize_terminal\`. Call \`list_terminals\` if the snapshot may be stale.`;
 }
 
 function appendMemoriesHint(systemPrompt, memories) {
@@ -342,6 +368,7 @@ export async function POST(request) {
     let systemPrompt;
     try {
       systemPrompt = appendExecutionIntentHint(loadSystemPrompt(), message);
+      systemPrompt = appendWorkspaceTerminalsHint(systemPrompt, requestContext.workspace_terminals);
       systemPrompt = appendMemoriesHint(systemPrompt, requestContext.memories);
     } catch (err) {
       zedLog.error('CONFIG', 'Failed to load system prompt', { error: err.message });

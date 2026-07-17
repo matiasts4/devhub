@@ -1,5 +1,9 @@
 /**
  * Zed fast path — local intent router for frequent commands.
+ *
+ * LLM-only diagnostic: set ZED_FAST_PATH=0 (and ZED_LLM_SHORT_CIRCUIT=0) so
+ * every message uses the connected model. Do not expand this router while
+ * capability smoke runs on the LLM path.
  * Skips MiniMax when confidence is high; falls back to LLM otherwise.
  */
 

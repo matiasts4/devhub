@@ -7,7 +7,11 @@ import { zedLog } from './utils/zed-logger';
 import { encodeZedSseEvent } from './zedStreamProtocol';
 import { labelForZedToolStart, labelForZedToolDone } from './zedToolLabels';
 import { mergeWorkspaceTerminalProcesses } from './workspaceTerminalRegistry';
-import { shouldShortCircuitAfterTools } from './zedShortCircuit';
+import {
+  isLlmShortCircuitEnabled,
+  matchesShortCircuitableResults,
+  shouldShortCircuitAfterTools,
+} from './zedShortCircuit';
 import { formatZedToolResultsReply } from './zedFastPathResponse';
 import { streamMinimax } from './streamMinimax';
 import { streamGrok } from './streamGrok';
@@ -295,6 +299,14 @@ export async function runZedChatLoop({
 
       allToolResults.push(...turnToolResults);
       mergeOpensIntoRequestContext(requestContext, turnToolResults);
+
+      if (matchesShortCircuitableResults(turnToolResults) && !isLlmShortCircuitEnabled()) {
+        zedLog.orchestration('short_circuit_disabled', {
+          turn,
+          tools: turnToolResults.map((t) => t.tool),
+          reason: 'ZED_LLM_SHORT_CIRCUIT=0 — continuing LLM turns',
+        });
+      }
 
       if (shouldShortCircuitAfterTools(turnToolResults)) {
         finalText = formatZedToolResultsReply(turnToolResults);
