@@ -80,7 +80,6 @@ import TerminalRestoreSettingsModal from './TerminalRestoreSettingsModal';
 import WorkspaceTerminalSetupModal from './WorkspaceTerminalSetupModal';
 import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
 import { applyZedOpenTerminalFocus } from './asistente/zedOpenTerminalFocus';
-import ZedAmbientOverlay from './asistente/ZedAmbientOverlay';
 import {
   buildTerminalSurfacesFromWindows,
   countPanelsInColumns,

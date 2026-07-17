@@ -1070,6 +1070,7 @@ export default function WorkspaceRenderAssembly(props) {
         sessionKey={`devhub-zed-chat-${projectId || 'default'}`}
         getTerminalPanelCount={getActiveWorkspaceTerminalPanelCount}
         getWorkspaceTerminals={getWorkspaceTerminals}
+        managerVisible={isVisible}
       />
     </motion.div>
   );

@@ -422,11 +422,20 @@ export default function ZedAmbientOverlay({
   getTerminalPanelCount = null,
   getWorkspaceTerminals = null,
   getWorkspaceWindows = null,
+  /** False while Terminales is soft-mounted off-route — keep Zed closed until the user opens it. */
+  managerVisible = true,
 }) {
   const motionMode = useMotionMode();
   const isReduced = motionMode === 'reduced';
   const isAmplified = motionMode === 'amplified';
   const { isOpen, close, open, toggle } = useZedOverlay();
+
+  // Soft-mount keeps this tree alive off /terminales. Never leave the composer open
+  // across route hide/show — only an explicit user open while visible should expand it.
+  // Re-run when isOpen flips too so Ctrl+Shift+Z while warm-mounted off-route cannot stick.
+  useEffect(() => {
+    if (!managerVisible) close();
+  }, [managerVisible, isOpen, close]);
   const {
     input,
     setInput,
@@ -498,43 +507,40 @@ export default function ZedAmbientOverlay({
   const voiceActive = recording;
   const composerValue = recording ? liveTranscript : input;
 
-  useEffect(() => {
-    if (!voiceEnabled) return undefined;
-    let cancelled = false;
-    async function bootVoice() {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        if (cancelled) return;
-        await invoke('voice_set_enabled', { enabled: true });
-        await invoke('voice_set_settings', {
-          settings: await buildVoiceEngineConfig(voiceSettings),
-        });
-        await startEngine();
-      } catch {
-        /* browser dev */
-      }
+  // Lazy voice boot — never probe mic / start STT just because Terminales mounted.
+  const ensureVoiceReady = useCallback(async () => {
+    if (!voiceEnabled) return { ok: false };
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('voice_set_enabled', { enabled: true });
+      await invoke('voice_set_settings', {
+        settings: await buildVoiceEngineConfig(voiceSettings),
+      });
+      return startEngine();
+    } catch {
+      return { ok: false };
     }
-    bootVoice();
-    return () => {
-      cancelled = true;
-    };
   }, [
     voiceEnabled,
     voiceSettings?.sttModel,
     voiceSettings?.sttBackend,
     voiceSettings?.selectedMicId,
+    voiceSettings?.ttsVoice,
+    voiceSettings?.ttsRate,
+    voiceSettings?.ttsSystemVoiceURI,
     startEngine,
   ]);
 
   const handleVoiceToggle = useCallback(async () => {
+    await ensureVoiceReady();
     return toggleRecording();
-  }, [toggleRecording]);
+  }, [ensureVoiceReady, toggleRecording]);
 
   const handleVoiceShortcut = useCallback(async () => {
-    if (!voiceEnabled) return;
+    if (!voiceEnabled || !managerVisible) return;
     if (!isOpen) open();
     await handleVoiceToggle();
-  }, [voiceEnabled, isOpen, open, handleVoiceToggle]);
+  }, [voiceEnabled, managerVisible, isOpen, open, handleVoiceToggle]);
 
   useZedVoiceShortcut({ enabled: voiceEnabled && available, onToggle: handleVoiceShortcut });
 
@@ -658,6 +664,13 @@ export default function ZedAmbientOverlay({
       lastVoicedErrorRef.current = '';
       return;
     }
+    // Mic probe failures must not resurface the ambient pill while Zed is idle.
+    // (TTS errors are rarer on mount and still useful on the collapsed pill.)
+    if (errorText && !ttsError && !isOpen && !recording) {
+      hideStatus();
+      lastVoicedErrorRef.current = '';
+      return;
+    }
     const voiceError = errorText || ttsError;
     if (voiceError === lastVoicedErrorRef.current) return;
     lastVoicedErrorRef.current = voiceError;
@@ -668,7 +681,7 @@ export default function ZedAmbientOverlay({
       return;
     }
     showStatus(voiceError);
-  }, [clearStatusTimers, errorText, hideStatus, showStatus, ttsError]);
+  }, [clearStatusTimers, errorText, hideStatus, isOpen, recording, showStatus, ttsError]);
 
   const displayMessages = useMemo(
     () => (streamingMessage ? [...messages, streamingMessage] : messages),
@@ -706,18 +719,19 @@ export default function ZedAmbientOverlay({
   );
 
   const { showAura, showPill, collapsed, pillState } = useMemo(() => {
-    const _showAura = shouldShowZedAura(phase) || speaking || recording;
+    const _showAura = managerVisible && (shouldShowZedAura(phase) || speaking || recording);
     // Do not resurface the pill on Ctrl+R from persisted activityExpanded —
-    // only show for an explicit open or live activity.
+    // only show for an explicit open or live activity while Terminales is visible.
     const _showPill =
-      isOpen || isLoading || speaking || Boolean(statusLine) || Boolean(currentStep);
+      managerVisible &&
+      (isOpen || isLoading || speaking || Boolean(statusLine) || Boolean(currentStep));
     return {
       showAura: _showAura,
       showPill: _showPill,
       collapsed: !isOpen,
       pillState: isLoading ? 'executing' : speaking ? 'speaking' : recording ? 'listening' : 'idle',
     };
-  }, [phase, speaking, recording, isOpen, isLoading, statusLine, currentStep]);
+  }, [managerVisible, phase, speaking, recording, isOpen, isLoading, statusLine, currentStep]);
 
   const lastTurnTimestamp =
     displayAssistantMessage && typeof displayAssistantMessage.timestamp === 'string'
@@ -831,7 +845,10 @@ export default function ZedAmbientOverlay({
     [close, handleKeyDown, input, isLoading]
   );
 
-  const onOpenCollapsed = useCallback(() => open(), [open]);
+  const onOpenCollapsed = useCallback(() => {
+    if (!managerVisible) return;
+    open();
+  }, [managerVisible, open]);
   const onToggleActivity = useCallback(() => setActivityExpanded((v) => !v), []);
 
   const voiceButtonProps = useMemo(

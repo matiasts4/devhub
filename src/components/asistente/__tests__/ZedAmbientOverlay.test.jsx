@@ -69,14 +69,14 @@ function installDom() {
   return dom;
 }
 
-function renderOverlay() {
+function renderOverlay(props = {}) {
   const ZedAmbientOverlay = require('../ZedAmbientOverlay').default;
   const { createRoot } = require('react-dom/client');
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(React.createElement(ZedAmbientOverlay));
+    root.render(React.createElement(ZedAmbientOverlay, props));
   });
   return { container, root };
 }
@@ -271,9 +271,33 @@ describe('ZedAmbientOverlay', () => {
     act(() => root.unmount());
   });
 
-  test('shows voice capture error as an ephemeral status line', () => {
+  test('closes and hides chrome when Terminales manager is soft-mounted off-route', () => {
+    const close = jest.fn();
+    mockUseZedOverlay.mockReturnValue({
+      isOpen: true,
+      close,
+      open: jest.fn(),
+      toggle: jest.fn(),
+    });
+    mockUseZedChat.mockReturnValue(
+      defaultZedChatMock({
+        isLoading: true,
+        currentStep: { tool: 'open_terminal', label: 'Abrir', status: 'running' },
+      })
+    );
+
+    const { container, root } = renderOverlay({ managerVisible: false });
+
+    expect(close).toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="zed-ambient-pill"]')).toBeNull();
+    expect(container.querySelector('textarea')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  test('shows voice capture error on collapsed pill while recording', () => {
     mockUseVoiceCapture.mockReturnValue(
       defaultVoiceCaptureMock({
+        recording: true,
         enginePhase: 'error',
         errorText: 'Micrófono no detectado',
       })
@@ -282,6 +306,21 @@ describe('ZedAmbientOverlay', () => {
     const { container, root } = renderOverlay();
 
     expect(container.textContent).toContain('Micrófono no detectado');
+    act(() => root.unmount());
+  });
+
+  test('does not show mic permission errors while Zed is closed', () => {
+    mockUseVoiceCapture.mockReturnValue(
+      defaultVoiceCaptureMock({
+        enginePhase: 'error',
+        errorText: 'Permiso de micrófono denegado. Verificá los permisos del sistema.',
+      })
+    );
+
+    const { container, root } = renderOverlay();
+
+    expect(container.querySelector('[data-testid="zed-ambient-pill"]')).toBeNull();
+    expect(container.textContent).not.toContain('Permiso de micrófono denegado');
     act(() => root.unmount());
   });
 

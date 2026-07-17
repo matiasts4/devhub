@@ -67,6 +67,9 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
   const lastTranscriptRef = useRef('');
   const pendingSendRef = useRef(false);
   const sendTimerRef = useRef(null);
+  // Do not probe getUserMedia / permissions until the user engages voice —
+  // mount-time checks surface "mic denied" on every Terminales load.
+  const voiceEngagedRef = useRef(false);
 
   const engineReady = enginePhase === 'ready' || enginePhase === 'listening';
 
@@ -173,37 +176,13 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
       }
     }
 
-    async function checkMicAccess() {
-      if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
-      try {
-        const perm = await navigator.permissions?.query({ name: 'microphone' });
-        const state = perm?.state || 'prompt';
-        setMicPermission(state);
-        if (state === 'denied') {
-          setErrorText('Permiso de micrófono denegado. Verificá los permisos del sistema.');
-          setEnginePhase('error');
-          return;
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((track) => track.stop());
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        setAudioDevices(devices.filter((d) => d.kind === 'audioinput'));
-        setErrorText('');
-      } catch (err) {
-        setMicPermission('denied');
-        setErrorText('No se pudo acceder al micrófono. Verificá permisos y dispositivos.');
-        setEnginePhase('error');
-      }
-    }
-
     function handleDeviceChange() {
-      checkMicAccess();
+      if (voiceEngagedRef.current) void ensureMicAccessRef.current?.();
     }
 
     setup();
 
     if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
-      checkMicAccess();
       navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
     }
 
@@ -220,8 +199,39 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
     };
   }, [cancelPendingSend, flushVoiceSend, onFinalTranscript, onPartial, resetTranscript]);
 
+  const ensureMicAccess = useCallback(async () => {
+    voiceEngagedRef.current = true;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) return { ok: true };
+    try {
+      const perm = await navigator.permissions?.query({ name: 'microphone' });
+      const state = perm?.state || 'prompt';
+      setMicPermission(state);
+      if (state === 'denied') {
+        setErrorText('Permiso de micrófono denegado. Verificá los permisos del sistema.');
+        setEnginePhase('error');
+        return { ok: false, error: 'mic-denied' };
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setAudioDevices(devices.filter((d) => d.kind === 'audioinput'));
+      setErrorText('');
+      return { ok: true };
+    } catch {
+      setMicPermission('denied');
+      setErrorText('No se pudo acceder al micrófono. Verificá permisos y dispositivos.');
+      setEnginePhase('error');
+      return { ok: false, error: 'mic-unavailable' };
+    }
+  }, []);
+
+  const ensureMicAccessRef = useRef(ensureMicAccess);
+  ensureMicAccessRef.current = ensureMicAccess;
+
   const startEngine = useCallback(async () => {
     if (!tauriAvailable || bootingRef.current) return { ok: false };
+    const mic = await ensureMicAccess();
+    if (!mic.ok) return mic;
     bootingRef.current = true;
     setEnginePhase('preparing');
     setErrorText('');
@@ -233,7 +243,7 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
       return result;
     }
     return result;
-  }, [tauriAvailable]);
+  }, [ensureMicAccess, tauriAvailable]);
 
   const toggleRecording = useCallback(async () => {
     if (!tauriAvailable) {
@@ -246,6 +256,9 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
     if (enginePhase === 'preparing') {
       return { ok: false, error: 'Preparando micrófono, espera a que termine…' };
     }
+
+    const mic = await ensureMicAccess();
+    if (!mic.ok) return mic;
 
     cancelPendingSend();
     resetTranscript();
@@ -262,7 +275,7 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
       if (result.data) resetTranscript();
     }
     return result;
-  }, [cancelPendingSend, enginePhase, resetTranscript, tauriAvailable]);
+  }, [cancelPendingSend, enginePhase, ensureMicAccess, resetTranscript, tauriAvailable]);
 
   return {
     recording,
