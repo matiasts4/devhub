@@ -413,11 +413,62 @@ export function isForwardedTerminalWheelEvent(event) {
   return Boolean(event?.[TERMINAL_WHEEL_FORWARD_FLAG]);
 }
 
+/**
+ * True when xterm will convert wheel events into SGR 64/65.
+ * After panel deactivate we write DECSET mouse-off into the emulator; dispatchEvent
+ * still returns true but no SGR reaches the PTY — callers must fall back to inject.
+ * Unknown internals → false (prefer inject; never swallow the wheel).
+ */
+export function terminalHasActiveMouseReporting(term) {
+  try {
+    const modes = term?._core?.coreService?.decPrivateModes;
+    if (!modes) return false;
+    const tracking = modes.mouseTrackingMode;
+    if (typeof tracking === 'number') return tracking > 0;
+    if (typeof tracking === 'string') return tracking !== 'none' && tracking !== 'NONE';
+    if (typeof modes.isMouseTrackingActive === 'boolean') {
+      return modes.isMouseTrackingActive;
+    }
+  } catch {
+    // xterm private API may be mid-dispose
+  }
+  return false;
+}
+
+/**
+ * xterm only turns wheel into SGR while its textarea/element holds DOM focus.
+ * Zed overlay (and other modals) steal focus without clearing mouse modes —
+ * native forward would swallow the wheel with no PTY input.
+ */
+export function terminalHasDomFocus(
+  term,
+  { documentRef = typeof document !== 'undefined' ? document : null } = {}
+) {
+  if (!term || !documentRef) return false;
+  try {
+    const active = documentRef.activeElement;
+    if (!active) return false;
+    if (term.textarea && active === term.textarea) return true;
+    const root = term.element;
+    if (root && typeof root.contains === 'function' && root.contains(active)) return true;
+  } catch {
+    // terminal may be mid-dispose
+  }
+  return false;
+}
+
+/** True only when native wheel→SGR can actually reach the PTY. */
+export function terminalCanNativeWheelPassthrough(term, options) {
+  return terminalHasActiveMouseReporting(term) && terminalHasDomFocus(term, options);
+}
+
 /** Shell capture can starve xterm's wheel listener — forward explicitly for TUI passthrough. */
 export function forwardTerminalWheelToXterm(term, event) {
   const target = term?.element;
   if (!target || !event || typeof WheelEvent === 'undefined') return false;
   if (isForwardedTerminalWheelEvent(event)) return false;
+  // Mouse modes off or terminal unfocused (Zed modal) → xterm will not emit SGR.
+  if (!terminalCanNativeWheelPassthrough(term)) return false;
 
   const forwarded = new WheelEvent(event.type, {
     deltaX: event.deltaX,

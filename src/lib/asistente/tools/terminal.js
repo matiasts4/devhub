@@ -71,6 +71,16 @@ export const terminalTool = {
       description:
         'Required true to run commands that are not on the auto-allowlist (e.g. npm install). Destructive commands (rm, git reset --hard, sudo, etc.) are always blocked.',
     },
+    prompt: {
+      type: 'string',
+      description:
+        'Task text to paste into the agent TUI after it is ready (native paste). Prefer this over embedding text in command. Alias of bootstrap_input.',
+    },
+    bootstrap_input: {
+      type: 'string',
+      description:
+        'Reserved text pasted into the agent TUI after readiness (same as prompt). Not embedded in the launch command.',
+    },
   },
   async execute(params, context = {}) {
     const { name: requestedName, program, cwd, command, confirm } = params || {};
@@ -187,15 +197,16 @@ export const terminalTool = {
       result.program = normalizedProgram;
       result.note = `Will launch ${normalizedProgram} TUI in the visible panel.`;
     }
-    // Optional reserved text for agent TUIs that cannot take --prompt (e.g. Grok).
-    // Client may inject after the panel is ready.
-    const bootstrap =
-      typeof params?.bootstrap_input === 'string' && params.bootstrap_input.trim()
+    // Task text for native post-ready paste (never embedded in command_sent).
+    const bootstrapRaw =
+      (typeof params?.bootstrap_input === 'string' && params.bootstrap_input.trim()
         ? params.bootstrap_input
-        : null;
-    if (bootstrap) {
-      result.bootstrap_input = bootstrap.endsWith('\n') ? bootstrap : `${bootstrap}\n`;
-      result.note = `${result.note || ''} bootstrap_input reserved for post-open inject.`.trim();
+        : null) ||
+      (typeof params?.prompt === 'string' && params.prompt.trim() ? params.prompt : null);
+    if (bootstrapRaw) {
+      result.bootstrap_input = bootstrapRaw.endsWith('\n') ? bootstrapRaw : `${bootstrapRaw}\n`;
+      result.note =
+        `${result.note || ''} bootstrap_input reserved for native paste after TUI ready.`.trim();
     }
     return result;
   },

@@ -28,6 +28,7 @@ import { resolveTerminalTypography } from './terminal/terminalTypographyPreferen
 import useTerminalViewportPointer from './terminal/hooks/useTerminalViewportPointer';
 import useTerminalScrollPreserve from './terminal/hooks/useTerminalScrollPreserve';
 import useTerminalSearchAndZedInput from './terminal/hooks/useTerminalSearchAndZedInput';
+import useNativeTuiBootstrapPaste from './terminal/hooks/useNativeTuiBootstrapPaste';
 import useTerminalPanelActivationRecovery from './terminal/hooks/useTerminalPanelActivationRecovery';
 import useTerminalAutoReconnect from './terminal/hooks/useTerminalAutoReconnect';
 import useTerminalWindowEventRouter from './terminal/hooks/useTerminalWindowEventRouter';
@@ -602,6 +603,17 @@ export default function TerminalTTY({
   const { adjustFontSize } = useTerminalFontSize({ ctxRef: slice1CtxRef });
   const { handleViewportMouseDown } = useTerminalViewportPointer({ ctxRef: slice1CtxRef });
   useTerminalSearchAndZedInput({ ctxRef: slice1CtxRef });
+  useNativeTuiBootstrapPaste({
+    panelId: id,
+    initialCommand,
+    wsRef,
+    transportRef,
+    grokTuiReadyRef,
+    kimiReadyNotifiedRef,
+    tuiSessionActiveRef,
+    tuiSessionFooterConfirmedRef,
+    isGrokSessionRef,
+  });
   const {
     isConnected,
     showTerminalViewport,
@@ -1357,10 +1369,12 @@ export default function TerminalTTY({
     }
 
     const tuiActive = Boolean(tuiSessionActiveRef.current);
+    // Re-enable mouse immediately on tab/Zed reactivation. Defer only when a
+    // text selection is already active (handled inside the helper) — not on
+    // every activate, or wheel stays dead until mouseup / 10s safety timer.
     return prepareActiveTuiTerminalFocusRespectingSelection(term, {
       tuiSessionActive: tuiActive,
-      // Defer mouse-mode rebind until pointer up so mid-drag selection on activate works.
-      deferMouseUntilPointerUp: tuiActive,
+      deferMouseUntilPointerUp: false,
     });
   }, [clearTimers, isActivePanel, scheduleInactiveViewportRepaint]);
 
@@ -1635,6 +1649,12 @@ export default function TerminalTTY({
     initErrorRef,
     osResumeReconnectTimerRef,
     lastOsResumeReconnectAtRef,
+    // Wheel readiness restore after Zed/tab deactivate cleared mouse modes
+    initialCommand,
+    tuiSessionFooterConfirmedRef,
+    setNativeWheelPassthrough,
+    isGrokSessionRef,
+    grokTuiReadyRef,
   };
 
   slice3CtxRef.current = {

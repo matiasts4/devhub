@@ -445,6 +445,7 @@ export default function ZedAmbientOverlay({
     handleRejectApproval,
     quickSuggestions,
     messages,
+    restoredFromStorage,
     auditTrail,
     sendFromVoice,
     voiceSettings,
@@ -706,25 +707,37 @@ export default function ZedAmbientOverlay({
 
   const { showAura, showPill, collapsed, pillState } = useMemo(() => {
     const _showAura = shouldShowZedAura(phase) || speaking || recording;
+    // Do not resurface the pill on Ctrl+R from persisted activityExpanded —
+    // only show for an explicit open or live activity.
     const _showPill =
-      isOpen ||
-      isLoading ||
-      speaking ||
-      Boolean(statusLine) ||
-      activityExpanded ||
-      Boolean(currentStep);
+      isOpen || isLoading || speaking || Boolean(statusLine) || Boolean(currentStep);
     return {
       showAura: _showAura,
       showPill: _showPill,
       collapsed: !isOpen,
       pillState: isLoading ? 'executing' : speaking ? 'speaking' : recording ? 'listening' : 'idle',
     };
-  }, [phase, speaking, recording, isOpen, isLoading, statusLine, activityExpanded, currentStep]);
+  }, [phase, speaking, recording, isOpen, isLoading, statusLine, currentStep]);
 
   const lastTurnTimestamp =
     displayAssistantMessage && typeof displayAssistantMessage.timestamp === 'string'
       ? displayAssistantMessage.timestamp
       : null;
+
+  // Cold boot from sessionStorage: treat restored assistant turns as seen so
+  // status/TTS do not resurface the pill after Ctrl+R.
+  useLayoutEffect(() => {
+    if (!restoredFromStorage) return;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const ts = messages[i]?.timestamp;
+      if (messages[i]?.role === 'assistant' && typeof ts === 'string' && ts !== 'initial') {
+        lastStatusTurnRef.current = ts;
+        lastSpokenRef.current = ts;
+        break;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only bootstrap
+  }, [restoredFromStorage]);
 
   useEffect(() => {
     if (isLoading) {

@@ -196,4 +196,28 @@ describe('prepareActiveTuiTerminalFocusRespectingSelection', () => {
       TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
     ]);
   });
+
+  test('panel reactivate without defer enables mouse modes immediately', () => {
+    const writes = [];
+    const term = {
+      write: (seq) => writes.push(seq),
+      hasSelection: () => false,
+      getSelection: () => '',
+    };
+    const listeners = new Map();
+    const documentRef = {
+      addEventListener: (type, fn) => listeners.set(type, fn),
+      removeEventListener: (type) => listeners.delete(type),
+    };
+
+    prepareActiveTuiTerminalFocusRespectingSelection(
+      term,
+      { tuiSessionActive: true, deferMouseUntilPointerUp: false },
+      { documentRef }
+    );
+
+    expect(writes).toContain(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
+    expect(writes).toContain(TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+    expect(listeners.has('mouseup')).toBe(false);
+  });
 });

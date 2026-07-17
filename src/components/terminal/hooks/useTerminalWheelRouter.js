@@ -29,6 +29,24 @@ import {
   shouldUseTerminalScrollbackWheel,
 } from '@/components/terminal/TerminalTTY.helpers';
 
+/**
+ * True when document focus is inside the xterm host.
+ * When focus is on Zed's composer (or any non-terminal UI), native wheel
+ * passthrough can "succeed" at the xterm layer while the TUI ignores it —
+ * prefer direct PTY SGR inject instead.
+ */
+export function terminalElementHasDocumentFocus(
+  term,
+  doc = typeof document !== 'undefined' ? document : null
+) {
+  if (!doc) return true;
+  const el = term?.element;
+  if (!el) return false;
+  const active = doc.activeElement;
+  if (!active) return false;
+  return el === active || (typeof el.contains === 'function' && el.contains(active));
+}
+
 export function createTerminalWheelHandler({
   term,
   shell,
@@ -40,6 +58,7 @@ export function createTerminalWheelHandler({
   sendTerminalPasteInput: sendPaste = sendTerminalPasteInput,
   resolveTerminalCellFromPointer: resolveCell = resolveTerminalCellFromPointer,
   shouldRouteWheelToTranscript: routeToTranscript = shouldRouteWheelToTranscript,
+  terminalHasFocus = terminalElementHasDocumentFocus,
 }) {
   return function handleWheel(event) {
     if (isForwardedTerminalWheelEvent(event)) return;
@@ -90,6 +109,10 @@ export function createTerminalWheelHandler({
       return;
     }
 
+    // Native passthrough only when the terminal actually has document focus.
+    // Zed ambient modal focuses its textarea on open; xterm may still have mouse
+    // modes on, but OpenCode/Grok often ignore forwarded wheel while unfocused.
+    // Fall through to PTY SGR inject in that case (scroll keeps working).
     if (
       shouldPassthroughNativeTuiWheel({
         isGrokSession,
@@ -98,11 +121,12 @@ export function createTerminalWheelHandler({
         kimiTuiReady: lifecycle.kimiReadyNotifiedRef?.current,
         opencodeFooterConfirmed: lifecycle.tuiSessionFooterConfirmedRef?.current,
       }) &&
-      lifecycle.isActivePanelRef?.current
+      lifecycle.isActivePanelRef?.current &&
+      terminalHasFocus(activeTerm)
     ) {
-      // Only consume the event when xterm accepted the forward. Cold-start Grok
-      // often has ready=false (inject path) or missing term.element — fall through
-      // to synthetic SGR so the wheel is not swallowed with preventDefault alone.
+      // Only consume when xterm can emit SGR (mouse modes on). After panel hide
+      // mouse modes are cleared — dispatchEvent alone would swallow the wheel.
+      // Cold-start / missing term.element / mouse-off → fall through to inject.
       if (forwardTerminalWheelToXterm(activeTerm, event)) {
         event.preventDefault();
         event.stopPropagation();

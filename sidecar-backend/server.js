@@ -41,6 +41,7 @@ const {
   updateSessionModeFromInput,
 } = require('./sessionTransport');
 const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
+const { shouldRespawnShellAfterPtyExit } = require('../src/lib/terminal/ptyRespawnPolicy.cjs');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
 // Respeta DEVHUB_HOME cuando el wrapper / Tauri lo pasan (permite tests con home
@@ -117,68 +118,109 @@ function broadcastSessionPayload(session, payload) {
   }
 }
 
-function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
-  if (sessions.has(sessionId)) {
-    return sessions.get(sessionId);
-  }
-
-  const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
-  const effectiveCwd = cwdResolution.effectiveCwd;
+function spawnSidecarPtyProcess(session) {
   const spawnConfig = buildSidecarSpawnConfig({
-    sessionId,
-    cwd: effectiveCwd,
-    isSwarmRole: Boolean(swarmContext.isSwarmRole),
-    launchId: swarmContext.launchId || null,
-    roleKey: swarmContext.roleKey || null,
+    sessionId: session.id,
+    cwd: session.cwd,
+    isSwarmRole: Boolean(session.swarmContext?.isSwarmRole),
+    launchId: session.swarmContext?.launchId || null,
+    roleKey: session.swarmContext?.roleKey || null,
     env: process.env,
   });
   const shell =
     spawnConfig.shell ||
     (os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash');
+  const cols = session.termsize?.cols || 120;
+  const rows = session.termsize?.rows || 36;
   const ptyProcess = pty.spawn(shell, spawnConfig.args, {
     name: 'xterm-256color',
-    cols: 120,
-    rows: 36,
-    cwd: effectiveCwd,
+    cols,
+    rows,
+    cwd: session.cwd,
     env: spawnConfig.env,
   });
+  session.ptyProcess = ptyProcess;
+  session.termsize = { cols, rows };
+  session.tmuxSession = spawnConfig.tmuxSession || null;
+  return { ptyProcess, shell, spawnConfig };
+}
 
-  const session = {
-    id: sessionId,
-    ptyProcess,
-    history: [], // Buffer de los últimos 5000 chars para replay al reconectar
-    clients: new Set(),
-    cwd: effectiveCwd,
-    createdAt: Date.now(),
-    lastSeenAt: new Date().toISOString(),
-    lastActivityAt: Date.now(),
-    lastOutputAt: Date.now(),
-    mode: 'shell',
-    historyEnabled: true,
-    outputTail: '', // Cola siempre activa (aunque history se apague en modo TUI) para /sessions/:id/output
-    opencodeSessionId: null,
-    agentType: null,
-    agentSessionId: null,
-    agentTuiState: null,
-    agentTuiStateAt: null,
-    pendingInput: '',
-    title: null,
-    _oscTitleBuffer: '',
-    oscProgress: '',
-    _oscProgressBuffer: '',
-    agentStateMachine: null,
-    detectionBuffer: '',
-    tmuxSession: spawnConfig.tmuxSession || null,
-    swarmContext: {
-      isSwarmRole: Boolean(swarmContext.isSwarmRole),
-      launchId: swarmContext.launchId || null,
-      roleKey: swarmContext.roleKey || null,
-    },
-  };
+function resetSessionAfterTuiPtyDeath(session) {
+  session.mode = 'shell';
+  session.historyEnabled = true;
+  session.history = [];
+  session.outputTail = '';
+  session.pendingInput = '';
+  session.agentTuiState = null;
+  session.agentTuiStateAt = null;
+  // Keep opencodeSessionId for Relanzar; drop live TUI markers so a later
+  // intentional `exit` is not treated as another Ctrl+C TUI death.
+  session.agentType = null;
+  session.agentSessionId = null;
+}
 
-  ensureAgentDetectionSession(session);
+function finalizeSidecarSessionExit(session, exitCode, signal) {
+  console.log(`[Sidecar] Session ${session.id} exited.`, { exitCode, signal });
+  broadcastSessionPayload(session, {
+    type: 'exit',
+    exitCode: exitCode ?? 0,
+    signal: signal ?? null,
+  });
+  for (const client of session.clients) {
+    try {
+      client.close();
+    } catch (_) {}
+  }
+  sessions.delete(session.id);
+}
 
-  // Capturar output del PTY y enviarlo a todos los clientes conectados
+function tryRespawnShellAfterTuiExit(session, exitCode, signal) {
+  const should = shouldRespawnShellAfterPtyExit({
+    platform: os.platform(),
+    mode: session.mode,
+    agentType: session.agentType,
+    exitCode,
+    respawnCount: session._tuiCtrlCRespawnCount || 0,
+  });
+  if (!should) return false;
+
+  session._tuiCtrlCRespawnCount = (session._tuiCtrlCRespawnCount || 0) + 1;
+  console.log(`[Sidecar] Win Ctrl+C killed TUI PTY — respawning shell`, {
+    sessionId: session.id,
+    exitCode,
+    signal,
+    respawnCount: session._tuiCtrlCRespawnCount,
+  });
+
+  resetSessionAfterTuiPtyDeath(session);
+
+  let spawnResult;
+  try {
+    spawnResult = spawnSidecarPtyProcess(session);
+  } catch (err) {
+    console.error(`[Sidecar] TUI shell respawn FAILED`, {
+      sessionId: session.id,
+      error: err?.message,
+    });
+    return false;
+  }
+
+  attachSidecarPtyHandlers(session);
+  broadcastSessionPayload(session, {
+    type: 'output',
+    data: '\r\n\x1b[33m[DevHub]\x1b[0m La TUI cerró el PTY (Ctrl+C). Shell nueva lista.\r\n',
+  });
+  console.log('[Sidecar] TUI shell respawned', {
+    sessionId: session.id,
+    shell: spawnResult.shell,
+  });
+  return true;
+}
+
+function attachSidecarPtyHandlers(session) {
+  const sessionId = session.id;
+  const ptyProcess = session.ptyProcess;
+
   ptyProcess.on('data', (data) => {
     const now = Date.now();
     session.lastSeenAt = new Date().toISOString();
@@ -259,16 +301,63 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     broadcastSessionPayload(session, { type: 'output', data: filteredData });
   });
 
-  ptyProcess.on('exit', () => {
-    console.log(`[Sidecar] Session ${sessionId} exited.`);
-    broadcastSessionPayload(session, { type: 'exit', exitCode: 0, signal: null });
-    for (const client of session.clients) {
-      try {
-        client.close();
-      } catch (_) {}
+  ptyProcess.on('exit', (code, sig) => {
+    // node-pty may emit (exitCode, signal) or a single options object.
+    const exitCode = typeof code === 'object' && code !== null ? code.exitCode : code;
+    const signal = typeof code === 'object' && code !== null ? code.signal : sig;
+    if (tryRespawnShellAfterTuiExit(session, exitCode ?? 0, signal ?? null)) {
+      return;
     }
-    sessions.delete(sessionId);
+    finalizeSidecarSessionExit(session, exitCode ?? 0, signal ?? null);
   });
+}
+
+function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
+  if (sessions.has(sessionId)) {
+    return sessions.get(sessionId);
+  }
+
+  const cwdResolution = resolveSidecarSessionCwd(cwd || os.homedir());
+  const effectiveCwd = cwdResolution.effectiveCwd;
+
+  const session = {
+    id: sessionId,
+    ptyProcess: null,
+    history: [], // Buffer de los últimos 5000 chars para replay al reconectar
+    clients: new Set(),
+    cwd: effectiveCwd,
+    createdAt: Date.now(),
+    lastSeenAt: new Date().toISOString(),
+    lastActivityAt: Date.now(),
+    lastOutputAt: Date.now(),
+    mode: 'shell',
+    historyEnabled: true,
+    outputTail: '', // Cola siempre activa (aunque history se apague en modo TUI) para /sessions/:id/output
+    opencodeSessionId: null,
+    agentType: null,
+    agentSessionId: null,
+    agentTuiState: null,
+    agentTuiStateAt: null,
+    pendingInput: '',
+    title: null,
+    _oscTitleBuffer: '',
+    oscProgress: '',
+    _oscProgressBuffer: '',
+    agentStateMachine: null,
+    detectionBuffer: '',
+    tmuxSession: null,
+    termsize: { cols: 120, rows: 36 },
+    _tuiCtrlCRespawnCount: 0,
+    swarmContext: {
+      isSwarmRole: Boolean(swarmContext.isSwarmRole),
+      launchId: swarmContext.launchId || null,
+      roleKey: swarmContext.roleKey || null,
+    },
+  };
+
+  ensureAgentDetectionSession(session);
+  const { shell, spawnConfig } = spawnSidecarPtyProcess(session);
+  attachSidecarPtyHandlers(session);
 
   sessions.set(sessionId, session);
   console.log('[Sidecar] Nueva sesión PTY', {
@@ -493,7 +582,10 @@ wss.on('connection', (ws, req) => {
     const payload = parseClientMessage(msg, ws.__devhubTransport || 'raw');
 
     if (payload.type === 'resize' && payload.cols && payload.rows) {
-      session.ptyProcess.resize(payload.cols, payload.rows);
+      session.termsize = { cols: payload.cols, rows: payload.rows };
+      try {
+        session.ptyProcess.resize(payload.cols, payload.rows);
+      } catch (_) {}
       return;
     }
 

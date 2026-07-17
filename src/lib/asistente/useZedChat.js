@@ -71,14 +71,23 @@ export function useZedChat({
   getWorkspaceTerminals = null,
   streamEnabled = true,
 } = {}) {
-  const [messages, setMessages] = useState(() => [DEFAULT_ZED_GREETING]);
+  // Sync-read sessionStorage so Ctrl+R does not flash overlay chrome while an
+  // effect hydrates chat history (and never re-dispatch past tool results).
+  const [bootChat] = useState(() => {
+    const persisted = readPersistedZedMessages(sessionKey);
+    return {
+      restoredFromStorage: Boolean(persisted),
+      messages: persisted || [DEFAULT_ZED_GREETING],
+    };
+  });
+  const restoredFromStorage = bootChat.restoredFromStorage;
+  const [messages, setMessages] = useState(() => bootChat.messages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [abortController, setAbortController] = useState(null);
   const [currentStep, setCurrentStep] = useState(null);
-  const [activityExpanded, setActivityExpanded] = useState(() =>
-    Boolean(getZedPreference('activityExpanded', false))
-  );
+  // Always start collapsed after reload — preference only applies within a session.
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [auditTrail, setAuditTrail] = useState(() => readZedAuditTrail());
   const [metrics, setMetrics] = useState(() => getMetricsSummary());
@@ -92,7 +101,6 @@ export function useZedChat({
   const textareaRef = useRef(null);
   const dispatchedSessionIdsRef = useRef(new Set());
   const lastDispatchedTypeRef = useRef(null);
-  const hydratedOpenTerminalRef = useRef(null);
   const pendingPlanIdRef = useRef(null);
   const streamingIdRef = useRef(null);
 
@@ -806,7 +814,6 @@ export function useZedChat({
   }, []);
 
   useEffect(() => {
-    hydratedOpenTerminalRef.current = null;
     const persisted = readPersistedZedMessages(sessionKey);
     if (persisted) {
       setMessages(persisted);
@@ -847,21 +854,9 @@ export function useZedChat({
     dispatchZedAuraToolType(lastToolType);
   }, [lastToolType]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !sessionKey) return;
-    if (hydratedOpenTerminalRef.current === sessionKey) return;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg?.tool_results?.some((r) => r.tool === 'open_terminal')) {
-        dispatchAllZedToolResults(msg.tool_results, dispatchOpts());
-        hydratedOpenTerminalRef.current = sessionKey;
-        break;
-      }
-    }
-  }, [dispatchOpts, messages, sessionKey]);
-
   return {
     messages,
+    restoredFromStorage,
     input,
     setInput,
     isLoading,

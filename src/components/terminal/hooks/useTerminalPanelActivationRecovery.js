@@ -11,7 +11,46 @@ import {
   shouldRecoverPanelOnActivation,
   shouldSkipReactivateViewportOnPanelActivation,
   prepareActiveTuiTerminalFocus,
+  reconcileOpenCodeTuiWheelReadiness,
+  reconcileGrokTuiWheelReadiness,
 } from '@/components/terminal/TerminalTTY.helpers';
+
+function reconcileTuiWheelOnPanelActivate(c, term) {
+  const {
+    initialCommand,
+    tuiSessionActiveRef,
+    tuiSessionFooterConfirmedRef,
+    setNativeWheelPassthrough,
+    isGrokSessionRef,
+    grokTuiReadyRef,
+  } = c;
+  // Only force-ready when we already confirmed chrome before this hide.
+  // Cold first activate must still scan the buffer (do not mark footer early).
+  const assumeOpenCode = Boolean(tuiSessionFooterConfirmedRef?.current);
+  const assumeGrok = Boolean(grokTuiReadyRef?.current);
+  reconcileOpenCodeTuiWheelReadiness({
+    term,
+    initialCommand,
+    tuiSessionActiveRef,
+    tuiSessionFooterConfirmedRef,
+    setNativeWheelPassthrough,
+    assumeTuiIfReattached: assumeOpenCode,
+  });
+  reconcileGrokTuiWheelReadiness({
+    term,
+    initialCommand,
+    tuiSessionActiveRef,
+    isGrokSessionRef,
+    grokTuiReadyRef,
+    setNativeWheelPassthrough,
+    assumeTuiIfReattached: assumeGrok,
+  });
+  // Always rebind mouse after deactivate cleared DECSET — even if footer
+  // reconcile no-ops (already confirmed / buffer scan miss).
+  prepareActiveTuiTerminalFocus(term, {
+    tuiSessionActive: Boolean(tuiSessionActiveRef?.current || assumeOpenCode || assumeGrok),
+  });
+}
 
 export default function useTerminalPanelActivationRecovery({
   ctxRef,
@@ -63,9 +102,7 @@ export default function useTerminalPanelActivationRecovery({
         fitAddon: fitRef.current,
       })
     ) {
-      prepareActiveTuiTerminalFocus(term, {
-        tuiSessionActive: tuiSessionActiveRef.current,
-      });
+      reconcileTuiWheelOnPanelActivate(c, term);
       if (autoFocus) {
         term.focus?.();
       }
@@ -86,11 +123,10 @@ export default function useTerminalPanelActivationRecovery({
       void syncTerminalViewportOnWorkspaceShow('panel-activated-catchup', { clearAtlas: true });
     }
 
-    if (!autoFocus) return;
-    prepareActiveTuiTerminalFocus(term, {
-      tuiSessionActive: tuiSessionActiveRef.current,
-    });
-    term.focus?.();
+    reconcileTuiWheelOnPanelActivate(c, term);
+    if (autoFocus) {
+      term.focus?.();
+    }
   }, [
     ctxRef,
     autoFocus,

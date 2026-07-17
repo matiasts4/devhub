@@ -5,7 +5,6 @@
 
 import { useEffect, useRef } from 'react';
 import { subscribeZedWorkspaceAction } from '@/lib/asistente/zedWorkspaceActionEvent';
-import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
 import { applyZedOpenTerminalFocus } from '@/components/asistente/zedOpenTerminalFocus';
 import {
   isValidZedOpenTerminalEvent,
@@ -21,6 +20,7 @@ import {
   MAX_ZED_TERMINAL_PANELS,
   isWorkspaceTerminalPanelLimitReached,
 } from '@/lib/terminal/workspaceTerminalLimits';
+import { reserveNativeTuiBootstrap } from '@/lib/asistente/nativeTuiBootstrapRegistry';
 
 export default function useZedWorkspaceEvents({
   projectId,
@@ -47,7 +47,16 @@ export default function useZedWorkspaceEvents({
   useEffect(() => {
     const handleZedOpenTerminal = (e) => {
       if (!isValidZedOpenTerminalEvent(e.detail)) return;
-      const { command, cwd, session_id, focus = false, displayName: zedDisplayName } = e.detail;
+      const {
+        command,
+        cwd,
+        session_id,
+        focus = false,
+        displayName: zedDisplayName,
+        bootstrap_input: bootstrapInput,
+        bootstrap_timeout_ms: bootstrapTimeoutMs,
+        program: zedProgram,
+      } = e.detail || {};
       const explicitPanelId = resolveZedOpenTerminalPanelId(e.detail, null);
 
       const targetWsId = activeWsIdRef.current || activeWsId;
@@ -81,6 +90,19 @@ export default function useZedWorkspaceEvents({
         explicitPanelId
       );
       if (!newPanelId) return;
+
+      // Reserve native post-ready paste (human Ctrl+V path) for agent task text.
+      if (typeof bootstrapInput === 'string' && bootstrapInput.trim()) {
+        reserveNativeTuiBootstrap(newPanelId, {
+          text: bootstrapInput,
+          program: typeof zedProgram === 'string' ? zedProgram : null,
+          timeoutMs:
+            typeof bootstrapTimeoutMs === 'number' && Number.isFinite(bootstrapTimeoutMs)
+              ? bootstrapTimeoutMs
+              : null,
+          initialCommand: typeof command === 'string' ? command : null,
+        });
+      }
 
       const maximizedView = rightDockStateRef.current?.maximizedView ?? null;
       applyZedOpenTerminalFocus(
@@ -215,7 +237,28 @@ export default function useZedWorkspaceEvents({
       } else if (action === 'close_restore_settings') {
         setRestoreSettingsModal({ open: false });
       } else if (action === 'toggle_pizarra') {
-        dispatchZedOverlayToggle?.('pizarra');
+        // Was wrongly wired to Zed overlay toggle — that re-opened the
+        // assistant modal on Ctrl+R when chat history replayed tool results.
+        updateRightDockState((currentState) => {
+          const isCurrentlyPizarra =
+            currentState?.maximized && currentState?.maximizedView === 'pizarra';
+          if (isCurrentlyPizarra) {
+            return {
+              ...currentState,
+              maximized: false,
+              maximizedView: null,
+            };
+          }
+          const nextEpoch = (Number(currentState?.browserLayoutEpoch) || 0) + 1;
+          return {
+            ...currentState,
+            visible: true,
+            activeTab: 'pizarra',
+            maximized: true,
+            maximizedView: 'pizarra',
+            browserLayoutEpoch: nextEpoch,
+          };
+        });
       } else if (action === 'arrange_pizarra') {
         updateRightDockState((currentState) => {
           const isCurrentlyPizarra =

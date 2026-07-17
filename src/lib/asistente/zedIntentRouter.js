@@ -149,8 +149,8 @@ export function mergeOpenTerminalWithAgentLaunch(steps) {
           ...(next.input.cwd ? { cwd: next.input.cwd } : {}),
         },
       };
-      // Grok is interactive; keep reserved text for client inject after open.
-      if (program === 'grok' && prompt) {
+      // Interactive launch + reserved text for native client paste after TUI ready.
+      if (prompt) {
         merged.input.bootstrap_input = prompt.endsWith('\n') ? prompt : `${prompt}\n`;
       }
       out.push(merged);

@@ -85,7 +85,6 @@ import {
   buildTerminalSurfacesFromWindows,
   countPanelsInColumns,
 } from '@/lib/terminal/workspaceSurfaceReconcile';
-import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
 import { subscribeZedWorkspaceAction } from '@/lib/asistente/zedWorkspaceActionEvent';
 import {
   DropdownMenu,

@@ -2,6 +2,7 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import { createRequire } from 'module';
 import { spawnSync } from 'child_process';
 import cwdGuard from './cwdGuard.js';
 import { saveSessions, loadSessions, classifySession } from './sessionStore.js';
@@ -33,6 +34,9 @@ import {
   shouldSkipBackendRestore,
   unregisterOpencodeSession,
 } from './opencodeSessionRegistry.js';
+
+const requireCjs = createRequire(import.meta.url);
+const { shouldRespawnShellAfterPtyExit } = requireCjs('./ptyRespawnPolicy.cjs');
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -237,8 +241,6 @@ function resolveMcpServerPath() {
     path.join(process.cwd(), 'devhub-mcp', 'server.js')
   );
 }
-
-import { createRequire } from 'module';
 
 function loadTerminalDependency(globalKey, moduleName) {
   if (globalThis[globalKey]) {
@@ -1211,6 +1213,90 @@ function handleSessionOutput(sessions, session, chunk) {
   }
 }
 
+function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
+  const should = shouldRespawnShellAfterPtyExit({
+    platform: os.platform(),
+    mode: session.mode,
+    agentType: session.agentType,
+    exitCode,
+    respawnCount: session._tuiCtrlCRespawnCount || 0,
+  });
+  if (!should || !sessions.has(session.id)) return false;
+
+  session._tuiCtrlCRespawnCount = (session._tuiCtrlCRespawnCount || 0) + 1;
+  ttyLog('PTY_EXIT', `Win Ctrl+C killed TUI PTY — respawning shell`, {
+    id: session.id,
+    exitCode,
+    signal,
+    respawnCount: session._tuiCtrlCRespawnCount,
+  });
+
+  try {
+    teardownPanelSessionProcesses(session, { hasTmux });
+  } catch {
+    // ignore cleanup failures before respawn
+  }
+
+  // Fresh interactive shell — do not re-inject initialCommand (would relaunch TUI).
+  const { env, spawnArgs, tmuxEnabled, tmuxSession } = buildSessionSpawnConfig(
+    session.cwd,
+    session.id,
+    session.swarmId || session.swarmRole
+      ? {
+          isSwarmRole: Boolean(session.swarmRole),
+          launchId: session.swarmId || null,
+          roleKey: session.swarmRole?.roleKey || null,
+        }
+      : null,
+    null,
+    { isEngineV2: Boolean(session.isEngineV2) }
+  );
+
+  let terminal;
+  try {
+    terminal = pty.spawn(session.shell || resolveShell(), spawnArgs, {
+      name: 'xterm-256color',
+      cols: session.termsize?.cols || 120,
+      rows: session.termsize?.rows || 32,
+      cwd: session.cwd,
+      env,
+    });
+  } catch (spawnErr) {
+    ttyLog('PTY_EXIT', `TUI shell respawn FAILED`, {
+      id: session.id,
+      error: spawnErr?.message,
+    });
+    return false;
+  }
+
+  session.pty = terminal;
+  session.ptyPid = terminal.pid;
+  session.mode = 'shell';
+  session.historyEnabled = true;
+  session.history = '';
+  session.pendingInput = '';
+  session.agentType = null;
+  session.agentTuiState = null;
+  session.agentTuiStateAt = null;
+  session.tmuxEnabled = Boolean(tmuxEnabled);
+  session.tmuxSession = tmuxSession || null;
+  session._ptyWired = false;
+  session.lastActivityAt = Date.now();
+  session.lastOutputAt = Date.now();
+  session.lastSeenAt = new Date().toISOString();
+
+  wireSessionPty(session, sessions);
+  tryUpdatePtyIdentity(session);
+  saveSessions(sessions);
+
+  handleSessionOutput(
+    sessions,
+    session,
+    '\r\n\x1b[33m[DevHub]\x1b[0m La TUI cerró el PTY (Ctrl+C). Shell nueva lista.\r\n'
+  );
+  return true;
+}
+
 function handleSessionExit(sessions, session, exitCode, signal) {
   ttyLog('PTY_EXIT', `session exited`, {
     id: session.id,
@@ -1218,6 +1304,10 @@ function handleSessionExit(sessions, session, exitCode, signal) {
     signal,
     socketCount: session.sockets?.size ?? 0,
   });
+
+  if (tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal)) {
+    return;
+  }
 
   // PTY-4: Clear workspace PTY identity on PTY process exit
   tryClearPtyIdentity(session);

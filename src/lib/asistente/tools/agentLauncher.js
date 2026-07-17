@@ -41,20 +41,19 @@ export const launchAgentSessionTool = {
     }
 
     const prompt = typeof params?.prompt === 'string' ? params.prompt.trim() : '';
-    // Grok Build is interactive-first (no --prompt flag in buildAgentLaunchCommand).
-    // Allow empty prompt so "abre grok" / launch_agent_session:grok still works.
+    // All agent TUIs open interactively; task text is reserved for native paste
+    // after readiness (bootstrap_input). Grok allows empty prompt ("just open").
     if (!prompt && program !== 'grok') {
       return { error: 'missing_prompt', message: 'Se requiere un prompt detallado.' };
     }
 
     try {
-      // Grok: interactive TUI only. Other agents: pass prompt into the launch CLI.
-      const interactiveBootstrapPrompt = program === 'grok';
-      const command = buildAgentLaunchCommand(program, prompt || '', {
+      // Clean launch only — never embed the task in CLI --prompt / -p / chat -q.
+      const command = buildAgentLaunchCommand(program, '', {
         opencodeAgent: DEFAULT_OPENCODE_AGENT,
         cwd: params?.cwd || process.cwd(),
         disableTmuxWrap: true,
-        interactiveBootstrapPrompt,
+        interactiveBootstrapPrompt: true,
       });
 
       zedLog.info('TOOL', 'launch_agent_session', {
@@ -69,13 +68,13 @@ export const launchAgentSessionTool = {
         program,
         command_sent: command,
         displayName: params?.name || null,
-        hint: 'Agent session opens in a new workspace terminal panel.',
+        hint: 'Agent session opens in a new workspace terminal panel. Task text is pasted after TUI ready.',
       };
-      // Surface reserved prompt so the client/UI can inject after TUI ready (Grok).
-      if (program === 'grok' && prompt) {
+      // Reserved for client-side native paste (Ctrl+V semantics) after readiness.
+      if (prompt) {
         result.bootstrap_input = prompt.endsWith('\n') ? prompt : `${prompt}\n`;
         result.note =
-          'Grok TUI launched; bootstrap_input is the text to type after the session is ready.';
+          'Interactive TUI launched; bootstrap_input is pasted natively after the session is ready.';
       }
       return result;
     } catch (error) {

@@ -76,8 +76,17 @@ export function dispatchZedOpenTerminalFromToolResults(
       typeof parsed?.displayName === 'string' && parsed.displayName.length > 0
         ? parsed.displayName
         : null;
+    const bootstrapInput =
+      typeof parsed?.bootstrap_input === 'string' && parsed.bootstrap_input.trim()
+        ? parsed.bootstrap_input
+        : null;
+    const bootstrapTimeoutMs =
+      typeof parsed?.bootstrap_timeout_ms === 'number' &&
+      Number.isFinite(parsed.bootstrap_timeout_ms)
+        ? parsed.bootstrap_timeout_ms
+        : null;
     const dispatchKey = isWorkspaceOpen
-      ? `ws:${terminalId || ''}:${commandToRun || ''}:${parsed?.cwd || ''}:${displayName || ''}`
+      ? `ws:${terminalId || ''}:${commandToRun || ''}:${parsed?.cwd || ''}:${displayName || ''}:${bootstrapInput ? 'b' : ''}`
       : parsed.session_id;
 
     if (keys.has(dispatchKey)) {
@@ -95,8 +104,15 @@ export function dispatchZedOpenTerminalFromToolResults(
       displayName,
       program: typeof parsed?.program === 'string' ? parsed.program : null,
       focus: parsed.focus !== false,
+      ...(bootstrapInput ? { bootstrap_input: bootstrapInput } : {}),
+      ...(bootstrapTimeoutMs != null ? { bootstrap_timeout_ms: bootstrapTimeoutMs } : {}),
     });
-    zedClientDebug('client_dispatch', { tool: 'open_terminal', terminalId, displayName });
+    zedClientDebug('client_dispatch', {
+      tool: 'open_terminal',
+      terminalId,
+      displayName,
+      hasBootstrap: Boolean(bootstrapInput),
+    });
     count += 1;
   }
   return count;

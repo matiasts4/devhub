@@ -9,14 +9,25 @@ jest.mock('@/lib/agentLaunchCommand.shared.js', () => ({
 const { launchAgentSessionTool, launchSwarmTool } = require('../tools/agentLauncher');
 
 describe('agentLauncher tools', () => {
-  test('launch_agent_session builds command for opencode', async () => {
+  test('launch_agent_session builds interactive command + bootstrap_input for opencode', async () => {
+    const { buildAgentLaunchCommand } = require('@/lib/agentLaunchCommand.shared.js');
+    buildAgentLaunchCommand.mockImplementation((program, prompt, options = {}) => {
+      if (options.interactiveBootstrapPrompt) return `${program} --interactive`;
+      return `${program} --prompt "${prompt}"`;
+    });
     const result = await launchAgentSessionTool.execute({
       program: 'opencode',
       prompt: 'refactorizar el router',
     });
     expect(result.opened).toBe(true);
     expect(result.program).toBe('opencode');
-    expect(result.command_sent).toContain('refactorizar el router');
+    expect(result.command_sent).not.toContain('refactorizar el router');
+    expect(result.bootstrap_input).toMatch(/refactorizar el router/);
+    expect(buildAgentLaunchCommand).toHaveBeenCalledWith(
+      'opencode',
+      '',
+      expect.objectContaining({ interactiveBootstrapPrompt: true })
+    );
   });
 
   test('launch_agent_session rejects invalid program', async () => {
