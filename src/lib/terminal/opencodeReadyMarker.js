@@ -51,6 +51,25 @@ export function detectOpenCodeReadyFromTerminalBuffer(term) {
   }
 }
 
+/**
+ * Once OpenCode/Grok ready is confirmed, skip the per-flush ready hot path
+ * (footer re-detect + mouse DECSET rebind) — footer strings linger in the output tail.
+ */
+export function shouldSkipConfirmedTuiReadyHotPath({
+  footerConfirmed = false,
+  grokReady = false,
+} = {}) {
+  return Boolean(footerConfirmed || grokReady);
+}
+
+/** Session-scoped once-guard for swarm ready-marker FS writes. */
+export function claimSessionFlagOnce(session, flagKey) {
+  if (!session || typeof session !== 'object' || !flagKey) return false;
+  if (session[flagKey]) return false;
+  session[flagKey] = true;
+  return true;
+}
+
 /** OpenCode interactive TUI footer — input area is ready for paste. */
 export function detectOpenCodeTuiReady(text) {
   if (!text || typeof text !== 'string') return false;

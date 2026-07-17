@@ -145,6 +145,7 @@ describe('DELETE /api/terminal/session', () => {
     global.fetch = jest.fn();
     mockExistsSync.mockReturnValue(false);
     mockReadFileSync.mockReset();
+    mockReadProductionSidecarPort.mockResolvedValue(null);
     NextResponse.json.mockImplementation((body, init) => ({ body, status: init?.status || 200 }));
   });
 
@@ -153,7 +154,7 @@ describe('DELETE /api/terminal/session', () => {
     global.fetch = originalFetch;
   });
 
-  test('closes the requested PTY session by id in development', async () => {
+  test('closes the requested PTY session by id when no sidecar is present', async () => {
     const { DELETE } = require('./route.js');
     const request = {
       nextUrl: new URL('http://localhost/api/terminal/session?sessionId=p3'),
@@ -166,10 +167,29 @@ describe('DELETE /api/terminal/session', () => {
     expect(response.status).toBe(200);
   });
 
+  test('forwards close to sidecar in development when sidecar is running (tauri:dev)', async () => {
+    mockReadProductionSidecarPort.mockResolvedValue(4001);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' });
+
+    const { DELETE } = require('./route.js');
+    const request = {
+      nextUrl: new URL('http://localhost/api/terminal/session?sessionId=p3'),
+    };
+
+    const response = await DELETE(request);
+
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:4001/sessions/p3', {
+      method: 'DELETE',
+      cache: 'no-store',
+    });
+    expect(mockCloseSession).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+  });
+
   test('forwards explicit close requests to the production sidecar', async () => {
     process.env.NODE_ENV = 'production';
     mockReadProductionSidecarPort.mockResolvedValue(4000);
-    global.fetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' });
 
     const { DELETE } = require('./route.js');
     const request = {

@@ -700,12 +700,12 @@ describe('TerminalTTY â€” v2 engine path', () => {
     expect(terminalPanelBridge.stashTerminalPanelBridge).not.toHaveBeenCalled();
   });
 
-  it('does not register a devhub:terminal-survivor-recover listener when isEngineV2 is true', async () => {
+  it('registers a soft-only devhub:terminal-survivor-recover listener when isEngineV2 is true', async () => {
     const addSpy = jest.spyOn(window, 'addEventListener');
 
     await renderIntoDom(
       React.createElement(TerminalTTY, {
-        id: 'panel-v2-no-survivor-listener',
+        id: 'panel-v2-soft-survivor-listener',
         isEngineV2: true,
         isVisibleInLayout: true,
         isActivePanel: true,
@@ -721,7 +721,7 @@ describe('TerminalTTY â€” v2 engine path', () => {
     const survivorRegistrations = addSpy.mock.calls.filter(
       ([eventName]) => eventName === 'devhub:terminal-survivor-recover'
     );
-    expect(survivorRegistrations).toHaveLength(0);
+    expect(survivorRegistrations.length).toBeGreaterThan(0);
 
     addSpy.mockRestore();
   });
@@ -758,10 +758,10 @@ describe('TerminalTTY â€” v2 engine path', () => {
     expect(term.refresh).not.toHaveBeenCalled();
   });
 
-  it('ignores devhub:terminal-survivor-recover events when isEngineV2 is true', async () => {
+  it('soft-repaints on workspace-removed survivor-recover when isEngineV2 is true', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {
-        id: 'panel-v2-no-survivor',
+        id: 'panel-v2-soft-survivor',
         isEngineV2: true,
         isVisibleInLayout: true,
         isActivePanel: true,
@@ -780,14 +780,14 @@ describe('TerminalTTY â€” v2 engine path', () => {
     window.dispatchEvent(
       new window.CustomEvent('devhub:terminal-survivor-recover', {
         detail: {
-          panelIds: ['panel-v2-no-survivor'],
+          panelIds: ['panel-v2-soft-survivor'],
           reason: 'workspace-removed',
         },
       })
     );
     await flushTerminalEffects();
 
-    expect(term.refresh).not.toHaveBeenCalled();
+    expect(term.refresh).toHaveBeenCalled();
   });
 
   it('keeps legacy output handling working when isEngineV2 is false', async () => {

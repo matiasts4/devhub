@@ -12,7 +12,7 @@ import {
 } from './terminalNoiseFilter.js';
 import { buildTmuxPanelAttachCommand } from './tmuxStatusBar.js';
 import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
-import { detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
+import { claimSessionFlagOnce, detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { detectKimiTuiReady } from './kimiReadyMarker.js';
 import { detectGrokSessionFromOutput } from './grokReadyMarker.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
@@ -449,6 +449,7 @@ function resolveSessionTmuxName(session) {
 function maybeWriteOpencodeReadyMarker(session, payload = {}) {
   const tmuxSession = resolveSessionTmuxName(session);
   if (!tmuxSession) return;
+  if (!claimSessionFlagOnce(session, '_opencodeReadyMarkerWritten')) return;
   try {
     writeOpencodeReadyMarker(tmuxSession, {
       sessionId: session.id,
@@ -457,12 +458,15 @@ function maybeWriteOpencodeReadyMarker(session, payload = {}) {
     });
   } catch {
     // Best-effort marker for bootstrap polling in swarm wrappers.
+    if (session) session._opencodeReadyMarkerWritten = false;
   }
 }
 
 function maybeWriteAgentReadyMarker(session, program = 'opencode', payload = {}) {
   const tmuxSession = resolveSessionTmuxName(session);
   if (!tmuxSession) return;
+  const flagKey = `_agentReadyMarkerWritten:${program || 'opencode'}`;
+  if (!claimSessionFlagOnce(session, flagKey)) return;
   try {
     writeAgentReadyMarker(tmuxSession, program, {
       sessionId: session.id,
@@ -471,6 +475,7 @@ function maybeWriteAgentReadyMarker(session, program = 'opencode', payload = {})
     });
   } catch {
     // Best-effort marker for bootstrap polling in swarm wrappers.
+    if (session) session[flagKey] = false;
   }
 }
 

@@ -95,6 +95,36 @@ function killTmuxSessionBestEffort(sessionName) {
   } catch (_) {}
 }
 
+/** Kill shell + OpenCode/agent children. pty.kill() alone often leaves orphans on Windows. */
+function killProcessTreeBestEffort(pid) {
+  const normalized = Number(pid);
+  if (!Number.isInteger(normalized) || normalized <= 0) return false;
+  try {
+    if (os.platform() === 'win32') {
+      const result = spawnSync('taskkill', ['/T', '/F', '/PID', String(normalized)], {
+        stdio: 'ignore',
+        timeout: 5000,
+      });
+      return result.status === 0;
+    }
+    try {
+      process.kill(-normalized, 'SIGTERM');
+    } catch (_) {}
+    try {
+      process.kill(normalized, 'SIGTERM');
+    } catch (_) {}
+    try {
+      process.kill(-normalized, 'SIGKILL');
+    } catch (_) {}
+    try {
+      process.kill(normalized, 'SIGKILL');
+    } catch (_) {}
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function abortOpenCodeSessionBestEffort(opencodeSessionId) {
   const normalized = String(opencodeSessionId || '').trim();
   if (!normalized) return;
@@ -278,12 +308,13 @@ function attachSidecarPtyHandlers(session) {
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'opencode');
       }
-      if (session.tmuxSession) {
+      if (session.tmuxSession && !session._opencodeReadyMarkerWritten) {
         writeOpencodeReadyMarker(session.tmuxSession, {
           sessionId,
           opencodeSessionId: session.opencodeSessionId || null,
           reason: 'sidecar-tui-footer',
         });
+        session._opencodeReadyMarkerWritten = true;
       }
     }
 
@@ -497,12 +528,16 @@ app.delete('/sessions/:sessionId', (req, res) => {
   abortOpenCodeSessionBestEffort(session.opencodeSessionId);
   killTmuxSessionBestEffort(session.tmuxSession);
 
+  const ptyPid = session.ptyProcess?.pid || session.ptyPid || null;
+  killProcessTreeBestEffort(ptyPid);
   try {
-    session.ptyProcess.kill();
+    session.ptyProcess?.kill?.();
   } catch (_) {}
 
   sessions.delete(sessionId);
-  console.log(`[Sidecar] Session ${sessionId} terminada por cierre explícito.`);
+  console.log(`[Sidecar] Session ${sessionId} terminada por cierre explícito.`, {
+    ptyPid,
+  });
   return res.json({ success: true, sessionId });
 });
 
@@ -513,10 +548,11 @@ app.post('/shutdown', (_req, res) => {
 
   // Dar tiempo a que la respuesta HTTP llegue
   setTimeout(() => {
-    // Matar todos los PTY activos
+    // Matar todos los PTY activos (árbol completo — OpenCode/hijos en Windows)
     for (const [id, session] of sessions) {
+      killProcessTreeBestEffort(session.ptyProcess?.pid || session.ptyPid);
       try {
-        session.ptyProcess.kill();
+        session.ptyProcess?.kill?.();
       } catch (_) {}
       console.log(`[Sidecar] PTY ${id} terminado.`);
     }

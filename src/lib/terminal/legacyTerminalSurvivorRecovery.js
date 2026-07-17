@@ -1,9 +1,9 @@
 /**
- * legacyTerminalSurvivorRecovery.js — v1-only survivor recovery orchestration.
+ * legacyTerminalSurvivorRecovery.js — survivor recovery orchestration.
  *
- * terminal-engine-v2 panels use persistent PTY + rehydration/graveyard instead.
- * This module is the only place that schedules `devhub:terminal-survivor-recover`
- * bursts for legacy panels.
+ * Schedules `devhub:terminal-survivor-recover` bursts after workspace close.
+ * engine-v2 panels share the soft-repaint path (no GPU recycle); legacy panels
+ * keep the fuller churn recovery for window switches.
  */
 
 /**

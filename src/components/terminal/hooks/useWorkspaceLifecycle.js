@@ -10,7 +10,6 @@ import {
   createPanelWithDisplayNameFactory,
   createWindow,
   getPanelIdsFromColumns,
-  collectEngineV2PanelIds,
 } from '@/components/terminal/models/workspaceStateModel';
 import {
   readWorkspaceSwarmLaunchSummary,
@@ -28,10 +27,7 @@ import {
   resolveSwarmPanelStandbyFlag,
 } from '@/lib/terminal/swarmLaunchWorkspace';
 import { buildProvisionedWorkerKey } from '@/lib/operations/swarmLazySpawn';
-import {
-  filterLegacySurvivorPanelIds,
-  scheduleSurvivorRecoverAfterClose,
-} from '@/lib/terminal/legacyTerminalSurvivorRecovery';
+import { scheduleSurvivorRecoverAfterClose } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   PANEL_LIFECYCLE_REASONS,
   scheduleSwarmProjectionReadyBurst,
@@ -249,23 +245,25 @@ export default function useWorkspaceLifecycle({
     ) {
       swarmLaunchIds.push(workspaceSwarmSummary.launchId);
     }
+    // Best-effort swarm terminate — do not block tab removal on network/PTY kill.
     if (swarmLaunchIds.length > 0 && projectId) {
-      try {
-        const terminateResults = await terminateSwarmLaunchesForWorkspace({
-          workspace: workspaceToRemove,
-          projectId,
-          storage,
-          workspaces,
+      void terminateSwarmLaunchesForWorkspace({
+        workspace: workspaceToRemove,
+        projectId,
+        storage,
+        workspaces,
+      })
+        .then((terminateResults) => {
+          terminateResults.forEach((result) => {
+            if (result.ok) {
+              dispatchTerminatePanelCloseEvents(result.payload);
+            }
+          });
+          setSwarmControlSnapshot(null);
+        })
+        .catch(() => {
+          // Best-effort: workspace close still proceeds.
         });
-        terminateResults.forEach((result) => {
-          if (result.ok) {
-            dispatchTerminatePanelCloseEvents(result.payload);
-          }
-        });
-        setSwarmControlSnapshot(null);
-      } catch {
-        // Best-effort: workspace close still proceeds.
-      }
     }
 
     const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== idToRemove);
@@ -280,7 +278,7 @@ export default function useWorkspaceLifecycle({
       return getPanelIdsFromColumns(activeWindow?.columns || ws.columns || []);
     });
 
-    // TIC-1: Clean devhub_agent_runs BEFORE anything else
+    // TIC-1: Clean devhub_agent_runs BEFORE React state removal
     // This prevents stale identity bleed into new workspaces created before React state removal
     const panelIdsToClean = getAllPanelIds(workspaceToRemove.columns);
     const activeWsWillChange = activeWsId === idToRemove;
@@ -298,14 +296,11 @@ export default function useWorkspaceLifecycle({
       // Ignore localStorage failures — cleanup is best-effort
     }
 
-    await closeTerminalSessions(panelIdsToClean);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await closeWorkspaceBrowserWindow(idToRemove);
-
     // Purge dock / browser / pizarra keys so a later workspace reusing this
     // sequential id cannot resurrect old dock mode or browser URL.
     clearWorkspaceScopedStorage(storage, projectId, idToRemove);
 
+    // Optimistic UI: drop the tab immediately; PTY DELETE / browser close run in background.
     setWorkspaces((prev) => {
       const newWs = prev.filter((w) => w.id !== idToRemove);
       if (newWs.length === 0) return prev;
@@ -347,33 +342,17 @@ export default function useWorkspaceLifecycle({
       window.setTimeout(() => panelsClosingRef.current.delete(panelId), 2000);
     });
 
-    const legacySurvivorPanelIds = filterLegacySurvivorPanelIds(
-      survivorPanelIds,
-      collectEngineV2PanelIds(remainingWorkspaces, workspaceWindows, activeWindowIds)
-    );
-
-    if (typeof window !== 'undefined' && legacySurvivorPanelIds.length > 0) {
-      // Closing the ACTIVE workspace lands the user on another workspace — that
-      // landing IS a workspace switch, so reuse the same WORKSPACE_SWITCH lifecycle
-      // burst a normal tab switch uses (handleLayoutSettled isWorkspaceSwitch branch
-      // → syncTerminalViewportOnWorkspaceShow + scheduleBoundedForceRepaint retry).
-      // Without this dispatch xterm destination panels relied solely on the
-      // layout-show useLayoutEffect's false→true repaint, which races the async GPU
-      // renderer reattach and leaves the destination black until a manual resize.
-      // The burst's raf/delay phases fire after re-render (once isVisibleInLayout is
-      // true) and retry the repaint until the renderer is ready. fitTerminalViewport
-      // is a no-op on parked (unchanged) containers, so there is no refit/flash/SIGWINCH
-      // on survivors. notifyNative=false on close-active because the activeWsId effect
-      // already dispatches terminal-layout-settled; a second dispatch would double-sync.
-      // terminal-engine-v2 panels skip survivor recovery — they keep the PTY alive
-      // and rehydrate from the ring buffer / graveyard instead.
+    if (typeof window !== 'undefined' && survivorPanelIds.length > 0) {
+      // Soft-repaint all survivors (incl. engine-v2). Closing the ACTIVE workspace
+      // lands on another workspace — reuse WORKSPACE_SWITCH; peer close uses
+      // WORKSPACE_REMOVED soft reveal (no GPU recycle — Option B keep-alive).
       const lifecycleReason = activeWsWillChange
         ? PANEL_LIFECYCLE_REASONS.WORKSPACE_SWITCH
         : PANEL_LIFECYCLE_REASONS.WORKSPACE_REMOVED;
       const lifecycleOpts = activeWsWillChange ? { notifyNative: false } : undefined;
       workspaceCloseRecoverCleanupRef.current?.();
       workspaceCloseRecoverCleanupRef.current = scheduleSurvivorRecoverAfterClose({
-        panelIds: legacySurvivorPanelIds,
+        panelIds: survivorPanelIds,
         workspaceId: nextActiveWsId,
         reason: lifecycleReason,
         onLifecycleSync: () =>
@@ -387,6 +366,9 @@ export default function useWorkspaceLifecycle({
     } else if (!activeWsWillChange && typeof window !== 'undefined') {
       notifyNativeLayoutSettled('workspace-removed');
     }
+
+    void closeTerminalSessions(panelIdsToClean);
+    void closeWorkspaceBrowserWindow(idToRemove);
   };
 
   const handleApplyGrid = (numCols, numRows) => {

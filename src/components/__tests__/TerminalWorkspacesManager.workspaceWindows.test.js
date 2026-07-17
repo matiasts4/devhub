@@ -643,9 +643,9 @@ describe('TerminalWorkspacesManager workspace tab switching', () => {
     expect(ws1CloseBtn).not.toBeNull();
     await click(ws1CloseBtn);
 
-    // removeWorkspace awaits a 200ms settle timer before the state setters + burst
-    // dispatch; flushEffects only drains microtasks, so wait past the timer then flush.
-    await new Promise((resolve) => setTimeout(resolve, 260));
+    // Optimistic close updates React state immediately; survivor burst uses double-rAF.
+    await flushEffects();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await flushEffects();
 
     const switchEvents = layoutSettledEvents

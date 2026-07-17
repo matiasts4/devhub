@@ -8,6 +8,8 @@ const {
   isOpenCodeLaunchCommand,
   resolveOpencodeReadyMarkerPath,
   resolveAgentReadyMarkerPath,
+  shouldSkipConfirmedTuiReadyHotPath,
+  claimSessionFlagOnce,
 } = require('../opencodeReadyMarker.js');
 const {
   writeOpencodeReadyMarker,
@@ -49,6 +51,19 @@ describe('opencodeReadyMarker', () => {
       detectOpenCodeTuiReady('⊙ 6 MCP /status    1.16.2\nMiniMax Token Plan (minimax.io)')
     ).toBe(true);
     expect(detectOpenCodeTuiReady('booting opencode')).toBe(false);
+  });
+
+  test('shouldSkipConfirmedTuiReadyHotPath is one-shot after footer or grok ready', () => {
+    expect(shouldSkipConfirmedTuiReadyHotPath({})).toBe(false);
+    expect(shouldSkipConfirmedTuiReadyHotPath({ footerConfirmed: true })).toBe(true);
+    expect(shouldSkipConfirmedTuiReadyHotPath({ grokReady: true })).toBe(true);
+  });
+
+  test('claimSessionFlagOnce writes marker only on first claim', () => {
+    const session = {};
+    expect(claimSessionFlagOnce(session, '_opencodeReadyMarkerWritten')).toBe(true);
+    expect(claimSessionFlagOnce(session, '_opencodeReadyMarkerWritten')).toBe(false);
+    expect(session._opencodeReadyMarkerWritten).toBe(true);
   });
 
   test('writeOpencodeReadyMarker writes generic and legacy markers', () => {

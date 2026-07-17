@@ -2,7 +2,7 @@
  * useTerminalLayoutChurnRecovery — legacy survivor + layout-settled churn recovery.
  * Split from TerminalTTY.jsx (terminal-decompose Slice B).
  */
-/* eslint-disable no-unused-vars -- ctxRef bag destructure */
+
 import { useEffect, useRef } from 'react';
 import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import { isKimiTuiLive } from '@/lib/terminal/kimiReadyMarker';
@@ -17,6 +17,7 @@ import {
   forceTerminalViewportRepaint,
   stabilizeTerminalRenderer,
   nudgeTerminalPtyResize,
+  shouldForcePtyNudgeOnSurvivorSoftReveal,
   needsGpuRendererReattach,
   shouldClearGpuAtlasOnWorkspaceShow,
   isWorkspaceCloseRecoverReason,
@@ -31,14 +32,105 @@ function readLayoutChurnCtx(ctxRef) {
   return c;
 }
 
+/**
+ * Soft recover for a visible survivor after peer workspace close / close-landing.
+ * Empty shells: fit + refresh. Live OpenCode/Grok: no fit (corrupts alt-screen),
+ * refresh + forced SIGWINCH; WebGL context-loss triggers dispose+reattach.
+ */
+export function softRevealVisibleSurvivor(c, diagnosticReason) {
+  if (!c) return;
+  const {
+    termRef,
+    containerRef,
+    fitRef,
+    wsRef,
+    lastPtySizeRef,
+    fitTerminalViewport: fitFn = fitTerminalViewport,
+    stabilizeTerminalRenderer: stabilizeFn = stabilizeTerminalRenderer,
+    nudgeTerminalPtyResize: nudgeFn = nudgeTerminalPtyResize,
+    coalescedForceRepaint,
+    logViewportDiagnostic,
+    tuiSessionActiveRef,
+    initialCommand,
+    kimiReadyNotifiedRef,
+    hasConnectedOnceRef,
+    windowSwitchTuiRecoverAtRef,
+    operationalRendererModeRef,
+    webglAddonRef,
+    disposeWebglAddonForContextLoss,
+    scheduleWorkspaceShowRecovery,
+  } = c;
+  if (!termRef?.current || !containerRef?.current) return;
+
+  const tuiNeedsPtyNudge = shouldForcePtyNudgeOnSurvivorSoftReveal({
+    tuiSessionActive: Boolean(tuiSessionActiveRef?.current),
+    hasSocket: Boolean(wsRef?.current),
+    kimiLive: isKimiTuiLive({
+      initialCommand,
+      kimiReady: kimiReadyNotifiedRef?.current,
+      tuiSessionActive: tuiSessionActiveRef?.current,
+      hasConnectedOnce: hasConnectedOnceRef?.current,
+    }),
+  });
+
+  if (
+    shouldAttachWebglRenderer({
+      operationalRendererMode: operationalRendererModeRef?.current,
+    }) &&
+    isWebglAddonContextLost(webglAddonRef?.current)
+  ) {
+    logViewportDiagnostic?.(`${diagnosticReason}-webgl-context-lost`);
+    disposeWebglAddonForContextLoss?.(`${diagnosticReason}-webgl-context-lost`);
+    // Reattach async; staggered survivor-recover bursts will soft-reveal again.
+    scheduleWorkspaceShowRecovery?.(WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON);
+  }
+
+  logViewportDiagnostic?.(diagnosticReason);
+  // Skip fit for live TUIs — refitting corrupts alternate-screen Ink layouts.
+  if (!tuiNeedsPtyNudge && fitRef?.current && typeof fitFn === 'function') {
+    fitFn({
+      container: containerRef.current,
+      fitAddon: fitRef.current,
+      term: termRef.current,
+      socket: wsRef.current,
+      clearAtlas: false,
+      lastPtySizeRef: lastPtySizeRef?.current,
+      skipPtyNotify: true,
+    });
+  }
+  if (typeof stabilizeFn === 'function') {
+    stabilizeFn(termRef.current, { clearAtlas: false });
+  }
+  refreshTerminalViewport(termRef.current);
+  if (isTerminalRendererReady(termRef.current) && typeof coalescedForceRepaint === 'function') {
+    coalescedForceRepaint(termRef.current, { reason: diagnosticReason });
+  }
+  if (tuiNeedsPtyNudge) {
+    const now = performance.now();
+    const elapsed = now - (windowSwitchTuiRecoverAtRef?.current || 0);
+    if (elapsed < 80) {
+      logViewportDiagnostic?.(`${diagnosticReason}-tui-nudge-coalesced`, { elapsed });
+    } else {
+      if (windowSwitchTuiRecoverAtRef) windowSwitchTuiRecoverAtRef.current = now;
+      if (isTerminalRendererReady(termRef.current)) {
+        forceTerminalViewportRepaint(termRef.current);
+      }
+      if (typeof nudgeFn === 'function') {
+        nudgeFn({
+          term: termRef.current,
+          socket: wsRef.current,
+          lastPtySizeRef: lastPtySizeRef?.current,
+          force: true,
+        });
+      }
+    }
+  }
+}
+
 export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
   const layoutSettleBurstCleanupRef = useRef(null);
 
   useEffect(() => {
-    if (!usesLegacyTerminalSurvivorRecovery(isEngineV2)) {
-      return undefined;
-    }
-
     const handleSurvivorRecover = (event) => {
       const c = readLayoutChurnCtx(ctxRef);
       if (!c) return;
@@ -61,20 +153,15 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         kimiReadyNotifiedRef,
         hasConnectedOnceRef,
         windowSwitchTuiRecoverAtRef,
-        fitTerminalViewport,
+        fitTerminalViewport: fitFn = fitTerminalViewport,
         lastPtySizeRef,
-        stabilizeTerminalRenderer,
-        refreshTerminalViewport,
-        isTerminalRendererReady,
+        stabilizeTerminalRenderer: stabilizeFn = stabilizeTerminalRenderer,
         coalescedForceRepaint,
-        nudgeTerminalPtyResize,
+        nudgeTerminalPtyResize: nudgeFn = nudgeTerminalPtyResize,
         canvasAddonRef,
         pendingWebglRecoveryRef,
         webglReleasedOnLayoutHideRef,
         canvasReleasedOnLayoutHideRef,
-        survivorGpuRecycleAtRef,
-        releaseWebglAddonForInactivePanel,
-        releaseCanvasAddon,
         scheduleWorkspaceShowRecovery,
       } = c;
       if (isDisposingRef.current) return;
@@ -89,14 +176,33 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       }
 
       const reason = event?.detail?.reason || '';
-      const isWorkspaceRemove = String(reason).includes('workspace-removed');
-      const isWorkspaceWindowSwitch = String(reason).includes('workspace-window-switch');
+      const reasonStr = String(reason);
+      const isWorkspaceRemove = reasonStr.includes('workspace-removed');
+      const isWorkspaceWindowSwitch = reasonStr.includes('workspace-window-switch');
+      const isWorkspaceTabSwitch =
+        reasonStr.includes('workspace-switch') && !reasonStr.includes('window-switch');
+
+      // Peer workspace close / close-active landing: soft reveal (TUI + SIGWINCH nudge).
+      // Releasing WebGL here left Option B survivors black until a manual tab switch.
+      // Empty shells are fine with refresh; OpenCode only blacks when this workspace
+      // is the visible landing target (opacity-0 parked TUIs defer to show edge).
+      if (isWorkspaceRemove) {
+        softRevealVisibleSurvivor(c, 'survivor-workspace-removed-soft');
+        return;
+      }
+      if (isWorkspaceTabSwitch) {
+        softRevealVisibleSurvivor(c, 'survivor-workspace-switch-soft');
+        return;
+      }
+      if (!usesLegacyTerminalSurvivorRecovery(isEngineV2)) {
+        return;
+      }
+
       // Window/workspace switch survivors can have a WebGL addon that is still
       // referenced but whose context was silently lost while the panel was parked.
       // Use the same disposal pattern as window.focus/visibilitychange/pageshow so
       // the recovery path reattaches the renderer instead of bailing out.
       if (
-        !isWorkspaceRemove &&
         shouldAttachWebglRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
         }) &&
@@ -135,7 +241,7 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         } else {
           windowSwitchTuiRecoverAtRef.current = now;
           logViewportDiagnostic('workspace-window-switch-tui-recover');
-          fitTerminalViewport({
+          fitFn({
             container: containerRef.current,
             fitAddon: fitRef.current,
             term: termRef.current,
@@ -144,14 +250,14 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
             lastPtySizeRef: lastPtySizeRef.current,
             skipPtyNotify: true,
           });
-          stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+          stabilizeFn(termRef.current, { clearAtlas: false });
           refreshTerminalViewport(termRef.current);
           if (isTerminalRendererReady(termRef.current)) {
             coalescedForceRepaint(termRef.current, {
               reason: 'survivor-window-switch-tui',
             });
           }
-          nudgeTerminalPtyResize({
+          nudgeFn({
             term: termRef.current,
             socket: wsRef.current,
             lastPtySizeRef: lastPtySizeRef.current,
@@ -168,27 +274,13 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         !pendingWebglRecoveryRef.current &&
         !webglReleasedOnLayoutHideRef.current &&
         !canvasReleasedOnLayoutHideRef.current;
-      if (!isWorkspaceRemove && gpuStillAttached && noGpuRecoveryPending) {
+      if (gpuStillAttached && noGpuRecoveryPending) {
         // layout-show soft reveal owns tab/window park when GPU stayed attached.
         return;
       }
-      // Workspace/window switches keep terminals mounted and the GPU addon attached.
-      // Only a real workspace removal needs the costly GPU recycle + reattach cycle.
-      const now = Date.now();
-      if (isWorkspaceRemove && now - survivorGpuRecycleAtRef.current > 1500) {
-        survivorGpuRecycleAtRef.current = now;
-        if (webglAddonRef.current) {
-          releaseWebglAddonForInactivePanel('survivor-recover-webgl');
-        } else if (canvasAddonRef.current) {
-          releaseCanvasAddon('survivor-recover-canvas');
-        }
-        needsViewportSyncOnShowRef.current = true;
-      }
-      const recoverReason = isWorkspaceRemove
+      const recoverReason = isWorkspaceWindowSwitch
         ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON
-        : isWorkspaceWindowSwitch
-          ? WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON
-          : 'workspace-show-layout';
+        : 'workspace-show-layout';
       scheduleWorkspaceShowRecovery(recoverReason);
     };
 
@@ -224,7 +316,10 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         clearAtlas: false,
       });
     };
-    window.addEventListener('devhub:terminal-window-visible', handleWindowVisible);
+    // Legacy-only window-visible path; v2 uses soft survivor-recover above.
+    if (usesLegacyTerminalSurvivorRecovery(isEngineV2)) {
+      window.addEventListener('devhub:terminal-window-visible', handleWindowVisible);
+    }
 
     return () => {
       window.removeEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
@@ -619,12 +714,18 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       if (isWorkspaceCloseRecover) {
         const isWorkspaceRemove = String(reason).includes('workspace-removed');
         const isWindowSwitch = String(reason).includes('workspace-window');
+        // Peer close while staying on this workspace (e.g. OpenCode visible): soft+TUI
+        // path owns recovery. scheduleWorkspaceShowRecovery fits without SIGWINCH and
+        // races survivor-recover — intermittent black on live alternate-screen TUIs.
+        if (isWorkspaceRemove) {
+          softRevealVisibleSurvivor(c, 'layout-settled-workspace-removed-soft');
+          return;
+        }
         // Window/workspace switch survivors can have a WebGL addon that is still
         // referenced but whose context was silently lost while the panel was parked.
         // Use the same disposal pattern as window.focus/visibilitychange/pageshow so
         // the recovery path reattaches the renderer instead of bailing out.
         if (
-          !isWorkspaceRemove &&
           shouldAttachWebglRenderer({
             operationalRendererMode: operationalRendererModeRef.current,
           }) &&
@@ -683,11 +784,10 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
           !canvasReleasedOnLayoutHideRef.current &&
           !webglReleasedOnLayoutHideRef.current;
         // Option B: tab/window switch with live GPU — layout-show soft reveal already repainted.
-        if (!isWorkspaceRemove && gpuStillAttached && noGpuRecoveryPending) {
+        if (gpuStillAttached && noGpuRecoveryPending) {
           logViewportDiagnostic(`${reason}-survivor-skipped-gpu-attached`);
           return;
         }
-        // Workspace close may dispose peer GPU contexts after the first pass — keep survivor path.
         scheduleWorkspaceShowRecovery(WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON);
         return;
       }

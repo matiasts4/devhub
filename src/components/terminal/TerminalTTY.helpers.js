@@ -1953,6 +1953,18 @@ export function chunkTerminalOutputForCatchup(
 }
 
 /** Nudge PTY dimensions so TUIs redraw after a layout-hidden catch-up flush. */
+/**
+ * Peer-workspace close soft reveal: empty shells need only refresh; live Ink TUIs
+ * need a forced PTY SIGWINCH so alternate-screen (OpenCode/Grok) repaints.
+ */
+export function shouldForcePtyNudgeOnSurvivorSoftReveal({
+  tuiSessionActive = false,
+  kimiLive = false,
+  hasSocket = false,
+} = {}) {
+  return Boolean(tuiSessionActive && hasSocket && !kimiLive);
+}
+
 export function nudgeTerminalPtyResize({
   term,
   socket,

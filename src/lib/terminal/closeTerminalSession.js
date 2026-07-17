@@ -3,6 +3,13 @@ async function readProductionSidecarPortDefault() {
   return readProductionSidecarPort();
 }
 
+/**
+ * Close a terminal PTY session.
+ *
+ * Prefer the sidecar whenever it is reachable (tauri:dev + production). In those
+ * modes the live OpenCode/shell processes live in the sidecar — deleting only the
+ * in-process ttyServer map leaves orphans and RAM unchanged.
+ */
 export async function closeTerminalSessionById(
   sessionId,
   {
@@ -18,14 +25,8 @@ export async function closeTerminalSessionById(
     throw new Error('sessionId required');
   }
 
-  if (nodeEnv === 'production') {
-    const sidecarPort = await readProductionSidecarPortImpl();
-    if (!sidecarPort) {
-      const error = new Error('Servidor terminal (sidecar) no encontrado');
-      error.status = 503;
-      throw error;
-    }
-
+  const sidecarPort = await readProductionSidecarPortImpl();
+  if (sidecarPort) {
     const response = await fetchImpl(
       `http://127.0.0.1:${sidecarPort}/sessions/${encodeURIComponent(normalizedSessionId)}`,
       {
@@ -47,6 +48,13 @@ export async function closeTerminalSessionById(
     }
 
     return { success: true, sessionId: normalizedSessionId };
+  }
+
+  // Pure Next.js / tests without a sidecar: close the in-process ttyServer session.
+  if (nodeEnv === 'production') {
+    const error = new Error('Servidor terminal (sidecar) no encontrado');
+    error.status = 503;
+    throw error;
   }
 
   const closeSessionFn =

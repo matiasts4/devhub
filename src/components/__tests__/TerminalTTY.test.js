@@ -145,6 +145,7 @@ const {
   terminalBufferHasRenderableContent,
   chunkTerminalOutputForCatchup,
   nudgeTerminalPtyResize,
+  shouldForcePtyNudgeOnSurvivorSoftReveal,
   shouldClearGpuAtlasOnWorkspaceShow,
   shouldClearAtlasForSplitCanvas,
   shouldBlockLateInitialCommandSend,
@@ -1272,6 +1273,30 @@ describe('hidden terminal output buffer helpers', () => {
     );
     expect(term.resize).not.toHaveBeenCalled();
     expect(sends).toHaveLength(0);
+  });
+
+  test('shouldForcePtyNudgeOnSurvivorSoftReveal only for live non-kimi TUIs with a socket', () => {
+    expect(
+      shouldForcePtyNudgeOnSurvivorSoftReveal({
+        tuiSessionActive: true,
+        hasSocket: true,
+        kimiLive: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldForcePtyNudgeOnSurvivorSoftReveal({
+        tuiSessionActive: false,
+        hasSocket: true,
+        kimiLive: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldForcePtyNudgeOnSurvivorSoftReveal({
+        tuiSessionActive: true,
+        hasSocket: true,
+        kimiLive: true,
+      })
+    ).toBe(false);
   });
 
   test('nudgeTerminalPtyResize can force an unchanged-dimension nudge', () => {

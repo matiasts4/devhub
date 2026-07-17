@@ -24,6 +24,7 @@ import { setPanelSemanticState } from '@/components/terminal/utils/panelSemantic
 import {
   detectOpenCodeTuiReady,
   isOpenCodeLaunchCommand,
+  shouldSkipConfirmedTuiReadyHotPath,
 } from '@/lib/terminal/opencodeReadyMarker';
 import {
   reconcileGrokTuiWheelReadiness,
@@ -352,6 +353,17 @@ export default function useTerminalV2Session({ ctxRef }) {
           }
         }
 
+        // Footer strings linger in the 8KB tail — once confirmed, skip detection
+        // and mouse rebind so every keystroke echo does not re-inject DECSET.
+        if (
+          shouldSkipConfirmedTuiReadyHotPath({
+            footerConfirmed: tuiSessionFooterConfirmedRef.current,
+            grokReady: grokTuiReadyRef.current,
+          })
+        ) {
+          return;
+        }
+
         const footerReady = detectOpenCodeTuiReady(chunk) || detectOpenCodeTuiReady(tail);
         const grokReady = detectGrokSessionFromOutput(chunk) || detectGrokSessionFromOutput(tail);
         if (!footerReady && !grokReady) return;
@@ -370,8 +382,7 @@ export default function useTerminalV2Session({ ctxRef }) {
           setNativeWheelPassthrough(true);
           void notifyOpencodeReady(null, 'client-tui-footer');
         }
-        // Always re-bind mouse modes once chrome is live so cold-start wheel
-        // passthrough (and post-Ctrl+R reattach) can emit SGR 64/65.
+        // One-shot on first ready; post-Ctrl+R reattach has its own bind call sites.
         prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
       };
 
