@@ -363,8 +363,8 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         syncTerminalViewportOnWorkspaceShow,
         disposeWebglAddonForContextLoss,
         stabilizeTerminalRenderer,
-        refreshTerminalViewport,
-        // use imported forceTerminalViewportRepaint — not always on ctxRef
+        // use imported refreshTerminalViewport / forceTerminalViewportRepaint —
+        // neither is on viewportCtxRef; destructuring would shadow with undefined
         nudgeTerminalPtyResize,
         scheduleWorkspaceShowRecovery,
         scheduleBoundedForceRepaint,
