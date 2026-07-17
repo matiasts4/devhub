@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextResponse } from 'next/server';
-import { ensureTTYServer, getTTYSessionsSnapshot } from '@/lib/terminal/ttyServer';
+import { getTTYSessionsSnapshot } from '@/lib/terminal/ttyServer';
 import { tables } from '@/lib/db/localDb';
 import { getOpenCodeProcesses } from '@/lib/swarm/openCodeProcesses';
 import {
@@ -104,7 +104,7 @@ function readDatabaseRows(tableOps, fallback = []) {
 
 export async function GET() {
   try {
-    await ensureTTYServer();
+    // Snapshot only — do not boot PTY just for health/diagnostics (was ~1/s ensureTTYServer).
     const terminalSessions = getTTYSessionsSnapshot();
     const swarmProcesses = getOpenCodeProcesses();
     const agentRegistry = readDatabaseRows(tables?.agent_registry, []);

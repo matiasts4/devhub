@@ -175,7 +175,7 @@ export default function useTerminalRendererController({ ctxRef }) {
     if (term._core?._isDisposed) return false;
 
     try {
-      const { CanvasAddon: CanvasAddonCtor } = await import('xterm-addon-canvas');
+      const { CanvasAddon: CanvasAddonCtor } = await import('@xterm/addon-canvas');
       if (!termRef.current || canvasAddonRef.current) return false;
 
       const canvasAddon = new CanvasAddonCtor();
@@ -275,7 +275,7 @@ export default function useTerminalRendererController({ ctxRef }) {
       if (!isTerminalRendererReady(term)) return false;
 
       try {
-        const { WebglAddon: WebglAddonCtor } = await import('xterm-addon-webgl');
+        const { WebglAddon: WebglAddonCtor } = await import('@xterm/addon-webgl');
         if (!termRef.current || webglAddonRef.current) return false;
 
         const webglAddon = new WebglAddonCtor();

@@ -1,5 +1,5 @@
 /**
- * CanvasTerminal — border resize contract (pizarra-drag-resize-polish).
+ * CanvasTerminal â€” border resize contract (pizarra-drag-resize-polish).
  *
  * The Konva Transformer is excluded for TERMINAL shapes (composite
  * type). The user resizes by grabbing any of the 8 edge/corner
@@ -12,8 +12,8 @@
  * delta, then assert onResize was called with the expected bounds.
  *
  * The handle testids are:
- *   - canvas-terminal-resize-n, s, e, w (edges — hit area scaled by resolveHandleSizing)
- *   - canvas-terminal-resize-nw, ne, sw, se (corners — hit area scaled)
+ *   - canvas-terminal-resize-n, s, e, w (edges â€” hit area scaled by resolveHandleSizing)
+ *   - canvas-terminal-resize-nw, ne, sw, se (corners â€” hit area scaled)
  *
  * Visible rails/grip dots are rendered inside the hit areas (selected only).
  * Minimum sizes: minW=160, minH=120 (see CanvasTerminal.handleResizeStart).
@@ -24,7 +24,7 @@ const { createRoot } = require('react-dom/client');
 const { flushSync, act: flushSyncAct } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
-// ── Mocks ──────────────────────────────────────────────────────────────────
+// â”€â”€ Mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 jest.mock('framer-motion', () => ({
   motion: {
     div: (() => {
@@ -45,7 +45,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => ({
       rows: 24,
@@ -69,7 +69,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -77,7 +77,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -101,7 +101,7 @@ jest.mock('@/components/TerminalTTY', () => {
   };
 });
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function installDom() {
   const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
@@ -165,9 +165,9 @@ function getHandle(testid) {
   return document.querySelector(`[data-testid="${testid}"]`);
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────
+// â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => {
+describe('CanvasTerminal â€” border resize (pizarra-drag-resize-polish)', () => {
   let consoleErrorSpy;
 
   beforeEach(() => {
@@ -186,7 +186,7 @@ describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => 
     }
   });
 
-  test('e: mousedown on east handle + mousemove +50px → onResize width = oldW + 50', () => {
+  test('e: mousedown on east handle + mousemove +50px â†’ onResize width = oldW + 50', () => {
     const onResize = jest.fn();
     const harness = renderTerminal({ onResize });
 
@@ -218,7 +218,7 @@ describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => 
     unmountTerminal(harness);
   });
 
-  test('w: mousedown on west handle + mousemove +50px → onResize width = oldW - 50 AND x = oldX + 50', () => {
+  test('w: mousedown on west handle + mousemove +50px â†’ onResize width = oldW - 50 AND x = oldX + 50', () => {
     const onResize = jest.fn();
     const harness = renderTerminal({ onResize });
 
@@ -248,7 +248,7 @@ describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => 
     unmountTerminal(harness);
   });
 
-  test('s: mousedown on south handle + mousemove +50px → onResize height = oldH + 50', () => {
+  test('s: mousedown on south handle + mousemove +50px â†’ onResize height = oldH + 50', () => {
     const onResize = jest.fn();
     const harness = renderTerminal({ onResize });
 
@@ -276,7 +276,7 @@ describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => 
     unmountTerminal(harness);
   });
 
-  test('n: mousedown on north handle + mousemove +50px → onResize height = oldH - 50 AND y = oldY + 50', () => {
+  test('n: mousedown on north handle + mousemove +50px â†’ onResize height = oldH - 50 AND y = oldY + 50', () => {
     const onResize = jest.fn();
     const harness = renderTerminal({ onResize });
 
@@ -304,7 +304,7 @@ describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => 
     unmountTerminal(harness);
   });
 
-  test('se: mousedown on south-east corner + mousemove +50/+50 → onResize grows both width and height', () => {
+  test('se: mousedown on south-east corner + mousemove +50/+50 â†’ onResize grows both width and height', () => {
     const onResize = jest.fn();
     const harness = renderTerminal({ onResize });
 
@@ -332,7 +332,7 @@ describe('CanvasTerminal — border resize (pizarra-drag-resize-polish)', () => 
     unmountTerminal(harness);
   });
 
-  test('min-w floor: mousedown on east + mousemove -10000px → onResize width = 160 (minW floor), not negative', () => {
+  test('min-w floor: mousedown on east + mousemove -10000px â†’ onResize width = 160 (minW floor), not negative', () => {
     const onResize = jest.fn();
     const harness = renderTerminal({ onResize });
 

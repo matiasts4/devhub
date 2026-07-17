@@ -10,6 +10,11 @@ jest.mock('@/lib/terminal/ttyServer', () => ({
   ensureTTYServer: mockEnsureTTYServer,
 }));
 
+jest.mock('@/lib/devhub/sidecarRuntime', () => ({
+  fetchSidecarHealth: jest.fn(async () => false),
+  readProductionSidecarPort: jest.fn(async () => null),
+}));
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: jest.fn((data, opts) => ({ _data: data, _status: opts?.status || 200 })),
@@ -71,7 +76,7 @@ describe('GET /api/terminal/sessions/[terminalId]', () => {
     expect(data.lastActivityAt).toBeTruthy();
   });
 
-  it('returns 404 when session is not found', async () => {
+  it('returns 404 when session is not found without booting TTY', async () => {
     mockGetTTYSessionsSnapshot.mockReturnValue([]);
 
     const { GET } = await import('./route.js');
@@ -82,6 +87,7 @@ describe('GET /api/terminal/sessions/[terminalId]', () => {
 
     expect(data.error).toBe('Session not found');
     expect(opts?.status || 200).toBe(404);
+    expect(mockEnsureTTYServer).not.toHaveBeenCalled();
   });
 
   it('returns 400 when terminalId is missing', async () => {

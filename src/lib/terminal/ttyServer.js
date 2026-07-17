@@ -247,19 +247,19 @@ function loadTerminalDependency(globalKey, moduleName) {
     return globalThis[globalKey];
   }
   try {
-    const nativeRequire = createRequire(path.resolve(process.cwd(), 'package.json'));
-    return nativeRequire(moduleName);
+    // Reuse module-scoped requireCjs only — a second createRequire()/import mid-file
+    // makes Turbopack fail with "createRequire is defined multiple times" and stalls
+    // every route that pulls ttyServer (health → runtime-diagnostics).
+    return requireCjs(moduleName);
   } catch (err) {
-    ttyLog('loadDepErr', `failed to load ${moduleName} via nativeRequire, trying eval`, {
+    ttyLog('loadDepErr', `failed to load ${moduleName} via requireCjs, trying eval`, {
       error: err?.message,
     });
     return eval('require')(moduleName);
   }
 }
 
-// Use global require via eval or createRequire to bypass Webpack's statically analyzed requires
-// This guarantees that the native .node addons for 'node-pty' and 'ws' load correctly
-// instead of getting stubbed or mangled by Next.js's dev compiler.
+// Native .node addons must load via CJS require (not ESM import) under Next/Turbopack.
 const pty = loadTerminalDependency('__DEVHUB_TTY_NODE_PTY__', 'node-pty');
 const { WebSocketServer } = loadTerminalDependency('__DEVHUB_TTY_WS__', 'ws');
 
@@ -1694,7 +1694,8 @@ export function restoreSessions() {
 
 export async function ensureTTYServer() {
   if (globalThis[GLOBAL_TTY_KEY]) {
-    ttyLog('ensureTTYServer', `reusing existing server`, globalThis[GLOBAL_TTY_KEY]);
+    // ponytail: no per-call ttyLog — health polls hit this every ~1s and the
+    // appendFileSync spam contended with cold Terminales (upgrade: debug flag).
     return globalThis[GLOBAL_TTY_KEY];
   }
 

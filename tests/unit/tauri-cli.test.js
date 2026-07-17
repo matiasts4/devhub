@@ -171,6 +171,33 @@ describe('tauri cli wrapper', () => {
     );
     expect(spawnSync.mock.calls[0][1][3]).toContain(sidecarPath);
     expect(spawnSync.mock.calls[0][1][3]).toContain('Remove-Item -LiteralPath $target -Force');
+    expect(spawnSync.mock.calls[0][1][3]).toMatch(/devhub-server\*/);
+  });
+
+  test('syncDevhubServerWrapperForDev copies Windows sidecar exe into target/debug', () => {
+    const copyFileSync = jest.fn();
+    const mkdirSync = jest.fn();
+    const binariesPath = api.WINDOWS_BINARIES_SIDECAR_PATH;
+    const triplePath = api.WINDOWS_DEBUG_SIDECAR_TRIPLE_PATH;
+    const plainPath = api.WINDOWS_DEBUG_SIDECAR_PATH;
+    const existsSync = jest.fn((target) => {
+      if (target === binariesPath) return true;
+      // packaging wrapper present so .cjs sync also runs
+      if (String(target).endsWith('devhub-server.cjs') && String(target).includes('packaging')) {
+        return true;
+      }
+      return false;
+    });
+
+    api.syncDevhubServerWrapperForDev({
+      existsSync,
+      copyFileSync,
+      mkdirSync,
+      platform: 'win32',
+    });
+
+    expect(copyFileSync).toHaveBeenCalledWith(binariesPath, triplePath);
+    expect(copyFileSync).toHaveBeenCalledWith(binariesPath, plainPath);
   });
 
   test('stopStaleWindowsDevSidecar is a no-op outside Windows', () => {

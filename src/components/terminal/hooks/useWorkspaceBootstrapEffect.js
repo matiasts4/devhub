@@ -45,6 +45,8 @@ import {
 } from '@/lib/terminal/startupRestoreRunner';
 import { writeBrowserWindowStates } from '@/components/workspace/browserWindowState';
 import { pruneOrphanWorkspaceScopedStorage } from '@/components/workspace/workspaceScopedStorage';
+import { markHeavySurfacesReady, markTwmMount } from '@/lib/terminal/startupPerfMarks';
+import { takePrefetchedTerminalState } from '@/lib/terminal/terminalStatePrefetch';
 
 export default function useWorkspaceBootstrapEffect({
   projectId,
@@ -98,13 +100,26 @@ export default function useWorkspaceBootstrapEffect({
   } = refBag;
 
   useEffect(() => {
-    if (!deferHeavySurfacesUntilPaint || !isVisible || heavySurfacesReady) return undefined;
+    markTwmMount();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible || heavySurfacesReady) return undefined;
+
+    if (!deferHeavySurfacesUntilPaint) {
+      setHeavySurfacesReady(true);
+      markHeavySurfacesReady();
+      return undefined;
+    }
 
     let cancelled = false;
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        if (!cancelled) setHeavySurfacesReady(true);
+        if (!cancelled) {
+          setHeavySurfacesReady(true);
+          markHeavySurfacesReady();
+        }
       });
     });
 
@@ -154,10 +169,14 @@ export default function useWorkspaceBootstrapEffect({
   // --- LocalStorage Persistence ---
   useEffect(() => {
     try {
-      const savedState =
-        storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
-      if (savedState) {
-        const parsed = JSON.parse(savedState);
+      const prefetched = takePrefetchedTerminalState(projectId);
+      let parsed = prefetched?.terminalState || null;
+      if (!parsed) {
+        const savedState =
+          storage?.getItem(terminalStateStorageKey) || storage?.getItem('devhub_terminal_state');
+        if (savedState) parsed = JSON.parse(savedState);
+      }
+      if (parsed) {
         if (parsed.workspaces && parsed.workspaces.length > 0) {
           const normalizedState = normalizeWorkspaceState(
             parsed.workspaces,

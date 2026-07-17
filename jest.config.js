@@ -11,6 +11,8 @@ module.exports = {
     // Force Jest to the real CJS entries so component/routing tests can import them.
     '^react-router-dom$': '<rootDir>/node_modules/react-router-dom/dist/index.js',
     '^react-router/dom$': '<rootDir>/node_modules/react-router/dist/development/dom-export.js',
+    '^@xterm/addon-webgl$': '<rootDir>/src/__mocks__/xterm-addon-webgl.js',
+    '^@xterm/addon-canvas$': '<rootDir>/src/__mocks__/xterm-addon-canvas.js',
   },
   modulePathIgnorePatterns: [
     '<rootDir>/.tmp/',

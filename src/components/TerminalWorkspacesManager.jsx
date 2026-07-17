@@ -282,9 +282,11 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     ? `devhub_restore_manifest:${projectId}`
     : 'devhub_restore_manifest';
   const [isClientLoaded, setIsClientLoaded] = useState(false);
+  // Always start false so Tier3 soft-mount (isVisible=false) cannot spin xterm/WebGL
+  // off-route. Production still waits an extra paint frame once visible.
   const deferHeavySurfacesUntilPaint =
     typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
-  const [heavySurfacesReady, setHeavySurfacesReady] = useState(!deferHeavySurfacesUntilPaint);
+  const [heavySurfacesReady, setHeavySurfacesReady] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
   const pendingReopenPanelsRef = useRef(new Map());
   const swarmLaunchScheduledTimersRef = useRef(new Map());

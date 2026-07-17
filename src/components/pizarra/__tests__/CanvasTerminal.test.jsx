@@ -9,7 +9,7 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
-// ── Mock all dependencies of CanvasTerminal + TerminalTTY ────────────────
+// â”€â”€ Mock all dependencies of CanvasTerminal + TerminalTTY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 jest.mock('framer-motion', () => ({
   motion: {
     div: (() => {
@@ -30,7 +30,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => ({
       rows: 24,
@@ -54,7 +54,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -62,7 +62,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -121,7 +121,7 @@ describe('CanvasTerminal', () => {
     flushSync(() => root.render(el));
   }
 
-  // ── Props passthrough ───────────────────────────────────────────────────
+  // â”€â”€ Props passthrough â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('props passthrough to TerminalTTY', () => {
     it('defaults to the xterm-webgl renderer path used by pizarra', () => {
       const { default: CanvasTerminal } = require('../CanvasTerminal');

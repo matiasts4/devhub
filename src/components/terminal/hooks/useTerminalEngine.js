@@ -34,6 +34,11 @@ import {
 import { filterTerminalInputForSession } from '@/lib/terminal/terminalNoiseFilter';
 import { clearPanelInitialCommandLifecycle } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import {
+  markFirstPanelInteractive,
+  markXtermCoreImportDone,
+  markXtermCoreImportStart,
+} from '@/lib/terminal/startupPerfMarks';
 
 export default function useTerminalEngine({
   ctxRef,
@@ -595,14 +600,9 @@ export default function useTerminalEngine({
         effectiveRendererMode: rendererViewModel.effectiveMode,
       });
       try {
-        const importList = [
-          import('xterm'),
-          import('xterm-addon-fit'),
-          import('xterm-addon-search'),
-        ];
-        // Attempt WebGL addon on explicit user choice (requested) even if the snapshot effective
-        // was still 'xterm' because the async probe had not arrived yet. The probe only informs
-        // the switcher labels and initial resolver; the actual load decides.
+        // Core first — do not await WebGL/canvas before terminal.open (Turbopack cold
+        // was paying ~10–17s on addon-webgl before first paint). Start GPU import in
+        // parallel; attach after open via ctor or tryReattach*.
         const wantsWebgl = shouldAttachWebglRenderer({
           operationalRendererMode: operationalRendererModeRef.current,
         });
@@ -615,47 +615,50 @@ export default function useTerminalEngine({
           isVisibleInLayout: isVisibleInLayoutRef.current,
           visibleTerminalPanelCount: visibleTerminalPanelCountRef.current,
         });
-        if (wantsWebgl) {
-          importList.push(
-            import('xterm-addon-webgl').catch((err) => {
-              console.warn(`[TTY:${id}] Failed to import xterm-addon-webgl:`, err?.message || err);
+        const gpuImportPromise = wantsWebgl
+          ? import('@xterm/addon-webgl').catch((err) => {
+              console.warn(`[TTY:${id}] Failed to import @xterm/addon-webgl:`, err?.message || err);
               return { failed: true };
             })
-          );
-        } else if (wantsCanvas && mountCanvasOnInit) {
-          importList.push(
-            import('xterm-addon-canvas').catch((err) => {
-              console.warn(`[TTY:${id}] Failed to import xterm-addon-canvas:`, err?.message || err);
-              return { failed: true };
-            })
-          );
-        }
-        const importResults = await Promise.all(importList);
+          : wantsCanvas && mountCanvasOnInit
+            ? import('@xterm/addon-canvas').catch((err) => {
+                console.warn(
+                  `[TTY:${id}] Failed to import @xterm/addon-canvas:`,
+                  err?.message || err
+                );
+                return { failed: true };
+              })
+            : null;
+
+        markXtermCoreImportStart();
+        const importResults = await Promise.all([
+          import('@xterm/xterm'),
+          import('@xterm/addon-fit'),
+          import('@xterm/addon-search'),
+        ]);
+        markXtermCoreImportDone();
 
         const [{ Terminal }, { FitAddon }, { SearchAddon }] = importResults;
-        const optionalAddonImport = importResults[3];
-        const WebglAddonCtor =
-          wantsWebgl && optionalAddonImport && !optionalAddonImport.failed
-            ? optionalAddonImport.WebglAddon
-            : null;
-        const CanvasAddonCtor =
-          mountCanvasOnInit && optionalAddonImport && !optionalAddonImport.failed
-            ? optionalAddonImport.CanvasAddon
-            : null;
 
         // Phase 3 terminal-engine-v2: load the SerializeAddon for periodic full
         // terminal snapshots. It is only needed on the v2 path.
         let SerializeAddonCtor = null;
         if (isEngineV2Ref.current) {
           try {
-            const serializeModule = await import('xterm-addon-serialize');
+            const serializeModule = await import('@xterm/addon-serialize');
             SerializeAddonCtor = serializeModule.SerializeAddon ?? null;
           } catch (err) {
             console.warn(
-              `[TTY:${id}] Failed to import xterm-addon-serialize:`,
+              `[TTY:${id}] Failed to import @xterm/addon-serialize:`,
               err?.message || err
             );
           }
+        }
+
+        // Warm GPU module cache in parallel; attach happens after open via
+        // needsGpuAfterInit → tryReattach* (must not block first-panel mark).
+        if (gpuImportPromise) {
+          void gpuImportPromise;
         }
 
         if (!mounted || !containerRef.current) {
@@ -817,6 +820,9 @@ export default function useTerminalEngine({
 
         containerRef.current.replaceChildren();
         terminal.open(containerRef.current);
+        if (isVisibleInLayoutRef.current) {
+          markFirstPanelInteractive();
+        }
         prepareActiveTuiTerminalFocus(terminal, {
           tuiSessionActive: tuiSessionActiveRef.current,
         });
@@ -839,13 +845,14 @@ export default function useTerminalEngine({
           blurTarget?.removeEventListener('focusout', handleTerminalBlur);
         };
 
+        // DOM renderer only on open — GPU deferred (see gpuImportPromise + needsGpuAfterInit).
         attachTerminalRendererAddons({
           terminal,
-          wantsWebgl,
-          wantsCanvas,
-          mountCanvasOnInit,
-          WebglAddonCtor,
-          CanvasAddonCtor,
+          wantsWebgl: false,
+          wantsCanvas: false,
+          mountCanvasOnInit: false,
+          WebglAddonCtor: null,
+          CanvasAddonCtor: null,
           panelId: id,
           webglAddonRef,
           canvasAddonRef,

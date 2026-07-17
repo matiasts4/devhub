@@ -32,6 +32,12 @@ import {
   isGrokTuiInitialCommand,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
+import {
+  markConnectStart,
+  markSessionApiOk,
+  markWsConnected,
+} from '@/lib/terminal/startupPerfMarks';
+import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
 
 export default function useTerminalV2Session({ ctxRef }) {
   const stopV2Session = useCallback(() => {
@@ -149,6 +155,7 @@ export default function useTerminalV2Session({ ctxRef }) {
       setConnectionState('connecting');
     }
 
+    markConnectStart();
     cliLog(`CLIENT:${id}`, 'connect() called', { cwd, autoFocus });
 
     connectInFlightRef.current = true;
@@ -199,31 +206,23 @@ export default function useTerminalV2Session({ ctxRef }) {
 
       console.log(`[TTY:${id}] Connecting to /api/terminal/session${queryStr}`);
       cliLog(`CLIENT:${id}`, 'fetching session API', { queryStr });
-      const sessionResponse = await fetch(`/api/terminal/session${queryStr}`, {
-        cache: 'no-store',
-        signal: abortController.signal,
+      // Coalesce with background warm — cache/inflight skip a second cold compile.
+      const endpoint = await warmTtySidecarViaApi({
+        cwd,
+        fetchImpl: (url, init) => fetch(url, { ...init, signal: abortController.signal }),
       });
       if (connectEpoch !== connectEpochRef.current) {
         cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch after session API');
         return;
       }
-      if (!sessionResponse.ok) {
-        const errText = await sessionResponse.text().catch(() => '');
-        console.error(`[TTY:${id}] Session API failed: ${sessionResponse.status}`, errText);
-        cliLog(`CLIENT:${id}`, 'session API FAILED', {
-          status: sessionResponse.status,
-          body: errText,
-        });
-        throw new Error(`No se pudo crear la sesión de terminal (${sessionResponse.status}).`);
-      }
-
-      const { port, wsPath } = await sessionResponse.json();
-      if (connectEpoch !== connectEpochRef.current) {
-        cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch before WebSocket');
-        return;
+      const { port, wsPath } = endpoint || {};
+      if (!port || !wsPath) {
+        cliLog(`CLIENT:${id}`, 'session API FAILED', { body: 'missing port/wsPath' });
+        throw new Error('No se pudo crear la sesión de terminal (endpoint inválido).');
       }
       console.log(`[TTY:${id}] Got port=${port}, wsPath=${wsPath}`);
       cliLog(`CLIENT:${id}`, 'session API ok', { port, wsPath });
+      markSessionApiOk();
       transportRef.current = wsPath === '/' ? 'raw' : 'json';
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const wsUrl = `${wsProtocol}://127.0.0.1:${port}${wsPath}${queryStr}`;
@@ -290,6 +289,7 @@ export default function useTerminalV2Session({ ctxRef }) {
         clearConnectDeferTimer();
         console.log(`[TTY:${id}] WebSocket connected`);
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
+        markWsConnected();
         hasConnectedOnceRef.current = true;
         panelActivityTrackerRef.current?.onOpen();
         if (initialCommandConnectSnapshotRef.current === null) {

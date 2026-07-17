@@ -749,21 +749,34 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
         runtime
     );
 
-    let sidecar_command = app
-        .shell()
-        .sidecar("devhub-server")
-        .expect("No se encontro el sidecar 'devhub-server'")
-        .env("DEVHUB_HOME", &home)
-        .env("DEVHUB_RUNTIME", runtime)
-        .env("SIDECAR_PORT", &sidecar_port_s)
-        .env("DEVHUB_WS_PORT", &ws_port_s)
-        .env("DEVHUB_TTY_PORT", &tty_port_s)
-        .env("NODE_PATH", &node_path)
-        .env("DEVHUB_NODE_BIN", &node_bin)
-        .env("DEVHUB_NPM_BIN", &npm_bin)
-        .env("DEVHUB_ALLOW_NODE24", &allow_node24);
+    let sidecar_command = match app.shell().sidecar("devhub-server") {
+        Ok(cmd) => cmd
+            .env("DEVHUB_HOME", &home)
+            .env("DEVHUB_RUNTIME", runtime)
+            .env("SIDECAR_PORT", &sidecar_port_s)
+            .env("DEVHUB_WS_PORT", &ws_port_s)
+            .env("DEVHUB_TTY_PORT", &tty_port_s)
+            .env("NODE_PATH", &node_path)
+            .env("DEVHUB_NODE_BIN", &node_bin)
+            .env("DEVHUB_NPM_BIN", &npm_bin)
+            .env("DEVHUB_ALLOW_NODE24", &allow_node24),
+        Err(error) => {
+            log::error!(
+                "[DevHub] No se encontro el sidecar 'devhub-server': {error}. \
+                 En Windows, asegurate de que target/debug/devhub-server-*.exe exista \
+                 (pnpm tauri:dev lo sincroniza desde src-tauri/binaries/)."
+            );
+            return;
+        }
+    };
 
-    let (mut rx, _child) = sidecar_command.spawn().expect("Error al lanzar el sidecar");
+    let (mut rx, _child) = match sidecar_command.spawn() {
+        Ok(spawned) => spawned,
+        Err(error) => {
+            log::error!("[DevHub] Error al lanzar el sidecar: {error}");
+            return;
+        }
+    };
 
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {

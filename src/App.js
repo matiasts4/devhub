@@ -48,7 +48,11 @@ import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
 import { OperatorActionsDispatchProvider } from './lib/operator/OperatorActionsDispatchContext';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
-import { getLegacyWorkspaceRedirectPath } from '@/lib/workspaceRouting';
+import {
+  getLegacyWorkspaceRedirectPath,
+  normalizeProjectPageKey,
+  resolveProjectEntryPage,
+} from '@/lib/workspaceRouting';
 import { isDevelopmentRuntime } from '@/lib/runtime/isDevelopmentRuntime';
 import {
   getTerminalPanelBodyStyle,
@@ -59,6 +63,18 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { MotionProvider } from '@/components/ui/motion/MotionProvider';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition } from '@/components/ui/system/motion-tokens';
+import {
+  exposePerfSnapshotOnWindow,
+  markAppShellStart,
+  markProjectReady,
+  markTerminalRouteEnter,
+} from '@/lib/terminal/startupPerfMarks';
+import { prefetchTerminalState } from '@/lib/terminal/terminalStatePrefetch';
+import {
+  prefetchXtermRendererModules,
+  scheduleTerminalWarm,
+  warmTtySidecarViaApi,
+} from '@/lib/terminal/terminalWarmPolicy';
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -95,6 +111,16 @@ function WorkspaceLayout() {
   const [uiPrefsReady, setUiPrefsReady] = useState(false);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
+  const cachedProjectCwd = useMemo(() => {
+    if (!projectId) return null;
+    try {
+      const cwd = getUIPrefs(projectId).lastProjectCwd;
+      return typeof cwd === 'string' && cwd.trim() ? cwd.trim() : null;
+    } catch {
+      return null;
+    }
+  }, [projectId]);
+  const effectiveTerminalCwd = project?.local_path || cachedProjectCwd || null;
   const db = useMemo(() => createClient(), []);
 
   const { activeWorkspaceId } = useAuth();
@@ -111,6 +137,57 @@ function WorkspaceLayout() {
   useEffect(() => {
     loadProject();
   }, [loadProject]);
+
+  useEffect(() => {
+    markAppShellStart();
+    exposePerfSnapshotOnWindow();
+    // Start @xterm + session-route compile ASAP (overlaps project fetch).
+    void prefetchXtermRendererModules().catch(() => {});
+    void warmTtySidecarViaApi({ timeoutMs: 15000 }).catch(() => {});
+  }, []);
+
+  // As soon as we know projectId (URL), warm endpoint + hydrate state — don't wait for DB row.
+  useEffect(() => {
+    if (!projectId) return undefined;
+    const storage = typeof window !== 'undefined' ? window.localStorage : null;
+    prefetchTerminalState(projectId, storage);
+    void warmTtySidecarViaApi({
+      cwd: effectiveTerminalCwd || undefined,
+      timeoutMs: 15000,
+    }).catch(() => {});
+    if (isTerminalRoute || resolveProjectEntryPage(projectId) === 'terminales') {
+      setTerminalManagerEverMounted(true);
+    }
+    return undefined;
+  }, [projectId, effectiveTerminalCwd, isTerminalRoute]);
+
+  useEffect(() => {
+    if (project) markProjectReady();
+  }, [project]);
+
+  useEffect(() => {
+    if (project?.id && project?.local_path) {
+      saveUIPref(project.id, 'lastProjectCwd', project.local_path);
+    }
+  }, [project?.id, project?.local_path]);
+
+  useEffect(() => {
+    if (!project?.id) return undefined;
+    const storage = typeof window !== 'undefined' ? window.localStorage : null;
+    const { cancel } = scheduleTerminalWarm({
+      projectId: project.id,
+      cwd: project.local_path,
+      warmSidecar: () => warmTtySidecarViaApi({ cwd: project.local_path }),
+      prefetchXtermModules: prefetchXtermRendererModules,
+      prefetchState: () => {
+        prefetchTerminalState(project.id, storage);
+      },
+      softMountTerminalManager: () => {
+        setTerminalManagerEverMounted(true);
+      },
+    });
+    return cancel;
+  }, [project?.id, project?.local_path]);
 
   useEffect(() => {
     if (project && activeWorkspaceId && project.workspace_id !== activeWorkspaceId) {
@@ -156,7 +233,10 @@ function WorkspaceLayout() {
   }, [isTerminalRoute]);
 
   useEffect(() => {
-    if (isTerminalRoute) setTerminalManagerEverMounted(true);
+    if (isTerminalRoute) {
+      markTerminalRouteEnter();
+      setTerminalManagerEverMounted(true);
+    }
   }, [isTerminalRoute]);
 
   const terminalContainerStyle = useMemo(() => {
@@ -190,6 +270,14 @@ function WorkspaceLayout() {
     if (!projectId || !uiPrefsReady) return;
     saveUIPref(projectId, 'sidebarCollapsed', collapsed);
   }, [projectId, collapsed, uiPrefsReady]);
+
+  // Remember last section so hub / index reopen skips the dashboard detour (~1s).
+  useEffect(() => {
+    if (!projectId || !uiPrefsReady) return;
+    const page = normalizeProjectPageKey(currentPage);
+    if (!page) return;
+    saveUIPref(projectId, 'lastProjectPage', page);
+  }, [projectId, currentPage, uiPrefsReady]);
 
   // Realtime project updates
   useSupabaseRealtime({
@@ -251,7 +339,9 @@ function WorkspaceLayout() {
     },
   };
 
-  if (loading) {
+  // Non-terminal routes keep the full-page spinner. Terminales paints immediately
+  // (cached cwd) so route→panel does not wait on the projects row.
+  if (loading && !isTerminalRoute) {
     return (
       <div className="flex h-screen items-center justify-center bg-surface-app">
         <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
@@ -259,7 +349,11 @@ function WorkspaceLayout() {
     );
   }
 
-  if (!project) return <Navigate to="/hub" replace />;
+  if (!loading && !project) return <Navigate to="/hub" replace />;
+
+  const sidebarProject = project || { id: projectId, name: '…', local_path: effectiveTerminalCwd };
+  const canMountTerminalManager =
+    Boolean(projectId && effectiveTerminalCwd) && (isTerminalRoute || terminalManagerEverMounted);
 
   return (
     <div
@@ -287,7 +381,7 @@ function WorkspaceLayout() {
                 style={{ width: sidebarWidth, flexShrink: 0 }}
               >
                 <WorkspaceSidebar
-                  project={project}
+                  project={sidebarProject}
                   collapsed={collapsed}
                   onToggleCollapse={setCollapsed}
                 />
@@ -297,7 +391,7 @@ function WorkspaceLayout() {
         </AnimatePresence>
 
         <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
-          {shouldShowGlobalHeader && (
+          {shouldShowGlobalHeader && project && (
             <PageHeader project={project} pageName={PAGE_LABELS[currentPage] || currentPage} />
           )}
 
@@ -310,21 +404,27 @@ function WorkspaceLayout() {
               scrollbarColor: 'var(--border-subtle) transparent',
             }}
           >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={location.pathname}
-                variants={routeVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={routeTransition}
-                className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-                style={{ width: '100%' }}
-                data-testid="project-route-scroll"
-              >
-                <Outlet context={{ project }} />
-              </motion.div>
-            </AnimatePresence>
+            {loading ? (
+              <div className="flex flex-1 items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
+              </div>
+            ) : (
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={location.pathname}
+                  variants={routeVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={routeTransition}
+                  className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+                  style={{ width: '100%' }}
+                  data-testid="project-route-scroll"
+                >
+                  <Outlet context={{ project }} />
+                </motion.div>
+              </AnimatePresence>
+            )}
           </main>
 
           {/* Persistent Terminal IDE Container */}
@@ -341,20 +441,33 @@ function WorkspaceLayout() {
             {/* Drag region for the Tauri window is provided by the
                 WorkspaceWindowTabBar wrapper (data-tauri-drag-region on the tab bar
                 inside the terminal container). No extra header is needed here. */}
-            {project && (isTerminalRoute || terminalManagerEverMounted) ? (
+            {canMountTerminalManager ? (
               <OperatorActionsDispatchProvider>
                 <TerminalWorkspacesManager
-                  cwd={project.local_path}
+                  cwd={effectiveTerminalCwd}
                   isVisible={isTerminalRoute}
-                  projectId={project.id}
+                  projectId={projectId}
                 />
               </OperatorActionsDispatchProvider>
+            ) : isTerminalRoute ? (
+              <div
+                className="flex h-full w-full items-center justify-center"
+                data-testid="terminal-awaiting-project"
+              >
+                <Loader2 className="h-6 w-6 animate-spin text-[var(--text-muted)]" />
+              </div>
             ) : null}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function ProjectEntryRedirect() {
+  const { projectId } = useParams();
+  const page = resolveProjectEntryPage(projectId);
+  return <Navigate to={page} replace />;
 }
 
 function LegacyAgentHubRedirect() {
@@ -457,7 +570,7 @@ function App() {
             <Route path="/" element={<Navigate to="/hub" replace />} />
             <Route path="/hub" element={<ProjectHub />} />
             <Route path="/project/:projectId" element={<WorkspaceLayout />}>
-              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route index element={<ProjectEntryRedirect />} />
               <Route path="dashboard" element={<ProjectDashboard />} />
               <Route path="planificacion" element={<Planificacion />} />
               <Route path="tareas" element={<Tareas />} />

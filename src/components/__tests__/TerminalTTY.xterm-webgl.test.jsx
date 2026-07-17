@@ -1,5 +1,5 @@
 /**
- * TerminalTTY — xterm-addon-webgl wiring contract.
+ * TerminalTTY â€” xterm-addon-webgl wiring contract.
  *
  * Specs: openspec/changes/terminal-renderer-xterm-webgl/specs/terminal-renderer-xterm-webgl/spec.md
  *
@@ -30,9 +30,9 @@ const mockWebSocketInstances = [];
 const mockResizeObserverInstances = [];
 const mockSetPanelRendererPreference = jest.fn();
 
-const { WebglAddon } = require('xterm-addon-webgl');
-const { CanvasAddon } = require('xterm-addon-canvas');
-const { Terminal: xtermTerminalMock } = require('xterm');
+const { WebglAddon } = require('@xterm/addon-webgl');
+const { CanvasAddon } = require('@xterm/addon-canvas');
+const { Terminal: xtermTerminalMock } = require('@xterm/xterm');
 
 jest.mock('framer-motion', () => ({
   motion: {
@@ -54,7 +54,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => {
       const instance = {
@@ -72,7 +72,7 @@ jest.mock(
             return;
           }
           // eslint-disable-next-line global-require
-          const mockAddon = require('xterm-addon-webgl').WebglAddon;
+          const mockAddon = require('@xterm/addon-webgl').WebglAddon;
           if (mockAddon && mockAddon.shouldThrow) {
             throw new Error('webgl-context-creation-failed');
           }
@@ -98,7 +98,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -106,7 +106,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -116,7 +116,7 @@ jest.mock(
   { virtual: true }
 );
 
-jest.mock('xterm-addon-canvas', () => {
+jest.mock('@xterm/addon-canvas', () => {
   class CanvasAddon {
     constructor() {
       CanvasAddon.instances.push(this);
@@ -274,7 +274,7 @@ function installTerminalRuntimeMocks() {
   window.WebSocket = MockWebSocket;
 }
 
-describe('TerminalTTY — xterm-addon-webgl wiring', () => {
+describe('TerminalTTY â€” xterm-addon-webgl wiring', () => {
   beforeEach(() => {
     installTerminalDom();
     installTerminalRuntimeMocks();
@@ -376,7 +376,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
   // demotes it (probe says no WebGL), the resolver picks plain 'xterm'
   // and the WebglAddon path is never even attempted. Without this fix the
   // user sees a silent DOM xterm with no warning that their preferred
-  // renderer is unavailable — confusing. The warning line must surface
+  // renderer is unavailable â€” confusing. The warning line must surface
   // the demotion reason, matching the prose returned by
   // getTerminalRendererWebglFallbackCopy.
   test('xterm-webgl demoted by capability: warning line surfaces the demotion reason (XW-06)', async () => {
@@ -467,7 +467,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
   });
 
   test('probeWebglSupport runs ONCE per mount, not on every re-render (XW-PROBE-ONCE)', async () => {
-    // The probe runs in render body — if re-renders don't memoize, the
+    // The probe runs in render body â€” if re-renders don't memoize, the
     // spy count will grow with every render. We force 3 re-renders by
     // calling root.render() repeatedly with the same element and assert
     // the count stays at 1.
@@ -546,7 +546,7 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(harness.container.querySelector('.devhub-xterm-container')).not.toBeNull();
   });
 
-  // Regression — Linux/WebKitGTK xterm-addon-webgl@0.16.0 teardown race.
+  // Regression â€” Linux/WebKitGTK xterm-addon-webgl@0.16.0 teardown race.
   //
   // The addon's `_renderer` MutableDisposable is cleared (.value = undefined)
   // before its terminal.onResize listener is removed. A queued
@@ -598,13 +598,13 @@ describe('TerminalTTY — xterm-addon-webgl wiring', () => {
     expect(terminal.dispose).toHaveBeenCalled();
   });
 
-  // A.4 — dispose hardening guard (isDisposingRef).
+  // A.4 â€” dispose hardening guard (isDisposingRef).
   //
   // A resize callback that fires WHILE disposeXtermRuntime is running must bail
   // out instead of driving a fit()/resize() against the half-cleared renderer
   // slot (the WebKitGTK `_renderer.value.handleResize` race). We hook the mock
-  // terminal's `dispose()` — invoked from inside disposeXtermRuntime while the
-  // guard is armed — to synchronously fire the captured ResizeObserver
+  // terminal's `dispose()` â€” invoked from inside disposeXtermRuntime while the
+  // guard is armed â€” to synchronously fire the captured ResizeObserver
   // callback. The guard must keep teardown crash-free and still dispose the
   // terminal.
   test('resize landing mid-dispose is ignored and teardown completes cleanly (A.4 guard)', async () => {

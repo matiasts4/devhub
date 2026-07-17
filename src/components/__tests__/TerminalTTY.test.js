@@ -28,7 +28,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => {
       const instance = {
@@ -56,7 +56,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -64,7 +64,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -75,13 +75,13 @@ jest.mock(
 );
 
 /**
- * TerminalTTY unit tests — terminal-ux-redesign
+ * TerminalTTY unit tests â€” terminal-ux-redesign
  *
  * Per Extract-Before-Mock rule, we test pure functions extracted from TerminalTTY.
  *
  * Spec requirements:
- * - xterm container wraps with fade-in animation (opacity 0→1, 150ms)
- * - No inline hex colors override CSS var–derived theme
+ * - xterm container wraps with fade-in animation (opacity 0â†’1, 150ms)
+ * - No inline hex colors override CSS varâ€“derived theme
  *
  * We test the exported pure helper `getXtermContainerAnimProps(connected)`.
  */
@@ -439,7 +439,7 @@ describe('shouldShowTerminalStatusOverlay()', () => {
   });
 
   test('shows overlay for init errors and recoverable connection failures', () => {
-    expect(shouldShowTerminalStatusOverlay(false, 'falló init', 'idle')).toBe(true);
+    expect(shouldShowTerminalStatusOverlay(false, 'fallÃ³ init', 'idle')).toBe(true);
     expect(shouldShowTerminalStatusOverlay(false, null, 'error')).toBe(true);
     expect(shouldShowTerminalStatusOverlay(false, null, 'disconnected')).toBe(true);
   });
@@ -838,7 +838,7 @@ describe('shouldRunPanelClickViewportRecovery()', () => {
 });
 
 describe('shouldRecoverPanelOnActivation()', () => {
-  test('only recovers on false→true activation edges', () => {
+  test('only recovers on falseâ†’true activation edges', () => {
     expect(shouldRecoverPanelOnActivation(false, true)).toBe(true);
     expect(shouldRecoverPanelOnActivation(true, true)).toBe(false);
     expect(shouldRecoverPanelOnActivation(true, false)).toBe(false);
@@ -1195,7 +1195,7 @@ describe('hidden output catchup policy', () => {
         active: {
           length: 2,
           getLine: (index) => ({
-            translateToString: () => (index === 1 ? '└─$ ' : ''),
+            translateToString: () => (index === 1 ? 'â””â”€$ ' : ''),
           }),
         },
       },
@@ -1212,7 +1212,7 @@ describe('hidden output catchup policy', () => {
     expect(
       shouldDiscardHiddenOutputCatchup({
         bufferedBytes: 200,
-        bufferText: '~/devhub § 6 MCP /status 1.16.2',
+        bufferText: '~/devhub Â§ 6 MCP /status 1.16.2',
       })
     ).toBe(true);
   });
@@ -1347,7 +1347,7 @@ describe('shouldSkipTerminalOutputWhileLayoutHidden()', () => {
 });
 
 describe('resolveWorkspaceLayoutShowRevealMode()', () => {
-  test('uses soft reveal whenever GPU is eligible (never pure — TUIs go black)', () => {
+  test('uses soft reveal whenever GPU is eligible (never pure â€” TUIs go black)', () => {
     expect(
       resolveWorkspaceLayoutShowRevealMode({
         isWorkspaceTabReveal: true,
@@ -2002,7 +2002,7 @@ describe('fitTerminalViewport()', () => {
     // Reproduces the workspace-switch gutter symptom: while hidden the term kept
     // stale smaller cols, and on show the container is wider. fitTerminalViewport
     // must recompute cols from the container, resize the term, and notify the PTY
-    // so the TUI redraws at full width — the automatic equivalent of a manual resize
+    // so the TUI redraws at full width â€” the automatic equivalent of a manual resize
     // (the only thing the user confirms clears the black right-edge gutter).
     const container = {
       getBoundingClientRect: () => ({ width: 800, height: 480 }),
@@ -2044,7 +2044,7 @@ describe('fitTerminalViewport()', () => {
 
     // Resized from stale 40 cols to the container's real 80 cols (800px / 10px cell).
     expect(term.resize).toHaveBeenCalledWith(80, 24);
-    // PTY got the NEW cols so the TUI redraws at full width — no black gutter.
+    // PTY got the NEW cols so the TUI redraws at full width â€” no black gutter.
     expect(socket.send).toHaveBeenCalledWith(
       JSON.stringify({ type: 'resize', cols: 80, rows: 24 })
     );

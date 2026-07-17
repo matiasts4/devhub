@@ -1,5 +1,5 @@
 /**
- * v2Graveyard.js — hidden surface registry for terminal-engine-v2 panels.
+ * v2Graveyard.js â€” hidden surface registry for terminal-engine-v2 panels.
  *
  * When a v2 panel is hidden or closed, its xterm surface (xterm instance +
  * renderer addons + container) is moved to the graveyard instead of being
@@ -63,12 +63,12 @@ export function evictOldestIfNeeded() {
  *
  * @param {string} sessionId
  * @param {object} surface
- * @param {import('xterm').Terminal} surface.termInstance
+ * @param {import('@xterm/xterm').Terminal} surface.termInstance
  * @param {object} [surface.webglAddon]
  * @param {object} [surface.canvasAddon]
  * @param {object} [surface.serializeAddon]
- * @param {import('xterm-addon-fit').FitAddon} [surface.fitAddon]
- * @param {import('xterm-addon-search').SearchAddon} [surface.searchAddon]
+ * @param {import('@xterm/addon-fit').FitAddon} [surface.fitAddon]
+ * @param {import('@xterm/addon-search').SearchAddon} [surface.searchAddon]
  * @param {HTMLElement} [surface.container]
  * @param {object} [surface.metadata]
  * @returns {boolean}

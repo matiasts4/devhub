@@ -10,7 +10,7 @@
  * Mirrors the rendering pattern in CanvasTerminal.test.jsx (JSDOM +
  * react-dom/client + flushSync). The lucide-react and xterm stacks
  * are mocked the same way; TerminalTTY is replaced with a self-
- * contained captor factory. The drag hook is NOT mocked — the close
+ * contained captor factory. The drag hook is NOT mocked â€” the close
  * button's stopPropagation is verified by asserting onSelect (called
  * by usePizarraSurfaceDrag) stays quiet.
  */
@@ -40,7 +40,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => ({
       rows: 24,
@@ -64,7 +64,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -72,7 +72,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),

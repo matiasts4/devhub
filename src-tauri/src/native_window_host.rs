@@ -1,3 +1,6 @@
+// Overlay helpers are Linux/GTK-only; keep symbols for shared tests/call sites.
+#![allow(dead_code)]
+
 pub const SHARED_NATIVE_OVERLAY_NAME: &str = "devhub-native-window-overlay";
 const LEGACY_NATIVE_BROWSER_OVERLAY_NAME: &str = "devhub-native-browser-overlay";
 const LEGACY_NATIVE_VTE_OVERLAY_NAME: &str = "devhub-native-vte-overlay";

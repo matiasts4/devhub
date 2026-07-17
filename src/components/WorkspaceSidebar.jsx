@@ -36,6 +36,8 @@ import {
   shouldShowPlanningSignal,
 } from './workspaceSidebarUtils';
 import { Button } from '@/components/ui/button';
+import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
+import { markTerminalNavIntent } from '@/lib/terminal/startupPerfMarks';
 
 const ACTIVE_AGENT_STATUSES = new Set([
   'working',
@@ -209,9 +211,9 @@ export default function WorkspaceSidebar({
       : { background: 'transparent', borderColor: 'transparent', boxShadow: 'none' };
 
     const href =
-      key === 'ajustes'
-        ? `/project/${project?.id}/ajustes`
-        : `/project/${project?.id}/${key}`;
+      key === 'ajustes' ? `/project/${project?.id}/ajustes` : `/project/${project?.id}/${key}`;
+
+    const prefetchTerminales = key === 'terminales';
 
     return (
       <Link
@@ -223,6 +225,17 @@ export default function WorkspaceSidebar({
         aria-current={active ? 'page' : undefined}
         className={navItemCls(active)}
         style={activeInlineStyle}
+        onPointerEnter={
+          prefetchTerminales
+            ? () => {
+                void warmTtySidecarViaApi({
+                  cwd: project?.local_path,
+                  timeoutMs: 15000,
+                }).catch(() => {});
+              }
+            : undefined
+        }
+        onPointerDown={prefetchTerminales ? () => markTerminalNavIntent() : undefined}
       >
         <div className="relative shrink-0">
           <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
+import { fetchSidecarHealth, readProductionSidecarPort } from '@/lib/devhub/sidecarRuntime';
 import { closeTerminalSessionById } from '@/lib/terminal/closeTerminalSession';
 import { createSession, ensureTTYServer, pushSessionInput } from '@/lib/terminal/ttyServer';
 
@@ -130,9 +130,22 @@ async function recoverProductionSidecar() {
 }
 
 export async function GET(request) {
+  // Fast path: explicit SIDECAR_PORT (tauri:dev isolation uses 4001) — short probe.
+  try {
+    const envPort = Number(process.env.SIDECAR_PORT);
+    if (Number.isFinite(envPort) && envPort > 0) {
+      const healthy = await fetchSidecarHealth(envPort, { timeoutMs: 400 });
+      if (healthy) {
+        return NextResponse.json({ port: envPort, wsPath: '/tty' });
+      }
+    }
+  } catch (e) {
+    console.error('Error probing SIDECAR_PORT:', e);
+  }
+
   // Always check for production sidecar first (works in both dev and prod)
   try {
-    const port = await readProductionSidecarPort();
+    const port = await readProductionSidecarPort({ timeoutMs: 800 });
     if (port) {
       return NextResponse.json({ port, wsPath: '/tty' });
     }

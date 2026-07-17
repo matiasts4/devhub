@@ -1,3 +1,6 @@
+// Helpers are Linux-only; non-linux builds keep the stub API without unused noise.
+#![cfg_attr(not(target_os = "linux"), allow(dead_code, unused_imports))]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

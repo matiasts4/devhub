@@ -12,13 +12,18 @@ const TAURI_CONF_PATH = path.join(__dirname, '..', 'src-tauri', 'tauri.conf.json
 const DEFAULT_LINUX_PKG_CONFIG_PATHS = ['/usr/lib/x86_64-linux-gnu/pkgconfig', '/usr/share/pkgconfig'];
 const DEV_URL_READY_PATH = '/api/agenthub/config';
 const PACKAGING_SIDECAR_WRAPPER = path.join(__dirname, '..', 'packaging', 'devhub-server.cjs');
-const WINDOWS_DEBUG_SIDECAR_PATH = path.join(
+const WINDOWS_DEBUG_DIR = path.join(__dirname, '..', 'src-tauri', 'target', 'debug');
+const WINDOWS_DEBUG_SIDECAR_PATH = path.join(WINDOWS_DEBUG_DIR, 'devhub-server.exe');
+const WINDOWS_DEBUG_SIDECAR_TRIPLE_PATH = path.join(
+  WINDOWS_DEBUG_DIR,
+  'devhub-server-x86_64-pc-windows-msvc.exe'
+);
+const WINDOWS_BINARIES_SIDECAR_PATH = path.join(
   __dirname,
   '..',
   'src-tauri',
-  'target',
-  'debug',
-  'devhub-server.exe'
+  'binaries',
+  'devhub-server-x86_64-pc-windows-msvc.exe'
 );
 const DEV_ISOLATION = {
   DEVHUB_HOME: path.join(os.homedir(), '.devhub-dev'),
@@ -94,26 +99,56 @@ function applyDevIsolationEnv(env = {}) {
 /**
  * Keep the debug-tree wrapper in sync with packaging/ so tauri dev never runs a
  * stale cjs that pre-kills :3400 (coexistence regression).
+ * Also restore the Windows sidecar exe next to target/debug/devhub.exe — Tauri
+ * resolves externalBin as `devhub-server-<triple>.exe`, and stopStale may have
+ * deleted the previous copy (Io NotFound panic on spawn).
  */
 function syncDevhubServerWrapperForDev({
   existsSync = fs.existsSync,
   copyFileSync = fs.copyFileSync,
   mkdirSync = fs.mkdirSync,
+  platform = process.platform,
 } = {}) {
-  if (!existsSync(PACKAGING_SIDECAR_WRAPPER)) {
+  if (existsSync(PACKAGING_SIDECAR_WRAPPER)) {
+    const targets = [
+      path.join(__dirname, '..', 'src-tauri', 'resources', 'devhub-server.cjs'),
+      path.join(WINDOWS_DEBUG_DIR, 'devhub-server.cjs'),
+    ];
+    for (const target of targets) {
+      try {
+        mkdirSync(path.dirname(target), { recursive: true });
+        copyFileSync(PACKAGING_SIDECAR_WRAPPER, target);
+      } catch (_error) {
+        // non-fatal: cargo/tauri may recreate resources later
+      }
+    }
+  }
+
+  if (platform !== 'win32') {
     return;
   }
-  const targets = [
-    path.join(__dirname, '..', 'src-tauri', 'resources', 'devhub-server.cjs'),
-    path.join(__dirname, '..', 'src-tauri', 'target', 'debug', 'devhub-server.cjs'),
-  ];
-  for (const target of targets) {
-    try {
-      mkdirSync(path.dirname(target), { recursive: true });
-      copyFileSync(PACKAGING_SIDECAR_WRAPPER, target);
-    } catch (_error) {
-      // non-fatal: cargo/tauri may recreate resources later
+
+  try {
+    if (!existsSync(WINDOWS_BINARIES_SIDECAR_PATH)) {
+      // Build launcher into src-tauri/binaries/ when missing.
+      const { syncWindowsSidecar } = require('./build-devhub-server-sidecar.cjs');
+      syncWindowsSidecar();
     }
+    if (!existsSync(WINDOWS_BINARIES_SIDECAR_PATH)) {
+      console.warn(
+        `[tauri-cli] Windows sidecar binary missing at ${WINDOWS_BINARIES_SIDECAR_PATH}`
+      );
+      return;
+    }
+    mkdirSync(WINDOWS_DEBUG_DIR, { recursive: true });
+    // Tauri looks up externalBin by triple-suffixed name beside the app exe.
+    copyFileSync(WINDOWS_BINARIES_SIDECAR_PATH, WINDOWS_DEBUG_SIDECAR_TRIPLE_PATH);
+    copyFileSync(WINDOWS_BINARIES_SIDECAR_PATH, WINDOWS_DEBUG_SIDECAR_PATH);
+    console.log('[tauri-cli] Synced Windows debug sidecar exe next to target/debug');
+  } catch (error) {
+    console.warn(
+      `[tauri-cli] Failed to sync Windows debug sidecar: ${error?.message || error}`
+    );
   }
 }
 
@@ -125,21 +160,34 @@ function syncDevhubServerWrapperForDev({
  */
 function stopStaleWindowsDevSidecar({
   platform = process.platform,
-  sidecarPath = WINDOWS_DEBUG_SIDECAR_PATH,
+  // sidecarPath kept for older tests/callers; prefer sidecarPaths.
+  sidecarPath,
+  sidecarPaths = sidecarPath
+    ? [sidecarPath]
+    : [WINDOWS_DEBUG_SIDECAR_PATH, WINDOWS_DEBUG_SIDECAR_TRIPLE_PATH],
   existsSync = fs.existsSync,
   spawnSync: spawn = spawnSync,
 } = {}) {
-  if (platform !== 'win32' || !existsSync(sidecarPath)) {
+  if (platform !== 'win32') {
     return [];
   }
 
-  const targetLiteral = `'${String(sidecarPath).replace(/'/g, "''")}'`;
+  const existing = (Array.isArray(sidecarPaths) ? sidecarPaths : [sidecarPaths]).filter((p) =>
+    existsSync(p)
+  );
+  if (existing.length === 0) {
+    return [];
+  }
+
+  const targetsLiteral = existing
+    .map((p) => `'${String(p).replace(/'/g, "''")}'`)
+    .join(', ');
   const script = [
-    `$target = [System.IO.Path]::GetFullPath(${targetLiteral})`,
-    "$processIds = @(Get-Process -Name 'devhub-server' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ([System.IO.Path]::GetFullPath($_.Path) -ieq $target) } | Select-Object -ExpandProperty Id)",
+    `$targets = @(${targetsLiteral}) | ForEach-Object { [System.IO.Path]::GetFullPath($_) }`,
+    "$processIds = @(Get-Process -Name 'devhub-server*' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($targets -contains [System.IO.Path]::GetFullPath($_.Path)) } | Select-Object -ExpandProperty Id -Unique)",
     'foreach ($processId in $processIds) { & taskkill.exe /PID $processId /T /F | Out-Null }',
-    'for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $target); $attempt += 1) { try { Remove-Item -LiteralPath $target -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 100 } }',
-    'if (Test-Path -LiteralPath $target) { [Console]::Error.Write("debug sidecar remained locked: $target"); exit 1 }',
+    'foreach ($target in $targets) { for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $target); $attempt += 1) { try { Remove-Item -LiteralPath $target -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 100 } } }',
+    'foreach ($target in $targets) { if (Test-Path -LiteralPath $target) { [Console]::Error.Write("debug sidecar remained locked: $target"); exit 1 } }',
     'if ($processIds.Count -gt 0) { [Console]::Out.Write(($processIds -join ",")) }',
     'exit 0',
   ].join('; ');
@@ -420,4 +468,6 @@ module.exports = {
   TAURI_CLI_ENTRY,
   TAURI_CONF_PATH,
   WINDOWS_DEBUG_SIDECAR_PATH,
+  WINDOWS_DEBUG_SIDECAR_TRIPLE_PATH,
+  WINDOWS_BINARIES_SIDECAR_PATH,
 };

@@ -1,5 +1,5 @@
 /**
- * TerminalTTY.v2.test.jsx — TDD tests for the terminal-engine-v2 frontend path.
+ * TerminalTTY.v2.test.jsx â€” TDD tests for the terminal-engine-v2 frontend path.
  *
  * Verifies: v2 panels send subscribe on connect; decode terminal:append frames
  * and write them to xterm.js; send unsubscribe before disposal.
@@ -35,7 +35,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => {
       const instance = {
@@ -45,7 +45,7 @@ jest.mock(
           const isWebglAddonInstance =
             addon && addon.constructor && addon.constructor.name === 'WebglAddon';
           if (!isWebglAddonInstance) return;
-          const mockAddon = require('xterm-addon-webgl').WebglAddon;
+          const mockAddon = require('@xterm/addon-webgl').WebglAddon;
           if (mockAddon?.shouldThrow) {
             throw new Error('webgl-context-creation-failed');
           }
@@ -72,7 +72,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -80,7 +80,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -91,7 +91,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-serialize',
+  '@xterm/addon-serialize',
   () => ({
     SerializeAddon: jest.fn().mockImplementation(() => ({
       serialize: jest.fn(() => '<serialized/>'),
@@ -121,7 +121,7 @@ jest.mock('@/lib/terminal/terminalPanelBridge', () => ({
 }));
 
 const terminalPanelBridge = require('@/lib/terminal/terminalPanelBridge');
-const { WebglAddon } = require('xterm-addon-webgl');
+const { WebglAddon } = require('@xterm/addon-webgl');
 const TerminalTTY = require('../TerminalTTY.jsx').default;
 
 function installTerminalDom() {
@@ -285,7 +285,7 @@ beforeEach(() => {
   try {
     resetV2Graveyard();
   } catch {
-    // ignore — module may not be initialized in some jest transforms
+    // ignore â€” module may not be initialized in some jest transforms
   }
   installTerminalDom();
   installTerminalRuntimeMocks();
@@ -296,7 +296,7 @@ afterEach(() => {
   WebglAddon.__reset?.();
 });
 
-describe('TerminalTTY — v2 engine path', () => {
+describe('TerminalTTY â€” v2 engine path', () => {
   it('requests snapshot on ready and subscribes after the snapshot response', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -665,7 +665,7 @@ describe('TerminalTTY — v2 engine path', () => {
     await flushTerminalEffects();
 
     expect(disposeSpy).toHaveBeenCalled();
-    // v2 must not schedule GPU recovery after context loss — no new WebGL addons.
+    // v2 must not schedule GPU recovery after context loss â€” no new WebGL addons.
     expect(WebglAddon.instances.length).toBe(instancesBeforeLoss);
     // WEBGL_CONTEXT_LOST keeps the live xterm viewport (no blocking error overlay).
     expect(

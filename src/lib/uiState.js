@@ -2,6 +2,10 @@ const STORAGE_PREFIX = 'devhub_ui_prefs_';
 
 const DEFAULT_PREFS = {
   sidebarCollapsed: false,
+  /** Last WorkspaceLayout section (`terminales`, `dashboard`, …). */
+  lastProjectPage: 'dashboard',
+  /** Last known local_path — lets Terminales mount before projects row returns. */
+  lastProjectCwd: null,
   historialExpandedMonths: [],
   editorExpandedPaths: [],
   editorMarkdownViewMode: 'preview',

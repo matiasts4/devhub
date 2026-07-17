@@ -7,7 +7,7 @@
  * had a useEffect cleanup that called onClose on unmount; that
  * caused a regression where React.StrictMode's intentional
  * double-mount in dev dispatched DELETE_ELEMENT for the just-added
- * terminal (length went 0 → 1 → 0 immediately).
+ * terminal (length went 0 â†’ 1 â†’ 0 immediately).
  *
  * This file pins the new contract:
  *   1. onClose is NOT called when re-rendered with a new onClose
@@ -46,7 +46,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => ({
       rows: 24,
@@ -70,7 +70,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -78,7 +78,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -95,7 +95,7 @@ jest.mock('@/components/TerminalTTY', () => ({
   },
 }));
 
-describe('CanvasTerminal — close-button contract (no unmount cleanup)', () => {
+describe('CanvasTerminal â€” close-button contract (no unmount cleanup)', () => {
   let container;
   let root;
   let dom;

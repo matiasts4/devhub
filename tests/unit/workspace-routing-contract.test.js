@@ -7,8 +7,14 @@ const {
 } = require('../../src/lib/workspaceRouting.js');
 
 describe('workspace routing contract', () => {
-  test('sends new projects to dashboard and planning to dedicated page', () => {
-    expect(getProjectEntryPath('proj-1')).toBe('/project/proj-1/dashboard');
+  test('sends new projects to dashboard (or last page) and planning to dedicated page', () => {
+    // No prefs → dashboard. Habitual terminales visits persist lastProjectPage via ui prefs.
+    expect(getProjectEntryPath('proj-1', { getUIPrefs: () => ({}) })).toBe(
+      '/project/proj-1/dashboard'
+    );
+    expect(
+      getProjectEntryPath('proj-1', { getUIPrefs: () => ({ lastProjectPage: 'terminales' }) })
+    ).toBe('/project/proj-1/terminales');
     expect(getProjectPlanningPath('proj-1')).toBe('/project/proj-1/planificacion');
     expect(getProjectPlanningPath('proj-1', 'continue')).toBe(
       '/project/proj-1/planificacion?mode=continue'

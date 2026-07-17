@@ -18,7 +18,7 @@ function shouldEchoToStdout(tag, msg, extra) {
   if (typeof msg !== 'string') return false;
   if (msg.includes('viewport diagnostic')) return true;
   if (msg.includes('xterm-webgl')) return true;
-  if (msg.includes('xterm-addon-webgl')) return true;
+  if (msg.includes('@xterm/addon-webgl') || msg.includes('xterm-addon-webgl')) return true;
   if (msg.includes('initializeTerminal')) return true;
   if (msg.includes('native VTE')) return true;
   if (msg.includes('WS ') || msg.includes('WebSocket')) return true;
@@ -61,7 +61,7 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true });
   } catch {
-    // Silent — never fail a log write
+    // Silent â€” never fail a log write
     return NextResponse.json({ ok: false });
   }
 }

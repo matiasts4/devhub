@@ -1,5 +1,5 @@
 /**
- * TerminalTTY.rehydration.test.jsx — TDD tests for the terminal-engine-v2
+ * TerminalTTY.rehydration.test.jsx â€” TDD tests for the terminal-engine-v2
  * two-tier rehydration protocol.
  *
  * Verifies: snapshot restore + delta replay + heldData buffering, temp-resize
@@ -36,7 +36,7 @@ jest.mock('lucide-react', () => {
 });
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => {
       const instance = {
@@ -65,7 +65,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -73,7 +73,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -84,7 +84,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-serialize',
+  '@xterm/addon-serialize',
   () => ({
     SerializeAddon: jest.fn().mockImplementation(() => {
       const instance = {
@@ -277,7 +277,7 @@ afterEach(() => {
   cleanupMountedRoots();
 });
 
-describe('TerminalTTY — v2 rehydration protocol', () => {
+describe('TerminalTTY â€” v2 rehydration protocol', () => {
   it('temp-resizes to the cached snapshot termsize before writing the serialized scrollback', async () => {
     await renderIntoDom(
       React.createElement(TerminalTTY, {
@@ -340,7 +340,7 @@ describe('TerminalTTY — v2 rehydration protocol', () => {
     });
     await flushTerminalEffects();
 
-    // Delta arrives while still loading — it must be queued, not written yet.
+    // Delta arrives while still loading â€” it must be queued, not written yet.
     socket.onmessage?.({
       data: JSON.stringify({
         type: 'append',

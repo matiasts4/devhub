@@ -338,7 +338,7 @@ export default function ProjectHub() {
               return (
                 <div
                   key={project.id}
-                  onClick={() => navigate(`/project/${project.id}/dashboard`)}
+                  onClick={() => navigate(getProjectEntryPath(project.id))}
                   className="fade-in-up project-card-hover core-panel hover-lift rounded-none p-5 cursor-pointer group"
                   style={{
                     animationDelay: `${i * 60}ms`,

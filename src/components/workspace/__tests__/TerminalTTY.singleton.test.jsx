@@ -1,5 +1,5 @@
 /**
- * TerminalTTY — singleton lifecycle contract (Phase 4 of
+ * TerminalTTY â€” singleton lifecycle contract (Phase 4 of
  * pizarra-shared-view-state).
  *
  * The `TerminalTTY` component is promoted to a singleton when
@@ -10,13 +10,13 @@
  *   1. On mount with `surfaceId`, the component registers
  *      with the provider and starts the WS / VTE lease exactly
  *      ONCE. The surface is "kept alive" by default.
- *   2. On a target switch (e.g. workspace → pizarra), the
- *      underlying TerminalTTY React instance is preserved —
+ *   2. On a target switch (e.g. workspace â†’ pizarra), the
+ *      underlying TerminalTTY React instance is preserved â€”
  *      the parent may render a different mount tree, but the
  *      surface is re-targeted. The WS / VTE lease is NOT
  *      re-opened. `setNativeVtePanelVisibility` is NOT
  *      called with `visible:false` on a target switch.
- *   3. On the explicit close path (X button → `onClose`
+ *   3. On the explicit close path (X button â†’ `onClose`
  *      callback OR an explicit `destroySurface` call from the
  *      parent), the component fires `releaseSurface(id, {
  *      keepAlive: false })`. The provider's destroy handler
@@ -61,7 +61,7 @@ afterEach(() => {
   }
 });
 
-// ── Mocks ──────────────────────────────────────────────────────────────────
+// â”€â”€ Mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const wsOpenSink = [];
 const wsCloseSink = [];
@@ -104,7 +104,7 @@ jest.mock('framer-motion', () => ({
 }));
 
 jest.mock(
-  'xterm',
+  '@xterm/xterm',
   () => ({
     Terminal: jest.fn().mockImplementation(() => ({
       rows: 24,
@@ -128,7 +128,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-fit',
+  '@xterm/addon-fit',
   () => ({
     FitAddon: jest.fn().mockImplementation(() => ({ fit: jest.fn() })),
   }),
@@ -136,7 +136,7 @@ jest.mock(
 );
 
 jest.mock(
-  'xterm-addon-search',
+  '@xterm/addon-search',
   () => ({
     SearchAddon: jest.fn().mockImplementation(() => ({
       findNext: jest.fn(),
@@ -146,7 +146,7 @@ jest.mock(
   { virtual: true }
 );
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function clearSinks() {
   wsOpenSink.length = 0;
@@ -168,7 +168,7 @@ function renderApp(element) {
 // lifecycle hooks we care about: registers with the provider,
 // opens WS on mount, and exposes a `destroySurface` ref. The
 // real TerminalTTY does much more (xterm.js, nativeVte, search,
-// etc.) — this test focuses on the registry bridge, not the
+// etc.) â€” this test focuses on the registry bridge, not the
 // xterm rendering.
 function TerminalInner({ surfaceId, onUserClose }) {
   const registry = useSurfaceRegistry();
@@ -240,9 +240,9 @@ function App({ surfaceId, hostIds, onUserClose, onSurfaceDestroy }) {
   );
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────
+// â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-describe('TerminalTTY — singleton lifecycle (Phase 4)', () => {
+describe('TerminalTTY â€” singleton lifecycle (Phase 4)', () => {
   beforeEach(() => {
     clearSinks();
     nextWebSocketId = 0;
@@ -266,7 +266,7 @@ describe('TerminalTTY — singleton lifecycle (Phase 4)', () => {
     });
   });
 
-  test('a target switch (workspace-dock → pizarra-canvas) does NOT close the WebSocket', () => {
+  test('a target switch (workspace-dock â†’ pizarra-canvas) does NOT close the WebSocket', () => {
     const onDestroy = jest.fn();
     const { container, root } = renderApp(
       React.createElement(App, {

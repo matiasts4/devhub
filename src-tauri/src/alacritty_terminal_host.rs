@@ -4,6 +4,9 @@
 //!
 //! See docs/IMPLEMENT_ALACRITTY_TEXTURE_RENDERER_PLAN.md for full plan.
 
+// Scaffold API — wired from JS later; keep the probe without call-site noise.
+#![allow(dead_code)]
+
 #[cfg(target_os = "linux")]
 pub mod linux {
     // TODO Phase 1: bring in alacritty_terminal + portable_pty
