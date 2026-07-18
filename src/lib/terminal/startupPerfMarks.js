@@ -18,6 +18,8 @@ const MARKS = Object.freeze({
   CONNECT_START: `${PREFIX}connect-start`,
   SESSION_API_OK: `${PREFIX}session-api-ok`,
   WS_CONNECTED: `${PREFIX}ws-connected`,
+  FIRST_PTY_BYTE: `${PREFIX}first-pty-byte`,
+  SIDECAR_WARM_READY: `${PREFIX}sidecar-warm-ready`,
   WARM_TIER_START: `${PREFIX}warm-tier-start`,
   WARM_TIER_DONE: `${PREFIX}warm-tier-done`,
 });
@@ -27,17 +29,22 @@ const MEASURES = Object.freeze({
   PROJECT_TO_NAV_INTENT: `${PREFIX}project-ready→nav-intent`,
   NAV_INTENT_TO_ROUTE: `${PREFIX}nav-intent→terminal-route`,
   TERMINAL_ROUTE_TO_INTERACTIVE: `${PREFIX}terminal-route→first-panel-interactive`,
+  TERMINAL_ROUTE_TO_FIRST_BYTE: `${PREFIX}terminal-route→first-pty-byte`,
   XTERM_CORE_IMPORT: `${PREFIX}xterm-core-import`,
   INTERACTIVE_TO_CONNECT_START: `${PREFIX}interactive→connect-start`,
   CONNECT_TO_SESSION_API: `${PREFIX}connect-start→session-api`,
   SESSION_API_TO_WS: `${PREFIX}session-api→ws-connected`,
+  WS_TO_FIRST_BYTE: `${PREFIX}ws-connected→first-pty-byte`,
   INTERACTIVE_TO_CONNECTED: `${PREFIX}interactive→ws-connected`,
+  INTERACTIVE_TO_FIRST_BYTE: `${PREFIX}interactive→first-pty-byte`,
   CONNECT_TOTAL: `${PREFIX}connect-start→ws-connected`,
   WARM_DURATION: `${PREFIX}warm-duration`,
 });
 
 let firstPanelInteractiveRecorded = false;
 let wsConnectedRecorded = false;
+let firstPtyByteRecorded = false;
+let sidecarWarmReadyRecorded = false;
 const onceMarks = {
   appShell: false,
   projectReady: false,
@@ -188,6 +195,9 @@ export function buildStartupPerfReport(reason) {
     interactiveToConnectedMs: byName[MEASURES.INTERACTIVE_TO_CONNECTED] ?? null,
     connectTotalMs: byName[MEASURES.CONNECT_TOTAL] ?? null,
     warmDurationMs: byName[MEASURES.WARM_DURATION] ?? null,
+    terminalesToFirstByteMs: byName[MEASURES.TERMINAL_ROUTE_TO_FIRST_BYTE] ?? null,
+    wsToFirstByteMs: byName[MEASURES.WS_TO_FIRST_BYTE] ?? null,
+    interactiveToFirstByteMs: byName[MEASURES.INTERACTIVE_TO_FIRST_BYTE] ?? null,
   };
   return {
     reason: reason || 'snapshot',
@@ -263,6 +273,9 @@ function logStartupPerfSummary(reason) {
     'interactive→connected (ms)': report.summary.interactiveToConnectedMs,
     'connect total (ms)': report.summary.connectTotalMs,
     'warm duration (ms)': report.summary.warmDurationMs,
+    'terminales→first pty byte (ms)': report.summary.terminalesToFirstByteMs,
+    'ws→first pty byte (ms)': report.summary.wsToFirstByteMs,
+    'interactive→first pty byte (ms)': report.summary.interactiveToFirstByteMs,
     marks: report.marks.map((m) => m.name),
     file: 'data/logs/startup-perf/latest.json',
     tip: 'Decime «revisá» — el agente lee ese archivo',
@@ -319,6 +332,27 @@ export function markWarmTierDone() {
   logStartupPerfSummary('warm-done');
 }
 
+/** Sidecar/session endpoint cached and ready for WS connect (prod hot path). */
+export function markSidecarWarmReady() {
+  if (sidecarWarmReadyRecorded) return;
+  sidecarWarmReadyRecorded = true;
+  mark(MARKS.SIDECAR_WARM_READY);
+}
+
+/**
+ * First PTY payload painted into xterm — cold-path success criterion.
+ * Call once from the session onmessage/output path.
+ */
+export function markFirstPtyByte() {
+  if (firstPtyByteRecorded) return;
+  firstPtyByteRecorded = true;
+  mark(MARKS.FIRST_PTY_BYTE);
+  measure(MEASURES.TERMINAL_ROUTE_TO_FIRST_BYTE, MARKS.TERMINAL_ROUTE_ENTER, MARKS.FIRST_PTY_BYTE);
+  measure(MEASURES.WS_TO_FIRST_BYTE, MARKS.WS_CONNECTED, MARKS.FIRST_PTY_BYTE);
+  measure(MEASURES.INTERACTIVE_TO_FIRST_BYTE, MARKS.FIRST_PANEL_INTERACTIVE, MARKS.FIRST_PTY_BYTE);
+  logStartupPerfSummary('first-pty-byte');
+}
+
 export function getPerfSnapshot() {
   const marks = localMarks.slice();
   const measures = localMeasures.slice();
@@ -344,6 +378,8 @@ export function getPerfSnapshot() {
 export function resetStartupPerfForTests() {
   firstPanelInteractiveRecorded = false;
   wsConnectedRecorded = false;
+  firstPtyByteRecorded = false;
+  sidecarWarmReadyRecorded = false;
   onceMarks.appShell = false;
   onceMarks.projectReady = false;
   onceMarks.terminalRoute = false;

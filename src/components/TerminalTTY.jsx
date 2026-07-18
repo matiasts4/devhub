@@ -1319,6 +1319,7 @@ export default function TerminalTTY({
     grokTuiReadyRef,
     tuiSessionFooterConfirmedRef,
     initialCommandConnectSnapshotRef,
+    isActivePanelRef,
     setConnectionState,
     setHasConnectedOnce,
     setRestoredToast,
@@ -1349,6 +1350,17 @@ export default function TerminalTTY({
   // useLayoutEffect runs before paint so blur/focus churn cannot beat us to the PTY.
   useLayoutEffect(() => {
     isActivePanelRef.current = isActivePanel;
+
+    // Tell the PTY host which panel owns keyboard focus so Win Ctrl+C
+    // collateral deaths can relaunch sibling agents instead of bare shells.
+    const socket = wsRef.current;
+    if (socket?.readyState === WebSocket.OPEN && transportRef.current !== 'raw') {
+      try {
+        socket.send(JSON.stringify({ type: 'panel-focus', focused: Boolean(isActivePanel) }));
+      } catch {
+        // ignore
+      }
+    }
 
     const term = termRef.current;
     if (!term) return undefined;

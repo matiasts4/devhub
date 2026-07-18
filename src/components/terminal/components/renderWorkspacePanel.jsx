@@ -1,9 +1,21 @@
-// renderWorkspacePanel — standalone JSX function for rendering a single terminal panel.
+// renderWorkspacePanel — standalone JSX function for rendering a single space panel.
 // Extracted from TerminalWorkspacesManager.jsx.
 
-import React from 'react';
-import { SplitSquareVertical, SplitSquareHorizontal, Maximize2, Minimize2, X } from 'lucide-react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import {
+  SplitSquareVertical,
+  SplitSquareHorizontal,
+  Maximize2,
+  Minimize2,
+  X,
+  Plus,
+  Terminal,
+  Globe,
+  FileCode2,
+} from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
+import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
+import { normalizePanelKind } from '../models/workspaceStateModel';
 import { derivePanelCommandMetadata } from '../utils/semanticMetadata';
 import { buildPanelHeaderDisplay } from '../utils/panelHeaderDisplay';
 import PanelRendererSelect from './PanelRendererSelect';
@@ -21,6 +33,157 @@ import {
   getTerminalPanelHeaderStyle,
 } from '../terminalChromeStyles';
 
+// ponytail: lazy keeps Monaco off TWM cold graph in production; tests use sync mock.
+const FileExplorerEditorPaneLazy = lazy(
+  () => import('@/components/workspace/FileExplorerEditorPane')
+);
+
+function FilesSpacePane(props) {
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+    /* eslint-disable no-undef -- sync mock path for Jest only */
+    const FileExplorerEditorPane = require('@/components/workspace/FileExplorerEditorPane').default;
+    /* eslint-enable no-undef */
+    return <FileExplorerEditorPane {...props} />;
+  }
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="flex h-full min-h-0 items-center justify-center"
+          data-testid="files-space-loading"
+        >
+          Loading files…
+        </div>
+      }
+    >
+      <FileExplorerEditorPaneLazy {...props} />
+    </Suspense>
+  );
+}
+
+const SPACE_KIND_OPTIONS = [
+  { kind: 'terminal', label: 'Terminal', Icon: Terminal },
+  { kind: 'browser', label: 'Browser', Icon: Globe },
+  { kind: 'files', label: 'Files', Icon: FileCode2 },
+];
+
+function PanelAddSpaceMenu({ panelId, panelKind, onAddSpaceKind, onSetPanelKind }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  return (
+    <span ref={rootRef} className="relative inline-flex">
+      <button
+        type="button"
+        data-testid={`panel-add-space-${panelId}`}
+        data-size="comfortable"
+        className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-secondary)]"
+        title="Añadir espacio"
+        aria-label="Añadir espacio"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          data-testid={`panel-add-space-menu-${panelId}`}
+          className="absolute right-0 top-full z-30 mt-1 min-w-[9.5rem] rounded-md border border-[var(--border-subtle)] bg-[var(--surface-card,#0f1724)] p-1 shadow-lg"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            Añadir
+          </div>
+          {SPACE_KIND_OPTIONS.map(({ kind, label, Icon }) => (
+            <button
+              key={`add-${kind}`}
+              type="button"
+              role="menuitem"
+              data-testid={`panel-add-space-${kind}-${panelId}`}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)]"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen(false);
+                onAddSpaceKind?.(kind);
+              }}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              {label}
+            </button>
+          ))}
+          {typeof onSetPanelKind === 'function' ? (
+            <>
+              <div
+                className="my-1 border-t border-white/10"
+                role="separator"
+                data-testid={`panel-convert-space-sep-${panelId}`}
+              />
+              <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Convertir
+              </div>
+              {SPACE_KIND_OPTIONS.map(({ kind, label, Icon }) => (
+                <button
+                  key={`convert-${kind}`}
+                  type="button"
+                  role="menuitem"
+                  data-testid={`panel-convert-space-${kind}-${panelId}`}
+                  disabled={kind === panelKind}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (kind === panelKind) return;
+                    setOpen(false);
+                    onSetPanelKind(kind);
+                  }}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  {label}
+                </button>
+              ))}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
+function renderSpaceComponentBody(panel, kind, options = {}) {
+  if (kind === 'browser') {
+    return (
+      <WorkspaceBrowserPane
+        projectId={options.projectId}
+        workspaceId={options.wsId}
+        dockState={options.dockState}
+        onDockStateChange={options.onDockStateChange}
+        browserWindowState={options.browserWindowState}
+        onBrowserWindowStateChange={options.onBrowserWindowStateChange}
+        workspaceWindows={options.workspaceWindows}
+        activeWorkspaceWindowId={options.activeWorkspaceWindowId}
+        layoutSyncKey={options.layoutSyncKey}
+        suspendNativeSurface={Boolean(options.suspendNativeSurface)}
+      />
+    );
+  }
+  if (kind === 'files') {
+    return <FilesSpacePane project={options.project} workspaceId={options.wsId} embedded={true} />;
+  }
+  return null;
+}
+
 export function renderWorkspacePanel(
   panel,
   {
@@ -35,6 +198,8 @@ export function renderWorkspacePanel(
     onClosePanel,
     onSplitRight,
     onSplitDown,
+    onAddSpaceKind = null,
+    onSetPanelKind = null,
     onToggleFocus,
     isFocusedPanel,
     requestedRendererMode,
@@ -61,9 +226,20 @@ export function renderWorkspacePanel(
     onCancelRename = null,
     agentRun = null,
     onConnectionStateChange = null,
+    projectId = null,
+    project = null,
+    dockState = null,
+    onDockStateChange = null,
+    browserWindowState = null,
+    onBrowserWindowStateChange = null,
+    workspaceWindows = null,
+    activeWorkspaceWindowId = null,
+    layoutSyncKey = null,
   }
 ) {
   const isActive = panel.id === activePanelId && activeWsId === wsId;
+  const panelKind = normalizePanelKind(panel?.kind);
+  const isSpaceComponent = panelKind === 'browser' || panelKind === 'files';
   // Shared-surface singleton only when pizarra owns projection — workspace docks mount
   // TerminalTTY directly to avoid hidden→portal remount (double xterm / double echo).
   const sharedViewEnabled = isPizarraSharedViewEnabled() && pizarraOwnsLiveSurfaces;
@@ -72,11 +248,22 @@ export function renderWorkspacePanel(
     document.documentElement?.dataset?.morphology === 'brutalist-stage'
       ? 34
       : 30;
-  const semanticMetadata = buildPanelHeaderDisplay(
-    panelLabel,
-    panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
-  );
-  const swarmRole = semanticMetadata?.swarmRole || panel?.swarmRole || null;
+  const semanticMetadata = isSpaceComponent
+    ? {
+        // ponytail: kind is visible in the body; keep the agent/panel name alone in chrome.
+        source: 'panel-kind',
+        primary: panelLabel || (panelKind === 'browser' ? 'Browser' : 'Files'),
+        secondary: null,
+        fullText: panelLabel || (panelKind === 'browser' ? 'Browser' : 'Files'),
+        swarmRole: null,
+      }
+    : buildPanelHeaderDisplay(
+        panelLabel,
+        panelSemanticMetadata || derivePanelCommandMetadata(panel?.initialCommand)
+      );
+  const swarmRole = isSpaceComponent
+    ? null
+    : semanticMetadata?.swarmRole || panel?.swarmRole || null;
   const sharedTerminalProps = {
     id: panel.id,
     cwd: panel.cwd || cwd,
@@ -272,12 +459,20 @@ export function renderWorkspacePanel(
             title={`Panel ${panelLabel || panel.id} actions`}
             style={getTerminalFloatingControlStyle({ active: isActive })}
           >
-            {SHOW_RENDERER_SWITCH ? (
+            {SHOW_RENDERER_SWITCH && !isSpaceComponent ? (
               <PanelRendererSelect
                 panelId={panel.id}
                 currentMode={requestedRendererMode}
                 availableModes={['xterm-webgl', 'xterm']}
                 onChange={(mode) => onSetPanelRenderer?.(mode)}
+              />
+            ) : null}
+            {onAddSpaceKind ? (
+              <PanelAddSpaceMenu
+                panelId={panel.id}
+                panelKind={panelKind}
+                onAddSpaceKind={(kind) => onAddSpaceKind(kind)}
+                onSetPanelKind={onSetPanelKind}
               />
             ) : null}
             <button
@@ -331,8 +526,8 @@ export function renderWorkspacePanel(
               data-testid={`panel-close-${panel.id}`}
               data-size="comfortable"
               className="inline-flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-white/10 hover:text-[#ff7b72]"
-              title="Cerrar terminal"
-              aria-label="Cerrar terminal"
+              title={isSpaceComponent ? 'Cerrar espacio' : 'Cerrar terminal'}
+              aria-label={isSpaceComponent ? 'Cerrar espacio' : 'Cerrar terminal'}
               onClick={(e) => {
                 e.stopPropagation();
                 onClosePanel?.();
@@ -346,73 +541,97 @@ export function renderWorkspacePanel(
       <div
         className="relative min-h-0 min-w-0 flex-1 bg-[var(--surface-app)] p-0"
         data-testid={`panel-body-${panel.id}`}
+        data-panel-kind={panelKind}
         style={getTerminalPanelBodyStyle({ withBackground: false })}
       >
-        {sharedViewEnabled ? (
-          <SharedTerminalSurfaceRegistrar
-            surfaceId={panel.id}
-            terminalProps={sharedTerminalProps}
-          />
-        ) : null}
-        <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
-          {sharedViewEnabled ? (
-            pizarraOwnsLiveSurfaces ? null : (
-              <SharedTerminalSurfacePortal
-                surfaceId={panel.id}
-                hostId="workspace-dock"
-                isActiveHost={true}
-                className="h-full w-full"
-              />
-            )
-          ) : deferLiveSurfaceToPizarra && sharedViewEnabled ? (
-            <div
-              data-testid={`panel-body-deferred-pizarra-${panel.id}`}
-              className="h-full w-full"
-              aria-hidden="true"
-              style={{ background: 'var(--surface-app, #050814)' }}
-            />
-          ) : shouldMountTerminal ? (
-            <TerminalTTY
-              id={panel.id}
-              isEngineV2={panelIsEngineV2}
-              cwd={panel.cwd || cwd}
-              swarmContext={panel.swarmContext || null}
-              hideTitleBar={true}
-              showQuickCopyButton={false}
-              autoFocus={isActive}
-              isActivePanel={Boolean(isActivePanel ?? isActive)}
-              isVisibleInLayout={Boolean(isVisibleInLayout)}
-              isWorkspaceShellVisible={Boolean(isWorkspaceShellVisible)}
-              visibleTerminalPanelCount={visibleTerminalPanelCount}
-              coldMountOrdinal={coldMountOrdinal}
-              initialCommand={panel.initialCommand}
-              connectionState={connectionState}
-              requestedRendererMode={requestedRendererMode}
-              onResetRendererToXterm={onResetRendererToXterm}
-              onActivatePanel={onActivatePanel}
-              suspendNativeSurface={Boolean(suspendNativeSurface)}
-              nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
-            />
-          ) : (
-            <div
-              data-testid={`panel-body-v2-stash-${panel.id}`}
-              className="h-full w-full"
-              aria-hidden="true"
-            />
-          )}
-        </div>
-        {shouldShowSwarmStandbyOverlay(panel, swarmDelegatedRoleKeys) ? (
+        {isSpaceComponent ? (
           <div
-            data-testid={`panel-standby-hint-${panel.id}`}
-            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-[rgba(5,8,20,0.42)]"
-            aria-hidden="true"
+            className="h-full w-full min-h-0 min-w-0 overflow-hidden bg-[var(--surface-app)]"
+            data-testid={`panel-space-${panelKind}-${panel.id}`}
           >
-            <div className="rounded-md border border-white/10 bg-[rgba(8,12,24,0.88)] px-3 py-2 text-center text-[11px] text-[var(--text-muted)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-              <span className="block font-medium text-[var(--text-secondary)]">Standby</span>
-              <span className="mt-0.5 block">Esperando delegación desde ZED</span>
-            </div>
+            {renderSpaceComponentBody(panel, panelKind, {
+              projectId,
+              project: project || { id: projectId, local_path: cwd },
+              wsId,
+              dockState,
+              onDockStateChange,
+              browserWindowState,
+              onBrowserWindowStateChange,
+              workspaceWindows,
+              activeWorkspaceWindowId,
+              layoutSyncKey,
+              suspendNativeSurface,
+            })}
           </div>
-        ) : null}
+        ) : (
+          <>
+            {sharedViewEnabled ? (
+              <SharedTerminalSurfaceRegistrar
+                surfaceId={panel.id}
+                terminalProps={sharedTerminalProps}
+              />
+            ) : null}
+            <div className="h-full w-full overflow-hidden bg-[var(--surface-app)]">
+              {sharedViewEnabled ? (
+                pizarraOwnsLiveSurfaces ? null : (
+                  <SharedTerminalSurfacePortal
+                    surfaceId={panel.id}
+                    hostId="workspace-dock"
+                    isActiveHost={true}
+                    className="h-full w-full"
+                  />
+                )
+              ) : deferLiveSurfaceToPizarra && sharedViewEnabled ? (
+                <div
+                  data-testid={`panel-body-deferred-pizarra-${panel.id}`}
+                  className="h-full w-full"
+                  aria-hidden="true"
+                  style={{ background: 'var(--surface-app, #050814)' }}
+                />
+              ) : shouldMountTerminal ? (
+                <TerminalTTY
+                  id={panel.id}
+                  isEngineV2={panelIsEngineV2}
+                  cwd={panel.cwd || cwd}
+                  swarmContext={panel.swarmContext || null}
+                  hideTitleBar={true}
+                  showQuickCopyButton={false}
+                  autoFocus={isActive}
+                  isActivePanel={Boolean(isActivePanel ?? isActive)}
+                  isVisibleInLayout={Boolean(isVisibleInLayout)}
+                  isWorkspaceShellVisible={Boolean(isWorkspaceShellVisible)}
+                  visibleTerminalPanelCount={visibleTerminalPanelCount}
+                  coldMountOrdinal={coldMountOrdinal}
+                  initialCommand={panel.initialCommand}
+                  connectionState={connectionState}
+                  requestedRendererMode={requestedRendererMode}
+                  onResetRendererToXterm={onResetRendererToXterm}
+                  onActivatePanel={onActivatePanel}
+                  suspendNativeSurface={Boolean(suspendNativeSurface)}
+                  nativeSurfacePolicy={nativeSurfacePolicy || 'live'}
+                />
+              ) : (
+                <div
+                  data-testid={`panel-body-v2-stash-${panel.id}`}
+                  className="h-full w-full"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+            {shouldShowSwarmStandbyOverlay(panel, swarmDelegatedRoleKeys) ? (
+              <div
+                data-testid={`panel-standby-hint-${panel.id}`}
+                className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-[rgba(5,8,20,0.42)]"
+                aria-hidden="true"
+              >
+                <div className="rounded-md border border-white/10 bg-[rgba(8,12,24,0.88)] px-3 py-2 text-center text-[11px] text-[var(--text-muted)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                  <span className="block font-medium text-[var(--text-secondary)]">Standby</span>
+                  <span className="mt-0.5 block">Esperando delegación desde ZED</span>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

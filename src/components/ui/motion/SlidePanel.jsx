@@ -33,7 +33,7 @@ export function SlidePanel({
   transition,
 }) {
   const variants = SLIDE_VARIANTS[side] ?? SLIDE_VARIANTS.left;
-  const resolvedTransition = transition ?? TRANSITION.enter;
+  const resolvedTransition = transition ?? TRANSITION.base;
 
   return (
     <AnimatePresence initial={false}>

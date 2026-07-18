@@ -55,7 +55,7 @@ describe('terminalWarmPolicy', () => {
     expect(tiers.tier3).toBe(false);
   });
 
-  test('scheduleTerminalWarm soft-mounts before network work', async () => {
+  test('scheduleTerminalWarm kicks sidecar/xterm before soft-mount', async () => {
     const calls = [];
     const { cancel } = scheduleTerminalWarm({
       projectId: 'p1',
@@ -75,10 +75,15 @@ describe('terminalWarmPolicy', () => {
       },
     });
 
-    await new Promise((r) => setTimeout(r, 40));
-    expect(calls[0]).toBe('soft');
-    expect(calls[1]).toBe('state');
-    expect(calls).toEqual(expect.arrayContaining(['sidecar', 'xterm']));
+    // Idle + double-rAF paint gate before soft-mount; network starts first.
+    await new Promise((r) => setTimeout(r, 120));
+    const firstNet = Math.min(
+      calls.indexOf('sidecar') === -1 ? 99 : calls.indexOf('sidecar'),
+      calls.indexOf('xterm') === -1 ? 99 : calls.indexOf('xterm')
+    );
+    const softIdx = calls.indexOf('soft');
+    expect(firstNet).toBeLessThan(softIdx);
+    expect(calls).toEqual(expect.arrayContaining(['sidecar', 'xterm', 'soft', 'state']));
     cancel();
   });
 

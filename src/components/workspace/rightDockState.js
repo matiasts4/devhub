@@ -190,13 +190,16 @@ function sanitizeRightDockState(rawState = {}) {
     ? Math.max(0, Math.floor(Number(rawState.browserLayoutEpoch)))
     : 0;
 
+  // Browser/files live in panel slots now — never keep them as an overlay dock.
+  const isSpaceComponentTab = normalizedActiveTab === 'browser' || normalizedActiveTab === 'editor';
+
   return {
-    visible,
+    visible: isSpaceComponentTab ? false : visible,
     activeTab: normalizedActiveTab,
     browserLayoutEpoch,
     browserRuntime,
     editMode,
-    maximized,
+    maximized: isSpaceComponentTab ? false : maximized,
     maximizedView,
     size,
     browserUrl,
@@ -233,6 +236,25 @@ function buildFreshRightDockState() {
     browserHistory: [DEFAULT_BROWSER_URL],
     browserHistoryIndex: 0,
   };
+}
+
+/**
+ * If an older build had browser/files as a visible dock overlay, return the
+ * space-component kind to assign to the focused panel on hydrate.
+ */
+function peekLegacySpaceComponentKind(storage, projectId, wsId) {
+  if (!storage || typeof storage.getItem !== 'function') return null;
+  try {
+    const raw = storage.getItem(buildRightDockStorageKey(projectId, wsId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.visible !== true) return null;
+    if (parsed.activeTab === 'editor') return 'files';
+    if (parsed.activeTab === 'browser' || parsed.activeTab === 'bridge') return 'browser';
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function readRightDockState(storage, projectId, wsId) {
@@ -272,6 +294,7 @@ module.exports = {
   buildFreshRightDockState,
   buildRightDockStorageKey,
   normalizeBrowserUrl,
+  peekLegacySpaceComponentKind,
   readRightDockState,
   rightDockStatesEqual,
   sanitizeRightDockState,

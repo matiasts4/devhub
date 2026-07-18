@@ -346,6 +346,13 @@ export default function useTerminalInitialCommandLifecycle({
       transport: transportRef.current,
     });
     console.log(`[TTY:${id}] Sending initial command: ${cleanCommand}`);
+    if (transportRef.current !== 'raw') {
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'session-meta', launchCommand: cleanCommand }));
+      } catch {
+        // ignore meta send failures
+      }
+    }
     if (transportRef.current === 'raw') {
       wsRef.current.send(cleanCommand + '\r');
     } else {

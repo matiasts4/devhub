@@ -255,6 +255,25 @@ export function getTerminalRendererCapabilities() {
 export const TERMINAL_SPLIT_WEBGL_PANEL_LIMIT = 1;
 export const TERMINAL_OPERATIONAL_CANVAS_MODE = 'xterm-canvas';
 
+/**
+ * Budget for resolveOperationalRendererMode.
+ * Files (Monaco) / browser panes also consume a GPU slot — counting only
+ * terminal panels left Files|Terminal on WebGL and the xterm canvas went blank.
+ */
+export function resolveVisibleTerminalPanelCountForRenderer({
+  focusedPanelId = null,
+  totalTerminalPanelCount = 0,
+  totalPanelCount = 0,
+} = {}) {
+  if (focusedPanelId) return 1;
+  const terminals = Math.max(0, Number(totalTerminalPanelCount) || 0);
+  const panels = Math.max(0, Number(totalPanelCount) || 0);
+  if (panels > terminals && terminals >= 1) {
+    return Math.max(terminals, TERMINAL_SPLIT_WEBGL_PANEL_LIMIT + 1);
+  }
+  return terminals > 0 ? terminals : 1;
+}
+
 export function resolveOperationalRendererMode({
   requestedMode,
   effectiveMode,

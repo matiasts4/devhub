@@ -536,9 +536,7 @@ export default function LLMProviderSettings({ embedded = false }) {
   }
 
   return (
-    <div
-      className={`space-y-6 ${embedded ? '' : 'animate-in fade-in slide-in-from-bottom-4 duration-500'}`}
-    >
+    <div className={`space-y-6 ${embedded ? '' : 'animate-in fade-in duration-150'}`}>
       {!embedded && (
         <div>
           <h1

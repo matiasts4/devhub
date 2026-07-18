@@ -1,7 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
-import { useRouteDirection } from '@/hooks/useRouteDirection';
 import {
   HashRouter,
   Routes,
@@ -16,6 +15,10 @@ import { Toaster } from 'sileo';
 import { AnimatePresence, motion } from 'framer-motion';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
+import {
+  isTerminalesSidebarToggleShortcut,
+  resolveWorkspaceSidebarWidth,
+} from './components/workspaceSidebarUtils';
 import ProjectHub from './views/ProjectHub';
 import ProjectDashboard from './views/ProjectDashboard';
 import Tareas from './views/Tareas';
@@ -62,7 +65,7 @@ import { resolveWorkspaceShellVisibilityStyle } from './components/terminal/work
 import { useAuth } from '@/lib/auth/AuthContext';
 import { MotionProvider } from '@/components/ui/motion/MotionProvider';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
-import { getTransition } from '@/components/ui/system/motion-tokens';
+import { getTransition, TRANSITION } from '@/components/ui/system/motion-tokens';
 import {
   exposePerfSnapshotOnWindow,
   markAppShellStart,
@@ -105,6 +108,8 @@ function WorkspaceLayout() {
     if (!projectId) return false;
     return Boolean(getUIPrefs(projectId).sidebarCollapsed);
   });
+  /** On Terminales, sidebar is 0px unless the user peeks it (Ctrl/Cmd+B). */
+  const [terminalesSidebarPeek, setTerminalesSidebarPeek] = useState(false);
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
   const [isPizarraActive, setIsPizarraActive] = useState(false);
   const [terminalManagerEverMounted, setTerminalManagerEverMounted] = useState(false);
@@ -126,7 +131,6 @@ function WorkspaceLayout() {
   const { activeWorkspaceId } = useAuth();
   const navigate = useNavigate();
   const motionMode = useMotionMode();
-  const direction = useRouteDirection();
 
   const loadProject = useCallback(async () => {
     const { data } = await db.from('projects').select('*').eq('id', projectId).single();
@@ -147,6 +151,7 @@ function WorkspaceLayout() {
   }, []);
 
   // As soon as we know projectId (URL), warm endpoint + hydrate state — don't wait for DB row.
+  // Soft-mount TWM only when already on Terminales (cold enter). Off-route warm is idle Tier3.
   useEffect(() => {
     if (!projectId) return undefined;
     const storage = typeof window !== 'undefined' ? window.localStorage : null;
@@ -155,7 +160,7 @@ function WorkspaceLayout() {
       cwd: effectiveTerminalCwd || undefined,
       timeoutMs: 15000,
     }).catch(() => {});
-    if (isTerminalRoute || resolveProjectEntryPage(projectId) === 'terminales') {
+    if (isTerminalRoute) {
       setTerminalManagerEverMounted(true);
     }
     return undefined;
@@ -236,7 +241,22 @@ function WorkspaceLayout() {
     if (isTerminalRoute) {
       markTerminalRouteEnter();
       setTerminalManagerEverMounted(true);
+    } else {
+      setTerminalesSidebarPeek(false);
     }
+  }, [isTerminalRoute]);
+
+  // Ctrl/Cmd+B toggles project nav peek on Terminales (does not steal plain 'b' from PTY).
+  useEffect(() => {
+    if (!isTerminalRoute) return undefined;
+    const onKeyDown = (event) => {
+      if (!isTerminalesSidebarToggleShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setTerminalesSidebarPeek((prev) => !prev);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [isTerminalRoute]);
 
   const terminalContainerStyle = useMemo(() => {
@@ -321,23 +341,31 @@ function WorkspaceLayout() {
     channelName: `public:tasks-progress:${projectId || 'none'}`,
   });
 
-  const sidebarWidth = collapsed ? 48 : 256;
-  const sidebarOffset = motionMode === 'reduced' ? 0 : -sidebarWidth;
+  const forceHideSidebar = (isTerminalMaximized || isPizarraActive) && isTerminalRoute;
+  const sidebarWidth = resolveWorkspaceSidebarWidth({
+    isTerminalRoute,
+    terminalesSidebarPeek,
+    collapsed,
+    forceHidden: forceHideSidebar,
+  });
+  const showWorkspaceSidebar = sidebarWidth > 0;
+  const sidebarOffset = motionMode === 'reduced' ? 0 : -Math.max(sidebarWidth, 48);
   const sidebarTransition = getTransition('nav', motionMode);
 
-  const routeTransition = getTransition('nav', motionMode);
-  const routeScale = motionMode === 'reduced' ? 1 : motionMode === 'amplified' ? 0.95 : 0.98;
-  const routeVariants = {
-    enter: {
-      scale: routeScale,
-      opacity: 0,
-    },
-    center: { scale: 1, opacity: 1 },
-    exit: {
-      scale: direction === 'forward' ? 1.01 : 0.99,
-      opacity: 0,
-    },
-  };
+  // Soft page enter: fade + slight y (no wait/scale). Premium ease via TRANSITION.enter.
+  const routeTransition = motionMode === 'reduced' ? TRANSITION.reduced : TRANSITION.enter;
+  const routeVariants =
+    motionMode === 'reduced'
+      ? {
+          enter: { opacity: 0 },
+          center: { opacity: 1 },
+          exit: { opacity: 0 },
+        }
+      : {
+          enter: { opacity: 0, y: 10 },
+          center: { opacity: 1, y: 0 },
+          exit: { opacity: 0, y: -6 },
+        };
 
   // Non-terminal routes keep the full-page spinner. Terminales paints immediately
   // (cached cwd) so route→panel does not wait on the projects row.
@@ -367,28 +395,51 @@ function WorkspaceLayout() {
     >
       {/* ── Inner layout: sidebar + content ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <AnimatePresence initial={false}>
-          {!((isTerminalMaximized || isPizarraActive) && isTerminalRoute) && (
+        {isTerminalRoute ? (
+          // Terminales peek must be instant — no slide/fade (feels laggy vs toggle).
+          showWorkspaceSidebar ? (
             <div
               key="workspace-sidebar-wrapper"
+              data-testid="workspace-sidebar-shell"
+              data-sidebar-width={String(sidebarWidth)}
               style={{ width: sidebarWidth, overflow: 'hidden', display: 'flex', flexShrink: 0 }}
             >
-              <motion.div
-                initial={{ x: sidebarOffset, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: sidebarOffset, opacity: 0 }}
-                transition={sidebarTransition}
-                style={{ width: sidebarWidth, flexShrink: 0 }}
-              >
+              <div style={{ width: sidebarWidth, flexShrink: 0 }}>
                 <WorkspaceSidebar
                   project={sidebarProject}
                   collapsed={collapsed}
                   onToggleCollapse={setCollapsed}
+                  instantLayout
                 />
-              </motion.div>
+              </div>
             </div>
-          )}
-        </AnimatePresence>
+          ) : null
+        ) : (
+          <AnimatePresence initial={false}>
+            {showWorkspaceSidebar ? (
+              <div
+                key="workspace-sidebar-wrapper"
+                data-testid="workspace-sidebar-shell"
+                data-sidebar-width={String(sidebarWidth)}
+                style={{ width: sidebarWidth, overflow: 'hidden', display: 'flex', flexShrink: 0 }}
+              >
+                <motion.div
+                  initial={{ x: sidebarOffset, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: sidebarOffset, opacity: 0 }}
+                  transition={sidebarTransition}
+                  style={{ width: sidebarWidth, flexShrink: 0 }}
+                >
+                  <WorkspaceSidebar
+                    project={sidebarProject}
+                    collapsed={collapsed}
+                    onToggleCollapse={setCollapsed}
+                  />
+                </motion.div>
+              </div>
+            ) : null}
+          </AnimatePresence>
+        )}
 
         <div className="flex-1 flex flex-col min-w-0 bg-surface-app relative">
           {shouldShowGlobalHeader && project && (
@@ -409,7 +460,7 @@ function WorkspaceLayout() {
                 <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
               </div>
             ) : (
-              <AnimatePresence mode="wait">
+              <AnimatePresence initial={false}>
                 <motion.div
                   key={location.pathname}
                   variants={routeVariants}
@@ -447,6 +498,11 @@ function WorkspaceLayout() {
                   cwd={effectiveTerminalCwd}
                   isVisible={isTerminalRoute}
                   projectId={projectId}
+                  navSidebarOpen={showWorkspaceSidebar}
+                  onToggleNavSidebar={() => {
+                    if (forceHideSidebar) return;
+                    setTerminalesSidebarPeek((prev) => !prev);
+                  }}
                 />
               </OperatorActionsDispatchProvider>
             ) : isTerminalRoute ? (

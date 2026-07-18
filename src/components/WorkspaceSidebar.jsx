@@ -2,7 +2,6 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   ListTodo,
@@ -11,7 +10,6 @@ import {
   Settings,
   History,
   ArrowLeft,
-  ChevronLeft,
   ChevronRight,
   Plug2,
   FolderOpen,
@@ -20,6 +18,7 @@ import {
   Cpu,
   Plus,
   Sparkles,
+  Cloud,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -79,9 +78,6 @@ const DEFAULT_NAV = [
 const SECTION_CORE = ['dashboard', 'planificacion', 'tareas', 'editor', 'roadmap', 'historial'];
 const SECTION_AI = ['swarm', 'telegram'];
 
-// Transition used consistently for slide/fade in collapsed ↔ expanded
-const SLIDE_TRANSITION = { duration: 0.18, ease: [0.4, 0, 0.2, 1] };
-
 function ProgressRing({ value, color = 'oklch(0.74 0.16 57)' }) {
   const radius = 16;
   const stroke = 2.5;
@@ -126,6 +122,7 @@ export default function WorkspaceSidebar({
   isTerminalOpen,
   onToggleCollapse,
   className,
+  instantLayout: _instantLayout = false,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -185,22 +182,15 @@ export default function WorkspaceSidebar({
 
   const navItemCls = (active) => getSidebarNavItemClasses({ active, collapsed });
 
-  const renderSectionLabel = (title, extra = null) => (
-    <AnimatePresence initial={false}>
-      {!collapsed && (
-        <motion.div
-          className="px-1.5 flex items-center justify-between"
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          exit={{ opacity: 0, height: 0 }}
-          transition={SLIDE_TRANSITION}
-        >
-          <p className="typography-section-label">{title}</p>
-          {extra}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+  const renderSectionLabel = (title, extra = null) => {
+    if (collapsed) return null;
+    return (
+      <div className="px-1.5 flex items-center justify-between">
+        <p className="typography-section-label">{title}</p>
+        {extra}
+      </div>
+    );
+  };
 
   const renderNavItem = (key, item, activeStyle = null) => {
     const { icon: Icon, label } = item;
@@ -252,19 +242,7 @@ export default function WorkspaceSidebar({
               </span>
             )}
         </div>
-        <AnimatePresence initial={false}>
-          {!collapsed && (
-            <motion.span
-              className="truncate"
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 'auto' }}
-              exit={{ opacity: 0, width: 0 }}
-              transition={{ ...SLIDE_TRANSITION, delay: 0.06 }}
-            >
-              {label}
-            </motion.span>
-          )}
-        </AnimatePresence>
+        {!collapsed ? <span className="truncate">{label}</span> : null}
       </Link>
     );
   };
@@ -294,16 +272,19 @@ export default function WorkspaceSidebar({
     );
   };
 
+  // Structural chrome: width snap only (no layout/width springs).
+  const asideWidth = collapsed ? 48 : 256;
+
   return (
-    <motion.aside
+    <aside
       data-testid="workspace-sidebar"
-      initial={false}
-      animate={{ width: collapsed ? 48 : 256 }}
-      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+      data-structural-instant="true"
       className={`relative flex-shrink-0 border-r h-full ${className || ''}`}
       style={{
         ...getSidebarChromeStyle(),
-        minWidth: collapsed ? 48 : 256,
+        width: asideWidth,
+        minWidth: asideWidth,
+        transition: 'none',
       }}
     >
       <div className="flex flex-col w-full h-full overflow-hidden">
@@ -329,32 +310,20 @@ export default function WorkspaceSidebar({
               title={collapsed ? 'Volver a proyectos' : undefined}
             >
               <ArrowLeft className="w-3.5 h-3.5 shrink-0" strokeWidth={1.7} />
-              <AnimatePresence initial={false}>
-                {!collapsed && (
-                  <motion.span
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={{ ...SLIDE_TRANSITION, delay: 0.12 }}
-                    className="overflow-hidden whitespace-nowrap"
-                  >
-                    Proyectos
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              {!collapsed ? (
+                <span className="overflow-hidden whitespace-nowrap">Proyectos</span>
+              ) : null}
             </Button>
 
-            <AnimatePresence initial={false}>
-              {!collapsed && (
-                <Button
-                  onClick={() => navigate(`/project/${project?.id}/tareas`)}
-                  variant="devhubPrimary"
-                  size="toolbar"
-                >
-                  <Plus className="w-3 h-3" strokeWidth={2.2} /> Nueva
-                </Button>
-              )}
-            </AnimatePresence>
+            {!collapsed ? (
+              <Button
+                onClick={() => navigate(`/project/${project?.id}/tareas`)}
+                variant="devhubPrimary"
+                size="toolbar"
+              >
+                <Plus className="w-3 h-3" strokeWidth={2.2} /> Nueva
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -384,8 +353,7 @@ export default function WorkspaceSidebar({
 
         {/* Identity block - moved to bottom */}
         <div className="px-2.5 py-2.5 border-t" style={{ borderTopColor: 'var(--border-subtle)' }}>
-          <motion.div
-            layout
+          <div
             className={collapsed ? 'flex justify-center' : 'rounded-none border p-2.5'}
             style={
               collapsed
@@ -434,12 +402,7 @@ export default function WorkspaceSidebar({
                     </div>
                   </div>
 
-                  <motion.div
-                    className="min-w-0"
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ ...SLIDE_TRANSITION, delay: 0.08 }}
-                  >
+                  <div className="min-w-0">
                     <p
                       className="typography-label truncate"
                       style={{ color: 'var(--text-primary)' }}
@@ -451,15 +414,10 @@ export default function WorkspaceSidebar({
                         ? 'Proyecto activo'
                         : project?.status || 'Proyecto'}
                     </p>
-                  </motion.div>
+                  </div>
                 </div>
 
-                <motion.div
-                  className="grid grid-cols-3 gap-1"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ ...SLIDE_TRANSITION, delay: 0.14 }}
-                >
+                <div className="grid grid-cols-3 gap-1">
                   {[
                     { label: 'Progreso', value: `${progressValue}%`, valueColor: accentColor },
                     {
@@ -493,10 +451,10 @@ export default function WorkspaceSidebar({
                       </p>
                     </div>
                   ))}
-                </motion.div>
+                </div>
               </div>
             )}
-          </motion.div>
+          </div>
         </div>
 
         {/* Bottom bar: user indicator + collapse toggle */}
@@ -557,7 +515,7 @@ export default function WorkspaceSidebar({
             }}
           >
             <ChevronRight
-              className="w-3 h-3 transition-transform duration-200"
+              className="w-3 h-3"
               strokeWidth={1.8}
               style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}
             />
@@ -565,6 +523,6 @@ export default function WorkspaceSidebar({
           </button>
         </div>
       </div>
-    </motion.aside>
+    </aside>
   );
 }

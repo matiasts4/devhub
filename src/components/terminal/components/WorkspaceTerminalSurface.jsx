@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Plus, Terminal } from 'lucide-react';
+import { Terminal, Globe, FileCode2 } from 'lucide-react';
 import {
   resolveWorkspaceShellVisibilityStyle,
   resolveWorkspaceWindowVisibilityStyle,
@@ -15,6 +15,7 @@ import {
 } from '@/lib/terminal/workspaceWindowRender';
 import { getPanelIdsFromColumns } from '@/components/terminal/models/workspaceStateModel';
 import { MIN_RIGHT_DOCK_SIZE } from '../../workspace/rightDockState';
+import { resolveVisibleTerminalPanelCountForRenderer } from '../terminalRendererCapabilities';
 
 function columnContainsFocusedPanel(column, focusedPanelId) {
   if (!focusedPanelId) return true;
@@ -71,6 +72,7 @@ function WorkspaceTerminalSurface({
   workspaceWindows,
   activeWindowIds,
   focusedPanelId,
+  totalPanelCount,
   totalTerminalPanelCount,
   isWorkspaceVisibleInLayout,
   panelSubtabsBarRef,
@@ -79,6 +81,7 @@ function WorkspaceTerminalSurface({
   renderWorkspacePanelSlot,
   resolvePanelVisibleInLayout: resolvePanelVisibleInLayoutProp,
   handleSplit,
+  splitWithKind,
   handlePanelGroupLayout,
   handleInternalSplitDragging,
   handleDockDragging,
@@ -117,7 +120,7 @@ function WorkspaceTerminalSurface({
             className="relative min-h-0 flex-1 overflow-hidden"
             data-focus-mode={focusedPanelId ? 'true' : undefined}
           >
-            {totalTerminalPanelCount === 0 ? (
+            {(totalPanelCount ?? totalTerminalPanelCount) === 0 ? (
               <div
                 data-testid="workspace-empty-terminal-state"
                 className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center"
@@ -125,21 +128,46 @@ function WorkspaceTerminalSurface({
                 <div className="flex flex-col items-center gap-2 max-w-sm">
                   <Terminal className="w-8 h-8 text-[var(--text-muted)]" />
                   <p className="text-sm text-[var(--text-secondary)]">
-                    Este workspace no tiene terminales activas.
+                    Este workspace no tiene espacios activos.
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Creá una nueva shell para seguir trabajando sin cerrar el workspace.
+                    Añadí un terminal, browser o files para empezar.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  data-testid="workspace-add-terminal"
-                  onClick={() => handleSplit('horizontal')}
-                  className="inline-flex items-center gap-2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-4 py-2 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+                <div
+                  className="flex flex-wrap items-center justify-center gap-2"
+                  data-testid="workspace-starter-chips"
                 >
-                  <Plus className="w-4 h-4" />
-                  Nueva terminal
-                </button>
+                  <button
+                    type="button"
+                    data-testid="workspace-add-terminal"
+                    onClick={() =>
+                      splitWithKind ? splitWithKind('terminal') : handleSplit('horizontal')
+                    }
+                    className="inline-flex items-center gap-2 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-3 py-2 text-sm font-medium text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+                  >
+                    <Terminal className="w-4 h-4" />
+                    Terminal
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="workspace-add-browser"
+                    onClick={() => splitWithKind?.('browser')}
+                    className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
+                  >
+                    <Globe className="w-4 h-4" />
+                    Browser
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="workspace-add-files"
+                    onClick={() => splitWithKind?.('files')}
+                    className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
+                  >
+                    <FileCode2 className="w-4 h-4" />
+                    Files
+                  </button>
+                </div>
               </div>
             ) : (
               resolveWorkspaceWindowsForRender(ws, workspaceWindows).map((window) => {
@@ -151,6 +179,23 @@ function WorkspaceTerminalSurface({
                 const isActiveWindow = window.id === activeWindowIdForWs;
                 const windowColumns = window.columns?.length > 0 ? window.columns : ws.columns;
                 const activeWindowPanelIds = getPanelIdsFromColumns(windowColumns);
+                const windowPanelCount = activeWindowPanelIds.length;
+                const windowTerminalPanelCount = (windowColumns || []).reduce(
+                  (sum, col) =>
+                    sum +
+                    (col?.panels || []).filter((panel) => {
+                      const kind = panel?.kind || 'terminal';
+                      return kind === 'terminal';
+                    }).length,
+                  0
+                );
+                const windowVisibleTerminalPanelCount = resolveVisibleTerminalPanelCountForRenderer(
+                  {
+                    focusedPanelId,
+                    totalTerminalPanelCount: windowTerminalPanelCount,
+                    totalPanelCount: windowPanelCount,
+                  }
+                );
                 const resolveWindowPanelVisibleInLayout = (panelId) =>
                   isActiveWindow &&
                   (resolvePanelVisibleInLayoutProp || resolvePanelVisibleInLayout)({
@@ -223,9 +268,8 @@ function WorkspaceTerminalSurface({
                                               panel.id
                                             ),
                                             isWorkspaceShellVisible: isWorkspaceVisibleInLayout,
-                                            visibleTerminalPanelCount: focusedPanelId
-                                              ? 1
-                                              : totalTerminalPanelCount,
+                                            visibleTerminalPanelCount:
+                                              windowVisibleTerminalPanelCount,
                                           })}
                                         </div>
                                       </Panel>
@@ -256,9 +300,7 @@ function WorkspaceTerminalSurface({
                                         column.panels[0].id
                                       ),
                                       isWorkspaceShellVisible: isWorkspaceVisibleInLayout,
-                                      visibleTerminalPanelCount: focusedPanelId
-                                        ? 1
-                                        : totalTerminalPanelCount,
+                                      visibleTerminalPanelCount: windowVisibleTerminalPanelCount,
                                     })}
                                   </div>
                                 </div>

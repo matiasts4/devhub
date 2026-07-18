@@ -20,7 +20,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Command } from 'cmdk';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
-import { getTransition } from '@/components/ui/system/motion-tokens';
+import { getTransition, TRANSITION } from '@/components/ui/system/motion-tokens';
 import { useCommandBar } from '@/lib/commandBar/useCommandBar';
 import { isCommandBarEnabled } from '@/lib/commandBar/featureFlag';
 import { buildCommandBarContext, resolveCommandBarIntent } from '@/lib/commandBar/zedIntentBridge';
@@ -114,8 +114,8 @@ export default function CommandBar({ surfaceController }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={getTransition('base', motionMode)}
-            className="fixed inset-0 bg-black/50"
+            transition={isReduced ? TRANSITION.reduced : TRANSITION.base}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm"
             onClick={close}
           />
 
@@ -124,15 +124,15 @@ export default function CommandBar({ surfaceController }) {
             initial={
               isReduced
                 ? { opacity: 0 }
-                : { opacity: 0, y: isAmplified ? -32 : -20, scale: isAmplified ? 0.88 : 0.95 }
+                : { opacity: 0, y: isAmplified ? -16 : -10, scale: isAmplified ? 0.96 : 0.98 }
             }
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={
               isReduced
                 ? { opacity: 0 }
-                : { opacity: 0, y: isAmplified ? -32 : -20, scale: isAmplified ? 0.88 : 0.95 }
+                : { opacity: 0, y: isAmplified ? -16 : -10, scale: isAmplified ? 0.96 : 0.98 }
             }
-            transition={getTransition('toggle', motionMode)}
+            transition={isReduced ? TRANSITION.reduced : TRANSITION.enter}
             className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-2xl"
           >
             <div className="bg-popover border border-border rounded-lg shadow-2xl overflow-hidden">

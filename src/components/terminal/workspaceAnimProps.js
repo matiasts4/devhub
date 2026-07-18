@@ -1,4 +1,4 @@
-import { TRANSITION } from '@/components/ui/system/motion-tokens';
+import { DUR, EASE, TRANSITION } from '@/components/ui/system/motion-tokens';
 
 /**
  * Pure animation helpers for TerminalWorkspacesManager.
@@ -6,56 +6,62 @@ import { TRANSITION } from '@/components/ui/system/motion-tokens';
  *
  * Native VTE panels are positioned via screen-space bounds from the WebView.
  * Scaling the workspace shell desyncs GTK overlays from React chrome during
- * maximize/restore, so we only animate opacity here — never transform/scale.
+ * maximize/restore, so we only animate opacity here — never transform/scale
+ * on the workspace shell itself.
  */
+
+const EASE_OUT = EASE.out;
+
+function resolveChromeDurationSeconds(motionMode = 'normal') {
+  if (motionMode === 'reduced') return 0;
+  // Cap structural chrome at 160ms (page enter uses TRANSITION.enter 320ms).
+  return Math.min(DUR.fast, 160) / 1000;
+}
 
 /**
  * GPU slide for the shared right dock layer (browser, editor, swarm, etc.).
- * Position (left/width) is applied instantly; only transform + opacity animate
- * so the panel enters from the right without sweeping across the workspace.
+ * Position (left/width) is applied instantly; only transform + opacity animate.
  *
- * @param {{ isVisible: boolean, isDragging?: boolean }} options
- * @returns {{ initial, animate, transition }}
+ * @param {{ isVisible: boolean, isDragging?: boolean, isFullscreen?: boolean, motionMode?: string }} options
  */
-export function getRightDockAnimProps({ isVisible, isDragging = false, isFullscreen = false }) {
-  // Fullscreen takeover (pizarra / browser / swarm maximized): the dock fills
-  // the whole workspace, so the default `x: '100%'` slide is a slow horizontal
-  // sweep across the entire screen (280ms) that feels sluggish when entering
-  // the pizarra. For takeovers we use an opacity-only fade timed to match
-  // useModeTransition enter (220ms) so workspace↔pizarra cross-fades feel
-  // synchronized. Opacity stays on the GPU and keeps native surface bounds
-  // in sync (no transform on the shell).
+export function getRightDockAnimProps({
+  isVisible,
+  isDragging = false,
+  isFullscreen = false,
+  motionMode = 'normal',
+} = {}) {
+  const duration = isDragging ? 0 : resolveChromeDurationSeconds(motionMode);
+
   if (isFullscreen) {
+    // Opacity-only for takeovers — no full-width slide sweep.
     return {
       initial: { opacity: 0 },
       animate: isVisible ? { opacity: 1 } : { opacity: 0 },
-      transition: isDragging ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+      transition: {
+        duration: isDragging ? 0 : Math.min(duration, DUR.fast / 1000),
+        ease: EASE_OUT,
+      },
     };
   }
+
   return {
     initial: { opacity: 0, x: '100%' },
     animate: isVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: '100%' },
-    transition: isDragging ? { duration: 0 } : TRANSITION.enter,
+    transition: duration === 0 ? { duration: 0 } : { duration, ease: EASE_OUT },
   };
 }
 
 /**
- * Returns Framer Motion props for the workspace container.
- * Opacity-only transition keeps native terminal bounds in sync with layout.
+ * Workspace shell mount — no fade (instant paint; terminals are already heavy).
  *
- * @param {boolean} isMaximized
- * @returns {{ initial, animate, transition }} Framer Motion props
+ * @param {boolean} _isMaximized
+ * @param {'reduced'|'normal'|'amplified'} [_motionMode]
  */
-export function getWorkspaceAnimProps(isMaximized) {
-  // When the workspace first mounts, fade in from opacity 0 so the initial
-  // paint doesn't flash. When restoring from maximized, skip the initial
-  // (it's already visible) and just let the transition complete naturally.
+export function getWorkspaceAnimProps(_isMaximized, _motionMode = 'normal') {
   return {
-    initial: { opacity: isMaximized ? 1 : 0 },
+    initial: false,
     animate: { opacity: 1 },
-    // Slightly longer enter duration (220ms) with a snappy ease-out curve
-    // for a smooth, polished mount feel. Opacity-only stays on the GPU.
-    transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0 },
   };
 }
 
@@ -63,7 +69,6 @@ export function getWorkspaceAnimProps(isMaximized) {
  * Workspace shell visibility — Option B keep-alive: inactive shells stay
  * compositor-visible (opacity 0 only). Avoid visibility:hidden and contain:strict
  * toggles — they tear down GPU layers and cause a post-reveal blink on tab switch.
- * Fullscreen browser/pizarra/swarm still fully suppresses the terminal grid.
  */
 export function resolveWorkspaceShellVisibilityStyle({
   isActiveWorkspace,
@@ -93,17 +98,6 @@ export function resolveWorkspaceShellVisibilityStyle({
 
 /**
  * Stacked V1/V2/V3 windows inside one workspace tab.
- * Parked windows now use the same opacity-only keep-alive as workspace tabs.
- * With Option B the GPU addon stays attached, and visibility:hidden tears down
- * the WebGL compositor, producing a black frame on switch-back. Keeping the
- * surface compositor-alive (opacity:0, visibility:visible) lets the canvas keep
- * its bitmap so the window reappears instantly.
- *
- * When the terminal manager is warm-mounted but not on the terminal route
- * (`isManagerVisible: false`), active windows MUST keep pointer-events:none.
- * CSS lets a descendant with pointer-events:auto receive hits even when an
- * ancestor is none — that invisible full-bleed window was eating wheel scroll
- * on Kanban / roadmap / other project pages.
  */
 export function resolveWorkspaceWindowVisibilityStyle({
   isActiveWindow,
@@ -138,3 +132,6 @@ export function resolveRightDockTakeoverChromeStyle(isFullscreenTakeover = false
     isolation: 'isolate',
   };
 }
+
+// Re-export for callers that want token defaults alongside helpers.
+export { TRANSITION };

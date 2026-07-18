@@ -41,7 +41,10 @@ const {
   updateSessionModeFromInput,
 } = require('./sessionTransport');
 const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
-const { shouldRespawnShellAfterPtyExit } = require('../src/lib/terminal/ptyRespawnPolicy.cjs');
+const {
+  shouldRespawnShellAfterPtyExit,
+  shouldRelaunchAgentAfterCtrlCRespawn,
+} = require('./ptyRespawnPolicy.cjs');
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
 // Respeta DEVHUB_HOME cuando el wrapper / Tauri lo pasan (permite tests con home
@@ -205,24 +208,39 @@ function finalizeSidecarSessionExit(session, exitCode, signal) {
 }
 
 function tryRespawnShellAfterTuiExit(session, exitCode, signal) {
+  const priorAgentType = session.agentType;
+  const priorLaunchCommand = session.launchCommand || null;
+  const wasFocused = session.inputFocused === true;
   const should = shouldRespawnShellAfterPtyExit({
     platform: os.platform(),
     mode: session.mode,
     agentType: session.agentType,
+    launchCommand: priorLaunchCommand,
     exitCode,
     respawnCount: session._tuiCtrlCRespawnCount || 0,
   });
   if (!should) return false;
 
   session._tuiCtrlCRespawnCount = (session._tuiCtrlCRespawnCount || 0) + 1;
-  console.log(`[Sidecar] Win Ctrl+C killed TUI PTY — respawning shell`, {
+  const bootstrapped = Boolean(priorLaunchCommand && String(priorLaunchCommand).trim());
+  const relaunchAgent = shouldRelaunchAgentAfterCtrlCRespawn({
+    inputFocused: wasFocused,
+    launchCommand: priorLaunchCommand,
+    agentType: priorAgentType,
+  });
+  console.log(`[Sidecar] Agent TUI PTY exited — respawning usable shell`, {
     sessionId: session.id,
     exitCode,
     signal,
     respawnCount: session._tuiCtrlCRespawnCount,
+    inputFocused: wasFocused,
+    bootstrapped,
+    relaunchAgent,
   });
 
   resetSessionAfterTuiPtyDeath(session);
+  // Keep launchCommand across bare-shell respawn so Relanzar / collateral restore work.
+  session.launchCommand = priorLaunchCommand;
 
   let spawnResult;
   try {
@@ -236,13 +254,35 @@ function tryRespawnShellAfterTuiExit(session, exitCode, signal) {
   }
 
   attachSidecarPtyHandlers(session);
-  broadcastSessionPayload(session, {
-    type: 'output',
-    data: '\r\n\x1b[33m[DevHub]\x1b[0m La TUI cerró el PTY (Ctrl+C). Shell nueva lista.\r\n',
-  });
+
+  // Nested typed-TUI Ctrl+C heal: no banner (feels like a normal shell return).
+  // Bootstrapped modal agents: short notice so the panel doesn't look frozen.
+  if (bootstrapped) {
+    const notice = relaunchAgent
+      ? '\r\n\x1b[33m[DevHub]\x1b[0m Panel hermano recuperado — relanzando agente…\r\n'
+      : '\r\n\x1b[33m[DevHub]\x1b[0m TUI cerrada. Shell lista.\r\n';
+    broadcastSessionPayload(session, { type: 'output', data: notice });
+  }
+
+  if (relaunchAgent && priorLaunchCommand) {
+    const cmd = String(priorLaunchCommand)
+      .replace(/\s*#recovery-\d+\s*$/, '')
+      .trim();
+    if (cmd) {
+      // ponytail: tiny yield so the new ConPTY accepts input; was 250ms (felt slow)
+      setTimeout(() => {
+        try {
+          if (!sessions.has(session.id) || !session.ptyProcess) return;
+          session.ptyProcess.write(`${cmd}\r`);
+        } catch (_) {}
+      }, 50);
+    }
+  }
+
   console.log('[Sidecar] TUI shell respawned', {
     sessionId: session.id,
     shell: spawnResult.shell,
+    relaunchAgent,
   });
   return true;
 }
@@ -379,6 +419,10 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     tmuxSession: null,
     termsize: { cols: 120, rows: 36 },
     _tuiCtrlCRespawnCount: 0,
+    // Focused panel receives keyboard; unfocused siblings killed by Win Ctrl+C
+    // should relaunch their agent instead of staying on a bare shell.
+    inputFocused: false,
+    launchCommand: null,
     swarmContext: {
       isSwarmRole: Boolean(swarmContext.isSwarmRole),
       launchId: swarmContext.launchId || null,
@@ -622,6 +666,17 @@ wss.on('connection', (ws, req) => {
       try {
         session.ptyProcess.resize(payload.cols, payload.rows);
       } catch (_) {}
+      return;
+    }
+
+    if (payload.type === 'panel-focus') {
+      session.inputFocused = payload.focused === true;
+      return;
+    }
+
+    if (payload.type === 'session-meta') {
+      const launch = typeof payload.launchCommand === 'string' ? payload.launchCommand.trim() : '';
+      if (launch) session.launchCommand = launch;
       return;
     }
 

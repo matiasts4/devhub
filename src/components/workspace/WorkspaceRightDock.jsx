@@ -1,15 +1,13 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import FileExplorerEditorPane from './FileExplorerEditorPane';
 import OperatorActionCard from '@/components/workspace/OperatorActionCard';
-import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
-import WorkspaceOperatorObserverPane from './WorkspaceOperatorObserverPane';
 import PizarraPane from '@/components/pizarra/PizarraPane';
 import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 
+// Browser/files are space components (panel.kind) — not right-dock tabs.
 export default function WorkspaceRightDock({
   project,
   workspaceId,
@@ -31,8 +29,6 @@ export default function WorkspaceRightDock({
     onCardConfirm: PropTypes.func,
     onCardCancel: PropTypes.func,
   };
-  const isBrowserActive = dockState.activeTab === 'browser';
-  const isEditorActive = dockState.activeTab === 'editor';
   const isSwarmActive = dockState.activeTab === 'swarm';
   const isPizarraActive = dockState.activeTab === 'pizarra';
 
@@ -50,29 +46,6 @@ export default function WorkspaceRightDock({
       data-testid="workspace-right-dock"
     >
       <div className="flex-1 min-h-0" data-testid="workspace-right-dock-shell">
-        <div
-          className={isBrowserActive ? 'h-full min-h-0' : 'hidden'}
-          aria-hidden={!isBrowserActive}
-        >
-          <WorkspaceBrowserPane
-            projectId={project?.id}
-            workspaceId={workspaceId}
-            dockState={dockState}
-            onDockStateChange={onDockStateChange}
-            browserWindowState={browserWindowState}
-            onBrowserWindowStateChange={onBrowserWindowStateChange}
-            workspaceWindows={workspaceWindows}
-            activeWorkspaceWindowId={activeWorkspaceWindowId}
-            onWorkspaceWindowSelect={onWorkspaceWindowSelect}
-            onWorkspaceWindowAdd={onWorkspaceWindowAdd}
-            onWorkspaceWindowRemove={onWorkspaceWindowRemove}
-          />
-        </div>
-
-        <div className={isEditorActive ? 'h-full min-h-0' : 'hidden'} aria-hidden={!isEditorActive}>
-          <FileExplorerEditorPane project={project} workspaceId={workspaceId} embedded={true} />
-        </div>
-
         <div className={isSwarmActive ? 'h-full min-h-0' : 'hidden'} aria-hidden={!isSwarmActive}>
           <WorkspaceSwarmPane
             project={project}

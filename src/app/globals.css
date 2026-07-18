@@ -35,6 +35,13 @@
   --proyectos-accent-lime: #39ff14;
   --proyectos-accent-pink: #ff007f;
   --proyectos-accent-yellow: #ffe600;
+
+  /* Motion kit (CSS-first chrome; mirrors motion-tokens.js) */
+  --motion-dur-fast: 160ms;
+  --motion-dur-base: 240ms;
+  --motion-dur-slow: 320ms;
+  --motion-ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 [data-density='compact'] {
@@ -2220,6 +2227,104 @@ html[data-motion-mode='reduced'] .zed-eq-bar {
 
 html[data-motion-mode='reduced'] .zed-eq-bar {
   height: 60%;
+}
+
+/* ─── DevHub chrome motion (CSS-first panel/tab/pill/reveal) ─── */
+@keyframes dh-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.dh-panel-in {
+  animation: dh-panel-in var(--motion-dur-slow) var(--motion-ease-premium);
+}
+
+@keyframes dh-tab-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.dh-tab-in {
+  animation: dh-tab-in var(--motion-dur-base) var(--motion-ease-premium);
+}
+
+@keyframes dh-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.dh-pill-in {
+  animation: dh-pill-in var(--motion-dur-base) var(--motion-ease-premium);
+}
+
+.dh-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows var(--motion-dur-base) var(--motion-ease-premium),
+    opacity var(--motion-dur-base) var(--motion-ease-premium);
+  opacity: 0;
+}
+.dh-reveal[data-state='open'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.dh-reveal > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-dur-fast: 0.01ms;
+    --motion-dur-base: 0.01ms;
+    --motion-dur-slow: 0.01ms;
+  }
+  .dh-reveal {
+    transition: none;
+  }
+}
+
+html[data-motion-mode='reduced'] {
+  --motion-dur-fast: 0.01ms;
+  --motion-dur-base: 0.01ms;
+  --motion-dur-slow: 0.01ms;
+}
+
+html[data-motion-mode='reduced'] .dh-panel-in,
+html[data-motion-mode='reduced'] .dh-tab-in,
+html[data-motion-mode='reduced'] .dh-pill-in {
+  animation: none !important;
+}
+
+html[data-motion-mode='reduced'] .dh-reveal {
+  transition: none;
+}
+
+/* Radix / tw-animate overlays honor in-app reduced mode (not only OS media). */
+html[data-motion-mode='reduced'] .animate-in,
+html[data-motion-mode='reduced'] .animate-out,
+html[data-motion-mode='reduced'] [data-state='open'].animate-in,
+html[data-motion-mode='reduced'] [data-state='closed'].animate-out,
+html[data-motion-mode='reduced'] [data-motion^='from-'],
+html[data-motion-mode='reduced'] [data-motion^='to-'] {
+  animation-duration: 1ms !important;
+  transition-duration: 1ms !important;
 }
 
 /* ─── Semantic accent escape hatch (FR-D06) ───

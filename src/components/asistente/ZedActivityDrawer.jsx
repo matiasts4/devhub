@@ -143,7 +143,7 @@ export default function ZedActivityDrawer({
           initial={isReduced ? { opacity: 0 } : { opacity: 0, y: isAmplified ? 14 : 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={isReduced ? { opacity: 0 } : { opacity: 0, y: isAmplified ? 10 : 6 }}
-          transition={getTransition('open', motionMode)}
+          transition={getTransition('base', motionMode)}
           style={{ width: `min(${widthPx}px, calc(100vw - 1.5rem))` }}
           className="pointer-events-auto mb-2 overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--accent-primary)_20%,var(--border-subtle))] bg-[color-mix(in_srgb,#0a1018_94%,transparent)] shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md"
         >

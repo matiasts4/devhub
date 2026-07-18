@@ -154,6 +154,14 @@ jest.mock(
   { virtual: true }
 );
 
+jest.mock('@/components/workspace/FileExplorerEditorPane', () => ({
+  __esModule: true,
+  default: () => {
+    const React = require('react');
+    return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
+  },
+}));
+
 jest.mock('@/hooks/useResumableSessionCatalog', () => ({
   __esModule: true,
   default: () => ({
@@ -239,9 +247,8 @@ function getVisibleWorkspaceColumns(container) {
 
 function getVisiblePanelSlots(container) {
   return (
-    getVisibleWorkspaceShell(container)?.querySelectorAll(
-      '[data-testid^="panel-slot-"].group'
-    ) || []
+    getVisibleWorkspaceShell(container)?.querySelectorAll('[data-testid^="panel-slot-"].group') ||
+    []
   );
 }
 
@@ -458,9 +465,9 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     await dispatchShortcut({ key: 'R', ctrlKey: true, shiftKey: true });
 
     const firstPress = await dispatchShortcut({ key: 'W', ctrlKey: true, shiftKey: true });
-    expect(view.container.querySelector('[data-testid="terminal-shortcut-hint"]')?.textContent).toMatch(
-      /Ctrl\+Shift\+W/
-    );
+    expect(
+      view.container.querySelector('[data-testid="terminal-shortcut-hint"]')?.textContent
+    ).toMatch(/Ctrl\+Shift\+W/);
     expect(getVisibleWorkspaceColumns(view.container)).toHaveLength(2);
 
     const secondPress = await dispatchShortcut({ key: 'W', ctrlKey: true, shiftKey: true });
@@ -472,44 +479,45 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     expect(secondPress.defaultPrevented).toBe(true);
   });
 
-  test('Ctrl+Shift+B opens the browser dock from terminal focus', async () => {
+  test('Ctrl+Shift+B splits a browser space from terminal focus', async () => {
     const view = await renderManager();
     const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
     terminal.focus();
 
     const event = await dispatchShortcut({ key: 'B', ctrlKey: true, shiftKey: true });
 
-    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="right-dock-tab-browser"]')?.getAttribute(
-        'data-pizarra-active-tab'
-      )
-    ).toBe('true');
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="workspace-browser-pane"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
     expect(event.defaultPrevented).toBe(true);
   });
 
-  test('Ctrl+Shift+E opens the editor dock from terminal focus', async () => {
+  test('Ctrl+Shift+E splits a files space from terminal focus', async () => {
     const view = await renderManager();
     const terminal = view.container.querySelector('[data-testid="terminal-p1"]');
     terminal.focus();
 
     const event = await dispatchShortcut({ key: 'E', ctrlKey: true, shiftKey: true });
 
-    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
-    expect(
-      view.container.querySelector('[data-testid="right-dock-tab-editor"]')?.getAttribute(
-        'data-pizarra-active-tab'
-      )
-    ).toBe('true');
+    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="shared-editor-pane"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
     expect(event.defaultPrevented).toBe(true);
   });
 
   test('Ctrl+Shift+. closes the right dock', async () => {
     const view = await renderManager();
-    await dispatchShortcut({ key: 'B', ctrlKey: true, shiftKey: true });
-    expect(view.container.querySelector('[data-testid="workspace-right-dock"]')).not.toBeNull();
+    await click(view.container.querySelector('[data-testid="right-dock-tab-swarm"]'));
+    expect(
+      view.container.querySelector('[data-testid="workspace-right-dock-panel"]')
+    ).not.toBeNull();
 
-    const event = await dispatchShortcut({ key: '.', ctrlKey: true, shiftKey: true, code: 'Period' });
+    const event = await dispatchShortcut({
+      key: '.',
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'Period',
+    });
 
     expect(view.container.querySelector('[data-testid="workspace-right-dock-panel"]')).toBeNull();
     expect(event.defaultPrevented).toBe(true);
@@ -579,7 +587,9 @@ describe('TerminalWorkspacesManager shortcuts', () => {
     });
 
     const view = await renderManager();
-    const terminalViewport = view.container.querySelector('[data-testid="terminal-viewport-shell"]');
+    const terminalViewport = view.container.querySelector(
+      '[data-testid="terminal-viewport-shell"]'
+    );
     const textarea = document.createElement('textarea');
     textarea.className = 'xterm-helper-textarea';
     terminalViewport?.appendChild(textarea);

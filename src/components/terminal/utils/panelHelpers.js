@@ -383,13 +383,14 @@ function resolveSplitCreatedPanelProps({
   return { initialCommand, panelCwd };
 }
 
-/** First terminal panel when workspace has zero panels (split/add from empty). */
+/** First panel when workspace has zero panels (split/add from empty). */
 function spawnFirstTerminalPanelColumns({
   allocateColumnId,
   allocatePanelId,
   initialCommand = null,
   panelCwd = null,
   explicitPanelId = null,
+  kind = null,
   createPanel: createPanelFn = createPanel,
 }) {
   const panelId =
@@ -397,11 +398,12 @@ function spawnFirstTerminalPanelColumns({
       ? explicitPanelId
       : allocatePanelId();
   const colId = allocateColumnId();
+  const metadata = kind ? { kind } : null;
   return {
     columns: [
       {
         id: colId,
-        panels: [createPanelFn(panelId, initialCommand, panelCwd)],
+        panels: [createPanelFn(panelId, initialCommand, panelCwd, metadata)],
       },
     ],
     panelId,

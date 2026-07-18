@@ -43,9 +43,10 @@ describe('motion-tokens v2', () => {
     });
   });
 
-  test('absorbed pizarra EASE_OUT matches EASE_CSS.out', () => {
-    expect(EASE_OUT).toBe('cubic-bezier(0.22, 1, 0.36, 1)');
+  test('EASE_OUT is premium decelerate (matches CSS --motion-ease-premium)', () => {
+    expect(EASE_OUT).toBe('cubic-bezier(0.16, 1, 0.3, 1)');
     expect(EASE_OUT).toBe(EASE_CSS.out);
+    expect(EASE.out).toEqual([0.16, 1, 0.3, 1]);
   });
 
   test('absorbed pizarra EASE_SOFT matches EASE_CSS.inOut', () => {
@@ -68,12 +69,12 @@ describe('motion-tokens v2', () => {
     });
   });
 
-  test('legacy DUR values remain backward-compatible', () => {
+  test('DUR kit aligns with CSS --motion-dur-* (160/240/320)', () => {
     expect(DUR.instant).toBe(80);
-    expect(DUR.fast).toBe(120);
-    expect(DUR.base).toBe(180);
-    expect(DUR.content).toBe(200);
-    expect(DUR.enter).toBe(280);
+    expect(DUR.fast).toBe(160);
+    expect(DUR.base).toBe(240);
+    expect(DUR.content).toBe(240);
+    expect(DUR.enter).toBe(320);
     expect(DUR.slow).toBe(400);
   });
 

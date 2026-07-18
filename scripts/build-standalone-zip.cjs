@@ -148,6 +148,54 @@ function pruneDataDirectory() {
   removeIfExists(path.join(STANDALONE_DIR, 'data'));
 }
 
+/**
+ * Next/file-tracing and accidental copies sometimes land whole-repo trees in
+ * `.next/standalone` (graphify-out, openspec, tmp, docs…). None of these are
+ * needed to serve the packaged Next runtime.
+ */
+const JUNK_TOP_LEVEL_DIRS = [
+  'graphify-out',
+  'openspec',
+  'tmp',
+  'docs',
+  'research',
+  'opencode',
+  'sidecar-backend',
+  'telegram-bot',
+  'sdd',
+  'devhub-cli',
+  'test_reports',
+  'memories',
+  'memory',
+  'skills',
+  'plugins',
+  'bin',
+  'lib',
+];
+
+const JUNK_TOP_LEVEL_FILES = [
+  'AGENTS.md',
+  '.gitignore',
+  'build_log.txt',
+  'build_log_optimized.txt',
+  'build_log_sccache.txt',
+];
+
+function pruneJunkTopLevel(rootDir = STANDALONE_DIR) {
+  for (const name of JUNK_TOP_LEVEL_DIRS) {
+    removeIfExists(path.join(rootDir, name));
+  }
+  for (const name of JUNK_TOP_LEVEL_FILES) {
+    const filePath = path.join(rootDir, name);
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      fs.rmSync(filePath, { force: true });
+    }
+  }
+  // Nested docs/logs that sneak under src/ (not runtime).
+  removeIfExists(path.join(rootDir, 'src', 'docs'));
+  removeIfExists(path.join(rootDir, 'src', 'tmp'));
+}
+
 function pruneLinuxMuslSharp() {
   if (process.platform !== 'linux') return;
   const nm = path.join(STANDALONE_DIR, 'node_modules');
@@ -247,6 +295,7 @@ function main() {
 
   // Additional pruning to reduce installer size without affecting runtime.
   pruneDataDirectory();
+  pruneJunkTopLevel();
   pruneSharpFromStandalone();
   pruneSourceMapsAndSymbols();
   pruneTestFiles();
@@ -267,4 +316,11 @@ if (require.main === module) {
   }
 }
 
-module.exports = { createZipArchive, main };
+module.exports = {
+  createZipArchive,
+  main,
+  pruneJunkTopLevel,
+  JUNK_TOP_LEVEL_DIRS,
+  JUNK_TOP_LEVEL_FILES,
+  STANDALONE_DIR,
+};

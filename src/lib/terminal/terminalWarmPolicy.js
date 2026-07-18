@@ -7,7 +7,11 @@
  * or inflate cold Terminales marks (seen ~24s warm in HMR-contaminated runs).
  */
 
-import { markWarmTierDone, markWarmTierStart } from '@/lib/terminal/startupPerfMarks';
+import {
+  markSidecarWarmReady,
+  markWarmTierDone,
+  markWarmTierStart,
+} from '@/lib/terminal/startupPerfMarks';
 
 import {
   coalesceTerminalEndpointFetch,
@@ -129,18 +133,8 @@ export function scheduleTerminalWarm({
       });
     }
     try {
-      // Tier3 / Tier2 first — do not wait on network.
-      if (resolved.tier3 && typeof softMountTerminalManager === 'function') {
-        if (cancelled) return;
-        softMountTerminalManager();
-      }
-      if (resolved.tier2 && typeof prefetchState === 'function') {
-        if (cancelled) return;
-        await prefetchState({ projectId });
-      }
-
-      // xterm + sidecar warm are fire-and-forget. Awaiting sidecar aborted the GET
-      // at 2s while the real session compile takes ~6s — panel then paid again.
+      // Kick sidecar + xterm immediately — do not wait for soft-mount paints.
+      // Awaiting sidecar still aborts cold compile; fire-and-forget only.
       if (resolved.tier1 && typeof prefetchXtermModules === 'function') {
         void Promise.resolve()
           .then(() => prefetchXtermModules())
@@ -156,6 +150,7 @@ export function scheduleTerminalWarm({
           .then((endpoint) => {
             if (endpoint?.port && endpoint?.wsPath) {
               rememberTerminalEndpoint({ ...endpoint, cwd });
+              markSidecarWarmReady();
               if (typeof console !== 'undefined') {
                 console.info('[terminal-warm] sidecar ready', {
                   port: endpoint.port,
@@ -169,6 +164,29 @@ export function scheduleTerminalWarm({
               console.warn('[terminal-warm] sidecar', err?.message || err);
             }
           });
+      }
+
+      // Soft-mount after a paint so Terminales-first entry isn't competing with first frame.
+      if (resolved.tier3 && typeof softMountTerminalManager === 'function') {
+        if (cancelled) return;
+        await new Promise((resolve) => {
+          const raf =
+            typeof globalThis !== 'undefined' &&
+            typeof globalThis.requestAnimationFrame === 'function'
+              ? globalThis.requestAnimationFrame.bind(globalThis)
+              : null;
+          if (raf) {
+            raf(() => raf(resolve));
+          } else {
+            setTimeout(resolve, 0);
+          }
+        });
+        if (cancelled) return;
+        softMountTerminalManager();
+      }
+      if (resolved.tier2 && typeof prefetchState === 'function') {
+        if (cancelled) return;
+        await prefetchState({ projectId });
       }
     } catch (err) {
       if (typeof console !== 'undefined') {
@@ -223,6 +241,7 @@ export async function warmTtySidecarViaApi({
       const data = await res.json().catch(() => ({}));
       if (data?.port && data?.wsPath) {
         rememberTerminalEndpoint({ ...data, cwd });
+        markSidecarWarmReady();
       }
       return data;
     } finally {
@@ -240,6 +259,11 @@ export async function prefetchXtermRendererModules() {
   ]);
   try {
     await import('@xterm/addon-webgl');
+  } catch {
+    /* optional */
+  }
+  try {
+    await import('@xterm/addon-serialize');
   } catch {
     /* optional */
   }

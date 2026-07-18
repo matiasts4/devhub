@@ -9,6 +9,7 @@ import {
   resolveRightDockLayerStyle,
 } from '@/components/terminal/hooks/useRightDockController';
 import { DEFAULT_RIGHT_DOCK_STATE } from '@/components/workspace/rightDockState';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 
 export default function useWorkspaceRightDockSync({
   activeWorkspace,
@@ -34,6 +35,8 @@ export default function useWorkspaceRightDockSync({
   syncRightDockMeasuredBoundsRef,
   workspaceGridAreaRef,
 }) {
+  const motionMode = useMotionMode();
+
   // Global drag-state listeners for the right-dock resize handle.
   useEffect(() => {
     if (!isDraggingDock) return undefined;
@@ -214,11 +217,11 @@ export default function useWorkspaceRightDockSync({
   }, []);
   applyLiveRightDockBoundsRef.current = applyLiveRightDockBounds;
 
+  // Browser is a space component now — fullscreen takeover is swarm/pizarra only.
   const isFullscreenBrowser =
     effectiveRightDockState.visible &&
     effectiveRightDockState.maximized &&
-    (effectiveRightDockState.maximizedView === 'browser' ||
-      effectiveRightDockState.maximizedView === 'swarm' ||
+    (effectiveRightDockState.maximizedView === 'swarm' ||
       effectiveRightDockState.maximizedView === 'pizarra');
   const pizarraOwnsLiveSurfaces =
     effectiveRightDockState.visible &&
@@ -234,6 +237,7 @@ export default function useWorkspaceRightDockSync({
     isVisible: dockLayerVisible,
     isDragging: isDraggingDock,
     isFullscreen: isFullscreenBrowser,
+    motionMode,
   });
 
   const rightDockLayerStyle = resolveRightDockLayerStyle({

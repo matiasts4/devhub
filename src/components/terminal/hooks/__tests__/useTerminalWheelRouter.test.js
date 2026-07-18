@@ -274,6 +274,45 @@ describe('useTerminalWheelRouter', () => {
     expect(event.preventDefault).toHaveBeenCalled();
   });
 
+  it('TUI wheel over input zone injects SGR instead of swallowing', () => {
+    const sendPaste = jest.fn(() => true);
+    const term = { cols: 80, rows: 24, scrollLines: jest.fn() };
+    const handler = createTerminalWheelHandler({
+      term,
+      initialCommand: 'opencode',
+      lifecycleRefs: {
+        current: {
+          tuiSessionActiveRef: { current: true },
+          isGrokSessionRef: { current: false },
+          kimiReadyNotifiedRef: { current: false },
+          grokTuiReadyRef: { current: false },
+          tuiSessionFooterConfirmedRef: { current: true },
+          isActivePanelRef: { current: false },
+          lastPointerZoneRef: { current: 'input' },
+        },
+      },
+      rendererRefs: { current: { termRef: { current: term } } },
+      sessionRefs: { current: { wsRef: { current: {} }, transportRef: { current: 'json' } } },
+      viewportRefs: {
+        current: {
+          containerRef: { current: null },
+          viewportShellRef: { current: document.createElement('div') },
+        },
+      },
+      sendTerminalPasteInput: sendPaste,
+      resolveTerminalCellFromPointer: () => ({ col: 10, row: 23 }),
+      shouldRouteWheelToTranscript: () => false,
+    });
+
+    const event = createWheelEvent(120);
+    handler(event);
+
+    expect(sendPaste).toHaveBeenCalled();
+    // eslint-disable-next-line no-control-regex -- ANSI escape sequences require control chars
+    expect(sendPaste.mock.calls[0][0].text).toMatch(/\x1b\[<6[45];/);
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
+
   it('OpenCode with mouse modes on but focus stolen by Zed modal injects SGR', () => {
     const sendPaste = jest.fn(() => true);
     const root = document.createElement('div');

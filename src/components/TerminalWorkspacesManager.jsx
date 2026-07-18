@@ -59,6 +59,8 @@ import {
   resolveWorkspaceAllWindowsTerminalPanelCount,
   buildStableWorkspaceShellKey,
   resolveWorkspacePanelId,
+  normalizePanelKind,
+  setPanelKindInWorkspaceTree,
 } from './terminal/models/workspaceStateModel';
 import {
   getSwarmSnapshotStorageKey,
@@ -110,6 +112,7 @@ import useSwarmLaunchController from './terminal/hooks/useSwarmLaunchController'
 import useWorkspaceLifecycle from './terminal/hooks/useWorkspaceLifecycle';
 import useWorkspacePanelLifecycle from './terminal/hooks/useWorkspacePanelLifecycle';
 import useZedWorkspaceEvents from './terminal/hooks/useZedWorkspaceEvents';
+import useOpenFileInWorkspace from './terminal/hooks/useOpenFileInWorkspace';
 import useTerminalWorkspaceShortcuts from './terminal/hooks/useTerminalWorkspaceShortcuts';
 import useWorkspaceLayoutState from './terminal/hooks/useWorkspaceLayoutState';
 import useWorkspaceNativeSync from './terminal/hooks/useWorkspaceNativeSync';
@@ -120,7 +123,6 @@ import useWorkspaceBootstrapEffect from './terminal/hooks/useWorkspaceBootstrapE
 import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
 import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
-import FileExplorerEditorPane from './workspace/FileExplorerEditorPane';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
 import {
   DEFAULT_RIGHT_DOCK_STATE,
@@ -260,7 +262,13 @@ export {
   resolveMeasuredRightDockBounds,
 } from './terminal/hooks/useRightDockController';
 
-export default function TerminalWorkspacesManager({ cwd, isVisible, projectId }) {
+export default function TerminalWorkspacesManager({
+  cwd,
+  isVisible,
+  projectId,
+  navSidebarOpen = false,
+  onToggleNavSidebar = null,
+}) {
   const managerRootRef = useRef(null);
   const [shortcutHint, setShortcutHint] = useState(null);
   const panelSubtabsBarRef = useRef(null);
@@ -854,33 +862,6 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     );
   }, []);
 
-  const handleRightDockTabSelect = useCallback(
-    (tab) => {
-      updateRightDockState((currentState) => {
-        if (tab === 'pizarra') {
-          const isCurrentlyPizarra =
-            currentState.maximized === true && currentState.maximizedView === 'pizarra';
-          if (isCurrentlyPizarra) {
-            const wsId = activeWsIdRef.current || activeWsId;
-            const browserOpen = browserWindowStates?.[wsId]?.open === true;
-            if (browserOpen) {
-              return {
-                ...currentState,
-                visible: true,
-                activeTab: 'browser',
-                maximized: false,
-                maximizedView: 'browser',
-                browserLayoutEpoch: (Number(currentState.browserLayoutEpoch) || 0) + 1,
-              };
-            }
-          }
-        }
-        return applyRightDockTabSelect(currentState, tab);
-      });
-    },
-    [updateRightDockState, activeWsId, browserWindowStates]
-  );
-
   const getWorkspaceDisplayLabel = (wsId) => {
     const ws = workspaces.find((w) => w.id === wsId);
     const index = workspaces.findIndex((w) => w.id === wsId);
@@ -1114,6 +1095,96 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     getAllPanelIds,
     collectSiblingPanelNames,
   });
+
+  const setPanelKind = useCallback(
+    (panelId, kind) => {
+      const wsId = activeWsIdRef.current || activeWsId;
+      if (!wsId || !panelId) return null;
+      const nextKind = normalizePanelKind(kind);
+      const { workspaces: nextWorkspaces, workspaceWindows: nextWindows } =
+        setPanelKindInWorkspaceTree({
+          workspaces: workspacesRef.current,
+          workspaceWindows: workspaceWindowsRef.current,
+          workspaceId: wsId,
+          panelId,
+          kind: nextKind,
+        });
+      setWorkspaces(nextWorkspaces);
+      setWorkspaceWindows(nextWindows);
+      setActivePanelIds((prev) => ({ ...prev, [wsId]: panelId }));
+      if (nextKind === 'browser') {
+        updateRightDockState((currentState) => ({
+          ...currentState,
+          visible: false,
+          maximized: false,
+          browserLayoutEpoch: (Number(currentState.browserLayoutEpoch) || 0) + 1,
+        }));
+      }
+      return { panelId, kind: nextKind };
+    },
+    [activeWsId, setWorkspaces, setWorkspaceWindows, setActivePanelIds, updateRightDockState]
+  );
+
+  const splitWithKind = useCallback(
+    (kind, sourcePanelId = null, direction = 'horizontal') => {
+      const wsId = activeWsIdRef.current || activeWsId;
+      const panelId =
+        sourcePanelId ||
+        activePanelIdsRef.current?.[wsId] ||
+        workspacesRef.current.find((entry) => entry.id === wsId)?.columns?.[0]?.panels?.[0]?.id ||
+        null;
+      const nextKind = normalizePanelKind(kind);
+      // Terminal add must match the split-button path (no kind meta) so layout /
+      // renderer budget stay identical; browser/files still pass kind.
+      const createdId =
+        nextKind === 'terminal'
+          ? handleSplit(direction, panelId)
+          : handleSplit(direction, panelId, null, null, null, nextKind);
+      if (createdId && nextKind === 'browser') {
+        updateRightDockState((currentState) => ({
+          ...currentState,
+          visible: false,
+          maximized: false,
+          browserLayoutEpoch: (Number(currentState.browserLayoutEpoch) || 0) + 1,
+        }));
+      }
+      return createdId;
+    },
+    [activeWsId, handleSplit, updateRightDockState]
+  );
+
+  const handleRightDockTabSelect = useCallback(
+    (tab) => {
+      // Browser/files are space components — create via split, never replace from chrome.
+      if (tab === 'browser' || tab === 'editor') {
+        splitWithKind(tab === 'browser' ? 'browser' : 'files');
+        return;
+      }
+
+      updateRightDockState((currentState) => {
+        if (tab === 'pizarra') {
+          const isCurrentlyPizarra =
+            currentState.maximized === true && currentState.maximizedView === 'pizarra';
+          if (isCurrentlyPizarra) {
+            const wsId = activeWsIdRef.current || activeWsId;
+            const browserOpen = browserWindowStates?.[wsId]?.open === true;
+            if (browserOpen) {
+              splitWithKind('browser');
+              return {
+                ...currentState,
+                visible: false,
+                maximized: false,
+                maximizedView: 'browser',
+                browserLayoutEpoch: (Number(currentState.browserLayoutEpoch) || 0) + 1,
+              };
+            }
+          }
+        }
+        return applyRightDockTabSelect(currentState, tab);
+      });
+    },
+    [updateRightDockState, activeWsId, browserWindowStates, splitWithKind]
+  );
 
   // pizarra-view-switch-complete: consolidate the active window so the workspace
   // state reflects the destination view. Without this the pane keeps receiving
@@ -1423,6 +1494,18 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     setRestoreSettingsModal,
   });
 
+  useOpenFileInWorkspace({
+    activeWsId,
+    activeWsIdRef,
+    workspacesRef,
+    workspaceWindowsRef,
+    activeWindowIdsRef,
+    splitWithKind,
+    activateWorkspacePanel,
+    setFocusedPanelByWorkspace,
+    setActivePanelIds,
+  });
+
   useTerminalWorkspaceShortcuts({
     isVisible,
     workspaceTerminalSetupOpen,
@@ -1633,6 +1716,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     addWindowToWorkspace,
     activeWorkspace,
     handleSplit,
+    splitWithKind,
+    setPanelKind,
     setIsGridLauncherOpen,
     handleApplyGrid,
     gridCommand,
@@ -1720,6 +1805,8 @@ export default function TerminalWorkspacesManager({ cwd, isVisible, projectId })
     getActiveWorkspaceTerminalPanelCount,
     getWorkspaceTerminals,
     showWorkspacePathChip,
+    navSidebarOpen,
+    onToggleNavSidebar,
   };
 
   return (

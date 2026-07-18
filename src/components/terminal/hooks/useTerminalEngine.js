@@ -39,6 +39,10 @@ import {
   markXtermCoreImportDone,
   markXtermCoreImportStart,
 } from '@/lib/terminal/startupPerfMarks';
+import { attachAgentFilePathLinks } from '@/lib/terminal/agentFilePathLinkProvider';
+import { isGrokTuiInitialCommand } from '@/components/terminal/TerminalTTY.helpers';
+import { isGrokLaunchCommand } from '@/lib/terminal/grokReadyMarker';
+import { isOpenCodeLaunchCommand } from '@/lib/terminal/opencodeReadyMarker';
 
 export default function useTerminalEngine({
   ctxRef,
@@ -924,6 +928,20 @@ export default function useTerminalEngine({
         termRef.current = terminal;
         fitRef.current = fitAddon;
         searchRef.current = searchAddon;
+
+        // Agent file-path links (Grok / OpenCode): Ctrl/Cmd+click opens in Files space.
+        try {
+          attachAgentFilePathLinks(terminal, {
+            panelId: id,
+            initialCommand: initialCommand || ctxRef.current?.initialCommand,
+            getCwd: () => ctxRef.current?.cwd || null,
+            getProjectRoot: () => ctxRef.current?.projectRoot || ctxRef.current?.cwd || null,
+            isGrokCommand: (cmd) => isGrokTuiInitialCommand(cmd) || isGrokLaunchCommand(cmd),
+            isOpenCodeCommand: (cmd) => isOpenCodeLaunchCommand(cmd),
+          });
+        } catch (err) {
+          console.warn(`[TTY:${id}] agent file-path links failed:`, err?.message || err);
+        }
 
         // A.0 lifecycle telemetry: a fresh xterm runtime came online.
         cliLog(

@@ -61,6 +61,11 @@ function parseClientMessage(rawMessage, transport = 'raw') {
     if (payload?.type === 'input' && typeof payload.data === 'string') {
       return payload;
     }
+    // Control frames must stay typed. Falling through to `{ type: 'input' }`
+    // writes the JSON into the PTY (visible at every panel focus / connect).
+    if (payload?.type === 'panel-focus' || payload?.type === 'session-meta') {
+      return payload;
+    }
   } catch {
     return { type: 'input', data: message };
   }

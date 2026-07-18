@@ -36,7 +36,8 @@ import {
 } from './opencodeSessionRegistry.js';
 
 const requireCjs = createRequire(import.meta.url);
-const { shouldRespawnShellAfterPtyExit } = requireCjs('./ptyRespawnPolicy.cjs');
+const { shouldRespawnShellAfterPtyExit, shouldRelaunchAgentAfterCtrlCRespawn } =
+  requireCjs('./ptyRespawnPolicy.cjs');
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -981,6 +982,9 @@ export function createSession({
     termsize: { cols: 120, rows: 32 },
     _oscCwdParser: createOscCwdParser(),
     snapshot: null,
+    inputFocused: false,
+    launchCommand: initialCommand || null,
+    _tuiCtrlCRespawnCount: 0,
   };
 
   sessions.set(id, session);
@@ -1219,30 +1223,40 @@ function handleSessionOutput(sessions, session, chunk) {
 }
 
 function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
+  const priorAgentType = session.agentType;
+  const priorLaunchCommand = session.launchCommand || session.initialCommand || null;
+  const wasFocused = session.inputFocused === true;
   const should = shouldRespawnShellAfterPtyExit({
     platform: os.platform(),
     mode: session.mode,
     agentType: session.agentType,
+    launchCommand: priorLaunchCommand,
     exitCode,
     respawnCount: session._tuiCtrlCRespawnCount || 0,
   });
   if (!should || !sessions.has(session.id)) return false;
 
   session._tuiCtrlCRespawnCount = (session._tuiCtrlCRespawnCount || 0) + 1;
-  ttyLog('PTY_EXIT', `Win Ctrl+C killed TUI PTY — respawning shell`, {
+  const bootstrapped = Boolean(priorLaunchCommand && String(priorLaunchCommand).trim());
+  const relaunchAgent = shouldRelaunchAgentAfterCtrlCRespawn({
+    inputFocused: wasFocused,
+    launchCommand: priorLaunchCommand,
+    agentType: priorAgentType,
+  });
+  ttyLog('PTY_EXIT', `Agent TUI PTY exited — respawning usable shell`, {
     id: session.id,
     exitCode,
     signal,
     respawnCount: session._tuiCtrlCRespawnCount,
+    inputFocused: wasFocused,
+    bootstrapped,
+    relaunchAgent,
   });
 
-  try {
-    teardownPanelSessionProcesses(session, { hasTmux });
-  } catch {
-    // ignore cleanup failures before respawn
-  }
+  // Do not taskkill here — the ConPTY is already exiting. /T races have killed
+  // sibling panel trees on Windows when PIDs were recycled mid-teardown.
 
-  // Fresh interactive shell — do not re-inject initialCommand (would relaunch TUI).
+  // Fresh interactive shell; collateral (unfocused) deaths re-inject launchCommand.
   const { env, spawnArgs, tmuxEnabled, tmuxSession } = buildSessionSpawnConfig(
     session.cwd,
     session.id,
@@ -1283,6 +1297,7 @@ function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
   session.agentType = null;
   session.agentTuiState = null;
   session.agentTuiStateAt = null;
+  session.launchCommand = priorLaunchCommand || null;
   session.tmuxEnabled = Boolean(tmuxEnabled);
   session.tmuxSession = tmuxSession || null;
   session._ptyWired = false;
@@ -1294,11 +1309,29 @@ function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
   tryUpdatePtyIdentity(session);
   saveSessions(sessions);
 
-  handleSessionOutput(
-    sessions,
-    session,
-    '\r\n\x1b[33m[DevHub]\x1b[0m La TUI cerró el PTY (Ctrl+C). Shell nueva lista.\r\n'
-  );
+  if (bootstrapped) {
+    const notice = relaunchAgent
+      ? '\r\n\x1b[33m[DevHub]\x1b[0m Panel hermano recuperado — relanzando agente…\r\n'
+      : '\r\n\x1b[33m[DevHub]\x1b[0m TUI cerrada. Shell lista.\r\n';
+    handleSessionOutput(sessions, session, notice);
+  }
+
+  if (relaunchAgent && priorLaunchCommand) {
+    const cmd = String(priorLaunchCommand)
+      .replace(/\s*#recovery-\d+\s*$/, '')
+      .trim();
+    if (cmd) {
+      setTimeout(() => {
+        if (!sessions.has(session.id) || !session.pty) return;
+        try {
+          session.pty.write(`${cmd}\r`);
+        } catch {
+          // ignore write failures on mid-dispose
+        }
+      }, 50);
+    }
+  }
+
   return true;
 }
 
@@ -1960,6 +1993,18 @@ export async function ensureTTYServer() {
     socket.on('message', (rawMessage) => {
       const message = parseClientMessage(rawMessage);
       if (!message?.type) return;
+
+      if (message.type === 'panel-focus') {
+        session.inputFocused = message.focused === true;
+        return;
+      }
+
+      if (message.type === 'session-meta') {
+        const launch =
+          typeof message.launchCommand === 'string' ? message.launchCommand.trim() : '';
+        if (launch) session.launchCommand = launch;
+        return;
+      }
 
       if (message.type === 'input' && typeof message.data === 'string') {
         const filteredInput = filterTerminalInputForSession(session, message.data);

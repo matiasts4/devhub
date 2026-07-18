@@ -644,10 +644,12 @@ export default function useWorkspacePanelLifecycle({
       sourcePanelId = null,
       initialCommand = null,
       panelCwd = null,
-      explicitPanelId = null
+      explicitPanelId = null,
+      kind = null
     ) => {
       const targetWorkspaceId = activeWsIdRef.current || activeWsId;
       if (!targetWorkspaceId) return null;
+      const panelKindMeta = kind ? { kind } : null;
 
       const targetWorkspace = workspacesRef.current.find((ws) => ws.id === targetWorkspaceId);
       const activeWindowId = resolveActiveWorkspaceWindowId(
@@ -682,9 +684,11 @@ export default function useWorkspacePanelLifecycle({
             panelCounterRef.current += 1;
             return `p${panelCounterRef.current}`;
           },
-          initialCommand,
+          initialCommand:
+            panelKindMeta?.kind && panelKindMeta.kind !== 'terminal' ? null : initialCommand,
           panelCwd,
           explicitPanelId,
+          kind: panelKindMeta?.kind || null,
         });
         const { columns: newColumns, panelId: newPanelId } = spawned;
         setWorkspaces((prev) =>
@@ -773,9 +777,11 @@ export default function useWorkspacePanelLifecycle({
             resolveSplitCreatedPanelProps({
               sourcePanel,
               workspaceCwd: cwd,
-              explicitInitialCommand: initialCommand,
+              explicitInitialCommand:
+                panelKindMeta?.kind && panelKindMeta.kind !== 'terminal' ? null : initialCommand,
               explicitPanelCwd: panelCwd,
             });
+          const newPanel = makePanel(newPanelId, splitInitialCommand, splitPanelCwd, panelKindMeta);
 
           if (direction === 'horizontal') {
             // Split Right: Agregar una nueva columna a la derecha
@@ -783,7 +789,7 @@ export default function useWorkspacePanelLifecycle({
             const newColId = `c${colCounterRef.current}`;
             nextColumnsSnapshot.splice(colIndex + 1, 0, {
               id: newColId,
-              panels: [makePanel(newPanelId, splitInitialCommand, splitPanelCwd)],
+              panels: [newPanel],
             });
           } else {
             // Split Down: Agregar un nuevo panel debajo en la misma columna
@@ -791,11 +797,7 @@ export default function useWorkspacePanelLifecycle({
               (p) => p.id === targetId
             );
             const newPanels = [...nextColumnsSnapshot[colIndex].panels];
-            newPanels.splice(
-              panelIndex + 1,
-              0,
-              makePanel(newPanelId, splitInitialCommand, splitPanelCwd)
-            );
+            newPanels.splice(panelIndex + 1, 0, newPanel);
             nextColumnsSnapshot[colIndex] = { ...nextColumnsSnapshot[colIndex], panels: newPanels };
           }
 

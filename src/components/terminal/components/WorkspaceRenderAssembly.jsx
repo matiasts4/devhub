@@ -16,10 +16,10 @@ import {
   Clock3,
   Grip,
   Globe,
-  FileCode2,
   Wand2,
   Terminal,
   Settings,
+  PanelLeft,
 } from 'lucide-react';
 import { getWorkspaceAnimProps, resolveRightDockTakeoverChromeStyle } from '../workspaceAnimProps';
 import { getWorkspaceShellChromeStyle, getWorkspaceTopBarStyle } from '../terminalChromeStyles';
@@ -39,6 +39,7 @@ import {
   resolvePanelVisibleInLayout,
 } from '@/lib/terminal/workspaceWindowRender';
 import { resolveRequestedRenderer } from '../terminalRendererPreferences';
+import { resolveVisibleTerminalPanelCountForRenderer } from '../terminalRendererCapabilities';
 import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
 import {
   DropdownMenu,
@@ -61,6 +62,7 @@ import { renderWorkspacePanel } from './renderWorkspacePanel';
 import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
 import { DEFAULT_RIGHT_DOCK_STATE } from '../../workspace/rightDockState';
 import { applyWorkspaceWindowSelectDockState } from '../../workspace/rightDockLayout';
+import { resolveWorkspaceAllWindowsPanelCount } from '../models/workspaceStateModel';
 
 export default function WorkspaceRenderAssembly(props) {
   const {
@@ -92,6 +94,8 @@ export default function WorkspaceRenderAssembly(props) {
     addWindowToWorkspace,
     activeWorkspace,
     handleSplit,
+    splitWithKind,
+    setPanelKind,
     setIsGridLauncherOpen,
     handleApplyGrid,
     gridCommand,
@@ -179,6 +183,8 @@ export default function WorkspaceRenderAssembly(props) {
     getActiveWorkspaceTerminalPanelCount,
     getWorkspaceTerminals,
     showWorkspacePathChip,
+    navSidebarOpen = false,
+    onToggleNavSidebar = null,
   } = props;
 
   const getTauriWindow = useCallback(async () => {
@@ -440,6 +446,25 @@ export default function WorkspaceRenderAssembly(props) {
           ...getWorkspaceTopBarStyle(),
         }}
       >
+        {typeof onToggleNavSidebar === 'function' ? (
+          <button
+            type="button"
+            data-testid="terminales-sidebar-toggle"
+            data-nav-open={navSidebarOpen ? 'true' : 'false'}
+            title={navSidebarOpen ? 'Hide navigation (Ctrl+B)' : 'Show navigation (Ctrl+B)'}
+            aria-label={navSidebarOpen ? 'Hide navigation' : 'Show navigation'}
+            aria-pressed={navSidebarOpen}
+            className={[
+              'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors',
+              navSidebarOpen
+                ? 'border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] text-[var(--accent-primary)]'
+                : 'border-transparent text-[var(--text-muted)] hover:border-white/10 hover:bg-white/[0.06] hover:text-[var(--text-primary)]',
+            ].join(' ')}
+            onClick={() => onToggleNavSidebar()}
+          >
+            <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        ) : null}
         <WorkspaceWindowTabBar
           workspaces={workspaces}
           activeWsId={activeWsId}
@@ -554,61 +579,6 @@ export default function WorkspaceRenderAssembly(props) {
 
           <button
             type="button"
-            data-testid="right-dock-tab-browser"
-            data-pizarra-active-tab={
-              rightDockState.activeTab === 'browser' && rightDockState.visible ? 'true' : 'false'
-            }
-            onClick={() => handleRightDockTabSelect('browser')}
-            className={`relative inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'browser' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Browser (Ctrl+Shift+B)"
-          >
-            <Globe className="w-4 h-4" />
-            {activeBrowserWindowState?.open ? (
-              <span
-                className="absolute -bottom-px -right-px h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                data-testid="right-dock-tab-browser-indicator"
-                title="Ventana browser activa en segundo plano"
-              />
-            ) : null}
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-editor"
-            data-pizarra-active-tab={
-              rightDockState.activeTab === 'editor' && rightDockState.visible ? 'true' : 'false'
-            }
-            onClick={() => handleRightDockTabSelect('editor')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'editor' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Editor / archivos (Ctrl+Shift+E)"
-          >
-            <FileCode2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            data-testid="right-dock-tab-swarm"
-            data-pizarra-active-tab={
-              rightDockState.activeTab === 'swarm' && rightDockState.visible ? 'true' : 'false'
-            }
-            onClick={() => handleRightDockTabSelect('swarm')}
-            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
-              rightDockState.activeTab === 'swarm' && rightDockState.visible
-                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
-                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
-            }`}
-            title="Show swarm topology"
-          >
-            <Bot className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
             data-testid="right-dock-tab-zed"
             onClick={() => dispatchZedOverlayToggle()}
             className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-gray-500 transition-all hover:text-gray-200 hover:bg-white/[0.05]"
@@ -655,6 +625,22 @@ export default function WorkspaceRenderAssembly(props) {
           </label>
           <button
             type="button"
+            data-testid="right-dock-tab-swarm"
+            data-pizarra-active-tab={
+              rightDockState.activeTab === 'swarm' && rightDockState.visible ? 'true' : 'false'
+            }
+            onClick={() => handleRightDockTabSelect('swarm')}
+            className={`inline-flex items-center justify-center h-7 w-7 rounded-sm transition-all ${
+              rightDockState.activeTab === 'swarm' && rightDockState.visible
+                ? 'text-[var(--accent-primary)] bg-[rgba(var(--accent-rgb,88,166,255),0.14)] outline outline-1 -outline-offset-1 outline-inset outline-[var(--accent-primary)]'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.05]'
+            }`}
+            title="Show swarm topology"
+          >
+            <Bot className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={openTerminalSwarmLauncher}
             className="inline-flex items-center justify-center h-7 w-7 rounded-sm text-orange-300/80 transition-all hover:text-orange-200 hover:bg-orange-400/10"
             title="Lanzar swarm desde terminales"
@@ -663,6 +649,13 @@ export default function WorkspaceRenderAssembly(props) {
           >
             <Wand2 className="h-4 w-4" />
           </button>
+          {activeBrowserWindowState?.open ? (
+            <span
+              className="h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-[#0d1320] shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+              data-testid="right-dock-tab-browser-indicator"
+              title="Ventana browser activa en segundo plano"
+            />
+          ) : null}
           {activeSwarmLaunchSummary?.launchId ? (
             <span
               className="max-w-[220px] truncate text-[10px] text-[var(--text-muted)]"
@@ -854,11 +847,16 @@ export default function WorkspaceRenderAssembly(props) {
                   !isFullscreenBrowser && activeWsId === ws.id && isVisible;
                 const shouldSuspendWorkspaceNativeSurfaces =
                   isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
+                const totalPanelCount = resolveWorkspaceAllWindowsPanelCount(ws, workspaceWindows);
                 const totalTerminalPanelCount = resolveWorkspaceAllWindowsTerminalPanelCount(
                   ws,
                   workspaceWindows
                 );
-                const visibleTerminalPanelCount = focusedPanelId ? 1 : totalTerminalPanelCount;
+                const visibleTerminalPanelCount = resolveVisibleTerminalPanelCountForRenderer({
+                  focusedPanelId,
+                  totalTerminalPanelCount,
+                  totalPanelCount,
+                });
                 const activeWindowIdForLayout = resolveActiveWorkspaceWindowId(
                   ws.id,
                   workspaceWindows,
@@ -901,6 +899,8 @@ export default function WorkspaceRenderAssembly(props) {
                     onClosePanel: () => handleClosePanel(panel.id),
                     onSplitRight: () => handleSplit('horizontal', panel.id),
                     onSplitDown: () => handleSplit('vertical', panel.id),
+                    onAddSpaceKind: (kind) => splitWithKind?.(kind, panel.id, 'horizontal'),
+                    onSetPanelKind: (kind) => setPanelKind?.(panel.id, kind),
                     onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
                     isFocusedPanel: focusedPanelId === panel.id,
                     navigationPulseActive: panelNavPulseId === panel.id,
@@ -934,6 +934,15 @@ export default function WorkspaceRenderAssembly(props) {
                     pizarraOwnsLiveSurfaces,
                     swarmDelegatedRoleKeys,
                     onConnectionStateChange: handleTerminalConnectionStateChange,
+                    projectId,
+                    project: { id: projectId, local_path: cwd },
+                    dockState: effectiveRightDockState,
+                    onDockStateChange: updateRightDockState,
+                    browserWindowState: browserWindowStates?.[ws.id] || null,
+                    onBrowserWindowStateChange: updateBrowserWindowState,
+                    workspaceWindows: workspaceWindows?.[ws.id] || [],
+                    activeWorkspaceWindowId: activeWindowIds?.[ws.id] || null,
+                    layoutSyncKey: `${panel.id}:${effectiveRightDockState?.browserLayoutEpoch || 0}`,
                   });
                 return (
                   <WorkspaceTerminalSurface
@@ -948,6 +957,7 @@ export default function WorkspaceRenderAssembly(props) {
                     workspaceWindows={workspaceWindows}
                     activeWindowIds={activeWindowIds}
                     focusedPanelId={focusedPanelId}
+                    totalPanelCount={totalPanelCount}
                     totalTerminalPanelCount={totalTerminalPanelCount}
                     isWorkspaceVisibleInLayout={isWorkspaceVisibleInLayout}
                     panelSubtabsBarRef={panelSubtabsBarRef}
@@ -958,6 +968,7 @@ export default function WorkspaceRenderAssembly(props) {
                     renderWorkspacePanelSlot={renderWorkspacePanelSlot}
                     resolvePanelVisibleInLayout={resolvePanelVisibleInLayout}
                     handleSplit={handleSplit}
+                    splitWithKind={splitWithKind}
                     handlePanelGroupLayout={handlePanelGroupLayout}
                     handleInternalSplitDragging={handleInternalSplitDragging}
                     handleDockDragging={handleDockDragging}

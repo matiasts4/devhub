@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 function prependNodeBinToPath(nodeBin, currentPath = process.env.PATH || '') {
@@ -130,13 +131,86 @@ function rebuildNativeModules({
   });
 }
 
+function readPackageVersion(cwd, packageName) {
+  try {
+    const pkgPath = path.join(cwd, 'node_modules', packageName, 'package.json');
+    const raw = fs.readFileSync(pkgPath, 'utf8');
+    return JSON.parse(raw).version || null;
+  } catch {
+    return null;
+  }
+}
+
+function stampPathFor(cwd) {
+  return path.join(cwd, 'node_modules', '.cache', 'devhub-native-runtime.json');
+}
+
+/**
+ * Fingerprint of Node ABI + native package versions. When unchanged and last
+ * ensure succeeded, skip re-running subprocess checks (fast predev path).
+ */
+function buildNativeRuntimeStamp({
+  cwd = process.cwd(),
+  nodeBin = process.execPath,
+  versions = process.versions,
+} = {}) {
+  return {
+    node: versions?.node || null,
+    modules: versions?.modules || null,
+    nodeBin,
+    'better-sqlite3': readPackageVersion(cwd, 'better-sqlite3'),
+    'node-pty': readPackageVersion(cwd, 'node-pty'),
+    'node-pty-sidecar': readPackageVersion(path.join(cwd, 'sidecar-backend'), 'node-pty'),
+  };
+}
+
+function readNativeRuntimeStamp(cwd = process.cwd(), { readFileSync = fs.readFileSync } = {}) {
+  try {
+    return JSON.parse(readFileSync(stampPathFor(cwd), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeNativeRuntimeStamp(
+  cwd = process.cwd(),
+  stamp,
+  { mkdirSync = fs.mkdirSync, writeFileSync = fs.writeFileSync } = {}
+) {
+  const file = stampPathFor(cwd);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(stamp, null, 2)}\n`, 'utf8');
+}
+
+function stampsMatch(a, b) {
+  if (!a || !b) return false;
+  const keys = [
+    'node',
+    'modules',
+    'nodeBin',
+    'better-sqlite3',
+    'node-pty',
+    'node-pty-sidecar',
+  ];
+  return keys.every((k) => a[k] === b[k]);
+}
+
 function ensureNativeRuntime({
   cwd = process.cwd(),
   exec = execFileSync,
   log = console,
   checks,
   nodeBin = process.execPath,
+  force = process.env.DEVHUB_NATIVE_ENSURE_FORCE === '1',
+  fsApi = fs,
+  stamp: stampOverride = null,
 } = {}) {
+  const stamp = stampOverride || buildNativeRuntimeStamp({ cwd, nodeBin });
+  if (!force && stampsMatch(readNativeRuntimeStamp(cwd, { readFileSync: fsApi.readFileSync }), stamp)) {
+    log.info?.('[native:ensure] Cache hit — native modules already verified');
+    return { rebuilt: false, failures: [], skippedViaCache: true };
+  }
+
   const activeChecks =
     checks ||
     createDefaultChecks({
@@ -146,7 +220,11 @@ function ensureNativeRuntime({
   let failures = runChecks({ checks: activeChecks });
 
   if (failures.length === 0) {
-    return { rebuilt: false, failures: [] };
+    writeNativeRuntimeStamp(cwd, stamp, {
+      mkdirSync: fsApi.mkdirSync.bind(fsApi),
+      writeFileSync: fsApi.writeFileSync.bind(fsApi),
+    });
+    return { rebuilt: false, failures: [], skippedViaCache: false };
   }
 
   log.warn?.(
@@ -168,14 +246,20 @@ function ensureNativeRuntime({
     throw error;
   }
 
+  writeNativeRuntimeStamp(cwd, stamp, {
+    mkdirSync: fsApi.mkdirSync.bind(fsApi),
+    writeFileSync: fsApi.writeFileSync.bind(fsApi),
+  });
   log.info?.('[native:ensure] Native modules rebuilt successfully');
-  return { rebuilt: true, failures: [] };
+  return { rebuilt: true, failures: [], skippedViaCache: false };
 }
 
 if (require.main === module) {
   try {
     const result = ensureNativeRuntime();
-    if (!result.rebuilt) {
+    if (result.skippedViaCache) {
+      console.log('[native:ensure] Cache hit — native modules already verified');
+    } else if (!result.rebuilt) {
       console.log('[native:ensure] Native modules already healthy');
     }
   } catch (error) {
@@ -185,10 +269,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildNativeRuntimeStamp,
   createDefaultChecks,
   ensureNativeRuntime,
   prependNodeBinToPath,
+  readNativeRuntimeStamp,
   rebuildNativeModules,
   runChecks,
   runNodeCheckScript,
+  stampsMatch,
+  writeNativeRuntimeStamp,
 };

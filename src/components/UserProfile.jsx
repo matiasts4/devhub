@@ -53,9 +53,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
   const { projectId } = useParams();
-  const accountSettingsPath = projectId
-    ? `/project/${projectId}/ajustes`
-    : '/ajustes';
+  const accountSettingsPath = projectId ? `/project/${projectId}/ajustes` : '/ajustes';
 
   // Modal Auth States
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -517,7 +515,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
               ) : (
                 <form
                   onSubmit={handleOtpVerify}
-                  className="space-y-4 animate-in fade-in duration-300"
+                  className="space-y-4 animate-in fade-in duration-150"
                 >
                   <div className="border border-amber-500/20 bg-amber-500/5 p-3.5 text-[11px] leading-relaxed text-amber-500/90 rounded-md">
                     Enviamos un correo a <strong className="text-text-primary">{email}</strong>.

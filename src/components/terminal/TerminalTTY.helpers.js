@@ -1292,10 +1292,15 @@ export function isTerminalTranscriptCell(
   return row < rows - reserved;
 }
 
+/**
+ * Synthetic SGR click for TUI inject path (when native DECSET is cold/unfocused).
+ * Press + release; do not toggle mouse modes off — same lesson as wheel SGR
+ * (toggling ?1000l after each burst breaks the next click/scroll).
+ */
 export function buildTerminalMousePressSequence(col, row) {
   const x = Math.max(1, Math.floor(col) + 1);
   const y = Math.max(1, Math.floor(row) + 1);
-  return `\x1b[?1006h\x1b[?1000h\x1b[<0;${x};${y}M\x1b[?1000l\x1b[?1006l`;
+  return `\x1b[<0;${x};${y}M\x1b[<0;${x};${y}m`;
 }
 
 /** Movement past this cancels deferred TUI transcript click injection (selection drag). */

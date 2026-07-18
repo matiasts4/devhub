@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect } from 'react';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
+import { logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
 import {
   buildGrokWheelScrollPayload,
   buildTerminalWheelScrollPayload,
@@ -27,6 +28,7 @@ import {
   shouldRouteWheelToTranscript,
   shouldScrollKimiWheelLocally,
   shouldUseTerminalScrollbackWheel,
+  terminalHasActiveMouseReporting,
 } from '@/components/terminal/TerminalTTY.helpers';
 
 /**
@@ -73,6 +75,11 @@ export function createTerminalWheelHandler({
       activeTerm.scrollLines(direction === 'up' ? -lines : lines);
       event.preventDefault();
       event.stopPropagation();
+      logTuiPointerDebug('tui-wheel', {
+        path: 'scrollback-local-shift',
+        term: activeTerm,
+        mouseTrackingMode: terminalHasActiveMouseReporting(activeTerm) ? 1 : 0,
+      });
       return;
     }
 
@@ -130,6 +137,17 @@ export function createTerminalWheelHandler({
       if (forwardTerminalWheelToXterm(activeTerm, event)) {
         event.preventDefault();
         event.stopPropagation();
+        logTuiPointerDebug('tui-wheel', {
+          path: 'native-forward',
+          term: activeTerm,
+          zone: 'transcript',
+          tuiSessionActive: Boolean(lifecycle.tuiSessionActiveRef?.current),
+          grokTuiReady: lifecycle.grokTuiReadyRef?.current === true,
+          opencodeFooterConfirmed: lifecycle.tuiSessionFooterConfirmedRef?.current === true,
+          isActivePanel: lifecycle.isActivePanelRef?.current === true,
+          mouseTrackingMode: terminalHasActiveMouseReporting(activeTerm) ? 1 : 0,
+          domFocus: true,
+        });
         return;
       }
     }
@@ -158,11 +176,11 @@ export function createTerminalWheelHandler({
       lastPointerZone: lifecycle.lastPointerZoneRef?.current,
       inputZoneRows,
     });
-    if (!inTranscript) {
-      if (isTuiSession) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+    const zone = inTranscript ? 'transcript' : 'input';
+
+    // Live TUIs own scroll everywhere (including prompt/footer chrome). Swallowing
+    // wheel over the input zone with no PTY bytes made scroll feel "broken".
+    if (!inTranscript && !isTuiSession) {
       return;
     }
 
@@ -199,10 +217,34 @@ export function createTerminalWheelHandler({
       transport: transportRef?.current,
       text: payload,
     });
-    if (!sent) return;
+    if (!sent) {
+      logTuiPointerDebug('tui-wheel', {
+        path: 'inject-wheel-failed',
+        term: activeTerm,
+        zone,
+        cell,
+        tuiSessionActive: Boolean(lifecycle.tuiSessionActiveRef?.current),
+        grokTuiReady: lifecycle.grokTuiReadyRef?.current === true,
+        opencodeFooterConfirmed: lifecycle.tuiSessionFooterConfirmedRef?.current === true,
+        isActivePanel: lifecycle.isActivePanelRef?.current === true,
+      });
+      return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
+    logTuiPointerDebug('tui-wheel', {
+      path: inTranscript ? 'inject-wheel' : 'inject-wheel-input-zone',
+      term: activeTerm,
+      zone,
+      cell,
+      tuiSessionActive: Boolean(lifecycle.tuiSessionActiveRef?.current),
+      grokTuiReady: lifecycle.grokTuiReadyRef?.current === true,
+      opencodeFooterConfirmed: lifecycle.tuiSessionFooterConfirmedRef?.current === true,
+      isActivePanel: lifecycle.isActivePanelRef?.current === true,
+      mouseTrackingMode: terminalHasActiveMouseReporting(activeTerm) ? 1 : 0,
+      domFocus: terminalHasFocus(activeTerm),
+    });
   };
 }
 

@@ -9,8 +9,67 @@ import { resolveActiveWorkspaceWindowId } from '@/lib/terminal/workspaceWindowRe
 
 const NEXT_DEV_OVERLAY_HIDE_STYLE_ID = 'devhub-hide-next-dev-overlay-on-terminals';
 
+/** Space occupants share the same panel-slot geometry. */
+const PANEL_KINDS = ['terminal', 'browser', 'files'];
+const DEFAULT_PANEL_KIND = 'terminal';
+
+function normalizePanelKind(kind) {
+  return PANEL_KINDS.includes(kind) ? kind : DEFAULT_PANEL_KIND;
+}
+
+function isTerminalPanelKind(panel) {
+  return normalizePanelKind(panel?.kind) === 'terminal';
+}
+
+function mapColumnsPanelKind(columns = [], panelId, kind) {
+  const nextKind = normalizePanelKind(kind);
+  return (columns || []).map((column) => ({
+    ...column,
+    panels: (column?.panels || []).map((panel) =>
+      panel?.id === panelId ? { ...panel, kind: nextKind } : panel
+    ),
+  }));
+}
+
+/**
+ * Replace a panel's component kind in workspace columns and every window that
+ * still holds that panel id. Geometry (slot / column) is unchanged.
+ */
+function setPanelKindInWorkspaceTree({
+  workspaces = [],
+  workspaceWindows = {},
+  workspaceId,
+  panelId,
+  kind,
+}) {
+  if (!workspaceId || !panelId) {
+    return { workspaces, workspaceWindows };
+  }
+  const nextKind = normalizePanelKind(kind);
+  const nextWorkspaces = (workspaces || []).map((ws) =>
+    ws?.id === workspaceId
+      ? { ...ws, columns: mapColumnsPanelKind(ws.columns, panelId, nextKind) }
+      : ws
+  );
+  const existingWindows = workspaceWindows?.[workspaceId];
+  if (!Array.isArray(existingWindows)) {
+    return { workspaces: nextWorkspaces, workspaceWindows };
+  }
+  return {
+    workspaces: nextWorkspaces,
+    workspaceWindows: {
+      ...workspaceWindows,
+      [workspaceId]: existingWindows.map((win) => ({
+        ...win,
+        columns: mapColumnsPanelKind(win.columns, panelId, nextKind),
+      })),
+    },
+  };
+}
+
 const createPanel = (id, initialCommand = null, panelCwd = null, metadata = null) => ({
   id,
+  kind: normalizePanelKind(metadata?.kind),
   initialCommand,
   cwd: panelCwd,
   swarmRole: metadata?.swarmRole || null,
@@ -65,18 +124,37 @@ function getPanelIdsFromColumns(columns = []) {
   return columns.flatMap((column) => (column?.panels || []).map((panel) => panel.id));
 }
 
-function resolveWorkspaceVisibleTerminalPanelCount(columns = []) {
+function resolveWorkspaceVisiblePanelCount(columns = []) {
   return getPanelIdsFromColumns(columns).length;
 }
 
-/** Count unique panels across all stacked windows (V1/V2/V3) for GPU/layout hints. */
-function resolveWorkspaceAllWindowsTerminalPanelCount(ws, workspaceWindows = {}) {
+function resolveWorkspaceVisibleTerminalPanelCount(columns = []) {
+  return getPanelsFromColumns(columns).filter(isTerminalPanelKind).length;
+}
+
+/** Count unique space panels (any kind) across stacked windows — layout / empty-state. */
+function resolveWorkspaceAllWindowsPanelCount(ws, workspaceWindows = {}) {
   const windows = workspaceWindows?.[ws?.id] || [];
   if (windows.length > 0) {
     const uniquePanelIds = new Set();
     for (const win of windows) {
       for (const panelId of getPanelIdsFromColumns(win.columns || [])) {
         if (panelId) uniquePanelIds.add(panelId);
+      }
+    }
+    return uniquePanelIds.size;
+  }
+  return resolveWorkspaceVisiblePanelCount(ws?.columns || []);
+}
+
+/** Count unique terminal panels across stacked windows (V1/V2/V3) for GPU/layout hints. */
+function resolveWorkspaceAllWindowsTerminalPanelCount(ws, workspaceWindows = {}) {
+  const windows = workspaceWindows?.[ws?.id] || [];
+  if (windows.length > 0) {
+    const uniquePanelIds = new Set();
+    for (const win of windows) {
+      for (const panel of getPanelsFromColumns(win.columns || [])) {
+        if (panel?.id && isTerminalPanelKind(panel)) uniquePanelIds.add(panel.id);
       }
     }
     return uniquePanelIds.size;
@@ -210,6 +288,7 @@ function normalizeWorkspaceState(rawWorkspaces, rawActiveWsId, rawActivePanelIds
 
         return {
           id: panelId,
+          kind: normalizePanelKind(panel?.kind),
           cwd: panel?.cwd || null,
           initialCommand: panel?.initialCommand || null,
           swarmRole: panel?.swarmRole || null,
@@ -363,12 +442,20 @@ function normalizeWorkspaceWindows(
 
 export {
   NEXT_DEV_OVERLAY_HIDE_STYLE_ID,
+  PANEL_KINDS,
+  DEFAULT_PANEL_KIND,
+  normalizePanelKind,
+  isTerminalPanelKind,
+  mapColumnsPanelKind,
+  setPanelKindInWorkspaceTree,
   createPanel,
   createPanelWithDisplayNameFactory,
   createColumn,
   createWindow,
   getPanelIdsFromColumns,
+  resolveWorkspaceVisiblePanelCount,
   resolveWorkspaceVisibleTerminalPanelCount,
+  resolveWorkspaceAllWindowsPanelCount,
   resolveWorkspaceAllWindowsTerminalPanelCount,
   columnContainsFocusedPanel,
   resolveFocusPanelSlotClassName,

@@ -29,15 +29,13 @@ describe('App.js — Slice 2 motion migrations', () => {
     });
 
     test('sidebar wrapper uses translateX (x) instead of width animation', () => {
-      // The sidebar motion wrapper must animate x and opacity, not width.
+      // Non-terminal shell still may slide; Terminales path is instant (no motion.div).
       expect(app).toMatch(/animate=\{\{[^}]*\bx:\s*0[^}]*\}\}/);
       expect(app).toMatch(/initial=\{\{[^}]*\bx:/);
       expect(app).toMatch(/exit=\{\{[^}]*\bx:/);
     });
 
     test('sidebar motion wrapper no longer animates width', () => {
-      // We still allow a parent div to set width as a layout snap, but the
-      // motion.div itself must not have width in its animate/initial/exit.
       const sidebarMatch = app.match(/key=["']workspace-sidebar-wrapper["'][\s\S]*?\u003e/m);
       expect(sidebarMatch).not.toBeNull();
       const sidebarBlock = sidebarMatch[0];
@@ -52,40 +50,32 @@ describe('App.js — Slice 2 motion migrations', () => {
   });
 
   describe('3.2 Route transitions', () => {
-    test('imports useRouteDirection hook', () => {
-      expect(app).toMatch(
-        /import\s*\{[^}]*\buseRouteDirection\b[^}]*\}\s*from\s+['"]@\/hooks\/useRouteDirection['"]/
-      );
-    });
-
-    test('wraps Outlet inside AnimatePresence mode="wait"', () => {
-      expect(app).toMatch(/\u003cAnimatePresence\s+mode=["']wait["']\s*\u003e/);
+    test('does not use AnimatePresence mode=wait (no blocked nav)', () => {
+      expect(app).not.toMatch(/\u003cAnimatePresence\s+mode=["']wait["']/);
     });
 
     test('keys the route motion wrapper by location pathname', () => {
       expect(app).toMatch(/key=\{location\.pathname\}/);
     });
 
-    test('route motion wrapper uses scale + opacity variants (no lateral slide)', () => {
+    test('route motion is soft fade+y (no scale / no wait)', () => {
       expect(app).toMatch(/variants=\{routeVariants\}/);
       expect(app).toMatch(/initial=["']enter["']/);
       expect(app).toMatch(/animate=["']center["']/);
       expect(app).toMatch(/exit=["']exit["']/);
-      // Variants must use scale, not x (no lateral slide on desktop)
-      expect(app).toMatch(/scale:\s*routeScale/);
-      expect(app).not.toMatch(/x:\s*direction/);
+      expect(app).toMatch(/enter:\s*\{\s*opacity:\s*0,\s*y:\s*10\s*\}/);
+      expect(app).not.toMatch(/scale:\s*routeScale/);
+      expect(app).not.toMatch(/useRouteDirection/);
     });
 
-    test('route transition comes from getTransition with nav intent', () => {
+    test('route transition uses TRANSITION.enter (premium, not spring nav)', () => {
       expect(app).toMatch(/transition=\{routeTransition\}/);
-      expect(app).toMatch(
-        /const\s+routeTransition\s*=\s*getTransition\(['"]nav["'],\s*motionMode\)/
-      );
+      expect(app).toMatch(/TRANSITION\.(enter|reduced)/);
     });
 
     test('terminal container is not inside the route AnimatePresence wrapper', () => {
       const animatePresenceMatch = app.match(
-        /\u003cAnimatePresence\s+mode=["']wait["']\s*\u003e[\s\S]*?\u003c\/AnimatePresence\u003e/
+        /\u003cAnimatePresence\s+initial=\{false\}\s*\u003e[\s\S]*?\u003c\/AnimatePresence\u003e/
       );
       expect(animatePresenceMatch).not.toBeNull();
       expect(animatePresenceMatch[0]).not.toMatch(/data-terminal-container/);

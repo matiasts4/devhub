@@ -31,6 +31,12 @@ import {
   writeEditorPaneState,
 } from './editorPaneState';
 import { btnSecondaryStyle } from '@/chrome/morphology';
+import {
+  OPEN_FILE_EVENT,
+  isValidOpenFileEvent,
+  consumePendingOpenFile,
+} from '@/lib/workspace/openFileEvent';
+import { resolveOpenFileTarget } from '@/lib/terminal/resolveOpenFileTarget';
 import 'highlight.js/styles/github-dark.css';
 
 const DOCUMENT_VIEW_MODES = {
@@ -193,8 +199,10 @@ export default function FileExplorerEditorPane({
   );
   const activeDocumentViewMode = isMarkdown ? markdownViewMode : latexViewMode;
   const showPreviewToggle = (isMarkdown || isLatex) && !fileLoading && !fileError;
+  // ponytail: collapsed tree should fill the slot — skip the wide embedded rail clamp
   const shouldUseEmbeddedDocumentRail =
     embedded &&
+    !isTreeCollapsed &&
     !isImage &&
     !isOfficeDocument &&
     ((isMarkdown && markdownViewMode === DOCUMENT_VIEW_MODES.PREVIEW) ||
@@ -295,6 +303,75 @@ export default function FileExplorerEditorPane({
     },
     [loadFile]
   );
+
+  const openExternalPath = useCallback(
+    (detail) => {
+      if (!isValidOpenFileEvent(detail)) return;
+      // Drop pending entries so remount does not re-open a stale path.
+      for (const key of [
+        workspaceId,
+        `project:${workspaceId}`,
+        project?.id && `project:${project.id}`,
+      ]
+        .filter(Boolean)
+        .map(String)) {
+        consumePendingOpenFile(key);
+      }
+      const resolved = resolveOpenFileTarget({
+        rawPath: detail.path,
+        projectRoot: project?.local_path || detail.base || null,
+        cwd: detail.base || project?.local_path || null,
+      });
+      if (!resolved.ok || !resolved.openPath) return;
+      // Expand ancestor folders so the tree highlights the file.
+      const posix = String(resolved.openPath).replace(/\\/g, '/');
+      const parts = posix.split('/').filter(Boolean);
+      if (parts.length > 1) {
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          let acc = '';
+          for (let i = 0; i < parts.length - 1; i += 1) {
+            acc = acc ? `${acc}/${parts[i]}` : parts[i];
+            next.add(acc);
+          }
+          return next;
+        });
+      }
+      void loadFile(resolved.openPath);
+    },
+    [loadFile, project?.id, project?.local_path, workspaceId]
+  );
+
+  // Agent terminal (and other) open-file requests → load in this Files pane.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const tryConsumePending = () => {
+      const keys = [workspaceId, `project:${workspaceId}`, project?.id && `project:${project.id}`]
+        .filter(Boolean)
+        .map(String);
+      for (const key of keys) {
+        const pending = consumePendingOpenFile(key);
+        if (pending) {
+          openExternalPath(pending);
+          return;
+        }
+      }
+    };
+
+    tryConsumePending();
+    // Late mount after splitWithKind('files'): pending was reserved first.
+    const t = window.setTimeout(tryConsumePending, 0);
+
+    const onOpenFile = (event) => {
+      openExternalPath(event?.detail);
+    };
+    window.addEventListener(OPEN_FILE_EVENT, onOpenFile);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener(OPEN_FILE_EVENT, onOpenFile);
+    };
+  }, [openExternalPath, project?.id, workspaceId]);
 
   useEffect(() => {
     const inMemorySnapshot = workspaceSnapshotsRef.current.get(workspaceStateKey);
@@ -677,7 +754,7 @@ export default function FileExplorerEditorPane({
           Changes
         </button>
       </div>
-      <div className="min-h-0 flex-1">
+      <div key={explorerSideTab} className="dh-panel-in min-h-0 flex-1">
         {explorerSideTab === 'changes' ? (
           <SourceControlPanel basePath={project?.local_path || null} onOpenFile={openFromChanges} />
         ) : (
@@ -707,7 +784,7 @@ export default function FileExplorerEditorPane({
   );
 
   const previewSection = (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden">
+    <section className="flex flex-1 min-h-0 flex-col overflow-hidden">
       <div className="px-4 py-2.5 border-b border-borders-subtle bg-surface-app flex items-center justify-between gap-3">
         <div className="min-w-0 flex items-center gap-2 flex-1">
           <button
@@ -794,7 +871,7 @@ export default function FileExplorerEditorPane({
 
       {!selectedPath ? (
         <div
-          className="flex h-full items-center justify-center px-6 text-center"
+          className="flex flex-1 min-h-0 items-center justify-center px-6 text-center"
           data-testid="editor-empty-state"
           style={{ background: 'var(--chrome-panel-fill)' }}
         >
@@ -943,32 +1020,32 @@ export default function FileExplorerEditorPane({
   return (
     <div
       data-testid="shared-editor-pane"
+      data-workspace-id={workspaceId || 'default'}
       className={`flex h-full w-full min-h-0 flex-col overflow-hidden ${embedded ? '' : 'flex-1'}`}
       style={{ background: embedded ? 'var(--chrome-panel-fill)' : undefined }}
     >
-      <div
-        className="px-4 py-2 border-b border-borders-subtle flex items-center justify-between gap-3"
-        style={{
-          background: 'var(--chrome-panel-fill-emphasis)',
-          borderBottomColor: 'var(--chrome-border-color)',
-        }}
-      >
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted font-semibold">
-            Workspace files
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => fileExplorerRef.current?.refresh?.()}
-          className="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-md hover:bg-surface-elevated cursor-pointer"
-          title="Recargar árbol de archivos"
-          aria-label="Recargar árbol de archivos"
-          style={btnSecondaryStyle({ size: 'xs' })}
+      {/* Embedded space chrome already names the panel; tree has its own refresh. */}
+      {!embedded ? (
+        <div
+          className="flex items-center justify-end gap-3 border-b border-borders-subtle px-3 py-1.5"
+          style={{
+            background: 'var(--chrome-panel-fill-emphasis)',
+            borderBottomColor: 'var(--chrome-border-color)',
+          }}
         >
-          <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.5} />
-        </button>
-      </div>
+          <button
+            type="button"
+            data-testid="editor-pane-refresh"
+            onClick={() => fileExplorerRef.current?.refresh?.()}
+            className="cursor-pointer rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-elevated hover:text-text-primary"
+            title="Recargar árbol de archivos"
+            aria-label="Recargar árbol de archivos"
+            style={btnSecondaryStyle({ size: 'xs' })}
+          >
+            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+        </div>
+      ) : null}
 
       <div
         className="flex-1 min-h-0 min-w-0 overflow-hidden"

@@ -1,10 +1,16 @@
 /* global module */
 
-/** Workspace tools that share one pane (mutually exclusive). */
-const WORKSPACE_DOCK_TABS = ['browser', 'editor', 'swarm', 'operator'];
+/** Overlay dock tools (browser/files are space components, not dock tabs). */
+const WORKSPACE_DOCK_TABS = ['swarm', 'operator'];
+/** @deprecated kept for persisted activeTab sanitize / migration */
+const LEGACY_SPACE_DOCK_TABS = ['browser', 'editor'];
 
 function isWorkspaceDockTab(tab) {
   return WORKSPACE_DOCK_TABS.includes(tab);
+}
+
+function isLegacySpaceDockTab(tab) {
+  return LEGACY_SPACE_DOCK_TABS.includes(tab);
 }
 
 function isRightDockWorkspacePaneVisible(dockState = {}) {
@@ -47,6 +53,18 @@ function applyRightDockTabSelect(currentState, tab) {
 
   if (tab === 'zed') {
     return state;
+  }
+
+  // Legacy browser/editor tabs no longer open the overlay — callers should
+  // assign panel.kind on the focused space instead.
+  if (isLegacySpaceDockTab(tab)) {
+    return {
+      ...state,
+      visible: false,
+      maximized: false,
+      activeTab: tab,
+      maximizedView: tab,
+    };
   }
 
   if (isWorkspaceDockTab(tab)) {
@@ -139,10 +157,12 @@ function applyWorkspaceWindowSelectDockState(currentState = {}) {
 
 module.exports = {
   WORKSPACE_DOCK_TABS,
+  LEGACY_SPACE_DOCK_TABS,
   applyRightDockTabSelect,
   applyZedOpenUrlDockFocus,
   applyZedOpenUrlDockUpdate,
   applyWorkspaceWindowSelectDockState,
   isRightDockWorkspacePaneVisible,
   isWorkspaceDockTab,
+  isLegacySpaceDockTab,
 };

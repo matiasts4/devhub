@@ -11,6 +11,7 @@ const {
   markConnectStart,
   markSessionApiOk,
   markWsConnected,
+  markFirstPtyByte,
   getPerfSnapshot,
   buildStartupPerfReport,
   persistStartupPerfSnapshot,
@@ -67,6 +68,24 @@ describe('startupPerfMarks', () => {
         'terminales→panel interactive (ms)': expect.any(Number),
       })
     );
+    info.mockRestore();
+  });
+
+  test('first pty byte measures from route and ws', () => {
+    const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+    markTerminalRouteEnter();
+    markFirstPanelInteractive();
+    markConnectStart();
+    markSessionApiOk();
+    markWsConnected();
+    markFirstPtyByte();
+    markFirstPtyByte();
+    const report = buildStartupPerfReport('test');
+    expect(report.summary.terminalesToFirstByteMs).toEqual(expect.any(Number));
+    expect(report.summary.wsToFirstByteMs).toEqual(expect.any(Number));
+    expect(
+      getPerfSnapshot().marks.filter((m) => m.name === STARTUP_PERF_MARKS.FIRST_PTY_BYTE)
+    ).toHaveLength(1);
     info.mockRestore();
   });
 

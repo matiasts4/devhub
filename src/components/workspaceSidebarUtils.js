@@ -101,3 +101,27 @@ export function getSidebarToggleStyle() {
     boxShadow: 'var(--chrome-shadow-control)',
   };
 }
+
+/**
+ * Project-shell sidebar width.
+ * On Terminales default is 0 (full canvas); peek restores 48/256 from collapsed.
+ */
+export function resolveWorkspaceSidebarWidth({
+  isTerminalRoute = false,
+  terminalesSidebarPeek = false,
+  collapsed = false,
+  forceHidden = false,
+} = {}) {
+  if (forceHidden) return 0;
+  if (isTerminalRoute && !terminalesSidebarPeek) return 0;
+  return collapsed ? 48 : 256;
+}
+
+/** Ctrl/Cmd+B — show/hide project nav while on Terminales. */
+export function isTerminalesSidebarToggleShortcut(event) {
+  if (!event || event.defaultPrevented) return false;
+  if (event.altKey || event.shiftKey) return false;
+  const key = String(event.key || '').toLowerCase();
+  if (key !== 'b') return false;
+  return Boolean(event.metaKey || event.ctrlKey);
+}

@@ -13,7 +13,7 @@
 
 ## Pending / follow-up
 
-- [ ] Manual baseline marks (cold Terminales) with `localStorage.devhub_perf=1` → `window.__DEVHUB_PERF__.getSnapshot()`
+- [x] Manual baseline marks recorded in `data/logs/startup-perf/option-a-baseline.json` (sample + zip/NSIS; cold-restart caveat noted)
 - [ ] Deps Wave A full Radix/minors bump (optional after smoke)
 - [ ] Deps Wave C Jest 27→30
 - [ ] ANALYZE=true bundle snapshot note

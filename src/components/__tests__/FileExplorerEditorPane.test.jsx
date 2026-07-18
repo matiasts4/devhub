@@ -528,7 +528,7 @@ describe('FileExplorerEditorPane', () => {
     expect(view.container.querySelector('[data-testid="editor-current-file"]')).toBeNull();
   });
 
-  test('keeps a compact header with only title and refresh action', async () => {
+  test('keeps a compact refresh action without a Workspace files title', async () => {
     const view = await renderIntoDom(
       React.createElement(FileExplorerEditorPane, {
         project: { id: 'project-5', local_path: '/workspace/devhub' },
@@ -538,13 +538,29 @@ describe('FileExplorerEditorPane', () => {
 
     await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
 
-    expect(view.container.textContent).toContain('Workspace files');
+    expect(view.container.textContent).not.toContain('Workspace files');
+    expect(view.container.querySelector('[data-testid="editor-pane-title"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="editor-pane-subtitle"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="editor-current-directory"]')).toBeNull();
     expect(view.container.querySelector('[data-testid="editor-current-file"]')).toBeNull();
     expect(
       view.container.querySelector('[aria-label="Recargar árbol de archivos"]')
     ).not.toBeNull();
+  });
+
+  test('embedded mode omits the top chrome strip entirely', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-5', local_path: '/workspace/devhub' },
+        workspaceId: 'ws1',
+        embedded: true,
+      })
+    );
+
+    await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
+
+    expect(view.container.textContent).not.toContain('Workspace files');
+    expect(view.container.querySelector('[data-testid="editor-pane-refresh"]')).toBeNull();
   });
 
   test('expands folders on row click and shows an empty-search message when nothing matches', async () => {

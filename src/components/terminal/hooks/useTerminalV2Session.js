@@ -36,6 +36,7 @@ import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiRead
 import {
   markConnectStart,
   markSessionApiOk,
+  markFirstPtyByte,
   markWsConnected,
 } from '@/lib/terminal/startupPerfMarks';
 import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
@@ -102,6 +103,7 @@ export default function useTerminalV2Session({ ctxRef }) {
       grokTuiReadyRef,
       tuiSessionFooterConfirmedRef,
       initialCommandConnectSnapshotRef,
+      isActivePanelRef,
       setConnectionState,
       setHasConnectedOnce,
       setRestoredToast,
@@ -302,6 +304,28 @@ export default function useTerminalV2Session({ ctxRef }) {
           hasSentInitialCommand.current = true;
         }
 
+        // Sync focus ownership with PTY host (Win Ctrl+C sibling isolation).
+        try {
+          if (transportRef.current !== 'raw') {
+            socket.send(
+              JSON.stringify({
+                type: 'panel-focus',
+                focused: Boolean(isActivePanelRef?.current),
+              })
+            );
+          }
+          if (initialCommand && transportRef.current !== 'raw') {
+            const clean = String(initialCommand)
+              .replace(/\s*#recovery-\d+\s*$/, '')
+              .trim();
+            if (clean) {
+              socket.send(JSON.stringify({ type: 'session-meta', launchCommand: clean }));
+            }
+          }
+        } catch {
+          // ignore
+        }
+
         if (isEngineV2Ref.current) {
           // Phase 3 terminal-engine-v2: start rehydration in a loaded=false state.
           // Subscribe is deferred until after the snapshot response so the
@@ -398,6 +422,7 @@ export default function useTerminalV2Session({ ctxRef }) {
         if (transportRef.current === 'raw') {
           if (typeof event.data === 'string' && event.data.length > 0) {
             panelActivityTrackerRef.current?.onFrame('raw', event.data);
+            markFirstPtyByte();
             writeTerminalOutput(event.data);
           }
           return;
@@ -607,6 +632,7 @@ export default function useTerminalV2Session({ ctxRef }) {
 
           if (payload.type === 'output' && typeof payload.data === 'string') {
             panelActivityTrackerRef.current?.onFrame('output', payload.data);
+            markFirstPtyByte();
             writeTerminalOutput(payload.data);
             return;
           }
@@ -617,6 +643,7 @@ export default function useTerminalV2Session({ ctxRef }) {
           // delta replay complete, preserving output order.
           if (payload.type === 'append' && typeof payload.data === 'string') {
             panelActivityTrackerRef.current?.onFrame('append', payload.data);
+            markFirstPtyByte();
             const binaryString = atob(payload.data);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i += 1) {

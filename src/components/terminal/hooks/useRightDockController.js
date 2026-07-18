@@ -114,11 +114,10 @@ export default function useRightDockController({
   }, []);
 
   const resolveDockLayoutFlags = useCallback(() => {
+    // Browser is a space component — overlay fullscreen is swarm/pizarra only.
     const isFullscreenBrowser =
       rightDockState.maximized &&
-      (rightDockState.maximizedView === 'browser' ||
-        rightDockState.maximizedView === 'swarm' ||
-        rightDockState.maximizedView === 'pizarra');
+      (rightDockState.maximizedView === 'swarm' || rightDockState.maximizedView === 'pizarra');
     const hideRightDockPanel =
       rightDockState.maximized && rightDockState.maximizedView === 'window';
     return { isFullscreenBrowser, hideRightDockPanel };

@@ -5,12 +5,38 @@ const {
 } = require('../workspaceAnimProps.js');
 
 describe('getRightDockAnimProps — fullscreen takeover', () => {
-  test('uses 220ms opacity fade aligned with useModeTransition enter', () => {
+  test('uses short opacity-only fade (≤160ms), no slide', () => {
     const props = getRightDockAnimProps({ isVisible: true, isFullscreen: true });
     expect(props.initial).toEqual({ opacity: 0 });
     expect(props.animate).toEqual({ opacity: 1 });
-    expect(props.transition.duration).toBe(0.22);
-    expect(props.transition.ease).toEqual([0.22, 1, 0.36, 1]);
+    expect(props.animate.x).toBeUndefined();
+    expect(props.transition.duration).toBeLessThanOrEqual(0.16);
+    expect(props.transition.duration).toBeGreaterThan(0);
+  });
+
+  test('reduced motion zeros dock duration', () => {
+    const props = getRightDockAnimProps({
+      isVisible: true,
+      isFullscreen: false,
+      motionMode: 'reduced',
+    });
+    expect(props.transition.duration).toBe(0);
+  });
+
+  test('normal dock slide is capped at 160ms', () => {
+    const props = getRightDockAnimProps({ isVisible: true, isFullscreen: false });
+    expect(props.transition.duration).toBeLessThanOrEqual(0.16);
+  });
+});
+
+describe('getWorkspaceAnimProps — mount', () => {
+  const { getWorkspaceAnimProps } = require('../workspaceAnimProps.js');
+
+  test('skips mount fade (instant opacity)', () => {
+    const props = getWorkspaceAnimProps(false);
+    expect(props.initial).toBe(false);
+    expect(props.animate).toEqual({ opacity: 1 });
+    expect(props.transition.duration).toBe(0);
   });
 });
 

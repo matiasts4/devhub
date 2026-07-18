@@ -129,7 +129,7 @@ export default function OnboardingTour({ isActive, onComplete }) {
   return (
     <div
       ref={overlayRef}
-      className={`fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${isExiting ? 'opacity-0' : 'opacity-100'}`}
+      className={`fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm transition-opacity duration-200 ${isExiting ? 'opacity-0' : 'opacity-100'}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) handleSkip();
       }}
@@ -138,7 +138,7 @@ export default function OnboardingTour({ isActive, onComplete }) {
       aria-label="Tour de bienvenida"
     >
       <div
-        className={`w-full max-w-md mx-3 sm:mx-4 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ${isExiting ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
+        className={`w-full max-w-md mx-3 sm:mx-4 rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${isExiting ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
         style={{
           background: 'var(--surface-muted)',
           border: '1px solid var(--border-strong)',

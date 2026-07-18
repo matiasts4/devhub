@@ -32,38 +32,17 @@ describe('getRightDockAnimProps()', () => {
 });
 
 describe('getWorkspaceAnimProps()', () => {
-  test('returns full opacity when maximized', () => {
+  test('returns full opacity with no scale (native VTE sync)', () => {
     const props = getWorkspaceAnimProps(true);
     expect(props.animate.opacity).toBe(1);
     expect(props.animate.scale).toBeUndefined();
   });
 
-  test('uses opacity-only animation in normal mode (no scale — native VTE sync)', () => {
+  test('skips mount fade — initial false, duration 0', () => {
     const props = getWorkspaceAnimProps(false);
+    expect(props.initial).toBe(false);
     expect(props.animate.opacity).toBe(1);
-    expect(props.animate.scale).toBeUndefined();
-    expect(props.initial.scale).toBeUndefined();
-  });
-
-  test('transition duration is <= 300ms (GPU-composited, feel instant)', () => {
-    const props = getWorkspaceAnimProps(true);
-    expect(props.transition.duration).toBeGreaterThan(0);
-    expect(props.transition.duration).toBeLessThanOrEqual(0.3);
-  });
-
-  test('initial state starts from zero opacity for a clean fade-in on mount', () => {
-    // When isMaximized=false (normal workspace mount), we want a clean
-    // fade-in from opacity 0. Starting near 1 (e.g. 0.94) makes the
-    // mount animation nearly invisible, defeating its purpose.
-    const props = getWorkspaceAnimProps(false);
-    expect(props.initial.opacity).toBe(0);
-  });
-
-  test('maximized initial state skips the fade-in (already visible)', () => {
-    // When isMaximized=true, the workspace was already visible at full
-    // opacity — no fade-in needed, start at 1.
-    const props = getWorkspaceAnimProps(true);
-    expect(props.initial.opacity).toBe(1);
+    expect(props.transition.duration).toBe(0);
   });
 });
 
@@ -370,10 +349,7 @@ function fireKey(element, key) {
 }
 
 function setControlledInputValue(element, value) {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    'value'
-  )?.set;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
   const tracker = element._valueTracker;
   if (tracker) {
     tracker.setValue(element.value);
@@ -389,7 +365,6 @@ function fireInputChange(element, value) {
   });
   return flushEffects();
 }
-
 
 function findPanelTab(doc, panelId) {
   return doc.querySelector(`[data-testid="panel-chrome-overlay-${panelId}"]`);
@@ -616,9 +591,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
         {
           id: 'ws1',
           name: 'Workspace 1',
-          columns: [
-            { id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] },
-          ],
+          columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] }],
         },
       ],
       activeWsId: 'ws1',
@@ -666,9 +639,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
         {
           id: 'ws1',
           name: 'Workspace 1',
-          columns: [
-            { id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] },
-          ],
+          columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] }],
         },
       ],
       activeWsId: 'ws1',
@@ -678,8 +649,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
     await renderManager();
     await flushEffects();
 
-    const swarmCommand =
-      'opencode --agent swarm-worker --task "do-the-thing"';
+    const swarmCommand = 'opencode --agent swarm-worker --task "do-the-thing"';
 
     dispatchRunAgent({
       command: swarmCommand,
@@ -704,9 +674,7 @@ describe('TerminalWorkspacesManager — devhub:run-agent launchOrigin gate-skip 
         {
           id: 'ws1',
           name: 'Workspace 1',
-          columns: [
-            { id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] },
-          ],
+          columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: '/workspace/devhub' }] }],
         },
       ],
       activeWsId: 'ws1',
@@ -763,7 +731,7 @@ describe('TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch 
     return src.slice(start);
   }
 
-  test('handleRunAgent branches on launchOrigin === \'planning-launch\' to skip the DocOps gate', () => {
+  test("handleRunAgent branches on launchOrigin === 'planning-launch' to skip the DocOps gate", () => {
     const block = extractHandleRunAgentBlock(source);
     expect(block).toContain("'planning-launch'");
     // The handler must NOT call enforceDocOpsGateOnLaunchCommand on the

@@ -3,6 +3,7 @@ const {
   WIN_CTRL_C_EXIT_CODE_U32,
   isWindowsCtrlCExit,
   shouldRespawnShellAfterPtyExit,
+  shouldRelaunchAgentAfterCtrlCRespawn,
 } = require('../../src/lib/terminal/ptyRespawnPolicy.cjs');
 
 describe('ptyRespawnPolicy', () => {
@@ -10,24 +11,43 @@ describe('ptyRespawnPolicy', () => {
     expect(isWindowsCtrlCExit(WIN_CTRL_C_EXIT_CODE)).toBe(true);
     expect(isWindowsCtrlCExit(WIN_CTRL_C_EXIT_CODE_U32)).toBe(true);
     expect(isWindowsCtrlCExit(0)).toBe(false);
-    expect(isWindowsCtrlCExit(1)).toBe(false);
   });
 
-  test('respawns only on win32 TUI/agent sessions killed by Ctrl+C', () => {
+  test('bootstrapped modal agent: respawn on any exit (avoid Sesión finalizada)', () => {
     expect(
       shouldRespawnShellAfterPtyExit({
-        platform: 'win32',
+        launchCommand: 'opencode',
         mode: 'tui',
-        exitCode: WIN_CTRL_C_EXIT_CODE,
+        exitCode: 0,
       })
     ).toBe(true);
 
     expect(
       shouldRespawnShellAfterPtyExit({
+        launchCommand: 'grok',
+        exitCode: 1,
+      })
+    ).toBe(true);
+  });
+
+  test('nested typed TUI: only Win Ctrl+C host-death respawns (clean quit stays fast)', () => {
+    expect(
+      shouldRespawnShellAfterPtyExit({
         platform: 'win32',
-        mode: 'shell',
+        mode: 'tui',
         agentType: 'opencode',
-        exitCode: WIN_CTRL_C_EXIT_CODE_U32,
+        launchCommand: null,
+        exitCode: 0,
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRespawnShellAfterPtyExit({
+        platform: 'win32',
+        mode: 'tui',
+        agentType: 'opencode',
+        launchCommand: null,
+        exitCode: WIN_CTRL_C_EXIT_CODE,
       })
     ).toBe(true);
 
@@ -35,10 +55,13 @@ describe('ptyRespawnPolicy', () => {
       shouldRespawnShellAfterPtyExit({
         platform: 'linux',
         mode: 'tui',
+        agentType: 'opencode',
         exitCode: WIN_CTRL_C_EXIT_CODE,
       })
     ).toBe(false);
+  });
 
+  test('plain shell never respawns', () => {
     expect(
       shouldRespawnShellAfterPtyExit({
         platform: 'win32',
@@ -46,25 +69,31 @@ describe('ptyRespawnPolicy', () => {
         exitCode: WIN_CTRL_C_EXIT_CODE,
       })
     ).toBe(false);
-
-    expect(
-      shouldRespawnShellAfterPtyExit({
-        platform: 'win32',
-        mode: 'tui',
-        exitCode: 0,
-      })
-    ).toBe(false);
   });
 
   test('caps respawn loops', () => {
     expect(
       shouldRespawnShellAfterPtyExit({
-        platform: 'win32',
-        mode: 'tui',
-        exitCode: WIN_CTRL_C_EXIT_CODE,
+        launchCommand: 'opencode',
         respawnCount: 3,
         maxRespawns: 3,
       })
     ).toBe(false);
+  });
+
+  test('relaunches agent only for unfocused collateral deaths', () => {
+    expect(
+      shouldRelaunchAgentAfterCtrlCRespawn({
+        inputFocused: true,
+        launchCommand: 'grok',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRelaunchAgentAfterCtrlCRespawn({
+        inputFocused: false,
+        launchCommand: 'grok',
+      })
+    ).toBe(true);
   });
 });

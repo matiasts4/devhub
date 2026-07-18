@@ -7,6 +7,7 @@ import {
   createDefaultWorkspaceState,
   normalizeWorkspaceState,
   normalizeWorkspaceWindows,
+  setPanelKindInWorkspaceTree,
 } from '@/components/terminal/models/workspaceStateModel';
 import { readAgentRunsByPanel } from '@/components/terminal/models/swarmRoleModel';
 import {
@@ -24,7 +25,10 @@ import {
   readTerminalRendererPreferences,
   writeTerminalRendererPreferences,
 } from '@/components/terminal/terminalRendererPreferences';
-import { readRightDockState } from '@/components/workspace/rightDockState';
+import {
+  peekLegacySpaceComponentKind,
+  readRightDockState,
+} from '@/components/workspace/rightDockState';
 import { readBrowserWindowStates } from '@/components/workspace/browserWindowState';
 import {
   buildRestoreManifestFromWorkspaceState,
@@ -168,6 +172,11 @@ export default function useWorkspaceBootstrapEffect({
 
   // --- LocalStorage Persistence ---
   useEffect(() => {
+    let bootWorkspaces = null;
+    let bootWindows = null;
+    let bootActivePanelIds = null;
+    let bootActiveWsId = null;
+
     try {
       const prefetched = takePrefetchedTerminalState(projectId);
       let parsed = prefetched?.terminalState || null;
@@ -190,9 +199,9 @@ export default function useWorkspaceBootstrapEffect({
             storage
           );
 
-          setWorkspaces(hydratedWorkspaces);
-          setActiveWsId(normalizedState.activeWsId);
-          setActivePanelIds(normalizedState.activePanelIds);
+          bootWorkspaces = hydratedWorkspaces;
+          bootActiveWsId = normalizedState.activeWsId;
+          bootActivePanelIds = normalizedState.activePanelIds;
 
           const normalizedWindows = normalizeWorkspaceWindows(
             parsed.workspaceWindows || {},
@@ -201,7 +210,7 @@ export default function useWorkspaceBootstrapEffect({
             normalizedState.activePanelIds
           );
 
-          setWorkspaceWindows(normalizedWindows.workspaceWindows);
+          bootWindows = normalizedWindows.workspaceWindows;
           setActiveWindowIds(normalizedWindows.activeWindowIds);
           setTerminalRendererPreferences(
             readTerminalRendererPreferences(storage, projectId, hydratedWorkspaces)
@@ -242,9 +251,10 @@ export default function useWorkspaceBootstrapEffect({
 
     // Drop zombie dock/browser/pizarra keys for sequential ids no longer live.
     const liveWorkspaces =
-      workspacesRef.current?.length > 0
+      bootWorkspaces ||
+      (workspacesRef.current?.length > 0
         ? workspacesRef.current
-        : createDefaultWorkspaceState().workspaces;
+        : createDefaultWorkspaceState().workspaces);
     const liveWorkspaceIds = liveWorkspaces.map((ws) => ws.id).filter(Boolean);
     const pruneResult = pruneOrphanWorkspaceScopedStorage(storage, projectId, liveWorkspaceIds);
     if (pruneResult.removedKeys?.length) {
@@ -255,8 +265,50 @@ export default function useWorkspaceBootstrapEffect({
     }
 
     const initialDockWorkspaceId =
+      bootActiveWsId ||
       (typeof activeWsIdRef.current === 'string' && activeWsIdRef.current) ||
       createDefaultWorkspaceState().activeWsId;
+
+    // Migrate legacy visible dock browser/files into the focused panel slot.
+    const legacySpaceKind = peekLegacySpaceComponentKind(
+      storage,
+      projectId,
+      initialDockWorkspaceId
+    );
+    if (legacySpaceKind) {
+      const baseWorkspaces = bootWorkspaces || createDefaultWorkspaceState().workspaces;
+      const panelId =
+        bootActivePanelIds?.[initialDockWorkspaceId] ||
+        baseWorkspaces.find((ws) => ws.id === initialDockWorkspaceId)?.columns?.[0]?.panels?.[0]
+          ?.id ||
+        baseWorkspaces[0]?.columns?.[0]?.panels?.[0]?.id ||
+        null;
+      if (panelId) {
+        const migrated = setPanelKindInWorkspaceTree({
+          workspaces: baseWorkspaces,
+          workspaceWindows: bootWindows || {},
+          workspaceId: initialDockWorkspaceId,
+          panelId,
+          kind: legacySpaceKind,
+        });
+        bootWorkspaces = migrated.workspaces;
+        bootWindows = migrated.workspaceWindows;
+        bootActiveWsId = bootActiveWsId || initialDockWorkspaceId;
+        bootActivePanelIds = bootActivePanelIds || {
+          [initialDockWorkspaceId]: panelId,
+        };
+      }
+    }
+
+    if (bootWorkspaces) {
+      setWorkspaces(bootWorkspaces);
+      if (bootActiveWsId) setActiveWsId(bootActiveWsId);
+      if (bootActivePanelIds) setActivePanelIds(bootActivePanelIds);
+    }
+    if (bootWindows) {
+      setWorkspaceWindows(bootWindows);
+    }
+
     setDockWorkspaceId(initialDockWorkspaceId);
     setRightDockState(readRightDockState(storage, projectId, initialDockWorkspaceId));
     setBrowserWindowStates(readBrowserWindowStates(storage, projectId));

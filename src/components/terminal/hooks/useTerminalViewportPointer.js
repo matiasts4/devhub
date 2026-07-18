@@ -2,12 +2,16 @@
  * useTerminalViewportPointer — mouse-down zone detection + TUI mouse injection.
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 1).
  *
- * TUI transcript clicks are deferred to short-click (mouseup without drag) so
- * selection drags are not stolen by PTY mouse injection.
+ * TUI clicks are deferred to short-click (mouseup without drag) so
+ * selection drags are not stolen by PTY mouse injection. Inject covers
+ * transcript and input/footer chrome — native DECSET alone is unreliable
+ * while mouse modes are deferred until pointer-up.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
+import { isOpenCodeLaunchCommand } from '@/lib/terminal/opencodeReadyMarker';
+import { logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
 import {
   sendTerminalPasteInput,
   resolveTerminalCellFromPointer,
@@ -53,6 +57,7 @@ export default function useTerminalViewportPointer({ ctxRef }) {
         wsRef,
         transportRef,
         isVisibleInLayoutRef,
+        isActivePanelRef,
         focusNativeVtePanel,
         handleNativeLeaseCommandError,
       } = c;
@@ -67,6 +72,21 @@ export default function useTerminalViewportPointer({ ctxRef }) {
         return;
       }
 
+      // Ctrl/Cmd+click is reserved for agent file-path open (xterm link provider).
+      // Skip TUI mouse injection so the link activate handler can win.
+      if (event?.ctrlKey || event?.metaKey) {
+        onActivatePanel?.(id);
+        logTuiPointerDebug('tui-pointer', {
+          path: 'modifier-file-open',
+          panelId: id,
+          zone: 'transcript',
+          cell: null,
+          term: termRef.current,
+          eligible: false,
+        });
+        return;
+      }
+
       const term = termRef.current;
       const shell = viewportShellRef.current;
       const cell =
@@ -74,6 +94,7 @@ export default function useTerminalViewportPointer({ ctxRef }) {
           ? resolveTerminalCellFromPointer(term, shell, event.clientX, event.clientY)
           : null;
       const grokSession = isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand);
+      const opencodeSession = isOpenCodeLaunchCommand(initialCommand);
       const isKimiSession = kimiReadyNotifiedRef.current || isKimiLaunchCommand(initialCommand);
       const inputZoneRows = resolveTerminalWheelInputZoneRows({
         isGrokSession: grokSession,
@@ -82,6 +103,7 @@ export default function useTerminalViewportPointer({ ctxRef }) {
       const inTranscript = cell
         ? isTerminalTranscriptCell(cell.row, term.rows, inputZoneRows)
         : lastPointerZoneRef.current !== 'input';
+      const zone = inTranscript ? 'transcript' : 'input';
 
       if (inTranscript) {
         lastPointerZoneRef.current = 'transcript';
@@ -89,10 +111,12 @@ export default function useTerminalViewportPointer({ ctxRef }) {
         lastPointerZoneRef.current = 'input';
       }
 
-      const tuiActive = Boolean(tuiSessionActiveRef.current || grokSession);
+      // Include launch-command TUI identity — tuiSessionActiveRef lags until footer/chrome.
+      // Passing false here used to write mouse-off on every Grok/OpenCode mousedown.
+      const tuiActive = Boolean(tuiSessionActiveRef.current || grokSession || opencodeSession);
       pendingFocusCleanupRef.current?.();
       pendingFocusCleanupRef.current = prepareActiveTuiTerminalFocusRespectingSelection(term, {
-        tuiSessionActive: tuiSessionActiveRef.current,
+        tuiSessionActive: tuiActive,
         deferMouseUntilPointerUp: tuiActive,
       });
       term?.focus?.();
@@ -100,12 +124,31 @@ export default function useTerminalViewportPointer({ ctxRef }) {
       const tuiReady = grokSession
         ? grokTuiReadyRef.current === true
         : tuiSessionFooterConfirmedRef.current === true;
-      const eligible =
-        Boolean(inTranscript) &&
-        Boolean(cell) &&
-        tuiActive &&
-        tuiReady &&
-        isVisibleInLayoutRef.current === true;
+      // Inject anywhere on the grid once we know it's a TUI — footer buttons live in
+      // the input zone and never got a fallback when DECSET was deferred/off.
+      // Ready flags are diagnostic-only here (wheel already injects while cold).
+      const eligible = Boolean(cell) && tuiActive && isVisibleInLayoutRef.current === true;
+
+      let path = 'ineligible';
+      if (!cell) path = 'no-cell';
+      else if (!tuiActive) path = 'shell-no-inject';
+      else if (isVisibleInLayoutRef.current !== true) path = 'hidden-layout';
+      else if (eligible) path = 'inject-click-scheduled';
+
+      logTuiPointerDebug('tui-pointer', {
+        path,
+        panelId: id,
+        zone,
+        cell,
+        term,
+        tuiSessionActive: Boolean(tuiSessionActiveRef.current),
+        grokTuiReady: grokTuiReadyRef.current === true,
+        opencodeFooterConfirmed: tuiSessionFooterConfirmedRef.current === true,
+        isActivePanel: isActivePanelRef?.current === true,
+        tuiReady,
+        eligible,
+        extra: { grokSession, opencodeSession, tuiActive },
+      });
 
       pendingInjectionCleanupRef.current?.();
       pendingInjectionCleanupRef.current = scheduleTuiTranscriptMouseInjection({
@@ -114,10 +157,18 @@ export default function useTerminalViewportPointer({ ctxRef }) {
         eligible,
         inject: (clickCell) => {
           const payload = buildTerminalMousePressSequence(clickCell.col, clickCell.row);
-          sendTerminalPasteInput({
+          const sent = sendTerminalPasteInput({
             socket: wsRef.current,
             transport: transportRef.current,
             text: payload,
+          });
+          logTuiPointerDebug('tui-pointer', {
+            path: sent ? 'inject-click' : 'inject-click-failed',
+            panelId: id,
+            zone,
+            cell: clickCell,
+            term,
+            eligible: true,
           });
         },
       });

@@ -2,13 +2,12 @@
  * motion-tokens.js — Shared motion design tokens for DevHub.
  *
  * Single source of truth for durations, easings, and framer-motion
- * transition presets. All animation-related values must come from here —
- * never hardcode timing values in component files.
+ * transition presets. CSS mirrors live in globals.css as --motion-dur-* /
+ * --motion-ease-* (premium decelerate kit).
  *
  * Design philosophy:
- *  - Fast UI feedback (< 150ms) feels instant, not animated
- *  - Enter animations (150-250ms) guide attention without blocking
- *  - Content transitions (80-180ms) preserve context, don't distract
+ *  - Fast UI feedback (~160ms) with premium ease
+ *  - Enter animations (~240–320ms) guide attention without blocking
  *  - All GPU-composited (transform + opacity only — no layout props)
  */
 
@@ -17,16 +16,16 @@ import { spring, amplified } from '../motion/motionPresets';
 // ─── Durations (ms) ───────────────────────────────────────────────────────────
 
 export const DUR = {
-  /** Micro-interactions: hover, focus rings, icon swaps. Feels instant. */
+  /** Micro-interactions: hover, focus rings, icon swaps. */
   instant: 80,
-  /** Fast state change: active tab indicator, button press. */
-  fast: 120,
-  /** Standard enter/exit: panels, tooltips, overlays. */
-  base: 180,
+  /** Fast state change — aligns with --motion-dur-fast. */
+  fast: 160,
+  /** Standard enter/exit — aligns with --motion-dur-base. */
+  base: 240,
   /** Content transition: workspace switch, view change. */
-  content: 200,
-  /** Rich enter: dialogs, drawers, modals. */
-  enter: 280,
+  content: 240,
+  /** Rich enter: page enter, panel reveal — aligns with --motion-dur-slow. */
+  enter: 320,
   /** Slow emphasis: onboarding callouts, loading reveals. */
   slow: 400,
 };
@@ -45,11 +44,11 @@ export const SURFACE_DUR = {
 // ─── Easings (cubic-bezier strings) ──────────────────────────────────────────
 
 export const EASE = {
-  /** Snappy deceleration — best for enter/reveal animations. */
-  out: [0.22, 1, 0.36, 1],
+  /** Premium decelerate — enter/reveal (matches --motion-ease-premium). */
+  out: [0.16, 1, 0.3, 1],
   /** Smooth acceleration — best for exit animations. */
   in: [0.55, 0, 1, 0.45],
-  /** Symmetric smooth — best for state toggles. */
+  /** Soft symmetric — matches --motion-ease-soft. */
   inOut: [0.4, 0, 0.2, 1],
   /** Linear — only for opacity cross-fades in reduced-motion. */
   linear: 'linear',
@@ -58,7 +57,7 @@ export const EASE = {
 // ─── CSS easing strings (for use in style={{ transition: ... }}) ──────────────
 
 export const EASE_CSS = {
-  out: 'cubic-bezier(0.22, 1, 0.36, 1)',
+  out: 'cubic-bezier(0.16, 1, 0.3, 1)',
   in: 'cubic-bezier(0.55, 0, 1, 0.45)',
   inOut: 'cubic-bezier(0.4, 0, 0.2, 1)',
 };
@@ -87,16 +86,16 @@ export const HOST_MOTION_MODES = {
  * All presets animate on the GPU compositor path (transform + opacity).
  */
 export const TRANSITION = {
-  /** 120ms snappy — workspace tab active indicator, badge swap. */
+  /** 160ms — badges, micro feedback. */
   fast: { duration: DUR.fast / 1000, ease: EASE.out },
 
-  /** 180ms standard — panel reveals, dropdown open/close. */
+  /** 240ms — panels, dropdowns, soft chrome. */
   base: { duration: DUR.base / 1000, ease: EASE.out },
 
-  /** 200ms content — workspace body crossfade. */
+  /** 240ms content — workspace body crossfade. */
   content: { duration: DUR.content / 1000, ease: EASE.inOut },
 
-  /** 280ms rich — modal enter, sheet slide-in. */
+  /** 320ms rich — page enter, panel reveal. */
   enter: { duration: DUR.enter / 1000, ease: EASE.out },
 
   /** Spring — active pill, drag feedback, toggle. Uses the approved preset. */

@@ -4,6 +4,7 @@ const {
   getTerminalRendererRuntimeCapabilities,
   resolveOperationalRendererMode,
   resolveRendererSelection,
+  resolveVisibleTerminalPanelCountForRenderer,
   TERMINAL_RENDERER_MODES,
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
   TERMINAL_OPERATIONAL_CANVAS_MODE,
@@ -201,6 +202,28 @@ describe('terminalRendererCapabilities', () => {
         visibleTerminalPanelCount: 1,
       })
     ).toBe('xterm-webgl');
+  });
+
+  test('resolveVisibleTerminalPanelCountForRenderer treats files/browser siblings as a GPU slot', () => {
+    expect(
+      resolveVisibleTerminalPanelCountForRenderer({
+        totalTerminalPanelCount: 1,
+        totalPanelCount: 2,
+      })
+    ).toBe(2);
+    expect(
+      resolveVisibleTerminalPanelCountForRenderer({
+        totalTerminalPanelCount: 1,
+        totalPanelCount: 1,
+      })
+    ).toBe(1);
+    expect(
+      resolveVisibleTerminalPanelCountForRenderer({
+        focusedPanelId: 'p1',
+        totalTerminalPanelCount: 1,
+        totalPanelCount: 2,
+      })
+    ).toBe(1);
   });
 
   test('resolveOperationalRendererMode routes visible splits to canvas for every panel', () => {

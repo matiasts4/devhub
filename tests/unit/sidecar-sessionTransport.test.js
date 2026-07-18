@@ -34,6 +34,20 @@ describe('sidecar session transport contract', () => {
     });
   });
 
+  test('keeps panel-focus and session-meta as control frames (not PTY input)', () => {
+    // Regression: these used to fall through to `{ type: 'input', data: <json> }`,
+    // so every focus/connect injected {"type":"panel-focus",...} into the shell.
+    expect(
+      parseClientMessage(JSON.stringify({ type: 'panel-focus', focused: true }), 'json')
+    ).toEqual({ type: 'panel-focus', focused: true });
+    expect(
+      parseClientMessage(
+        JSON.stringify({ type: 'session-meta', launchCommand: 'opencode' }),
+        'json'
+      )
+    ).toEqual({ type: 'session-meta', launchCommand: 'opencode' });
+  });
+
   test('builds structured json events for output, exit, and reopen detection', () => {
     expect(buildServerMessage('json', { type: 'output', data: 'hello' })).toBe(
       JSON.stringify({ type: 'output', data: 'hello' })
