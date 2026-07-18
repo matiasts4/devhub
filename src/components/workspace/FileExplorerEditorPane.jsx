@@ -1,32 +1,26 @@
 'use client';
 
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import {
   AlertTriangle,
-  Braces,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  File,
-  FileCode2,
   FileText,
-  FileType,
-  Folder,
-  FolderOpen,
   Loader2,
-  GitBranch,
-  Palette,
   RefreshCw,
-  Shield,
 } from 'lucide-react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
 import { InlineCode, BlockCode } from '@/components/chat/CodeBlock';
 import LatexDocumentPreview from './LatexDocumentPreview';
+import { FileExplorer } from './explorer/FileExplorer';
+import { SourceControlPanel } from './explorer/SourceControlPanel';
+import { CodeFileView } from './explorer/CodeFileView';
+import { GitDiffView } from './explorer/GitDiffView';
+import { isCodeDiffablePath } from './explorer/codeLanguages';
 import {
   DEFAULT_EDITOR_PANE_CONTENT,
   DEFAULT_EDITOR_PANE_STATE,
@@ -36,7 +30,7 @@ import {
   readEditorPaneState,
   writeEditorPaneState,
 } from './editorPaneState';
-import { panelStyle, pillStyle, btnSecondaryStyle, inputStyle } from '@/chrome/morphology';
+import { btnSecondaryStyle } from '@/chrome/morphology';
 import 'highlight.js/styles/github-dark.css';
 
 const DOCUMENT_VIEW_MODES = {
@@ -57,95 +51,11 @@ const safeHighlight = (options) => {
   };
 };
 
-function detectLanguage(filePath) {
-  const lower = filePath.toLowerCase();
-  if (lower.endsWith('.ts')) return 'typescript';
-  if (lower.endsWith('.tsx')) return 'typescript';
-  if (lower.endsWith('.js')) return 'javascript';
-  if (lower.endsWith('.jsx')) return 'javascript';
-  if (lower.endsWith('.json')) return 'json';
-  if (lower.endsWith('.md')) return 'markdown';
-  if (lower.endsWith('.tex') || lower.endsWith('.latex') || lower.endsWith('.ltx')) return 'latex';
-  if (lower.endsWith('.html')) return 'html';
-  if (lower.endsWith('.css')) return 'css';
-  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'yaml';
-  if (lower.endsWith('.sh')) return 'shell';
-  if (lower.endsWith('.py')) return 'python';
-  if (lower.endsWith('.rs')) return 'rust';
-  return 'plaintext';
-}
-
-function getFileIconMeta(node) {
-  if (node.type === 'directory') {
-    return { Icon: null, color: '#58A6FF' };
-  }
-
-  const lower = node.name.toLowerCase();
-  const path = node.path.toLowerCase();
-
-  if (lower === '.gitignore' || lower.endsWith('.gitignore')) {
-    return { Icon: GitBranch, color: '#A371F7' };
-  }
-  if (lower === '.env' || lower.startsWith('.env.')) return { Icon: Shield, color: '#3FB950' };
-  if (path.endsWith('.js') || path.endsWith('.jsx')) return { Icon: FileCode2, color: '#F1E05A' };
-  if (path.endsWith('.ts') || path.endsWith('.tsx')) return { Icon: FileType, color: '#3178C6' };
-  if (path.endsWith('.css')) return { Icon: Palette, color: '#264DE4' };
-  if (path.endsWith('.json')) return { Icon: Braces, color: '#8B949E' };
-  if (path.endsWith('.md')) return { Icon: FileText, color: '#8B949E' };
-  if (path.endsWith('.tex') || path.endsWith('.latex') || path.endsWith('.ltx')) {
-    return { Icon: FileText, color: '#9B7BFF' };
-  }
-
-  return { Icon: File, color: '#8B949E' };
-}
-
 function normalizePathSegments(path) {
   return String(path || '')
     .split('/')
     .map((segment) => segment.trim())
     .filter(Boolean);
-}
-
-function buildForcedExpandedPaths(nodes, collector = new Set()) {
-  nodes.forEach((node) => {
-    if (node.type === 'directory') {
-      collector.add(node.path);
-      buildForcedExpandedPaths(node.children || [], collector);
-    }
-  });
-
-  return collector;
-}
-
-function filterTreeNodes(nodes, query) {
-  const normalizedQuery = String(query || '')
-    .trim()
-    .toLowerCase();
-  if (!normalizedQuery) return nodes;
-
-  return nodes.reduce((result, node) => {
-    const matchesSelf = `${node.name} ${node.path}`.toLowerCase().includes(normalizedQuery);
-
-    if (node.type === 'directory') {
-      const filteredChildren = filterTreeNodes(node.children || [], normalizedQuery);
-      if (matchesSelf) {
-        result.push(node);
-        return result;
-      }
-
-      if (filteredChildren.length > 0) {
-        result.push({ ...node, children: filteredChildren });
-      }
-
-      return result;
-    }
-
-    if (matchesSelf) {
-      result.push(node);
-    }
-
-    return result;
-  }, []);
 }
 
 function getScrollableDistance(element) {
@@ -211,149 +121,6 @@ function EmbeddedTreeResizeHandle({ treeWidthPx, onWidthChange }) {
   );
 }
 
-function findNodeByPath(nodes, targetPath) {
-  for (const node of nodes || []) {
-    if (node.path === targetPath) return node;
-    if (node.type === 'directory' && Array.isArray(node.children)) {
-      const found = findNodeByPath(node.children, targetPath);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function setDirectoryChildren(nodes, dirPath, children) {
-  return (nodes || []).map((node) => {
-    if (node.path === dirPath && node.type === 'directory') {
-      return { ...node, children };
-    }
-    if (
-      node.type === 'directory' &&
-      Array.isArray(node.children) &&
-      (dirPath === node.path || dirPath.startsWith(`${node.path}/`))
-    ) {
-      return {
-        ...node,
-        children: setDirectoryChildren(node.children, dirPath, children),
-      };
-    }
-    return node;
-  });
-}
-
-function buildFsTreeUrl({ basePath, dir, query, fresh, recursive } = {}) {
-  const params = new URLSearchParams();
-  if (basePath) params.set('base', basePath);
-  if (dir) params.set('dir', dir);
-  if (query) params.set('q', query);
-  if (fresh) params.set('fresh', '1');
-  if (recursive) params.set('recursive', '1');
-  const qs = params.toString();
-  return qs ? `/api/fs/tree?${qs}` : '/api/fs/tree';
-}
-
-const TreeNode = memo(function TreeNode({
-  node,
-  level,
-  expanded,
-  onToggle,
-  onSelect,
-  selectedPath,
-  loadingDirs,
-}) {
-  const isDir = node.type === 'directory';
-  const isExpanded = isDir && expanded.has(node.path);
-  const isSelected = selectedPath === node.path;
-  const indent = level * 12;
-  const { Icon: FileIcon, color } = getFileIconMeta(node);
-  const isLoadingChildren = isDir && loadingDirs?.has(node.path);
-  const childrenLoaded = Array.isArray(node.children);
-
-  return (
-    <div>
-      <div
-        data-path={node.path}
-        data-node-type={node.type}
-        className={`group flex items-center py-1 px-2 text-sm select-none transition-colors ${isSelected ? 'bg-surface-elevated text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
-        style={{ paddingLeft: `${indent + 8}px` }}
-        onClick={() => {
-          if (!isDir) onSelect(node.path);
-        }}
-      >
-        <div className="mr-1.5 flex h-5 w-5 items-center justify-center text-text-muted group-hover:text-text-secondary">
-          {isDir ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggle(node.path);
-              }}
-              data-testid={`tree-toggle-${node.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
-              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`}
-              className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-transparent text-text-muted transition-colors hover:border-borders-subtle hover:bg-surface-elevated hover:text-text-primary"
-            >
-              {isExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5" strokeWidth={1.8} />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.8} />
-              )}
-            </button>
-          ) : null}
-        </div>
-        <div className="mr-1.5 flex h-4 w-4 items-center justify-center text-text-muted group-hover:text-text-secondary">
-          {isDir ? (
-            isExpanded ? (
-              <FolderOpen className="w-3.5 h-3.5" style={{ color: '#58A6FF' }} />
-            ) : (
-              <Folder className="w-3.5 h-3.5" style={{ color: '#8B949E' }} />
-            )
-          ) : (
-            <FileIcon className="w-3.5 h-3.5" style={{ color }} />
-          )}
-        </div>
-        <button
-          type="button"
-          className={`min-w-0 flex-1 truncate text-left ${isDir ? 'cursor-default' : 'cursor-pointer'}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (!isDir) onSelect(node.path);
-          }}
-        >
-          {node.name}
-        </button>
-      </div>
-
-      {isDir && isExpanded ? (
-        <div>
-          {isLoadingChildren || !childrenLoaded ? (
-            <div
-              className="flex items-center gap-2 py-1 text-[11px] text-text-muted"
-              style={{ paddingLeft: `${indent + 28}px` }}
-              data-testid={`tree-loading-${node.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
-            >
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Cargando…
-            </div>
-          ) : (
-            node.children.map((child) => (
-              <TreeNode
-                key={child.path}
-                node={child}
-                level={level + 1}
-                expanded={expanded}
-                onToggle={onToggle}
-                onSelect={onSelect}
-                selectedPath={selectedPath}
-                loadingDirs={loadingDirs}
-              />
-            ))
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
 export default function FileExplorerEditorPane({
   project,
   workspaceId = 'default',
@@ -361,20 +128,13 @@ export default function FileExplorerEditorPane({
   onContextChange,
 }) {
   const explorerPanelRef = useRef(null);
+  const fileExplorerRef = useRef(null);
   const previewScrollRegionRef = useRef(null);
   const documentPreviewRailRef = useRef(null);
   const embeddedHorizontalScrollRef = useRef(null);
   const scrollSyncSourceRef = useRef(null);
   const workspaceSnapshotsRef = useRef(new Map());
-  const treeRef = useRef([]);
   const expandedRef = useRef(new Set());
-  const loadingDirsRef = useRef(new Set());
-  const [tree, setTree] = useState([]);
-  const [treeLoading, setTreeLoading] = useState(true);
-  const [treeError, setTreeError] = useState('');
-  const [loadingDirs, setLoadingDirs] = useState(() => new Set());
-  const [searchTree, setSearchTree] = useState(null);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [expanded, setExpanded] = useState(new Set(DEFAULT_EDITOR_PANE_STATE.expandedPaths));
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(DEFAULT_EDITOR_PANE_STATE.isTreeCollapsed);
   const [selectedPath, setSelectedPath] = useState(DEFAULT_EDITOR_PANE_STATE.selectedPath);
@@ -383,19 +143,41 @@ export default function FileExplorerEditorPane({
   const [fileError, setFileError] = useState('');
   const [markdownViewMode, setMarkdownViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
   const [latexViewMode, setLatexViewMode] = useState(DOCUMENT_VIEW_MODES.PREVIEW);
-  const [searchInputValue, setSearchInputValue] = useState(DEFAULT_EDITOR_PANE_STATE.searchQuery);
   const [embeddedTreeWidthPx, setEmbeddedTreeWidthPx] = useState(
     DEFAULT_EDITOR_PANE_STATE.embeddedTreeWidthPx
   );
   const [embeddedDocumentSurfaceWidth, setEmbeddedDocumentSurfaceWidth] = useState(0);
-  const deferredSearchQuery = useDeferredValue(searchInputValue);
+  const [explorerSideTab, setExplorerSideTab] = useState('files');
+  /** 'file' = content / document preview; 'diff' = HEAD vs working (code only). */
+  const [editorSurface, setEditorSurface] = useState('file');
+  const [diffStaged, setDiffStaged] = useState(false);
+  const workspaceStateKey = `${project?.id || 'global'}:${workspaceId || 'default'}`;
 
-  treeRef.current = tree;
   expandedRef.current = expanded;
+  const deferredExpanded = useDeferredValue([...expanded]);
 
-  const language = useMemo(() => detectLanguage(selectedPath || ''), [selectedPath]);
+  // Sync seed so FileExplorer can mount immediately (no treeSeed gate).
+  const initialExpandedForKey = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return [...DEFAULT_EDITOR_PANE_STATE.expandedPaths];
+    }
+    const persisted = readEditorPaneState(window.localStorage, project?.id, workspaceId);
+    const legacyPrefs = project?.id ? getUIPrefs(project.id) : {};
+    if (
+      hasUIPref(project?.id, 'editorExpandedPaths') &&
+      Array.isArray(legacyPrefs.editorExpandedPaths)
+    ) {
+      return legacyPrefs.editorExpandedPaths;
+    }
+    return persisted.expandedPaths || [...DEFAULT_EDITOR_PANE_STATE.expandedPaths];
+  }, [project?.id, workspaceId, workspaceStateKey]);
+
   const selectedPathLower = useMemo(() => (selectedPath || '').toLowerCase(), [selectedPath]);
-  const isMarkdown = useMemo(() => selectedPathLower.endsWith('.md'), [selectedPathLower]);
+  const canShowCodeDiff = useMemo(() => isCodeDiffablePath(selectedPath || ''), [selectedPath]);
+  const isMarkdown = useMemo(
+    () => selectedPathLower.endsWith('.md') || selectedPathLower.endsWith('.mdx'),
+    [selectedPathLower]
+  );
   const isLatex = useMemo(
     () => Boolean(selectedPathLower.match(/\.(tex|latex|ltx)$/)),
     [selectedPathLower]
@@ -443,24 +225,7 @@ export default function FileExplorerEditorPane({
       }
     : undefined;
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
-  const workspaceStateKey = `${project?.id || 'global'}:${workspaceId || 'default'}`;
-  const appliedSearchQuery = searchInputValue.trim();
-  const filteredTree = useMemo(() => {
-    if (searchTree !== null) return searchTree;
-    // While the server search catches up, filter whatever is already loaded.
-    return filterTreeNodes(tree, deferredSearchQuery);
-  }, [deferredSearchQuery, searchTree, tree]);
-  const forcedExpandedPaths = useMemo(
-    () => (appliedSearchQuery ? buildForcedExpandedPaths(filteredTree) : new Set()),
-    [appliedSearchQuery, filteredTree]
-  );
-  const visibleExpandedPaths = useMemo(() => {
-    if (!appliedSearchQuery) return expanded;
-    return new Set([...expanded, ...forcedExpandedPaths]);
-  }, [appliedSearchQuery, expanded, forcedExpandedPaths]);
   const currentFileBreadcrumb = useMemo(() => normalizePathSegments(selectedPath), [selectedPath]);
-  const showTreeBusy =
-    treeLoading || (Boolean(appliedSearchQuery) && searchLoading && searchTree === null);
 
   const persistLegacyTreeCollapsedPref = useCallback(
     (nextValue) => {
@@ -471,94 +236,25 @@ export default function FileExplorerEditorPane({
     [project?.id]
   );
 
-  const markDirLoading = useCallback((dirPath, isLoading) => {
-    if (isLoading) loadingDirsRef.current.add(dirPath);
-    else loadingDirsRef.current.delete(dirPath);
-    setLoadingDirs(new Set(loadingDirsRef.current));
-  }, []);
-
-  const fetchDirectoryChildren = useCallback(
-    async (dirPath, { fresh = false } = {}) => {
-      if (!dirPath) return [];
-      if (loadingDirsRef.current.has(dirPath)) return null;
-
-      markDirLoading(dirPath, true);
-      try {
-        const response = await fetch(
-          buildFsTreeUrl({
-            basePath: project?.local_path,
-            dir: dirPath,
-            fresh,
-          })
-        );
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.error || 'No se pudo cargar la carpeta.');
-        }
-        const children = Array.isArray(data.tree) ? data.tree : [];
-        setTree((previous) => setDirectoryChildren(previous, dirPath, children));
-        return children;
-      } catch (error) {
-        setTreeError(error.message || 'No se pudo cargar la carpeta.');
-        return [];
-      } finally {
-        markDirLoading(dirPath, false);
+  const handleExpandedChange = useCallback(
+    (paths) => {
+      const next = new Set(paths || []);
+      setExpanded(next);
+      if (project?.id) {
+        saveUIPref(project.id, 'editorExpandedPaths', Array.from(next));
       }
     },
-    [markDirLoading, project?.local_path]
-  );
-
-  const hydrateExpandedDirectories = useCallback(
-    async (rootNodes, expandedPaths) => {
-      const ordered = [...expandedPaths].sort(
-        (left, right) => left.split('/').length - right.split('/').length
-      );
-      let current = rootNodes;
-      for (const dirPath of ordered) {
-        const node = findNodeByPath(current, dirPath);
-        if (!node || node.type !== 'directory' || Array.isArray(node.children)) continue;
-        const children = await fetchDirectoryChildren(dirPath);
-        if (children) {
-          current = setDirectoryChildren(current, dirPath, children);
-        }
-      }
-    },
-    [fetchDirectoryChildren]
-  );
-
-  const loadTree = useCallback(
-    async ({ fresh = false } = {}) => {
-      setTreeLoading(true);
-      setTreeError('');
-      try {
-        const response = await fetch(
-          buildFsTreeUrl({
-            basePath: project?.local_path,
-            fresh,
-          })
-        );
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.error || 'No se pudo cargar el árbol de archivos.');
-        }
-        const nextTree = Array.isArray(data.tree) ? data.tree : [];
-        setTree(nextTree);
-        treeRef.current = nextTree;
-        await hydrateExpandedDirectories(nextTree, Array.from(expandedRef.current));
-      } catch (error) {
-        setTreeError(error.message || 'No se pudo cargar el árbol de archivos.');
-      } finally {
-        setTreeLoading(false);
-      }
-    },
-    [hydrateExpandedDirectories, project?.local_path]
+    [project?.id]
   );
 
   const loadFile = useCallback(
-    async (path) => {
+    async (path, options = {}) => {
       if (!path) return;
 
+      const preferDiff = Boolean(options.preferDiff) && isCodeDiffablePath(path);
       setSelectedPath(path);
+      setDiffStaged(Boolean(options.staged));
+      setEditorSurface(preferDiff ? 'diff' : 'file');
       setFileLoading(true);
       setFileError('');
 
@@ -590,6 +286,16 @@ export default function FileExplorerEditorPane({
     [project?.local_path]
   );
 
+  const openFromChanges = useCallback(
+    (path, meta = {}) => {
+      void loadFile(path, {
+        preferDiff: isCodeDiffablePath(path),
+        staged: Boolean(meta.staged),
+      });
+    },
+    [loadFile]
+  );
+
   useEffect(() => {
     const inMemorySnapshot = workspaceSnapshotsRef.current.get(workspaceStateKey);
     const persistedSnapshot = readEditorPaneState(storage, project?.id, workspaceId);
@@ -619,13 +325,13 @@ export default function FileExplorerEditorPane({
           : persistedSnapshot.latexViewMode),
     };
 
-    setExpanded(new Set(nextState.expandedPaths || DEFAULT_EDITOR_PANE_STATE.expandedPaths));
+    const nextExpanded = nextState.expandedPaths || DEFAULT_EDITOR_PANE_STATE.expandedPaths;
+    setExpanded(new Set(nextExpanded));
     setIsTreeCollapsed(Boolean(nextState.isTreeCollapsed));
     setSelectedPath(nextState.selectedPath || '');
     setContent(inMemorySnapshot?.content || DEFAULT_EDITOR_PANE_CONTENT);
     setFileError(inMemorySnapshot?.fileError || '');
     setFileLoading(false);
-    setSearchInputValue(nextState.searchQuery || '');
     setEmbeddedTreeWidthPx(
       clampEmbeddedTreeWidth(
         nextState.embeddedTreeWidthPx ?? DEFAULT_EDITOR_PANE_STATE.embeddedTreeWidthPx
@@ -636,55 +342,10 @@ export default function FileExplorerEditorPane({
   }, [project?.id, storage, workspaceId, workspaceStateKey]);
 
   useEffect(() => {
-    loadTree();
-  }, [loadTree]);
-
-  useEffect(() => {
-    const query = searchInputValue.trim();
-    if (!query) {
-      setSearchTree(null);
-      setSearchLoading(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-    setSearchLoading(true);
-
-    (async () => {
-      try {
-        const response = await fetch(
-          buildFsTreeUrl({
-            basePath: project?.local_path,
-            query,
-          })
-        );
-        const data = await response.json();
-        if (cancelled) return;
-        if (!response.ok) {
-          throw new Error(data?.error || 'No se pudo buscar archivos.');
-        }
-        setSearchTree(Array.isArray(data.tree) ? data.tree : []);
-      } catch (error) {
-        if (!cancelled) {
-          setTreeError(error.message || 'No se pudo buscar archivos.');
-          setSearchTree([]);
-        }
-      } finally {
-        if (!cancelled) setSearchLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [project?.local_path, searchInputValue]);
-
-  useEffect(() => {
     const snapshot = {
       expandedPaths: Array.from(expanded),
       isTreeCollapsed,
       selectedPath,
-      searchQuery: searchInputValue,
       markdownViewMode,
       latexViewMode,
       content,
@@ -699,25 +360,22 @@ export default function FileExplorerEditorPane({
     isTreeCollapsed,
     latexViewMode,
     markdownViewMode,
-    searchInputValue,
     selectedPath,
     workspaceStateKey,
   ]);
 
   useEffect(() => {
     writeEditorPaneState(storage, project?.id, workspaceId, {
-      expandedPaths: Array.from(expanded),
+      expandedPaths: deferredExpanded,
       isTreeCollapsed,
       selectedPath,
-      searchQuery: deferredSearchQuery,
       markdownViewMode,
       latexViewMode,
       embeddedTreeWidthPx,
     });
   }, [
-    deferredSearchQuery,
+    deferredExpanded,
     embeddedTreeWidthPx,
-    expanded,
     isTreeCollapsed,
     latexViewMode,
     markdownViewMode,
@@ -738,30 +396,6 @@ export default function FileExplorerEditorPane({
       breadcrumb: currentFileBreadcrumb,
     });
   }, [currentFileBreadcrumb, onContextChange, project?.local_path, selectedPath]);
-
-  const toggleNode = useCallback(
-    (path) => {
-      setExpanded((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) {
-          next.delete(path);
-        } else {
-          next.add(path);
-          const node = findNodeByPath(treeRef.current, path);
-          if (node?.type === 'directory' && !Array.isArray(node.children)) {
-            void fetchDirectoryChildren(path);
-          }
-        }
-
-        if (project?.id) {
-          saveUIPref(project.id, 'editorExpandedPaths', Array.from(next));
-        }
-
-        return next;
-      });
-    },
-    [fetchDirectoryChildren, project?.id]
-  );
 
   const handleDocumentViewModeChange = useCallback(
     (mode) => {
@@ -796,34 +430,6 @@ export default function FileExplorerEditorPane({
     setIsTreeCollapsed(nextValue);
     persistLegacyTreeCollapsedPref(nextValue);
   }, [isTreeCollapsed, persistLegacyTreeCollapsedPref]);
-
-  const clearSearch = useCallback(() => {
-    setSearchInputValue('');
-  }, []);
-
-  const handleSearchQueryChange = useCallback((event) => {
-    const nextValue = event.target.value;
-    setSearchInputValue((previousValue) =>
-      previousValue === nextValue ? previousValue : nextValue
-    );
-  }, []);
-
-  const renderedTree = useMemo(
-    () =>
-      filteredTree.map((node) => (
-        <TreeNode
-          key={node.path}
-          node={node}
-          level={0}
-          expanded={visibleExpandedPaths}
-          onToggle={toggleNode}
-          onSelect={loadFile}
-          selectedPath={selectedPath}
-          loadingDirs={loadingDirs}
-        />
-      )),
-    [filteredTree, loadFile, loadingDirs, selectedPath, toggleNode, visibleExpandedPaths]
-  );
 
   const measureEmbeddedDocumentSurfaceWidth = useCallback(() => {
     if (!shouldUseEmbeddedDocumentRail) return;
@@ -1039,82 +645,65 @@ export default function FileExplorerEditorPane({
   ]);
 
   const treeBrowser = (
-    <>
-      <div className="flex-shrink-0 border-b border-borders-subtle px-2 py-2">
-        <div
-          className="flex items-center gap-2 border border-borders-subtle px-2.5 py-2"
-          style={inputStyle()}
-        >
-          <input
-            type="search"
-            value={searchInputValue}
-            onInput={handleSearchQueryChange}
-            onChange={handleSearchQueryChange}
-            placeholder="Search files or paths"
-            className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
-            data-testid="editor-tree-search-input"
-            aria-label="Search files"
-          />
-          {searchInputValue ? (
-            <button
-              type="button"
-              onClick={clearSearch}
-              className="inline-flex h-5 items-center rounded-md px-1.5 text-[11px] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
-              aria-label="Clear file search"
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
       <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
-        data-testid="editor-tree-scroll-region"
-        style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+        className="flex flex-shrink-0 gap-1 border-b border-borders-subtle px-2 py-1.5"
+        data-testid="explorer-side-tabs"
       >
-        {showTreeBusy ? (
-          <div className="space-y-3 p-2" data-testid="editor-tree-loading">
-            <div className="flex items-center gap-2 text-[11px] text-text-muted">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-primary" />
-              {appliedSearchQuery ? 'Buscando archivos…' : 'Cargando archivos del workspace…'}
-            </div>
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div
-                  className="h-3.5 w-3.5 animate-pulse rounded-sm"
-                  style={{
-                    background: 'color-mix(in srgb, var(--text-muted) 28%, transparent)',
-                  }}
-                />
-                <div
-                  className={`h-3 animate-pulse rounded ${i % 2 === 0 ? 'w-28' : 'w-20'}`}
-                  style={{
-                    background: 'color-mix(in srgb, var(--text-muted) 22%, transparent)',
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        ) : treeError ? (
-          <div className="text-xs text-danger p-2 rounded-md border border-[#F778BA33] bg-[#F778BA11]">
-            {treeError}
-          </div>
-        ) : filteredTree.length === 0 ? (
-          appliedSearchQuery ? (
-            <div
-              className="rounded-md border border-borders-subtle bg-surface-elevated px-3 py-2 text-xs text-text-muted"
-              data-testid="editor-tree-empty-search"
-            >
-              No files match “{appliedSearchQuery}”.
-            </div>
-          ) : (
-            <div className="text-xs text-text-muted p-2">No se encontraron archivos.</div>
-          )
+        <button
+          type="button"
+          data-testid="explorer-tab-files"
+          className={[
+            'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+            explorerSideTab === 'files'
+              ? 'bg-surface-elevated text-text-primary'
+              : 'text-text-muted hover:text-text-primary',
+          ].join(' ')}
+          onClick={() => setExplorerSideTab('files')}
+        >
+          Files
+        </button>
+        <button
+          type="button"
+          data-testid="explorer-tab-changes"
+          className={[
+            'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+            explorerSideTab === 'changes'
+              ? 'bg-surface-elevated text-text-primary'
+              : 'text-text-muted hover:text-text-primary',
+          ].join(' ')}
+          onClick={() => setExplorerSideTab('changes')}
+        >
+          Changes
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {explorerSideTab === 'changes' ? (
+          <SourceControlPanel basePath={project?.local_path || null} onOpenFile={openFromChanges} />
         ) : (
-          renderedTree
+          <FileExplorer
+            key={workspaceStateKey}
+            ref={fileExplorerRef}
+            basePath={project?.local_path || null}
+            activeFilePath={selectedPath || null}
+            initialExpanded={initialExpandedForKey}
+            onOpenFile={loadFile}
+            onExpandedChange={handleExpandedChange}
+            onPathRenamed={(from, to) => {
+              if (selectedPath === from || (selectedPath && selectedPath.startsWith(from + '/'))) {
+                setSelectedPath(selectedPath === from ? to : to + selectedPath.slice(from.length));
+              }
+            }}
+            onPathDeleted={(path) => {
+              if (selectedPath === path || (selectedPath && selectedPath.startsWith(path + '/'))) {
+                setSelectedPath('');
+                setContent(DEFAULT_EDITOR_PANE_CONTENT);
+              }
+            }}
+          />
         )}
       </div>
-    </>
+    </div>
   );
 
   const previewSection = (
@@ -1159,6 +748,7 @@ export default function FileExplorerEditorPane({
             <div
               className="inline-flex rounded-md border border-borders-subtle p-0.5"
               style={{ background: 'var(--chrome-control-fill)' }}
+              data-testid="editor-document-view-toggle"
             >
               <button
                 type="button"
@@ -1176,6 +766,28 @@ export default function FileExplorerEditorPane({
               </button>
             </div>
           )}
+          {canShowCodeDiff && !fileLoading && !fileError && selectedPath ? (
+            <div
+              className="inline-flex rounded-md border border-borders-subtle p-0.5"
+              style={{ background: 'var(--chrome-control-fill)' }}
+              data-testid="editor-code-surface-toggle"
+            >
+              <button
+                type="button"
+                onClick={() => setEditorSurface('file')}
+                className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${editorSurface === 'file' ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
+              >
+                Code
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditorSurface('diff')}
+                className={`px-2.5 py-1 text-[11px] rounded-sm transition-colors cursor-pointer ${editorSurface === 'diff' ? 'bg-accent-primary text-black' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'}`}
+              >
+                Diff
+              </button>
+            </div>
+          ) : null}
           {fileLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-primary" />}
         </div>
       </div>
@@ -1214,7 +826,13 @@ export default function FileExplorerEditorPane({
           data-testid="editor-preview-scroll-region"
           style={{ background: 'var(--chrome-panel-fill)' }}
         >
-          {isPdf ? (
+          {canShowCodeDiff && editorSurface === 'diff' ? (
+            <GitDiffView
+              basePath={project?.local_path || null}
+              path={selectedPath}
+              staged={diffStaged}
+            />
+          ) : isPdf ? (
             <div
               ref={documentPreviewRailRef}
               className={`h-full ${embeddedDocumentSurfaceClass}`}
@@ -1298,65 +916,7 @@ export default function FileExplorerEditorPane({
               </div>
             )
           ) : (
-            <div className="h-full min-h-0 min-w-0 w-full overflow-hidden">
-              <Editor
-                height="100%"
-                language={language}
-                theme="vs-dark"
-                value={content}
-                options={{
-                  readOnly: true,
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  fontFamily: 'Consolas, "Courier New", monospace',
-                  wordWrap: 'on',
-                  wrappingIndent: 'indent',
-                  scrollBeyondLastLine: false,
-                  padding: { top: 16 },
-                }}
-                loading={
-                  <div
-                    className="flex h-full w-full flex-col"
-                    style={{
-                      background: 'var(--chrome-panel-fill)',
-                      borderTop: 'var(--chrome-border-width) solid var(--chrome-border-color)',
-                    }}
-                  >
-                    <div
-                      className="flex items-center justify-between px-4 py-3"
-                      style={{
-                        background: 'var(--chrome-panel-fill-emphasis)',
-                        borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)',
-                        boxShadow: 'var(--chrome-shadow-control)',
-                      }}
-                    >
-                      <div className="h-3 w-28" style={pillStyle()} />
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-12" style={pillStyle()} />
-                        <Loader2 className="w-4 h-4 animate-spin text-accent-primary" />
-                      </div>
-                    </div>
-                    <div className="flex-1 p-4" style={{ background: 'var(--chrome-panel-fill)' }}>
-                      <div
-                        className="h-full w-full p-4"
-                        style={{
-                          ...panelStyle(),
-                          borderRadius: 'var(--chrome-radius-panel)',
-                          boxShadow: 'var(--chrome-shadow-panel)',
-                        }}
-                      >
-                        <div className="space-y-3">
-                          <div className="h-3 w-11/12" style={pillStyle()} />
-                          <div className="h-3 w-10/12" style={pillStyle()} />
-                          <div className="h-3 w-9/12" style={pillStyle()} />
-                          <div className="h-3 w-7/12" style={pillStyle()} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                }
-              />
-            </div>
+            <CodeFileView path={selectedPath} value={content} loading={fileLoading} />
           )}
         </div>
       )}
@@ -1400,7 +960,7 @@ export default function FileExplorerEditorPane({
         </div>
         <button
           type="button"
-          onClick={() => loadTree({ fresh: true })}
+          onClick={() => fileExplorerRef.current?.refresh?.()}
           className="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded-md hover:bg-surface-elevated cursor-pointer"
           title="Recargar árbol de archivos"
           aria-label="Recargar árbol de archivos"

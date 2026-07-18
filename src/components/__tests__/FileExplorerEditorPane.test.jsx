@@ -3,17 +3,22 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
-jest.mock('@monaco-editor/react', () => ({
-  __esModule: true,
-  default: ({ language, value }) => {
-    const React = require('react');
-    return React.createElement(
+jest.mock('@monaco-editor/react', () => {
+  const React = require('react');
+  const Editor = ({ language, value }) =>
+    React.createElement(
       'div',
       { 'data-testid': 'monaco-editor' },
       `${language || 'plaintext'}::${value || ''}`
     );
-  },
-}));
+  const DiffEditor = ({ language, original, modified }) =>
+    React.createElement(
+      'div',
+      { 'data-testid': 'monaco-diff-editor' },
+      `${language || 'plaintext'}::${original || ''}=>${modified || ''}`
+    );
+  return { __esModule: true, default: Editor, DiffEditor };
+});
 
 jest.mock('react-markdown', () => ({
   __esModule: true,
@@ -105,6 +110,28 @@ jest.mock('lucide-react', () => {
   );
 });
 
+jest.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }) => ({
+    getVirtualItems: () => [],
+    getTotalSize: () => count * 24,
+    scrollToIndex: jest.fn(),
+  }),
+}));
+
+jest.mock('@iconify-json/catppuccin/icons.json', () => ({
+  width: 16,
+  height: 16,
+  icons: {
+    file: { body: '<path d="M0 0"/>' },
+    folder: { body: '<path d="M0 0"/>' },
+    'folder-open': { body: '<path d="M0 0"/>' },
+    javascript: { body: '<path d="M0 0"/>' },
+    markdown: { body: '<path d="M0 0"/>' },
+    tex: { body: '<path d="M0 0"/>' },
+    react: { body: '<path d="M0 0"/>' },
+  },
+}));
+
 const FileExplorerEditorPane = require('../workspace/FileExplorerEditorPane').default;
 
 function installDom() {
@@ -169,11 +196,12 @@ async function changeInput(element, value) {
   await flushEffects();
 }
 
-async function waitForElement(getElement, attempts = 20) {
+async function waitForElement(getElement, attempts = 40) {
   for (let index = 0; index < attempts; index += 1) {
     const element = getElement();
     if (element) return element;
     await flushEffects();
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
   return null;
@@ -203,50 +231,117 @@ describe('FileExplorerEditorPane', () => {
     dom = installDom();
     window.localStorage.clear();
 
-    global.fetch = jest.fn((url) => {
+    global.fetch = jest.fn((url, init) => {
       const href = String(url);
+
+      if (href.startsWith('/api/fs/git-status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            repoRoot: '/workspace/devhub',
+            changedFiles: [
+              {
+                path: 'src/components/TerminalDock.jsx',
+                indexStatus: ' ',
+                worktreeStatus: 'M',
+                untracked: false,
+                unstaged: true,
+              },
+              {
+                path: 'README.md',
+                indexStatus: ' ',
+                worktreeStatus: 'M',
+                untracked: false,
+                unstaged: true,
+              },
+            ],
+            updatedAt: 1,
+          }),
+        });
+      }
+
+      if (href.startsWith('/api/fs/git-diff')) {
+        const url = new URL(href, 'https://devhub.test');
+        const filePath = url.searchParams.get('path') || '';
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            path: filePath,
+            binary: false,
+            tooLarge: false,
+            original: '// original\n',
+            modified: filePath.endsWith('.jsx')
+              ? 'export default function TerminalDock() { return null; }'
+              : '# Hola mundo',
+          }),
+        });
+      }
+
+      if (href.startsWith('/api/fs/tree/batch') || href === '/api/fs/tree/batch') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            listings: {
+              '': [
+                { name: 'paper.tex', path: 'paper.tex', type: 'file' },
+                { name: 'README.md', path: 'README.md', type: 'file' },
+                { name: 'src', path: 'src', type: 'directory', children: null },
+              ],
+              src: [
+                {
+                  name: 'components',
+                  path: 'src/components',
+                  type: 'directory',
+                  children: null,
+                },
+              ],
+              'src/components': [
+                {
+                  name: 'TerminalDock.jsx',
+                  path: 'src/components/TerminalDock.jsx',
+                  type: 'file',
+                },
+              ],
+            },
+          }),
+        });
+      }
+
+      if (href.startsWith('/api/fs/watch')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+
+      if (href.startsWith('/api/fs/search')) {
+        const parsed = new URL(href, 'https://devhub.test');
+        const query = (parsed.searchParams.get('q') || '').toLowerCase();
+        if (query.includes('missing')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ hits: [], truncated: false }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            hits: [
+              {
+                path: 'src/components/TerminalDock.jsx',
+                rel: 'src/components/TerminalDock.jsx',
+                name: 'TerminalDock.jsx',
+                is_dir: false,
+              },
+            ],
+            truncated: false,
+          }),
+        });
+      }
 
       if (href.startsWith('/api/fs/tree')) {
         const parsed = new URL(href, 'https://devhub.test');
         const dir = parsed.searchParams.get('dir') || '';
-        const query = (parsed.searchParams.get('q') || '').toLowerCase();
-
-        if (query) {
-          if (query.includes('missing')) {
-            return Promise.resolve({
-              ok: true,
-              json: async () => ({ tree: [], mode: 'search' }),
-            });
-          }
-
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({
-              mode: 'search',
-              tree: [
-                {
-                  name: 'src',
-                  path: 'src',
-                  type: 'directory',
-                  children: [
-                    {
-                      name: 'components',
-                      path: 'src/components',
-                      type: 'directory',
-                      children: [
-                        {
-                          name: 'TerminalDock.jsx',
-                          path: 'src/components/TerminalDock.jsx',
-                          type: 'file',
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            }),
-          });
-        }
 
         if (dir === 'src') {
           return Promise.resolve({
@@ -394,13 +489,14 @@ describe('FileExplorerEditorPane', () => {
     expect(collapsedPrefs.editorFileTreeCollapsed).toBe(true);
 
     await click(view.container.querySelector('[data-testid="editor-tree-toggle"]'));
+    await waitForElement(() => view.container.querySelector('[data-path="paper.tex"]'));
     expect(findByText(view.container, 'paper.tex')).not.toBeNull();
 
     const expandedPrefs = JSON.parse(window.localStorage.getItem('devhub_ui_prefs_project-2'));
     expect(expandedPrefs.editorFileTreeCollapsed).toBe(false);
   });
 
-  test('searches via /api/fs/tree?q=, keeps ancestor folders visible, and opens nested matches', async () => {
+  test('searches via /api/fs/search and opens nested matches', async () => {
     const view = await renderIntoDom(
       React.createElement(FileExplorerEditorPane, {
         project: { id: 'project-3', local_path: '/workspace/devhub' },
@@ -409,10 +505,6 @@ describe('FileExplorerEditorPane', () => {
     );
 
     await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
-
-    const treeFetchCallsBeforeSearch = global.fetch.mock.calls.filter(([url]) =>
-      String(url).startsWith('/api/fs/tree')
-    ).length;
 
     await changeInput(
       view.container.querySelector('[data-testid="editor-tree-search-input"]'),
@@ -423,16 +515,11 @@ describe('FileExplorerEditorPane', () => {
       view.container.querySelector('[data-path="src/components/TerminalDock.jsx"]')
     );
 
-    expect(view.container.textContent).toContain('src');
-    expect(view.container.textContent).toContain('components');
     expect(view.container.textContent).toContain('TerminalDock.jsx');
     expect(view.container.textContent).not.toContain('README.md');
     expect(
-      global.fetch.mock.calls.filter(([url]) => String(url).includes('q=terminaldock'))
+      global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/search'))
     ).not.toHaveLength(0);
-    expect(
-      global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/fs/tree')).length
-    ).toBeGreaterThan(treeFetchCallsBeforeSearch);
 
     await click(view.container.querySelector('[data-path="src/components/TerminalDock.jsx"]'));
     expect(view.container.querySelector('[data-testid="monaco-editor"]')?.textContent).toContain(
@@ -460,7 +547,7 @@ describe('FileExplorerEditorPane', () => {
     ).not.toBeNull();
   });
 
-  test('renders explicit folder toggles and shows an empty-search message when nothing matches', async () => {
+  test('expands folders on row click and shows an empty-search message when nothing matches', async () => {
     const view = await renderIntoDom(
       React.createElement(FileExplorerEditorPane, {
         project: { id: 'project-4', local_path: '/workspace/devhub' },
@@ -470,9 +557,10 @@ describe('FileExplorerEditorPane', () => {
 
     await waitForElement(() => view.container.querySelector('[data-path="README.md"]'));
 
-    const srcToggle = view.container.querySelector('[data-testid="tree-toggle-src"]');
-    expect(srcToggle).not.toBeNull();
-    expect(srcToggle?.getAttribute('aria-label')).toContain('src');
+    const srcRow = view.container.querySelector('[data-path="src"]');
+    expect(srcRow).not.toBeNull();
+    await click(srcRow);
+    await waitForElement(() => view.container.querySelector('[data-path="src/components"]'));
 
     await changeInput(
       view.container.querySelector('[data-testid="editor-tree-search-input"]'),
@@ -647,5 +735,47 @@ describe('FileExplorerEditorPane', () => {
     const pane = view.container.querySelector('[data-testid="shared-editor-pane"]');
     expect(pane.classList.contains('h-full')).toBe(true);
     expect(pane.classList.contains('w-full')).toBe(true);
+  });
+
+  test('opens code files from Changes as Diff; markdown keeps document preview', async () => {
+    const view = await renderIntoDom(
+      React.createElement(FileExplorerEditorPane, {
+        project: { id: 'project-diff', local_path: '/workspace/devhub' },
+      })
+    );
+
+    await waitForElement(() =>
+      view.container.querySelector('[data-testid="explorer-tab-changes"]')
+    );
+    await click(view.container.querySelector('[data-testid="explorer-tab-changes"]'));
+    await waitForElement(() =>
+      view.container.querySelector('[data-testid="source-control-panel"]')
+    );
+
+    const jsRow = Array.from(view.container.querySelectorAll('[data-testid="sc-file-open"]')).find(
+      (el) =>
+        el.getAttribute('title') === 'src/components/TerminalDock.jsx' ||
+        el.textContent.includes('TerminalDock.jsx')
+    );
+    expect(jsRow).toBeTruthy();
+    await click(jsRow);
+    await waitForElement(() => view.container.querySelector('[data-testid="git-diff-view"]'));
+    expect(view.container.querySelector('[data-testid="monaco-diff-editor"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="editor-code-surface-toggle"]')
+    ).not.toBeNull();
+
+    await click(view.container.querySelector('[data-testid="explorer-tab-files"]'));
+    const readme = await waitForElement(() =>
+      view.container.querySelector('[data-path="README.md"]')
+    );
+    await click(readme);
+    await waitForElement(() => view.container.querySelector('[data-testid="markdown-preview"]'));
+    expect(view.container.querySelector('[data-testid="markdown-preview"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="git-diff-view"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="editor-document-view-toggle"]')
+    ).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="editor-code-surface-toggle"]')).toBeNull();
   });
 });

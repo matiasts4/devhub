@@ -23,6 +23,14 @@
   --density-row-padding-x: 0.75rem;
   --density-row-gap: 0.5rem;
   --warning: oklch(0.79 0.16 80);
+  --success: oklch(0.6 0.16 145);
+  --danger: oklch(0.72 0.19 0);
+  /* Explorer git decorations (VS Code-like) */
+  --explorer-git-m: var(--warning);
+  --explorer-git-a: var(--success);
+  --explorer-git-u: var(--success);
+  --explorer-git-d: var(--danger);
+  --explorer-git-r: var(--accent-primary, #58a6ff);
   --proyectos-accent-cyan: #00f0ff;
   --proyectos-accent-lime: #39ff14;
   --proyectos-accent-pink: #ff007f;
