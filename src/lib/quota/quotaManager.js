@@ -1,11 +1,3 @@
-import { fetchAnthropicQuota } from './providers/anthropic.js';
-import { fetchGrokQuota } from './providers/grok.js';
-import { fetchAntigravityQuota } from './providers/antigravity.js';
-import { fetchKimiQuota } from './providers/kimi.js';
-import { fetchCodexQuota } from './providers/codex.js';
-import { fetchOpenCodeQuota } from './providers/opencode.js';
-import { PROVIDERS } from './types.js';
-
 class QuotaManager {
   constructor() {
     /** @type {Map<string, any>} */
@@ -15,15 +7,6 @@ class QuotaManager {
     this.pollIntervalMs = 45000; // 45 seconds polling
     this.timer = null;
     this.isPolling = false;
-
-    this.adapters = {
-      [PROVIDERS.CLAUDE]: fetchAnthropicQuota,
-      [PROVIDERS.GROK]: fetchGrokQuota,
-      [PROVIDERS.ANTIGRAVITY]: fetchAntigravityQuota,
-      [PROVIDERS.KIMI]: fetchKimiQuota,
-      [PROVIDERS.CODEX]: fetchCodexQuota,
-      [PROVIDERS.OPENCODE]: fetchOpenCodeQuota,
-    };
   }
 
   /**
@@ -33,7 +16,6 @@ class QuotaManager {
    */
   subscribe(callback) {
     this.subscribers.add(callback);
-    // Immediately emit current cache to new subscriber
     callback(this.getAllQuotas());
 
     if (!this.isPolling && this.subscribers.size > 0) {
@@ -48,9 +30,6 @@ class QuotaManager {
     };
   }
 
-  /**
-   * Start periodic background polling
-   */
   startPolling() {
     if (this.isPolling) return;
     this.isPolling = true;
@@ -58,9 +37,6 @@ class QuotaManager {
     this.timer = setInterval(() => this.fetchAll(), this.pollIntervalMs);
   }
 
-  /**
-   * Stop background polling
-   */
   stopPolling() {
     if (this.timer) {
       clearInterval(this.timer);
@@ -70,18 +46,19 @@ class QuotaManager {
   }
 
   /**
-   * Fetch quota for a single provider
+   * Fetch quota for a single provider from backend API
    * @param {string} providerId
    */
   async fetchProvider(providerId) {
-    const adapter = this.adapters[providerId];
-    if (!adapter) return null;
-
     try {
-      const status = await adapter();
-      this.cache.set(providerId, status);
-      this.notifySubscribers();
-      return status;
+      const res = await fetch(`/api/quota?provider=${encodeURIComponent(providerId)}`);
+      if (res.ok) {
+        const status = await res.json();
+        this.cache.set(providerId, status);
+        this.notifySubscribers();
+        return status;
+      }
+      return null;
     } catch (err) {
       console.warn(`[QuotaManager] Error fetching ${providerId}:`, err);
       return null;
@@ -89,24 +66,29 @@ class QuotaManager {
   }
 
   /**
-   * Fetch all registered providers
+   * Fetch all providers from backend API
    */
   async fetchAll() {
-    const providerIds = Object.keys(this.adapters);
-    await Promise.all(providerIds.map((id) => this.fetchProvider(id).catch(() => null)));
+    try {
+      const res = await fetch('/api/quota');
+      if (res.ok) {
+        const allQuotas = await res.json();
+        for (const [key, val] of Object.entries(allQuotas)) {
+          this.cache.set(key, val);
+        }
+        this.notifySubscribers();
+        return allQuotas;
+      }
+    } catch (err) {
+      console.warn('[QuotaManager] Error fetching all quotas:', err);
+    }
+    return this.getAllQuotas();
   }
 
-  /**
-   * Get quota status for a specific provider
-   * @param {string} providerId
-   */
   getQuota(providerId) {
     return this.cache.get(providerId) || null;
   }
 
-  /**
-   * Get map of all current quota statuses
-   */
   getAllQuotas() {
     const result = {};
     for (const [key, val] of this.cache.entries()) {

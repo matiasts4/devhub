@@ -1,8 +1,24 @@
 import { quotaManager } from '../quotaManager.js';
 import { detectProviderFromSession } from '../activeSessionSensor.js';
 import { PROVIDERS } from '../types.js';
+import { fetchGrokQuota } from '../server/grok.js';
 
 describe('QuotaManager & ActiveSessionSensor', () => {
+  beforeAll(() => {
+    global.fetch = jest.fn().mockImplementation((_url) => {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            providerId: 'grok',
+            displayName: 'Grok',
+            primaryRemainingPercent: 85,
+            windows: [],
+          }),
+      });
+    });
+  });
+
   afterEach(() => {
     quotaManager.stopPolling();
   });
@@ -30,10 +46,16 @@ describe('QuotaManager & ActiveSessionSensor', () => {
     unsubscribe();
   });
 
-  test('fetches provider quota status', async () => {
+  test('fetches provider quota status via API', async () => {
     const grokStatus = await quotaManager.fetchProvider(PROVIDERS.GROK);
     expect(grokStatus).toBeDefined();
     expect(grokStatus.providerId).toBe(PROVIDERS.GROK);
-    expect(grokStatus.primaryRemainingPercent).toBeGreaterThanOrEqual(0);
+    expect(grokStatus.primaryRemainingPercent).toBe(85);
+  });
+
+  test('server grok provider executes safely in Node', async () => {
+    const grokStatus = await fetchGrokQuota();
+    expect(grokStatus).toBeDefined();
+    expect(grokStatus.providerId).toBe(PROVIDERS.GROK);
   });
 });
