@@ -41,6 +41,8 @@ import {
 import { resolveRequestedRenderer } from '../terminalRendererPreferences';
 import { resolveVisibleTerminalPanelCountForRenderer } from '../terminalRendererCapabilities';
 import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
+import { isElectronDesktop } from '@/lib/desktop/desktopBridge';
+import * as windowControls from '@/lib/desktop/windowControls';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +65,7 @@ import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
 import { DEFAULT_RIGHT_DOCK_STATE } from '../../workspace/rightDockState';
 import { applyWorkspaceWindowSelectDockState } from '../../workspace/rightDockLayout';
 import { resolveWorkspaceAllWindowsPanelCount } from '../models/workspaceStateModel';
+import { QuotaHeaderBadge } from '../../quota/QuotaHeaderBadge';
 
 export default function WorkspaceRenderAssembly(props) {
   const {
@@ -200,9 +203,26 @@ export default function WorkspaceRenderAssembly(props) {
 
   useEffect(() => {
     let unlisten;
+    let unsubElectron;
+    let cancelled = false;
+
     (async () => {
+      if (isElectronDesktop()) {
+        const max = await windowControls.isMaximized();
+        if (!cancelled) setIsWinMaximized(Boolean(max));
+        try {
+          unsubElectron = window.devhubDesktop?.on?.('window-event', (payload) => {
+            if (payload?.type === 'maximize') setIsWinMaximized(true);
+            if (payload?.type === 'unmaximize') setIsWinMaximized(false);
+          });
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
       const win = await getTauriWindow();
-      if (!win) return;
+      if (!win || cancelled) return;
       const current = await win.isMaximized().catch(() => false);
       setIsWinMaximized(current);
       unlisten = await win
@@ -213,8 +233,14 @@ export default function WorkspaceRenderAssembly(props) {
         .catch(() => null);
     })();
     return () => {
+      cancelled = true;
       try {
         unlisten?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        unsubElectron?.();
       } catch {
         /* ignore */
       }
@@ -222,16 +248,36 @@ export default function WorkspaceRenderAssembly(props) {
   }, [getTauriWindow]);
 
   const handleWinMinimize = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.minimize();
+      return;
+    }
     const win = await getTauriWindow();
     await win?.minimize().catch(() => {});
   }, [getTauriWindow]);
 
   const handleWinToggleMaximize = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.toggleMaximize();
+      const max = await windowControls.isMaximized();
+      setIsWinMaximized(Boolean(max));
+      return;
+    }
     const win = await getTauriWindow();
-    await win?.toggleMaximize().catch(() => {});
+    if (!win) return;
+    const current = await win.isMaximized().catch(() => false);
+    if (current) {
+      await win.unmaximize().catch(() => {});
+    } else {
+      await win.maximize().catch(() => {});
+    }
   }, [getTauriWindow]);
 
   const handleWinClose = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.close();
+      return;
+    }
     const win = await getTauriWindow();
     await win?.close().catch(() => {});
   }, [getTauriWindow]);
@@ -440,11 +486,15 @@ export default function WorkspaceRenderAssembly(props) {
       <div
         key="workspace-top-tab-bar"
         data-testid="workspace-top-tab-bar"
+        data-tauri-drag-region
         className="flex items-center min-h-[42px] bg-[var(--surface-app)] select-none shrink-0 px-2 gap-1.5"
         style={{
           ...getWorkspaceShellChromeStyle(),
           ...getWorkspaceTopBarStyle(),
+          // Frameless Electron/Tauri: drag the chrome strip to move the window.
+          WebkitAppRegion: 'drag',
         }}
+        onDoubleClick={handleWinToggleMaximize}
       >
         {typeof onToggleNavSidebar === 'function' ? (
           <button
@@ -454,6 +504,7 @@ export default function WorkspaceRenderAssembly(props) {
             title={navSidebarOpen ? 'Hide navigation (Ctrl+B)' : 'Show navigation (Ctrl+B)'}
             aria-label={navSidebarOpen ? 'Hide navigation' : 'Show navigation'}
             aria-pressed={navSidebarOpen}
+            style={{ WebkitAppRegion: 'no-drag' }}
             className={[
               'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors',
               navSidebarOpen
@@ -482,38 +533,42 @@ export default function WorkspaceRenderAssembly(props) {
           getAllPanelIds={getAllPanelIds}
         />
 
-        <WorkspaceWindowSwitcher
-          variant="header"
-          views={workspaceWindows[activeWsId] || []}
-          activeViewId={
-            pizarraPendingViewId ||
-            activeWindowIds[activeWsId] ||
-            workspaceWindows[activeWsId]?.[0]?.id
-          }
-          visible={isVisible}
-          onSelectView={(windowId) => {
-            const pizarraUiActive =
-              pizarraOwnsLiveSurfaces ||
-              (effectiveRightDockState.visible && effectiveRightDockState.activeTab === 'pizarra');
-            if (pizarraUiActive) {
-              setPizarraPendingViewId(windowId);
-              window.dispatchEvent(
-                new CustomEvent('devhub:pizarra-select-view', {
-                  detail: { windowId, workspaceId: activeWsId },
-                })
-              );
-              return;
+        <div style={{ WebkitAppRegion: 'no-drag' }} className="shrink-0">
+          <WorkspaceWindowSwitcher
+            variant="header"
+            views={workspaceWindows[activeWsId] || []}
+            activeViewId={
+              pizarraPendingViewId ||
+              activeWindowIds[activeWsId] ||
+              workspaceWindows[activeWsId]?.[0]?.id
             }
-            switchWindowInWorkspace(activeWsId, windowId);
-          }}
-          onAddView={() => addWindowToWorkspace(activeWsId)}
-        />
+            visible={isVisible}
+            onSelectView={(windowId) => {
+              const pizarraUiActive =
+                pizarraOwnsLiveSurfaces ||
+                (effectiveRightDockState.visible &&
+                  effectiveRightDockState.activeTab === 'pizarra');
+              if (pizarraUiActive) {
+                setPizarraPendingViewId(windowId);
+                window.dispatchEvent(
+                  new CustomEvent('devhub:pizarra-select-view', {
+                    detail: { windowId, workspaceId: activeWsId },
+                  })
+                );
+                return;
+              }
+              switchWindowInWorkspace(activeWsId, windowId);
+            }}
+            onAddView={() => addWindowToWorkspace(activeWsId)}
+          />
+        </div>
 
         {countPanelsInColumns(activeWorkspace?.columns || []) === 0 ? (
           <button
             type="button"
             data-testid="header-add-terminal"
             onClick={() => handleSplit('horizontal')}
+            style={{ WebkitAppRegion: 'no-drag' }}
             className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-2.5 text-[11px] font-mono font-semibold text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
             title="Nueva terminal"
             aria-label="Nueva terminal"
@@ -525,8 +580,13 @@ export default function WorkspaceRenderAssembly(props) {
 
         <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
 
+        {/* Subscription Quota Header Badge */}
+        <div className="mx-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
+          <QuotaHeaderBadge activeSessionTitle={activeWorkspace?.title || activeWorkspace?.label} />
+        </div>
+
         {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
           {/* Grid Launcher */}
           <DropdownMenu onOpenChange={setIsGridLauncherOpen}>
             <DropdownMenuTrigger asChild>
