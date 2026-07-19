@@ -1,5 +1,7 @@
 import { useEffect, useCallback, useState } from 'react';
-import { X, Minus, Square, Sparkles, Plus } from 'lucide-react';
+import { X, Minus, Plus, Sparkles } from 'lucide-react';
+import { isElectronDesktop } from '@/lib/desktop/desktopBridge';
+import * as windowControls from '@/lib/desktop/windowControls';
 
 /**
  * TitleBar — VS Code / Antigravity style compact titlebar
@@ -17,7 +19,10 @@ export default function TitleBar({
   title = 'DevHub',
   subtitle,
   className = '',
-  showMenu = true,
+  // Decorative File/Edit/View row — off by default on Electron (OS menu removed; avoid double chrome).
+  showMenu = typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true
+    ? false
+    : true,
   leftSlot,
   rightSlot,
   showWindowControls = true,
@@ -36,9 +41,26 @@ export default function TitleBar({
   // Detect platform and track maximize state
   useEffect(() => {
     let unlisten;
+    let unsubElectron;
+    let cancelled = false;
+
     (async () => {
+      if (isElectronDesktop()) {
+        const max = await windowControls.isMaximized();
+        if (!cancelled) setIsMaximized(Boolean(max));
+        try {
+          unsubElectron = window.devhubDesktop?.on?.('window-event', (payload) => {
+            if (payload?.type === 'maximize') setIsMaximized(true);
+            if (payload?.type === 'unmaximize') setIsMaximized(false);
+          });
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
       const win = await getTauriWindow();
-      if (!win) return;
+      if (!win || cancelled) return;
       const current = await win.isMaximized().catch(() => false);
       setIsMaximized(current);
       unlisten = await win
@@ -49,8 +71,14 @@ export default function TitleBar({
         .catch(() => null);
     })();
     return () => {
+      cancelled = true;
       try {
         unlisten?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        unsubElectron?.();
       } catch {
         /* ignore */
       }
@@ -58,11 +86,22 @@ export default function TitleBar({
   }, [getTauriWindow]);
 
   const handleMinimize = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.minimize();
+      return;
+    }
     const win = await getTauriWindow();
     await win?.minimize().catch(() => {});
   }, [getTauriWindow]);
 
   const handleToggleMaximize = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.toggleMaximize();
+      const max = await windowControls.isMaximized();
+      setIsMaximized(Boolean(max));
+      return;
+    }
+
     const win = await getTauriWindow();
     if (!win) return;
     // Use explicit maximize/unmaximize instead of toggleMaximize — Tauri v2's
@@ -82,6 +121,10 @@ export default function TitleBar({
   }, [getTauriWindow]);
 
   const handleClose = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.close();
+      return;
+    }
     const win = await getTauriWindow();
     await win?.close().catch(() => {});
   }, [getTauriWindow]);

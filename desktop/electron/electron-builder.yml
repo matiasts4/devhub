@@ -1,0 +1,57 @@
+# DevHub Electron packaging (E1 — minimal but real NSIS config)
+# Invoke from repo root:
+#   pnpm electron:pack   # dir unpacked
+#   pnpm electron:build  # NSIS installer
+#
+# Main entry is set via extraMetadata (package.json has no top-level "main").
+
+appId: com.devhub.desktop
+productName: DevHub
+copyright: Copyright © DevHub
+
+# electron-builder runs with cwd = package.json directory (repo root)
+directories:
+  output: dist/electron
+  buildResources: desktop/electron/packaging
+
+# Use the Electron host as the app entry without changing package.json "main" for Next.
+extraMetadata:
+  main: desktop/electron/main.js
+
+files:
+  - desktop/electron/**/*
+  - package.json
+  - '!desktop/electron/**/*.test.js'
+  - '!desktop/electron/scripts/**'
+
+# Packaged resource layout (read by packaging/runtime.js via process.resourcesPath):
+#   resources/standalone.zip
+#   resources/devhub-server.cjs  (optional)
+extraResources:
+  - from: src-tauri/resources
+    to: resources
+    filter:
+      - '**/*'
+      - '!**/.*'
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: src-tauri/icons/icon.ico
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DevHub
+  deleteAppDataOnUninstall: false
+
+# Do not auto-publish
+publish: null
+
+# Electron version comes from devDependency "electron"
+electronVersion: null

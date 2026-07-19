@@ -2,14 +2,51 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/**
+ * Route voice invokes through desktopBridge on Electron; Tauri invoke otherwise.
+ */
 async function invokeVoice(cmd, args) {
   if (typeof window === 'undefined') {
     return { ok: false, error: 'not-in-browser' };
   }
+
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const data = await invoke(cmd, args);
-    return { ok: true, data };
+    const { invokeDesktop, isElectronDesktop, detectDesktopRuntime } =
+      await import('@/lib/desktop/desktopBridge');
+
+    if (isElectronDesktop()) {
+      const result = await invokeDesktop(cmd, args || {}, {
+        failureShape: { ok: false, reason: 'desktop-unavailable' },
+        tauriWrapRequest: false,
+      });
+      if (
+        result == null ||
+        result.ok === false ||
+        result.reason === 'desktop-unavailable' ||
+        result.reason === 'voice-deferred-electron' ||
+        result.reason === 'not-implemented' ||
+        result.reason === 'voice-disabled'
+      ) {
+        return {
+          ok: false,
+          error: String(result?.reason || result?.error || 'voice invoke failed'),
+          data: result,
+        };
+      }
+      // Electron may return a boolean (toggle) or { ok: true, data }
+      if (typeof result === 'boolean') {
+        return { ok: true, data: result };
+      }
+      return { ok: true, data: result?.data !== undefined ? result.data : result };
+    }
+
+    if (detectDesktopRuntime() === 'tauri') {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data = await invoke(cmd, args);
+      return { ok: true, data };
+    }
+
+    return { ok: false, error: 'desktop-unavailable' };
   } catch (error) {
     return { ok: false, error: String(error?.message || error || 'voice invoke failed') };
   }
@@ -103,6 +140,24 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
 
     async function setup() {
       try {
+        const { isElectronDesktop, subscribeDesktopEvent, detectDesktopRuntime } =
+          await import('@/lib/desktop/desktopBridge');
+
+        if (isElectronDesktop()) {
+          // Events may no-op until preload wires VOICE_EVENT; still mark desktop available
+          // so invoke path is exercised (engine returns voice-deferred-electron).
+          if (!cancelled) {
+            setTauriAvailable(true);
+            unlistenRef.current = [];
+          }
+          return;
+        }
+
+        if (detectDesktopRuntime() !== 'tauri') {
+          if (!cancelled) setTauriAvailable(false);
+          return;
+        }
+
         const { listen } = await import('@tauri-apps/api/event');
         if (cancelled) return;
 
@@ -247,7 +302,7 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
 
   const toggleRecording = useCallback(async () => {
     if (!tauriAvailable) {
-      return { ok: false, error: 'Voz solo disponible en la app Tauri' };
+      return { ok: false, error: 'Voz solo disponible en la app de escritorio' };
     }
 
     if (enginePhase === 'loading_model') {

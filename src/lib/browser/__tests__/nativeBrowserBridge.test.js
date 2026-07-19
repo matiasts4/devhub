@@ -60,14 +60,29 @@ describe('nativeBrowserBridge', () => {
       bounds: { x: 20, y: 24, width: 960, height: 640 },
     };
 
-    await bridge.probeNativeBrowser({ panelId: 'browser-panel', requestedMode: 'native-gtk', tauriAvailable: true });
+    await bridge.probeNativeBrowser({
+      panelId: 'browser-panel',
+      requestedMode: 'native-gtk',
+      tauriAvailable: true,
+    });
     await bridge.openNativeBrowser(openPayload);
-    await bridge.loadNativeBrowserUrl({ panelId: 'browser-panel', url: 'https://example.com/docs' });
+    await bridge.loadNativeBrowserUrl({
+      panelId: 'browser-panel',
+      url: 'https://example.com/docs',
+    });
     await bridge.reloadNativeBrowser({ panelId: 'browser-panel' });
     await bridge.resizeNativeBrowser({ panelId: 'browser-panel', bounds: openPayload.bounds });
     await bridge.focusNativeBrowser({ panelId: 'browser-panel' });
-    await bridge.setNativeBrowserVisibility({ panelId: 'browser-panel', visible: true, bounds: openPayload.bounds });
-    await bridge.nativeBrowserSelectorCommand({ panelId: 'browser-panel', action: 'activate', mode: 'select' });
+    await bridge.setNativeBrowserVisibility({
+      panelId: 'browser-panel',
+      visible: true,
+      bounds: openPayload.bounds,
+    });
+    await bridge.nativeBrowserSelectorCommand({
+      panelId: 'browser-panel',
+      action: 'activate',
+      mode: 'select',
+    });
     await bridge.selectAllNativeBrowser({ panelId: 'browser-panel' });
     await bridge.copyNativeBrowser({ panelId: 'browser-panel' });
     await bridge.closeNativeBrowser({ panelId: 'browser-panel', reason: 'cleanup' });
@@ -120,7 +135,13 @@ describe('nativeBrowserBridge', () => {
     const teardown = await bridge.subscribeNativeBrowserEvents();
     expect(listenMock).toHaveBeenCalledWith('native-browser-event', expect.any(Function));
 
-    callback?.({ payload: { panelId: 'browser-panel', type: 'selector-selected', element: { tagName: 'button' } } });
+    callback?.({
+      payload: {
+        panelId: 'browser-panel',
+        type: 'selector-selected',
+        element: { tagName: 'button' },
+      },
+    });
     expect(payloads).toEqual([
       { panelId: 'browser-panel', type: 'selector-selected', element: { tagName: 'button' } },
     ]);
@@ -129,13 +150,51 @@ describe('nativeBrowserBridge', () => {
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
 
-  test('reports tauri-unavailable when the desktop runtime is missing', async () => {
+  test('reports desktop-unavailable when the desktop runtime is missing', async () => {
     delete window.__TAURI_INTERNALS__;
     const bridge = require('../nativeBrowserBridge');
 
     await expect(bridge.probeNativeBrowser({ panelId: 'browser-panel' })).resolves.toEqual({
       ready: false,
-      reason: 'tauri-unavailable',
+      reason: 'desktop-unavailable',
+    });
+  });
+
+  test('E2 avoid/hide/workspace helpers fail-closed without desktop runtime', async () => {
+    delete window.__TAURI_INTERNALS__;
+    const bridge = require('../nativeBrowserBridge');
+
+    await expect(bridge.setNativeBrowserAvoidRects({ panelId: 'p1', rects: [] })).resolves.toEqual({
+      reason: 'desktop-unavailable',
+    });
+    await expect(bridge.hideAllNativeBrowsers({ reason: 'modal' })).resolves.toEqual({
+      hidden: false,
+      reason: 'desktop-unavailable',
+    });
+    await expect(bridge.showNativeBrowsersForWorkspace({ workspaceId: 'ws-1' })).resolves.toEqual({
+      reason: 'desktop-unavailable',
+    });
+  });
+
+  test('E2 avoid/hide/workspace helpers wrap request on Tauri', async () => {
+    invokeMock.mockResolvedValue({});
+    const bridge = require('../nativeBrowserBridge');
+
+    await bridge.setNativeBrowserAvoidRects({
+      panelId: 'p1',
+      rects: [{ x: 0, y: 0, width: 10, height: 10 }],
+    });
+    await bridge.hideAllNativeBrowsers({ reason: 'overlay' });
+    await bridge.showNativeBrowsersForWorkspace({ workspaceId: null });
+
+    expect(invokeMock).toHaveBeenCalledWith('native_browser_set_avoid_rects', {
+      request: { panelId: 'p1', rects: [{ x: 0, y: 0, width: 10, height: 10 }] },
+    });
+    expect(invokeMock).toHaveBeenCalledWith('native_browser_hide_all', {
+      request: { reason: 'overlay' },
+    });
+    expect(invokeMock).toHaveBeenCalledWith('native_browser_show_workspace', {
+      request: { workspaceId: null },
     });
   });
 });

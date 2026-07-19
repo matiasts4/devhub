@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNativeBrowserHostEffects } from '@/lib/desktop/useNativeBrowserHostEffects';
 import {
   getRightDockAnimProps,
   getWorkspaceAnimProps,
@@ -317,6 +318,7 @@ export default function TerminalWorkspacesManager({
     initialActiveWsId: defaultWorkspaceState.activeWsId,
     initialActivePanelIds: defaultWorkspaceState.activePanelIds,
   });
+
   const [draggedWsId, setDraggedWsId] = useState(null);
   const [dragOverWsId, setDragOverWsId] = useState(null);
   const pendingDragRef = useRef(null);
@@ -332,6 +334,18 @@ export default function TerminalWorkspacesManager({
     restorePolicy: 'manual',
   });
   const [restoreSettingsModal, setRestoreSettingsModal] = useState({ open: false });
+
+  // Electron WebContentsView: hide under modals + filter by active workspace.
+  useNativeBrowserHostEffects({
+    workspaceId: activeWsId,
+    modalOpen:
+      Boolean(terminalSettingsModal?.open) ||
+      Boolean(restoreSettingsModal?.open) ||
+      Boolean(workspaceTerminalSetupOpen) ||
+      Boolean(isGridLauncherOpen),
+    commandPaletteOpen: false,
+  });
+
   const [panelRestoreModes, setPanelRestoreModes] = useState({});
   const [panelConnectionStateById, setPanelConnectionStateById] = useState({});
   const getPanelConnectionState = useCallback(

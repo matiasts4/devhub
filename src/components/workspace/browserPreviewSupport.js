@@ -91,7 +91,8 @@ export function shouldWarnAboutFraming(url) {
 export function shouldUsePreviewProxy(browserUrl) {
   const value = String(browserUrl || '').trim();
   if (!value) return false;
-  if (value.startsWith('/api/preview-proxy?url=') || value.startsWith('/api/preview-proxy/?url=')) return false;
+  if (value.startsWith('/api/preview-proxy?url=') || value.startsWith('/api/preview-proxy/?url='))
+    return false;
 
   try {
     const parsed = new URL(value);
@@ -186,7 +187,11 @@ export function isSameOriginBrowserUrl(browserUrl) {
 
 export function getInitialSupportState(browserUrl, protocolVerified = false) {
   if (shouldUsePreviewProxy(browserUrl)) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY, SUPPORT_REASON.PROXY_ACTIVE, true);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
+      SUPPORT_REASON.PROXY_ACTIVE,
+      true
+    );
   }
 
   if (protocolVerified) {
@@ -194,13 +199,24 @@ export function getInitialSupportState(browserUrl, protocolVerified = false) {
   }
 
   if (isSameOriginBrowserUrl(browserUrl)) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM, SUPPORT_REASON.SAME_ORIGIN_ACCESS);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+      SUPPORT_REASON.SAME_ORIGIN_ACCESS
+    );
   }
 
-  return createSupportState(PREVIEW_SUPPORT_MODE.UNSUPPORTED, SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION);
+  return createSupportState(
+    PREVIEW_SUPPORT_MODE.UNSUPPORTED,
+    SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION
+  );
 }
 
-export function classifyPreviewSupport({ browserUrl, iframe, iframeSrc = '', protocolVerified = false } = {}) {
+export function classifyPreviewSupport({
+  browserUrl,
+  iframe,
+  iframeSrc = '',
+  protocolVerified = false,
+} = {}) {
   const currentIframeSrc = String(iframeSrc || iframe?.getAttribute?.('src') || '');
   const isProxyExpected = shouldUsePreviewProxy(browserUrl);
   const isProxyFrame = currentIframeSrc.includes('/api/preview-proxy');
@@ -210,7 +226,11 @@ export function classifyPreviewSupport({ browserUrl, iframe, iframeSrc = '', pro
   }
 
   if (isProxyExpected) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY, SUPPORT_REASON.PROXY_ACTIVE, true);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
+      SUPPORT_REASON.PROXY_ACTIVE,
+      true
+    );
   }
 
   if (protocolVerified) {
@@ -218,14 +238,23 @@ export function classifyPreviewSupport({ browserUrl, iframe, iframeSrc = '', pro
   }
 
   if (canAccessIframeDom(iframe)) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM, SUPPORT_REASON.SAME_ORIGIN_ACCESS);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+      SUPPORT_REASON.SAME_ORIGIN_ACCESS
+    );
   }
 
   if (safeHasVisualEditProtocol(getIframeContentWindow(iframe))) {
-    return createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_PENDING);
+    return createSupportState(
+      PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+      SUPPORT_REASON.PROTOCOL_PENDING
+    );
   }
 
-  return createSupportState(PREVIEW_SUPPORT_MODE.UNSUPPORTED, SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION);
+  return createSupportState(
+    PREVIEW_SUPPORT_MODE.UNSUPPORTED,
+    SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION
+  );
 }
 
 export function getUnsupportedCopy(reason) {
@@ -243,7 +272,17 @@ export function getUnsupportedCopy(reason) {
 }
 
 export function normalizeBrowserRuntime(runtime) {
-  return runtime === BROWSER_RUNTIME.NATIVE_GTK ? BROWSER_RUNTIME.NATIVE_GTK : BROWSER_RUNTIME.IFRAME;
+  return runtime === BROWSER_RUNTIME.NATIVE_GTK
+    ? BROWSER_RUNTIME.NATIVE_GTK
+    : BROWSER_RUNTIME.IFRAME;
+}
+
+function isElectronDesktopHost() {
+  try {
+    return typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true;
+  } catch {
+    return false;
+  }
 }
 
 export function resolveBrowserRuntimeSelection({
@@ -251,7 +290,12 @@ export function resolveBrowserRuntimeSelection({
   editMode = false,
   nativeCapability = null,
 } = {}) {
-  const normalizedRequestedRuntime = normalizeBrowserRuntime(requestedRuntime);
+  // Electron: always request native WebContentsView unless caller forced iframe AND
+  // we are not on Electron. On Electron, coerce request to native-gtk.
+  const onElectron = isElectronDesktopHost();
+  const normalizedRequestedRuntime = onElectron
+    ? BROWSER_RUNTIME.NATIVE_GTK
+    : normalizeBrowserRuntime(requestedRuntime);
 
   if (normalizedRequestedRuntime !== BROWSER_RUNTIME.NATIVE_GTK) {
     return {
@@ -262,6 +306,15 @@ export function resolveBrowserRuntimeSelection({
   }
 
   if (nativeCapability && nativeCapability.ready === false) {
+    // On Electron, probe should not fail; if it does, still prefer native so we
+    // do not stick on iframe while the host restarts registry.
+    if (onElectron) {
+      return {
+        requestedRuntime: normalizedRequestedRuntime,
+        effectiveRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+        fallbackReason: null,
+      };
+    }
     return {
       requestedRuntime: normalizedRequestedRuntime,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
@@ -269,11 +322,14 @@ export function resolveBrowserRuntimeSelection({
     };
   }
 
-  if (editMode && !hasNativeSelectorInspectCapability(nativeCapability)) {
+  // Edit-mode selector still needs iframe on non-Electron (or when inspect missing).
+  // On Electron, keep native browser for browsing; selector-deferred does not force iframe.
+  if (editMode && !hasNativeSelectorInspectCapability(nativeCapability) && !onElectron) {
     return {
       requestedRuntime: normalizedRequestedRuntime,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
-      fallbackReason: nativeCapability?.reason || BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
+      fallbackReason:
+        nativeCapability?.reason || BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
     };
   }
 
@@ -285,7 +341,18 @@ export function resolveBrowserRuntimeSelection({
 }
 
 export function getBrowserRuntimeLabel(runtime) {
-  return normalizeBrowserRuntime(runtime) === BROWSER_RUNTIME.NATIVE_GTK ? 'native gtk' : 'iframe';
+  if (normalizeBrowserRuntime(runtime) !== BROWSER_RUNTIME.NATIVE_GTK) {
+    return 'iframe';
+  }
+  // Electron WebContentsView — short label. Tauri Linux still says "native gtk".
+  try {
+    if (typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true) {
+      return 'native';
+    }
+  } catch {
+    /* ignore */
+  }
+  return 'native gtk';
 }
 
 export function getBrowserRuntimeFallbackCopy(reason) {
@@ -296,6 +363,8 @@ export function getBrowserRuntimeFallbackCopy(reason) {
       return 'iframe fallback · selector unavailable';
     case 'unsupported-platform':
       return 'iframe fallback · unsupported platform';
+    case 'desktop-unavailable':
+      return 'iframe fallback · desktop bridge missing';
     case 'tauri-unavailable':
       return 'iframe fallback · tauri unavailable';
     case 'missing-bounds':

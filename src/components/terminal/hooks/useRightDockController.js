@@ -65,17 +65,16 @@ export default function useRightDockController({
   const [isDraggingDock, setIsDraggingDock] = useState(false);
   const prevActiveWsForBrowserHideRef = useRef(activeWsId);
 
-  // Hide the previous workspace native browser when switching tabs (dock host is shared).
+  // Workspace switch: ONE event → showWorkspace filter (no hideAll thrash).
   useEffect(() => {
     if (!isClientLoaded || !projectId) return undefined;
     const prevWsId = prevActiveWsForBrowserHideRef.current;
     if (prevWsId && activeWsId && prevWsId !== activeWsId) {
-      const panelId = `browser-${projectId}-${prevWsId}`;
-      import('@/lib/browser/nativeBrowserBridge')
-        .then(({ setNativeBrowserVisibility }) =>
-          setNativeBrowserVisibility({ panelId, visible: false })
-        )
-        .catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('devhub:browser-workspace', { detail: { workspaceId: activeWsId } })
+        );
+      }
     }
     prevActiveWsForBrowserHideRef.current = activeWsId;
     return undefined;

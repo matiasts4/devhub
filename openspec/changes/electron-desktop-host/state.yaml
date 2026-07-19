@@ -1,0 +1,22 @@
+change: electron-desktop-host
+created: 2026-07-18
+updated: 2026-07-18
+branch: feature/electron-desktop-host
+artifact_store: hybrid
+execution_mode: auto
+delivery_strategy: auto-chain
+review_budget_lines: 400
+phases:
+  explore: complete
+  proposal: complete
+  specs: complete
+  design: complete
+  tasks: complete
+  apply: complete
+  verify: pass_with_warnings
+  archive: pending_cutover_gates
+notes:
+  - Host implementation E0–E4 complete (DOM webview primary on Electron; dual-shell Tauri retained)
+  - Production Windows cutover blocked on W1–W8 human/NSIS gates (cutover-checklist.md)
+  - Deferred by design: selector-deferred, voice-deferred-electron, Linux Electron smoke
+  - Prefer pnpm electron:up for local dev (Next :3100 + sidecar :4001 + Electron)

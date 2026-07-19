@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { openDialog } from '@/lib/desktop/dialogs';
 import {
   Settings,
   Save,

@@ -55,6 +55,14 @@ describe('useVoiceCapture hook', () => {
   beforeEach(() => {
     Object.keys(eventListeners).forEach((k) => delete eventListeners[k]);
     jest.clearAllMocks();
+    // Prefer Tauri runtime path so mocks of @tauri-apps/api still apply.
+    delete window.devhubDesktop;
+    window.__TAURI_INTERNALS__ = {};
+  });
+
+  afterEach(() => {
+    delete window.__TAURI_INTERNALS__;
+    delete window.devhubDesktop;
   });
 
   async function renderVoiceHook(props) {

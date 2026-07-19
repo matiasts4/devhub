@@ -38,6 +38,13 @@ function resetNavigator() {
 
 function loadClipboardWithTauriMock(invokeMap) {
   jest.resetModules();
+  // Runtime detection prefers Electron/Tauri markers over bare web.
+  global.window = global.window || {};
+  global.window.__TAURI_INTERNALS__ = {};
+  if (typeof window !== 'undefined') {
+    window.__TAURI_INTERNALS__ = {};
+    delete window.devhubDesktop;
+  }
   jest.doMock('@tauri-apps/api/core', () => ({
     invoke: jest.fn(async (command, args) => {
       const handler = invokeMap[command];

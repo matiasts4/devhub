@@ -8,6 +8,7 @@ import {
   openNativeBrowser,
   probeNativeBrowser,
   resizeNativeBrowser,
+  setNativeBrowserAvoidRects,
   setNativeBrowserVisibility,
 } from '@/lib/browser/nativeBrowserBridge';
 
@@ -101,6 +102,8 @@ export function useNativeBrowserSurface({
   observeNode,
   focusOnShow = true,
   layoutSyncKey = null,
+  workspaceId = null,
+  isolateProfile = false,
 }) {
   const nativeLeaseRef = useRef({ opened: false, lastUrl: '' });
   const [nativeRuntimeReady, setNativeRuntimeReady] = useState(false);
@@ -125,6 +128,12 @@ export function useNativeBrowserSurface({
       });
     });
   }, []);
+
+  // Push avoid-rects to host as a dedicated command (Electron subtracts; Tauri may ignore).
+  useEffect(() => {
+    if (!nativeLeaseRef.current.opened) return;
+    setNativeBrowserAvoidRects({ panelId, rects: activeAvoidRects }).catch(() => {});
+  }, [activeAvoidRects, panelId]);
 
   const closeActiveNativeLease = useCallback(
     async (reason) => {
@@ -217,7 +226,18 @@ export function useNativeBrowserSurface({
               url,
               bounds,
               avoidRects: activeAvoidRects,
+              workspaceId: workspaceId || undefined,
+              isolateProfile: isolateProfile === true,
             });
+            if (typeof console !== 'undefined' && console.debug) {
+              console.debug('[useNativeBrowserSurface] open', {
+                panelId,
+                url,
+                bounds,
+                visibleInLayout,
+                result,
+              });
+            }
           } finally {
             openInFlightRef.current = false;
           }
@@ -251,6 +271,12 @@ export function useNativeBrowserSurface({
           }
 
           nativeLeaseRef.current = { opened: true, lastUrl: url };
+          // Mark ready as soon as host accepted open — don't wait for resize chain
+          // or the SPA keeps an opaque spinner while WebContentsView is already live.
+          if (!cancelled) {
+            setNativeError(null);
+            setNativeRuntimeReady(true);
+          }
         } else if (nativeLeaseRef.current.lastUrl !== url) {
           const result = await loadNativeBrowserUrl({ panelId, url });
           if (cancelled) return;
@@ -399,6 +425,7 @@ export function useNativeBrowserSurface({
     closeActiveNativeLease,
     focusOnShow,
     hideActiveNativeLease,
+    isolateProfile,
     layoutSyncKey,
     measureBounds,
     openRecoveryAttempt,
@@ -406,6 +433,7 @@ export function useNativeBrowserSurface({
     scheduleOpenRecovery,
     url,
     visibleInLayout,
+    workspaceId,
   ]);
 
   useEffect(
@@ -417,14 +445,15 @@ export function useNativeBrowserSurface({
       }
       openInFlightRef.current = false;
       if (!nativeLeaseRef.current.opened) return;
-      // Hide on unmount (so native doesn't paint when its controlling view/pane is not active,
-      // e.g. during normal <-> pizarra switch for the same browser pid).
-      // Do NOT close the webview instance here: close only on explicit browser close/remove
-      // or ws level close. This lets the live content survive the owner switch without re-init/re-load.
+      // inactive surfaces stay warm off-screen. Only hide this panel —
+      // workspace filter also parks others. Keep lease so remount skips reload.
       hideActiveNativeLease().catch(() => {});
-      nativeLeaseRef.current = { opened: false, lastUrl: '' };
+      nativeLeaseRef.current = {
+        opened: true,
+        lastUrl: nativeLeaseRef.current.lastUrl,
+      };
     },
-    [panelId]
+    [panelId, hideActiveNativeLease]
   );
 
   useEffect(() => {
@@ -436,26 +465,37 @@ export function useNativeBrowserSurface({
     const node = observeNode?.current || observeNode;
     if (!node) return undefined;
 
-    const observer = new window.ResizeObserver(() => {
-      const bounds = measureBounds?.();
-      if (!bounds) return;
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-      rafRef.current = requestAnimationFrame(() => {
+    let lastPushed = null;
+    const boundsChanged = (a, b) => {
+      if (!a || !b) return true;
+      return (
+        Math.abs(a.x - b.x) > 0.5 ||
+        Math.abs(a.y - b.y) > 0.5 ||
+        Math.abs(a.width - b.width) > 0.5 ||
+        Math.abs(a.height - b.height) > 0.5
+      );
+    };
+
+    const pushBounds = (immediate = false) => {
+      const run = () => {
         rafRef.current = null;
-        const fresh = measureBounds?.() || bounds;
+        const fresh = measureBounds?.();
         if (!fresh || fresh.height < MIN_NATIVE_BROWSER_BOUNDS_HEIGHT) {
           if (nativeLeaseRef.current.opened) {
             setNativeBrowserVisibility({
               panelId,
               visible: false,
-              bounds: fresh,
+              bounds: fresh || { x: 0, y: 0, width: 0, height: 0 },
               avoidRects: activeAvoidRects,
             }).catch(() => {});
+            lastPushed = null;
           }
           return;
         }
+        if (!boundsChanged(lastPushed, fresh) && visibleInLayout) {
+          return; // no-op — stops thrash/flicker
+        }
+        lastPushed = { ...fresh };
         resizeNativeBrowser({ panelId, bounds: fresh, avoidRects: activeAvoidRects }).catch(
           () => {}
         );
@@ -465,16 +505,56 @@ export function useNativeBrowserSurface({
           bounds: fresh,
           avoidRects: activeAvoidRects,
         }).catch(() => {});
-      });
+      };
+
+      if (immediate) {
+        if (rafRef.current != null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        run();
+        return;
+      }
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(run);
+    };
+
+    const observer = new window.ResizeObserver(() => {
+      pushBounds(false);
     });
 
     observer.observe(node);
+
+    // Track split-drag without flooding IPC (rAF + boundsChanged gate).
+    const onDragMove = () => {
+      if (!nativeLeaseRef.current.opened) return;
+      pushBounds(false);
+    };
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onDragMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      pushBounds(true);
+    };
+    const onPointerDown = () => {
+      window.addEventListener('pointermove', onDragMove, { passive: true });
+      window.addEventListener('pointerup', onPointerUp, { passive: true });
+    };
+    const onWindowResize = () => pushBounds(false);
+    window.addEventListener('pointerdown', onPointerDown, { passive: true });
+    window.addEventListener('resize', onWindowResize, { passive: true });
+
+    pushBounds(true);
+
     return () => {
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
       observer.disconnect();
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onDragMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('resize', onWindowResize);
     };
   }, [
     active,

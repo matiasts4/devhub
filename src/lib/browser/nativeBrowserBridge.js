@@ -1,6 +1,9 @@
 'use client';
 /* global require */
 
+import { detectDesktopRuntime, isElectronDesktop } from '@/lib/desktop/desktopRuntime';
+import { invokeDesktop, subscribeDesktopEvent } from '@/lib/desktop/desktopBridge';
+
 let nativeBrowserUnlisten = null;
 
 const NATIVE_BROWSER_EVENT_NAME = 'native-browser-event';
@@ -15,32 +18,11 @@ function hasWindow() {
   return typeof window !== 'undefined';
 }
 
+/** True when a desktop host can service native browser commands (Electron or Tauri). */
 export function isNativeBrowserRuntimeAvailable() {
-  return hasWindow() && Boolean(window.__TAURI_INTERNALS__);
-}
-
-async function getTauriCore() {
-  if (!isNativeBrowserRuntimeAvailable()) {
-    throw new Error('tauri-unavailable');
-  }
-
-  if (typeof require === 'function') {
-    return require('@tauri-apps/api/core');
-  }
-
-  return import('@tauri-apps/api/core');
-}
-
-async function getTauriEvent() {
-  if (!isNativeBrowserRuntimeAvailable()) {
-    throw new Error('tauri-unavailable');
-  }
-
-  if (typeof require === 'function') {
-    return require('@tauri-apps/api/event');
-  }
-
-  return import('@tauri-apps/api/event');
+  if (!hasWindow()) return false;
+  const runtime = detectDesktopRuntime();
+  return runtime === 'electron' || runtime === 'tauri';
 }
 
 function normalizeNativeBrowserReason(reason, fallbackReason) {
@@ -72,43 +54,63 @@ async function invokeNativeBrowser(command, payload = {}, failureShape = {}) {
     return failureShape;
   }
 
-  try {
-    const { invoke } = await getTauriCore();
-    return await invoke(command, { request: payload });
-  } catch (error) {
-    return {
-      ...failureShape,
-      reason: normalizeNativeBrowserReason(error?.message, failureShape.reason || 'bridge-failed'),
-    };
-  }
+  return invokeDesktop(command, payload, {
+    failureShape,
+    tauriWrapRequest: true,
+  });
+}
+
+function desktopUnavailableShape(extra = {}) {
+  return { ready: false, reason: 'desktop-unavailable', ...extra };
 }
 
 export async function probeNativeBrowser(payload = {}) {
-  return invokeNativeBrowser('native_browser_probe', payload, {
-    ready: false,
-    reason: 'tauri-unavailable',
-  });
+  return invokeNativeBrowser('native_browser_probe', payload, desktopUnavailableShape());
 }
 
 export async function openNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_open', payload, {
     opened: false,
-    reason: 'tauri-unavailable',
+    reason: 'desktop-unavailable',
   });
 }
 
 export async function loadNativeBrowserUrl(payload = {}) {
   return invokeNativeBrowser('native_browser_load_url', payload, {
     loaded: false,
-    reason: 'tauri-unavailable',
+    reason: 'desktop-unavailable',
   });
 }
 
 export async function reloadNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_reload', payload, {
     reloaded: false,
-    reason: 'tauri-unavailable',
+    reason: 'desktop-unavailable',
   });
+}
+
+export async function goBackNativeBrowser(payload = {}) {
+  return invokeNativeBrowser('native_browser_go_back', payload, {
+    ok: false,
+    reason: 'desktop-unavailable',
+  });
+}
+
+export async function goForwardNativeBrowser(payload = {}) {
+  return invokeNativeBrowser('native_browser_go_forward', payload, {
+    ok: false,
+    reason: 'desktop-unavailable',
+  });
+}
+
+/** Best-effort navigation helpers used by the SPA toolbar. */
+export async function navigateNativeBrowser(panelId, url) {
+  return loadNativeBrowserUrl({ panelId, url });
+}
+
+/** Blur embed windows so SPA chrome can take mouse/keyboard focus. */
+export async function releaseNativeBrowserFocus(payload = {}) {
+  return invokeNativeBrowser('native_browser_release_focus', payload, { ok: false });
 }
 
 export async function resizeNativeBrowser(payload = {}) {
@@ -173,26 +175,58 @@ export async function setNativeBrowserVisibility(payload = {}) {
 export async function nativeBrowserSelectorCommand(payload = {}) {
   return invokeNativeBrowser('native_browser_selector_command', payload, {
     supported: false,
-    reason: 'tauri-unavailable',
+    reason: 'desktop-unavailable',
   });
 }
 
 export async function selectAllNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_select_all', payload, {
     supported: false,
-    reason: 'tauri-unavailable',
+    reason: 'desktop-unavailable',
   });
 }
 
 export async function copyNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_copy', payload, {
     supported: false,
-    reason: 'tauri-unavailable',
+    reason: 'desktop-unavailable',
   });
 }
 
 export async function closeNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_close', payload, {});
+}
+
+/**
+ * Store avoid rects for a panel and re-apply host bounds.
+ * Payload: `{ panelId, rects: [{x,y,width,height,source?}] }` (or `avoidRects`).
+ * Fail-closed when no desktop runtime is available.
+ */
+export async function setNativeBrowserAvoidRects(payload = {}) {
+  return invokeNativeBrowser('native_browser_set_avoid_rects', payload, {
+    reason: 'desktop-unavailable',
+  });
+}
+
+/**
+ * Hide all native browser panels (keep logical bounds).
+ * Payload: `{ reason? }`. Fail-closed on web.
+ */
+export async function hideAllNativeBrowsers(payload = {}) {
+  return invokeNativeBrowser('native_browser_hide_all', payload, {
+    hidden: false,
+    reason: 'desktop-unavailable',
+  });
+}
+
+/**
+ * Show panels for a workspace; hide others. Pass `workspaceId: null` to restore all.
+ * Fail-closed on web.
+ */
+export async function showNativeBrowsersForWorkspace(payload = {}) {
+  return invokeNativeBrowser('native_browser_show_workspace', payload, {
+    reason: 'desktop-unavailable',
+  });
 }
 
 export async function subscribeNativeBrowserEvents() {
@@ -204,15 +238,26 @@ export async function subscribeNativeBrowserEvents() {
     return nativeBrowserUnlisten;
   }
 
-  const { listen } = await getTauriEvent();
-  nativeBrowserUnlisten = await listen(NATIVE_BROWSER_EVENT_NAME, (event) => {
-    const payload = event?.payload || {};
+  if (isElectronDesktop()) {
+    const unsub = await subscribeDesktopEvent(NATIVE_BROWSER_EVENT_NAME, (payload) => {
+      if (!payload?.type) return;
+      emitNativeBrowserEvent(payload);
+    });
+    nativeBrowserUnlisten = () => {
+      unsub?.();
+      nativeBrowserUnlisten = null;
+    };
+    return nativeBrowserUnlisten;
+  }
+
+  const unsub = await subscribeDesktopEvent(NATIVE_BROWSER_EVENT_NAME, (payload) => {
     if (!payload?.type) return;
     emitNativeBrowserEvent(payload);
   });
-
-  return () => {
-    nativeBrowserUnlisten?.();
+  nativeBrowserUnlisten = () => {
+    unsub?.();
     nativeBrowserUnlisten = null;
   };
+
+  return nativeBrowserUnlisten;
 }

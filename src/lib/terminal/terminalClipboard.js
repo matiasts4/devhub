@@ -1,4 +1,9 @@
 import { isEditableElement } from '@/components/terminal/workspaceShortcuts';
+import {
+  invokeDesktop,
+  isElectronDesktop,
+  detectDesktopRuntime,
+} from '@/lib/desktop/desktopBridge';
 
 /**
  * Whether a clipboard keydown/paste handler on a terminal panel should run.
@@ -34,6 +39,30 @@ export function readClipboardTextFromEvent(clipboardEvent) {
   return typeof text === 'string' && text.length > 0 ? text : null;
 }
 
+async function invokeClipboardCommand(command, payload = {}) {
+  if (isElectronDesktop()) {
+    return invokeDesktop(command, payload, {
+      failureShape: { __desktopFail: true, reason: 'desktop-unavailable' },
+      tauriWrapRequest: false,
+    });
+  }
+
+  if (detectDesktopRuntime() === 'tauri') {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke(command, payload);
+    } catch {
+      return { __desktopFail: true };
+    }
+  }
+
+  return { __desktopFail: true, reason: 'web' };
+}
+
+function isDesktopFail(result) {
+  return Boolean(result && typeof result === 'object' && result.__desktopFail);
+}
+
 export async function readClipboardText({ clipboardEvent } = {}) {
   const fromEvent = readClipboardTextFromEvent(clipboardEvent);
   if (fromEvent) return fromEvent;
@@ -45,17 +74,13 @@ export async function readClipboardText({ clipboardEvent } = {}) {
       if (typeof text === 'string' && text.length > 0) return text;
     }
   } catch {
-    // WebKitGTK often blocks async clipboard reads — fall through to Tauri GTK.
+    // WebKitGTK often blocks async clipboard reads — fall through to desktop bridge.
   }
 
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const text = await invoke('read_system_clipboard_text');
-    if (typeof text === 'string' && text.length > 0) return text;
-  } catch {
-    // Browser dev mode or non-Tauri runtime.
-  }
-
+  const result = await invokeClipboardCommand('read_system_clipboard_text');
+  if (isDesktopFail(result)) return null;
+  if (typeof result === 'string' && result.length > 0) return result;
+  if (result && typeof result.text === 'string' && result.text.length > 0) return result.text;
   return null;
 }
 
@@ -98,17 +123,14 @@ export function fileToBase64(file) {
 
 export async function saveClipboardImageToTempFile({ data, mimeType } = {}) {
   if (!data) return null;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const extension = typeof mimeType === 'string' ? mimeType.split('/')[1] : 'png';
-    const path = await invoke('write_clipboard_image_to_temp_file', {
-      dataBase64: data,
-      extension,
-    });
-    if (typeof path === 'string' && path.length > 0) return path;
-  } catch {
-    // Browser dev mode or non-Tauri runtime.
-  }
+  const extension = typeof mimeType === 'string' ? mimeType.split('/')[1] : 'png';
+  const result = await invokeClipboardCommand('write_clipboard_image_to_temp_file', {
+    dataBase64: data,
+    extension,
+  });
+  if (isDesktopFail(result)) return null;
+  if (typeof result === 'string' && result.length > 0) return result;
+  if (result && typeof result.path === 'string' && result.path.length > 0) return result.path;
   return null;
 }
 
@@ -137,15 +159,10 @@ export async function readClipboardImage({ clipboardEvent } = {}) {
     // WebKitGTK / restricted contexts block async clipboard reads.
   }
 
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const image = await invoke('read_system_clipboard_image');
-    if (image?.data) {
-      return { data: image.data, mimeType: image.mime_type || 'image/png' };
-    }
-  } catch {
-    // Browser dev mode or non-Tauri runtime.
+  const image = await invokeClipboardCommand('read_system_clipboard_image');
+  if (isDesktopFail(image) || !image) return null;
+  if (image?.data) {
+    return { data: image.data, mimeType: image.mime_type || image.mimeType || 'image/png' };
   }
-
   return null;
 }

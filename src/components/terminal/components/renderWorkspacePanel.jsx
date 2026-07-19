@@ -175,6 +175,8 @@ function renderSpaceComponentBody(panel, kind, options = {}) {
         activeWorkspaceWindowId={options.activeWorkspaceWindowId}
         layoutSyncKey={options.layoutSyncKey}
         suspendNativeSurface={Boolean(options.suspendNativeSurface)}
+        // inactive tabs stay warm off-screen — park webview when shell not shown.
+        surfaceActive={Boolean(options.surfaceActive)}
       />
     );
   }
@@ -561,6 +563,9 @@ export function renderWorkspacePanel(
               activeWorkspaceWindowId,
               layoutSyncKey,
               suspendNativeSurface,
+              // Parks inactive tabs off-screen at full size; we park webviews
+              // when the workspace shell or panel is not the active surface.
+              surfaceActive: Boolean(isVisibleInLayout && isWorkspaceShellVisible),
             })}
           </div>
         ) : (

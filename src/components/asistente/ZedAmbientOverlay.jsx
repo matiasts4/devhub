@@ -511,12 +511,32 @@ export default function ZedAmbientOverlay({
   const ensureVoiceReady = useCallback(async () => {
     if (!voiceEnabled) return { ok: false };
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('voice_set_enabled', { enabled: true });
-      await invoke('voice_set_settings', {
-        settings: await buildVoiceEngineConfig(voiceSettings),
-      });
-      return startEngine();
+      const { invokeDesktop, isElectronDesktop, detectDesktopRuntime } =
+        await import('@/lib/desktop/desktopBridge');
+      const settings = await buildVoiceEngineConfig(voiceSettings);
+
+      if (isElectronDesktop()) {
+        await invokeDesktop(
+          'voice_set_enabled',
+          { enabled: true },
+          { tauriWrapRequest: false, failureShape: { ok: false } }
+        );
+        await invokeDesktop(
+          'voice_set_settings',
+          { settings },
+          { tauriWrapRequest: false, failureShape: { ok: false } }
+        );
+        return startEngine();
+      }
+
+      if (detectDesktopRuntime() === 'tauri') {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('voice_set_enabled', { enabled: true });
+        await invoke('voice_set_settings', { settings });
+        return startEngine();
+      }
+
+      return { ok: false };
     } catch {
       return { ok: false };
     }

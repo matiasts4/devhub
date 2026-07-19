@@ -158,3 +158,26 @@ Si Pack D volvió a doler (HWND), Electron es la vía “pagar el rewrite del sh
 1. Terminar de materializar Option A (`npm run build` con prune).
 2. Spike E0 de 1–2 semanas **solo** si el browser dock en Windows es P0 de producto.
 3. No migrar “porque Electron es más robusto” en abstracto — migrar porque **necesitás WebContents hijo en Windows** y rechazás reabrir Pack D en Tauri.
+
+---
+
+## Implementation status 2026-07-18
+
+**Branch:** `feature/electron-desktop-host`  
+**OpenSpec change:** `openspec/changes/electron-desktop-host/`  
+**Apply:** complete · **Verify:** PASS WITH WARNINGS · **Production cutover:** pending W1–W8
+
+| Batch                                                                                         | Status                                                                 |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| E0 spike (main/preload/sidecar + desktop bridge + browser surface)                            | **Complete**                                                           |
+| E1 shell parity (titlebar, tray, dialogs, clipboard, packaging runtime, electron-builder.yml) | **Complete (code)**; NSIS operator smoke open                          |
+| E2 browser dock (DOM webview + warm pool, overlays, workspace restore)                        | **Complete (code)**; selector deferred; product QA open                |
+| E3 voice + multi-window                                                                       | Multi-window **complete**; voice engine **deferred** (Web Speech path) |
+| E4 hardening docs + structural smoke + window restore                                         | **Complete**                                                           |
+
+**Linux decision (recorded):** Electron primary on **Windows**; keep **Tauri for Linux** GTK browser until Electron Linux smoke — see `openspec/changes/electron-desktop-host/cutover-checklist.md`.
+
+**Operator guide:** [`docs/electron-desktop-host.md`](./electron-desktop-host.md)  
+**Dev:** `pnpm electron:up`  
+**Verify / progress:** `openspec/changes/electron-desktop-host/verify-report.md`, `apply-progress.md`  
+**Smoke:** `pnpm electron:smoke`

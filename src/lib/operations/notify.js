@@ -1,4 +1,5 @@
 import { createOperationalEvent } from '@/lib/operations/contracts';
+import { invokeDesktop, isElectronDesktop } from '@/lib/desktop/desktopBridge';
 
 async function loadTauriNotificationModule() {
   if (typeof window === 'undefined') return null;
@@ -11,11 +12,28 @@ async function loadTauriNotificationModule() {
 }
 
 async function defaultIsDesktopAvailable() {
+  if (isElectronDesktop()) return true;
+
   const notificationModule = await loadTauriNotificationModule();
   return Boolean(notificationModule?.sendNotification);
 }
 
 async function defaultRequestPermission() {
+  if (isElectronDesktop()) {
+    const result = await invokeDesktop(
+      'notify_request_permission',
+      {},
+      {
+        failureShape: { permission: 'unavailable' },
+        tauriWrapRequest: false,
+      }
+    );
+    if (typeof result === 'string') return result;
+    if (result?.permission) return result.permission;
+    // Electron desktop notifications are typically available without a prompt.
+    return 'granted';
+  }
+
   const notificationModule = await loadTauriNotificationModule();
   if (!notificationModule) return 'unavailable';
 
@@ -32,6 +50,24 @@ async function defaultRequestPermission() {
 }
 
 async function defaultSendNotification(payload) {
+  if (isElectronDesktop()) {
+    const result = await invokeDesktop(
+      'notify_show',
+      {
+        title: payload?.title,
+        body: payload?.body,
+      },
+      {
+        failureShape: { ok: false, reason: 'desktop-unavailable' },
+        tauriWrapRequest: false,
+      }
+    );
+    if (result?.ok === false || result?.reason === 'desktop-unavailable') {
+      throw new Error(result?.reason || 'desktop notification unavailable');
+    }
+    return result;
+  }
+
   const notificationModule = await loadTauriNotificationModule();
   if (!notificationModule?.sendNotification) {
     throw new Error('desktop notification unavailable');

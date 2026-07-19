@@ -7,8 +7,9 @@ const MAX_RIGHT_DOCK_SIZE = 82;
 const DEFAULT_RIGHT_DOCK_STATE = {
   visible: false,
   activeTab: 'browser',
-  /** Bumped when the in-app browser dock opens/resizes so native GTK re-measures bounds. */
+  /** Bumped when the in-app browser dock opens/resizes so native surface re-measures bounds. */
   browserLayoutEpoch: 0,
+  /** Default is always native embed (WebContentsView on Electron / WebKitGTK on Linux Tauri). */
   browserRuntime: 'native-gtk',
   editMode: false,
   maximized: false,
@@ -17,12 +18,30 @@ const DEFAULT_RIGHT_DOCK_STATE = {
   browserUrl: DEFAULT_BROWSER_URL,
   browserHistory: [DEFAULT_BROWSER_URL],
   browserHistoryIndex: 0,
-  // pizarra-ux-overhaul: opt-in flag for the pizarra-mounted browser
-  // surface to keep using the iframe path even when the native GTK
-  // runtime reports ready. Defaults to false on the right-dock path;
-  // PizarraBrowserSurface always sets it to true explicitly.
+  // Opt-in iframe-only path. Defaults false so native is preferred.
   browserLoadFallback: false,
 };
+
+/** Electron host always prefers native WebContentsView over iframe. */
+function isElectronDesktopHost() {
+  try {
+    if (typeof window === 'undefined') return false;
+    return window.devhubDesktop?.isElectron === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve stored/requested runtime. On Electron, force native-gtk so legacy
+ * localStorage `iframe` choices from Tauri Windows do not stick.
+ */
+function resolvePreferredBrowserRuntime(rawRuntime) {
+  if (isElectronDesktopHost()) {
+    return 'native-gtk';
+  }
+  return rawRuntime === 'iframe' ? 'iframe' : 'native-gtk';
+}
 
 function buildRightDockStorageKey(projectId, wsId) {
   const base = `devhub_right_dock_${projectId || 'global'}`;
@@ -134,7 +153,11 @@ function sanitizeRightDockState(rawState = {}) {
     : rawActiveTab === 'zed'
       ? 'browser'
       : 'browser';
-  const browserRuntime = rawState.browserRuntime === 'iframe' ? 'iframe' : 'native-gtk';
+  const browserRuntime = resolvePreferredBrowserRuntime(rawState.browserRuntime);
+  // On Electron never keep load-fallback iframe sticky from old sessions.
+  const browserLoadFallback = isElectronDesktopHost()
+    ? false
+    : rawState.browserLoadFallback === true;
   const editMode = rawState.editMode === true || isLegacyBridgeTab;
   const maximized = rawState.maximized === true;
   const normalizedActiveTab = activeTab;
@@ -179,12 +202,6 @@ function sanitizeRightDockState(rawState = {}) {
   );
 
   const browserUrl = browserHistory[browserHistoryIndex] || normalizedUrl;
-
-  // pizarra-ux-overhaul: strict === true coercion so any non-boolean
-  // value (null, undefined, 0, "true" as a string, 1 as a number)
-  // falls back to false. Only the literal `true` opts in to the
-  // iframe-first browser path.
-  const browserLoadFallback = rawState.browserLoadFallback === true;
 
   const browserLayoutEpoch = Number.isFinite(Number(rawState.browserLayoutEpoch))
     ? Math.max(0, Math.floor(Number(rawState.browserLayoutEpoch)))

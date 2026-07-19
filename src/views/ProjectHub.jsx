@@ -4,7 +4,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { openDialog } from '@/lib/desktop/dialogs';
+import { isDesktopHost } from '@/lib/desktop/desktopRuntime';
 import TitleBar from '@/components/TitleBar';
 import { Button } from '@/components/ui/button';
 import { UiHeader } from '@/components/ui/system';
@@ -98,8 +99,8 @@ export default function ProjectHub() {
   const navigate = useNavigate();
   const db = useMemo(() => createClient(), []);
 
-  // Detectar contexto Tauri (el plugin de diálogo solo funciona en desktop)
-  const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+  // Native folder picker (Electron / Tauri). Web: type path manually.
+  const isDesktop = typeof window !== 'undefined' && isDesktopHost(window);
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -148,9 +149,7 @@ export default function ProjectHub() {
   });
 
   async function handleSelectFolder() {
-    // Detectar si estamos en contexto Tauri
-    const isTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
-    if (!isTauri) {
+    if (!isDesktop) {
       // En web no hay acceso al filesystem nativo — el usuario escribe la ruta manualmente
       return;
     }
@@ -524,7 +523,7 @@ export default function ProjectHub() {
                   <button
                     type="button"
                     onClick={handleSelectFolder}
-                    disabled={!isTauri}
+                    disabled={!isDesktop}
                     className="flex h-[42px] w-[42px] items-center justify-center disabled:opacity-50"
                     style={{
                       ...btnSecondaryStyle({ size: 'md' }),
@@ -533,7 +532,7 @@ export default function ProjectHub() {
                       color: 'var(--text-muted)',
                     }}
                     title={
-                      isTauri
+                      isDesktop
                         ? 'Explorar carpetas'
                         : 'Solo disponible en la app de escritorio — escribí la ruta manualmente'
                     }

@@ -38,6 +38,14 @@ describe('useVoiceTts', () => {
     jest.clearAllMocks();
     delete window.speechSynthesis;
     delete window.SpeechSynthesisUtterance;
+    // Prefer Tauri runtime path so mocks of @tauri-apps/api/core still apply.
+    delete window.devhubDesktop;
+    window.__TAURI_INTERNALS__ = {};
+  });
+
+  afterEach(() => {
+    delete window.__TAURI_INTERNALS__;
+    delete window.devhubDesktop;
   });
 
   test('marks speaking while waiting for tts-done', async () => {

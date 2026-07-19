@@ -4,14 +4,48 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { rateToLengthScale } from './ttsVoiceCatalog';
 import { resolveSpeechSynthesisVoice } from './systemSpeechVoices';
 
+/**
+ * Route voice invokes through desktopBridge on Electron; Tauri invoke otherwise.
+ * Web: structured fail (caller may fall back to Web Speech).
+ */
 async function invokeVoice(cmd, args) {
   if (typeof window === 'undefined') {
     return { ok: false, error: 'not-in-browser' };
   }
+
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const data = await invoke(cmd, args);
-    return { ok: true, data };
+    const { invokeDesktop, isElectronDesktop, detectDesktopRuntime } =
+      await import('@/lib/desktop/desktopBridge');
+
+    if (isElectronDesktop()) {
+      const result = await invokeDesktop(cmd, args || {}, {
+        failureShape: { ok: false, reason: 'desktop-unavailable' },
+        tauriWrapRequest: false,
+      });
+      // Deferred Piper / engine stubs: { ok: false, reason: 'voice-deferred-electron' }
+      if (
+        result == null ||
+        result.ok === false ||
+        result.reason === 'desktop-unavailable' ||
+        result.reason === 'voice-deferred-electron' ||
+        result.reason === 'not-implemented'
+      ) {
+        return {
+          ok: false,
+          error: String(result?.reason || result?.error || 'voice invoke failed'),
+          data: result,
+        };
+      }
+      return { ok: true, data: result?.data !== undefined ? result.data : result };
+    }
+
+    if (detectDesktopRuntime() === 'tauri') {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data = await invoke(cmd, args);
+      return { ok: true, data };
+    }
+
+    return { ok: false, error: 'desktop-unavailable' };
   } catch (error) {
     return { ok: false, error: String(error?.message || error || 'voice invoke failed') };
   }
@@ -119,6 +153,26 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
 
     async function setup() {
       try {
+        const { isElectronDesktop, subscribeDesktopEvent, detectDesktopRuntime } =
+          await import('@/lib/desktop/desktopBridge');
+
+        if (isElectronDesktop()) {
+          // Voice events are optional on Electron (preload may no-op).
+          const unError = await subscribeDesktopEvent('tts-error', (payload) => {
+            const msg =
+              typeof payload === 'string' && payload.trim()
+                ? payload.trim()
+                : 'No se pudo reproducir audio';
+            setTtsError(msg);
+            setSpeaking(false);
+          });
+          const unDone = await subscribeDesktopEvent('tts-done', () => setSpeaking(false));
+          if (!cancelled) unlistenRef.current = [unError, unDone];
+          return;
+        }
+
+        if (detectDesktopRuntime() !== 'tauri') return;
+
         const { listen } = await import('@tauri-apps/api/event');
         if (cancelled) return;
         const unError = await listen('tts-error', (event) => {
@@ -178,6 +232,7 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
       // Windows builds intentionally reject the Python/Piper command. WebView2
       // already exposes the OS speech voices, so use the platform feature
       // instead of requiring another native dependency.
+      // Electron also defers Piper → same Web Speech fallback.
       const browserSpeech = createBrowserUtterance(clipped, {
         voiceId: voice,
         rate,

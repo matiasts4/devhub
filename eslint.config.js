@@ -38,6 +38,7 @@ const swarmCommonJsFiles = [
 const commonJsAndJestFiles = [
   'bin/**/*.js',
   'devhub-cli/**/*.js',
+  'desktop/electron/**/*.{js,cjs}',
   'jest.config.js',
   'lib/**/*.js',
   'scripts/**/*.cjs',
