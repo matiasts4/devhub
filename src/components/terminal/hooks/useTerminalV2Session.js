@@ -17,6 +17,7 @@ import {
   resolveTerminalConnectionCloseState,
   TERMINAL_SNAPSHOT_THRESHOLD_BYTES,
   TERMINAL_SNAPSHOT_MAX_INTERVAL_MS,
+  TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
 } from '@/components/terminal/TerminalTTY.helpers';
 import {
   clearPanelInitialCommandLifecycle,
@@ -375,11 +376,12 @@ export default function useTerminalV2Session({ ctxRef }) {
           if (!kimiReadyNotifiedRef.current && kimiTuiReady) {
             kimiReadyNotifiedRef.current = true;
             void notifyAgentReady('kimi', null, 'client-tui-footer');
+            if (termRef.current) {
+              termRef.current.write(TERMINAL_DISABLE_MOUSE_REPORTING_SEQ);
+            }
           }
-          if (isKimiLaunch) {
-            tuiSessionActiveRef.current = true;
-            return;
-          }
+          tuiSessionActiveRef.current = true;
+          return;
         }
 
         // Footer strings linger in the 8KB tail — once confirmed, skip detection

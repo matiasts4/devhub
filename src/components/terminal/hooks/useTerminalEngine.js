@@ -568,6 +568,7 @@ export default function useTerminalEngine({
       writeTerminalOutput,
       wsRef,
       xtermBootNonce,
+      kimiReadyNotifiedRef,
     } = ctxRef.current;
 
     let mounted = true;
@@ -804,17 +805,18 @@ export default function useTerminalEngine({
           theme: theme,
         });
 
-        if (isKimiLaunchCommand(initialCommand)) {
-          const blockedModes = new Set([1000, 1001, 1002, 1003, 1005, 1006, 1015]);
-          const blockHandler = (params) => {
-            for (let i = 0; i < params.length; i++) {
-              if (blockedModes.has(params[i])) return true;
-            }
-            return false;
-          };
-          terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'h' }, blockHandler);
-          terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'l' }, blockHandler);
-        }
+        const isKimiLaunch = isKimiLaunchCommand(initialCommand);
+        const blockedModes = new Set([1000, 1001, 1002, 1003, 1005, 1006, 1015]);
+        const blockHandler = (params) => {
+          const isKimiActive = isKimiLaunch || kimiReadyNotifiedRef?.current === true;
+          if (!isKimiActive) return false;
+          for (let i = 0; i < params.length; i++) {
+            if (blockedModes.has(params[i])) return true;
+          }
+          return false;
+        };
+        terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'h' }, blockHandler);
+        terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'l' }, blockHandler);
 
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
