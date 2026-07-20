@@ -34,6 +34,7 @@ import {
 import { filterTerminalInputForSession } from '@/lib/terminal/terminalNoiseFilter';
 import { clearPanelInitialCommandLifecycle } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
   markFirstPanelInteractive,
   markXtermCoreImportDone,
@@ -43,6 +44,7 @@ import { attachAgentFilePathLinks } from '@/lib/terminal/agentFilePathLinkProvid
 import { isGrokTuiInitialCommand } from '@/components/terminal/TerminalTTY.helpers';
 import { isGrokLaunchCommand } from '@/lib/terminal/grokReadyMarker';
 import { isOpenCodeLaunchCommand } from '@/lib/terminal/opencodeReadyMarker';
+import { attachGrokTuiWheelInject } from '@/lib/terminal/grokTuiWheelInject';
 
 export default function useTerminalEngine({
   ctxRef,
@@ -791,16 +793,28 @@ export default function useTerminalEngine({
           letterSpacing: fontOpts.letterSpacing,
           lineHeight: fontOpts.lineHeight,
           allowTransparency: false,
-          // T2.3 ÔÇö per-pane scrollback buffer (R-BUF-3). The default
+          // T2.3 — per-pane scrollback buffer (R-BUF-3). The default
           // xterm scrollback is 1000 lines, which is too shallow for
           // director + 4 workers during a swarm launch: the user loses
           // the prompt injection context as soon as the TUI scrolls.
-          // 5000 lines per pane ├ù 5 panes = 25K total per launch, well
+          // 5000 lines per pane × 5 panes = 25K total per launch, well
           // under the xterm memory budget. Per-pane (not global) so
           // single-pane users don't pay the extra memory.
           scrollback: 5000,
           theme: theme,
         });
+
+        if (isKimiLaunchCommand(initialCommand)) {
+          const blockedModes = new Set([1000, 1001, 1002, 1003, 1005, 1006, 1015]);
+          const blockHandler = (params) => {
+            for (let i = 0; i < params.length; i++) {
+              if (blockedModes.has(params[i])) return true;
+            }
+            return false;
+          };
+          terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'h' }, blockHandler);
+          terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'l' }, blockHandler);
+        }
 
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
@@ -868,11 +882,30 @@ export default function useTerminalEngine({
         });
 
         terminal.onData((data) => {
+          // Agent launch / session flags: treat as live TUI for input noise filter so
+          // native SGR wheel/click is not stripped before chrome-ready refs flip.
+          // Without this, cold-start Grok scroll dies until Ctrl+R remounts readiness.
+          const agentLaunch =
+            isGrokSessionRef.current ||
+            isGrokTuiInitialCommand(initialCommand) ||
+            isGrokLaunchCommand(initialCommand) ||
+            isOpenCodeLaunchCommand(initialCommand) ||
+            tuiSessionActiveRef.current;
+          const agentType =
+            isGrokSessionRef.current || isGrokTuiInitialCommand(initialCommand)
+              ? 'grok'
+              : isOpenCodeLaunchCommand(initialCommand)
+                ? 'opencode'
+                : tuiSessionActiveRef.current
+                  ? 'opencode'
+                  : null;
           const sessionContext = {
-            mode: tuiSessionActiveRef.current ? 'tui' : 'shell',
-            tuiReady: isGrokSessionRef.current
-              ? grokTuiReadyRef.current === true
-              : tuiSessionFooterConfirmedRef.current === true,
+            mode: agentLaunch ? 'tui' : 'shell',
+            tuiReady:
+              agentLaunch ||
+              grokTuiReadyRef.current === true ||
+              tuiSessionFooterConfirmedRef.current === true,
+            agentType,
             tuiAdapter: isGrokSessionRef.current
               ? 'grok'
               : tuiSessionActiveRef.current
@@ -928,6 +961,46 @@ export default function useTerminalEngine({
         termRef.current = terminal;
         fitRef.current = fitAddon;
         searchRef.current = searchAddon;
+
+        // Grok wheel inject on term.element (capture) + customWheelEventHandler.
+        // Live getters so first-panel identity works even if initialCommand was late.
+        try {
+          const disposeGrokWheel = attachGrokTuiWheelInject(terminal, {
+            getInitialCommand: () => ctxRef.current?.initialCommand || initialCommand || '',
+            getLifecycle: () => {
+              const c = ctxRef.current || {};
+              return {
+                isGrokSessionRef: c.isGrokSessionRef,
+                grokTuiReadyRef: c.grokTuiReadyRef,
+                tuiSessionActiveRef: c.tuiSessionActiveRef,
+              };
+            },
+            getSession: () => {
+              const c = ctxRef.current || {};
+              return { wsRef: c.wsRef, transportRef: c.transportRef };
+            },
+            getViewport: () => {
+              const c = ctxRef.current || {};
+              return {
+                containerRef: c.containerRef,
+                viewportShellRef: c.viewportShellRef,
+              };
+            },
+          });
+          if (typeof disposeGrokWheel === 'function') {
+            const prevBlur = terminalBlurCleanupRef.current;
+            terminalBlurCleanupRef.current = () => {
+              try {
+                disposeGrokWheel();
+              } catch {
+                // ignore
+              }
+              prevBlur?.();
+            };
+          }
+        } catch (err) {
+          console.warn(`[TTY:${id}] Grok wheel inject bind failed:`, err?.message || err);
+        }
 
         // Agent file-path links (Grok / OpenCode): Ctrl/Cmd+click opens in Files space.
         try {
