@@ -6,6 +6,8 @@ const { JSDOM } = require('jsdom');
 jest.mock('@/components/terminal/terminalRendererPreferences', () => ({
   readTerminalRendererDefaultModeSetting: () => 'xterm-webgl',
   writeTerminalRendererDefaultModeSetting: jest.fn(),
+  getStoredTerminalAutoCopy: () => true,
+  setStoredTerminalAutoCopy: jest.fn(),
 }));
 jest.mock('@/components/terminal/terminalTypographyPreferences', () => ({
   applyTerminalTypographyToDocument: jest.fn(),

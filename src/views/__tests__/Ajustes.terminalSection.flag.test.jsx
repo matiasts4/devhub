@@ -125,11 +125,20 @@ jest.mock('@/lib/theme/themes', () => ({
   ]),
   getStoredTerminalAccentBarVisible: jest.fn(() => true),
   setStoredTerminalAccentBarVisible: jest.fn((v) => v),
+  getStoredAppearance: jest.fn(() => ({
+    fontFamily: 'system-ui',
+    fontScale: 1,
+    density: 'default',
+    zoom: 1,
+  })),
+  restoreAppearanceSnapshot: jest.fn(),
 }));
 
 jest.mock('@/components/terminal/terminalRendererPreferences', () => ({
   readTerminalRendererDefaultModeSetting: jest.fn(() => 'xterm-webgl'),
   writeTerminalRendererDefaultModeSetting: jest.fn(),
+  getStoredTerminalAutoCopy: jest.fn(() => true),
+  setStoredTerminalAutoCopy: jest.fn(),
 }));
 
 jest.mock('@/components/terminal/terminalTypographyPreferences', () => {

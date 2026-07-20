@@ -19,6 +19,7 @@ import {
   sendTerminalPasteInput,
   isMultilineTerminalPaste,
 } from '@/components/terminal/TerminalTTY.helpers';
+import { getStoredTerminalAutoCopy } from '@/components/terminal/terminalRendererPreferences';
 
 export default function useTerminalClipboard({
   rendererRefs,
@@ -36,6 +37,15 @@ export default function useTerminalClipboard({
   const [copied, setCopied] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const pasteInFlightRef = useRef(false);
+  const [autoCopy, setAutoCopy] = useState(() => getStoredTerminalAutoCopy());
+
+  useEffect(() => {
+    const handler = (e) => {
+      setAutoCopy(Boolean(e.detail));
+    };
+    window.addEventListener('devhub:terminal-auto-copy-changed', handler);
+    return () => window.removeEventListener('devhub:terminal-auto-copy-changed', handler);
+  }, []);
 
   const copyTextToClipboard = useCallback(async (text) => {
     const normalized = normalizeTerminalSelectionForClipboard(text);
@@ -301,6 +311,7 @@ export default function useTerminalClipboard({
 
     const handleMouseUp = () => {
       if (lifecycleRefs?.current?.isDisposingRef?.current) return;
+      if (!autoCopy) return;
       const termRef = rendererRefs?.current?.termRef;
       const term = termRef?.current;
       if (!term) return;
@@ -320,7 +331,7 @@ export default function useTerminalClipboard({
     return () => {
       rootElement.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [copyTextToClipboard, lifecycleRefs, rendererRefs, viewportRefs]);
+  }, [autoCopy, copyTextToClipboard, lifecycleRefs, rendererRefs, viewportRefs]);
 
   useEffect(() => {
     if (!contextMenu) return;

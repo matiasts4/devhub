@@ -6,6 +6,8 @@ import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surfac
 import {
   readTerminalRendererDefaultModeSetting,
   writeTerminalRendererDefaultModeSetting,
+  getStoredTerminalAutoCopy,
+  setStoredTerminalAutoCopy,
 } from '@/components/terminal/terminalRendererPreferences';
 import {
   applyTerminalTypographyToDocument,
@@ -56,6 +58,7 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
   });
 
   const [zoom, setZoomState] = useState(() => getStoredZoom());
+  const [autoCopy, setAutoCopyState] = useState(() => getStoredTerminalAutoCopy());
 
   const [typography, setTypographyState] = useState(() => {
     if (typeof window === 'undefined') return resolveTerminalTypography();
@@ -110,6 +113,12 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
   const handleZoomChange = (newZoom) => {
     const next = setZoom(newZoom);
     setZoomState(next);
+  };
+
+  const handleAutoCopyToggle = () => {
+    const next = !autoCopy;
+    setStoredTerminalAutoCopy(next);
+    setAutoCopyState(next);
   };
 
   const commitTypography = (partial) => {
@@ -245,6 +254,33 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
               <span
                 className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
                 style={{ transform: accentBarVisible ? 'translateX(22px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between max-w-sm">
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Auto-copiar al seleccionar
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Copia automáticamente el texto seleccionado al portapapeles.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoCopy}
+              data-testid="terminal-auto-copy-toggle"
+              onClick={handleAutoCopyToggle}
+              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+              style={{
+                background: autoCopy ? 'var(--accent-primary)' : 'var(--surface-muted)',
+              }}
+            >
+              <span
+                className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                style={{ transform: autoCopy ? 'translateX(22px)' : 'translateX(2px)' }}
               />
             </button>
           </div>

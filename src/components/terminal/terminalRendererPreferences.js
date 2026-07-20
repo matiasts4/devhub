@@ -216,3 +216,21 @@ export function setPanelRendererPreference(prefs, workspaceId, panelId, mode) {
     },
   };
 }
+
+export const TERMINAL_AUTO_COPY_STORAGE_KEY = 'devhub_terminal_auto_copy_on_select';
+
+export function getStoredTerminalAutoCopy() {
+  if (typeof window === 'undefined') return true;
+  const stored = window.localStorage.getItem(TERMINAL_AUTO_COPY_STORAGE_KEY);
+  if (stored === null) return true;
+  return stored === 'true';
+}
+
+export function setStoredTerminalAutoCopy(enabled) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(TERMINAL_AUTO_COPY_STORAGE_KEY, String(Boolean(enabled)));
+  // Dispatch custom event to notify other parts of the app (like currently active terminals)
+  window.dispatchEvent(
+    new CustomEvent('devhub:terminal-auto-copy-changed', { detail: Boolean(enabled) })
+  );
+}
