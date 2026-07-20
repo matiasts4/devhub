@@ -296,6 +296,33 @@ export default function useTerminalClipboard({
   }, [handlePasteIntoTerminal, isActivePanel, lifecycleRefs, viewportRefs]);
 
   useEffect(() => {
+    const rootElement = viewportRefs?.current?.terminalRootRef?.current;
+    if (!rootElement) return undefined;
+
+    const handleMouseUp = () => {
+      if (lifecycleRefs?.current?.isDisposingRef?.current) return;
+      const termRef = rendererRefs?.current?.termRef;
+      const term = termRef?.current;
+      if (!term) return;
+
+      // Let xterm finalize selection from this gesture
+      setTimeout(async () => {
+        if (term.hasSelection()) {
+          const selectedText = term.getSelection();
+          if (selectedText) {
+            await copyTextToClipboard(selectedText);
+          }
+        }
+      }, 0);
+    };
+
+    rootElement.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      rootElement.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [copyTextToClipboard, lifecycleRefs, rendererRefs, viewportRefs]);
+
+  useEffect(() => {
     if (!contextMenu) return;
     const handler = () => setContextMenu(null);
     document.addEventListener('click', handler);

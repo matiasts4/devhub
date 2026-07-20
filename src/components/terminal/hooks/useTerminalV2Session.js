@@ -8,8 +8,11 @@ import {
   prepareActiveTuiTerminalFocus,
   resetTerminalModesForReattach,
   disableTerminalFocusReporting,
-} from '@/components/terminal/TerminalTTY.helpers';
-import {
+  reconcileGrokTuiWheelReadiness,
+  reconcileOpenCodeTuiWheelReadiness,
+  detectGrokSessionFromOutput,
+  isGrokTuiInitialCommand,
+  terminalHasActiveMouseReporting,
   resolveConnectInitialCommandState,
   resolveTerminalConnectionCloseState,
   TERMINAL_SNAPSHOT_THRESHOLD_BYTES,
@@ -26,12 +29,8 @@ import {
   isOpenCodeLaunchCommand,
   shouldSkipConfirmedTuiReadyHotPath,
 } from '@/lib/terminal/opencodeReadyMarker';
-import {
-  reconcileGrokTuiWheelReadiness,
-  reconcileOpenCodeTuiWheelReadiness,
-  detectGrokSessionFromOutput,
-  isGrokTuiInitialCommand,
-} from '@/components/terminal/TerminalTTY.helpers';
+import { isGrokLaunchCommand } from '@/lib/terminal/grokReadyMarker';
+import { scheduleGrokWheelBootstrap } from '@/lib/terminal/grokWheelBootstrap';
 import { detectKimiTuiReady, isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
   markConnectStart,
@@ -43,7 +42,12 @@ import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
 
 export default function useTerminalV2Session({ ctxRef }) {
   const stopV2Session = useCallback(() => {
-    const { connectAbortRef, wsRef, connectInFlightRef } = ctxRef.current;
+    const c = ctxRef.current;
+    if (typeof c?._cancelGrokWheelBootstrap === 'function') {
+      c._cancelGrokWheelBootstrap();
+      c._cancelGrokWheelBootstrap = null;
+    }
+    const { connectAbortRef, wsRef, connectInFlightRef } = c || {};
     if (connectAbortRef?.current) {
       connectAbortRef.current.abort();
       connectAbortRef.current = null;
@@ -373,6 +377,7 @@ export default function useTerminalV2Session({ ctxRef }) {
             void notifyAgentReady('kimi', null, 'client-tui-footer');
           }
           if (isKimiLaunch) {
+            tuiSessionActiveRef.current = true;
             return;
           }
         }
@@ -399,15 +404,20 @@ export default function useTerminalV2Session({ ctxRef }) {
         if (grokReady) {
           isGrokSessionRef.current = true;
           grokTuiReadyRef.current = true;
-          setNativeWheelPassthrough(true);
+          // Grok is inject-only — never enable native passthrough (first-panel swallow).
+          setNativeWheelPassthrough(false);
+          // One light rebind when chrome is real — avoid Ctrl+L storm during boot.
+          prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
         }
         if (footerReady) {
           tuiSessionFooterConfirmedRef.current = true;
           setNativeWheelPassthrough(true);
           void notifyOpencodeReady(null, 'client-tui-footer');
+          // OpenCode already works; keep light rebind for parity after panel hide.
+          prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
+        } else if (!grokReady) {
+          prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
         }
-        // One-shot on first ready; post-Ctrl+R reattach has its own bind call sites.
-        prepareActiveTuiTerminalFocus(termRef.current, { tuiSessionActive: true });
       };
 
       onFlushWriteRef.current = (combined) => {
@@ -519,6 +529,39 @@ export default function useTerminalV2Session({ ctxRef }) {
             } else {
               // Fresh session: the tmux pane is empty, so it is safe to launch the
               // agent now. sendInitialCommandIfReady also waits for viewport fit.
+              //
+              // Do NOT set grokTuiReady / mouse-on here: enabling xterm mouse before
+              // Grok's TUI owns tracking causes native wheel to swallow events with
+              // no TUI listener. Readiness + resetTerminalModesForReattach runs when
+              // chrome is detected (handleTuiReadyFromOutput) — same moment OpenCode
+              // flips footerConfirmed.
+              if (isGrokTuiInitialCommand(initialCommand) || isGrokLaunchCommand(initialCommand)) {
+                isGrokSessionRef.current = true;
+                tuiSessionActiveRef.current = true;
+                // Cold app start: Grok boots slowly. One rebind at 2.5s often fires too early
+                // (before TUI owns mouse); then hot-path skip never rebinds again → dead scroll
+                // until Ctrl+R. After a page reload Grok is warm and one rebind works.
+                // Multi-shot bootstrap repeats Ctrl+R-equivalent rebind for ~14s.
+                if (typeof ctxRef.current._cancelGrokWheelBootstrap === 'function') {
+                  ctxRef.current._cancelGrokWheelBootstrap();
+                }
+                const epochAtSchedule = connectEpochRef.current;
+                ctxRef.current._cancelGrokWheelBootstrap = scheduleGrokWheelBootstrap({
+                  getTerm: () => termRef.current,
+                  isCancelled: () =>
+                    isDisposingRef.current || connectEpochRef.current !== epochAtSchedule,
+                  initialCommand,
+                  tuiSessionActiveRef,
+                  isGrokSessionRef,
+                  grokTuiReadyRef,
+                  setNativeWheelPassthrough,
+                  resetTerminalModesForReattach,
+                  prepareActiveTuiTerminalFocus,
+                  terminalHasActiveMouseReporting,
+                });
+              } else if (isOpenCodeLaunchCommand(initialCommand)) {
+                tuiSessionActiveRef.current = true;
+              }
               sendInitialCommandIfReady();
             }
             return;
@@ -642,7 +685,6 @@ export default function useTerminalV2Session({ ctxRef }) {
           // is buffered in heldData so it can be flushed after the snapshot and
           // delta replay complete, preserving output order.
           if (payload.type === 'append' && typeof payload.data === 'string') {
-            panelActivityTrackerRef.current?.onFrame('append', payload.data);
             markFirstPtyByte();
             const binaryString = atob(payload.data);
             const bytes = new Uint8Array(binaryString.length);
@@ -650,6 +692,8 @@ export default function useTerminalV2Session({ ctxRef }) {
               bytes[i] = binaryString.charCodeAt(i);
             }
             const decoded = new TextDecoder().decode(bytes);
+
+            panelActivityTrackerRef.current?.onFrame('output', decoded);
 
             if (typeof payload.offset === 'number') {
               currentPtyOffsetRef.current = payload.offset;

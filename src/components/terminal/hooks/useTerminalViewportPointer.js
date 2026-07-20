@@ -113,7 +113,9 @@ export default function useTerminalViewportPointer({ ctxRef }) {
 
       // Include launch-command TUI identity — tuiSessionActiveRef lags until footer/chrome.
       // Passing false here used to write mouse-off on every Grok/OpenCode mousedown.
-      const tuiActive = Boolean(tuiSessionActiveRef.current || grokSession || opencodeSession);
+      const tuiActive = Boolean(
+        tuiSessionActiveRef.current || grokSession || opencodeSession || isKimiSession
+      );
       pendingFocusCleanupRef.current?.();
       pendingFocusCleanupRef.current = prepareActiveTuiTerminalFocusRespectingSelection(term, {
         tuiSessionActive: tuiActive,
