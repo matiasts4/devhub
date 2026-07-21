@@ -377,7 +377,7 @@ async function main() {
       spawnSync(
         process.execPath,
         [path.join(repoRoot, 'scripts', 'build-sidecar-agent-detection.mjs')],
-        { cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32' }
+        { cwd: repoRoot, stdio: 'inherit', shell: false }
       );
     } catch (err) {
       console.warn('[electron-up] sidecar detection rebuild failed, continuing with existing bundle:', err?.message);
@@ -502,8 +502,8 @@ async function main() {
         if (!name) return;
         if (/\.(test|spec)\./i.test(name)) return;
         if (!/\.(js|cjs|mjs|json|yml|yaml)$/i.test(name)) return;
-        // Ignore editor junk / lock files.
-        if (/~$|\.swp$|\.tmp$/i.test(name)) return;
+        // Ignore editor junk, lock files, and Electron runtime state files (e.g. windowState.js)
+        if (/~$|\.swp$|\.tmp$|windowState|state\.json|desktop-state/i.test(name)) return;
 
         const filePath = path.join(hostWatchRoot, name);
         try {
