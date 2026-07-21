@@ -108,6 +108,7 @@ export function derivePanelStatus({
   agentRun,
   initialCommand,
   apiStatus,
+  apiStatusAt = null,
   terminalActivity = null,
   liveActivity = null,
   liveActivityAgeMs = null,
@@ -156,7 +157,9 @@ export function derivePanelStatus({
   }
 
   // In-progress API status (agenthub) is a strong signal even when PTY is quiet.
-  if (apiStatus && IN_PROGRESS_STATUSES.has(String(apiStatus).toLowerCase())) {
+  const apiStatusAgeMs = apiStatusAt ? Date.now() - apiStatusAt : null;
+  const isApiStatusRecent = apiStatusAgeMs === null || apiStatusAgeMs <= 30000;
+  if (apiStatus && isApiStatusRecent && IN_PROGRESS_STATUSES.has(String(apiStatus).toLowerCase())) {
     return PANEL_STATUS.RUNNING;
   }
 

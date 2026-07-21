@@ -74,34 +74,61 @@ jest.mock('@/lib/theme/themes', () => ({
   THEMES: {
     DEEP_SEA: 'deep-sea',
     LIGHT: 'light',
+    OPENCODE: 'opencode',
   },
   MORPHOLOGIES: {
     DEFAULT: 'default',
     BRUTALIST_STAGE: 'brutalist-stage',
     CURSOR: 'cursor',
+    OPENCODE_DESKTOP: 'opencode-desktop',
   },
   MOTION_MODES: {
     REDUCED: 'reduced',
     NORMAL: 'normal',
     AMPLIFIED: 'amplified',
   },
+  OPENCODE_DESKTOP_PRESET: {
+    theme: 'opencode',
+    morphology: 'opencode-desktop',
+    density: 'compact',
+  },
   THEME_OPTIONS: [
     { id: 'deep-sea', label: 'Deep Sea', desc: 'desc', accent: '#58A6FF' },
     { id: 'light', label: 'Light', desc: 'desc', accent: '#0969DA' },
+    { id: 'opencode', label: 'OpenCode Desktop', desc: 'desc', accent: '#9dbefe' },
   ],
   MORPHOLOGY_OPTIONS: [
     { id: 'default', label: 'Default', desc: 'base chrome' },
     { id: 'brutalist-stage', label: 'Brutalist Stage', desc: 'brutalist chrome' },
     { id: 'cursor', label: 'Cursor', desc: 'Warm amber Cursor-style chrome.' },
+    { id: 'opencode-desktop', label: 'OpenCode Desktop', desc: 'Quiet rounded chrome.' },
   ],
   getStoredTheme: jest.fn(() => 'deep-sea'),
   getStoredMorphology: jest.fn(() => 'default'),
   getStoredAccent: jest.fn(() => 'theme'),
   getStoredMotionMode: jest.fn(() => 'normal'),
+  getStoredAppearance: jest.fn(() => ({
+    fontFamily: 'Inter',
+    fontScale: 1,
+    density: 'comfortable',
+    zoom: 1,
+  })),
   setTheme: jest.fn((val) => val),
   setMorphology: jest.fn((val) => val),
   setAccent: jest.fn((val) => val),
   setMotionMode: jest.fn((val) => val),
+  setDensity: jest.fn((val) => (val === 'compact' || val === 'comfortable' ? val : 'comfortable')),
+  applyOpenCodeDesktopPreset: jest.fn(() => ({
+    theme: 'deep-sea',
+    morphology: 'default',
+    appearance: {
+      fontFamily: 'Inter',
+      fontScale: 1,
+      density: 'comfortable',
+      zoom: 1,
+    },
+  })),
+  restoreAppearanceSnapshot: jest.fn(),
 }));
 
 const Ajustes = require('../Ajustes').default;
@@ -224,9 +251,9 @@ describe('Ajustes appearance tab — interactive controls', () => {
 
     expect(themeModule.setMorphology).toHaveBeenCalledWith('cursor');
   });
-
   test('renders the motion mode section and persists changes', async () => {
     rendered = await renderIntoDom(React.createElement(Ajustes));
+
     const appearanceTab = findButton(rendered.container, (button) =>
       /apariencia|appearance/i.test(button.textContent || '')
     );
@@ -244,11 +271,100 @@ describe('Ajustes appearance tab — interactive controls', () => {
       /amplified/i.test(b.textContent || '')
     );
     expect(amplifiedButton).toBeTruthy();
+
     flushSync(() => {
       amplifiedButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     });
     await flushEffects();
 
     expect(themeModule.setMotionMode).toHaveBeenCalledWith('amplified');
+  });
+
+  async function openAppearanceTab() {
+    rendered = await renderIntoDom(React.createElement(Ajustes));
+    const appearanceTab = findButton(rendered.container, (button) =>
+      /apariencia|appearance/i.test(button.textContent || '')
+    );
+    flushSync(() => {
+      appearanceTab.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+  }
+
+  test('renders OpenCode Desktop preset control and applies preset on click', async () => {
+    await openAppearanceTab();
+
+    const presetButton = rendered.container.querySelector(
+      '[data-testid="ajustes-opencode-desktop-preset"]'
+    );
+    expect(presetButton).toBeTruthy();
+    expect(presetButton.textContent).toMatch(/OpenCode Desktop/i);
+
+    flushSync(() => {
+      presetButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.applyOpenCodeDesktopPreset).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows undo after preset and restores the captured snapshot', async () => {
+    await openAppearanceTab();
+
+    const presetButton = rendered.container.querySelector(
+      '[data-testid="ajustes-opencode-desktop-preset"]'
+    );
+    flushSync(() => {
+      presetButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    const undoButton = rendered.container.querySelector(
+      '[data-testid="ajustes-opencode-desktop-preset-undo"]'
+    );
+    expect(undoButton).toBeTruthy();
+
+    flushSync(() => {
+      undoButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(themeModule.restoreAppearanceSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        theme: 'deep-sea',
+        morphology: 'default',
+        appearance: expect.objectContaining({ density: 'comfortable' }),
+      })
+    );
+  });
+
+  test('renders density control and switches compact | comfortable', async () => {
+    await openAppearanceTab();
+
+    const densitySection = rendered.container.querySelector(
+      '[data-testid="ajustes-density-control"]'
+    );
+    expect(densitySection).toBeTruthy();
+
+    const compactButton = rendered.container.querySelector(
+      '[data-testid="ajustes-density-option-compact"]'
+    );
+    const comfortableButton = rendered.container.querySelector(
+      '[data-testid="ajustes-density-option-comfortable"]'
+    );
+    expect(compactButton).toBeTruthy();
+    expect(comfortableButton).toBeTruthy();
+
+    flushSync(() => {
+      compactButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+    expect(themeModule.setDensity).toHaveBeenCalledWith('compact');
+
+    flushSync(() => {
+      comfortableButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+    expect(themeModule.setDensity).toHaveBeenCalledWith('comfortable');
   });
 });

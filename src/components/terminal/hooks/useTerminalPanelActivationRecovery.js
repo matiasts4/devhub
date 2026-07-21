@@ -28,6 +28,9 @@ function reconcileTuiWheelOnPanelActivate(c, term) {
   // Cold first activate must still scan the buffer (do not mark footer early).
   const assumeOpenCode = Boolean(tuiSessionFooterConfirmedRef?.current);
   const assumeGrok = Boolean(grokTuiReadyRef?.current);
+  const isGrokLaunch =
+    Boolean(isGrokSessionRef?.current) ||
+    (typeof initialCommand === 'string' && /\bgrok\b/i.test(initialCommand));
   reconcileOpenCodeTuiWheelReadiness({
     term,
     initialCommand,
@@ -43,12 +46,16 @@ function reconcileTuiWheelOnPanelActivate(c, term) {
     isGrokSessionRef,
     grokTuiReadyRef,
     setNativeWheelPassthrough,
-    assumeTuiIfReattached: assumeGrok,
+    // Grok launch panels: on activate always assume TUI (cold start may not have
+    // flipped ready yet). Matches post-Ctrl+R behavior where reattach assumes ready.
+    assumeTuiIfReattached: assumeGrok || isGrokLaunch,
   });
   // Always rebind mouse after deactivate cleared DECSET — even if footer
   // reconcile no-ops (already confirmed / buffer scan miss).
   prepareActiveTuiTerminalFocus(term, {
-    tuiSessionActive: Boolean(tuiSessionActiveRef?.current || assumeOpenCode || assumeGrok),
+    tuiSessionActive: Boolean(
+      tuiSessionActiveRef?.current || assumeOpenCode || assumeGrok || isGrokLaunch
+    ),
   });
 }
 

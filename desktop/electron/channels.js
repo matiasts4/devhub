@@ -24,6 +24,7 @@ const NATIVE_BROWSER_COMMANDS = {
   CLOSE: 'native_browser_close',
   GO_BACK: 'native_browser_go_back',
   GO_FORWARD: 'native_browser_go_forward',
+  CAPTURE: 'native_browser_capture',
   /** Blur embed windows so SPA toolbar/URL can receive clicks/focus. */
   RELEASE_FOCUS: 'native_browser_release_focus',
   /** E2 bulk / overlay helpers */
@@ -52,6 +53,7 @@ const SHELL_COMMANDS = {
   NOTIFY_PERMISSION: 'notify_request_permission',
   RUNTIME_STATUS: 'runtime_status',
   RUNTIME_ENSURE: 'runtime_ensure',
+  LOG_CLIENT_ERROR: 'log_client_error',
 };
 
 /** Voice commands (E3) — names match Tauri where possible. */

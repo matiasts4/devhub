@@ -19,6 +19,8 @@ function handleNativeBrowserCommand(registry, command, payload = {}) {
       return registry.goBack(payload);
     case NATIVE_BROWSER_COMMANDS.GO_FORWARD:
       return registry.goForward(payload);
+    case NATIVE_BROWSER_COMMANDS.CAPTURE:
+      return registry.capture(payload);
     case NATIVE_BROWSER_COMMANDS.RELEASE_FOCUS:
       return registry.releaseFocus(payload);
     case NATIVE_BROWSER_COMMANDS.RESIZE:

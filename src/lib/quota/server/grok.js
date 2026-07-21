@@ -42,6 +42,7 @@ export async function fetchGrokQuota() {
           Authorization: `Bearer ${creds.accessToken}`,
           'User-Agent': 'DevHub-QuotaEngine/1.0',
         },
+        signal: AbortSignal.timeout(8000),
       });
 
       if (response.ok) {
@@ -75,19 +76,13 @@ export async function fetchGrokQuota() {
         }
       }
     } catch (_err) {
-      // Fallback
+      // Probe failed — reported below.
     }
 
-    result.primaryUsagePercent = 10;
-    result.primaryRemainingPercent = 90;
-    result.windows.push({
-      name: 'Active SuperGrok Session',
-      usagePercent: 10,
-      remainingFraction: 0.9,
-      resetsAt: null,
-      timeUntilResetMs: null,
-      isExhausted: false,
-    });
+    // Credentials exist but no quota endpoint answered. Never fabricate usage.
+    result.error = 'Grok credentials found, but the xAI usage probe did not return quota data';
+    result.primaryUsagePercent = 0;
+    result.primaryRemainingPercent = 100;
 
     return result;
   } catch (err) {

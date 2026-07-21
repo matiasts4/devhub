@@ -49,6 +49,8 @@ export default function PizarraLiveSurfaceLayer({
   isViewTransitioning = false,
   transitionFromViewId = null,
   suspendDuringCanvasPan = false,
+  isSurfaceDragging = false,
+  hudRevealed = false,
   // Draggable layout dividers (optional)
   // The parent (PizarraPane) computes them and provides the handler that performs
   // the paired resize when a divider is dragged.
@@ -128,8 +130,14 @@ export default function PizarraLiveSurfaceLayer({
           return null;
         }
 
-        const surfaceViewId = getSurfaceViewId(shape, views, null);
-        const isShown = Boolean(surfaceViewId && visibleIdSet.has(surfaceViewId));
+        // Pass fallbackViewId so carried browsers without a stored viewId still show
+        // on the active window (getSurfaceViewId used to return null for browsers).
+        const surfaceViewId = getSurfaceViewId(shape, views, fallbackViewId);
+        const isShown = Boolean(
+          surfaceViewId
+            ? visibleIdSet.size === 0 || visibleIdSet.has(surfaceViewId)
+            : visibleIdSet.size === 0
+        );
         const surfaceOpacity =
           isShown && isViewTransitioning && surfaceViewId === transitionFromViewId ? 0.88 : 1;
 
@@ -170,6 +178,8 @@ export default function PizarraLiveSurfaceLayer({
             surfaceOpacity={surfaceOpacity}
             suspendDuringViewTransition={isViewTransitioning && isShown}
             suspendDuringCanvasPan={suspendDuringCanvasPan}
+            isSurfaceDragging={isSurfaceDragging}
+            hudRevealed={hudRevealed}
             onSurfaceContextMenu={onSurfaceContextMenu}
           />
         );
@@ -226,6 +236,8 @@ function LiveSurfaceItem({
   surfaceOpacity = 1,
   suspendDuringViewTransition = false,
   suspendDuringCanvasPan = false,
+  isSurfaceDragging = false,
+  hudRevealed = false,
   onSurfaceContextMenu,
 }) {
   const shapeRef = useRef(shape);
@@ -441,6 +453,11 @@ function LiveSurfaceItem({
       // Fixes the "mucho retardo en cargar la vista adaptada" when moving browser
       // surfaces, and reduces chances of the content getting into a bad state
       // that requires new workspace to recover.
+      // Tauri GTK overlay only — Electron uses in-DOM <webview>, no IPC bounds thrash.
+      const isElectron =
+        typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true;
+      if (isElectron) return;
+
       for (const { sid, shape: movedShape, entry } of moved) {
         if (!movedShape || movedShape.type !== SHAPE_TYPES.BROWSER) continue;
         const el = entry?.el;
@@ -456,7 +473,8 @@ function LiveSurfaceItem({
           };
           // Must match PizarraBrowserSurface nativePanelId (not pizarra-browser-*).
           const panelId =
-            movedShape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || sid}`;
+            movedShape.panelId ||
+            `browser-${projectId || 'pizarra'}-pizarra-${movedShape.id || sid}`;
           flushNativeBrowserResize({ panelId, bounds }).catch(() => {});
           setNativeBrowserVisibility({ panelId, visible: true, bounds }).catch(() => {});
         } catch {
@@ -631,7 +649,10 @@ function LiveSurfaceItem({
         onWorkspaceWindowRemove={onWorkspaceWindowRemove}
         suspendDuringViewTransition={suspendDuringViewTransition}
         suspendDuringCanvasPan={suspendDuringCanvasPan}
+        isSurfaceDragging={isSurfaceDragging}
+        hudRevealed={hudRevealed}
         skipEnterAnimation={suspendDuringViewTransition}
+        pizarraOwnsLiveSurfaces={pizarraOwnsLiveSurfaces}
       />
     </div>
   );

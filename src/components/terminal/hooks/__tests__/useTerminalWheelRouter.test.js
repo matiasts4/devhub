@@ -137,6 +137,67 @@ describe('useTerminalWheelRouter', () => {
     expect(event.preventDefault).toHaveBeenCalled();
   });
 
+  it('Grok ready + mouse modes + DOM focus still injects (never native swallow)', () => {
+    const sendPaste = jest.fn(() => true);
+    const termEl = document.createElement('div');
+    const term = {
+      cols: 80,
+      rows: 24,
+      scrollLines: jest.fn(),
+      focus: jest.fn(),
+      write: jest.fn(),
+      element: termEl,
+      _core: { coreService: { decPrivateModes: { mouseTrackingMode: 1 } } },
+    };
+    // Put focus inside the terminal so native path would have been eligible pre-fix.
+    document.body.appendChild(termEl);
+    termEl.tabIndex = 0;
+    termEl.focus();
+
+    const handler = createTerminalWheelHandler({
+      term,
+      initialCommand: 'grok',
+      lifecycleRefs: {
+        current: {
+          tuiSessionActiveRef: { current: true },
+          isGrokSessionRef: { current: true },
+          kimiReadyNotifiedRef: { current: false },
+          grokTuiReadyRef: { current: true },
+          tuiSessionFooterConfirmedRef: { current: false },
+          isActivePanelRef: { current: true },
+          lastPointerZoneRef: { current: 'transcript' },
+        },
+      },
+      rendererRefs: { current: { termRef: { current: term } } },
+      sessionRefs: { current: { wsRef: { current: {} }, transportRef: { current: 'json' } } },
+      viewportRefs: {
+        current: {
+          containerRef: { current: null },
+          viewportShellRef: { current: document.createElement('div') },
+        },
+      },
+      sendTerminalPasteInput: sendPaste,
+      resolveTerminalCellFromPointer: () => ({ col: 10, row: 5 }),
+      shouldRouteWheelToTranscript: () => true,
+      terminalHasFocus: () => true,
+    });
+
+    const event = createWheelEvent(120);
+    handler(event);
+
+    expect(sendPaste).toHaveBeenCalled();
+    const payload = sendPaste.mock.calls[0][0].text;
+    // eslint-disable-next-line no-control-regex -- ANSI escape sequences require control chars
+    expect(payload).toMatch(/\x1b\[<6[45];/);
+    // Pure SGR like OpenCode (no arrow keys that steal Grok prompt focus)
+    // eslint-disable-next-line no-control-regex -- arrow CSI must not appear
+    expect(payload).not.toMatch(/\x1b\[[AB]/);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(term.focus).toHaveBeenCalled();
+
+    termEl.remove();
+  });
+
   it('falls back to SGR inject when native passthrough forward fails', () => {
     const sendPaste = jest.fn(() => true);
     // No term.element → forwardTerminalWheelToXterm returns false

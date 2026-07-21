@@ -320,6 +320,7 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
               termRef.current.write(chunk);
             }
             stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
+            scrollTerminalToBottom();
           }
         }
         if (pendingWebglRecoveryRef.current && !webglAddonRef.current) {

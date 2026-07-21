@@ -2,6 +2,10 @@
 
 Windows-first desktop host using Electron.
 
+**Window chrome:** frameless (`frame: false`) like Tauri `decorations: false`.  
+SPA owns drag regions (`-webkit-app-region: drag`) and traffic-light controls via
+`window_minimize` / `window_toggle_maximize` / `window_close` IPC.
+
 **Browser model:** Chromium `<webview>` **inside the SPA DOM**
 (`webviewTag: true` on the host SPA WebContentsView).
 
@@ -45,6 +49,18 @@ pnpm electron:up
 ```
 
 Starts **Next (:3100) + sidecar (:4001) + Electron**. Ctrl+C stops all three.
+
+### Hot reload (same idea as Tauri dev)
+
+| What you edit | What to do |
+|---------------|------------|
+| React / Next / CSS under `src/` | **Nothing** — Next Fast Refresh updates the SPA while Electron stays open |
+| Soft refresh of SPA | **Ctrl+R** or **F5** (no process restart) |
+| Hard refresh (clear cache) | **Ctrl+Shift+R** |
+| Inspect console / HMR | **F12** DevTools |
+| `desktop/electron/**` (main, preload, window) | **Auto-restart Electron only** with `pnpm electron:up` (Next keeps running) |
+
+You only need a full stack restart when Next/sidecar themselves crash or you change their ports/env.
 
 ### Or 3 terminals
 

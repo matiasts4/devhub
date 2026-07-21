@@ -344,7 +344,8 @@ describe('PizarraBrowserSurface — board-browser-load Req 1-4', () => {
     const dragHandle = container.querySelector('[data-testid="pizarra-drag-handle"]');
     const closeButton = container.querySelector('[data-testid="pizarra-browser-close"]');
 
-    expect(capturedWorkspacePaneProps.tabsMode).toBe('multi');
+    // Electron/pizarra chrome uses single-tab strip by default (no name noise).
+    expect(capturedWorkspacePaneProps.tabsMode).toBe('single');
     expect(toolbar.contains(dragHandle)).toBe(true);
     expect(toolbar.contains(closeButton)).toBe(true);
   });

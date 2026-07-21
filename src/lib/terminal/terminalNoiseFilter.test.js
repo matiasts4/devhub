@@ -266,16 +266,32 @@ describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
     expect(filterTerminalInputForSession({ mode: 'shell' }, SGR_WHEEL_UP)).toBeNull();
   });
 
-  test('strips wheel 64 when ctx.mode=tui and tuiReady=false (bootstrap)', () => {
+  test('strips wheel 64 when ctx.mode=tui and tuiReady=false without agentType (bootstrap)', () => {
     expect(
       filterTerminalInputForSession({ mode: 'tui', tuiReady: false }, SGR_WHEEL_UP)
     ).toBeNull();
   });
 
-  test('forwards wheel 64 only when ctx.mode=tui and tuiReady=true', () => {
+  test('forwards wheel 64 when ctx.mode=tui and tuiReady=true', () => {
     expect(
       filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_WHEEL_UP)
     ).toBe(SGR_WHEEL_UP);
+  });
+
+  test('forwards wheel 64 when mode=tui and agentType set even without tuiReady (server session)', () => {
+    // ttyServer historically never set session.tuiReady — only agentType/mode.
+    expect(
+      filterTerminalInputForSession(
+        { mode: 'tui', tuiReady: false, agentType: 'grok' },
+        SGR_WHEEL_UP
+      )
+    ).toBe(SGR_WHEEL_UP);
+    expect(
+      filterTerminalInputForSession(
+        { mode: 'tui', agentType: 'opencode' },
+        SGR_WHEEL_DOWN
+      )
+    ).toBe(SGR_WHEEL_DOWN);
   });
 
   test('strips SGR motion reports (button 35) in all contexts including live TUIs', () => {

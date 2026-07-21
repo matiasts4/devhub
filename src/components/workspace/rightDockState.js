@@ -1,8 +1,55 @@
 /* global module */
-const DEFAULT_BROWSER_URL = 'http://localhost:3200/';
+/** Safe default — never a dead local preview port (3000/3200 often refuse). */
+const DEFAULT_BROWSER_URL = 'https://duckduckgo.com/';
 const DEFAULT_SEARCH_URL = 'https://duckduckgo.com/?q=';
 const MIN_RIGHT_DOCK_SIZE = 20;
 const MAX_RIGHT_DOCK_SIZE = 82;
+
+/** Legacy defaults that commonly cause ERR_CONNECTION_REFUSED in Electron. */
+const LEGACY_DEAD_BROWSER_URLS = new Set([
+  'http://localhost:3000/',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000/',
+  'http://127.0.0.1:3000',
+  'http://localhost:3200/',
+  'http://localhost:3200',
+  'http://127.0.0.1:3200/',
+  'http://127.0.0.1:3200',
+]);
+
+/**
+ * True if URL is a known dead local default (not DevHub's own :3100 UI).
+ * @param {string} url
+ */
+function isLegacyDeadBrowserUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return true;
+  if (LEGACY_DEAD_BROWSER_URLS.has(raw)) return true;
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase();
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+    if ((host === 'localhost' || host === '127.0.0.1') && (port === '3000' || port === '3200')) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
+ * Prefer a navigable URL for dock/pizarra browser. Replaces legacy dead ports.
+ * @param {string} url
+ * @param {string} [fallback]
+ */
+function sanitizeBrowserUrl(url, fallback = DEFAULT_BROWSER_URL) {
+  const raw = String(url || '').trim();
+  if (!raw || isLegacyDeadBrowserUrl(raw)) {
+    return fallback || DEFAULT_BROWSER_URL;
+  }
+  return raw;
+}
 
 const DEFAULT_RIGHT_DOCK_STATE = {
   visible: false,
@@ -183,14 +230,15 @@ function sanitizeRightDockState(rawState = {}) {
 
   const normalizedHistory = Array.isArray(rawState.browserHistory)
     ? rawState.browserHistory
-        .map((entry) => normalizeBrowserUrl(entry))
+        .map((entry) => sanitizeBrowserUrl(normalizeBrowserUrl(entry) || entry))
         .filter((entry, index, array) => entry && array.indexOf(entry) === index)
     : [];
 
-  const normalizedUrl =
+  const normalizedUrl = sanitizeBrowserUrl(
     normalizeBrowserUrl(rawState.browserUrl) ||
-    normalizedHistory[0] ||
-    DEFAULT_RIGHT_DOCK_STATE.browserUrl;
+      normalizedHistory[0] ||
+      DEFAULT_RIGHT_DOCK_STATE.browserUrl
+  );
 
   const browserHistory = normalizedHistory.length > 0 ? normalizedHistory : [normalizedUrl];
   const browserHistoryIndex = clamp(
@@ -201,7 +249,7 @@ function sanitizeRightDockState(rawState = {}) {
     browserHistory.length - 1
   );
 
-  const browserUrl = browserHistory[browserHistoryIndex] || normalizedUrl;
+  const browserUrl = sanitizeBrowserUrl(browserHistory[browserHistoryIndex] || normalizedUrl);
 
   const browserLayoutEpoch = Number.isFinite(Number(rawState.browserLayoutEpoch))
     ? Math.max(0, Math.floor(Number(rawState.browserLayoutEpoch)))
@@ -310,10 +358,12 @@ module.exports = {
   MIN_RIGHT_DOCK_SIZE,
   buildFreshRightDockState,
   buildRightDockStorageKey,
+  isLegacyDeadBrowserUrl,
   normalizeBrowserUrl,
   peekLegacySpaceComponentKind,
   readRightDockState,
   rightDockStatesEqual,
+  sanitizeBrowserUrl,
   sanitizeRightDockState,
   writeRightDockState,
 };

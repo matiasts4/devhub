@@ -10,6 +10,12 @@ import {
   resolvePanelSurfaceLabel,
 } from '@/lib/terminal/panelDisplayName';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
+import { resolveWorkspaceBrowserCacheKey } from '@/lib/pizarra/pizarraViewLayout';
+import {
+  DEFAULT_BROWSER_URL,
+  isLegacyDeadBrowserUrl,
+  sanitizeBrowserUrl,
+} from '@/components/workspace/rightDockState';
 
 export default function useWorkspaceSurfaceRegistry({
   activeWorkspace,
@@ -26,13 +32,23 @@ export default function useWorkspaceSurfaceRegistry({
 }) {
   const registry = useBaseSurfaceRegistry(projectId, activeWorkspace?.id);
 
+  const workspaceBrowserCacheKey = useMemo(
+    () => resolveWorkspaceBrowserCacheKey(projectId, activeWorkspace?.id),
+    [projectId, activeWorkspace?.id]
+  );
+
   const isDedicatedBrowserSurface = useCallback(
     (s) => {
       if (!activeWorkspace?.id) return false;
       const wid = activeWorkspace.id;
-      return s.id === `shape-browser-${wid}` || s.panelId === `browser-${wid}`;
+      const pid = String(s?.panelId || '');
+      return (
+        s.id === `shape-browser-${wid}` ||
+        pid === `browser-${wid}` ||
+        pid === workspaceBrowserCacheKey
+      );
     },
-    [activeWorkspace?.id]
+    [activeWorkspace?.id, workspaceBrowserCacheKey]
   );
 
   const registryAddSurface = useCallback(
@@ -87,7 +103,7 @@ export default function useWorkspaceSurfaceRegistry({
           id: `shape-browser-${unique}`,
           panelId: `pizarra-browser-${unique}`,
           label: surface.label || 'Browser',
-          url: surface.url || 'http://localhost:3000/',
+          url: sanitizeBrowserUrl(surface.url, DEFAULT_BROWSER_URL),
           pizarra: {
             ...surface.pizarra,
             visible: true,
@@ -171,7 +187,7 @@ export default function useWorkspaceSurfaceRegistry({
     const windows = workspaceWindows[wsId] || [];
     const activeWindowId = activeWindowIds[wsId] || windows[0]?.id || null;
 
-    const { terminals: builtTerminals } = buildTerminalSurfacesFromWindows({
+    const { terminals: builtTerminals, browserPanels = [] } = buildTerminalSurfacesFromWindows({
       workspaceId: wsId,
       windows,
       activeWindowId,
@@ -184,23 +200,41 @@ export default function useWorkspaceSurfaceRegistry({
 
     const terminals = builtTerminals;
 
+    // One carried browser surface per workspace for the dock/space browser guest.
+    // Cache key MUST match WorkspaceBrowserPane: browser-${projectId}-${workspaceId}.
     const browserOpen = browserWindowStates?.[activeWorkspace.id]?.open === true;
+    const hasBrowserSpacePanel = browserPanels.length > 0;
     const browsers = [];
-    if (browserOpen) {
+    if (browserOpen || hasBrowserSpacePanel) {
       const browserState = browserWindowStates?.[activeWorkspace.id] || {};
       const layoutPriority = browserState?.pizarraLayoutPriority === true;
+      // Prefer live dock URL; never seed with dead localhost:3000/3200 defaults.
+      const dockUrl = sanitizeBrowserUrl(
+        effectiveRightDockState?.browserUrl ||
+          browserState?.url ||
+          browserPanels[0]?.panel?.url ||
+          DEFAULT_BROWSER_URL,
+        DEFAULT_BROWSER_URL
+      );
+      const viewIdForBrowser =
+        browserPanels[0]?.viewId || activeWindowId || windows[0]?.id || null;
       browsers.push({
         id: `shape-browser-${activeWorkspace.id}`,
         type: 'browser',
-        panelId: `browser-${activeWorkspace.id}`,
-        label: browserState?.label || `Browser ${activeWorkspace.id}`,
-        url: browserState?.url || 'http://localhost:3000/',
+        // Align with WorkspaceBrowserPane / ElectronWebviewBrowser cacheKey.
+        panelId: workspaceBrowserCacheKey,
+        label: 'Browser',
+        url: dockUrl,
         pizarra: {
           x: null,
           y: null,
           width: 1024,
           height: 700,
           visible: true,
+          // Always keep the workspace dock browser in pizarra adaptive layout
+          // (otherwise 2+ terminals hide the carried browser → "gone" after toggles).
+          layoutPriority: true,
+          ...(viewIdForBrowser ? { viewId: viewIdForBrowser } : {}),
           ...(layoutPriority ? { layoutPriority: true } : {}),
         },
       });
@@ -225,8 +259,15 @@ export default function useWorkspaceSurfaceRegistry({
           itemChanged = true;
         }
         if (as.type === 'browser' && existing.url !== as.url) {
-          existing.url = as.url;
-          itemChanged = true;
+          // Never clobber a real navigated URL with a legacy dead default (3000/3200).
+          const incomingDead = isLegacyDeadBrowserUrl(as.url);
+          const existingDead = isLegacyDeadBrowserUrl(existing.url);
+          if (incomingDead && !existingDead) {
+            // keep existing.url
+          } else if (as.url) {
+            existing.url = sanitizeBrowserUrl(as.url, existing.url || DEFAULT_BROWSER_URL);
+            itemChanged = true;
+          }
         }
         if (as.type === 'browser' && as.pizarra) {
           const prevPizarra = existing.pizarra || {};
@@ -307,6 +348,9 @@ export default function useWorkspaceSurfaceRegistry({
     registry.resetSurfaces,
     isDedicatedBrowserSurface,
     terminalRendererPreferences,
+    projectId,
+    workspaceBrowserCacheKey,
+    effectiveRightDockState?.browserUrl,
   ]);
 
   return {

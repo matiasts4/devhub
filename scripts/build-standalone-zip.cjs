@@ -171,6 +171,8 @@ const JUNK_TOP_LEVEL_DIRS = [
   'plugins',
   'bin',
   'lib',
+  'dist',
+  'data',
 ];
 
 const JUNK_TOP_LEVEL_FILES = [

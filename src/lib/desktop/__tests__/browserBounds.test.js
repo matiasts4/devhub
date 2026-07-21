@@ -31,7 +31,7 @@ describe('electron browser bounds', () => {
       { x: 1000, y: 800, width: 500, height: 400 },
       { width: 1200, height: 900 }
     );
-    expect(clamped).toEqual({ x: 700, y: 500, width: 500, height: 400 });
+    expect(clamped).toEqual({ x: 700, y: 800, width: 500, height: 100 });
   });
 
   test('boundsEqual', () => {

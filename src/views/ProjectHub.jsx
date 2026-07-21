@@ -127,8 +127,11 @@ export default function ProjectHub() {
     }
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) {
-      console.error('fetchProjects ERROR:', error);
-      sileo.error({ title: 'Error al cargar proyectos: ' + error.message });
+      const errorMsg =
+        error.message ||
+        (typeof error === 'object' && Object.keys(error).length > 0 ? JSON.stringify(error) : String(error || 'Error desconocido'));
+      console.error('[devhub] fetchProjects ERROR:', errorMsg, error);
+      sileo.error({ title: 'Error al cargar proyectos: ' + errorMsg });
     }
     if (!error && data) setProjects(data);
     setLoading(false);

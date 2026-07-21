@@ -713,6 +713,17 @@ export default function ZedAmbientOverlay({
     [streamingMessage, lastAssistantMessage]
   );
 
+  const isFirstMountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstMountRef.current && displayAssistantMessage) {
+      if (displayAssistantMessage.timestamp) {
+        lastSpokenRef.current = displayAssistantMessage.timestamp;
+        lastStatusTurnRef.current = displayAssistantMessage.timestamp;
+      }
+      isFirstMountRef.current = false;
+    }
+  }, [displayAssistantMessage]);
+
   const streamingText = streamingMessage?.content || '';
   const hasSpeakableResponse = Boolean(
     displayAssistantMessage?.content &&
@@ -919,7 +930,8 @@ export default function ZedAmbientOverlay({
             aria-label="Zed asistente"
             aria-busy={isLoading}
             aria-modal={isOpen ? 'true' : undefined}
-            data-devhub-modal={isOpen ? 'true' : undefined}
+            data-devhub-modal={isOpen ? 'soft' : undefined}
+            data-zed-overlay="true"
             className="fixed inset-x-0 bottom-6 z-[260] flex justify-center pointer-events-none"
             initial={
               isReduced

@@ -114,6 +114,39 @@ export function buildXtermTheme(getVar) {
   };
 }
 
+let sharedColorCanvasCtx = null;
+
+/**
+ * Normalize a CSS color to a format xterm.js can parse (#hex, rgb()/rgba(),
+ * named colors). Modern Chromium preserves wide-gamut functions like
+ * oklch()/oklab()/color() in computed styles, and passing them to
+ * `new Terminal({ theme })` throws (xterm's css parser is hex/rgb/named only),
+ * which kills terminal initialization entirely. Canvas fillStyle assignment
+ * normalizes any valid CSS color to sRGB hex/rgb; invalid assignments are
+ * ignored by the canvas, leaving the sentinel in place.
+ */
+export function normalizeColorForXterm(value) {
+  if (!value || typeof value !== 'string') return '';
+  const v = value.trim();
+  if (!v) return '';
+  if (v.startsWith('#') || v.startsWith('rgb') || /^[a-zA-Z]+$/.test(v)) return v;
+  if (typeof document === 'undefined') return '';
+  try {
+    if (!sharedColorCanvasCtx) {
+      const canvas = document.createElement('canvas');
+      sharedColorCanvasCtx = (canvas.getContext && canvas.getContext('2d')) || null;
+    }
+    if (!sharedColorCanvasCtx) return '';
+    sharedColorCanvasCtx.fillStyle = '#010203'; // sentinel
+    sharedColorCanvasCtx.fillStyle = v;
+    const normalized = sharedColorCanvasCtx.fillStyle;
+    if (!normalized || normalized === '#010203') return '';
+    return normalized;
+  } catch {
+    return '';
+  }
+}
+
 function makeDomCssVarResolver() {
   return (name) => {
     try {
@@ -130,7 +163,10 @@ function makeDomCssVarResolver() {
       parent.appendChild(tempEl);
       const resolved = getComputedStyle(tempEl).color;
       parent.removeChild(tempEl);
-      return resolved || '';
+      // Chromium may keep oklch()/color() in computed styles; xterm cannot
+      // parse those, so normalize to sRGB. If normalization is unavailable
+      // (non-browser/test env), keep the computed value as before.
+      return normalizeColorForXterm(resolved) || resolved || '';
     } catch {
       return '';
     }

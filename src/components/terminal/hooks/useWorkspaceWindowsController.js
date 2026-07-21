@@ -125,22 +125,29 @@ export default function useWorkspaceWindowsController({
       const browserState = browserWindowStates?.[wsId];
       const label = browserState?.label || buildBrowserWindowLabel(projectId, wsId);
 
-      try {
-        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-          const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-          const existingWindow = await WebviewWindow.getByLabel(label);
-          await existingWindow?.close().catch(() => {});
+      // Update state immediately so UI updates instantly without waiting for window destruction
+      updateBrowserWindowState(wsId, {
+        open: false,
+        label,
+        url: '',
+        updatedAt: Date.now(),
+      });
+
+      // Hide and close native window in background non-blocking
+      (async () => {
+        try {
+          if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+            const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+            const existingWindow = await WebviewWindow.getByLabel(label);
+            if (existingWindow) {
+              await existingWindow.hide().catch(() => {});
+              await existingWindow.close().catch(() => {});
+            }
+          }
+        } catch {
+          // Ignore Tauri close failures in background
         }
-      } catch {
-        // Ignore Tauri close failures so state can still be cleaned up locally.
-      } finally {
-        updateBrowserWindowState(wsId, {
-          open: false,
-          label,
-          url: '',
-          updatedAt: Date.now(),
-        });
-      }
+      })();
     },
     [browserWindowStates, projectId, updateBrowserWindowState]
   );
@@ -355,7 +362,9 @@ export default function useWorkspaceWindowsController({
       const targetWindow = windows.find((win) => win.id === windowId);
       if (targetWindow?.columns?.length) {
         const panelIds = getAllPanelIds(targetWindow.columns);
-        await closeTerminalSessions(panelIds);
+        closeTerminalSessions(panelIds).catch((err) => {
+          console.error('[removeWindowFromWorkspace] Error closing terminal sessions in background:', err);
+        });
       }
 
       const nextWindows = windows.filter((win) => win.id !== windowId);

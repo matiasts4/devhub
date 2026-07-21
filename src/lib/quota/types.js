@@ -35,6 +35,7 @@ export const PROVIDERS = {
   KIMI: 'kimi',
   OPENCODE: 'opencode',
   CODEX: 'codex',
+  ZAI: 'zai',
 };
 
 export const PROVIDER_LABELS = {
@@ -44,4 +45,5 @@ export const PROVIDER_LABELS = {
   [PROVIDERS.KIMI]: 'Kimi Code',
   [PROVIDERS.OPENCODE]: 'OpenCode',
   [PROVIDERS.CODEX]: 'Codex',
+  [PROVIDERS.ZAI]: 'Z.ai',
 };

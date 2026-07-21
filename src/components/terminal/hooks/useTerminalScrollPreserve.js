@@ -5,6 +5,7 @@
 import { useEffect } from 'react';
 import {
   getTerminalViewportScrollOffset,
+  isTerminalViewportNearBottom,
   restoreTerminalViewportScroll,
 } from '@/components/terminal/TerminalTTY.helpers';
 
@@ -17,17 +18,29 @@ export default function useTerminalScrollPreserve({
 }) {
   useEffect(() => {
     const c = ctxRef.current;
+    if (!c) return;
     const { termRef, lastViewportYRef } = c;
-    if (!termRef.current) return;
+    const term = termRef?.current;
+    if (!term) return;
+
     if (isVisibleInLayout) {
-      const saved = lastViewportYRef.current;
-      if (saved != null) {
-        restoreTerminalViewportScroll(termRef.current, saved);
-      } else if (isActivePanel) {
-        scrollTerminalToBottom(true);
+      const saved = lastViewportYRef?.current;
+      if (lastViewportYRef) {
+        lastViewportYRef.current = null;
       }
-    } else {
-      lastViewportYRef.current = getTerminalViewportScrollOffset(termRef.current);
+      if (saved === 'bottom' || saved == null) {
+        if (isActivePanel) {
+          scrollTerminalToBottom(true);
+        }
+      } else if (typeof saved === 'number') {
+        restoreTerminalViewportScroll(term, saved);
+      }
+    } else if (lastViewportYRef) {
+      if (isTerminalViewportNearBottom(term, 1)) {
+        lastViewportYRef.current = 'bottom';
+      } else {
+        lastViewportYRef.current = getTerminalViewportScrollOffset(term);
+      }
     }
   }, [ctxRef, initialCommand, isVisibleInLayout, isActivePanel, scrollTerminalToBottom]);
 }

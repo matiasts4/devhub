@@ -27,7 +27,7 @@ Leyenda: `FAIL*` = fallo esperado por código pre-fix; `OK?` = debería funciona
 | OpenCode frío                          | OK? (inject sin ready)                | OK? (inject zona input) | OK (inject frío) | OK? (ya no swallow) |
 | OpenCode tras workspace switch         | OK? si DECSET rebind                  | OK?                     | OK?              | OK?                 |
 | OpenCode + Zed abierto (sin foco term) | OK? inject                            | OK? inject              | OK inject        | OK?                 |
-| Grok frío                              | OK?                                   | OK?                     | OK               | OK?                 |
+| Grok frío                              | OK?                                   | OK?                     | OK (fix doc 12) | OK?                 |
 | Grok tras sibling close / switch       | OK?                                   | OK?                     | OK?              | OK?                 |
 | Split 2 paneles → activar el inactivo  | FAIL\* si mousedown escribe mouse-off | FAIL\* mismo            | OK?              | OK?                 |
 
@@ -46,6 +46,14 @@ Evidencia: lectura estática + contratos nuevos (no UI tauri en este turno). Ord
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | 1   | `tuiActive` = sessionRef \|\| grok \|\| opencode launch al rebind; inject en **cualquier** zona; `buildTerminalMousePressSequence` = press+release **sin** `?1000l` | mousedown Grok frío escribía mouse-off; footer nunca inyectaba; inject apagaba DECSET tras cada click | `useTerminalViewportPointer.js`, `TerminalTTY.helpers.js` |
 | 2   | Wheel TUI sobre input zone → inject SGR (antes: swallow sin PTY)                                                                                                    | router hacía `preventDefault` sin bytes; scroll “muerto” sobre prompt                                 | `useTerminalWheelRouter.js`                               |
+
+### Grok cold-start / primer panel (fix completo)
+
+El caso **“primer Grok sin scroll hasta Ctrl+R o hasta abrir un segundo Grok”** está documentado y cerrado en:
+
+→ **[`../12-grok-cold-start-scroll/README.md`](../12-grok-cold-start-scroll/README.md)**
+
+Resumen: Grok es **inject-only** (`grokTuiWheelInject.js` en `term.open`); no native passthrough (tragaba el wheel en el primer panel).
 
 Fuera de este slice (seguir si la matriz UI sigue fallando): rebind en `useTerminalPanelActivationRecovery` si modes siguen off tras workspace switch; corrupción atlas (doc 03).
 

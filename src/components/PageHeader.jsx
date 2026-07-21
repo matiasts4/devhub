@@ -3,6 +3,8 @@ import { useCallback, useState, useEffect } from 'react';
 import { X, Minus, Plus, Terminal as TerminalIcon } from 'lucide-react';
 import NotificationCenter from './NotificationCenter';
 import UserProfile from './UserProfile';
+import { isElectronDesktop } from '@/lib/desktop/desktopBridge';
+import * as windowControls from '@/lib/desktop/windowControls';
 
 /**
  * PageHeader - Integrated header for all pages (except terminals)
@@ -14,7 +16,7 @@ export default function PageHeader({
   children, // Page-specific controls/buttons
   className = '',
 }) {
-  // --- Window Controls ---
+  // --- Window Controls (Electron IPC or Tauri) ---
   const getTauriWindow = useCallback(async () => {
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -28,9 +30,26 @@ export default function PageHeader({
 
   useEffect(() => {
     let unlisten;
+    let unsubElectron;
+    let cancelled = false;
+
     (async () => {
+      if (isElectronDesktop()) {
+        const max = await windowControls.isMaximized();
+        if (!cancelled) setIsWinMaximized(Boolean(max));
+        try {
+          unsubElectron = window.devhubDesktop?.on?.('window-event', (payload) => {
+            if (payload?.type === 'maximize') setIsWinMaximized(true);
+            if (payload?.type === 'unmaximize') setIsWinMaximized(false);
+          });
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
       const win = await getTauriWindow();
-      if (!win) return;
+      if (!win || cancelled) return;
       const current = await win.isMaximized().catch(() => false);
       setIsWinMaximized(current);
       unlisten = await win
@@ -41,8 +60,14 @@ export default function PageHeader({
         .catch(() => null);
     })();
     return () => {
+      cancelled = true;
       try {
         unlisten?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        unsubElectron?.();
       } catch {
         /* ignore */
       }
@@ -50,21 +75,24 @@ export default function PageHeader({
   }, [getTauriWindow]);
 
   const handleWinMinimize = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.minimize();
+      return;
+    }
     const win = await getTauriWindow();
     await win?.minimize().catch(() => {});
   }, [getTauriWindow]);
 
   const handleWinToggleMaximize = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.toggleMaximize();
+      const max = await windowControls.isMaximized();
+      setIsWinMaximized(Boolean(max));
+      return;
+    }
     const win = await getTauriWindow();
     if (!win) return;
-    // Use explicit maximize/unmaximize instead of toggleMaximize — Tauri v2's
-    // toggleMaximize races with the onResized listener and can return
-    // a no-op when local state and native state disagree. The explicit
-    // pair is deterministic. We do NOT call setIsWinMaximized here — the
-    // onResized listener (above) will read win.isMaximized() and update
-    // state once the window actually resizes, avoiding any local-vs-native
-    // race. Tauri v2 API only exposes maximize() / unmaximize() / toggleMaximize();
-    // there is no setMaximized(boolean).
+    // Explicit maximize/unmaximize avoids Tauri v2 toggleMaximize races.
     const current = await win.isMaximized().catch(() => false);
     if (current) {
       await win.unmaximize().catch(() => {});
@@ -74,6 +102,10 @@ export default function PageHeader({
   }, [getTauriWindow]);
 
   const handleWinClose = useCallback(async () => {
+    if (isElectronDesktop()) {
+      await windowControls.close();
+      return;
+    }
     const win = await getTauriWindow();
     await win?.close().catch(() => {});
   }, [getTauriWindow]);
@@ -89,6 +121,7 @@ export default function PageHeader({
         background:
           'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.028) 100%), linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 90%, black), color-mix(in srgb, var(--surface-card) 82%, black))',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+        WebkitAppRegion: 'drag',
       }}
     >
       {/* Left: App Icon + Project Name */}

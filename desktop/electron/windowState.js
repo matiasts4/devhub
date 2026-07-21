@@ -1,12 +1,14 @@
 'use strict';
 
 /**
- * Persist / restore BrowserWindow bounds and recover from renderer crashes.
+ * Persist / restore window bounds and recover from renderer crashes.
+ * Clamps saved bounds onto a visible display so multi-monitor disconnects
+ * cannot leave the app "running but invisible".
  */
 
 const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
+const { app, screen } = require('electron');
 
 const STATE_FILE = 'window-state.json';
 const DEFAULT_BOUNDS = { width: 1440, height: 900, x: undefined, y: undefined, isMaximized: false };
@@ -19,20 +21,60 @@ function statePath() {
   }
 }
 
+/**
+ * Ensure width/height/x/y land on a visible display work area.
+ * @param {{ width?: number, height?: number, x?: number, y?: number, isMaximized?: boolean }} raw
+ */
+function sanitizeWindowState(raw = {}) {
+  const width = Number(raw.width) > 200 ? Math.round(Number(raw.width)) : DEFAULT_BOUNDS.width;
+  const height = Number(raw.height) > 200 ? Math.round(Number(raw.height)) : DEFAULT_BOUNDS.height;
+  let x = Number.isFinite(raw.x) ? Math.round(Number(raw.x)) : undefined;
+  let y = Number.isFinite(raw.y) ? Math.round(Number(raw.y)) : undefined;
+  const isMaximized = Boolean(raw.isMaximized);
+
+  try {
+    const displays = screen.getAllDisplays?.() || [];
+    if (!displays.length) {
+      return { width, height, x, y, isMaximized };
+    }
+
+    const visibleEnough = (px, py, w, h) => {
+      // At least 80×80 of the window must intersect some display work area.
+      const margin = 80;
+      for (const d of displays) {
+        const a = d.workArea || d.bounds;
+        if (!a) continue;
+        const ix = Math.max(px, a.x);
+        const iy = Math.max(py, a.y);
+        const ix2 = Math.min(px + w, a.x + a.width);
+        const iy2 = Math.min(py + h, a.y + a.height);
+        if (ix2 - ix >= margin && iy2 - iy >= margin) return true;
+      }
+      return false;
+    };
+
+    if (x == null || y == null || !visibleEnough(x, y, width, height)) {
+      // Center on primary work area.
+      const primary = screen.getPrimaryDisplay?.() || displays[0];
+      const area = primary.workArea || primary.bounds;
+      x = Math.round(area.x + Math.max(0, (area.width - width) / 2));
+      y = Math.round(area.y + Math.max(0, (area.height - height) / 2));
+    }
+  } catch {
+    /* screen not ready — keep defaults */
+  }
+
+  return { width, height, x, y, isMaximized };
+}
+
 function loadWindowState() {
   try {
     const raw = fs.readFileSync(statePath(), 'utf8');
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_BOUNDS };
-    return {
-      width: Number(parsed.width) > 200 ? Number(parsed.width) : DEFAULT_BOUNDS.width,
-      height: Number(parsed.height) > 200 ? Number(parsed.height) : DEFAULT_BOUNDS.height,
-      x: Number.isFinite(parsed.x) ? Number(parsed.x) : undefined,
-      y: Number.isFinite(parsed.y) ? Number(parsed.y) : undefined,
-      isMaximized: Boolean(parsed.isMaximized),
-    };
+    if (!parsed || typeof parsed !== 'object') return sanitizeWindowState(DEFAULT_BOUNDS);
+    return sanitizeWindowState(parsed);
   } catch {
-    return { ...DEFAULT_BOUNDS };
+    return sanitizeWindowState(DEFAULT_BOUNDS);
   }
 }
 
@@ -40,7 +82,10 @@ function saveWindowState(win) {
   if (!win || win.isDestroyed()) return;
   try {
     const isMaximized = win.isMaximized();
-    const bounds = isMaximized ? win.getNormalBounds() : win.getBounds();
+    const bounds =
+      isMaximized && typeof win.getNormalBounds === 'function'
+        ? win.getNormalBounds()
+        : win.getBounds();
     const payload = {
       width: bounds.width,
       height: bounds.height,
@@ -57,7 +102,7 @@ function saveWindowState(win) {
 
 /**
  * Attach persist + crash recovery listeners.
- * @param {import('electron').BrowserWindow} win
+ * @param {import('electron').BaseWindow | import('electron').BrowserWindow} win
  */
 function attachWindowLifecycle(win) {
   if (!win) return;
@@ -70,7 +115,6 @@ function attachWindowLifecycle(win) {
   win.on('unmaximize', persist);
 
   // Renderer crash recovery: reload SPA once (avoid loops).
-  // BaseWindow host exposes SPA via win.webContents polyfill or __devhubSpaView.
   const wc = win.webContents || win.__devhubSpaView?.webContents || null;
   if (!wc) return;
 
@@ -98,6 +142,7 @@ function attachWindowLifecycle(win) {
 module.exports = {
   loadWindowState,
   saveWindowState,
+  sanitizeWindowState,
   attachWindowLifecycle,
   DEFAULT_BOUNDS,
 };

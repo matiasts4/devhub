@@ -147,15 +147,17 @@ export function useNativeBrowserSurface({
 
   const hideActiveNativeLease = useCallback(async () => {
     if (!nativeLeaseRef.current.opened) return;
-    const bounds = measureBounds?.();
+    // CRITICAL: do NOT pass measureBounds here. On unmount/mode switch the host
+    // rect is often 0×0 or mid-layout; writing that into the registry parks the
+    // WebContentsView at a wrong size/position and the next show looks "desfasado".
+    // Keep last good bounds; only flip visibility so the guest stays warm off-screen.
     await setNativeBrowserVisibility({
       panelId,
       visible: false,
-      bounds,
       avoidRects: activeAvoidRects,
     }).catch(() => {});
     openInFlightRef.current = false;
-  }, [activeAvoidRects, measureBounds, panelId]);
+  }, [activeAvoidRects, panelId]);
 
   const clearOpenRecoveryTimer = useCallback(() => {
     if (openRecoveryTimerRef.current) {
@@ -185,7 +187,11 @@ export function useNativeBrowserSurface({
     async function syncNativeSurface() {
       try {
         if (!active || !url) {
-          await closeActiveNativeLease('surface-inactive');
+          // Warm park — never destroy the guest on mode/suspend toggles.
+          // Destroying WebContentsView/DOM webview is what blanked pizarra on the 2nd switch.
+          if (nativeLeaseRef.current.opened) {
+            await hideActiveNativeLease();
+          }
           openInFlightRef.current = false;
           if (!cancelled) {
             setNativeRuntimeReady(false);
@@ -212,9 +218,10 @@ export function useNativeBrowserSurface({
         }
 
         if (!nativeLeaseRef.current.opened) {
-          // Always call open: probe.ready only means the GTK host exists, NOT that this
+          // Always call open: probe.ready only means the host exists, NOT that this
           // panel_id is registered. Skipping open caused panel-not-found on load/resize.
-          // registry_open_panel reuses an existing panel when the pid is already live.
+          // Electron WCV registry reuses an existing panel when the pid is already live
+          // (warm handoff after hide — no reload).
           if (openInFlightRef.current) {
             return;
           }
@@ -228,6 +235,7 @@ export function useNativeBrowserSurface({
               avoidRects: activeAvoidRects,
               workspaceId: workspaceId || undefined,
               isolateProfile: isolateProfile === true,
+              visible: true,
             });
             if (typeof console !== 'undefined' && console.debug) {
               console.debug('[useNativeBrowserSurface] open', {
@@ -243,8 +251,10 @@ export function useNativeBrowserSurface({
           }
 
           if (cancelled || !visibleInLayout) {
+            // Do NOT close — hide so the next host (pizarra ↔ workspace) reclaims warm.
             if (result?.opened === true) {
-              await closeNativeBrowser({ panelId, reason: 'stale-open-cancelled' }).catch(() => {});
+              nativeLeaseRef.current = { opened: true, lastUrl: url };
+              await hideActiveNativeLease();
             }
             return;
           }
@@ -254,7 +264,8 @@ export function useNativeBrowserSurface({
               hasRecoverableNativeBridgeReason(result) &&
               openRecoveryAttempt < MAX_NATIVE_OPEN_RECOVERY_ATTEMPTS
             ) {
-              await closeNativeBrowser({ panelId, reason: 'open-recovery' }).catch(() => {});
+              // Soft recovery: try hide + re-open, avoid hard destroy when possible.
+              await hideActiveNativeLease();
               nativeLeaseRef.current = { opened: false, lastUrl: '' };
               if (!cancelled) {
                 setNativeRuntimeReady(false);
@@ -456,16 +467,24 @@ export function useNativeBrowserSurface({
     [panelId, hideActiveNativeLease]
   );
 
+  const resolvedNode = observeNode?.current || observeNode;
+
   useEffect(() => {
     if (!active || !nativeRuntimeReady) return undefined;
     if (typeof window === 'undefined' || typeof window.ResizeObserver !== 'function') {
       return undefined;
     }
 
-    const node = observeNode?.current || observeNode;
+    const node = resolvedNode;
     if (!node) return undefined;
 
+    let cancelled = false;
     let lastPushed = null;
+    let settleRaf = null;
+    let settleFrames = 0;
+    const SETTLE_FRAMES = 24; // ~400ms of position tracking after show/mode switch
+    const settleTimers = [];
+
     const boundsChanged = (a, b) => {
       if (!a || !b) return true;
       return (
@@ -478,17 +497,17 @@ export function useNativeBrowserSurface({
 
     const pushBounds = (immediate = false) => {
       const run = () => {
+        if (cancelled) return;
         rafRef.current = null;
         const fresh = measureBounds?.();
-        if (!fresh || fresh.height < MIN_NATIVE_BROWSER_BOUNDS_HEIGHT) {
-          if (nativeLeaseRef.current.opened) {
+        if (!fresh || fresh.height < MIN_NATIVE_BROWSER_BOUNDS_HEIGHT || fresh.width < 2) {
+          // Never write zero bounds into the registry — only hide visibility.
+          if (nativeLeaseRef.current.opened && !visibleInLayout) {
             setNativeBrowserVisibility({
               panelId,
               visible: false,
-              bounds: fresh || { x: 0, y: 0, width: 0, height: 0 },
               avoidRects: activeAvoidRects,
             }).catch(() => {});
-            lastPushed = null;
           }
           return;
         }
@@ -543,13 +562,33 @@ export function useNativeBrowserSurface({
     window.addEventListener('pointerdown', onPointerDown, { passive: true });
     window.addEventListener('resize', onWindowResize, { passive: true });
 
+    // Mode switch / dock layout: host often moves without a size change, so RO
+    // alone never fires. Track position for a short settle window + delayed snaps.
+    const settleTick = () => {
+      settleRaf = null;
+      if (cancelled || !visibleInLayout) return;
+      pushBounds(true);
+      settleFrames += 1;
+      if (settleFrames < SETTLE_FRAMES) {
+        settleRaf = requestAnimationFrame(settleTick);
+      }
+    };
+    settleFrames = 0;
+    settleRaf = requestAnimationFrame(settleTick);
+    for (const ms of [32, 80, 160, 320, 600]) {
+      settleTimers.push(setTimeout(() => pushBounds(true), ms));
+    }
+
     pushBounds(true);
 
     return () => {
+      cancelled = true;
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      if (settleRaf != null) cancelAnimationFrame(settleRaf);
+      for (const t of settleTimers) clearTimeout(t);
       observer.disconnect();
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onDragMove);
@@ -559,9 +598,10 @@ export function useNativeBrowserSurface({
   }, [
     active,
     activeAvoidRects,
+    layoutSyncKey,
     measureBounds,
     nativeRuntimeReady,
-    observeNode,
+    resolvedNode,
     panelId,
     visibleInLayout,
   ]);

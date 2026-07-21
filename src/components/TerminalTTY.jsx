@@ -59,6 +59,7 @@ import {
 import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
 import {
   detectOpenCodeTuiReady,
+  isOpenCodeLaunchCommand,
   shouldDiscardOpenCodeCatchupReplay,
 } from '@/lib/terminal/opencodeReadyMarker';
 import {
@@ -942,8 +943,16 @@ export default function TerminalTTY({
   } = useTerminalViewportSync({ ctxRef: viewportCtxRef });
 
   const scrollIfActivePanel = useCallback(() => {
-    if (isActivePanelRef.current) scrollTerminalToBottom();
-  }, [scrollTerminalToBottom]);
+    if (!isActivePanelRef.current) return;
+    const isKimi = isKimiTuiLive({
+      initialCommand,
+      kimiReady: kimiReadyNotifiedRef.current,
+      tuiSessionActive: tuiSessionActiveRef.current,
+      hasConnectedOnce: hasConnectedOnceRef.current,
+    });
+    if (isKimi) return;
+    scrollTerminalToBottom();
+  }, [initialCommand, scrollTerminalToBottom]);
 
   const rendererCtxRef = useRef(null);
   const {
@@ -1369,7 +1378,14 @@ export default function TerminalTTY({
       // Cancel active-panel resize debounces so a stale RAF cannot clear GPU atlases
       // after the user switched away. Still refit if the container geometry changed.
       clearTimers();
-      disableTerminalFocusReporting(term, { disableMouse: true });
+      // Agent TUIs: do NOT clear mouse modes on deactivate — re-enabling them only after
+      // chrome re-detect (or Ctrl+R) left Grok scroll dead on the next activate/new panel.
+      const keepAgentMouse =
+        isGrokSessionRef.current ||
+        isGrokTuiInitialCommand(initialCommand) ||
+        isOpenCodeLaunchCommand(initialCommand) ||
+        isLikelyTuiInitialCommand(initialCommand);
+      disableTerminalFocusReporting(term, { disableMouse: !keepAgentMouse });
       try {
         if (term.element?.contains(document.activeElement)) {
           term.blur?.();
@@ -1380,7 +1396,14 @@ export default function TerminalTTY({
       return undefined;
     }
 
-    const tuiActive = Boolean(tuiSessionActiveRef.current);
+    // Cold-start Grok/OpenCode: tuiSessionActiveRef lags until chrome is scanned.
+    // Treat launch command as TUI so we re-enable mouse modes instead of clearing them.
+    const tuiActive = Boolean(
+      tuiSessionActiveRef.current ||
+        isGrokSessionRef.current ||
+        isGrokTuiInitialCommand(initialCommand) ||
+        isOpenCodeLaunchCommand(initialCommand)
+    );
     // Re-enable mouse immediately on tab/Zed reactivation. Defer only when a
     // text selection is already active (handled inside the helper) — not on
     // every activate, or wheel stays dead until mouseup / 10s safety timer.

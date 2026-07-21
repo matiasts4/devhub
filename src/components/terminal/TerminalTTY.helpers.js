@@ -279,8 +279,9 @@ export function reconcileGrokTuiWheelReadiness({
   // Only promote to native passthrough when chrome is visible in the buffer, or when
   // reattach assumes a live TUI and we re-bind mouse modes below.
   if (grokTuiReadyRef) grokTuiReadyRef.current = true;
+  // Grok is inject-only — never flip native passthrough on (first-panel swallow).
   if (typeof setNativeWheelPassthrough === 'function') {
-    setNativeWheelPassthrough(true);
+    setNativeWheelPassthrough(false);
   }
   if (term) {
     prepareActiveTuiTerminalFocus(term, { tuiSessionActive: true });
@@ -353,9 +354,14 @@ export function resolveGrokWheelSgrCoords(
   return { col, row: transcriptCenterRow };
 }
 
-/** Grok Ink accepts SGR wheel and/or arrow scroll depending on focus — send both. */
+/**
+ * Grok Ink scroll payload for PTY inject — same SGR 64/65 as OpenCode.
+ * Keep pure SGR (no arrow keys): arrows can steal focus in the Grok prompt
+ * and made cold-start scroll feel dead while OpenCode (SGR-only) worked.
+ */
 export function buildGrokWheelScrollPayload(direction, col, row, steps = 1) {
-  return buildTerminalWheelSgrSequence(direction, col, row);
+  const normalizedSteps = Math.max(1, Math.min(6, Math.floor(Number(steps) || 1)));
+  return buildTerminalWheelSgrSequence(direction, col, row).repeat(normalizedSteps);
 }
 
 export const TERMINAL_GROK_INPUT_ZONE_ROWS = 5;
@@ -463,7 +469,7 @@ export function terminalCanNativeWheelPassthrough(term, options) {
 }
 
 /** Shell capture can starve xterm's wheel listener — forward explicitly for TUI passthrough. */
-export function forwardTerminalWheelToXterm(term, event) {
+export function forwardTerminalWheelToXterm(term, event, { onPtyWheelWrite } = {}) {
   const target = term?.element;
   if (!target || !event || typeof WheelEvent === 'undefined') return false;
   if (isForwardedTerminalWheelEvent(event)) return false;
@@ -489,7 +495,13 @@ export function forwardTerminalWheelToXterm(term, event) {
   });
   forwarded[TERMINAL_WHEEL_FORWARD_FLAG] = true;
 
-  return target.dispatchEvent(forwarded);
+  const dispatched = target.dispatchEvent(forwarded);
+  if (dispatched) {
+    if (typeof onPtyWheelWrite === 'function') {
+      onPtyWheelWrite({ type: 'native-forward' });
+    }
+  }
+  return dispatched;
 }
 
 export function refreshTerminalViewport(term) {
@@ -1123,6 +1135,7 @@ export function sendTerminalPasteInput({
   transport = 'json',
   text,
   websocketOpenState = WebSocket.OPEN,
+  onPtyWheelWrite,
 }) {
   if (!socket || socket.readyState !== websocketOpenState) return false;
   if (typeof text !== 'string' || text.length === 0) return false;
@@ -1132,6 +1145,13 @@ export function sendTerminalPasteInput({
   } else {
     socket.send(JSON.stringify({ type: 'input', data: text }));
   }
+
+  if (/\x1b\[<(?:64|65)/.test(text)) {
+    if (typeof onPtyWheelWrite === 'function') {
+      onPtyWheelWrite({ type: 'sgr-paste', text });
+    }
+  }
+
   return true;
 }
 
@@ -1174,8 +1194,10 @@ export function getTerminalViewportScrollOffset(term) {
 
 export function isTerminalViewportNearBottom(term, threshold = 2) {
   const activeBuffer = term?.buffer?.active;
-  const baseY = activeBuffer?.baseY;
-  const viewportY = activeBuffer?.viewportY ?? activeBuffer?.ydisp;
+  if (!activeBuffer) return false;
+  if (activeBuffer.type === 'alternate') return true;
+  const baseY = activeBuffer.baseY;
+  const viewportY = activeBuffer.viewportY ?? activeBuffer.ydisp;
   if (!Number.isInteger(baseY) || !Number.isInteger(viewportY)) return false;
   return baseY - viewportY <= threshold;
 }

@@ -37,7 +37,10 @@ function WorkspaceWindowTabBar({
   getAllPanelIds,
 }) {
   return (
-    <div className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1">
+    <div
+      className="flex-1 flex gap-2 h-full items-center overflow-x-auto no-scrollbar py-1"
+      style={{ WebkitAppRegion: 'no-drag' }}
+    >
       {workspaces.map((ws) => {
         const totalPanels = getAllPanelIds(ws.columns).length;
         const workspaceTabKey = buildStableWorkspaceShellKey('workspace-tab', ws.id);

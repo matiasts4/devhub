@@ -104,6 +104,7 @@ export const THEMES = {
   SYNTHWAVE: 'synthwave',
   BRUTALIST_STAGE: 'brutalist-stage',
   SWITCHYARD: 'switchyard',
+  OPENCODE: 'opencode',
 };
 
 export const MORPHOLOGIES = {
@@ -112,6 +113,7 @@ export const MORPHOLOGIES = {
   AURA: 'aura',
   SWITCHYARD: 'switchyard',
   CURSOR: 'cursor',
+  OPENCODE_DESKTOP: 'opencode-desktop',
 };
 
 export const ACCENTS = {
@@ -223,9 +225,16 @@ export const THEME_OPTIONS = [
   {
     id: THEMES.SWITCHYARD,
     label: 'Switchyard',
-    description: 'Mineral dark con grid sutil y acento teal. Control room aesthetic.',
+    desc: 'Mineral dark con grid sutil y acento teal. Control room aesthetic.',
     accent: '#63d0c2',
     terminalBg: { bg: '#091014', fg: '#ecf5f4', headerBg: '#111d22' },
+  },
+  {
+    id: THEMES.OPENCODE,
+    label: 'OpenCode Desktop',
+    desc: 'Near-black OpenCode Desktop dark with cool interactive blue.',
+    accent: '#9dbefe',
+    terminalBg: { bg: '#101010', fg: '#e8e8e8', headerBg: '#161616' },
   },
 ];
 
@@ -254,6 +263,11 @@ export const MORPHOLOGY_OPTIONS = [
     id: MORPHOLOGIES.CURSOR,
     label: 'Cursor',
     description: 'Warm amber, softer shadows, and rounded Cursor-style chrome.',
+  },
+  {
+    id: MORPHOLOGIES.OPENCODE_DESKTOP,
+    label: 'OpenCode Desktop',
+    description: 'Quiet rounded chrome — soft borders, low shadows, no accent lock.',
   },
 ];
 
@@ -381,6 +395,7 @@ export const WARNING = {
   [THEMES.SYNTHWAVE]: 'oklch(0.79 0.16 80)',
   [THEMES.BRUTALIST_STAGE]: 'oklch(0.79 0.16 80)',
   [THEMES.SWITCHYARD]: 'oklch(0.79 0.16 80)',
+  [THEMES.OPENCODE]: 'oklch(0.79 0.16 80)',
 };
 
 export function applyWarning(value) {
@@ -426,6 +441,72 @@ export function setMorphology(morphology) {
   applyMorphologyToDocument(normalized);
   setStoredMorphology(normalized);
   return normalized;
+}
+
+/** One-click OpenCode Desktop appearance pair + compact density. */
+export const OPENCODE_DESKTOP_PRESET = {
+  theme: THEMES.OPENCODE,
+  morphology: MORPHOLOGIES.OPENCODE_DESKTOP,
+  density: 'compact',
+};
+
+/**
+ * Apply OpenCode Desktop preset (theme + morphology + density).
+ * @returns {{ theme: string, morphology: string, appearance: object }} prior snapshot for undo
+ */
+export function applyOpenCodeDesktopPreset() {
+  const before = {
+    theme: getStoredTheme(),
+    morphology: getStoredMorphology(),
+    appearance: getStoredAppearance(),
+  };
+
+  setTheme(OPENCODE_DESKTOP_PRESET.theme);
+  setMorphology(OPENCODE_DESKTOP_PRESET.morphology);
+
+  const nextAppearance = {
+    ...before.appearance,
+    density: OPENCODE_DESKTOP_PRESET.density,
+  };
+  setStoredAppearance(nextAppearance);
+  applyAppearanceSettings(nextAppearance);
+
+  return before;
+}
+
+/**
+ * Restore theme, morphology, and appearance from a preset snapshot.
+ * @param {{ theme?: string, morphology?: string, appearance?: object } | null | undefined} snapshot
+ */
+export function restoreAppearanceSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+
+  if (snapshot.theme != null) {
+    setTheme(snapshot.theme);
+  }
+  if (snapshot.morphology != null) {
+    setMorphology(snapshot.morphology);
+  }
+  if (snapshot.appearance != null) {
+    const appearance = normalizeAppearance(snapshot.appearance);
+    setStoredAppearance(appearance);
+    applyAppearanceSettings(appearance);
+  }
+}
+
+/**
+ * Update density only (compact | comfortable). Axes stay independent.
+ * @param {string} density
+ * @returns {string} normalized density
+ */
+export function setDensity(density) {
+  const appearance = normalizeAppearance({
+    ...getStoredAppearance(),
+    density,
+  });
+  setStoredAppearance(appearance);
+  applyAppearanceSettings(appearance);
+  return appearance.density;
 }
 
 export function setAccent(accent) {

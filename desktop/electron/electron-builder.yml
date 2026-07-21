@@ -33,6 +33,21 @@ extraResources:
     filter:
       - '**/*'
       - '!**/.*'
+  - from: sidecar-backend
+    to: resources/sidecar-backend
+    filter:
+      - '**/*'
+      - '!**/.*'
+  - from: sidecar-backend/node_modules
+    to: resources/sidecar-backend/node_modules
+    filter:
+      - '**/*'
+      - '!**/.*'
+  - from: packages/veloce-audio/python
+    to: resources/veloce-audio
+    filter:
+      - 'requirements.txt'
+      - 'voices/**/*'
 
 win:
   target:

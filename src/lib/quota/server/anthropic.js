@@ -116,9 +116,21 @@ function getClaudeToken() {
   if (process.env.ANTHROPIC_OAUTH_TOKEN) return process.env.ANTHROPIC_OAUTH_TOKEN;
 
   const home = os.homedir();
+
+  // Claude Code persists its OAuth session in ~/.claude/.credentials.json
+  const credentialsPath = path.join(home, '.claude', '.credentials.json');
+  try {
+    if (fs.existsSync(credentialsPath)) {
+      const parsed = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+      const oauth = parsed?.claudeAiOauth;
+      if (oauth?.accessToken) return oauth.accessToken;
+    }
+  } catch (_err) {
+    // Fall through to legacy token files
+  }
+
   const tokenPaths = [
     path.join(home, '.claude', '.token'),
-    path.join(home, '.claude.json'),
     path.join(home, '.config', 'claude', '.token'),
   ];
 

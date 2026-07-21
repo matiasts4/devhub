@@ -29,7 +29,10 @@ export function useNativeBrowserHostEffects({
   const lastWorkspaceId = useRef(undefined);
 
   // Electron path uses DOM <webview> — no main-process browser panels to manage.
-  const usesDomWebview = typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true;
+  const usesDomWebview =
+    typeof window !== 'undefined' &&
+    window.__DEVHUB_FORCE_DOM_WEBVIEW__ === true &&
+    window.devhubDesktop?.isElectron === true;
 
   useEffect(() => {
     if (usesDomWebview) return undefined;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RotateCcw, Terminal, Palette, Mic, Keyboard, Bot, Sparkles, X } from 'lucide-react';
+import { RotateCcw, Terminal, Palette, Mic, Keyboard, Bot, Sparkles, X, Gauge, Settings } from 'lucide-react';
 
 import {
   panelStyle,
@@ -30,6 +30,7 @@ import ZedOverlaySettings from '@/components/settings/ZedOverlaySettings';
 import ZedModelSettings from '@/components/settings/ZedModelSettings';
 import TerminalShortcutsSettings from '@/components/settings/TerminalShortcutsSettings';
 import TerminalAgentsSettings from '@/components/settings/TerminalAgentsSettings';
+import { QuotaProviderSettings } from '@/components/quota/QuotaProviderSettings';
 
 const SECTIONS = [
   { key: 'restore', label: 'Restauración', icon: RotateCcw },
@@ -39,6 +40,7 @@ const SECTIONS = [
   { key: 'voice', label: 'Voz', icon: Mic },
   { key: 'shortcuts', label: 'Atajos', icon: Keyboard },
   { key: 'agents', label: 'Agentes', icon: Bot },
+  { key: 'cuotas', label: 'Cuotas', icon: Gauge },
 ];
 
 function RestoreSection() {
@@ -218,6 +220,22 @@ function SectionContent({ section, onNavigateToZed }) {
       return <TerminalShortcutsSettings />;
     case 'agents':
       return <TerminalAgentsSettings />;
+    case 'cuotas':
+      return (
+        <div className="space-y-5">
+          <div>
+            <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Cuotas de IA en el header
+            </h4>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              Elige qué proveedores sincroniza el badge de cuotas del workspace, en qué orden se
+              muestran y cuál queda fijado por defecto (★). Los desactivados no se consultan
+              nunca — ni en el header ni en segundo plano. Los cambios se guardan al instante.
+            </p>
+          </div>
+          <QuotaProviderSettings />
+        </div>
+      );
     default:
       return null;
   }
@@ -338,7 +356,8 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
                 className="inline-flex items-center gap-1"
                 style={pillStyle({ tone: 'accent' })}
               >
-                ⚙ {activeLabel}
+                <Settings className="w-3 h-3" />
+                {activeLabel}
               </span>
             </div>
             <button

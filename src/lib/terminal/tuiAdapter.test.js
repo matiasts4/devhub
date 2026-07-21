@@ -52,8 +52,9 @@ describe('grok adapter strategies', () => {
     expect(a.detectReady({ refs })).toBe(true);
   });
 
-  test('wheelStrategy preserves SGR 64 and 65', () => {
-    expect(a.wheelStrategy.passThrough).toBe(true);
+  test('wheelStrategy is inject-only (no native passthrough) with SGR 64/65', () => {
+    // First Grok panel + native passthrough = swallow; inject is the reliable path.
+    expect(a.wheelStrategy.passThrough).toBe(false);
     expect(a.wheelStrategy.buttons.sort()).toEqual([64, 65]);
   });
 });

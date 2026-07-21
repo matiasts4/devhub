@@ -18,7 +18,18 @@ function resolvePreloadPath() {
 }
 
 function resolveUiUrl() {
-  return process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL || 'http://127.0.0.1:3100';
+  if (process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL) {
+    return process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL;
+  }
+  try {
+    const { app } = require('electron');
+    if (app && app.isPackaged) {
+      return 'http://127.0.0.1:3400';
+    }
+  } catch {
+    /* ignore */
+  }
+  return 'http://127.0.0.1:3100';
 }
 
 function layoutSpaView(win, spaView) {
@@ -85,16 +96,27 @@ function createMainWindow() {
   const state = loadWindowState();
   const preloadPath = resolvePreloadPath();
 
-  const win = new BaseWindow({
+  // Frameless host (parity with Tauri decorations:false) — SPA TitleBar / terminal
+  // top-bar traffic lights own minimize / maximize / close via desktop IPC.
+  const winOpts = {
     width: state.width,
     height: state.height,
-    x: state.x,
-    y: state.y,
     show: false,
+    title: 'DevHub',
     backgroundColor: '#0b0f14',
     autoHideMenuBar: true,
-    frame: true,
-  });
+    frame: false,
+    // Keep Windows resize grips on frameless windows.
+    thickFrame: true,
+    // Ensure the window appears on the taskbar / Alt-Tab.
+    skipTaskbar: false,
+  };
+  if (Number.isFinite(state.x) && Number.isFinite(state.y)) {
+    winOpts.x = state.x;
+    winOpts.y = state.y;
+  }
+
+  const win = new BaseWindow(winOpts);
 
   const spaView = new WebContentsView({
     webPreferences: {
@@ -104,7 +126,7 @@ function createMainWindow() {
       // Enables <webview> inside the SPA for browser blocks.
       webviewTag: true,
       // webviewTag + sandbox can conflict on some Electron builds; keep sandbox off
-      // for the host SPA so guest <webview> attaches reliably .
+      // for the host SPA so guest <webview> attaches reliably.
       sandbox: false,
       spellcheck: false,
       backgroundThrottling: false,
@@ -132,14 +154,6 @@ function createMainWindow() {
   win.__devhubIsBaseWindowHost = true;
   win.__devhubUsesDomWebview = true;
 
-  if (state.isMaximized) {
-    try {
-      win.maximize();
-    } catch {
-      /* ignore */
-    }
-  }
-
   const onResize = () => {
     layoutSpaView(win, spaView);
   };
@@ -150,9 +164,16 @@ function createMainWindow() {
   attachWindowLifecycle(win);
 
   const url = resolveUiUrl();
-  console.log('[DevHub Electron] host=BaseWindow+SPA webviewTag ');
+  console.log('[DevHub Electron] host=BaseWindow+SPA webviewTag frameless');
   console.log('[DevHub Electron] preload:', preloadPath);
   console.log('[DevHub Electron] loadURL:', url);
+  console.log('[DevHub Electron] initial bounds:', {
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
+    isMaximized: state.isMaximized,
+  });
 
   // Secure guest webviews .
   spaView.webContents.on('did-attach-webview', (_event, guestWc) => {
@@ -188,17 +209,76 @@ function createMainWindow() {
       .catch(() => {});
   });
 
+  // Dev hot-reload ergonomics (app menu is null → native accelerators would not exist).
+  // SPA/Next Fast Refresh still applies for React edits while Next dev is running.
+  const isDevUi =
+    /localhost|127\.0\.0\.1/.test(String(url)) || process.env.NODE_ENV === 'development';
+  if (isDevUi) {
+    const beforeInput = (event, input) => {
+      if (!spaView?.webContents || spaView.webContents.isDestroyed()) return;
+      const key = String(input.key || '').toLowerCase();
+      const ctrl = Boolean(input.control || input.meta);
+      // Ctrl/Cmd+R or F5 → soft reload SPA (no Electron process restart)
+      if ((ctrl && key === 'r' && !input.shift) || key === 'f5') {
+        event.preventDefault();
+        spaView.webContents.reload();
+        return;
+      }
+      // Ctrl/Cmd+Shift+R → hard reload
+      if (ctrl && input.shift && key === 'r') {
+        event.preventDefault();
+        spaView.webContents.reloadIgnoringCache();
+        return;
+      }
+      // F12 → DevTools (inspect HMR / console)
+      if (key === 'f12') {
+        event.preventDefault();
+        if (spaView.webContents.isDevToolsOpened()) {
+          spaView.webContents.closeDevTools();
+        } else {
+          spaView.webContents.openDevTools({ mode: 'detach' });
+        }
+      }
+    };
+    spaView.webContents.on('before-input-event', beforeInput);
+    win.on('closed', () => {
+      try {
+        spaView.webContents.removeListener('before-input-event', beforeInput);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
   let shown = false;
-  const showOnce = () => {
+  const showOnce = (reason = 'unknown') => {
     if (shown || win.isDestroyed()) return;
     shown = true;
-    layoutSpaView(win, spaView);
-    win.show();
-    win.focus();
+    try {
+      layoutSpaView(win, spaView);
+      // Maximize only after first show — maximize-before-show can leave
+      // frameless BaseWindow off-screen / invisible on some Windows setups.
+      if (state.isMaximized) {
+        try {
+          win.maximize();
+        } catch {
+          /* ignore */
+        }
+      }
+      win.show();
+      if (typeof win.moveTop === 'function') win.moveTop();
+      win.focus();
+      const b = win.getBounds?.() || {};
+      console.log('[DevHub Electron] window shown', { reason, bounds: b, maximized: win.isMaximized?.() });
+    } catch (err) {
+      console.error('[DevHub Electron] showOnce failed', err?.message || err);
+    }
   };
-  spaView.webContents.once('dom-ready', () => setTimeout(showOnce, 30));
-  spaView.webContents.once('did-finish-load', showOnce);
-  setTimeout(showOnce, 4000);
+  spaView.webContents.once('dom-ready', () => setTimeout(() => showOnce('dom-ready'), 30));
+  spaView.webContents.once('did-finish-load', () => showOnce('did-finish-load'));
+  // Failsafe: never leave the process running with a hidden window.
+  setTimeout(() => showOnce('timeout-800'), 800);
+  setTimeout(() => showOnce('timeout-3000'), 3000);
 
   return win;
 }

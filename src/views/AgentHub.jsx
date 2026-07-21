@@ -48,6 +48,7 @@ import AgentHubHeader from '@/components/chat/AgentHubHeader';
 import ChatMessageList from '@/components/chat/ChatMessageList';
 import { enforceDocOpsGateOnLaunchCommand, shellQuotePrompt } from '@/lib/docopsPrompts';
 import { detectMcpOutput } from '@/components/chat/utils/detectMcpOutput';
+import { dispatchOperationalNotification } from '@/lib/operations/notify';
 import { slashCommands, filterSlashCommands, groupByCategory } from '@/lib/slashSkills';
 import { createAgentHubStreamParser } from '@/lib/agenthubStream';
 import {
@@ -892,12 +893,34 @@ Dale, empezá leyendo el contexto del proyecto.`;
 
       // Save to DB and parse commands (skip if this is an MCP injection to prevent loops)
       await db.from('agent_hub_messages').insert(finalMessage);
+
+      // Disparar notificación operacional cuando el agente finaliza su respuesta
+      dispatchOperationalNotification({
+        title: `Respuesta de Agente Finalizada`,
+        body: activeMessage.slice(0, 150) + (activeMessage.length > 150 ? '...' : ''),
+        category: 'agents',
+        severity: 'success',
+        source: 'agenthub',
+        entity_id: sessionId,
+        dedupe_key: `agenthub:turn:${assistantMessageId}`,
+        actions: [{ label: 'Ver Chat', action_type: 'navigate', target: `/agenthub?session=${sessionId}` }],
+      });
+
       if (!skipParse) await parseAndExecuteCommands(activeMessage);
     } catch (err) {
       setIsStreaming(false);
       // Don't show error toast if it was an abort (user stopped)
       if (err.name !== 'AbortError') {
         sileo.error({ title: err.message });
+        dispatchOperationalNotification({
+          title: `Error en Respuesta de Agente`,
+          body: err.message || 'Error inesperado durante la generación.',
+          category: 'agents',
+          severity: 'critical',
+          source: 'agenthub',
+          entity_id: sessionId,
+          dedupe_key: `agenthub:error:${sessionId}:${Date.now()}`,
+        });
       }
     } finally {
       abortControllerRef.current = null;

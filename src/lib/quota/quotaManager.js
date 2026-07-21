@@ -1,3 +1,8 @@
+import {
+  QUOTA_PREFERENCES_EVENT,
+  readQuotaPreferences,
+} from './quotaPreferences.js';
+
 class QuotaManager {
   constructor() {
     /** @type {Map<string, any>} */
@@ -7,6 +12,7 @@ class QuotaManager {
     this.pollIntervalMs = 45000; // 45 seconds polling
     this.timer = null;
     this.isPolling = false;
+    this._prefsListener = null;
   }
 
   /**
@@ -33,6 +39,7 @@ class QuotaManager {
   startPolling() {
     if (this.isPolling) return;
     this.isPolling = true;
+    this._installPrefsListener();
     this.fetchAll();
     this.timer = setInterval(() => this.fetchAll(), this.pollIntervalMs);
   }
@@ -42,7 +49,33 @@ class QuotaManager {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this._prefsListener && typeof window !== 'undefined') {
+      window.removeEventListener(QUOTA_PREFERENCES_EVENT, this._prefsListener);
+      this._prefsListener = null;
+    }
     this.isPolling = false;
+  }
+
+  /**
+   * Re-fetch immediately when the user enables/disables/reorders providers.
+   */
+  _installPrefsListener() {
+    if (typeof window === 'undefined' || this._prefsListener) return;
+    this._prefsListener = () => {
+      this.pruneDisabledProviders();
+      this.fetchAll();
+    };
+    window.addEventListener(QUOTA_PREFERENCES_EVENT, this._prefsListener);
+  }
+
+  /** Drops cached entries for providers the user has disabled. */
+  pruneDisabledProviders() {
+    const { providerOrder } = readQuotaPreferences();
+    const enabled = new Set(providerOrder);
+    for (const key of [...this.cache.keys()]) {
+      if (!enabled.has(key)) this.cache.delete(key);
+    }
+    this.notifySubscribers();
   }
 
   /**
@@ -66,13 +99,22 @@ class QuotaManager {
   }
 
   /**
-   * Fetch all providers from backend API
+   * Fetch all enabled providers from backend API.
+   * @param {boolean} force - bypass the server-side TTL cache (manual refresh)
    */
-  async fetchAll() {
+  async fetchAll(force = false) {
+    const { providerOrder } = readQuotaPreferences();
+    if (providerOrder.length === 0) {
+      this.cache.clear();
+      this.notifySubscribers();
+      return {};
+    }
     try {
-      const res = await fetch('/api/quota');
+      const params = `providers=${encodeURIComponent(providerOrder.join(','))}`;
+      const res = await fetch(`/api/quota?${params}${force ? '&force=1' : ''}`);
       if (res.ok) {
         const allQuotas = await res.json();
+        this.cache.clear();
         for (const [key, val] of Object.entries(allQuotas)) {
           this.cache.set(key, val);
         }

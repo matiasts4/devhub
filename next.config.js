@@ -57,7 +57,7 @@ const nextConfig = {
   // standalone y solo inflan el zip (735MB → ~120MB). Los archivos realmente
   // necesarios se copian explícitamente en scripts/build-standalone-zip.cjs.
   outputFileTracingExcludes: {
-    '/*': [
+    '*': [
       './src-tauri/**/*',
       './devhub-mcp/**/*',
       './docs/**/*',
@@ -70,6 +70,21 @@ const nextConfig = {
       './logs/**/*',
       './.git/**/*',
       './.next/cache/**/*',
+      './dist/**/*',
+      './graphify-out/**/*',
+      './data/**/*',
+      './tmp/**/*',
+      './openspec/**/*',
+      './research/**/*',
+      './opencode/**/*',
+      './sidecar-backend/**/*',
+      './telegram-bot/**/*',
+      './memories/**/*',
+      './memory/**/*',
+      './skills/**/*',
+      './plugins/**/*',
+      './**/*.log',
+      './**/*.db',
     ],
   },
 };

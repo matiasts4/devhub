@@ -1,4 +1,5 @@
 import { createOperationalEvent } from '@/lib/operations/contracts';
+import { persistOperationalEvent } from '@/lib/operations/events';
 import { invokeDesktop, isElectronDesktop } from '@/lib/desktop/desktopBridge';
 
 async function loadTauriNotificationModule() {
@@ -30,7 +31,6 @@ async function defaultRequestPermission() {
     );
     if (typeof result === 'string') return result;
     if (result?.permission) return result.permission;
-    // Electron desktop notifications are typically available without a prompt.
     return 'granted';
   }
 
@@ -88,6 +88,9 @@ export async function dispatchOperationalNotification(eventInput = {}, dependenc
   const requestPermission = dependencies.requestPermission || defaultRequestPermission;
   const sendNotification = dependencies.sendNotification || defaultSendNotification;
 
+  // Persistir evento en el store único canonical de DevHub
+  persistOperationalEvent(event, { storage: dependencies.storage, dispatch: true });
+
   const desktop = {
     event_id: event.id,
     status: 'skipped',
@@ -108,8 +111,12 @@ export async function dispatchOperationalNotification(eventInput = {}, dependenc
       if (permission !== 'granted') {
         desktop.status = permission;
       } else {
-        await sendNotification({ title: event.title, body: event.body });
-        desktop.status = 'delivered';
+        try {
+          await sendNotification({ title: event.title, body: event.body || event.message });
+          desktop.status = 'delivered';
+        } catch {
+          desktop.status = 'error';
+        }
       }
     }
   }

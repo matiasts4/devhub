@@ -162,6 +162,7 @@ export default function WorkspaceRenderAssembly(props) {
     dockLayerVisible,
     rightDockLayerChromeStyle,
     isDraggingDock,
+    isDraggingInternalSplit = false,
     updateBrowserWindowState,
     removeWindowFromWorkspace,
     operatorCards,
@@ -906,7 +907,8 @@ export default function WorkspaceRenderAssembly(props) {
                 const isWorkspaceVisibleInLayout =
                   !isFullscreenBrowser && activeWsId === ws.id && isVisible;
                 const shouldSuspendWorkspaceNativeSurfaces =
-                  isWorkspaceVisibleInLayout && shouldSuspendNativeSurfaces;
+                  isWorkspaceVisibleInLayout &&
+                  (shouldSuspendNativeSurfaces || isDraggingDock || isDraggingInternalSplit);
                 const totalPanelCount = resolveWorkspaceAllWindowsPanelCount(ws, workspaceWindows);
                 const totalTerminalPanelCount = resolveWorkspaceAllWindowsTerminalPanelCount(
                   ws,
@@ -1090,10 +1092,10 @@ export default function WorkspaceRenderAssembly(props) {
                 onCardConfirm={confirmCard}
                 onCardCancel={cancelCard}
               />
-              {isDraggingDock ? (
+              {isDraggingDock || isDraggingInternalSplit ? (
                 <div
                   data-testid="workspace-right-dock-drag-overlay"
-                  className="pointer-events-none absolute inset-0 z-50 cursor-col-resize"
+                  className="pointer-events-auto absolute inset-0 z-50 cursor-col-resize bg-transparent"
                 />
               ) : null}
             </motion.div>

@@ -1024,7 +1024,7 @@ export default function FileExplorerEditorPane({
       className={`flex h-full w-full min-h-0 flex-col overflow-hidden ${embedded ? '' : 'flex-1'}`}
       style={{ background: embedded ? 'var(--chrome-panel-fill)' : undefined }}
     >
-      {/* Embedded space chrome already names the panel; tree has its own refresh. */}
+      {/* Non-embedded dock: refresh only. Embedded files use floating panel chrome. */}
       {!embedded ? (
         <div
           className="flex items-center justify-end gap-3 border-b border-borders-subtle px-3 py-1.5"

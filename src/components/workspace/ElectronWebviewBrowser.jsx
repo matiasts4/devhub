@@ -1,36 +1,39 @@
 'use client';
 
 /**
- *  dock browser: pooled Chromium <webview> in SPA DOM.
+ * Electron dock browser: pooled Chromium <webview> in SPA DOM.
  *
- * Critical for no-reload workspace switch:
- * - Keep the <webview> attached to its React host while the workspace shell
- *   stays mounted (opacity:0 keep-alive). Reparenting reloads the guest.
- * - Only move to the park host on true React unmount.
- * - Navigate only when the intended URL changes — never on mere surface re-activate.
+ * - Guest is a real child of this host (absolute fill) — reliable paint in Electron.
+ * - Mode handoff (workspace ↔ pizarra) recreates the guest instead of reparenting
+ *   (reparent blanks/kills the guest after 1–3 toggles).
+ * - Session cookies survive via persist: partition; page reloads once on handoff.
+ * - surfaceActive=false only marks parked (keep-alive shells stay mounted).
  */
 
 import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import {
-  acquireElectronWebview,
-  attachElectronWebview,
+  claimElectronWebview,
   getElectronWebviewEntry,
+  injectElectronWebviewChromeCss,
   markElectronWebviewParked,
   navigateElectronWebview,
-  parkElectronWebview,
+  releaseElectronWebview,
+  syncWebviewPixelSize,
   webviewUrlsEqual,
 } from '@/lib/browser/electronWebviewPool';
 
 /**
  * @param {object} props
- * @param {string} props.cacheKey  stable id (e.g. browser-${projectId}-${workspaceId})
+ * @param {string} props.cacheKey
  * @param {string} props.src
  * @param {string} [props.partition]
  * @param {string} [props.className]
@@ -46,8 +49,8 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
     src,
     partition = 'persist:devhub-browser-dock',
     className = '',
-    /** When false, mark parked in-place  — do NOT reparent. */
     surfaceActive = true,
+    suspendNativeSurface = false,
     onNavigate,
     onFailLoad,
     onLoadingChange,
@@ -59,12 +62,26 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
   const entryRef = useRef(
     /** @type {import('@/lib/browser/electronWebviewPool').PoolEntry|null} */ (null)
   );
-  /** Last URL we intentionally navigated to for this key (survives surface toggle). */
   const lastIntentSrcRef = useRef('');
+  const srcRef = useRef(src);
+  srcRef.current = src;
   const key = String(cacheKey || partition || 'default');
   const active = surfaceActive !== false;
+  const reactId = useId();
+  const ownerIdRef = useRef(`ewv-${key}-${reactId}`);
+  /** Bumps when the pool recreates the guest so event listeners re-bind. */
+  const [guestGeneration, setGuestGeneration] = useState(0);
 
-  const getWv = useCallback(() => entryRef.current?.el || null, []);
+  const getWv = useCallback(() => entryRef.current?.el || getElectronWebviewEntry(key)?.el || null, [
+    key,
+  ]);
+
+  const noteEntry = useCallback((entry) => {
+    entryRef.current = entry;
+    if (entry && typeof entry.generation === 'number') {
+      setGuestGeneration(entry.generation);
+    }
+  }, []);
 
   useImperativeHandle(
     ref,
@@ -129,67 +146,148 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
     [getWv, key]
   );
 
-  // Acquire + attach once per cacheKey. Do NOT reparent when surfaceActive flips —
-  // inactive workspace shells stay mounted (opacity:0); moving <webview> reloads guest.
+  // Claim host on mount; delayed release lets the next mode claim & recreate cleanly.
   useLayoutEffect(() => {
-    const entry = acquireElectronWebview(key, partition);
-    entryRef.current = entry;
+    const ownerId = ownerIdRef.current;
     const host = hostRef.current;
+
+    const claim = (hostEl) => {
+      const entry = claimElectronWebview(key, hostEl, ownerId, partition);
+      noteEntry(entry);
+      return entry;
+    };
+
     if (host) {
-      attachElectronWebview(key, host);
+      claim(host);
+    } else {
+      const raf = requestAnimationFrame(() => {
+        const h = hostRef.current;
+        if (h) claim(h);
+      });
+      return () => {
+        cancelAnimationFrame(raf);
+        releaseElectronWebview(key, ownerId);
+        entryRef.current = null;
+      };
     }
 
     return () => {
-      // True unmount only: park warm off-screen for later reacquire.
-      parkElectronWebview(key);
-      if (entryRef.current === entry) {
-        entryRef.current = null;
+      releaseElectronWebview(key, ownerId);
+      entryRef.current = null;
+    };
+  }, [key, partition, noteEntry]);
+
+  // surfaceActive: reclaim + force navigate when shown again after handoff.
+  useLayoutEffect(() => {
+    const ownerId = ownerIdRef.current;
+    const host = hostRef.current;
+
+    if (!active) {
+      markElectronWebviewParked(key);
+      return undefined;
+    }
+
+    const genBefore = getElectronWebviewEntry(key)?.generation ?? 0;
+    if (host) {
+      noteEntry(claimElectronWebview(key, host, ownerId, partition));
+      const ent = getElectronWebviewEntry(key);
+      if (ent) syncWebviewPixelSize(ent, host);
+    }
+
+    const live = entryRef.current || getElectronWebviewEntry(key);
+    const genAfter = live?.generation ?? genBefore;
+    const recreated = genAfter !== genBefore;
+    const desired = String(
+      srcRef.current || lastIntentSrcRef.current || live?.lastUrl || ''
+    ).trim();
+
+    const ensurePaint = (force) => {
+      const h = hostRef.current;
+      const entry = getElectronWebviewEntry(key);
+      if (entry && h) syncWebviewPixelSize(entry, h);
+      if (!desired || desired === 'about:blank') return;
+      let liveUrl = '';
+      try {
+        liveUrl =
+          entry?.el && typeof entry.el.getURL === 'function' ? String(entry.el.getURL() || '') : '';
+      } catch {
+        liveUrl = '';
+      }
+      const blank = !liveUrl || liveUrl === 'about:blank';
+      const size = entry?.lastPixelSize;
+      const hasBox = size && size.w >= 2 && size.h >= 2;
+      if (!hasBox) return; // wait for RO / delayed size apply
+      if (force || recreated || blank || entry?.loadFailed || !entry?.hasLoadedOnce) {
+        void navigateElectronWebview(key, desired, { force: true }).then(() => {
+          const el = getElectronWebviewEntry(key)?.el;
+          if (el) injectElectronWebviewChromeCss(el);
+        });
+      } else if (entry?.el) {
+        injectElectronWebviewChromeCss(entry.el);
       }
     };
-  }, [key, partition]);
 
-  // Surface visibility: flag only. Guest stays in the React host under the shell.
-  useLayoutEffect(() => {
-    const entry = entryRef.current || getElectronWebviewEntry(key);
-    if (!entry) return;
-    if (active) {
-      entry.parked = false;
-      const host = hostRef.current;
-      // Re-attach only if something else parked us to the off-screen host (unmount race).
-      if (host && entry.el.parentElement !== host) {
-        attachElectronWebview(key, host);
+    ensurePaint(recreated);
+
+    // After handoff recreate, re-claim once layout has non-zero bounds.
+    const t0 = setTimeout(() => {
+      const h = hostRef.current;
+      if (h && active) {
+        const g0 = getElectronWebviewEntry(key)?.generation ?? 0;
+        noteEntry(claimElectronWebview(key, h, ownerId, partition));
+        const g1 = getElectronWebviewEntry(key)?.generation ?? 0;
+        if (g1 !== g0 || recreated) {
+          ensurePaint(true);
+        }
       }
-      // Re-focus guest after workspace restore (helps compositor paint without reload).
-      const focusGuest = () => {
+    }, 50);
+    const t1 = setTimeout(() => {
+      const entry = getElectronWebviewEntry(key);
+      let liveUrl = '';
+      try {
+        liveUrl =
+          entry?.el && typeof entry.el.getURL === 'function'
+            ? String(entry.el.getURL() || '')
+            : '';
+      } catch {
+        liveUrl = '';
+      }
+      if (!liveUrl || liveUrl === 'about:blank' || entry?.loadFailed) {
+        ensurePaint(true);
+      }
+      const el = entry?.el;
+      if (el) {
+        injectElectronWebviewChromeCss(el);
         try {
-          entry.el.focus?.();
+          el.focus?.();
         } catch {
           /* ignore */
         }
-      };
-      focusGuest();
-      const t1 = setTimeout(focusGuest, 10);
-      const t2 = setTimeout(focusGuest, 30);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
-    }
-    markElectronWebviewParked(key);
-    return undefined;
-  }, [key, active]);
+      }
+    }, 250);
 
-  // Event wiring on the stable pooled element.
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+    };
+  }, [key, active, partition, noteEntry]);
+
+  // Event wiring — re-bind when pool generation changes (after recreate).
   useEffect(() => {
-    const entry = entryRef.current || acquireElectronWebview(key, partition);
-    const wv = entry.el;
+    const ownerId = ownerIdRef.current;
+    const entry =
+      entryRef.current || claimElectronWebview(key, hostRef.current, ownerId, partition);
+    noteEntry(entry);
+    const wv = getElectronWebviewEntry(key)?.el;
     if (!wv) return undefined;
 
     const emitNav = () => {
       try {
-        const url = (typeof wv.getURL === 'function' ? wv.getURL() : '') || entry.lastUrl || '';
+        const current = getElectronWebviewEntry(key);
+        const url =
+          (typeof wv.getURL === 'function' ? wv.getURL() : '') || current?.lastUrl || '';
         if (url && url !== 'about:blank') {
-          entry.lastUrl = url;
+          if (current) current.lastUrl = url;
           lastIntentSrcRef.current = url;
           onNavigate?.(url);
         }
@@ -201,17 +299,21 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
     const onStart = () => onLoadingChange?.(true);
     const onStop = () => {
       onLoadingChange?.(false);
+      injectElectronWebviewChromeCss(wv);
       emitNav();
     };
-    const onNav = () => emitNav();
+    const onNav = () => {
+      injectElectronWebviewChromeCss(wv);
+      emitNav();
+    };
     const onTitle = (e) => {
-      const title = e?.title;
-      if (title) onPageTitle?.(String(title));
+      if (e?.title) onPageTitle?.(String(e.title));
     };
     const onFail = (e) => {
       onLoadingChange?.(false);
       const code = e?.errorCode;
-      if (code === -3 || code === '-3') return;
+      if (code === -3 || code === '-3' || code === 0) return;
+      if (code === -102 || code === '-102') return;
       onFailLoad?.({
         errorCode: code,
         errorDescription: e?.errorDescription,
@@ -234,42 +336,73 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
       wv.removeEventListener('page-title-updated', onTitle);
       wv.removeEventListener('did-fail-load', onFail);
     };
-  }, [key, partition, onFailLoad, onLoadingChange, onNavigate, onPageTitle]);
+  }, [
+    key,
+    partition,
+    guestGeneration,
+    onFailLoad,
+    onLoadingChange,
+    onNavigate,
+    onPageTitle,
+    noteEntry,
+  ]);
 
-  // Reset intent when the pool key changes (must run before navigate effect).
   useEffect(() => {
     lastIntentSrcRef.current = '';
   }, [key]);
 
-  // Navigate only when the intended URL changes. Surface re-activate alone = no loadURL.
   useEffect(() => {
     if (!active) return;
     const next = String(src || '').trim();
     if (!next) return;
 
-    // Mere workspace re-show with the same intent — keep guest session.
-    if (webviewUrlsEqual(next, lastIntentSrcRef.current)) {
-      return;
-    }
-
     const entry = getElectronWebviewEntry(key);
-    // Guest already warm on this (or equivalent) URL — common after workspace switch.
-    if (entry?.lastUrl && webviewUrlsEqual(entry.lastUrl, next)) {
-      lastIntentSrcRef.current = next;
+    let live = '';
+    try {
+      live = entry?.el && typeof entry.el.getURL === 'function' ? String(entry.el.getURL() || '') : '';
+    } catch {
+      live = '';
+    }
+    const guestBlank = !live || live === 'about:blank';
+    const neverPainted = !entry?.hasLoadedOnce;
+
+    if (
+      webviewUrlsEqual(next, lastIntentSrcRef.current) &&
+      !guestBlank &&
+      !entry?.loadFailed &&
+      !neverPainted
+    ) {
       return;
     }
 
-    void navigateElectronWebview(key, next).then((result) => {
-      // Dock-state race may offer DEFAULT_RIGHT_DOCK_STATE; pool skips it — keep prior intent.
-      if (result?.reason && String(result.reason).includes('placeholder')) {
-        return;
-      }
-      if (result?.ok !== false) {
-        lastIntentSrcRef.current = next;
-      }
+    if (
+      entry?.lastUrl &&
+      webviewUrlsEqual(entry.lastUrl, next) &&
+      !guestBlank &&
+      !entry.loadFailed &&
+      entry.hasLoadedOnce
+    ) {
+      lastIntentSrcRef.current = next;
+      injectElectronWebviewChromeCss(entry.el);
+      return;
+    }
+
+    void navigateElectronWebview(key, next, {
+      force: Boolean(guestBlank || entry?.loadFailed || neverPainted),
+    }).then((result) => {
+      if (result?.reason && String(result.reason).includes('placeholder')) return;
+      if (result?.ok !== false) lastIntentSrcRef.current = next;
     });
   }, [key, src, active]);
 
+  useEffect(() => {
+    const el = getWv();
+    if (el) {
+      el.style.pointerEvents = active && !suspendNativeSurface ? 'auto' : 'none';
+    }
+  }, [getWv, active, suspendNativeSurface, guestGeneration]);
+
+  // Keep host box stretching fully so pixel-size sync has a real rect.
   return (
     <div
       ref={hostRef}
@@ -279,9 +412,15 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
       style={{
         width: '100%',
         height: '100%',
+        minWidth: 0,
         minHeight: 0,
-        position: 'relative',
+        flex: '1 1 auto',
+        alignSelf: 'stretch',
+        position: 'absolute',
+        inset: 0,
         overflow: 'hidden',
+        background: 'var(--surface-app, #0a111d)',
+        pointerEvents: active && !suspendNativeSurface ? 'auto' : 'none',
       }}
     />
   );
@@ -289,7 +428,22 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
 
 export default ElectronWebviewBrowser;
 
+/**
+ * DOM &lt;webview&gt; path is disabled by default.
+ * Electron uses WebContentsView (native_browser_* IPC) so normal↔pizarra
+ * only setBounds/setVisible — no guest remount, no black panel after toggles.
+ *
+ * Opt-in emergency: window.__DEVHUB_FORCE_DOM_WEBVIEW__ = true
+ */
 export function shouldUseElectronWebview() {
   if (typeof window === 'undefined') return false;
-  return window.devhubDesktop?.isElectron === true;
+  try {
+    if (window.__DEVHUB_FORCE_DOM_WEBVIEW__ === true) {
+      return window.devhubDesktop?.isElectron === true;
+    }
+  } catch {
+    /* ignore */
+  }
+  // Prefer main-process WebContentsView on Electron (stable across mode switches).
+  return false;
 }

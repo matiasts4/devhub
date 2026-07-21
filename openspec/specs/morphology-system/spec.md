@@ -1,12 +1,12 @@
 # Spec: morphology-system
 
-> **Source of truth**: originally promoted from `openspec/changes/switchyard-fourth-theme-system/spec.md` on 2026-05-29 (archive of `switchyard-fourth-theme-system`); updated on 2026-06-14 (archive of `cursor-morphology`) to add the `cursor` token block sibling and to broaden the no-regression invariant to cover all four pre-`cursor` morphologies.
+> **Source of truth**: originally promoted from `openspec/changes/switchyard-fourth-theme-system/spec.md` on 2026-05-29 (archive of `switchyard-fourth-theme-system`); updated on 2026-06-14 (archive of `cursor-morphology`) to add the `cursor` token block sibling and to broaden the no-regression invariant to cover all four pre-`cursor` morphologies; updated on 2026-07-19 (archive of `opencode-desktop-appearance`) to allow sixth morphology `opencode-desktop` and broaden no-regression to the five pre-`opencode-desktop` morphologies.
 > **Status**: active. Owned by DevHub theme team.
-> **Origin**: Switchyard Fourth Morphology; extended by `cursor-morphology` (R4 ADDED, R5 MODIFIED).
+> **Origin**: Switchyard Fourth Morphology; extended by `cursor-morphology` (R4 ADDED, R5 MODIFIED); extended by `opencode-desktop-appearance` (sixth slot + no-regression/factory invariants).
 
 ## Purpose
 
-Define the morphology system: the registry, the per-morphology CSS token blocks, the chrome factory functions, the chrome primitives that consume them, and the no-regression invariant that keeps the four pre-`cursor` morphologies stable across future additions.
+Define the morphology system: the registry, the per-morphology CSS token blocks, the chrome factory functions, the chrome primitives that consume them, and the no-regression invariant that keeps the five pre-`opencode-desktop` morphologies stable across future additions.
 
 ## Requirements
 
@@ -135,7 +135,8 @@ The system MUST show a palette sub-picker (Mineral / Cobalt / Alloy) in the Appe
 
 ### Requirement: All existing morphologies unchanged (default-radius exception)
 
-The system MUST NOT modify any token values for Brutalist Stage, Aura, Switchyard, or Cursor morphology blocks. Default MUST NOT modify any token EXCEPT `--chrome-radius-panel`, which it MAY set to `0` to preserve the legacy Ajustes square look under default. (Originally scoped to Default, Brutalist Stage, and Aura for the Switchyard integration; broadened on 2026-06-14 to include Switchyard for the `cursor` integration; default-radius exception added on 2026-06-15 by `ajustes-cursor-restyle` so the legacy Ajustes square geometry is preserved under default.)
+The system MUST NOT modify any token values for Brutalist Stage, Aura, Switchyard, Cursor, or Default morphology blocks, except Default MAY set `--chrome-radius-panel` to `0` to preserve the legacy Ajustes square look. The no-regression set is the full pre-`opencode-desktop` morphology set (including `cursor`).
+(Previously: no-regression covered Default, Brutalist Stage, Aura, Switchyard, and Cursor with default-radius exception; wording referenced four pre-`cursor` morphologies in Purpose — now explicitly the five pre-`opencode-desktop` morphologies must not regress when adding the sixth.)
 
 #### Scenario: Brutalist Stage radius unchanged
 
@@ -158,11 +159,20 @@ The system MUST NOT modify any token values for Brutalist Stage, Aura, Switchyar
 - THEN `--chrome-radius-panel` equals `18px`
 - AND `--accent-primary` equals `#63d0c2`
 
+#### Scenario: Cursor morphology tokens unchanged
+
+- GIVEN Cursor was existing before `opencode-desktop` was added
+- WHEN the user selects Cursor
+- THEN `--chrome-radius-panel` equals `18px`
+- AND `--chrome-radius-control` equals `8px`
+- AND `--accent-primary` remains warm amber (`oklch(0.74 0.16 57)`)
+
 ---
 
 ### Requirement: Shared primitives consume chrome tokens or morphology factories
 
-Card, Input, Switch, Dialog, Select, Button, AND the Ajustes settings page (`src/views/Ajustes.jsx`, all 7 tabs) MUST derive chrome geometry (border radius, border width, shadow) from `--chrome-*` CSS variables or from `src/chrome/morphology.js` factory functions. The Ajustes page MUST NOT ship `borderRadius: 0` overrides or `4px 4px 0 0 var(--border-strong)` shadows on chrome surfaces. The three local helpers `getSettingsShellStyle`, `getSettingsControlStyle`, `getSettingsAccentOptionStyle` (deleted on 2026-06-15 by `ajustes-cursor-restyle`) are forbidden; their call sites MUST use `chromeSurfaceStyle()` / `panelStyle()` / `pillStyle()` / `btnPrimaryStyle()` directly.
+Card, Input, Switch, Dialog, Select, Button, AND the Ajustes settings page (`src/views/Ajustes.jsx`, all 7 tabs) MUST derive chrome geometry (border radius, border width, shadow) from `--chrome-*` CSS variables or from `src/chrome/morphology.js` factory functions. The Ajustes page MUST NOT ship `borderRadius: 0` overrides or `4px 4px 0 0 var(--border-strong)` shadows on chrome surfaces. The three local helpers `getSettingsShellStyle`, `getSettingsControlStyle`, `getSettingsAccentOptionStyle` (deleted on 2026-06-15 by `ajustes-cursor-restyle`) are forbidden; their call sites MUST use `chromeSurfaceStyle()` / `panelStyle()` / `pillStyle()` / `btnPrimaryStyle()` directly. Factories MUST remain pure token consumers when `opencode-desktop` is added (no morphology-id branching required for the sixth morphology).
+(Previously: same consumer contract without explicit sixth-morphology token-consumer invariant.)
 
 **Files**: `src/chrome/morphology.js`, `src/components/ui/chrome-surface.jsx`, `src/components/ui/button.jsx`, `src/components/ui/card.jsx`, `src/components/ui/input.jsx`, `src/components/ui/switch.jsx`, `src/components/ui/dialog.jsx`, `src/components/ui/select.jsx`, `src/views/Ajustes.jsx`
 
@@ -182,6 +192,33 @@ Card, Input, Switch, Dialog, Select, Button, AND the Ajustes settings page (`src
 - THEN `--chrome-radius-panel` is `18px`
 - AND Apariencia's computed `border-radius` is `18px`
 
+#### Scenario: opencode-desktop uses same factories
+
+- GIVEN `data-morphology='opencode-desktop'` is active
+- WHEN panel and control chrome render via factories
+- THEN geometry comes from `--chrome-*` variables
+- AND factories do not hardcode opencode-desktop-only radii in JS
+
+---
+
+### Requirement: Sixth morphology slot for opencode-desktop
+
+The morphology system MUST allow a sixth morphology id `opencode-desktop` in `MORPHOLOGIES` / `MORPHOLOGY_OPTIONS` without requiring factory rewrites. Shared primitives MUST keep consuming `--chrome-*` tokens so the new morphology applies through existing chrome factories.
+
+#### Scenario: Six morphologies registered
+
+- GIVEN the theme registry is loaded
+- WHEN `MORPHOLOGY_OPTIONS` is enumerated
+- THEN it contains exactly the prior five plus `opencode-desktop`
+- AND each id remains independently selectable
+
+#### Scenario: Unknown morphology still normalizes
+
+- GIVEN a stored morphology value is unsupported
+- WHEN `normalizeMorphology` runs
+- THEN it falls back to a supported default
+- AND theme selection is not mutated
+
 ---
 
 ### Requirement: Single PR delivery within 800-line review budget
@@ -198,8 +235,9 @@ No new files outside these five, no dependency additions, no schema migrations.
 
 ## MODIFIED Requirements
 
-- **All existing morphologies unchanged** — the original Switchyard-integration requirement listed only `Default, Brutalist Stage, or Aura` as the morphologies that must not regress. On 2026-06-14 (archive of `cursor-morphology`) the scope was broadened to also include `Switchyard`. Title changed from "All existing morphologies unchanged after Switchyard integration" to "All existing morphologies unchanged". A third scenario was added to cover the Switchyard baseline (`--chrome-radius-panel: 18px` and `--accent-primary: #63d0c2`). On 2026-06-15 (archive of `ajustes-cursor-restyle`) a default-radius exception was added so Default MAY set `--chrome-radius-panel: 0` to preserve the legacy Ajustes square look; the requirement title gained the `(default-radius exception)` suffix and the prior "Default morphology radius unchanged" scenario was rewritten as "Default radius is 0 by design (R6 amendment)".
-- **Shared primitives consume chrome tokens or morphology factories** — on 2026-06-15 (archive of `ajustes-cursor-restyle`) the requirement body was extended to include `src/views/Ajustes.jsx` (all 7 tabs) as a chrome-token consumer, the three local helpers `getSettingsShellStyle` / `getSettingsControlStyle` / `getSettingsAccentOptionStyle` were forbidden, the `**Files**` list was extended to include `src/views/Ajustes.jsx`, the partial-coverage note date was bumped to 2026-06-15 to record the new coverage, and a new scenario "Ajustes Apariencia honors cursor chrome" was added.
+- **All existing morphologies unchanged** — the original Switchyard-integration requirement listed only `Default, Brutalist Stage, or Aura` as the morphologies that must not regress. On 2026-06-14 (archive of `cursor-morphology`) the scope was broadened to also include `Switchyard`. Title changed from "All existing morphologies unchanged after Switchyard integration" to "All existing morphologies unchanged". A third scenario was added to cover the Switchyard baseline (`--chrome-radius-panel: 18px` and `--accent-primary: #63d0c2`). On 2026-06-15 (archive of `ajustes-cursor-restyle`) a default-radius exception was added so Default MAY set `--chrome-radius-panel: 0` to preserve the legacy Ajustes square look; the requirement title gained the `(default-radius exception)` suffix and the prior "Default morphology radius unchanged" scenario was rewritten as "Default radius is 0 by design (R6 amendment)". On 2026-07-19 (archive of `opencode-desktop-appearance`) the no-regression set became the five pre-`opencode-desktop` morphologies (including Cursor), and a Cursor baseline scenario was added.
+- **Shared primitives consume chrome tokens or morphology factories** — on 2026-06-15 (archive of `ajustes-cursor-restyle`) the requirement body was extended to include `src/views/Ajustes.jsx` (all 7 tabs) as a chrome-token consumer, the three local helpers `getSettingsShellStyle` / `getSettingsControlStyle` / `getSettingsAccentOptionStyle` were forbidden, the `**Files**` list was extended to include `src/views/Ajustes.jsx`, the partial-coverage note date was bumped to 2026-06-15 to record the new coverage, and a new scenario "Ajustes Apariencia honors cursor chrome" was added. On 2026-07-19 (archive of `opencode-desktop-appearance`) factories must remain pure token consumers for the sixth morphology (no morphology-id branching), and scenario "opencode-desktop uses same factories" was added.
+- **Sixth morphology slot for opencode-desktop** — ADDED on 2026-07-19 (archive of `opencode-desktop-appearance`).
 
 ## REMOVED Requirements
 

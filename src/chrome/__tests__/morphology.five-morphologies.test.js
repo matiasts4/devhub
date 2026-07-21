@@ -2,10 +2,11 @@
 // from --chrome-* tokens or morphology.js factories. No chrome surface in
 // Ajustes.jsx may hardcode `borderRadius: 0`.
 //
-// The 5 theme-card preview inner blocks (lines 261, 269, 275, 282, 1120)
-// are decoration, not chrome — they are kept as deliberate square
-// preview thumbnails. This test asserts the per-morphology radius and
-// shadow resolve through tokens on chrome surfaces only.
+// The theme-card preview inner blocks are decoration, not chrome — they are
+// kept as deliberate square preview thumbnails. This test asserts the
+// per-morphology radius and shadow resolve through tokens on chrome surfaces
+// only. Six morphologies: default, brutalist-stage, aura, switchyard, cursor,
+// opencode-desktop.
 //
 // Test layer: unit (source-level). Reads Ajustes.jsx + globals.css and
 // asserts the contract, not the rendered DOM. This is the right layer
@@ -105,7 +106,7 @@ describe('Ajustes morphology chrome coverage (R5)', () => {
   });
 
   test('Ajustes chrome resolves --chrome-radius-panel from each morphology block', () => {
-    // For each of the 5 morphologies, --chrome-radius-panel is defined
+    // For each of the 6 morphologies, --chrome-radius-panel is defined
     // in globals.css. The token is what Ajustes inherits via
     // chromeSurfaceStyle() / panelStyle() / pillStyle() — no inline
     // override should bypass it.
@@ -115,6 +116,7 @@ describe('Ajustes morphology chrome coverage (R5)', () => {
       aura: '1.25rem',
       switchyard: '18px',
       cursor: '18px',
+      'opencode-desktop': '12px',
     };
 
     Object.entries(expected).forEach(([key, want]) => {
@@ -124,6 +126,15 @@ describe('Ajustes morphology chrome coverage (R5)', () => {
         new RegExp(`--chrome-radius-panel\\s*:\\s*${want.replace(/\./g, '\\.')}\\s*;`)
       );
     });
+  });
+
+  test('opencode-desktop morphology has quiet control radius and no accent lock', () => {
+    const block = extractMorphologyBlock(globalsSrc, 'opencode-desktop');
+    expect(block).not.toBeNull();
+    expect(block).toMatch(/--chrome-radius-control\s*:\s*8px\s*;/);
+    expect(block).toMatch(/--chrome-border-width\s*:\s*1px\s*;/);
+    expect(block).not.toMatch(/--accent-primary\s*:/);
+    expect(block).not.toMatch(/--accent-glow\s*:/);
   });
 
   test('Ajustes chrome surfaces wire through chromeSurfaceStyle / panelStyle / pillStyle / btnPrimaryStyle', () => {

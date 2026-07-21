@@ -148,6 +148,36 @@ describe('CSS Tokens — globals.css', () => {
     expect(compactMatch?.[1] || '').toMatch(/--density-row-padding-x\s*:\s*0\.5rem/);
     expect(compactMatch?.[1] || '').toMatch(/--density-row-gap\s*:\s*0\.25rem/);
   });
+
+  test("[data-theme='opencode'] defines standalone surface/text/accent/warning tokens", () => {
+    const match = css.match(/\[data-theme=['"]opencode['"]\]\s*\{([\s\S]*?)\n\s*\}/);
+    expect(match).not.toBeNull();
+    const block = match[1];
+
+    expect(block).toMatch(/--surface-app\s*:/);
+    expect(block).toMatch(/--surface-card\s*:/);
+    expect(block).toMatch(/--surface-elevated\s*:/);
+    expect(block).toMatch(/--text-primary\s*:/);
+    expect(block).toMatch(/--text-secondary\s*:/);
+    expect(block).toMatch(/--text-muted\s*:/);
+    expect(block).toMatch(/--border-subtle\s*:/);
+    expect(block).toMatch(/--border-strong\s*:/);
+    expect(block).toMatch(/--accent-primary\s*:/);
+    expect(block).toMatch(/--warning\s*:/);
+
+    // Near-black OC dark ladder (#101010 / #161616 family)
+    expect(block).toMatch(/--surface-app\s*:\s*#1[0-6][0-9a-fA-F]{4}/);
+    expect(block).toMatch(/--surface-card\s*:\s*#1[0-6][0-9a-fA-F]{4}/);
+
+    // Cool interactive blue accent (not cursor amber)
+    expect(block).toMatch(/--accent-primary\s*:\s*#9dbefe/i);
+    expect(block).not.toMatch(/--accent-primary\s*:\s*#e3b341/i);
+
+    // Standalone tokens — no live bridge into opencode-vars.css
+    expect(block).not.toMatch(/var\s*\(\s*--oc-/);
+    expect(block).not.toMatch(/opencode-vars/);
+    expect(block).not.toMatch(/prefers-color-scheme/);
+  });
 });
 
 describe('CSS Tokens — index.css cleanup', () => {

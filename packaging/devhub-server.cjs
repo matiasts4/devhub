@@ -283,10 +283,15 @@ function checkBetterSqlite3(runtimeDir, nodeBin) {
 }
 
 function checkNodePty(runtimeDir, nodeBin) {
+  const nodePath = [
+    path.join(runtimeDir, 'node_modules'),
+    process.env.NODE_PATH
+  ].filter(Boolean).join(path.delimiter);
+
   const result = spawnSync(nodeBin, ['-e', "try { const pty = require('node-pty'); if (typeof pty.spawn !== 'function') process.exit(2); } catch (error) { console.error(error); process.exit(1); }"], {
     cwd: runtimeDir,
     stdio: 'pipe',
-    env: { ...process.env, NODE_PATH: path.join(runtimeDir, 'node_modules') },
+    env: { ...process.env, NODE_PATH: nodePath },
   });
   return result.status === 0;
 }
@@ -308,7 +313,8 @@ function ensureNativeRuntime({ runtimeDir, packageName, label, checkKind, nodeBi
   }
 
   logStep(`Native module mismatch detected in ${label} (${packageName}). Running npm rebuild...`);
-  const result = spawnSync(npmBin, ['rebuild', packageName], {
+  const npmCmd = process.platform === 'win32' ? `"${npmBin}"` : npmBin;
+  const result = spawnSync(npmCmd, ['rebuild', packageName], {
     cwd: runtimeDir,
     stdio: 'inherit',
     env: {
@@ -577,8 +583,9 @@ function main() {
     const child = spawn(nodeBin, [scriptPath], {
       cwd: path.dirname(scriptPath),
       env: { ...process.env, ...env },
-      stdio: 'inherit',
+      stdio: 'ignore',
       shell: false,
+      windowsHide: true,
     });
     children.push(child);
     return child;

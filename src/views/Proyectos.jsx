@@ -65,7 +65,10 @@ export default function Proyectos() {
         .eq('workspace_id', activeWorkspaceId)
         .order('created_at', { ascending: false });
       if (error) {
-        sileo.error({ title: 'Error al cargar proyectos: ' + error.message });
+        const errorMsg =
+          error.message ||
+          (typeof error === 'object' && Object.keys(error).length > 0 ? JSON.stringify(error) : String(error || 'Error desconocido'));
+        sileo.error({ title: 'Error al cargar proyectos: ' + errorMsg });
       } else {
         setProjects(data || []);
       }

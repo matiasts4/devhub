@@ -142,6 +142,8 @@ export default function TitleBar({
         background:
           'linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.028) 100%), linear-gradient(180deg, color-mix(in srgb, var(--surface-app) 90%, black), color-mix(in srgb, var(--surface-card) 82%, black))',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+        // Frameless host: drag empty chrome (controls use no-drag below).
+        WebkitAppRegion: 'drag',
       }}
       data-tauri-drag-region
       onDoubleClick={handleToggleMaximize}

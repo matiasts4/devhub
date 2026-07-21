@@ -668,10 +668,17 @@ export default function useTerminalV2Session({ ctxRef }) {
           }
 
           if (payload.type === 'agent-state' && payload.agentTuiState) {
-            setPanelSemanticState(id, {
-              agentTuiState: payload.agentTuiState,
-              agentTuiStateAt: payload.at ?? Date.now(),
-            });
+            setPanelSemanticState(
+              id,
+              {
+                agentTuiState: payload.agentTuiState,
+                agentTuiStateAt: payload.at ?? Date.now(),
+              },
+              {
+                agentType: payload.agentType || initialCommand || null,
+                wasCancelled: Boolean(payload.wasCancelled),
+              }
+            );
             return;
           }
 

@@ -36,6 +36,8 @@ export function buildTerminalSurfacesFromWindows({
 } = {}) {
   const activePanelIds = new Set();
   const terminals = [];
+  /** @type {{ viewId: string, panel: object }[]} */
+  const browserPanels = [];
 
   // Active live columns are the freshest ownership source. Process them first,
   // then ignore duplicate panel ids from lagging inactive-window snapshots.
@@ -57,6 +59,17 @@ export function buildTerminalSurfacesFromWindows({
         if (!p?.id) continue;
         if (activePanelIds.has(p.id)) continue;
         activePanelIds.add(p.id);
+
+        const kind = String(p.kind || 'terminal');
+        if (kind === 'browser') {
+          browserPanels.push({ viewId, panel: p });
+          continue;
+        }
+        if (kind === 'files') {
+          // Files are not live pizarra composites yet.
+          continue;
+        }
+
         terminals.push({
           id: `shape-term-${p.id}`,
           type: 'terminal',
@@ -85,5 +98,5 @@ export function buildTerminalSurfacesFromWindows({
     }
   }
 
-  return { terminals, activePanelIds };
+  return { terminals, browserPanels, activePanelIds };
 }

@@ -1,17 +1,19 @@
 /**
- * PizarraBrowserSurface — iframe-first mount + 5s explicit failure surface.
+ * PizarraBrowserSurface — live browser card on the pizarra canvas.
+ *
+ * Hosts:
+ * - Electron: DOM <webview> via WorkspaceBrowserPane (same pool as workspace dock)
+ * - Tauri Linux: WebKitGTK native overlay when ready, iframe fallback
+ * - Web: iframe
  *
  * Covers board-browser-load Req 1-4 and Req 5 (browserLoadFallback
  * round-trip). The 10 spec scenarios are exercised by the test
  * file at src/components/workspace/__tests__/rightDockState.test.js
  * (Req 5) and this file (Req 1-4).
  *
- * pizarra-ux-overhaul: the pizarra now mounts the iframe immediately
- * (no waiting on nativeRuntimeReady). A 5s timer fires the
- * BrowserLoadFailed view if neither the iframe load event nor the
- * native readiness signal arrive in time. The iframe stays in the
- * DOM underneath the failure view. The user can hit Reload to
- * re-arm the timer and force an iframe reload.
+ * Load watchdog (5s failure surface) applies to iframe / Tauri native
+ * paths. On Electron the guest is a pooled webview — watchdog disabled
+ * (content readiness is handled by electronWebviewPool).
  */
 
 'use client';
@@ -38,7 +40,11 @@ import {
   PIZARRA_SURFACE_BORDER_RADIUS,
   PIZARRA_SURFACE_FRAME_BG,
 } from '@/lib/pizarra/surfaceMotion';
-import { normalizeBrowserUrl } from '@/components/workspace/rightDockState';
+import {
+  DEFAULT_BROWSER_URL,
+  normalizeBrowserUrl,
+  sanitizeBrowserUrl,
+} from '@/components/workspace/rightDockState';
 import {
   useSurfaceEnterAnimation,
   SURFACE_ENTER_STATE_ATTRIBUTE,
@@ -53,31 +59,37 @@ const LEGACY_LOCALHOST_3200 = 'http://localhost:3200/';
 const LEGACY_LOCALHOST_3000 = 'http://localhost:3000/';
 
 function resolveBrowserUrl(url) {
-  const DEFAULT =
-    typeof window !== 'undefined' ? window.location.origin + '/' : 'http://localhost:3100/';
-  if (!url) return DEFAULT;
-  const normalized = url.endsWith('/') ? url : url + '/';
-  if (normalized === LEGACY_LOCALHOST_3200 || normalized === LEGACY_LOCALHOST_3000) return DEFAULT;
-  return url;
+  if (!url) return DEFAULT_BROWSER_URL;
+  const normalized = url.endsWith('/') ? url : `${url}/`;
+  if (normalized === LEGACY_LOCALHOST_3200 || normalized === LEGACY_LOCALHOST_3000) {
+    return DEFAULT_BROWSER_URL;
+  }
+  return sanitizeBrowserUrl(url, DEFAULT_BROWSER_URL);
 }
 
 function canonicalBrowserUrl(url) {
-  return normalizeBrowserUrl(url) || resolveBrowserUrl(url);
+  return sanitizeBrowserUrl(normalizeBrowserUrl(url) || resolveBrowserUrl(url), DEFAULT_BROWSER_URL);
 }
 
-function createDockState(url) {
+function isElectronDesktopHost() {
+  try {
+    if (typeof window === 'undefined') return false;
+    return window.devhubDesktop?.isElectron === true;
+  } catch {
+    return false;
+  }
+}
+
+function createDockState(url, { preferNative = false } = {}) {
   const resolvedUrl = resolveBrowserUrl(url);
 
   return {
     activeTab: 'browser',
     browserHistory: [resolvedUrl],
     browserHistoryIndex: 0,
-    // pizarra-browser-fix: start on iframe so the browser always renders content.
-    // The useEffect that watches nativeCapability will upgrade to native-gtk
-    // automatically when the Tauri WebKitGTK backend is ready.
-    // Forcing native-gtk from the start caused a perpetual "Preparando" spinner
-    // when the native backend was not yet initialized.
-    browserRuntime: 'iframe',
+    // Electron: always "native" (DOM webview path in WorkspaceBrowserPane).
+    // Tauri: start iframe until WebKitGTK capability is ready (unless carried).
+    browserRuntime: preferNative || isElectronDesktopHost() ? 'native-gtk' : 'iframe',
     browserLoadFallback: false,
     browserUrl: resolvedUrl,
     editMode: false,
@@ -115,27 +127,49 @@ export default function PizarraBrowserSurface({
   onWorkspaceWindowSelect,
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
-  tabsMode = 'multi',
+  // Single-tab chrome by default — multi tab strip re-introduces label noise.
+  tabsMode = 'single',
   suspendDuringViewTransition = false,
   suspendDuringCanvasPan = false,
+  isSurfaceDragging = false,
+  hudRevealed = false,
   skipEnterAnimation = false,
+  // Ownership guard: true only while the pizarra view owns live surfaces
+  // (dockState.visible && maximized && maximizedView === 'pizarra'). When the
+  // user exits pizarra the surface stays warm-mounted inside the collapsed
+  // dock layer; without this guard its bounds-sync effect re-shows the shared
+  // native guest at the shrunken canvas rect and wins the race against the
+  // workspace pane re-claiming it (browser "collapsed" on the right column).
+  pizarraOwnsLiveSurfaces = true,
 }) {
   // Compute early (before any hooks/state) so initial dockState can use it.
   // isCarriedFromWorkspace: the surface was auto-registered by TWM from the
   // normal workspace browser (not a fresh "Add Browser" in pizarra). For these,
   // we want instant content (reuse live native webview) + no loading chrome.
-  const nativePanelId =
-    shape.panelId || `browser-${projectId || 'pizarra'}-${workspaceId || shape.id}`;
-  const isCarriedFromWorkspace = !!(shape.panelId && shape.panelId.startsWith('browser-'));
+  //
+  // Cache key / nativePanelId:
+  // - Carried: keep workspace panelId so Electron webview pool reuses the same guest
+  // - Pizarra-only: include shape.id so we never collide with the workspace dock browser
+  // Carried from normal: workspace dock/space browser (pool key browser-${project}-${ws}).
+  // Pizarra-only cards use pizarra-browser-* or browser-*-pizarra-* keys.
+  const panelIdStr = String(shape.panelId || '');
+  const isCarriedFromWorkspace = !!(
+    panelIdStr.startsWith('browser-') &&
+    !panelIdStr.startsWith('pizarra-browser-') &&
+    !panelIdStr.includes('-pizarra-')
+  );
+  const nativePanelId = isCarriedFromWorkspace
+    ? shape.panelId
+    : shape.panelId ||
+      `browser-${projectId || 'pizarra'}-pizarra-${shape.id || workspaceId || 'card'}`;
+  const electronHost = isElectronDesktopHost();
 
   const [localDockState, setLocalDockState] = useState(() => {
-    const ds = createDockState(shape.url);
-    // For carried (from normal mode switch): start on native-gtk using the live
-    // webview instance (no re-load, no spinner). New pizarra adds start on iframe
-    // for safety until native ready.
-    if (isCarriedFromWorkspace) {
-      ds.browserRuntime = 'native-gtk';
-    }
+    // Electron always prefers native-gtk flag (DOM webview). Carried Tauri
+    // browsers also start native. Fresh Tauri cards start on iframe.
+    const ds = createDockState(shape.url, {
+      preferNative: isCarriedFromWorkspace || electronHost,
+    });
     return ds;
   });
 
@@ -161,7 +195,10 @@ export default function PizarraBrowserSurface({
   // For carried workspace browsers on switch to pizarra: start "loaded" so no
   // perpetual spinner; the live native content is already there, we just re-parent
   // its bounds to the card.
-  const [iframeLoaded, setIframeLoaded] = useState(!!isCarriedFromWorkspace);
+  // Electron webview: treat as content-ready from mount (pool owns load lifecycle).
+  const [iframeLoaded, setIframeLoaded] = useState(
+    !!isCarriedFromWorkspace || isElectronDesktopHost()
+  );
   // pizarra-ux-overhaul: reload key forces iframe re-mount when
   // incremented. Bump on Reload click.
   const [srcReloadKey, setSrcReloadKey] = useState(0);
@@ -217,13 +254,13 @@ export default function PizarraBrowserSurface({
     onUpdateElement?.(shape.id, { url: dockUrl });
   }, [resolvedDockState.browserUrl, shape.url, onUpdateElement, shape.id]);
 
-  // pizarra-ux-overhaul: 5s explicit failure timer. Counts the time
-  // the iframe is "stuck" (no load event AND no native readiness
-  // signal). On fire, sets loadFailed with the iframe-stuck category
-  // unless the native runtime timed out (then native-timeout).
+  // pizarra-ux-overhaul: 5s explicit failure timer for iframe / Tauri paths.
+  // Electron DOM <webview> owns its own load recovery in electronWebviewPool —
+  // do not paint a false "taking too long" overlay over a warm guest.
   const nativeSupported = nativeCapability && nativeCapability.supported;
   useEffect(() => {
-    if (resolvedDockState.browserRuntime === 'native-gtk') return; // Enforce native-gtk: disable iframe timer
+    if (electronHost) return;
+    if (resolvedDockState.browserRuntime === 'native-gtk') return; // Tauri native path
     if (loadFailed) return; // already failed; don't restart
     if (iframeLoaded) return; // iframe already loaded; success path
     const handle = setTimeout(() => {
@@ -243,6 +280,7 @@ export default function PizarraBrowserSurface({
     srcReloadKey,
     nativeSupported,
     resolvedDockState.browserRuntime,
+    electronHost,
   ]);
 
   // Mirror loadFailed into a ref so the timer callback sees the
@@ -309,9 +347,7 @@ export default function PizarraBrowserSurface({
     ensureSurfaceMotionKeyframes();
   }, []);
 
-  // Newly added browser surface should start on top (including above any terminals).
-  // For carried: use nativePanelId (the registered one from normal) so the live
-  // webview moves under this pizarra card immediately.
+  // Raise main-process native panel on mount (Electron WCV + Tauri GTK).
   useEffect(() => {
     raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
   }, [nativePanelId]); // mount only
@@ -337,19 +373,32 @@ export default function PizarraBrowserSurface({
   }, [nativePanelId]);
 
   // Immediate native bounds sync for carried browsers on pizarra mount/switch.
-  // The layout pass attempts the handoff before paint; the RAF is only a
-  // correction for cases where the shell rect settles one frame later.
+  // Electron WebContentsView + Tauri GTK both use native_browser_* IPC.
   useLayoutEffect(() => {
-    if (!isCarriedFromWorkspace) return;
+    if (!isCarriedFromWorkspace) return undefined;
+    // pizarra-exit-native-ownership-fix: after leaving pizarra this surface
+    // stays warm-mounted inside the collapsed dock layer. Re-syncing here
+    // would re-show the shared guest at the shrunken canvas rect and win the
+    // race against the workspace pane re-claiming it (browser collapsed on
+    // the right). When pizarra no longer owns live surfaces, stay silent —
+    // the inner pane parks the guest via surfaceActive=false.
+    if (!pizarraOwnsLiveSurfaces) return undefined;
     raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
     syncCarriedNativeBrowserBounds();
     const raf = requestAnimationFrame(() => {
       syncCarriedNativeBrowserBounds();
     });
-    return () => cancelAnimationFrame(raf);
+    const t = setTimeout(() => {
+      syncCarriedNativeBrowserBounds();
+    }, 80);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
   }, [
     isCarriedFromWorkspace,
     nativePanelId,
+    pizarraOwnsLiveSurfaces,
     bounds.x,
     bounds.y,
     bounds.width,
@@ -363,11 +412,10 @@ export default function PizarraBrowserSurface({
         return;
       }
       onSelect?.(shape.id);
-      // Raise native browser webview so this surface's content is above
-      // other native surfaces (terminals etc) in pizarra z-order.
+      // Raise main-process native panel (Electron WCV / Tauri GTK).
       raiseNativeBrowser({ panelId: nativePanelId }).catch(() => {});
     },
-    [onSelect, shape.id]
+    [onSelect, shape.id, nativePanelId]
   );
 
   // pizarra-drag-resize-polish + fluidity fix: border-based resize.
@@ -650,8 +698,21 @@ export default function PizarraBrowserSurface({
             // direct style mutations on the ancestors. This makes the "cuerpo"
             // (web content / terminal lines) follow the header without pop-in on release.
             suspendNativeSurface={
-              isDragging || suspendDuringViewTransition || suspendDuringCanvasPan
+              isDragging || isSurfaceDragging || hudRevealed || suspendDuringViewTransition || suspendDuringCanvasPan
             }
+            // Electron webview: keep guest warm during card drag/resize; only park when
+            // the whole pizarra view transition or canvas pan would leave a ghost guest.
+            // Do NOT gate on loadFailed — that blocked reattach recovery after mode toggles.
+            surfaceActive={
+              Boolean(resolvedDockState.visible) &&
+              !suspendDuringViewTransition &&
+              !suspendDuringCanvasPan &&
+              (electronHost || !loadFailed)
+            }
+            onContentReady={() => {
+              setIframeLoaded(true);
+              setLoadFailed(null);
+            }}
             isPizarraContext={true}
             tabsMode={tabsMode}
             toolbarLeadingContent={

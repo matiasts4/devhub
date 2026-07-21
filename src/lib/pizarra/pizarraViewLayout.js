@@ -95,7 +95,11 @@ export function isSurfaceVisibleForLayout(surface) {
 export function isCarriedWorkspaceBrowser(surface) {
   if (!surface || surface.type !== 'browser') return false;
   const panelId = String(surface.panelId || '');
-  return panelId.startsWith('browser-') && !panelId.startsWith('pizarra-browser-');
+  if (!panelId.startsWith('browser-')) return false;
+  // Pizarra-only cards use pizarra-browser-* or browser-*-pizarra-* keys.
+  if (panelId.startsWith('pizarra-browser-')) return false;
+  if (panelId.includes('-pizarra-')) return false;
+  return true;
 }
 
 /**
@@ -472,6 +476,14 @@ export function accumulateHorizontalWheelNav(accumState, deltaX, now = Date.now(
   return direction;
 }
 
+/**
+ * Stable Electron/webview pool key for a workspace dock browser.
+ * Must match WorkspaceBrowserPane default: browser-${projectId}-${workspaceId}
+ */
+export function resolveWorkspaceBrowserCacheKey(projectId, workspaceId) {
+  return `browser-${projectId || 'global'}-${workspaceId || 'workspace'}`;
+}
+
 /** Resolve which workspace window a surface belongs to. */
 export function getSurfaceViewId(surface, views = [], fallbackViewId = null) {
   const stored = surface?.pizarra?.viewId;
@@ -481,19 +493,36 @@ export function getSurfaceViewId(surface, views = [], fallbackViewId = null) {
     return stored;
   }
 
+  // Terminals and space-component browsers that own a panel id can resolve via columns.
   const panelId =
-    surface?.type === 'terminal'
-      ? surface?.panelId || String(surface?.id || '').replace(/^shape-term-/, '')
+    surface?.type === 'terminal' || surface?.type === 'browser'
+      ? surface?.panelId ||
+        (surface?.type === 'terminal'
+          ? String(surface?.id || '').replace(/^shape-term-/, '')
+          : null)
       : null;
+
   if (panelId && views.length > 0) {
-    const owningViews = views.filter((view) =>
-      (view?.columns || []).some((column) =>
-        (column?.panels || []).some((panel) => String(panel?.id) === String(panelId))
-      )
-    );
-    // Recover legacy/orphan terminal ownership without assigning it to the
-    // currently active view by fallback.
-    if (owningViews.length === 1) return owningViews[0].id;
+    // Space browser cache keys are browser-${project}-${ws}, not panel row ids —
+    // only match column panels for real panel ids (terminal + kind:browser splits).
+    const looksLikeCacheKey =
+      String(panelId).startsWith('browser-') && String(panelId).split('-').length >= 3;
+    if (!looksLikeCacheKey) {
+      const owningViews = views.filter((view) =>
+        (view?.columns || []).some((column) =>
+          (column?.panels || []).some((panel) => String(panel?.id) === String(panelId))
+        )
+      );
+      if (owningViews.length === 1) return owningViews[0].id;
+    } else {
+      // Carried dock browser: prefer a window that has any browser panel, else fallback.
+      const windowsWithBrowser = views.filter((view) =>
+        (view?.columns || []).some((column) =>
+          (column?.panels || []).some((panel) => panel?.kind === 'browser')
+        )
+      );
+      if (windowsWithBrowser.length === 1) return windowsWithBrowser[0].id;
+    }
   }
 
   if (fallbackViewId != null) return fallbackViewId;

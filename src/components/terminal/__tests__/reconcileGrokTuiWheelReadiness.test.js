@@ -46,7 +46,8 @@ describe('reconcileGrokTuiWheelReadiness', () => {
     expect(refs.tuiSessionActiveRef.current).toBe(true);
     expect(refs.isGrokSessionRef.current).toBe(true);
     expect(refs.grokTuiReadyRef.current).toBe(true);
-    expect(setNative).toHaveBeenCalledWith(true);
+    // Grok is inject-only — native passthrough stays off
+    expect(setNative).toHaveBeenCalledWith(false);
     expect(writes.join('')).toContain(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
     expect(writes.join('')).toContain(TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
   });

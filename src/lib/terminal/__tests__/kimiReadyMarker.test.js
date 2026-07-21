@@ -80,6 +80,20 @@ describe('kimiReadyMarker', () => {
       shouldSkipKimiTuiPtyResize({
         initialCommand: kimiCmd,
         hasConnectedOnce: true,
+        kimiReady: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipKimiTuiPtyResize({
+        initialCommand: kimiCmd,
+        hasConnectedOnce: true,
+        tuiSessionActive: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipKimiTuiPtyResize({
+        initialCommand: kimiCmd,
+        hasConnectedOnce: true,
       })
     ).toBe(false);
     expect(

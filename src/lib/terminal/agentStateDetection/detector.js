@@ -10,10 +10,12 @@
 
 import { evaluateManifest } from './ruleEngine.js';
 import kimiManifest from './manifests/kimi.js';
+import { stripAnsi } from '../stripAnsi.js';
 import claudeManifest from './manifests/claude.js';
 import codexManifest from './manifests/codex.js';
 import opencodeManifest from './manifests/opencode.js';
 import grokManifest from './manifests/grok.js';
+import antigravityManifest from './manifests/antigravity.js';
 
 const MANIFESTS = new Map([
   ['kimi', kimiManifest],
@@ -21,6 +23,7 @@ const MANIFESTS = new Map([
   ['codex', codexManifest],
   ['opencode', opencodeManifest],
   ['grok', grokManifest],
+  ['agy', antigravityManifest],
 ]);
 
 const AGENT_TYPE_ALIASES = {
@@ -36,6 +39,9 @@ const AGENT_TYPE_ALIASES = {
   groc: 'grok',
   'grok-build': 'grok',
   hermes: 'hermes',
+  agy: 'agy',
+  antigravity: 'agy',
+  'antigravity-cli': 'agy',
 };
 
 const manifestCache = new Map();
@@ -99,15 +105,20 @@ export function detectAgentState(agentType, screen, options = {}) {
     return UNKNOWN_DETECTION;
   }
 
+  const cleanScreen = stripAnsi(screen || '');
+  const isCancellation = /(?:\^C|\binterrupted\b|\bcancelled\b|\bcanceled\b|\baborted\b)/i.test(cleanScreen);
+
   const detected = evaluateManifest(manifest, {
-    screen: screen || '',
+    screen: cleanScreen,
     oscTitle: options.oscTitle || '',
     oscProgress: options.oscProgress || '',
   });
 
-  // Known agent with no manifest match → assume idle, not unknown. This keeps
-  // generic PTY activity (including user keystrokes) from being interpreted as
-  // "running" just because the buffer did not match a working/blocked rule.
+  if (isCancellation) {
+    detected.wasCancelled = true;
+  }
+
+  // Known agent with no manifest match → assume idle, not unknown.
   if (detected.state === 'unknown') {
     return IDLE_FALLBACK_DETECTION;
   }

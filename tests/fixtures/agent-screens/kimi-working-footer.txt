@@ -1,0 +1,9 @@
+# Kimi Code CLI - Working footer screen fixture
+# Source: kimiReadyMarker.js known chrome / kimi.exe strings
+# Version: kimi-code cli v1.2.0
+
+welcome to kimi code cli v1.2.0
+session_8817fa9d-12ab-4bcd-88ef-123456789abc
+k2.7 code thinking / 42.5% (creating component files)
+esc interrupt | mcp / status: active
+⠋ thinking...

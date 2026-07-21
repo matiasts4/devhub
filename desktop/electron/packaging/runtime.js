@@ -42,7 +42,10 @@ function isPackagedMode(app = tryGetApp()) {
 }
 
 function resolveUiUrl() {
-  return process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL || 'http://127.0.0.1:3100';
+  if (process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL) {
+    return process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL;
+  }
+  return isPackagedMode() ? 'http://127.0.0.1:3400' : 'http://127.0.0.1:3100';
 }
 
 function sidecarPort() {

@@ -88,6 +88,23 @@ export function stripShellTerminalResponseNoise(chunk) {
  * @param {string} chunk
  * @param {{ mode?: 'tui' | 'shell'; tuiReady?: boolean; panelHidden?: boolean; panelInactive?: boolean } | null | undefined} [ctx]
  */
+/**
+ * Live agent TUI input context: allow SGR wheel/click through to the PTY.
+ *
+ * Server sessions often have `mode: 'tui'` + `agentType` from the launch command
+ * but never set `tuiReady` — historically that stripped *all* mouse reports
+ * (including wheel 64/65), so Grok/OpenCode scroll inject never reached the PTY
+ * until a full client remount happened to look "fixed".
+ */
+export function isLiveTuiInputContext(ctx) {
+  if (!ctx || ctx.mode !== 'tui') return false;
+  if (ctx.panelHidden === true || ctx.panelInactive === true) return false;
+  if (ctx.tuiReady === true) return true;
+  // Agent sessions marked at launch / detection — treat as live for input mouse.
+  if (typeof ctx.agentType === 'string' && ctx.agentType.trim()) return true;
+  return false;
+}
+
 export function stripTerminalInputNoise(chunk, ctx) {
   if (typeof chunk !== 'string' || !chunk) return chunk;
   const baseStripped = chunk
@@ -95,13 +112,7 @@ export function stripTerminalInputNoise(chunk, ctx) {
     .replace(SHELL_TERMINAL_RESPONSE_RE, '');
   const focusStripped = stripTerminalFocusReporting(baseStripped);
   const motionStripped = stripTerminalMouseMotionLeak(focusStripped);
-  const tuiLive =
-    ctx &&
-    ctx.mode === 'tui' &&
-    ctx.tuiReady === true &&
-    ctx.panelHidden !== true &&
-    ctx.panelInactive !== true;
-  if (tuiLive) {
+  if (isLiveTuiInputContext(ctx)) {
     return motionStripped;
   }
   return stripTerminalMouseReporting(motionStripped);

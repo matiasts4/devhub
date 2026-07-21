@@ -850,7 +850,10 @@ export default function useWorkspacePanelLifecycle({
 
       markPanelsClosing([targetId]);
 
-      await closeTerminalSessions([targetId]);
+      // Fire terminal session cleanup in background asynchronously without blocking UI updates
+      closeTerminalSessions([targetId]).catch((err) => {
+        console.error('[handleClosePanel] Error closing terminal session in background:', err);
+      });
 
       const nextColumnsSnapshot = activeWorkspace.columns
         .map((col) => ({

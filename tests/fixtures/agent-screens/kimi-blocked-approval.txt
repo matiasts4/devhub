@@ -1,0 +1,13 @@
+# Kimi Code CLI - Blocked approval screen fixture
+# Source: kimiReadyMarker.js known chrome / kimi.exe strings
+# Version: kimi-code cli v1.2.0
+
+welcome to kimi code cli v1.2.0
+session_8817fa9d-12ab-4bcd-88ef-123456789abc
+
+Kimi wants to execute a command:
+  $ npm run test
+
+Do you want to run this command?
+  ↵ confirm (Y/n)
+  choose: approve once / reject / revise

@@ -111,14 +111,66 @@ function getLegacyDbCandidates({
   homeDir = os.homedir(),
 } = {}) {
   return uniquePaths([
+    findExistingPath(cwd, 'devhub-mcp', 'data', 'devhub.db'),
+    findExistingPath(moduleDir, 'devhub-mcp', 'data', 'devhub.db'),
     findExistingPath(cwd, 'data', 'devhub.db'),
     findExistingPath(moduleDir, 'data', 'devhub.db'),
     findExistingPath(cwd, '.next', 'standalone', 'data', 'devhub.db'),
     findExistingPath(moduleDir, '.next', 'standalone', 'data', 'devhub.db'),
+    path.join(homeDir, '.devhub-dev', 'data', 'devhub.db'),
     path.join(homeDir, '.devhub', 'data', 'devhub.db'),
     path.join(homeDir, '.devhub', 'standalone', 'data', 'devhub.db'),
     path.join(homeDir, '.devhub', 'devhub.db'),
   ]).filter((candidate) => fs.existsSync(candidate));
+}
+
+function hasProjectsInDb(dbPath) {
+  if (!fs.existsSync(dbPath)) return false;
+  try {
+    const stat = fs.statSync(dbPath);
+    if (stat.size < 100) return false;
+    const fd = fs.openSync(dbPath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    if (buf.toString('utf8', 0, 15) !== 'SQLite format 3') return false;
+
+    const Database = require('better-sqlite3');
+    const tempDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+    let count = 0;
+    try {
+      count = tempDb.prepare("SELECT count(*) as c FROM projects").get().c;
+    } catch {}
+    tempDb.close();
+    return count > 0;
+  } catch {
+    return false;
+  }
+}
+
+function getLegacyDbScore(dbPath) {
+  if (!fs.existsSync(dbPath)) return 0;
+  try {
+    const stat = fs.statSync(dbPath);
+    if (stat.size < 100) return 0;
+    const fd = fs.openSync(dbPath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    if (buf.toString('utf8', 0, 15) !== 'SQLite format 3') return 0;
+
+    const Database = require('better-sqlite3');
+    const tempDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const pCount = tempDb.prepare("SELECT count(*) as c FROM projects").get().c;
+    let tCount = 0;
+    try {
+      tCount = tempDb.prepare("SELECT count(*) as c FROM tasks").get().c;
+    } catch {}
+    tempDb.close();
+    return pCount * 1000 + tCount;
+  } catch {
+    return 0;
+  }
 }
 
 function isDevCanonicalDbPath(canonicalDbPath, homeDir = os.homedir()) {
@@ -131,23 +183,51 @@ function getProductionDbPath(homeDir = os.homedir()) {
 }
 
 function maybeMigrateLegacyDb(canonicalDbPath, options = {}) {
-  if (fs.existsSync(canonicalDbPath) && fs.statSync(canonicalDbPath).size > 0) {
+  if (hasProjectsInDb(canonicalDbPath)) {
+    const currentScore = getLegacyDbScore(canonicalDbPath);
+    const legacyCandidates = getLegacyDbCandidates(options).filter(
+      (candidate) =>
+        path.resolve(candidate) !== path.resolve(canonicalDbPath) &&
+        fs.existsSync(candidate) &&
+        fs.statSync(candidate).size > 0
+    );
+    const populatedCandidates = legacyCandidates.filter((cand) => hasProjectsInDb(cand));
+    if (populatedCandidates.length > 0) {
+      const bestCandidate = populatedCandidates.sort(
+        (left, right) => getLegacyDbScore(right) - getLegacyDbScore(left)
+      )[0];
+      if (getLegacyDbScore(bestCandidate) > currentScore) {
+        console.log(
+          `[pathResolver] Upgrading DB with richer candidate (${getLegacyDbScore(bestCandidate)} tasks/projects) from ${bestCandidate} to ${canonicalDbPath}`
+        );
+        copySqliteFamily(bestCandidate, canonicalDbPath);
+        return canonicalDbPath;
+      }
+    }
     return canonicalDbPath;
   }
 
   const legacyCandidates = getLegacyDbCandidates(options).filter(
     (candidate) =>
-      path.resolve(candidate) !== path.resolve(canonicalDbPath) && fs.statSync(candidate).size > 0
+      path.resolve(candidate) !== path.resolve(canonicalDbPath) &&
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).size > 0
   );
 
   if (legacyCandidates.length === 0) {
     return canonicalDbPath;
   }
 
-  const newestLegacyDbPath = legacyCandidates.sort(
-    (left, right) => getNewestMtimeMs(right) - getNewestMtimeMs(left)
-  )[0];
+  const populatedCandidates = legacyCandidates.filter((cand) => hasProjectsInDb(cand));
+  const pool = populatedCandidates.length > 0 ? populatedCandidates : legacyCandidates;
 
+  const newestLegacyDbPath = pool.sort((left, right) => {
+    const scoreDiff = getLegacyDbScore(right) - getLegacyDbScore(left);
+    if (scoreDiff !== 0) return scoreDiff;
+    return getNewestMtimeMs(right) - getNewestMtimeMs(left);
+  })[0];
+
+  console.log(`[pathResolver] Restoring populated DB from ${newestLegacyDbPath} to ${canonicalDbPath}`);
   copySqliteFamily(newestLegacyDbPath, canonicalDbPath);
   return canonicalDbPath;
 }
@@ -166,11 +246,14 @@ function shouldRefreshDevDatabaseFromProduction(productionDbPath, canonicalDbPat
     return true;
   }
 
+  // Do not overwrite a dev DB that has more tasks/projects than the production DB
+  if (getLegacyDbScore(canonicalDbPath) > getLegacyDbScore(productionDbPath)) {
+    return false;
+  }
+
   const productionStat = fs.statSync(productionDbPath);
   const canonicalStat = fs.statSync(canonicalDbPath);
 
-  // Compare the main DB file only — WAL/SHM activity in dev must not block syncing
-  // a stale fixture DB when ~/.devhub/data has the real project catalog.
   if (productionStat.mtimeMs > canonicalStat.mtimeMs) {
     return true;
   }
@@ -195,23 +278,22 @@ function maybeSyncDevDatabaseFromProduction(canonicalDbPath, options = {}) {
 function resolveDbPath(options = {}) {
   const env = options.env || process.env;
 
+  let dbPath;
   if (env.DEVHUB_DB_PATH) {
-    const explicitDbPath = path.resolve(env.DEVHUB_DB_PATH);
-    ensureDirectory(path.dirname(explicitDbPath));
-    return explicitDbPath;
+    dbPath = path.resolve(env.DEVHUB_DB_PATH);
+    ensureDirectory(path.dirname(dbPath));
+  } else if (env.NODE_ENV === 'test' && !options.forceCanonicalInTests) {
+    dbPath = path.join(options.cwd || process.cwd(), 'data', 'devhub.db');
+    ensureDirectory(path.dirname(dbPath));
+    return dbPath;
+  } else {
+    dbPath = path.join(getCanonicalDataDir(options), 'devhub.db');
+    ensureDirectory(path.dirname(dbPath));
   }
 
-  if (env.NODE_ENV === 'test' && !options.forceCanonicalInTests) {
-    const testDbPath = path.join(options.cwd || process.cwd(), 'data', 'devhub.db');
-    ensureDirectory(path.dirname(testDbPath));
-    return testDbPath;
-  }
-
-  const canonicalDbPath = path.join(getCanonicalDataDir(options), 'devhub.db');
-  ensureDirectory(path.dirname(canonicalDbPath));
-  maybeMigrateLegacyDb(canonicalDbPath, options);
-  maybeSyncDevDatabaseFromProduction(canonicalDbPath, options);
-  return canonicalDbPath;
+  maybeMigrateLegacyDb(dbPath, options);
+  maybeSyncDevDatabaseFromProduction(dbPath, options);
+  return dbPath;
 }
 
 module.exports = {
@@ -232,4 +314,5 @@ module.exports = {
   maybeSyncDevDatabaseFromProduction,
   shouldRefreshDevDatabaseFromProduction,
   resolveDbPath,
+  hasProjectsInDb,
 };

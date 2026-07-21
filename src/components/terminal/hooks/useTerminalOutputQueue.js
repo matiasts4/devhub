@@ -30,6 +30,7 @@ export function createOutputRefsBag() {
       hiddenOutputCatchupPendingRef: { current: false },
       terminalOutputQueueRef: { current: [] },
       terminalOutputFlushRafRef: { current: null },
+      terminalOutputFlushTimerRef: { current: null },
       syncOutputActiveRef: { current: false },
       syncOutputBufferRef: { current: '' },
       syncOutputTimeoutRef: { current: null },
@@ -77,11 +78,21 @@ export default function useTerminalOutputQueue({
       cancelAnimationFrame(flushRaf);
       writeBagField(outputRefs, 'terminalOutputFlushRafRef', null);
     }
+    const flushTimer = readBagField(outputRefs, 'terminalOutputFlushTimerRef');
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      writeBagField(outputRefs, 'terminalOutputFlushTimerRef', null);
+    }
     clearSyncOutputTimeout();
   }, [clearSyncOutputTimeout, outputRefs]);
 
   const flushOutput = useCallback(() => {
     writeBagField(outputRefs, 'terminalOutputFlushRafRef', null);
+    const flushTimer = readBagField(outputRefs, 'terminalOutputFlushTimerRef');
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      writeBagField(outputRefs, 'terminalOutputFlushTimerRef', null);
+    }
 
     const isDisposing = lifecycleRefs?.current?.isDisposingRef?.current;
     if (isDisposing) {
@@ -163,28 +174,38 @@ export default function useTerminalOutputQueue({
       queueRef.unshift(rest);
       writeBagField(outputRefs, 'terminalOutputQueueRef', queueRef);
       combined = now;
-      const flushRaf = readBagField(outputRefs, 'terminalOutputFlushRafRef');
-      if (!flushRaf) {
-        const rafId = requestAnimationFrame(flushOutput);
-        writeBagField(outputRefs, 'terminalOutputFlushRafRef', rafId);
-      }
+      scheduleFlush();
     }
 
     onWrite?.(combined);
   }, [clearSyncOutputTimeout, isActivePanelRef, lifecycleRefs, onFlushWriteRef, outputRefs]);
+
+  const scheduleFlush = useCallback(() => {
+    const flushRaf = readBagField(outputRefs, 'terminalOutputFlushRafRef');
+    if (!flushRaf) {
+      const rafId = requestAnimationFrame(flushOutput);
+      writeBagField(outputRefs, 'terminalOutputFlushRafRef', rafId);
+      const timerId = setTimeout(() => {
+        const currentRaf = readBagField(outputRefs, 'terminalOutputFlushRafRef');
+        if (currentRaf) {
+          cancelAnimationFrame(currentRaf);
+          writeBagField(outputRefs, 'terminalOutputFlushRafRef', null);
+        }
+        writeBagField(outputRefs, 'terminalOutputFlushTimerRef', null);
+        flushOutput();
+      }, 32);
+      writeBagField(outputRefs, 'terminalOutputFlushTimerRef', timerId);
+    }
+  }, [flushOutput, outputRefs]);
 
   const enqueueOutput = useCallback(
     (chunk) => {
       const queue = readBagField(outputRefs, 'terminalOutputQueueRef') || [];
       queue.push(chunk);
       writeBagField(outputRefs, 'terminalOutputQueueRef', queue);
-      const flushRaf = readBagField(outputRefs, 'terminalOutputFlushRafRef');
-      if (!flushRaf) {
-        const rafId = requestAnimationFrame(flushOutput);
-        writeBagField(outputRefs, 'terminalOutputFlushRafRef', rafId);
-      }
+      scheduleFlush();
     },
-    [flushOutput, outputRefs]
+    [scheduleFlush, outputRefs]
   );
 
   const writeTerminalOutput = useCallback(

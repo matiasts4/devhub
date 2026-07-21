@@ -66,3 +66,26 @@ Suites:
 ## Final verdict
 
 **PASS WITH WARNINGS** — core apply complete; archive acceptable after user review of WS e2e gap.
+
+---
+
+## Addendum: Fixes for Kimi Code & Cascading Staleness (2026.07.20)
+
+To resolve issues where agent status was incorrectly displayed as "Inactivo" (idle), we implemented the following corrections:
+
+1. **Cascading Staleness Fix**:
+   - Updated `stableVisibleSignalRefreshDue` in `stateMachine.js` to refresh visible working states as well as blocker states.
+   - Implemented `tickAgentDetection` in `sessionAgentDetector.js` to periodically refresh stable/pending-idle signals.
+   - Wired the tick interval in `ttyServer.js` and `sidecar-backend/server.js` (running every 500ms by default, adjustable via `AGENT_DETECTION_TICK_MS` env) and cleaned up/evicted properly.
+
+2. **Kimi Manifest Expansion**:
+   - Added new manifest rules to `manifests/kimi.js` to match the Kimi Code TUI footer (`working_footer_esc_interrupt`, `thinking_progress_working`, and `kimi_idle_prompt`).
+   - Extended `detector.test.js` to validate these new rules using realistic screen fixtures.
+
+3. **ANSI Sequence Stripping**:
+   - Created a shared `stripAnsi.js` helper and integrated it into `detector.js` and `sessionAgentDetector.js` to clean raw terminal streams (CSIs, erase sequences, DCS/APC/PM/OSC, `\r`) prior to applying manifest checks.
+
+4. **Activity Tracker Integration & apiStatus Staleness**:
+   - Updated `useTerminalV2Session.js` to decode base64 terminal append streams and properly pass the decoded characters to the activity tracker.
+   - Enforced a 30s freshness constraint on `apiStatus` inside `panelStatusHelpers.js` to prevent stale database states from showing persistent "Running" status.
+

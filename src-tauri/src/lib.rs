@@ -18,10 +18,10 @@ mod voice_engine;
 mod voice_python_setup;
 
 use native_browser::{
-    native_browser_close, native_browser_copy, native_browser_focus, native_browser_load_url,
-    native_browser_open, native_browser_probe, native_browser_raise, native_browser_reload,
-    native_browser_resize, native_browser_select_all, native_browser_selector_command,
-    native_browser_set_visibility, NativeBrowserState,
+    native_browser_capture, native_browser_close, native_browser_copy, native_browser_focus,
+    native_browser_load_url, native_browser_open, native_browser_probe, native_browser_raise,
+    native_browser_reload, native_browser_resize, native_browser_select_all,
+    native_browser_selector_command, native_browser_set_visibility, NativeBrowserState,
 };
 use system_clipboard::{
     read_system_clipboard_image, read_system_clipboard_text, write_clipboard_image_to_temp_file,
@@ -1078,6 +1078,7 @@ pub fn run() {
             native_browser_select_all,
             native_browser_copy,
             native_browser_close,
+            native_browser_capture,
             read_system_clipboard_text,
             read_system_clipboard_image,
             write_clipboard_image_to_temp_file,

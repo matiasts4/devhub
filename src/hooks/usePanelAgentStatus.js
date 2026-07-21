@@ -17,7 +17,9 @@ import {
 } from '@/components/terminal/utils/panelSemanticStateStore';
 
 const DEFAULT_POLLING_INTERVAL_MS = 6000;
-const FETCH_TIMEOUT_MS = 3000;
+// Generous: in dev, Turbopack recompiles can stall API routes for several
+// seconds; a short timeout here leaves the badge permanently hidden.
+const FETCH_TIMEOUT_MS = 10000;
 
 function resolveApiSessionId(agentRun, initialCommand, agentSessionId) {
   if (agentRun) {
@@ -61,6 +63,7 @@ export default function usePanelAgentStatus(
 ) {
   const effectiveTerminalId = terminalId || panelId;
   const [apiStatus, setApiStatus] = useState(null);
+  const [apiStatusAt, setApiStatusAt] = useState(null);
   const [terminalActivity, setTerminalActivity] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
@@ -98,6 +101,7 @@ export default function usePanelAgentStatus(
         agentRun,
         initialCommand,
         apiStatus,
+        apiStatusAt,
         terminalActivity: mergedTerminalActivity,
         liveActivity,
         liveActivityAgeMs,
@@ -107,6 +111,7 @@ export default function usePanelAgentStatus(
       agentRun,
       initialCommand,
       apiStatus,
+      apiStatusAt,
       mergedTerminalActivity,
       liveActivity,
       liveActivityAgeMs,
@@ -165,6 +170,7 @@ export default function usePanelAgentStatus(
         if (cancelled || requestId !== requestIdRef.current) return;
 
         setApiStatus(data?.status || null);
+        setApiStatusAt(data?.updated_at ? new Date(data.updated_at).getTime() : Date.now());
         setLastUpdated(new Date().toISOString());
         setError(null);
       } catch (err) {
@@ -229,6 +235,7 @@ export default function usePanelAgentStatus(
 
         const data = await res.json();
         if (cancelled || requestId !== tickRequestIdRef.current) return;
+
 
         const lastActivityAt = data?.lastActivityAt || null;
         const lastOutputAt = data?.lastOutputAt || null;

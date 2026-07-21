@@ -1,14 +1,16 @@
 /**
  * Circular progress ring for quota percentage remaining
  */
-export function QuotaProgressRing({ percentage = 100, size = 18, strokeWidth = 2.5 }) {
+export function QuotaProgressRing({ percentage = 100, size = 18, strokeWidth = 2.5, dimmed = false }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
     circumference - (Math.max(0, Math.min(100, percentage)) / 100) * circumference;
 
   let colorClass = 'text-emerald-400';
-  if (percentage < 20) {
+  if (dimmed) {
+    colorClass = 'text-zinc-600';
+  } else if (percentage < 20) {
     colorClass = 'text-red-400';
   } else if (percentage < 45) {
     colorClass = 'text-amber-400';
@@ -29,6 +31,7 @@ export function QuotaProgressRing({ percentage = 100, size = 18, strokeWidth = 2
         cy={size / 2}
         r={radius}
         className={`transition-all duration-500 ease-out ${colorClass}`}
+        stroke="currentColor"
         strokeWidth={strokeWidth}
         strokeDasharray={circumference}
         strokeDashoffset={strokeDashoffset}

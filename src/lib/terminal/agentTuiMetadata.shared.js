@@ -9,7 +9,7 @@
 
 import { detectAgentState, hasManifest, AgentStateMachine } from './agentStateDetection/index.js';
 
-export const AGENT_TUI_TYPES = ['opencode', 'kimi', 'claude', 'codex', 'grok', 'hermes'];
+export const AGENT_TUI_TYPES = ['opencode', 'kimi', 'claude', 'codex', 'grok', 'hermes', 'agy'];
 
 const AGENT_TYPE_PATTERNS = {
   opencode: /\bopencode\b/i,
@@ -18,6 +18,7 @@ const AGENT_TYPE_PATTERNS = {
   codex: /\bcodex\b/i,
   grok: /\b(?:grok|groc)\b/i,
   hermes: /\bhermes\b/i,
+  agy: /\b(?:agy|antigravity)\b/i,
 };
 
 const AGENT_SESSION_PATTERNS = {
@@ -33,6 +34,8 @@ const AGENT_SESSION_PATTERNS = {
   codex: /codex\s+(?:--session\s+|session\s+resume\s+|resume\s+)([\w-]+)/i,
   // grok does not expose a session id; we synthesize one.
   grok: null,
+  // agy does not expose a session id; we synthesize one.
+  agy: null,
 };
 
 export const AGENT_TUI_PATTERN = new RegExp(
@@ -99,6 +102,8 @@ export function resolveAgentTuiLabel(type) {
       return 'Grok';
     case 'hermes':
       return 'Hermes';
+    case 'agy':
+      return 'Antigravity';
     default:
       return 'Agente TUI';
   }

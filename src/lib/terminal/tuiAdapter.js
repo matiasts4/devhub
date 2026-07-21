@@ -27,8 +27,13 @@ const TUI_ADAPTER_REGISTRY = Object.freeze({
   grok: Object.freeze({
     id: 'grok',
     detectReady: ({ refs } = {}) => Boolean(refs?.grokTuiReadyRef?.current),
+    // ALWAYS inject for Grok — never native xterm wheel passthrough.
+    // First Grok panel after cold start often has host-side mouse modes ON (from
+    // rebind spam) while the TUI is not listening → native forward "succeeds",
+    // preventDefault swallows the wheel, scroll is dead. Second Grok panel often
+    // falls through to inject and works. Inject-only matches the reliable path.
     wheelStrategy: Object.freeze({
-      passThrough: true,
+      passThrough: false,
       buttons: [64, 65],
     }),
     clickStrategy: Object.freeze({

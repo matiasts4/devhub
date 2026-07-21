@@ -321,6 +321,19 @@ async function handleShellCommand(command, payload = {}, ctx = { getMainWindow: 
     case SHELL_COMMANDS.RUNTIME_ENSURE:
       return ensureRuntime({ force: Boolean(payload.force) });
 
+    case SHELL_COMMANDS.LOG_CLIENT_ERROR:
+      console.error(`[Client Error Log] panel:${payload.panelId} message:${payload.message}\nstack:${payload.stack}`);
+      try {
+        fs.appendFileSync(
+          'D:/devhub/debug_terminal_client.log',
+          `[${new Date().toISOString()}] panel:${payload.panelId} msg:${payload.message}\nstack:${payload.stack}\n\n`,
+          'utf8'
+        );
+      } catch (_e) {
+        // ignore
+      }
+      return { ok: true };
+
     default:
       return { reason: 'not-implemented', command };
   }

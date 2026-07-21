@@ -7,8 +7,8 @@
  * DevHub: 'idle' | 'running' | 'blocked' | 'unknown'.
  */
 
-const PENDING_IDLE_CAP_MS = 700;
-const PENDING_IDLE_CONFIRMATIONS = 3;
+const PENDING_IDLE_CAP_MS = 4000;
+const PENDING_IDLE_CONFIRMATIONS = 6;
 const STABLE_VISIBLE_SIGNAL_REFRESH_MS = 800;
 
 export class AgentStateMachine {
@@ -60,10 +60,20 @@ export class AgentStateMachine {
    * Periodically refresh a stable visible blocker so consumers keep noticing it.
    */
   stableVisibleSignalRefreshDue(next, now) {
-    const stableVisibleSignal = next.visibleBlocker && this.lastVisibleBlocker;
+    const stableVisibleSignal =
+      (next.visibleBlocker && this.lastVisibleBlocker) ||
+      (next.visibleWorking && this.lastVisibleWorking);
     if (!stableVisibleSignal) return false;
-    if (!this.lastVisibleSignalRefresh) return true;
+    if (this.lastVisibleSignalRefresh === null) return true;
     return now - this.lastVisibleSignalRefresh >= STABLE_VISIBLE_SIGNAL_REFRESH_MS;
+  }
+
+  /**
+   * Directly publish a hook state report, bypassing anti-flicker hold.
+   */
+  publishHook(detection, now = Date.now()) {
+    this.pendingIdle = null;
+    return this.publish(detection, now, { bypassHold: true });
   }
 
   /**
@@ -75,9 +85,11 @@ export class AgentStateMachine {
    * @param {boolean} detection.visibleWorking
    * @param {boolean} detection.visibleBlocker
    * @param {number} now — timestamp in ms
+   * @param {object} [options]
+   * @param {boolean} [options.bypassHold] — skip anti-flicker hold (used for authoritative hooks)
    * @returns {object|null} published state or null if unchanged
    */
-  publish(detection, now = Date.now()) {
+  publish(detection, now = Date.now(), options = {}) {
     const next = {
       state: detection.state,
       visibleIdle: detection.visibleIdle,
@@ -92,7 +104,7 @@ export class AgentStateMachine {
       visibleBlocker: this.lastVisibleBlocker,
     };
 
-    if (this.shouldHoldWorkingToIdle(previous, next, now)) {
+    if (!options.bypassHold && this.shouldHoldWorkingToIdle(previous, next, now)) {
       return null;
     }
 

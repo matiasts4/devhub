@@ -7,34 +7,44 @@ const {
   ACCENTS,
   ACCENT_OPTIONS,
   ACCENT_STORAGE_KEY,
+  APPEARANCE_STORAGE_KEY,
   MORPHOLOGIES,
   MORPHOLOGY_OPTIONS,
   MORPHOLOGY_STORAGE_KEY,
+  OPENCODE_DESKTOP_PRESET,
   PALETTES,
   PALETTE_OPTIONS,
   PALETTE_STORAGE_KEY,
+  THEME_OPTIONS,
   THEME_STORAGE_KEY,
   THEMES,
   WARNING,
   applyAccentToDocument,
   applyMotionModeToDocument,
   applyMorphologyToDocument,
+  applyOpenCodeDesktopPreset,
   applyPaletteToDocument,
   applyWarning,
   getStoredAccent,
+  getStoredAppearance,
   getStoredMorphology,
   getStoredMotionMode,
   getStoredPalette,
+  getStoredTheme,
   MOTION_MODES,
   MOTION_MODE_STORAGE_KEY,
   normalizeAccent,
   normalizeMotionMode,
   normalizeMorphology,
   normalizePalette,
+  normalizeTheme,
+  restoreAppearanceSnapshot,
   setAccent,
+  setDensity,
   setMotionMode,
   setMorphology,
   setPalette,
+  setStoredAppearance,
   setStoredMotionMode,
   setTheme,
 } = require('../themes.js');
@@ -145,6 +155,218 @@ describe('theme morphology helpers', () => {
 
   test('exposes switchyard as a first-class theme option', () => {
     expect(THEMES.SWITCHYARD).toBe('switchyard');
+  });
+
+  test('exposes opencode as a first-class theme option', () => {
+    expect(THEMES.OPENCODE).toBe('opencode');
+    expect(THEME_OPTIONS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: THEMES.OPENCODE,
+          label: expect.stringMatching(/opencode/i),
+          terminalBg: expect.objectContaining({
+            bg: expect.stringMatching(/^#1[0-6]/),
+            fg: expect.any(String),
+            headerBg: expect.stringMatching(/^#1[0-6]/),
+          }),
+        }),
+      ])
+    );
+  });
+
+  test('normalizeTheme accepts opencode and rejects unknown values', () => {
+    expect(normalizeTheme('opencode')).toBe('opencode');
+    expect(normalizeTheme(THEMES.OPENCODE)).toBe(THEMES.OPENCODE);
+    expect(normalizeTheme('garbage')).toBe(THEMES.DEEP_SEA);
+  });
+
+  test('WARNING.opencode is a non-empty CSS color string', () => {
+    expect(typeof WARNING[THEMES.OPENCODE]).toBe('string');
+    expect(WARNING[THEMES.OPENCODE].length).toBeGreaterThan(0);
+    expect(WARNING.opencode).toBe(WARNING[THEMES.OPENCODE]);
+  });
+
+  test('setTheme(opencode) applies data-theme and matching WARNING inline', () => {
+    const result = setTheme(THEMES.OPENCODE);
+    expect(result).toBe(THEMES.OPENCODE);
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.OPENCODE);
+    expect(document.documentElement.style.getPropertyValue('--warning')).toBe(
+      WARNING[THEMES.OPENCODE]
+    );
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(THEMES.OPENCODE);
+  });
+
+  test('exposes opencode-desktop as a first-class morphology option', () => {
+    expect(MORPHOLOGIES.OPENCODE_DESKTOP).toBe('opencode-desktop');
+    expect(MORPHOLOGY_OPTIONS).toHaveLength(6);
+    expect(MORPHOLOGY_OPTIONS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: MORPHOLOGIES.OPENCODE_DESKTOP,
+          label: expect.stringMatching(/opencode/i),
+        }),
+      ])
+    );
+  });
+
+  test('normalizeMorphology accepts opencode-desktop and rejects unknown values', () => {
+    expect(normalizeMorphology('opencode-desktop')).toBe('opencode-desktop');
+    expect(normalizeMorphology(MORPHOLOGIES.OPENCODE_DESKTOP)).toBe(
+      MORPHOLOGIES.OPENCODE_DESKTOP
+    );
+    expect(normalizeMorphology('garbage-morph')).toBe(MORPHOLOGIES.DEFAULT);
+  });
+
+  test('setMorphology(opencode-desktop) does not change theme', () => {
+    setTheme(THEMES.OPENCODE);
+    const result = setMorphology(MORPHOLOGIES.OPENCODE_DESKTOP);
+
+    expect(result).toBe(MORPHOLOGIES.OPENCODE_DESKTOP);
+    expect(document.documentElement.getAttribute('data-morphology')).toBe(
+      MORPHOLOGIES.OPENCODE_DESKTOP
+    );
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.OPENCODE);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(THEMES.OPENCODE);
+    expect(window.localStorage.getItem(MORPHOLOGY_STORAGE_KEY)).toBe(
+      MORPHOLOGIES.OPENCODE_DESKTOP
+    );
+  });
+});
+
+describe('OpenCode Desktop preset + density helpers', () => {
+  let dom;
+
+  beforeEach(() => {
+    dom = new JSDOM('<!doctype html><html><body></body></html>', {
+      url: 'https://devhub.test',
+    });
+
+    global.window = dom.window;
+    global.document = dom.window.document;
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-morphology');
+    document.documentElement.removeAttribute('data-density');
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    dom.window.close();
+    delete global.window;
+    delete global.document;
+  });
+
+  test('OPENCODE_DESKTOP_PRESET targets opencode + opencode-desktop + compact', () => {
+    expect(OPENCODE_DESKTOP_PRESET).toEqual({
+      theme: THEMES.OPENCODE,
+      morphology: MORPHOLOGIES.OPENCODE_DESKTOP,
+      density: 'compact',
+    });
+  });
+
+  test('applyOpenCodeDesktopPreset applies all three axes and returns prior snapshot', () => {
+    setTheme(THEMES.DRACULA);
+    setMorphology(MORPHOLOGIES.CURSOR);
+    setStoredAppearance({
+      fontFamily: 'Inter',
+      fontScale: 1.1,
+      density: 'comfortable',
+      zoom: 1,
+    });
+
+    const snapshot = applyOpenCodeDesktopPreset();
+
+    expect(snapshot).toEqual({
+      theme: THEMES.DRACULA,
+      morphology: MORPHOLOGIES.CURSOR,
+      appearance: expect.objectContaining({
+        density: 'comfortable',
+        fontFamily: 'Inter',
+        fontScale: 1.1,
+      }),
+    });
+
+    expect(getStoredTheme()).toBe(THEMES.OPENCODE);
+    expect(getStoredMorphology()).toBe(MORPHOLOGIES.OPENCODE_DESKTOP);
+    expect(getStoredAppearance().density).toBe('compact');
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.OPENCODE);
+    expect(document.documentElement.getAttribute('data-morphology')).toBe(
+      MORPHOLOGIES.OPENCODE_DESKTOP
+    );
+    expect(document.documentElement.getAttribute('data-density')).toBe('compact');
+    expect(JSON.parse(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).density).toBe(
+      'compact'
+    );
+  });
+
+  test('restoreAppearanceSnapshot restores theme, morphology, and appearance', () => {
+    setTheme(THEMES.DRACULA);
+    setMorphology(MORPHOLOGIES.CURSOR);
+    setStoredAppearance({
+      fontFamily: 'Inter',
+      fontScale: 1.1,
+      density: 'comfortable',
+      zoom: 1.2,
+    });
+
+    const snapshot = applyOpenCodeDesktopPreset();
+    restoreAppearanceSnapshot(snapshot);
+
+    expect(getStoredTheme()).toBe(THEMES.DRACULA);
+    expect(getStoredMorphology()).toBe(MORPHOLOGIES.CURSOR);
+    expect(getStoredAppearance()).toEqual(
+      expect.objectContaining({
+        density: 'comfortable',
+        fontFamily: 'Inter',
+        fontScale: 1.1,
+        zoom: 1.2,
+      })
+    );
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.DRACULA);
+    expect(document.documentElement.getAttribute('data-morphology')).toBe(MORPHOLOGIES.CURSOR);
+    expect(document.documentElement.getAttribute('data-density')).toBe('comfortable');
+  });
+
+  test('setDensity updates density without changing theme or morphology', () => {
+    setTheme(THEMES.NORD);
+    setMorphology(MORPHOLOGIES.DEFAULT);
+    setStoredAppearance({ density: 'comfortable', fontFamily: 'Inter', fontScale: 1, zoom: 1 });
+
+    const result = setDensity('compact');
+
+    expect(result).toBe('compact');
+    expect(getStoredAppearance().density).toBe('compact');
+    expect(document.documentElement.getAttribute('data-density')).toBe('compact');
+    expect(getStoredTheme()).toBe(THEMES.NORD);
+    expect(getStoredMorphology()).toBe(MORPHOLOGIES.DEFAULT);
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.NORD);
+  });
+
+  test('setDensity normalizes unsupported values to comfortable', () => {
+    setStoredAppearance({ density: 'compact', fontFamily: 'Inter', fontScale: 1, zoom: 1 });
+
+    const result = setDensity('ultra');
+
+    expect(result).toBe('comfortable');
+    expect(getStoredAppearance().density).toBe('comfortable');
+    expect(document.documentElement.getAttribute('data-density')).toBe('comfortable');
+  });
+
+  test('post-preset independent theme change leaves morphology and density', () => {
+    setTheme(THEMES.DEEP_SEA);
+    setMorphology(MORPHOLOGIES.DEFAULT);
+    setStoredAppearance({ density: 'comfortable', fontFamily: 'Inter', fontScale: 1, zoom: 1 });
+
+    applyOpenCodeDesktopPreset();
+    setTheme(THEMES.DRACULA);
+
+    expect(getStoredTheme()).toBe(THEMES.DRACULA);
+    expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.DRACULA);
+    expect(getStoredMorphology()).toBe(MORPHOLOGIES.OPENCODE_DESKTOP);
+    expect(getStoredAppearance().density).toBe('compact');
+    expect(document.documentElement.getAttribute('data-morphology')).toBe(
+      MORPHOLOGIES.OPENCODE_DESKTOP
+    );
+    expect(document.documentElement.getAttribute('data-density')).toBe('compact');
   });
 });
 

@@ -32,6 +32,7 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 data/logs/
+data/quota-cache.json
 
 # === Lock files (keep only one, using package-lock.json) ===
 yarn.lock
@@ -145,3 +146,11 @@ packaging/windows/devhub-server-launcher/target/
 
 # === Runtime terminal session state ===
 terminals/
+
+# === Temporary logs and debug artifacts ===
+*.log
+tmp_*
+devhub-mcp/data/*.backup-*
+.codegraph/
+
+

@@ -39,8 +39,20 @@ function clampBoundsToContent(bounds, contentSize) {
   let { x, y, width, height } = normalized;
   width = Math.min(width, maxW);
   height = Math.min(height, maxH);
-  x = Math.min(Math.max(0, x), Math.max(0, maxW - width));
-  y = Math.min(Math.max(0, y), Math.max(0, maxH - height));
+
+  x = Math.max(0, Math.min(x, Math.max(0, maxW - width)));
+
+  const maxY = Math.max(0, maxH - height);
+  if (y > maxY) {
+    if (y < maxH) {
+      height = Math.max(0, maxH - y);
+    } else {
+      y = maxY;
+    }
+  } else {
+    y = Math.max(0, y);
+  }
+
   return { x, y, width, height };
 }
 

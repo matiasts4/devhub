@@ -61,6 +61,8 @@ function buildSidecarSpawnConfig({
   launchId = null,
   roleKey = null,
   env = process.env,
+  hookToken = null,
+  hookUrl = null,
 } = {}) {
   const isWin = os.platform() === 'win32';
   const resolvedShell = isWin ? resolveWindowsShell() : env.SHELL || 'bash';
@@ -73,6 +75,10 @@ function buildSidecarSpawnConfig({
   const separator = isWin ? ';' : ':';
   const newPath = existingPath ? `${kimiBinDir}${separator}${existingPath}` : kimiBinDir;
 
+  const sidecarPort = env.SIDECAR_PORT || '4000';
+  const defaultHookUrl = env.DEVHUB_HOOK_URL || `http://127.0.0.1:${sidecarPort}/agent-hook`;
+  const effectiveHookUrl = hookUrl || defaultHookUrl;
+
   const spawnEnv = {
     ...env,
     [pathKey]: newPath,
@@ -81,7 +87,14 @@ function buildSidecarSpawnConfig({
     MOTD_SHOWN: 'true',
     SSH_CONNECTION: '',
     HUSHLOGIN: 'true',
+    DEVHUB_HOOK_ENV: '1',
+    DEVHUB_TERMINAL_ID: sessionId || '',
+    DEVHUB_HOOK_URL: effectiveHookUrl,
   };
+
+  if (hookToken) {
+    spawnEnv.DEVHUB_HOOK_TOKEN = hookToken;
+  }
 
   // The PTY sidecar is a Node process and may have been launched with a
   // restrictive --max-old-space-size (e.g. 384 MB). Shells spawned through it

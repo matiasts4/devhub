@@ -10,7 +10,31 @@
  * - No hard-coded blue hex in primary mappings
  */
 
-const { buildXtermTheme, getTerminalFontOptions } = require('../terminal/TerminalThemeSync.js');
+const { buildXtermTheme, getTerminalFontOptions, normalizeColorForXterm } = require('../terminal/TerminalThemeSync.js');
+
+describe('normalizeColorForXterm()', () => {
+  test('passes through hex, rgb/rgba and named colors unchanged', () => {
+    expect(normalizeColorForXterm('#1a1a1a')).toBe('#1a1a1a');
+    expect(normalizeColorForXterm('rgb(1, 2, 3)')).toBe('rgb(1, 2, 3)');
+    expect(normalizeColorForXterm('rgba(88,166,255,0.3)')).toBe('rgba(88,166,255,0.3)');
+    expect(normalizeColorForXterm('transparent')).toBe('transparent');
+  });
+
+  test('returns empty string for empty or non-string input', () => {
+    expect(normalizeColorForXterm('')).toBe('');
+    expect(normalizeColorForXterm('   ')).toBe('');
+    expect(normalizeColorForXterm(null)).toBe('');
+    expect(normalizeColorForXterm(undefined)).toBe('');
+  });
+
+  test('in jsdom (no canvas 2d) wide-gamut colors normalize to empty, never throw', () => {
+    // jsdom has no canvas 2d context, so oklch cannot be converted here; the
+    // important contract is: no throw, no passthrough of unparseable values.
+    expect(() => normalizeColorForXterm('oklch(0.13 0.01 240)')).not.toThrow();
+    expect(normalizeColorForXterm('oklch(0.13 0.01 240)')).toBe('');
+    expect(normalizeColorForXterm('not-a-color(')).toBe('');
+  });
+});
 
 describe('buildXtermTheme()', () => {
   // Helper: simulate CSS var resolution with known values

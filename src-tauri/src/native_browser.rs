@@ -139,6 +139,14 @@ pub struct NativeBrowserOpenResponse {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeBrowserCaptureResponse {
+    pub ok: bool,
+    pub data_url: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct NativeBrowserLoadUrlResponse {
     pub loaded: bool,
     pub reason: Option<String>,
@@ -1628,6 +1636,20 @@ pub fn native_browser_close(
         let _ = state;
         let _ = request;
         Err("unsupported-platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn native_browser_capture(
+    _app: AppHandle,
+    _state: State<'_, NativeBrowserState>,
+    request: NativeBrowserPanelRequest,
+) -> NativeBrowserCaptureResponse {
+    let _ = request;
+    NativeBrowserCaptureResponse {
+        ok: false,
+        data_url: None,
+        reason: Some("unsupported-platform".to_string()),
     }
 }
 

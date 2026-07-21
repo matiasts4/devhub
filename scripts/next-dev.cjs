@@ -44,7 +44,13 @@ if (process.env.ZED_FAST_PATH == null) {
 }
 
 const nextBin = path.join(__dirname, '..', 'node_modules', 'next', 'dist', 'bin', 'next');
-const result = spawnSync(process.execPath, [nextBin, 'dev', '--port', '3100'], {
+const nextArgs = [nextBin, 'dev', '--port', '3100'];
+// DEVHUB_NEXT_BUNDLER=webpack avoids silent Turbopack native crashes on Windows
+// (vercel/next.js#95015: next dev exits with no error; --webpack stays up).
+if (process.env.DEVHUB_NEXT_BUNDLER === 'webpack') {
+  nextArgs.push('--webpack');
+}
+const result = spawnSync(process.execPath, nextArgs, {
   stdio: 'inherit',
   env: process.env,
 });

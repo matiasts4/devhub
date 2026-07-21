@@ -8,7 +8,21 @@
  */
 
 const path = require('path');
+const os = require('os');
 const { app, ipcMain, Menu } = require('electron');
+
+// Set isolated user data directory and app name BEFORE requestSingleInstanceLock
+try {
+  app.setName('DevHub');
+  if (!app.isPackaged) {
+    const devhubHome =
+      process.env.DEVHUB_HOME || path.join(os.homedir(), '.devhub-dev');
+    app.setPath('userData', path.join(devhubHome, 'electron-user-data'));
+  }
+} catch {
+  /* ignore */
+}
+
 const { createMainWindow, resolveUiUrl } = require('./window');
 const { ensureSidecar } = require('./sidecar');
 const { createBrowserRegistry } = require('./browser/registry');
@@ -89,9 +103,18 @@ function registerIpc() {
 
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  try {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+  } catch {
+    /* ignore */
+  }
+  try {
+    mainWindow.show();
+    if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop();
+    mainWindow.focus();
+  } catch (err) {
+    console.warn('[DevHub Electron] focusMainWindow failed', err?.message || err);
+  }
 }
 
 function attachMainWindow(win) {
@@ -113,6 +136,13 @@ function attachMainWindow(win) {
 }
 
 async function boot() {
+  // Product name (avoids generic "Electron" chrome when a title is shown).
+  try {
+    app.setName('DevHub');
+  } catch {
+    /* ignore */
+  }
+
   // Single-instance lock — second launch focuses existing window.
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {

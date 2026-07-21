@@ -22,9 +22,12 @@ const { buildSidecarSpawnConfig, parseBooleanQueryFlag } = require('./sessionSpa
 const {
   ensureAgentDetectionSession,
   ingestAgentDetectionFromFilteredOutput,
+  tickAgentDetection,
   processOscTitle,
   stripOscTitleSequences,
   processOscProgress,
+  generateSessionHookToken,
+  handleHookReport,
 } = require('./bundled/agentDetection.cjs');
 const {
   applyAgentTuiDetection,
@@ -159,6 +162,7 @@ function spawnSidecarPtyProcess(session) {
     launchId: session.swarmContext?.launchId || null,
     roleKey: session.swarmContext?.roleKey || null,
     env: process.env,
+    hookToken: session.hookToken || null,
   });
   const shell =
     spawnConfig.shell ||
@@ -186,6 +190,7 @@ function resetSessionAfterTuiPtyDeath(session) {
   session.pendingInput = '';
   session.agentTuiState = null;
   session.agentTuiStateAt = null;
+  session.hookState = null;
   // Keep opencodeSessionId for Relanzar; drop live TUI markers so a later
   // intentional `exit` is not treated as another Ctrl+C TUI death.
   session.agentType = null;
@@ -423,6 +428,8 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     // should relaunch their agent instead of staying on a bare shell.
     inputFocused: false,
     launchCommand: null,
+    hookToken: generateSessionHookToken(),
+    hookState: null,
     swarmContext: {
       isSwarmRole: Boolean(swarmContext.isSwarmRole),
       launchId: swarmContext.launchId || null,
@@ -585,6 +592,22 @@ app.delete('/sessions/:sessionId', (req, res) => {
   return res.json({ success: true, sessionId });
 });
 
+// Endpoint POST /agent-hook — reportes de estado por hooks de lifecycle del agente
+app.post('/agent-hook', (req, res) => {
+  const jsonStr = JSON.stringify(req.body || {});
+  if (jsonStr.length > 4096) {
+    return res.status(400).json({ error: 'Payload size exeeded 4KB limit' });
+  }
+  const result = handleHookReport(sessions, req.body, Date.now());
+  if (result.status !== 204) {
+    return res.status(result.status).json({ error: result.error });
+  }
+  if (result.broadcast && result.session?.clients) {
+    broadcastSessionPayload(result.session, result.broadcast);
+  }
+  return res.status(204).send();
+});
+
 // Endpoint de shutdown graceful — llamado por Tauri al cerrar la app
 app.post('/shutdown', (_req, res) => {
   console.log('[Sidecar] Recibida señal de shutdown graceful...');
@@ -639,6 +662,18 @@ wss.on('connection', (ws, req) => {
     if (replay) {
       sendToClient(ws, { type: 'output', data: replay });
     }
+  }
+
+  // Replay del estado semántico del agente: los frames agent-state solo se
+  // emiten en transiciones, así que un cliente que conecta con el estado
+  // estable (p.ej. idle/running sostenido) no vería badge hasta el próximo
+  // cambio o hasta que el poll HTTP responda.
+  if (session.agentTuiState) {
+    sendToClient(ws, {
+      type: 'agent-state',
+      agentTuiState: session.agentTuiState,
+      at: session.agentTuiStateAt ?? Date.now(),
+    });
   }
 
   if (session.opencodeSessionId) {
@@ -729,4 +764,28 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[Sidecar] ✅ Sidecar escuchando en http://127.0.0.1:${PORT}`);
   console.log(`[Sidecar]    PID: ${process.pid}`);
   console.log(`[Sidecar]    Shell: ${process.env.SHELL || 'bash'}`);
+
+  // Arrancar intervalo de tick para detección de agentes
+  const tickMs = Number(process.env.AGENT_DETECTION_TICK_MS || 500);
+  setInterval(() => {
+    for (const session of sessions.values()) {
+      if (session.agentType) {
+        const tickResult = tickAgentDetection(session, Date.now());
+        if (tickResult.published && session.agentTuiState) {
+          const payload = {
+            type: 'agent-state',
+            agentTuiState: session.agentTuiState,
+            at: session.agentTuiStateAt,
+          };
+          for (const client of session.clients) {
+            if (client.readyState === WebSocket.OPEN) {
+              try {
+                client.send(JSON.stringify(payload));
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    }
+  }, tickMs).unref();
 });

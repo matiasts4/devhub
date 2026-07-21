@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { commitBrowserNavigation, moveBrowserHistory } from './browserHistory';
 import {
+  captureNativeBrowser,
   closeNativeBrowser,
   focusNativeBrowser,
   goBackNativeBrowser,
@@ -60,8 +61,10 @@ import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
 
+// Note: avoid `contain: size` here — it interacts badly with Electron <webview>
+// percentage/intrinsic sizing and contributes to top-only crop + black body.
 const VIEWPORT_SHELL_STYLE = {
-  contain: 'layout paint size',
+  contain: 'layout paint',
   isolation: 'isolate',
   transform: 'translateZ(0)',
   backfaceVisibility: 'hidden',
@@ -91,28 +94,47 @@ function WorkspaceBrowserPane({
   isPizarraContext = false,
   toolbarLeadingContent = null,
   toolbarTrailingContent = null,
+  /** Extra end padding so floating panel chrome does not cover URL controls. */
+  toolbarEndPadClassName = '',
   nativePanelId: nativePanelIdProp = null,
   /** When false, park Electron webview warm off-screen . */
   surfaceActive = true,
+  /** Fired when the guest finishes a load (webview/iframe) — pizarra readiness. */
+  onContentReady = null,
 }) {
-  const viewportShellRef = useRef(null);
+  const [viewportNode, setViewportNode] = useState(null);
+  const viewportShellRef = useCallback((node) => {
+    setViewportNode(node);
+  }, []);
   /**  DOM <webview> on Electron (not sibling WebContentsView). */
   const useDomWebview = shouldUseElectronWebview();
   const electronWebviewRef = useRef(null);
 
   const measureNativeBounds = useCallback(() => {
-    const el = viewportShellRef.current;
-    const rect = el?.getBoundingClientRect?.();
-    if (!rect || rect.width < 2 || rect.height < 2) {
+    const el = viewportNode;
+    if (!el) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
+    const rect = el.getBoundingClientRect?.();
+    // Prefer layout box; fall back to client size if rect is mid-transition.
+    const width = Math.max(
+      0,
+      Math.round(rect?.width || el.clientWidth || 0)
+    );
+    const height = Math.max(
+      0,
+      Math.round(rect?.height || el.clientHeight || 0)
+    );
+    if (width < 2 || height < 2) {
       return { x: 0, y: 0, width: 0, height: 0 };
     }
     return {
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.max(0, Math.round(rect.width)),
-      height: Math.max(0, Math.round(rect.height)),
+      x: Math.round(rect?.left ?? 0),
+      y: Math.round(rect?.top ?? 0),
+      width,
+      height,
     };
-  }, []);
+  }, [viewportNode]);
   const previewEditMode = Boolean(dockState.editMode || forceEditMode);
   const requestedBrowserRuntime = dockState.browserRuntime || BROWSER_RUNTIME.NATIVE_GTK;
 
@@ -140,15 +162,79 @@ function WorkspaceBrowserPane({
     !useDomWebview && browserRuntimeSelection.effectiveRuntime === BROWSER_RUNTIME.NATIVE_GTK;
   // UI treats Electron webview as "native embed" for chrome/chip (not iframe).
   const browserEmbedActive = useDomWebview || nativeRuntimeActive;
+  const [hasFullModalOpen, setHasFullModalOpen] = useState(false);
+  const [hasSoftOverlayOpen, setHasSoftOverlayOpen] = useState(false);
+  const [frozenImage, setFrozenImage] = useState(null);
+
+  const effectiveSuspendNativeSurface = suspendNativeSurface || hasSoftOverlayOpen;
+  const shouldHideNative = hasFullModalOpen || effectiveSuspendNativeSurface;
+
+  useEffect(() => {
+    if (!nativeRuntimeActive || !nativePanelId) return;
+
+    if (shouldHideNative) {
+      void captureNativeBrowser({ panelId: nativePanelId }).then((res) => {
+        if (res?.ok && res.dataUrl) {
+          setFrozenImage(res.dataUrl);
+        }
+      }).catch((err) => {
+        console.error('[WorkspaceBrowserPane] Capture failed:', err);
+      });
+    } else {
+      setFrozenImage(null);
+    }
+  }, [shouldHideNative, nativeRuntimeActive, nativePanelId]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.body) return undefined;
+    const checkModal = () => {
+      try {
+        const fullModal = document.querySelector(
+          '[data-devhub-modal="full"], [data-devhub-modal="true"], [data-testid$="-setup-modal"], [data-testid$="-settings-modal"]'
+        );
+        const softOverlay = document.querySelector(
+          '[data-devhub-modal="soft"], [data-devhub-soft-overlay="true"], [data-zed-overlay="true"], [data-testid^="zed-ambient"], [data-testid^="zed-aura"], [data-testid^="panel-add-space-menu-"], [data-testid^="panel-renderer-listbox-"]'
+        );
+        setHasFullModalOpen(Boolean(fullModal));
+        setHasSoftOverlayOpen(Boolean(softOverlay));
+      } catch {
+        /* ignore */
+      }
+    };
+    checkModal();
+    let observer = null;
+    if (typeof MutationObserver !== 'undefined' && document.body) {
+      try {
+        observer = new MutationObserver(checkModal);
+        observer.observe(document.body, { childList: true, subtree: true });
+      } catch {
+        observer = null;
+      }
+    }
+    return () => observer?.disconnect?.();
+  }, []);
+
   const nativeRuntimeVisibleInLayout = useMemo(() => {
     if (useDomWebview) return false; // no main-process surface
-    if (!nativeRuntimeActive || suspendNativeSurface) return false;
+    if (!nativeRuntimeActive) return false;
+
+    // Zero-flicker transition: keep native browser visible until frozenImage is ready.
+    if (shouldHideNative) {
+      return !frozenImage;
+    }
+
+    // Explicit surfaceActive=false parks the guest (keep-alive shell).
+    if (surfaceActive === false) return false;
 
     if (isPizarraContext) {
-      return true;
+      return !effectiveSuspendNativeSurface;
     }
 
     const maximizedView = dockState.maximizedView || 'browser';
+    // Pizarra takeover: workspace browser host is deferred/unmounted; hide native surface.
+    if (dockState.maximized === true && maximizedView === 'pizarra') {
+      return false;
+    }
     const takeoverBlocksWorkspaceBrowser =
       dockState.maximized === true && maximizedView !== 'browser' && maximizedView !== 'window';
     const browserOwnsLayout = !dockState.maximized || maximizedView === 'browser';
@@ -157,9 +243,12 @@ function WorkspaceBrowserPane({
   }, [
     dockState.maximized,
     dockState.maximizedView,
+    effectiveSuspendNativeSurface,
+    shouldHideNative,
+    frozenImage,
     isPizarraContext,
     nativeRuntimeActive,
-    suspendNativeSurface,
+    surfaceActive,
     useDomWebview,
   ]);
 
@@ -491,7 +580,7 @@ function WorkspaceBrowserPane({
     active: nativeRuntimeActive && !browserError,
     visibleInLayout: nativeRuntimeVisibleInLayout,
     measureBounds: measureNativeBounds,
-    observeNode: viewportShellRef,
+    observeNode: viewportNode,
     layoutSyncKey,
     workspaceId: workspaceId || null,
   });
@@ -619,20 +708,27 @@ function WorkspaceBrowserPane({
   const handleCloseDedicatedBrowser = async () => {
     if (!dedicatedBrowserOpen) return;
 
-    try {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const existingWindow = await WebviewWindow.getByLabel(dedicatedBrowserWindowLabel);
-      await existingWindow?.close().catch(() => {});
-    } catch {
-      // Ignore Tauri close failures in non-desktop contexts.
-    } finally {
-      onBrowserWindowStateChange?.(workspaceId, {
-        open: false,
-        label: dedicatedBrowserWindowLabel,
-        url: '',
-        updatedAt: Date.now(),
-      });
-    }
+    // Immediately update parent state so UI closes instantly
+    onBrowserWindowStateChange?.(workspaceId, {
+      open: false,
+      label: dedicatedBrowserWindowLabel,
+      url: '',
+      updatedAt: Date.now(),
+    });
+
+    // Close native window asynchronously in background
+    (async () => {
+      try {
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const existingWindow = await WebviewWindow.getByLabel(dedicatedBrowserWindowLabel);
+        if (existingWindow) {
+          await existingWindow.hide().catch(() => {});
+          await existingWindow.close().catch(() => {});
+        }
+      } catch {
+        // Ignore Tauri close failures in non-desktop contexts.
+      }
+    })();
   };
 
   const handleWorkspaceMaximizeToggle = () => {
@@ -662,7 +758,7 @@ function WorkspaceBrowserPane({
         />
       ) : null}
       <form
-        className={`flex ${isPizarraContext ? 'h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-2' : 'px-3'}`}
+        className={`flex ${isPizarraContext ? 'h-8' : 'h-11'} items-center gap-1 border-b border-[var(--border-subtle)] bg-[#07111c] ${isPizarraContext ? 'px-2' : 'px-3'} ${toolbarEndPadClassName || ''}`}
         onSubmit={handleNativeSubmit}
         data-testid="workspace-browser-toolbar"
         data-layout={isPizarraContext ? 'single-row' : 'default'}
@@ -798,9 +894,10 @@ function WorkspaceBrowserPane({
             placeholder={
               isPizarraContext ? 'URL' : 'Escribí una URL, localhost:3200 o una búsqueda'
             }
-            className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-20 text-[10px]' : 'h-8 pl-9 pr-36 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
+            className={`w-full ${isPizarraContext ? 'h-6 pl-7 pr-9 text-[10px]' : 'h-8 pl-9 pr-10 text-[13px]'} rounded-xl border border-[var(--border-subtle)] bg-[#08101d] text-[var(--text-primary)] outline-none transition-colors focus:border-[rgba(var(--accent-rgb,88,166,255),0.35)] focus:bg-[#091325]`}
           />
-          <div className="absolute inset-y-0 right-1 flex items-center gap-1">
+          {/* Only edit-mode inside the field — keeps the URL bar uncluttered. */}
+          <div className="absolute inset-y-0 right-1 flex items-center">
             <button
               type="button"
               data-testid="browser-edit-toggle"
@@ -815,138 +912,46 @@ function WorkspaceBrowserPane({
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
-            {dockState.browserUrl && !isPizarraContext ? (
-              <button
-                type="button"
-                data-testid="browser-toggle-workspace-maximize"
-                onClick={handleWorkspaceMaximizeToggle}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded-md px-2 text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
-                aria-label={
-                  dockState.maximized
-                    ? 'Restore browser with terminals'
-                    : 'Expand browser in workspace'
-                }
-                title={
-                  dockState.maximized
-                    ? 'Restore browser with terminals'
-                    : 'Expand browser in workspace'
-                }
-              >
-                {dockState.maximized ? (
-                  <Minimize2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-                <span className="text-[10px] font-semibold">
-                  {dockState.maximized ? 'Terminales' : 'Expandir'}
-                </span>
-              </button>
-            ) : null}
-            <div
-              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5"
-              style={{ display: 'none' }}
-              data-testid="browser-runtime-toggle"
-            >
-              <button
-                type="button"
-                data-testid="browser-runtime-option-iframe"
-                aria-pressed={browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.IFRAME}
-                onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.IFRAME)}
-                className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
-                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.IFRAME
-                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                    : 'text-[var(--text-muted)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
-                }`}
-                title="Use iframe runtime"
-              >
-                iframe
-              </button>
-              <button
-                type="button"
-                data-testid="browser-runtime-option-native-gtk"
-                aria-pressed={
-                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                }
-                onClick={() => handleBrowserRuntimeChange(BROWSER_RUNTIME.NATIVE_GTK)}
-                className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-semibold transition-colors ${
-                  browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.18)] text-[var(--accent-primary)]'
-                    : 'text-[var(--text-muted)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]'
-                }`}
-                title="Use native GTK runtime"
-              >
-                native gtk
-              </button>
-            </div>
-            {/* Show runtime/edit status chip even in pizarra (useful for inspector/reviews on page).
-                Was hidden before; now visible in browser cards for the "preguntas/reviews" functionality. */}
-            <div
-              className={`inline-flex h-6 items-center rounded-full border text-[10px] font-semibold ${
-                isPizarraContext ? 'w-6 justify-center px-0' : 'gap-1 px-2'
-              } ${
-                browserEmbedActive
-                  ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
-                  : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                    ? 'border-amber-400/25 bg-amber-400/10 text-amber-100'
-                    : 'border-white/10 bg-white/[0.04] text-[var(--text-muted)]'
-              }`}
-              data-testid="browser-native-runtime-chip"
-              title={
-                useDomWebview
-                  ? 'Electron <webview>  active'
-                  : nativeRuntimeActive
-                    ? 'Native GTK/WebKitGTK runtime active'
-                    : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                      ? 'Native GTK pedido, pero el browser cayó a iframe'
-                      : 'Iframe runtime active'
-              }
-            >
-              <span
-                className={`inline-flex h-1.5 w-1.5 rounded-full ${
-                  browserEmbedActive
-                    ? 'bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.65)]'
-                    : browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK
-                      ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.45)]'
-                      : 'bg-white/35'
-                }`}
-              />
-              <span
-                data-testid="browser-runtime-status"
-                className={isPizarraContext ? 'sr-only' : undefined}
-              >
-                {runtimeStatusCopy}
-              </span>
-            </div>
-
-            {dedicatedBrowserOpen ? (
-              <button
-                type="button"
-                data-testid="browser-close-dedicated"
-                onClick={handleCloseDedicatedBrowser}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-200 hover:bg-rose-400/10 hover:text-rose-100"
-                aria-label="Close dedicated DevHub browser window"
-                title="Close dedicated DevHub browser window"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-            {dockState.browserUrl ? (
-              <a
-                href={dockState.browserUrl}
-                target="_blank"
-                rel="noreferrer"
-                data-testid="browser-open-external"
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)]"
-                aria-label={`Open ${hostLabel} externally`}
-                title={`Open ${hostLabel} externally`}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            ) : null}
           </div>
         </label>
+        {/* After URL, before the reserved chrome pad — never absolute so it cannot stack under panel actions. */}
+        {dockState.browserUrl ? (
+          <a
+            href={dockState.browserUrl}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="browser-open-external"
+            className={`order-4 mr-0.5 inline-flex shrink-0 items-center justify-center ${isPizarraContext ? 'h-6 w-6' : 'h-7 w-7'} rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.05] hover:text-[var(--text-primary)]`}
+            aria-label={`Open ${hostLabel} externally`}
+            title={`Open ${hostLabel} externally`}
+          >
+            <ExternalLink className={isPizarraContext ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+          </a>
+        ) : null}
+        {dedicatedBrowserOpen ? (
+          <button
+            type="button"
+            data-testid="browser-close-dedicated"
+            onClick={handleCloseDedicatedBrowser}
+            className="order-4 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] text-rose-200 transition-colors hover:bg-rose-400/10 hover:text-rose-100"
+            aria-label="Close dedicated DevHub browser window"
+            title="Close dedicated DevHub browser window"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        {/*
+          Intentionally removed from workspace browser toolbar:
+          - "Expandir" / workspace maximize — covered by Focus Panel chrome
+          - "Activo: native" runtime chip — Electron webview is the only path; chip was noise
+          Keep the chip code commented for future diagnostics if needed.
+        */}
+        {/*
+            <div data-testid="browser-native-runtime-chip" ...>{runtimeStatusCopy}</div>
+            <button data-testid="browser-toggle-workspace-maximize">Expandir</button>
+        */}
         {toolbarTrailingContent ? (
-          <div className="order-4 inline-flex shrink-0 items-center">{toolbarTrailingContent}</div>
+          <div className="order-5 inline-flex shrink-0 items-center">{toolbarTrailingContent}</div>
         ) : null}
       </form>
 
@@ -1088,11 +1093,21 @@ function WorkspaceBrowserPane({
               cacheKey={nativePanelId}
               src={dockState.browserUrl || 'about:blank'}
               surfaceActive={surfaceActive !== false}
+              suspendNativeSurface={effectiveSuspendNativeSurface}
               partition={
                 projectId ? `persist:devhub-browser-${projectId}` : 'persist:devhub-browser-dock'
               }
               onNavigate={handleWebviewNavigate}
-              className="h-full w-full"
+              onLoadingChange={(loading) => {
+                if (!loading) {
+                  try {
+                    onContentReady?.({ panelId: nativePanelId, runtime: 'electron-webview' });
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              }}
+              className="absolute inset-0 h-full w-full min-h-0"
             />
           ) : nativeRuntimeActive ? (
             <>
@@ -1105,6 +1120,14 @@ function WorkspaceBrowserPane({
                 className="absolute inset-0 pointer-events-none"
                 aria-hidden="true"
               />
+
+              {frozenImage && !nativeRuntimeVisibleInLayout ? (
+                <img
+                  src={frozenImage}
+                  alt="Browser freeze frame"
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none z-[5]"
+                />
+              ) : null}
 
               {nativeError && !isPizarraContext ? (
                 <div

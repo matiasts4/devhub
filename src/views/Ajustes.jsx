@@ -34,14 +34,18 @@ import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 import {
   ACCENT_OPTIONS,
+  applyOpenCodeDesktopPreset,
   getStoredAccent,
+  getStoredAppearance,
   getStoredMorphology,
   getStoredMotionMode,
   getStoredTheme,
   getStoredZoom,
   MORPHOLOGY_OPTIONS,
   MOTION_MODES,
+  restoreAppearanceSnapshot,
   setAccent,
+  setDensity,
   setMotionMode,
   setMorphology,
   setTheme,
@@ -52,6 +56,8 @@ import {
 import { MotionModeToggle } from '@/components/motion-lab/MotionModeToggle';
 import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
 import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
+import AgentHooksSettingsSection from '@/components/settings/AgentHooksSettingsSection';
+import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
 import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
 import EquipoSettings from '@/components/EquipoSettings';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
@@ -420,6 +426,7 @@ const TABS = [
   { key: 'project', label: 'Proyecto', icon: LayoutGrid },
   { key: 'team', label: 'Equipo', icon: Users },
   { key: 'theme', label: 'Apariencia', icon: Palette },
+  { key: 'notifications', label: 'Notificaciones', icon: Bell },
   { key: 'llm', label: 'LLM', icon: Cpu },
   { key: 'swarm', label: 'Swarm', icon: Server },
   { key: 'profile', label: 'Perfil', icon: User },
@@ -465,6 +472,8 @@ export default function Ajustes() {
   const [activeMorphology, setActiveMorphology] = useState('default');
   const [activeAccent, setActiveAccent] = useState('theme');
   const [activeMotionMode, setActiveMotionMode] = useState(MOTION_MODES.NORMAL);
+  const [activeDensity, setActiveDensity] = useState('comfortable');
+  const [appearanceSnapshot, setAppearanceSnapshot] = useState(null);
   const [themeFilter, setThemeFilter] = useState('all'); // all | dark | light
 
   // Tabs
@@ -518,10 +527,12 @@ export default function Ajustes() {
     const storedMorphology = getStoredMorphology();
     const storedAccent = getStoredAccent();
     const storedMotionMode = getStoredMotionMode();
+    const storedAppearance = getStoredAppearance();
     setActiveTheme(storedTheme);
     setActiveMorphology(storedMorphology);
     setActiveAccent(storedAccent);
     setActiveMotionMode(storedMotionMode);
+    setActiveDensity(storedAppearance.density);
     setTheme(storedTheme);
     setMorphology(storedMorphology);
     setAccent(storedAccent);
@@ -544,6 +555,38 @@ export default function Ajustes() {
     setActiveMorphology(next);
     sileo.success({
       title: `Morfologia aplicada: ${MORPHOLOGY_OPTIONS.find((m) => m.id === next)?.label || next}`,
+    });
+  }, []);
+
+  const handleOpenCodeDesktopPreset = useCallback(() => {
+    const snapshot = applyOpenCodeDesktopPreset();
+    setAppearanceSnapshot(snapshot);
+    setActiveTheme(THEMES.OPENCODE);
+    setActiveMorphology('opencode-desktop');
+    setActiveDensity('compact');
+    sileo.success({ title: 'Preset aplicado: OpenCode Desktop' });
+  }, []);
+
+  const handlePresetUndo = useCallback(() => {
+    if (appearanceSnapshot) {
+      restoreAppearanceSnapshot(appearanceSnapshot);
+      setActiveTheme(appearanceSnapshot.theme);
+      setActiveMorphology(appearanceSnapshot.morphology);
+      setActiveDensity(appearanceSnapshot.appearance?.density || 'comfortable');
+      setAppearanceSnapshot(null);
+      sileo.success({ title: 'Apariencia restaurada' });
+      return;
+    }
+    const next = setDensity('comfortable');
+    setActiveDensity(next);
+    sileo.success({ title: 'Densidad restaurada: comfortable' });
+  }, [appearanceSnapshot]);
+
+  const handleDensityChange = useCallback((density) => {
+    const next = setDensity(density);
+    setActiveDensity(next);
+    sileo.success({
+      title: `Densidad: ${next === 'compact' ? 'Compact' : 'Comfortable'}`,
     });
   }, []);
 
@@ -1072,7 +1115,111 @@ export default function Ajustes() {
             ))}
           </div>
 
-          <div className="p-6">
+          <div className="p-6 space-y-5">
+            <div
+              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+              style={{
+                ...chromeSurfaceStyle({ surface: 'panel' }),
+                padding: '12px 14px',
+              }}
+            >
+              <div className="min-w-0">
+                <p
+                  className="font-mono text-xs font-semibold uppercase tracking-[0.16em]"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  OpenCode Desktop preset
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Aplica tema opencode, morphologia opencode-desktop y densidad compact.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  data-testid="ajustes-opencode-desktop-preset"
+                  onClick={handleOpenCodeDesktopPreset}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    ...pillStyle({ tone: 'accent' }),
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  OpenCode Desktop
+                </button>
+                {appearanceSnapshot ? (
+                  <button
+                    type="button"
+                    data-testid="ajustes-opencode-desktop-preset-undo"
+                    onClick={handlePresetUndo}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      ...pillStyle(),
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    Undo
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div data-testid="ajustes-density-control">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <p
+                    className="font-mono text-xs font-semibold uppercase tracking-[0.16em]"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    Density
+                  </p>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Compact o comfortable — independiente del preset.
+                  </p>
+                </div>
+                <span
+                  className="inline-flex items-center px-2.5 py-1 text-[10px] uppercase tracking-[0.14em]"
+                  style={{
+                    ...chromeSurfaceStyle({ surface: 'pill', emphasized: true }),
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {activeDensity}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {[
+                  { id: 'compact', label: 'Compact' },
+                  { id: 'comfortable', label: 'Comfortable' },
+                ].map((option) => {
+                  const isActive = activeDensity === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      data-testid={`ajustes-density-option-${option.id}`}
+                      onClick={() => handleDensityChange(option.id)}
+                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium transition-all"
+                      style={
+                        isActive
+                          ? {
+                              ...pillStyle({ tone: 'accent' }),
+                              color: 'var(--text-primary)',
+                            }
+                          : {
+                              ...pillStyle(),
+                              color: 'var(--text-muted)',
+                            }
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredThemes.map((option) => (
                 <ThemeOptionCard
@@ -1253,7 +1400,12 @@ export default function Ajustes() {
     </div>
   );
 
-  const renderLlmTab = () => <LLMProviderSettings embedded />;
+  const renderLlmTab = () => (
+    <div className="space-y-6">
+      <LLMProviderSettings embedded />
+      <AgentHooksSettingsSection />
+    </div>
+  );
 
   const renderSwarmTab = () => (
     <div className="space-y-6">
@@ -1771,6 +1923,7 @@ export default function Ajustes() {
     project: renderProjectTab,
     team: renderTeamTab,
     theme: renderThemeTab,
+    notifications: () => <NotificationSettingsSection />,
     llm: renderLlmTab,
     swarm: renderSwarmTab,
     profile: renderProfileTab,

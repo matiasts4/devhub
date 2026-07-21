@@ -229,6 +229,27 @@
   --accent-glow: rgba(227, 179, 65, 0.16);
 }
 
+[data-morphology='opencode-desktop'] {
+  --chrome-radius-panel: 12px;
+  --chrome-radius-control: 8px;
+  --chrome-border-width: 1px;
+  --chrome-border-color: color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  --chrome-shadow-panel: 0 8px 20px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --chrome-shadow-control: 0 2px 8px rgba(0, 0, 0, 0.14);
+  --chrome-panel-fill: color-mix(in srgb, var(--surface-card) 98%, transparent);
+  --chrome-panel-fill-emphasis: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  --chrome-control-fill: color-mix(in srgb, var(--surface-card) 92%, transparent);
+  --chrome-control-fill-hover: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+  --chrome-press-offset: 0px;
+  /* terminal chrome only — layout frozen */
+  --terminal-chrome-border-width: 1px;
+  --terminal-chrome-border-color: color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  --terminal-chrome-shadow-panel: none;
+  --terminal-header-divider-width: 1px;
+  --terminal-header-divider-color: color-mix(in srgb, var(--border-subtle) 55%, transparent);
+  /* NO --accent-primary / --accent-glow — theme owns accent */
+}
+
 /* ─── Terminal Zone — base fallbacks applied before header style overrides ─── */
 [data-terminal-container] {
   --terminal-bg: var(--surface-app);
@@ -843,6 +864,53 @@ code {
     --warning: oklch(0.79 0.16 80);
   }
 
+  /* OpenCode Desktop dark sample — standalone DevHub tokens (no opencode-vars.css bridge) */
+  [data-theme='opencode'] {
+    --background: 0 0% 6%;
+    --foreground: 0 0% 91%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 91%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 91%;
+    --primary: 217 97% 81%;
+    --primary-foreground: 0 0% 6%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 91%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 58%;
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 91%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 91%;
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 217 97% 81%;
+
+    --surface-app: #101010;
+    --surface-card: #161616;
+    --surface-elevated: #1a1a1a;
+    --surface-muted: #121212;
+    --surface-hover: #1e1e1e;
+    --text-primary: #e8e8e8;
+    --text-secondary: #c8c8c8;
+    --text-muted: #8a8a8a;
+    --border-subtle: #2a2a2a;
+    --border-strong: #3a3a3a;
+    --accent-primary: #9dbefe;
+    --accent-secondary: #b8d0ff;
+    --accent-rgb: 157, 190, 254;
+    --accent-shadow: rgba(157, 190, 254, 0.28);
+    --accent-cyan: #7dd3e8;
+    --accent-purple: #b4a0fe;
+    --accent-green: #7ecf9a;
+    --accent-pink: #e89bb0;
+    --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.45);
+    --shadow-lifted: 0 20px 52px rgba(0, 0, 0, 0.6);
+    --danger: #f85149;
+    --success: #3fb950;
+    --warning: oklch(0.79 0.16 80);
+  }
+
   [data-accent='amber'] {
     --accent-primary: #e3b341;
     --accent-secondary: #f0c96b;
@@ -952,6 +1020,7 @@ code {
     --shadow-lifted: 0 20px 52px rgba(0, 0, 0, 0.75);
     --danger: #f85149;
     --success: #3fb950;
+    --warning: #e3b341;
   }
 
   [data-accent='amber'] {

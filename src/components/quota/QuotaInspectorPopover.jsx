@@ -1,14 +1,21 @@
+import { RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { PROVIDER_LABELS } from '../../lib/quota/types.js';
 import { QuotaProgressRing } from './QuotaProgressRing.jsx';
 
 export function QuotaInspectorPopover({
   allQuotas = {},
+  orderedProviders = null,
   selectedProvider = 'grok',
   onSelectProvider,
   onRefresh,
   onClose,
 }) {
   const currentQuota = allQuotas[selectedProvider] || null;
+  // Only enabled providers, in the user-configured order.
+  const providerIds =
+    Array.isArray(orderedProviders) && orderedProviders.length > 0
+      ? orderedProviders
+      : Object.keys(PROVIDER_LABELS);
 
   function formatTimeRemaining(ms) {
     if (!ms || ms <= 0) return 'Reset ready / No limit';
@@ -24,11 +31,16 @@ export function QuotaInspectorPopover({
   }
 
   return (
-    <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-zinc-800 bg-zinc-900/95 p-4 shadow-2xl backdrop-blur-md z-50 text-zinc-100 font-sans text-xs">
+    <div
+      data-devhub-modal="soft"
+      data-devhub-soft-overlay="true"
+      className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-zinc-800 bg-zinc-900/95 p-4 shadow-2xl backdrop-blur-md z-50 text-zinc-100 font-sans text-xs"
+    >
       {/* Header Tabs */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-2 mb-3">
         <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar max-w-[200px]">
-          {Object.entries(PROVIDER_LABELS).map(([id, label]) => {
+          {providerIds.map((id) => {
+            const label = PROVIDER_LABELS[id] || id;
             const status = allQuotas[id];
             const isActive = id === selectedProvider;
             const isAvail = status?.isAvailable;
@@ -57,14 +69,14 @@ export function QuotaInspectorPopover({
             title="Refresh quotas"
             className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-md transition-colors"
           >
-            🔄
+            <RefreshCw size={13} />
           </button>
           <button
             onClick={onClose}
             title="Close"
             className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-md transition-colors"
           >
-            ✕
+            <X size={14} />
           </button>
         </div>
       </div>
@@ -93,12 +105,68 @@ export function QuotaInspectorPopover({
             </div>
 
             <div className="text-right">
-              <span className="text-base font-bold text-emerald-400">
-                {currentQuota.primaryRemainingPercent}%
-              </span>
-              <div className="text-[9px] text-zinc-400">Remaining</div>
+              {currentQuota.error && (!currentQuota.windows || currentQuota.windows.length === 0) ? (
+                <>
+                  <span className="text-base font-bold text-zinc-500">--</span>
+                  <div className="text-[9px] text-zinc-400">No data</div>
+                </>
+              ) : (
+                <>
+                  <span className="text-base font-bold text-emerald-400">
+                    {currentQuota.primaryRemainingPercent}%
+                  </span>
+                  <div className="text-[9px] text-zinc-400">Remaining</div>
+                </>
+              )}
             </div>
           </div>
+
+          {/* Provider metadata (plan, membership, credits) */}
+          {currentQuota.metadata && Object.keys(currentQuota.metadata).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {currentQuota.metadata.membership && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+                  Plan: {currentQuota.metadata.membership}
+                </span>
+              )}
+              {currentQuota.metadata.planType && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+                  Plan: {currentQuota.metadata.planType}
+                </span>
+              )}
+              {currentQuota.metadata.creditsBalance != null && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300 border border-zinc-700">
+                  Credits: {currentQuota.metadata.creditsBalance}
+                </span>
+              )}
+              {currentQuota.metadata.extraUsage && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300 border border-zinc-700">
+                  Extra Usage: {(currentQuota.metadata.extraUsage.balanceCents / 100).toFixed(2)}{' '}
+                  {currentQuota.metadata.extraUsage.currency}
+                </span>
+              )}
+              {currentQuota.metadata.email && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300 border border-zinc-700">
+                  {currentQuota.metadata.email}
+                </span>
+              )}
+              {Array.isArray(currentQuota.metadata.authenticatedProviders) &&
+                currentQuota.metadata.authenticatedProviders.length > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300 border border-zinc-700">
+                    Auth:{' '}
+                    {currentQuota.metadata.authenticatedProviders
+                      .map((p) => `${p.id} (${p.type})`)
+                      .join(', ')}
+                  </span>
+                )}
+              {Array.isArray(currentQuota.metadata.configuredProviders) &&
+                currentQuota.metadata.configuredProviders.length > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-300 border border-zinc-700">
+                    Config: {currentQuota.metadata.configuredProviders.join(', ')}
+                  </span>
+                )}
+            </div>
+          )}
 
           {/* Usage Windows Breakdown */}
           {currentQuota.windows && currentQuota.windows.length > 0 && (
@@ -133,8 +201,9 @@ export function QuotaInspectorPopover({
           )}
 
           {currentQuota.error && (
-            <div className="text-[10px] text-amber-400/90 bg-amber-950/30 p-2 rounded border border-amber-800/40">
-              ⚠️ {currentQuota.error}
+            <div className="flex items-start gap-1.5 text-[10px] text-amber-400/90 bg-amber-950/30 p-2 rounded border border-amber-800/40">
+              <TriangleAlert size={12} className="mt-px shrink-0" />
+              <span>{currentQuota.error}</span>
             </div>
           )}
         </div>

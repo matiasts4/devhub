@@ -193,6 +193,13 @@ export async function copyNativeBrowser(payload = {}) {
   });
 }
 
+export async function captureNativeBrowser(payload = {}) {
+  return invokeNativeBrowser('native_browser_capture', payload, {
+    ok: false,
+    reason: 'desktop-unavailable',
+  });
+}
+
 export async function closeNativeBrowser(payload = {}) {
   return invokeNativeBrowser('native_browser_close', payload, {});
 }

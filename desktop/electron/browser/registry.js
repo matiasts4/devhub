@@ -30,6 +30,16 @@ const DEFAULT_PARTITION = 'persist:devhub-browser-dock';
 // and sometimes "lost" views after alt-tab).
 const OFFSCREEN = { x: -15000, y: -15000 };
 
+const fs = require('fs');
+function logDebug(action, panelId, details) {
+  try {
+    const line = `[${new Date().toISOString()}] [${action}] panel:${panelId} details:${JSON.stringify(details)}\n`;
+    fs.appendFileSync('D:/devhub/debug_bounds.log', line, 'utf8');
+  } catch (_e) {
+    // ignore
+  }
+}
+
 function createBrowserRegistry({ getMainWindow, sendEvent }) {
   /** @type {Map<string, any>} */
   const panels = new Map();
@@ -119,6 +129,17 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
       ? result.effectiveBounds
       : offscreenRect(result.effectiveBounds || entry.bounds || contentSize());
 
+    logDebug('applyBounds', entry.panelId || 'unknown', {
+      bounds,
+      entryBounds: entry.bounds,
+      show,
+      nextRect,
+      visible: entry.visible,
+      workspaceHidden: entry.workspaceHidden,
+      avoidHidden: entry.avoidHidden,
+      lastApplied: entry._lastApplied,
+    });
+
     // Skip no-op .
     if (
       entry._lastApplied &&
@@ -199,11 +220,56 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     parent.on('devhub-content-resize', () => scheduleSync(true));
   }
 
+  /**
+   * Theme guest scrollbars to match DevHub dark chrome (SPA CSS cannot reach WCV).
+   * Re-injected on every document load / navigation.
+   */
+  function injectGuestScrollbarCss(wc) {
+    if (!wc || wc.isDestroyed?.()) return;
+    const css = `
+html {
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: #3d4f66 #0d1520;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: #0d1520;
+}
+::-webkit-scrollbar-track {
+  background: #0d1520;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d4f66;
+  border-radius: 8px;
+  border: 2px solid #0d1520;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 166, 255, 0.55);
+  border: 2px solid #0d1520;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: #0d1520;
+}
+`.trim();
+    try {
+      const p = wc.insertCSS(css);
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {
+      /* guest mid-navigation */
+    }
+  }
+
   function attachListeners(panelId, view) {
     const wc = view.webContents;
     wc.on('did-navigate', (_e, url) => {
       const entry = panels.get(panelId);
       if (entry) entry.url = url;
+      injectGuestScrollbarCss(wc);
       emit(panelId, 'navigated', { url });
     });
     wc.on('did-navigate-in-page', (_e, url) => {
@@ -215,7 +281,13 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
       emit(panelId, 'fail-load', { errorCode, errorDescription, url: validatedURL });
     });
-    wc.on('did-finish-load', () => emit(panelId, 'loaded', { url: wc.getURL() }));
+    wc.on('did-finish-load', () => {
+      injectGuestScrollbarCss(wc);
+      emit(panelId, 'loaded', { url: wc.getURL() });
+    });
+    wc.on('dom-ready', () => {
+      injectGuestScrollbarCss(wc);
+    });
   }
 
   function resolvePartition(panelId, request) {
@@ -275,7 +347,8 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
         },
       });
       try {
-        view.setBackgroundColor('#ffffff');
+        // Match SPA browser host chrome (avoid white flash on open / mode switch).
+        view.setBackgroundColor('#0a111d');
       } catch {
         /* ignore */
       }
@@ -286,6 +359,7 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
           : null;
 
       entry = {
+        panelId,
         view,
         bounds,
         visible: true,
@@ -320,8 +394,15 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
 
     storeAvoidRectsFromRequest(entry, request);
     entry.visible = request.visible !== false;
+    logDebug('open', panelId, { bounds: request.bounds, url: request.url });
+
     entry._lastApplied = null;
-    applyBounds(entry, bounds);
+    // Prefer request bounds when they are real; never keep a stale pizarra rect
+    // when reopening in workspace (mode switch).
+    const requested = normalizeBounds(request.bounds);
+    const openBounds =
+      requested && requested.width >= 2 && requested.height >= 2 ? requested : bounds;
+    applyBounds(entry, openBounds || bounds);
 
     if (url && url !== entry.url) {
       entry.url = url;
@@ -331,14 +412,25 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
           url,
         });
       });
+    } else {
+      // Warm reattach — re-theme scrollbars without full reload.
+      try {
+        injectGuestScrollbarCss(entry.view.webContents);
+      } catch {
+        /* ignore */
+      }
     }
 
-    setTimeout(() => {
-      if (!panels.has(panelId)) return;
-      const e = panels.get(panelId);
-      e._lastApplied = null;
-      applyBounds(e, e.bounds);
-    }, 32);
+    // Multi-tick reassert: SPA dock/pizarra layout settles after React paint.
+    for (const ms of [16, 48, 120, 280]) {
+      setTimeout(() => {
+        if (!panels.has(panelId)) return;
+        const e = panels.get(panelId);
+        if (!e) return;
+        e._lastApplied = null;
+        applyBounds(e, e.bounds);
+      }, ms);
+    }
 
     return {
       opened: true,
@@ -389,12 +481,29 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     return { ok: true, navigated: false, reason: 'no-history-forward' };
   }
 
+  async function capture(request = {}) {
+    const entry = panels.get(String(request.panelId || ''));
+    if (!entry) return { ok: false, reason: 'panel-not-found' };
+    try {
+      const image = await entry.view.webContents.capturePage();
+      return { ok: true, dataUrl: image.toDataURL() };
+    } catch (err) {
+      return { ok: false, reason: 'capture-failed', message: err?.message || String(err) };
+    }
+  }
+
   function resize(request = {}) {
     const entry = panels.get(String(request.panelId || ''));
     if (!entry) return { reason: 'panel-not-found' };
+    logDebug('resize', request.panelId, { bounds: request.bounds });
     const next = normalizeBounds(request.bounds);
     if (!next) return { reason: 'missing-bounds' };
+    // Ignore zero-size resize storms during layout transitions.
+    if (next.width < 2 || next.height < 2) {
+      return { reason: 'bounds-too-small', bounds: entry.bounds };
+    }
     storeAvoidRectsFromRequest(entry, request);
+    entry._lastApplied = null;
     applyBounds(entry, next);
     return {
       bounds: entry.bounds,
@@ -436,10 +545,15 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     const panelId = String(request.panelId || '');
     const entry = panels.get(panelId);
     if (!entry) return { reason: 'panel-not-found' };
+    logDebug('setVisibility', panelId, { visible: request.visible, bounds: request.bounds });
     storeAvoidRectsFromRequest(entry, request);
+    // Only accept on-screen bounds with a real size. Zero/stale rects from
+    // unmount measure races must not clobber the last good box (causes offset guest).
     if (request.bounds) {
       const next = normalizeBounds(request.bounds);
-      if (next) entry.bounds = next;
+      if (next && next.width >= 2 && next.height >= 2) {
+        entry.bounds = next;
+      }
     }
     if (request.visible !== false) {
       if (activeWorkspaceFilter != null) {
@@ -455,6 +569,21 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     entry.visible = request.visible !== false;
     entry._lastApplied = null;
     applyBounds(entry, entry.bounds);
+    // Re-assert after layout tick when showing (mode switch / dock settle).
+    if (entry.visible) {
+      setTimeout(() => {
+        if (!panels.has(panelId)) return;
+        const e = panels.get(panelId);
+        if (!e || !e.visible) return;
+        e._lastApplied = null;
+        applyBounds(e, e.bounds);
+        try {
+          injectGuestScrollbarCss(e.view.webContents);
+        } catch {
+          /* ignore */
+        }
+      }, 48);
+    }
     return {
       visible: isEffectivelyVisible(entry),
       desiredVisible: entry.visible,
@@ -474,19 +603,25 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     } catch {
       /* ignore */
     }
-    try {
-      if (!entry.view.webContents.isDestroyed()) {
-        entry.view.webContents.close();
-      }
-    } catch {
-      try {
-        entry.view.webContents.destroy();
-      } catch {
-        /* ignore */
-      }
-    }
     panels.delete(panelId);
     visibilitySnapshot.delete(panelId);
+
+    // Defer actual webContents destruction to background so IPC returns instantly
+    // and UI doesn't block while waiting for page unload / timeouts.
+    setImmediate(() => {
+      try {
+        if (!entry.view.webContents.isDestroyed()) {
+          entry.view.webContents.close();
+        }
+      } catch {
+        try {
+          entry.view.webContents.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+
     return {};
   }
 
@@ -622,6 +757,7 @@ function createBrowserRegistry({ getMainWindow, sendEvent }) {
     reload,
     goBack,
     goForward,
+    capture,
     resize,
     focus,
     raise,

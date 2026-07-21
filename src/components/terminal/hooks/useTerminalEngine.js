@@ -810,13 +810,21 @@ export default function useTerminalEngine({
         const blockHandler = (params) => {
           const isKimiActive = isKimiLaunch || kimiReadyNotifiedRef?.current === true;
           if (!isKimiActive) return false;
-          for (let i = 0; i < params.length; i++) {
-            if (blockedModes.has(params[i])) return true;
+          const paramList = Array.isArray(params)
+            ? params
+            : params?.toArray
+              ? params.toArray()
+              : (params && typeof params.length === 'number')
+                ? Array.from(params)
+                : [];
+          for (let i = 0; i < paramList.length; i++) {
+            const val = typeof paramList[i] === 'number' ? paramList[i] : paramList[i]?.value;
+            if (blockedModes.has(val)) return true;
           }
           return false;
         };
-        terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'h' }, blockHandler);
-        terminal.parser.registerCsiHandler({ prefix: '?', cmd: 'l' }, blockHandler);
+        terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, blockHandler);
+        terminal.parser.registerCsiHandler({ prefix: '?', final: 'l' }, blockHandler);
 
         const fitAddon = new FitAddon();
         const searchAddon = new SearchAddon();
@@ -1125,6 +1133,18 @@ export default function useTerminalEngine({
       } catch (error) {
         console.error(`[TTY:${id}] initializeTerminal() failed:`, error);
         cliLog(`CLIENT:${id}`, 'initializeTerminal() failed', { error: error?.message });
+
+        if (typeof window !== 'undefined') {
+          import('@/lib/desktop/desktopBridge')
+            .then(({ invokeDesktop }) => {
+              invokeDesktop('log_client_error', {
+                panelId: id,
+                message: error?.message || String(error),
+                stack: error?.stack || '',
+              }).catch(() => {});
+            })
+            .catch(() => {});
+        }
 
         if (!mounted) return;
 

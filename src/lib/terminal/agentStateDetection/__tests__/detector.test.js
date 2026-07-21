@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const {
   detectAgentState,
   hasManifest,
@@ -62,6 +64,100 @@ describe('agentStateDetection', () => {
       const result = detectAgentState('kimi', '🌕');
       expect(result.state).toBe('running');
       expect(result.visibleWorking).toBe(true);
+    });
+
+    test('agy detects braille spinner verb as running', () => {
+      const result = detectAgentState('agy', '⠋ Thinking');
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('agy detects permission prompt as blocked', () => {
+      const screen = ['requesting permission for:', '  $ npm test', 'do you want to proceed?'].join('\n');
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('blocked');
+      expect(result.visibleBlocker).toBe(true);
+    });
+
+    test('agy alias antigravity resolves to the same manifest', () => {
+      const result = detectAgentState('antigravity', '⠋ Working');
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('agy falls back to idle with no rule match', () => {
+      const result = detectAgentState('agy', 'plain unrelated output');
+      expect(result.state).toBe('idle');
+    });
+
+    test('agy does not stay running from stale spinner lines in scrollback', () => {
+      // Stream model: after the agent stops, old spinner lines remain in the
+      // buffer but the fresh prompt lines at the bottom must win.
+      const screen = [
+        '⠋ Thinking',
+        '· 2 tasks running',
+        'some final answer text',
+        'another output line',
+        '> ',
+      ].join('\n');
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleWorking).toBe(false);
+    });
+
+    test('agy detects working from esc-to-cancel footer (agy 1.1.x)', () => {
+      const screen = ['writing a story…', '', 'esc to cancel', 'accept-edits · Gemini 3.5 Flash'].join(
+        '\n'
+      );
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('agy detects idle from shortcuts footer (agy 1.1.x)', () => {
+      const screen = ['OK', '', '? for shortcuts', 'accept-edits · Gemini 3.5 Flash'].join('\n');
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleIdle).toBe(true);
+    });
+
+    test('kimi does not stay running from stale moon spinner in scrollback', () => {
+      const screen = ['🌕', 'final response text', 'more output', 'ctrl+p commands', '> '].join(
+        '\n'
+      );
+      const result = detectAgentState('kimi', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleWorking).toBe(false);
+    });
+
+    test('kimi detects moon spinner as running even with ANSI erase codes', () => {
+      const result = detectAgentState('kimi', '\x1b[2K\x1b[G🌕');
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('kimi detects working from working-footer fixture', () => {
+      const fixturePath = path.resolve(__dirname, '../../../../../tests/fixtures/agent-screens/kimi-working-footer.txt');
+      const screen = fs.readFileSync(fixturePath, 'utf8');
+      const result = detectAgentState('kimi', screen);
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('kimi detects idle from idle-prompt fixture', () => {
+      const fixturePath = path.resolve(__dirname, '../../../../../tests/fixtures/agent-screens/kimi-idle-prompt.txt');
+      const screen = fs.readFileSync(fixturePath, 'utf8');
+      const result = detectAgentState('kimi', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleIdle).toBe(true);
+    });
+
+    test('kimi detects blocked from blocked-approval fixture', () => {
+      const fixturePath = path.resolve(__dirname, '../../../../../tests/fixtures/agent-screens/kimi-blocked-approval.txt');
+      const screen = fs.readFileSync(fixturePath, 'utf8');
+      const result = detectAgentState('kimi', screen);
+      expect(result.state).toBe('blocked');
+      expect(result.visibleBlocker).toBe(true);
     });
 
     test('claude detects permission blocker', () => {
@@ -148,28 +244,12 @@ describe('agentStateDetection', () => {
         { state: 'running', visibleIdle: false, visibleWorking: true, visibleBlocker: false },
         0
       );
-      sm.publish(
-        { state: 'idle', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
-        10
-      );
-      sm.publish(
-        { state: 'idle', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
-        20
-      );
-      sm.publish(
-        { state: 'idle', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
-        30
-      );
-      const final = sm.publish(
-        { state: 'idle', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
-        40
-      );
-      expect(final).toEqual({
-        state: 'idle',
-        visibleIdle: false,
-        visibleWorking: false,
-        visibleBlocker: false,
-      });
+      for (let i = 1; i <= 6; i++) {
+        sm.publish(
+          { state: 'idle', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
+          i * 1000
+        );
+      }
       expect(sm.state).toBe('idle');
     });
 
@@ -202,6 +282,24 @@ describe('agentStateDetection', () => {
         10
       );
       expect(again).toBeNull();
+    });
+
+    test('refreshes stable working state periodically', () => {
+      const sm = new AgentStateMachine();
+      sm.publish(
+        { state: 'running', visibleIdle: false, visibleWorking: true, visibleBlocker: false },
+        0
+      );
+      const refresh = sm.publish(
+        { state: 'running', visibleIdle: false, visibleWorking: true, visibleBlocker: false },
+        1000
+      );
+      expect(refresh).toEqual({
+        state: 'running',
+        visibleIdle: false,
+        visibleWorking: true,
+        visibleBlocker: false,
+      });
     });
   });
 });

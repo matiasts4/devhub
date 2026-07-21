@@ -145,9 +145,11 @@ export default function PanelRendererSelect({
       {isOpen ? (
         <ul
           role="listbox"
+          data-devhub-modal="soft"
+          data-devhub-soft-overlay="true"
           data-testid={`panel-renderer-listbox-${panelId}`}
           aria-label="Renderer del panel"
-          className="absolute right-0 top-full z-30 mt-1 min-w-[200px] overflow-hidden rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320] py-1 text-[11px] shadow-[0_12px_28px_rgba(2,6,23,0.46)]"
+          className="absolute right-0 top-full z-[9999] mt-1 min-w-[200px] overflow-hidden rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.32)] bg-[#0d1320] py-1 text-[11px] shadow-[0_12px_28px_rgba(2,6,23,0.46)]"
           onMouseDown={(e) => e.stopPropagation()}
         >
           {RENDERER_SELECT_OPTIONS.map((option) => {

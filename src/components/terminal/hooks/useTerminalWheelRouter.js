@@ -1,11 +1,18 @@
 /**
  * useTerminalWheelRouter — shell vs TUI wheel routing decisions.
  * Extracted from TerminalTTY.jsx.
+ *
+ * CRITICAL: wheel must attach to a real DOM node that exists after xterm opens.
+ * Relying only on useEffect(shellRef) can miss first paint; we also bind on
+ * term.element when the engine boots (attachTerminalWheelListener).
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
+import { isGrokLaunchCommand } from '@/lib/terminal/grokReadyMarker';
+import { isOpenCodeLaunchCommand } from '@/lib/terminal/opencodeReadyMarker';
 import { logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
+import { createScrollHealthMonitor } from '../utils/scrollHealthMonitor';
 import {
   buildGrokWheelScrollPayload,
   buildTerminalWheelScrollPayload,
@@ -14,6 +21,7 @@ import {
   isForwardedTerminalWheelEvent,
   isGrokTuiInitialCommand,
   isTerminalTranscriptCell,
+  prepareActiveTuiTerminalFocus,
   resolveGrokWheelSgrCoords,
   resolveTerminalCellFromPointer,
   resolveTerminalPointerElement,
@@ -61,7 +69,9 @@ export function createTerminalWheelHandler({
   resolveTerminalCellFromPointer: resolveCell = resolveTerminalCellFromPointer,
   shouldRouteWheelToTranscript: routeToTranscript = shouldRouteWheelToTranscript,
   terminalHasFocus = terminalElementHasDocumentFocus,
-}) {
+  onWheelHandlerProcessed,
+  onPtyWheelWrite,
+} = {}) {
   return function handleWheel(event) {
     if (isForwardedTerminalWheelEvent(event)) return;
 
@@ -80,28 +90,44 @@ export function createTerminalWheelHandler({
         term: activeTerm,
         mouseTrackingMode: terminalHasActiveMouseReporting(activeTerm) ? 1 : 0,
       });
+      onWheelHandlerProcessed?.({ path: 'scrollback-local-shift' });
       return;
     }
 
     const lifecycle = lifecycleRefs?.current || {};
+    if (lifecycle.isActivePanelRef?.current && activeTerm && !terminalHasFocus(activeTerm)) {
+      try {
+        activeTerm.focus?.();
+      } catch {
+        // ignore
+      }
+    }
+
     const isGrokSession =
-      lifecycle.isGrokSessionRef?.current || isGrokTuiInitialCommand(initialCommand);
+      lifecycle.isGrokSessionRef?.current ||
+      isGrokTuiInitialCommand(initialCommand) ||
+      isGrokLaunchCommand(initialCommand);
+    const isOpenCodeSession = isOpenCodeLaunchCommand(initialCommand);
     const isKimiSession =
       lifecycle.kimiReadyNotifiedRef?.current || isKimiLaunchCommand(initialCommand);
-    const isTuiSession = lifecycle.tuiSessionActiveRef?.current || isGrokSession;
+    // Treat launch-command Grok/OpenCode as TUI even before footer/chrome refs flip —
+    // otherwise wheel falls into local scrollback and does nothing on the alt buffer.
+    const isTuiSession =
+      lifecycle.tuiSessionActiveRef?.current || isGrokSession || isOpenCodeSession;
 
     if (shouldScrollKimiWheelLocally(isKimiSession)) {
       const direction = resolveTerminalWheelScrollDirection(event.deltaY);
       if (!direction) return;
       if (
         scrollTerminalViewport(activeTerm, direction, event.deltaY, {
-          linesPerStep: 1,
-          lineHeight: 60,
-          maxSteps: 4,
+          linesPerStep: 3,
+          lineHeight: 30,
+          maxSteps: 6,
         })
       ) {
         event.preventDefault();
         event.stopPropagation();
+        onWheelHandlerProcessed?.({ path: 'kimi-scroll-local' });
       }
       return;
     }
@@ -112,15 +138,15 @@ export function createTerminalWheelHandler({
       if (scrollTerminalViewport(activeTerm, direction, event.deltaY)) {
         event.preventDefault();
         event.stopPropagation();
+        onWheelHandlerProcessed?.({ path: 'scroll-viewport-local' });
       }
       return;
     }
 
-    // Native passthrough only when the terminal actually has document focus.
-    // Zed ambient modal focuses its textarea on open; xterm may still have mouse
-    // modes on, but OpenCode/Grok often ignore forwarded wheel while unfocused.
-    // Fall through to PTY SGR inject in that case (scroll keeps working).
+    // OpenCode only: native wheel when footer ready + mouse modes + focus.
+    // Grok is inject-only (passThrough false) — native swallow is the first-panel bug.
     if (
+      !isGrokSession &&
       shouldPassthroughNativeTuiWheel({
         isGrokSession,
         isKimiSession,
@@ -131,10 +157,7 @@ export function createTerminalWheelHandler({
       lifecycle.isActivePanelRef?.current &&
       terminalHasFocus(activeTerm)
     ) {
-      // Only consume when xterm can emit SGR (mouse modes on). After panel hide
-      // mouse modes are cleared — dispatchEvent alone would swallow the wheel.
-      // Cold-start / missing term.element / mouse-off → fall through to inject.
-      if (forwardTerminalWheelToXterm(activeTerm, event)) {
+      if (forwardTerminalWheelToXterm(activeTerm, event, { onPtyWheelWrite })) {
         event.preventDefault();
         event.stopPropagation();
         logTuiPointerDebug('tui-wheel', {
@@ -148,6 +171,7 @@ export function createTerminalWheelHandler({
           mouseTrackingMode: terminalHasActiveMouseReporting(activeTerm) ? 1 : 0,
           domFocus: true,
         });
+        onWheelHandlerProcessed?.({ path: 'native-forward' });
         return;
       }
     }
@@ -178,8 +202,6 @@ export function createTerminalWheelHandler({
     });
     const zone = inTranscript ? 'transcript' : 'input';
 
-    // Live TUIs own scroll everywhere (including prompt/footer chrome). Swallowing
-    // wheel over the input zone with no PTY bytes made scroll feel "broken".
     if (!inTranscript && !isTuiSession) {
       return;
     }
@@ -210,13 +232,80 @@ export function createTerminalWheelHandler({
         ? buildTerminalWheelSgrSequence(direction, wheelCol, wheelRow)
         : buildTerminalWheelScrollPayload(direction, steps, { prefer: scrollPrefer });
 
+    // Grok: focus for TUI input routing; do not host-enable mouse modes here
+    // (that enables native swallow on the first panel). OpenCode may rebind lightly.
+    if (isGrokSession || isOpenCodeSession) {
+      try {
+        activeTerm.focus?.();
+      } catch {
+        // ignore
+      }
+      if (isOpenCodeSession && !terminalHasActiveMouseReporting(activeTerm)) {
+        prepareActiveTuiTerminalFocus(activeTerm, { tuiSessionActive: true });
+      }
+      // Ensure inject path is taken even if chrome detect lagged.
+      if (isGrokSession) {
+        if (lifecycle.isGrokSessionRef) lifecycle.isGrokSessionRef.current = true;
+        if (lifecycle.tuiSessionActiveRef) lifecycle.tuiSessionActiveRef.current = true;
+        if (lifecycle.grokTuiReadyRef) lifecycle.grokTuiReadyRef.current = true;
+      }
+    }
+
     const wsRef = sessionRefs?.current?.wsRef;
     const transportRef = sessionRefs?.current?.transportRef;
-    const sent = sendPaste({
-      socket: wsRef?.current,
+    const socket = wsRef?.current;
+    let sent = sendPaste({
+      socket,
       transport: transportRef?.current,
       text: payload,
+      onPtyWheelWrite,
     });
+
+    // Cold start race: WS may still be CONNECTING. Retry once shortly after open.
+    if (!sent && socket && typeof socket.readyState === 'number' && socket.readyState === 0) {
+      const retryPayload = payload;
+      const retrySocket = socket;
+      const retryTransport = transportRef?.current;
+      const onOpen = () => {
+        retrySocket.removeEventListener?.('open', onOpen);
+        sendPaste({
+          socket: retrySocket,
+          transport: retryTransport,
+          text: retryPayload,
+          onPtyWheelWrite,
+        });
+      };
+      try {
+        retrySocket.addEventListener?.('open', onOpen);
+        setTimeout(() => {
+          try {
+            retrySocket.removeEventListener?.('open', onOpen);
+          } catch {
+            // ignore
+          }
+        }, 5000);
+        sent = true;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Last-resort: if JSON transport failed, try raw write of the same payload
+    // (some first-panel sessions report OPEN but reject structured frames briefly).
+    if (!sent && socket && socket.readyState === 1 && payload) {
+      try {
+        if (transportRef?.current === 'raw') {
+          socket.send(payload);
+        } else {
+          socket.send(JSON.stringify({ type: 'input', data: payload }));
+        }
+        sent = true;
+        onPtyWheelWrite?.({ type: 'sgr-raw-send', text: payload });
+      } catch {
+        // ignore
+      }
+    }
+
     if (!sent) {
       logTuiPointerDebug('tui-wheel', {
         path: 'inject-wheel-failed',
@@ -233,6 +322,7 @@ export function createTerminalWheelHandler({
 
     event.preventDefault();
     event.stopPropagation();
+    onWheelHandlerProcessed?.({ path: inTranscript ? 'inject-wheel' : 'inject-wheel-input-zone' });
     logTuiPointerDebug('tui-wheel', {
       path: inTranscript ? 'inject-wheel' : 'inject-wheel-input-zone',
       term: activeTerm,
@@ -248,6 +338,52 @@ export function createTerminalWheelHandler({
   };
 }
 
+/**
+ * Attach wheel inject to a DOM node (shell or term.element). Idempotent per node via WeakMap.
+ * Returns dispose fn.
+ */
+const wheelListenerByNode = new WeakMap();
+
+export function attachTerminalWheelListener(node, getHandler) {
+  if (!node || typeof node.addEventListener !== 'function') return () => {};
+  const existing = wheelListenerByNode.get(node);
+  if (existing) {
+    existing.dispose();
+  }
+  const listener = (event) => {
+    const handler = typeof getHandler === 'function' ? getHandler() : null;
+    if (typeof handler === 'function') handler(event);
+  };
+  node.addEventListener('wheel', listener, { passive: false, capture: true });
+  const dispose = () => {
+    try {
+      node.removeEventListener('wheel', listener, { capture: true });
+    } catch {
+      // ignore
+    }
+    if (wheelListenerByNode.get(node)?.listener === listener) {
+      wheelListenerByNode.delete(node);
+    }
+  };
+  wheelListenerByNode.set(node, { listener, dispose });
+  return dispose;
+}
+
+/**
+ * Bind wheel to xterm root element right after terminal.open (cold-start safe).
+ */
+export function attachTerminalWheelToXterm(term, options = {}) {
+  const el = term?.element;
+  if (!el) return () => {};
+  return attachTerminalWheelListener(el, () =>
+    createTerminalWheelHandler({
+      term,
+      shell: el,
+      ...options,
+    })
+  );
+}
+
 export default function useTerminalWheelRouter({
   lifecycleRefs,
   rendererRefs,
@@ -255,48 +391,137 @@ export default function useTerminalWheelRouter({
   viewportRefs,
   initialCommand,
   shouldUseNativeRenderer,
+  panelId,
 }) {
-  const onWheel = useCallback(
-    (event) => {
-      const shell = viewportRefs?.current?.viewportShellRef?.current;
-      const handler = createTerminalWheelHandler({
-        shell,
-        initialCommand,
-        lifecycleRefs,
-        rendererRefs,
-        sessionRefs,
-        viewportRefs,
-      });
-      handler(event);
-    },
-    [initialCommand, lifecycleRefs, rendererRefs, sessionRefs, viewportRefs]
-  );
+  const monitorRef = useRef(null);
 
   useEffect(() => {
     if (shouldUseNativeRenderer) return undefined;
 
-    const shell = viewportRefs?.current?.viewportShellRef?.current;
-    if (!shell) return undefined;
+    const activePanelId = panelId || lifecycleRefs?.current?.panelId || 'terminal-panel';
+    const monitor = createScrollHealthMonitor(activePanelId, {
+      getTerm: () => rendererRefs?.current?.termRef?.current,
+      getIsActivePanel: () => lifecycleRefs?.current?.isActivePanelRef?.current ?? true,
+      getTuiSessionActive: () => lifecycleRefs?.current?.tuiSessionActiveRef?.current ?? false,
+      getWsReadyState: () => sessionRefs?.current?.wsRef?.current?.readyState ?? null,
+      getKimiReadyNotified: () => lifecycleRefs?.current?.kimiReadyNotifiedRef?.current ?? false,
+      getGrokTuiReady: () => lifecycleRefs?.current?.grokTuiReadyRef?.current ?? false,
+      getOpencodeFooterConfirmed: () =>
+        lifecycleRefs?.current?.tuiSessionFooterConfirmedRef?.current ?? false,
+    });
+    monitorRef.current = monitor;
 
-    const handler = createTerminalWheelHandler({
+    const shell =
+      viewportRefs?.current?.viewportShellRef?.current ||
+      viewportRefs?.current?.containerRef?.current ||
+      rendererRefs?.current?.termRef?.current?.element;
+    if (shell) {
+      monitor.attach(shell);
+    }
+
+    return () => {
+      monitor.dispose();
+      monitorRef.current = null;
+    };
+  }, [panelId, shouldUseNativeRenderer]);
+
+  const getHandler = useCallback(() => {
+    const shell = viewportRefs?.current?.viewportShellRef?.current;
+    return createTerminalWheelHandler({
       shell,
       initialCommand,
       lifecycleRefs,
       rendererRefs,
       sessionRefs,
       viewportRefs,
+      onWheelHandlerProcessed: (info) => monitorRef.current?.onWheelHandlerProcessed(info),
+      onPtyWheelWrite: (info) => monitorRef.current?.onPtyWheelWrite(info),
     });
+  }, [initialCommand, lifecycleRefs, rendererRefs, sessionRefs, viewportRefs]);
 
-    shell.addEventListener('wheel', handler, { passive: false, capture: true });
-    return () => shell.removeEventListener('wheel', handler, { capture: true });
+  // Bind/re-bind shell whenever it appears (poll briefly after mount + on dep change).
+  useEffect(() => {
+    if (shouldUseNativeRenderer) return undefined;
+
+    let disposed = false;
+    let disposeListener = null;
+    let tries = 0;
+    let timer = null;
+
+    const tryBind = () => {
+      if (disposed) return;
+      const shell = viewportRefs?.current?.viewportShellRef?.current;
+      if (shell) {
+        monitorRef.current?.attach(shell);
+        disposeListener = attachTerminalWheelListener(shell, getHandler);
+        return;
+      }
+      tries += 1;
+      if (tries < 40) {
+        timer = setTimeout(tryBind, 50);
+      }
+    };
+
+    tryBind();
+
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+      disposeListener?.();
+    };
+  }, [getHandler, shouldUseNativeRenderer, viewportRefs]);
+
+  // Also re-bind when xterm element becomes available (after engine boot).
+  useEffect(() => {
+    if (shouldUseNativeRenderer) return undefined;
+
+    let disposed = false;
+    let disposeListener = null;
+    let tries = 0;
+    let timer = null;
+
+    const tryBindTerm = () => {
+      if (disposed) return;
+      const term = rendererRefs?.current?.termRef?.current;
+      const el = term?.element;
+      if (el) {
+        monitorRef.current?.attach(el);
+        disposeListener = attachTerminalWheelListener(el, () =>
+          createTerminalWheelHandler({
+            term,
+            shell: el,
+            initialCommand,
+            lifecycleRefs,
+            rendererRefs,
+            sessionRefs,
+            viewportRefs,
+            onWheelHandlerProcessed: (info) => monitorRef.current?.onWheelHandlerProcessed(info),
+            onPtyWheelWrite: (info) => monitorRef.current?.onPtyWheelWrite(info),
+          })
+        );
+        return;
+      }
+      tries += 1;
+      if (tries < 60) {
+        timer = setTimeout(tryBindTerm, 100);
+      }
+    };
+
+    tryBindTerm();
+
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+      disposeListener?.();
+    };
   }, [
     initialCommand,
     lifecycleRefs,
     rendererRefs,
     sessionRefs,
-    viewportRefs,
     shouldUseNativeRenderer,
+    viewportRefs,
   ]);
 
-  return { onWheel };
+  return { getHandler };
 }

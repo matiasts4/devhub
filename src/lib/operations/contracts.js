@@ -139,30 +139,98 @@ export function buildOperationalDedupeKey(source, eventType, parts = []) {
   return compactParts([source, eventType, parts]).join(':');
 }
 
+function deriveCategoryFromSource(source = '') {
+  if (source === 'agenthub' || source === 'presence' || source === 'swarm') return 'agents';
+  if (source === 'tasks' || source === 'deadline') return 'tasks';
+  return 'system';
+}
+
 export function createOperationalEvent(input = {}) {
   const source = input.source || 'system';
   const eventType = input.event_type || 'system.event';
-  const occurredAt = input.occurred_at || new Date().toISOString();
+  const occurredAt = input.occurred_at || input.created_at || new Date().toISOString();
   const dedupeKey =
     input.dedupe_key || buildOperationalDedupeKey(source, eventType, input.dedupe_parts || []);
+  const category = input.category || deriveCategoryFromSource(source);
 
   return {
     id: input.id || dedupeKey,
     event_type: eventType,
+    category,
     severity: normalizeSeverity(input.severity),
     source,
     source_authority: normalizeAuthority(input.source_authority),
     occurred_at: occurredAt,
+    created_at: occurredAt,
     dedupe_key: dedupeKey,
     delivery: {
       desktop: Boolean(input.delivery?.desktop),
       in_app: input.delivery?.in_app !== false,
     },
     title: input.title || eventType,
-    body: input.body || '',
+    body: input.body || input.message || '',
+    message: input.message || input.body || '',
     status: input.status || 'pending',
+    read_at: input.read_at || null,
+    occurrence_count: Number(input.occurrence_count) || 1,
+    actions: Array.isArray(input.actions) ? input.actions : [],
+    entity_id: input.entity_id || input.metadata?.entity_id || null,
     metadata: input.metadata || {},
   };
+}
+
+export function createAgentPresenceEvent({
+  agentId,
+  newState,
+  prevState = 'unknown',
+  statusSummary = '',
+  missionId = null,
+} = {}) {
+  let severity = 'info';
+  let title = `Agente ${agentId}: ${newState}`;
+  let body = statusSummary || `Transición de estado de ${prevState} a ${newState}.`;
+  let actions = [{ label: 'Ver Agente', action_type: 'navigate', target: `/control-room?agent=${agentId}` }];
+
+  if (newState === 'blocked') {
+    severity = 'warning';
+    title = `Agente Requiere Intervención (${agentId})`;
+    body = `El agente está esperando aprobación o input del usuario.${statusSummary ? ` Detalle: ${statusSummary}` : ''}`;
+  } else if (newState === 'error' || newState === 'failed') {
+    severity = 'critical';
+    title = `Fallo Crítico en Agente (${agentId})`;
+    body = `El agente se ha detenido o ha fallado.${statusSummary ? ` Detalle: ${statusSummary}` : ''}`;
+    actions.push({ label: 'Inspeccionar Logs', action_type: 'navigate', target: `/control-room?agent=${agentId}&tab=logs` });
+  } else if (newState === 'completed') {
+    severity = 'info';
+    title = `Tarea Completada (${agentId})`;
+    body = statusSummary || 'El agente ha finalizado su ejecución exitosamente.';
+  } else if (newState === 'running') {
+    severity = 'info';
+    title = `Agente Activo (${agentId})`;
+  }
+
+  return createOperationalEvent({
+    event_type: `agent.presence.${newState}`,
+    category: 'agents',
+    severity,
+    source: 'presence',
+    source_authority: 'authoritative',
+    dedupe_key: `presence:${newState}:${agentId}`,
+    title,
+    body,
+    entity_id: agentId,
+    actions,
+    delivery: {
+      desktop: severity === 'critical' || severity === 'warning',
+      in_app: true,
+    },
+    metadata: {
+      agent_id: agentId,
+      new_state: newState,
+      prev_state: prevState,
+      mission_id: missionId,
+    },
+  });
 }
 
 export function createHealthSource(input = {}) {

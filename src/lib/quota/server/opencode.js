@@ -4,7 +4,19 @@ import os from 'os';
 import { PROVIDERS, PROVIDER_LABELS } from '../types.js';
 
 /**
- * Server-side OpenCode Quota Adapter
+ * Server-side OpenCode Quota Adapter.
+ *
+ * OpenCode itself has no subscription quota endpoint — it brokers requests to
+ * upstream providers whose quotas are tracked by their own adapters. This
+ * adapter therefore detects installation/auth state and reports it honestly
+ * instead of fabricating usage numbers.
+ *
+ * Detection sources:
+ * - `~/.config/opencode/opencode.json` → custom configured providers
+ *   (`provider` map, e.g. local proxies like headroom).
+ * - `~/.local/share/opencode/auth.json` → authenticated providers, with the
+ *   credential type per entry: API key (`{type, key}`) or OAuth
+ *   (`{type, refresh, access, expires}`).
  */
 export async function fetchOpenCodeQuota() {
   const result = {
@@ -23,25 +35,58 @@ export async function fetchOpenCodeQuota() {
   };
 
   try {
-    const configPath = path.join(os.homedir(), '.opencode');
-    if (!fs.existsSync(configPath)) {
-      result.error = 'OpenCode directory not found';
+    const home = os.homedir();
+    const configCandidates = [
+      path.join(home, '.config', 'opencode', 'opencode.json'),
+      path.join(home, '.config', 'opencode', 'opencode.jsonc'),
+      path.join(home, '.opencode', 'opencode.json'),
+    ];
+    const authPath = path.join(home, '.local', 'share', 'opencode', 'auth.json');
+
+    const configPath = configCandidates.find((p) => fs.existsSync(p));
+    const hasAuth = fs.existsSync(authPath);
+    if (!configPath && !hasAuth) {
+      result.error = 'OpenCode configuration not found';
       return result;
     }
 
     result.isAvailable = true;
-    result.isAuth = true;
-    result.primaryUsagePercent = 10;
-    result.primaryRemainingPercent = 90;
 
-    result.windows.push({
-      name: 'OpenCode Session',
-      usagePercent: 10,
-      remainingFraction: 0.9,
-      resetsAt: null,
-      timeUntilResetMs: null,
-      isExhausted: false,
-    });
+    let configuredProviders = [];
+    if (configPath) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        configuredProviders = Object.keys(parsed?.provider || {});
+      } catch (_err) {
+        // JSONC or unreadable — still counts as installed.
+      }
+    }
+
+    const authenticatedProviders = [];
+    if (hasAuth) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+        for (const [id, entry] of Object.entries(parsed || {})) {
+          if (!entry || typeof entry !== 'object') continue;
+          authenticatedProviders.push({
+            id,
+            type: entry.access || entry.refresh ? 'oauth' : entry.key ? 'api-key' : 'unknown',
+          });
+        }
+      } catch (_err) {
+        // Unreadable auth store — ignore.
+      }
+    }
+
+    result.isAuth = authenticatedProviders.length > 0;
+    result.metadata = {
+      configPath: configPath || null,
+      configuredProviders,
+      authenticatedProviders,
+    };
+    result.error = authenticatedProviders.length
+      ? `OpenCode brokers ${authenticatedProviders.length} authenticated provider(s) — quota is tracked per upstream (Kimi, Codex, Z.ai…)`
+      : 'OpenCode has no quota endpoint of its own — quota is tracked per upstream provider (Kimi, Codex, Z.ai…)';
 
     return result;
   } catch (err) {

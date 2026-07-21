@@ -1,6 +1,8 @@
+var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -14,16 +16,31 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/lib/terminal/sidecarAgentDetectionEntry.js
 var sidecarAgentDetectionEntry_exports = {};
 __export(sidecarAgentDetectionEntry_exports, {
+  ALLOWED_HOOK_STATES: () => ALLOWED_HOOK_STATES,
+  HOOK_AUTHORITY_TTL_MS: () => HOOK_AUTHORITY_TTL_MS,
+  buildSessionHookEnv: () => buildSessionHookEnv,
   ensureAgentDetectionSession: () => ensureAgentDetectionSession,
+  generateSessionHookToken: () => generateSessionHookToken,
+  handleHookReport: () => handleHookReport,
+  hasFreshHookAuthority: () => hasFreshHookAuthority,
   ingestAgentDetectionFromFilteredOutput: () => ingestAgentDetectionFromFilteredOutput,
   processOscProgress: () => processOscProgress,
   processOscTitle: () => processOscTitle,
-  stripOscTitleSequences: () => stripOscTitleSequences
+  stripOscTitleSequences: () => stripOscTitleSequences,
+  tickAgentDetection: () => tickAgentDetection
 });
 module.exports = __toCommonJS(sidecarAgentDetectionEntry_exports);
 
@@ -104,6 +121,68 @@ function promptBoxBody(content) {
   const endOffset = lines.slice(0, endIndex).reduce((sum, line) => sum + line.length + 1, 0);
   return content.slice(Math.min(startOffset, content.length), Math.min(endOffset, content.length));
 }
+function codexPromptLine(line) {
+  return line === "\u203A" || line.startsWith("\u203A ");
+}
+function codexBlockMarkerLine(line) {
+  return line.startsWith("\u2022") || line.startsWith("\u25A0") || line.startsWith("\u2717") || line.startsWith("\u2713");
+}
+function currentCodexPromptIndex(lines) {
+  const promptIndex = lines.findLastIndex((line) => codexPromptLine(line));
+  if (promptIndex === -1) return -1;
+  if (lines.slice(promptIndex + 1).some((line) => codexBlockMarkerLine(line))) {
+    return -1;
+  }
+  return promptIndex;
+}
+function beforeCurrentPromptMarker(content) {
+  const lines = content.split("\n");
+  const index = currentCodexPromptIndex(lines);
+  if (index === -1) return content;
+  const byteOffset = lines.slice(0, index).reduce((sum, line) => sum + line.length + 1, 0);
+  return content.slice(0, Math.min(byteOffset, content.length));
+}
+function wholeRecentWithoutCurrentPromptMarker(content) {
+  const lines = content.split("\n");
+  return currentCodexPromptIndex(lines) === -1 ? content : "";
+}
+function currentPromptBlockMarker(content) {
+  const lines = content.split("\n");
+  const promptIndex = currentCodexPromptIndex(lines);
+  if (promptIndex === -1) return null;
+  for (let i = promptIndex - 1; i >= 0; i--) {
+    if (codexBlockMarkerLine(lines[i])) return lines[i];
+  }
+  return null;
+}
+function afterCurrentPromptBlockMarker(content) {
+  const lines = content.split("\n");
+  const promptIndex = currentCodexPromptIndex(lines);
+  if (promptIndex === -1) return null;
+  let blockIndex = -1;
+  for (let i = promptIndex - 1; i >= 0; i--) {
+    if (codexBlockMarkerLine(lines[i])) {
+      blockIndex = i;
+      break;
+    }
+  }
+  if (blockIndex === -1) return null;
+  return sliceFromLineIndex(content, lines, blockIndex);
+}
+function abovePromptBox(content) {
+  const lines = content.split("\n");
+  const top = promptBoxTopBorderIndex(lines);
+  if (top === -1) return content;
+  const byteOffset = lines.slice(0, top).reduce((sum, line) => sum + line.length + 1, 0);
+  return content.slice(0, Math.min(byteOffset, content.length));
+}
+function lastNonEmptyLine(content) {
+  const lines = content.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim().length > 0) return lines[i];
+  }
+  return "";
+}
 function getRegion(input, spec) {
   const trimmed = spec.trim();
   if (trimmed === "osc_title") return input.oscTitle || "";
@@ -114,12 +193,28 @@ function getRegion(input, spec) {
       return content;
     case "after_last_prompt_marker":
       return afterLastPromptMarker(content);
+    case "before_current_prompt_marker":
+      return beforeCurrentPromptMarker(content);
+    case "whole_recent_without_current_prompt_marker":
+      return wholeRecentWithoutCurrentPromptMarker(content);
+    case "current_prompt_block_marker": {
+      const marker = currentPromptBlockMarker(content);
+      return marker === null ? "" : marker;
+    }
+    case "after_current_prompt_block_marker": {
+      const afterMarker = afterCurrentPromptBlockMarker(content);
+      return afterMarker === null ? "" : afterMarker;
+    }
     case "after_last_horizontal_rule":
       return afterLastHorizontalRule(content);
     case "prompt_box_body": {
       const body = promptBoxBody(content);
       return body === null ? "" : body;
     }
+    case "above_prompt_box":
+      return abovePromptBox(content);
+    case "last_non_empty_above_prompt_box":
+      return lastNonEmptyLine(abovePromptBox(content));
     default: {
       const parsed = parseRegionSpec(trimmed);
       if (parsed) {
@@ -233,7 +328,7 @@ function evaluateManifest(manifest, input) {
 // src/lib/terminal/agentStateDetection/manifests/kimi.js
 var kimi_default = {
   id: "kimi",
-  version: "2026.06.10.1",
+  version: "2026.07.20.1",
   aliases: ["kimi", "kimi-code", "kimi code"],
   rules: [
     {
@@ -258,6 +353,12 @@ var kimi_default = {
         },
         {
           contains: ["ready to build with this plan?"]
+        },
+        {
+          contains: ["execute command?"]
+        },
+        {
+          contains: ["allow this action?"]
         },
         {
           lineRegex: ["(?i)^\\s*\u25B6?\\s*approve .*\\?$"]
@@ -330,18 +431,46 @@ var kimi_default = {
       ]
     },
     {
+      // Explicit idle prompt in bottom 3 lines wins over scrollback, and clears instantly when user inputs text
+      id: "kimi_idle_prompt",
+      state: "idle",
+      priority: 200,
+      region: "bottom_lines(3)",
+      visibleIdle: true,
+      any: [
+        { contains: ["ctrl+p commands"] },
+        { lineRegex: ["(?i)^\\s*kimi>"] }
+      ]
+    },
+    {
       id: "background_agent_status_working",
       state: "running",
       priority: 120,
-      region: "bottom_non_empty_lines(3)",
+      region: "bottom_lines(8)",
       visibleWorking: true,
       lineRegex: ["(?i)\\bkimi[-\\w.]*\\s+thinking\\b.*\\[[1-9][0-9]*\\s+agents?\\s+running\\]"]
+    },
+    {
+      id: "working_footer_esc_interrupt",
+      state: "running",
+      priority: 110,
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      contains: ["esc interrupt"]
+    },
+    {
+      id: "thinking_progress_working",
+      state: "running",
+      priority: 105,
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      lineRegex: ["(?i)\\b(thinking|working|processing)\\b.*\\/\\s*[\\d.]+%\\s*\\("]
     },
     {
       id: "moon_spinner_working",
       state: "running",
       priority: 100,
-      region: "whole_recent",
+      region: "bottom_lines(8)",
       visibleWorking: true,
       lineRegex: ["^\\s*(\u{1F315}|\u{1F316}|\u{1F317}|\u{1F318}|\u{1F311}|\u{1F312}|\u{1F313}|\u{1F314})\\s*$"]
     },
@@ -349,12 +478,22 @@ var kimi_default = {
       id: "braille_spinner_working",
       state: "running",
       priority: 90,
-      region: "whole_recent",
+      region: "bottom_lines(8)",
       visibleWorking: true,
-      lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking\\.\\.\\.|working\\.\\.\\.|using )"]
+      lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|working|using|analyzing|executing|reading|writing|searching)"]
     }
   ]
 };
+
+// src/lib/terminal/stripAnsi.js
+function stripAnsi(text) {
+  if (typeof text !== "string") return "";
+  return text.replace(
+    // eslint-disable-next-line no-control-regex
+    /\x1b\[[0-9;?]*[a-zA-Z]|\x1bP[\s\S]*?(?:\x1b\\|\x07)|\x1b_[\s\S]*?(?:\x1b\\|\x07)|\x1b\^[\s\S]*?(?:\x1b\\|\x07)|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\r/g,
+    ""
+  );
+}
 
 // src/lib/terminal/agentStateDetection/manifests/claude.js
 var claude_default = {
@@ -865,10 +1004,7 @@ var grok_default = {
       visibleWorking: true,
       any: [
         {
-          all: [
-            { contains: ["ctrl+c:cancel", "ctrl+enter:interject"] },
-            { contains: ["waiting"] }
-          ]
+          all: [{ contains: ["ctrl+c:cancel", "ctrl+enter:interject"] }, { contains: ["waiting"] }]
         },
         {
           lineRegex: ["^\\s*[\\u2801-\\u28FF]\\s+(Run|Read|Search|List)\\b"]
@@ -887,13 +1023,110 @@ var grok_default = {
   ]
 };
 
+// src/lib/terminal/agentStateDetection/manifests/antigravity.js
+var antigravity_default = {
+  id: "agy",
+  version: "2026.07.21.2",
+  aliases: ["agy", "antigravity", "antigravity-cli"],
+  rules: [
+    {
+      id: "permission_prompt",
+      state: "blocked",
+      priority: 300,
+      region: "whole_recent",
+      visibleBlocker: true,
+      any: [
+        {
+          contains: ["requesting permission for:"]
+        },
+        {
+          contains: ["do you want to proceed?"]
+        },
+        {
+          contains: ["tab amend", "edit command"]
+        },
+        {
+          contains: ["allow execution"]
+        },
+        {
+          contains: ["do you grant permission"]
+        },
+        {
+          contains: ["permission requested"]
+        },
+        {
+          contains: ["press enter to confirm"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*\\[y\\/n\\]\\s*$"]
+        },
+        {
+          lineRegex: ["(?i)allow\\s*\\[y\\/n\\]"]
+        }
+      ]
+    },
+    {
+      // Explicit idle prompt in bottom 3 lines wins over scrollback, and clears instantly when user inputs text
+      id: "idle_prompt_footer",
+      state: "idle",
+      priority: 200,
+      region: "bottom_lines(3)",
+      visibleIdle: true,
+      any: [
+        { contains: ["? for shortcuts"] },
+        { lineRegex: ["(?i)^\\s*(antigravity|>)\\s*$"] }
+      ]
+    },
+    {
+      // herdr parity: agy 1.1.x shows "esc to cancel" in footer while working
+      id: "working_footer_esc_cancel",
+      state: "running",
+      priority: 110,
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      contains: ["esc to cancel"]
+    },
+    {
+      id: "spinner_working",
+      state: "running",
+      priority: 100,
+      // herdr parity: whole_recent so streaming text doesn't push working signal out of view
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      any: [
+        {
+          lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s+[a-z]\\w*ing\\b"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing)"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*\xB7\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing)"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*tool\\s+call\\b"]
+        }
+      ]
+    },
+    {
+      id: "background_tasks_working",
+      state: "running",
+      priority: 90,
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      lineRegex: ["(?i)\xB7\\s*[1-9][0-9]*\\s+task"]
+    }
+  ]
+};
+
 // src/lib/terminal/agentStateDetection/detector.js
 var MANIFESTS = /* @__PURE__ */ new Map([
   ["kimi", kimi_default],
   ["claude", claude_default],
   ["codex", codex_default],
   ["opencode", opencode_default],
-  ["grok", grok_default]
+  ["grok", grok_default],
+  ["agy", antigravity_default]
 ]);
 var AGENT_TYPE_ALIASES = {
   opencode: "opencode",
@@ -907,7 +1140,10 @@ var AGENT_TYPE_ALIASES = {
   grok: "grok",
   groc: "grok",
   "grok-build": "grok",
-  hermes: "hermes"
+  hermes: "hermes",
+  agy: "agy",
+  antigravity: "agy",
+  "antigravity-cli": "agy"
 };
 var manifestCache = /* @__PURE__ */ new Map();
 function normalizeAgentType(agentType) {
@@ -933,21 +1169,38 @@ var UNKNOWN_DETECTION = {
   visibleBlocker: false,
   matchedRule: null
 };
+var IDLE_FALLBACK_DETECTION = {
+  state: "idle",
+  skipStateUpdate: false,
+  visibleIdle: false,
+  visibleWorking: false,
+  visibleBlocker: false,
+  matchedRule: null
+};
 function detectAgentState(agentType, screen, options = {}) {
   const manifest = loadManifest(agentType);
   if (!manifest) {
     return UNKNOWN_DETECTION;
   }
-  return evaluateManifest(manifest, {
-    screen: screen || "",
+  const cleanScreen = stripAnsi(screen || "");
+  const isCancellation = /(?:\^C|\binterrupted\b|\bcancelled\b|\bcanceled\b|\baborted\b)/i.test(cleanScreen);
+  const detected = evaluateManifest(manifest, {
+    screen: cleanScreen,
     oscTitle: options.oscTitle || "",
     oscProgress: options.oscProgress || ""
   });
+  if (isCancellation) {
+    detected.wasCancelled = true;
+  }
+  if (detected.state === "unknown") {
+    return IDLE_FALLBACK_DETECTION;
+  }
+  return detected;
 }
 
 // src/lib/terminal/agentStateDetection/stateMachine.js
-var PENDING_IDLE_CAP_MS = 700;
-var PENDING_IDLE_CONFIRMATIONS = 3;
+var PENDING_IDLE_CAP_MS = 4e3;
+var PENDING_IDLE_CONFIRMATIONS = 6;
 var STABLE_VISIBLE_SIGNAL_REFRESH_MS = 800;
 var AgentStateMachine = class {
   constructor() {
@@ -987,10 +1240,17 @@ var AgentStateMachine = class {
    * Periodically refresh a stable visible blocker so consumers keep noticing it.
    */
   stableVisibleSignalRefreshDue(next, now) {
-    const stableVisibleSignal = next.visibleBlocker && this.lastVisibleBlocker;
+    const stableVisibleSignal = next.visibleBlocker && this.lastVisibleBlocker || next.visibleWorking && this.lastVisibleWorking;
     if (!stableVisibleSignal) return false;
-    if (!this.lastVisibleSignalRefresh) return true;
+    if (this.lastVisibleSignalRefresh === null) return true;
     return now - this.lastVisibleSignalRefresh >= STABLE_VISIBLE_SIGNAL_REFRESH_MS;
+  }
+  /**
+   * Directly publish a hook state report, bypassing anti-flicker hold.
+   */
+  publishHook(detection, now = Date.now()) {
+    this.pendingIdle = null;
+    return this.publish(detection, now, { bypassHold: true });
   }
   /**
    * Consume a detection result and optionally return a published state change.
@@ -1001,9 +1261,11 @@ var AgentStateMachine = class {
    * @param {boolean} detection.visibleWorking
    * @param {boolean} detection.visibleBlocker
    * @param {number} now — timestamp in ms
+   * @param {object} [options]
+   * @param {boolean} [options.bypassHold] — skip anti-flicker hold (used for authoritative hooks)
    * @returns {object|null} published state or null if unchanged
    */
-  publish(detection, now = Date.now()) {
+  publish(detection, now = Date.now(), options = {}) {
     const next = {
       state: detection.state,
       visibleIdle: detection.visibleIdle,
@@ -1016,7 +1278,7 @@ var AgentStateMachine = class {
       visibleWorking: this.lastVisibleWorking,
       visibleBlocker: this.lastVisibleBlocker
     };
-    if (this.shouldHoldWorkingToIdle(previous, next, now)) {
+    if (!options.bypassHold && this.shouldHoldWorkingToIdle(previous, next, now)) {
       return null;
     }
     const stableRefreshDue = this.stableVisibleSignalRefreshDue(next, now);
@@ -1034,7 +1296,7 @@ var AgentStateMachine = class {
 };
 
 // src/lib/terminal/agentTuiMetadata.shared.js
-var AGENT_TUI_TYPES = ["opencode", "kimi", "claude", "codex", "grok", "hermes"];
+var AGENT_TUI_TYPES = ["opencode", "kimi", "claude", "codex", "grok", "hermes", "agy"];
 var AGENT_TUI_PATTERN = new RegExp(
   `\\b(?:${AGENT_TUI_TYPES.map((t) => t === "grok" ? "grok|groc" : t).join("|")})\\b`,
   "i"
@@ -1052,6 +1314,19 @@ var DEFAULT_DETECTION_VIEWPORT_LINES = 40;
 var MAX_DETECTION_BUFFER_CHARS = 8192;
 
 // src/lib/terminal/sessionAgentDetector.js
+var HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 12e4);
+var HOOK_AUTHORITY_AGENTS = ["kimi", "claude", "opencode", "agy", "antigravity"];
+function hasFreshHookAuthority(session, now = Date.now()) {
+  if (!session?.hookState || typeof session.hookState.at !== "number") {
+    return false;
+  }
+  const sourceAgent = session.hookState.source ? session.hookState.source.replace(/^devhub:/, "") : null;
+  const agentType = session.agentType || sourceAgent;
+  if (!agentType || !HOOK_AUTHORITY_AGENTS.includes(agentType)) {
+    return false;
+  }
+  return now - session.hookState.at < HOOK_AUTHORITY_TTL_MS;
+}
 function ensureAgentDetectionSession(session) {
   if (!session) return session;
   if (!session.agentStateMachine) {
@@ -1082,7 +1357,16 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
   if (session.detectionBuffer.length > MAX_DETECTION_BUFFER_CHARS) {
     session.detectionBuffer = session.detectionBuffer.slice(-MAX_DETECTION_BUFFER_CHARS);
   }
-  const screen = extractBottomViewport(session.detectionBuffer, {
+  if (hasFreshHookAuthority(session, now)) {
+    session._hadHookAuthority = true;
+    return result;
+  }
+  if (session._hadHookAuthority) {
+    session._hadHookAuthority = false;
+    session.lastDetection = null;
+  }
+  const cleanBuffer = stripAnsi(session.detectionBuffer || "");
+  const screen = extractBottomViewport(cleanBuffer, {
     maxLines: session.detectionViewportLines || DEFAULT_DETECTION_VIEWPORT_LINES
   });
   const detected = detectAgentState(session.agentType, screen, {
@@ -1092,13 +1376,78 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
   if (detected.skipStateUpdate) {
     return result;
   }
+  if (session.agentTuiState === "running" && detected.state === "idle" && !detected.visibleIdle) {
+    return result;
+  }
+  session.lastDetection = detected;
   const published = session.agentStateMachine.publish(detected, now);
   if (published) {
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
-    result.published = published;
+    result.published = {
+      ...published,
+      wasCancelled: Boolean(detected.wasCancelled)
+    };
     result.agentTuiState = published.state;
     result.agentTuiStateAt = now;
+    result.wasCancelled = Boolean(detected.wasCancelled);
+  }
+  return result;
+}
+function tickAgentDetection(session, now = Date.now()) {
+  ensureAgentDetectionSession(session);
+  const result = {
+    published: null,
+    agentTuiState: session.agentTuiState ?? null,
+    agentTuiStateAt: session.agentTuiStateAt ?? null
+  };
+  if (!session.agentType || !session.agentStateMachine) {
+    return result;
+  }
+  const pty = session.pty || session.ptyProcess;
+  const ptyPid = session.ptyPid || pty && pty.pid;
+  if (!pty || !ptyPid) {
+    session.hookState = null;
+    const published = session.agentStateMachine.publish({
+      state: "idle",
+      visibleIdle: true,
+      visibleWorking: false,
+      visibleBlocker: false
+    }, now);
+    if (published) {
+      session.agentTuiState = published.state;
+      session.agentTuiStateAt = now;
+      result.published = published;
+      result.agentTuiState = published.state;
+      result.agentTuiStateAt = now;
+    }
+    return result;
+  }
+  if (hasFreshHookAuthority(session, now)) {
+    session._hadHookAuthority = true;
+    return result;
+  }
+  if (session._hadHookAuthority) {
+    session._hadHookAuthority = false;
+    session.lastDetection = null;
+  }
+  const bufferUnchanged = session.lastTickBuffer === session.detectionBuffer;
+  session.lastTickBuffer = session.detectionBuffer;
+  const state = session.agentTuiState;
+  const isRunningOrBlocked = state === "running" || state === "blocked";
+  const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
+  if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle) {
+    return result;
+  }
+  if (session.lastDetection) {
+    const published = session.agentStateMachine.publish(session.lastDetection, now);
+    if (published) {
+      session.agentTuiState = published.state;
+      session.agentTuiStateAt = now;
+      result.published = published;
+      result.agentTuiState = published.state;
+      result.agentTuiStateAt = now;
+    }
   }
   return result;
 }
@@ -1143,11 +1492,97 @@ function processOscProgress(session, chunk) {
   }
   session._oscProgressBuffer = buffer.slice(lastIndex).slice(-MAX_OSC_PROGRESS_BUFFER);
 }
+
+// src/lib/terminal/agentHooks/hookEnv.js
+var import_crypto = __toESM(require("crypto"));
+function generateSessionHookToken() {
+  return import_crypto.default.randomBytes(16).toString("hex");
+}
+function buildSessionHookEnv({ session, hookUrl } = {}) {
+  if (!session) return {};
+  const url = hookUrl || process.env.DEVHUB_HOOK_URL;
+  if (!url) {
+    throw new Error("hookUrl is required in buildSessionHookEnv (pass hookUrl or set DEVHUB_HOOK_URL)");
+  }
+  if (!session.hookToken) {
+    session.hookToken = generateSessionHookToken();
+  }
+  return {
+    DEVHUB_HOOK_ENV: "1",
+    DEVHUB_TERMINAL_ID: session.id || "",
+    DEVHUB_HOOK_URL: url,
+    DEVHUB_HOOK_TOKEN: session.hookToken
+  };
+}
+
+// src/lib/terminal/agentHooks/handleHookReport.js
+var ALLOWED_HOOK_STATES = ["working", "blocked", "idle", "session"];
+function handleHookReport(sessionsMap, body, now = Date.now()) {
+  if (!body || typeof body !== "object") {
+    return { status: 400, error: "Invalid JSON payload" };
+  }
+  const { terminalId, token, state, event, source, agent, agentSessionId } = body;
+  if (!terminalId || typeof terminalId !== "string" || !token || typeof token !== "string" || !state || typeof state !== "string") {
+    return { status: 400, error: "Missing required fields: terminalId, token, state" };
+  }
+  if (!ALLOWED_HOOK_STATES.includes(state)) {
+    return { status: 400, error: `Invalid state '${state}'. Allowed: ${ALLOWED_HOOK_STATES.join(", ")}` };
+  }
+  const session = typeof sessionsMap.get === "function" ? sessionsMap.get(terminalId) : sessionsMap[terminalId];
+  if (!session) {
+    return { status: 404, error: `Session '${terminalId}' not found` };
+  }
+  if (!session.hookToken || session.hookToken !== token) {
+    return { status: 403, error: "Invalid session token" };
+  }
+  if (agentSessionId) {
+    session.agentSessionId = agentSessionId;
+  }
+  if (agent && !session.agentType) {
+    session.agentType = agent;
+  }
+  if (state === "session") {
+    return { status: 204, session, broadcast: null };
+  }
+  const mappedState = state === "working" ? "running" : state;
+  session.hookState = {
+    state: mappedState,
+    rawState: state,
+    event: event || null,
+    at: now,
+    source: source || `devhub:${agent || session.agentType || "unknown"}`,
+    agentSessionId: agentSessionId || session.agentSessionId || null
+  };
+  const detection = {
+    state: mappedState,
+    visibleWorking: mappedState === "running",
+    visibleBlocker: mappedState === "blocked",
+    visibleIdle: mappedState === "idle"
+  };
+  const published = session.agentStateMachine ? session.agentStateMachine.publishHook(detection, now) : null;
+  if (published) {
+    session.agentTuiState = published.state;
+    session.agentTuiStateAt = now;
+  }
+  const broadcastPayload = published ? {
+    type: "agent-state",
+    agentTuiState: published.state,
+    at: now
+  } : null;
+  return { status: 204, broadcast: broadcastPayload, session };
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  ALLOWED_HOOK_STATES,
+  HOOK_AUTHORITY_TTL_MS,
+  buildSessionHookEnv,
   ensureAgentDetectionSession,
+  generateSessionHookToken,
+  handleHookReport,
+  hasFreshHookAuthority,
   ingestAgentDetectionFromFilteredOutput,
   processOscProgress,
   processOscTitle,
-  stripOscTitleSequences
+  stripOscTitleSequences,
+  tickAgentDetection
 });

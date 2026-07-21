@@ -982,6 +982,8 @@ function PizarraInner({
     if (viewportPersistTimerRef.current) clearTimeout(viewportPersistTimerRef.current);
     viewportPersistTimerRef.current = setTimeout(() => {
       viewportPersistTimerRef.current = null;
+      // Guard: jsdom may destroy the document between scheduling and firing (test teardown).
+      if (typeof window === 'undefined' || !window.document) return;
       writePizarraViewport(window.localStorage, projectId, workspaceId, { pan, zoom });
     }, 400);
     return () => {
@@ -1963,7 +1965,9 @@ function PizarraInner({
             visible: true,
             viewId: fallbackViewId || undefined,
           },
-          url: cleanedExtraProps.url || (type === 'browser' ? 'http://localhost:3000/' : undefined),
+          url:
+            cleanedExtraProps.url ||
+            (type === 'browser' ? 'https://duckduckgo.com/' : undefined),
           initialCommand: cleanedExtraProps.initialCommand,
           label: cleanedExtraProps.label || (isTerminal ? `Terminal` : `Browser`),
           // terminal-renderer-default-xterm-webgl: defensive pin — even if
@@ -2433,7 +2437,7 @@ function PizarraInner({
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browser, visible: true },
-          url: 'http://localhost:3000/',
+          url: 'https://duckduckgo.com/',
           label: 'Browser',
           requestedRendererMode: 'xterm-webgl',
         });
@@ -2450,7 +2454,7 @@ function PizarraInner({
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browser, visible: true },
-          url: 'http://localhost:3000/',
+          url: 'https://duckduckgo.com/',
           label: 'Browser',
           requestedRendererMode: 'xterm-webgl',
         });
@@ -2473,14 +2477,14 @@ function PizarraInner({
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browsers[0], visible: true },
-          url: 'http://localhost:3000/',
+          url: 'https://duckduckgo.com/',
           label: 'Browser 1',
           requestedRendererMode: 'xterm-webgl',
         });
         registry.addSurface({
           type: 'browser',
           pizarra: { ...slots.browsers[1], visible: true },
-          url: 'http://localhost:3000/',
+          url: 'https://duckduckgo.com/',
           label: 'Browser 2',
           requestedRendererMode: 'xterm-webgl',
         });
@@ -2880,6 +2884,8 @@ function PizarraInner({
             isViewTransitioning={isViewTransitioning}
             transitionFromViewId={viewTransitionPair?.from ?? null}
             suspendDuringCanvasPan={isCanvasPanning}
+            isSurfaceDragging={isSurfaceDragging}
+            hudRevealed={hudRevealed}
             // pizarra-editing-ux Phase 4: right-click on a composite surface
             // records the target id + world anchor so the shared Radix menu
             // (wrapping the canvas container) opens over the surface.

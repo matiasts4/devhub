@@ -54,8 +54,18 @@ export function shouldFreezeKimiTuiViewportOnWorkspaceShow({
 }
 
 /** Kimi Ink scroll resets on redundant PTY resize even when cols/rows are unchanged. */
-export function shouldSkipKimiTuiPtyResize() {
-  return false;
+export function shouldSkipKimiTuiPtyResize({
+  initialCommand = '',
+  hasConnectedOnce = false,
+  kimiReady = false,
+  tuiSessionActive = false,
+} = {}) {
+  return isKimiTuiLive({
+    initialCommand,
+    kimiReady,
+    tuiSessionActive,
+    hasConnectedOnce,
+  });
 }
 
 /** Scan xterm scrollback for kimi chrome after reattach before fresh output arrives. */

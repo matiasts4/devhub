@@ -32,6 +32,7 @@ import Ajustes from './views/Ajustes';
 import SwarmControl from './views/SwarmControl';
 import TelegramMonitor from './views/TelegramMonitor';
 import MotionLab from './views/MotionLab';
+import NotificationToastStack from './components/NotificationToastStack';
 import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
@@ -316,7 +317,9 @@ function WorkspaceLayout() {
     if (!tasks || tasks.length === 0) return;
     const total = tasks.length;
     const done = tasks.filter((t) =>
-      ['completed', 'done'].includes((t.status || '').toLowerCase())
+      ['completed', 'done', 'qa_ready', 'qa-ready', 'resolved', 'closed'].includes(
+        (t.status || '').toLowerCase()
+      )
     ).length;
     const newProgress = Math.round((done / total) * 100);
 
@@ -622,6 +625,7 @@ function App() {
               },
             }}
           />
+          <NotificationToastStack />
           <Routes>
             <Route path="/" element={<Navigate to="/hub" replace />} />
             <Route path="/hub" element={<ProjectHub />} />

@@ -25,7 +25,11 @@ import {
 } from './agentTuiMetadata.node.js';
 import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
 import { processOscProgress } from './oscProgressParser.js';
-import { ingestAgentDetectionFromFilteredOutput } from './sessionAgentDetector.js';
+import {
+  ingestAgentDetectionFromFilteredOutput,
+  tickAgentDetection,
+} from './sessionAgentDetector.js';
+import { buildSessionHookEnv, generateSessionHookToken } from './agentHooks/hookEnv.js';
 import { createScrollbackStore } from './terminalScrollbackStore.js';
 import { createOscCwdParser } from './oscCwdParser.js';
 import {
@@ -35,9 +39,9 @@ import {
   unregisterOpencodeSession,
 } from './opencodeSessionRegistry.js';
 
-const requireCjs = createRequire(import.meta.url);
-const { shouldRespawnShellAfterPtyExit, shouldRelaunchAgentAfterCtrlCRespawn } =
-  requireCjs('./ptyRespawnPolicy.cjs');
+const requireCjs = createRequire(
+  typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'package.json')
+);
 
 const { resolveTerminalSpawnCwd, validateSwarmCwd } = cwdGuard;
 
@@ -232,6 +236,59 @@ function findPathUpwards(startDir, ...relativeSegments) {
 
   return null;
 }
+
+function resolvePtyRespawnPolicy() {
+  const candidates = [
+    typeof __dirname !== 'undefined' ? path.join(__dirname, 'ptyRespawnPolicy.cjs') : null,
+    typeof __dirname !== 'undefined'
+      ? path.resolve(__dirname, '../../../sidecar-backend/ptyRespawnPolicy.cjs')
+      : null,
+    findPathUpwards(process.cwd(), 'src', 'lib', 'terminal', 'ptyRespawnPolicy.cjs'),
+    findPathUpwards(process.cwd(), 'sidecar-backend', 'ptyRespawnPolicy.cjs'),
+  ].filter(Boolean);
+
+  for (const cand of candidates) {
+    if (fs.existsSync(cand)) {
+      try {
+        return eval('require')(cand);
+      } catch {
+        /* try next candidate */
+      }
+    }
+  }
+
+  // Fallback inline implementation if file cannot be found in Next build bundles
+  return {
+    shouldRespawnShellAfterPtyExit({
+      launchCommand = null,
+      mode = null,
+      agentType = null,
+      platform = typeof process !== 'undefined' ? process.platform : '',
+      exitCode = null,
+      respawnCount = 0,
+      maxRespawns = 3,
+    } = {}) {
+      if (Number(respawnCount) >= Number(maxRespawns)) return false;
+      if (typeof launchCommand === 'string' && launchCommand.trim().length > 0) return true;
+      const wasTui = mode === 'tui' || Boolean(agentType);
+      if (!wasTui) return false;
+      if (platform !== 'win32') return false;
+      const n = Number(exitCode);
+      return n === -1073741510 || n === 0xc000013a;
+    },
+    shouldRelaunchAgentAfterCtrlCRespawn({
+      inputFocused = false,
+      launchCommand = null,
+      agentType = null,
+    } = {}) {
+      if (inputFocused) return false;
+      return (typeof launchCommand === 'string' && launchCommand.trim().length > 0) || Boolean(agentType);
+    },
+  };
+}
+
+const { shouldRespawnShellAfterPtyExit, shouldRelaunchAgentAfterCtrlCRespawn } =
+  resolvePtyRespawnPolicy();
 
 function resolveMcpServerPath() {
   return (
@@ -547,6 +604,9 @@ function applyAgentTuiDetection(session, command) {
   if (!type) return false;
 
   session.mode = 'tui';
+  // Mark ready for input filtering so SGR wheel/click inject is not stripped.
+  // Without tuiReady/agentType the noise filter drops ESC[<64/65 (dead Grok scroll).
+  session.tuiReady = true;
   session.historyEnabled = false;
   session.history = '';
   session.agentType = type;
@@ -597,7 +657,7 @@ function detectSessionModeFromInput(session, input) {
 /**
  * getOrInitSessions — returns the global terminal sessions map, initializing if needed.
  */
-function getOrInitSessions() {
+export function getOrInitSessions() {
   if (!globalThis[GLOBAL_TTY_SESSIONS_KEY]) {
     globalThis[GLOBAL_TTY_SESSIONS_KEY] = new Map();
   }
@@ -799,7 +859,15 @@ function buildSessionSpawnConfig(
     ? `devhub-swarm-${swarmContext.launchId}-${swarmContext.roleKey}`
     : normalizeTmuxSessionName(terminalId);
   const resolvedShell = resolveShell();
-  const env = Object.assign(sanitizeTerminalSpawnEnv(process.env), {
+  // Hook environment for agent lifecycle state reporting
+  const ttyPort = process.env.PORT || '3000';
+  const hookUrl = process.env.DEVHUB_HOOK_URL || `http://127.0.0.1:${ttyPort}/api/terminal/agent-hook`;
+  const hookEnv = buildSessionHookEnv({
+    session: { id: terminalId, hookToken: options.hookToken },
+    hookUrl,
+  });
+
+  const env = Object.assign(sanitizeTerminalSpawnEnv(process.env), hookEnv, {
     DEVHUB_PROJECT_DIR: cwd,
     DEVHUB_MCP_CMD: `node ${MCP_SERVER_PATH}`,
     GEMINI_MCP_HINT: 'Use DEVHUB_MCP_CMD to connect Gemini CLI to your local server.',
@@ -911,12 +979,14 @@ export function createSession({
     }
   }
 
+  const hookToken = generateSessionHookToken();
+
   const { env, spawnArgs, tmuxEnabled, tmuxSession } = buildSessionSpawnConfig(
     resolvedCwd,
     id,
     swarmContext,
     initialCommand,
-    { isEngineV2: false }
+    { isEngineV2: false, hookToken }
   );
 
   ttyLog('createSession', `spawning PTY`, {
@@ -971,6 +1041,8 @@ export function createSession({
     tmuxEnabled: Boolean(tmuxEnabled),
     agentTuiState: null,
     agentTuiStateAt: null,
+    hookToken,
+    hookState: null,
     agentStateMachine: new AgentStateMachine(),
     detectionBuffer: '',
     _oscTitleBuffer: '',
@@ -1129,6 +1201,8 @@ function handleSessionOutput(sessions, session, chunk) {
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'kimi');
       }
+      session.mode = 'tui';
+      session.tuiReady = true;
       maybeWriteAgentReadyMarker(session, 'kimi', { reason: 'tty-tui-footer' });
     } else if (detectOpenCodeTuiReady(filtered)) {
       if (session.mode !== 'tui') {
@@ -1138,11 +1212,14 @@ function handleSessionOutput(sessions, session, chunk) {
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'opencode');
       }
+      session.tuiReady = true;
       maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
     } else if (detectGrokSessionFromOutput(filtered)) {
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'grok');
       }
+      session.mode = 'tui';
+      session.tuiReady = true;
     }
 
     session._lastAgentStateEvent = ingestAgentDetectionFromFilteredOutput(
@@ -1222,6 +1299,20 @@ function handleSessionOutput(sessions, session, chunk) {
   }
 }
 
+export function broadcastSessionPayload(session, payload) {
+  if (!session || !session.sockets) return;
+  const data = JSON.stringify(payload);
+  for (const socket of session.sockets) {
+    if (socket.readyState === socket.OPEN) {
+      try {
+        socket.send(data);
+      } catch {
+        /* stale socket */
+      }
+    }
+  }
+}
+
 function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
   const priorAgentType = session.agentType;
   const priorLaunchCommand = session.launchCommand || session.initialCommand || null;
@@ -1268,7 +1359,7 @@ function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
         }
       : null,
     null,
-    { isEngineV2: Boolean(session.isEngineV2) }
+    { isEngineV2: Boolean(session.isEngineV2), hookToken: session.hookToken }
   );
 
   let terminal;
@@ -1297,6 +1388,7 @@ function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
   session.agentType = null;
   session.agentTuiState = null;
   session.agentTuiStateAt = null;
+  session.hookState = null;
   session.launchCommand = priorLaunchCommand || null;
   session.tmuxEnabled = Boolean(tmuxEnabled);
   session.tmuxSession = tmuxSession || null;
@@ -1848,12 +1940,13 @@ export async function ensureTTYServer() {
 
     if (!session) {
       const shell = resolveShell();
+      const hookToken = generateSessionHookToken();
       const { env, spawnArgs, tmuxEnabled } = buildSessionSpawnConfig(
         cwd,
         terminalId,
         swarmContext,
         null,
-        { isEngineV2: requestedIsEngineV2 }
+        { isEngineV2: requestedIsEngineV2, hookToken }
       );
 
       ttyLog('WS_CONN', `creating new session`, {
@@ -1904,6 +1997,8 @@ export async function ensureTTYServer() {
         swarmId: swarmContext?.launchId || null,
         agentTuiState: null,
         agentTuiStateAt: null,
+        hookToken,
+        hookState: null,
         agentStateMachine: new AgentStateMachine(),
         detectionBuffer: '',
         _oscTitleBuffer: '',
@@ -2007,7 +2102,16 @@ export async function ensureTTYServer() {
       }
 
       if (message.type === 'input' && typeof message.data === 'string') {
-        const filteredInput = filterTerminalInputForSession(session, message.data);
+        // Build an explicit filter ctx — never pass the raw session alone.
+        // session.tuiReady must be honored; agentType covers launch-detected TUIs.
+        const filteredInput = filterTerminalInputForSession(
+          {
+            mode: session.mode === 'tui' ? 'tui' : 'shell',
+            tuiReady: session.tuiReady === true,
+            agentType: session.agentType || null,
+          },
+          message.data
+        );
         if (filteredInput === null) return;
         detectSessionModeFromInput(session, filteredInput);
         session.lastActivityAt = Date.now();
@@ -2291,6 +2395,19 @@ export async function ensureTTYServer() {
       mode: session?.mode || 'shell',
     });
 
+    // Replay del estado semántico del agente al conectar: los frames
+    // agent-state solo se emiten en transiciones, así que sin esto un cliente
+    // nuevo no vería badge hasta el próximo cambio de estado.
+    if (session?.agentTuiState) {
+      socket.send(
+        JSON.stringify({
+          type: 'agent-state',
+          agentTuiState: session.agentTuiState,
+          at: session.agentTuiStateAt ?? Date.now(),
+        })
+      );
+    }
+
     // Phase 2 terminal-engine-v2: v2 subscribers receive canonical termsize,
     // cwd, and ptyOffset in the ready frame so the frontend can apply them
     // before replaying buffered output.
@@ -2328,6 +2445,36 @@ export async function ensureTTYServer() {
 
   // Start periodic idle-session cleanup to prevent unbounded Map growth
   startIdleCleanup(terminalSessions);
+
+  // Start periodic agent state detection tick
+  if (globalThis.__DEVHUB_TTY_AGENT_TICK__) {
+    clearInterval(globalThis.__DEVHUB_TTY_AGENT_TICK__);
+  }
+  const tickMs = Number(process.env.AGENT_DETECTION_TICK_MS || 500);
+  globalThis.__DEVHUB_TTY_AGENT_TICK__ = setInterval(() => {
+    for (const session of terminalSessions.values()) {
+      if (session.agentType) {
+        const tickResult = tickAgentDetection(session, Date.now());
+        if (tickResult.published && session.agentTuiState) {
+          const agentStateEvent = {
+            type: 'agent-state',
+            agentTuiState: session.agentTuiState,
+            at: session.agentTuiStateAt,
+          };
+          for (const socket of session.sockets) {
+            if (socket.readyState !== socket.OPEN) continue;
+            try {
+              socket.send(JSON.stringify(agentStateEvent));
+            } catch {
+              /* stale socket */
+            }
+          }
+        }
+      }
+    }
+  }, tickMs);
+  // Do not keep the process (or a jest worker) alive just for the tick.
+  globalThis.__DEVHUB_TTY_AGENT_TICK__.unref?.();
 
   return serverState;
 }

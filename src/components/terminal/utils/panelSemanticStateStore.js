@@ -2,6 +2,8 @@
  * Live semantic agent-TUI state from WS `agent-state` frames (herdr parity).
  */
 
+import { handleAgentStateTransition } from './agentNotificationBridge';
+
 const states = new Map();
 const listeners = new Map();
 
@@ -9,7 +11,7 @@ export function getPanelSemanticState(panelId) {
   return states.get(panelId) ?? null;
 }
 
-export function setPanelSemanticState(panelId, next) {
+export function setPanelSemanticState(panelId, next, options = {}) {
   const prev = states.get(panelId) ?? null;
   const normalized =
     next && next.agentTuiState
@@ -28,6 +30,9 @@ export function setPanelSemanticState(panelId, next) {
     return;
   }
 
+  const prevStateStr = prev?.agentTuiState || null;
+  const nextStateStr = normalized?.agentTuiState || null;
+
   if (!normalized) {
     states.delete(panelId);
   } else {
@@ -38,11 +43,15 @@ export function setPanelSemanticState(panelId, next) {
   if (cbs) {
     for (const cb of cbs) {
       try {
-        cb();
+        cb(normalized, prev);
       } catch {
         /* ignore */
       }
     }
+  }
+
+  if (prevStateStr !== nextStateStr && nextStateStr) {
+    handleAgentStateTransition(panelId, prevStateStr, nextStateStr, options);
   }
 }
 

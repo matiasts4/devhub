@@ -1058,7 +1058,15 @@ export default function Tareas() {
     if (fMyTasks && user?.id && t.assigned_to !== user.id) return false;
     if (fUnlocked) {
       const taskDeps = dependencies.filter((d) => d.task_id === t.id && d.tipo === 'blocks');
-      if (taskDeps.some((d) => statusMap[d.depends_on] !== 'completed')) return false;
+      if (
+        taskDeps.some(
+          (d) =>
+            !['completed', 'done', 'qa_ready', 'qa-ready'].includes(
+              (statusMap[d.depends_on] || '').toLowerCase()
+            )
+        )
+      )
+        return false;
     }
     return true;
   });

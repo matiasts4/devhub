@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const agents = ['kimi', 'claude', 'codex', 'opencode', 'grok'];
+const agents = ['kimi', 'claude', 'codex', 'opencode', 'grok', 'antigravity'];
 
 function herdrMeta(agent) {
   const p = path.join(root, '.research/herdr/src/detect/manifests', `${agent}.toml`);

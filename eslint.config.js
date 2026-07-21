@@ -166,9 +166,9 @@ export default [
     },
   },
 
-  // Lib __tests__ and selected unit tests use ESM imports under Jest/Babel
+  // Lib and App __tests__ and selected unit tests use ESM imports under Jest/Babel
   {
-    files: ['src/lib/**/__tests__/**/*.js', 'tests/unit/panel-helpers.test.js'],
+    files: ['src/lib/**/__tests__/**/*.js', 'src/app/**/__tests__/**/*.js', 'tests/unit/panel-helpers.test.js'],
     languageOptions: {
       sourceType: 'module',
       globals: {
@@ -178,6 +178,7 @@ export default [
       },
     },
   },
+
 
   // Override for localClient.js and its test to support ESM
   {

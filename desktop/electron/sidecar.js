@@ -1,16 +1,10 @@
 'use strict';
 
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-
-function sidecarPort() {
-  const raw = process.env.SIDECAR_PORT;
-  if (raw && Number.isFinite(Number(raw))) return Number(raw);
-  // Match Tauri dev convention when possible.
-  return process.env.NODE_ENV === 'production' ? 4000 : 4001;
-}
+const { isPackagedMode, sidecarPort, locateSidecarEntry, resolveStandaloneDir } = require('./packaging/runtime');
 
 function healthUrl(port = sidecarPort()) {
   return `http://127.0.0.1:${port}/health`;
@@ -30,28 +24,39 @@ function checkSidecarHealth(port = sidecarPort(), timeoutMs = 1500) {
   });
 }
 
-/**
- * Resolve a candidate sidecar entry for local monorepo layouts.
- * E0: may return null — external sidecar is OK.
- */
-function resolveSidecarEntry(repoRoot) {
+function resolveNodeBin() {
   const candidates = [
-    path.join(repoRoot, 'sidecar-backend', 'server.js'),
-    path.join(repoRoot, '.next', 'standalone', 'server.js'),
-  ];
-  for (const file of candidates) {
-    if (fs.existsSync(file)) return file;
+    process.env.DEVHUB_NODE_BIN,
+    process.execPath.endsWith('node.exe') || process.execPath.endsWith('node') ? process.execPath : null,
+    process.platform === 'win32' ? 'C:\\Program Files\\nodejs\\node.exe' : '/usr/bin/node',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
   }
-  return null;
+
+  try {
+    const which = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['node'], {
+      encoding: 'utf8',
+    });
+    if (which.status === 0) {
+      const resolved = which.stdout.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+      if (resolved && fs.existsSync(resolved)) return resolved;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return 'node';
 }
 
 /**
- * Ensure sidecar is reachable. Optionally spawn if DEVHUB_ELECTRON_SPAWN_SIDECAR=1.
+ * Ensure sidecar is reachable. Optionally spawn if DEVHUB_ELECTRON_SPAWN_SIDECAR=1 or if packaged.
  * @returns {Promise<{ mode: 'external'|'spawned'|'missing', port: number, pid?: number }>}
  */
 async function ensureSidecar({
   repoRoot,
-  spawnIfMissing = process.env.DEVHUB_ELECTRON_SPAWN_SIDECAR === '1',
+  spawnIfMissing = (isPackagedMode() || process.env.DEVHUB_ELECTRON_SPAWN_SIDECAR === '1'),
 } = {}) {
   const port = sidecarPort();
   const healthy = await checkSidecarHealth(port);
@@ -66,16 +71,27 @@ async function ensureSidecar({
     return { mode: 'missing', port };
   }
 
-  const entry = resolveSidecarEntry(repoRoot);
+  const entry = locateSidecarEntry({ repoRoot });
   if (!entry) {
     console.warn('[DevHub Electron] No sidecar entry found to spawn.');
     return { mode: 'missing', port };
   }
 
-  const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, SIDECAR_PORT: String(port), PORT: String(port) },
-    stdio: 'inherit',
+  const nodeBin = resolveNodeBin();
+  const standaloneDir = resolveStandaloneDir({ repoRoot });
+  const nodeModulesPath = path.join(standaloneDir, 'node_modules');
+  console.log(`[DevHub Electron] Spawning sidecar using node: ${nodeBin} from entry: ${entry}`);
+  const child = spawn(nodeBin, [entry], {
+    env: (function() {
+      const e = { ...process.env, SIDECAR_PORT: String(port), NODE_PATH: nodeModulesPath };
+      if (!entry.endsWith('devhub-server.cjs')) {
+        e.PORT = String(port);
+      }
+      return e;
+    })(),
+    stdio: 'ignore',
     detached: false,
+    windowsHide: true,
   });
 
   // Brief wait for boot.
@@ -94,6 +110,5 @@ module.exports = {
   sidecarPort,
   healthUrl,
   checkSidecarHealth,
-  resolveSidecarEntry,
   ensureSidecar,
 };
