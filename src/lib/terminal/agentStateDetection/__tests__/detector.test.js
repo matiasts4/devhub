@@ -73,7 +73,9 @@ describe('agentStateDetection', () => {
     });
 
     test('agy detects permission prompt as blocked', () => {
-      const screen = ['requesting permission for:', '  $ npm test', 'do you want to proceed?'].join('\n');
+      const screen = ['requesting permission for:', '  $ npm test', 'do you want to proceed?'].join(
+        '\n'
+      );
       const result = detectAgentState('agy', screen);
       expect(result.state).toBe('blocked');
       expect(result.visibleBlocker).toBe(true);
@@ -106,9 +108,24 @@ describe('agentStateDetection', () => {
     });
 
     test('agy detects working from esc-to-cancel footer (agy 1.1.x)', () => {
-      const screen = ['writing a story…', '', 'esc to cancel', 'accept-edits · Gemini 3.5 Flash'].join(
-        '\n'
-      );
+      const screen = [
+        'writing a story…',
+        '',
+        'esc to cancel',
+        'accept-edits · Gemini 3.5 Flash',
+      ].join('\n');
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('agy detects working from esc to interrupt footer', () => {
+      const screen = [
+        'building project assets…',
+        '',
+        'esc to interrupt',
+        'accept-edits · Gemini 3.5 Flash',
+      ].join('\n');
       const result = detectAgentState('agy', screen);
       expect(result.state).toBe('running');
       expect(result.visibleWorking).toBe(true);
@@ -118,6 +135,26 @@ describe('agentStateDetection', () => {
       const screen = ['OK', '', '? for shortcuts', 'accept-edits · Gemini 3.5 Flash'].join('\n');
       const result = detectAgentState('agy', screen);
       expect(result.state).toBe('idle');
+      expect(result.visibleIdle).toBe(true);
+    });
+
+    test('agy does not stay blocked from answered permission prompt in scrollback', () => {
+      const screen = [
+        'requesting permission for:',
+        '  $ npm test',
+        'do you want to proceed?',
+        'user selected: Yes',
+        'executing command...',
+        'Command completed successfully.',
+        'line 7',
+        'line 8',
+        'line 9',
+        'line 10',
+        'antigravity>',
+      ].join('\n');
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleBlocker).toBe(false);
       expect(result.visibleIdle).toBe(true);
     });
 
@@ -137,7 +174,10 @@ describe('agentStateDetection', () => {
     });
 
     test('kimi detects working from working-footer fixture', () => {
-      const fixturePath = path.resolve(__dirname, '../../../../../tests/fixtures/agent-screens/kimi-working-footer.txt');
+      const fixturePath = path.resolve(
+        __dirname,
+        '../../../../../tests/fixtures/agent-screens/kimi-working-footer.txt'
+      );
       const screen = fs.readFileSync(fixturePath, 'utf8');
       const result = detectAgentState('kimi', screen);
       expect(result.state).toBe('running');
@@ -145,7 +185,10 @@ describe('agentStateDetection', () => {
     });
 
     test('kimi detects idle from idle-prompt fixture', () => {
-      const fixturePath = path.resolve(__dirname, '../../../../../tests/fixtures/agent-screens/kimi-idle-prompt.txt');
+      const fixturePath = path.resolve(
+        __dirname,
+        '../../../../../tests/fixtures/agent-screens/kimi-idle-prompt.txt'
+      );
       const screen = fs.readFileSync(fixturePath, 'utf8');
       const result = detectAgentState('kimi', screen);
       expect(result.state).toBe('idle');
@@ -153,7 +196,10 @@ describe('agentStateDetection', () => {
     });
 
     test('kimi detects blocked from blocked-approval fixture', () => {
-      const fixturePath = path.resolve(__dirname, '../../../../../tests/fixtures/agent-screens/kimi-blocked-approval.txt');
+      const fixturePath = path.resolve(
+        __dirname,
+        '../../../../../tests/fixtures/agent-screens/kimi-blocked-approval.txt'
+      );
       const screen = fs.readFileSync(fixturePath, 'utf8');
       const result = detectAgentState('kimi', screen);
       expect(result.state).toBe('blocked');

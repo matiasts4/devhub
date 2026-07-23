@@ -1026,14 +1026,14 @@ var grok_default = {
 // src/lib/terminal/agentStateDetection/manifests/antigravity.js
 var antigravity_default = {
   id: "agy",
-  version: "2026.07.21.2",
+  version: "2026.07.23.1",
   aliases: ["agy", "antigravity", "antigravity-cli"],
   rules: [
     {
       id: "permission_prompt",
       state: "blocked",
       priority: 300,
-      region: "whole_recent",
+      region: "bottom_lines(8)",
       visibleBlocker: true,
       any: [
         {
@@ -1074,23 +1074,31 @@ var antigravity_default = {
       visibleIdle: true,
       any: [
         { contains: ["? for shortcuts"] },
-        { lineRegex: ["(?i)^\\s*(antigravity|>)\\s*$"] }
+        { contains: ["press ? for shortcuts"] },
+        { lineRegex: ["(?i)^\\s*(antigravity|>|antigravity\\s*\\(v[^)]+\\))\\s*$"] },
+        { lineRegex: ["(?i)^\\s*antigravity>"] },
+        { lineRegex: ["(?i)^\\s*>\\s*$"] }
       ]
     },
     {
-      // herdr parity: agy 1.1.x shows "esc to cancel" in footer while working
+      // herdr parity: agy 1.1.x / 1.2.x shows "esc to cancel" or "esc to interrupt" in footer while working
       id: "working_footer_esc_cancel",
       state: "running",
-      priority: 110,
+      priority: 210,
       region: "bottom_lines(8)",
       visibleWorking: true,
-      contains: ["esc to cancel"]
+      any: [
+        { contains: ["esc to cancel"] },
+        { contains: ["esc to interrupt"] },
+        { contains: ["ctrl+c to cancel"] },
+        { contains: ["ctrl+c to interrupt"] },
+        { lineRegex: ["(?i)esc\\s+to\\s+(cancel|interrupt)"] }
+      ]
     },
     {
       id: "spinner_working",
       state: "running",
       priority: 100,
-      // herdr parity: whole_recent so streaming text doesn't push working signal out of view
       region: "bottom_lines(8)",
       visibleWorking: true,
       any: [
@@ -1098,13 +1106,16 @@ var antigravity_default = {
           lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s+[a-z]\\w*ing\\b"]
         },
         {
-          lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing)"]
+          lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"]
         },
         {
-          lineRegex: ["(?i)^\\s*\xB7\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing)"]
+          lineRegex: ["(?i)^\\s*\xB7\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"]
         },
         {
           lineRegex: ["(?i)^\\s*tool\\s+call\\b"]
+        },
+        {
+          lineRegex: ["(?i)\\b(thinking|analyzing|executing|reading|writing|searching|working|processing)..."]
         }
       ]
     },
@@ -1303,11 +1314,21 @@ var AGENT_TUI_PATTERN = new RegExp(
 );
 
 // src/lib/terminal/extractBottomViewport.js
+function processCarriageReturns(text) {
+  if (!text || typeof text !== "string" || !text.includes("\r")) return text;
+  const normalized = text.replace(/\r\n/g, "\n");
+  return normalized.split("\n").map((line) => {
+    if (!line.includes("\r")) return line;
+    const parts = line.split("\r");
+    return parts[parts.length - 1];
+  }).join("\n");
+}
 function extractBottomViewport(buffer, options = {}) {
   const maxLines = Math.max(1, Number(options.maxLines) || 40);
   if (!buffer || typeof buffer !== "string") return "";
-  const lines = buffer.split("\n");
-  if (lines.length <= maxLines) return buffer;
+  const sanitized = processCarriageReturns(buffer);
+  const lines = sanitized.split("\n");
+  if (lines.length <= maxLines) return sanitized;
   return lines.slice(-maxLines).join("\n");
 }
 var DEFAULT_DETECTION_VIEWPORT_LINES = 40;
