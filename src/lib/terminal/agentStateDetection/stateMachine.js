@@ -90,6 +90,15 @@ export class AgentStateMachine {
    * @returns {object|null} published state or null if unchanged
    */
   publish(detection, now = Date.now(), options = {}) {
+    // 'unknown' detections are non-evidence (W4): they must never publish a
+    // state change, never confirm a pending running→idle transition, and never
+    // cancel it either. The previous stable state stays sticky. Authoritative
+    // hook reports (bypassHold) always carry concrete idle/running/blocked
+    // states, so they are unaffected.
+    if (detection.state === 'unknown' && !options.bypassHold) {
+      return null;
+    }
+
     const next = {
       state: detection.state,
       visibleIdle: detection.visibleIdle,

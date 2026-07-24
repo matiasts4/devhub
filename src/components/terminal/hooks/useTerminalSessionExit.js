@@ -15,6 +15,8 @@ import {
   readPanelSessionExit,
 } from '@/lib/terminal/agentSessionExit';
 import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
+import { clearPanelSemanticState } from '@/components/terminal/utils/panelSemanticStateStore';
+import { resetAgentNotificationBridgeState } from '@/components/terminal/utils/agentNotificationBridge';
 import {
   cancelNativeVteLayoutHide,
   clearNativeVteLease,
@@ -66,6 +68,12 @@ export default function useTerminalSessionExit({ ctxRef, shouldUseNativeRenderer
       setNativeWheelPassthrough(false);
       setSessionExitReason(reason);
       disableTerminalFocusReporting(termRef.current, { disableMouse: true });
+
+      // N7/W7 client-side exit cleanup: drop the live semantic agent state so
+      // stale "blocked"/"running" badges don't persist after the child exits,
+      // and reset the notification bridge cooldown maps for this panel.
+      clearPanelSemanticState(id);
+      resetAgentNotificationBridgeState(id);
 
       if (agentSession && parsed.kind === 'agent') {
         setConnectionState('agent-exited');

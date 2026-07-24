@@ -26,6 +26,7 @@ const {
   synthesizeAgentSessionId,
 } = require('./agentTuiMetadata');
 const { detectKimiTuiReady } = require('./kimiReadyMarker');
+const { detectAntigravityTuiReady } = require('./antigravityReadyMarker');
 
 const SHELL_TERMINAL_RESPONSE_RE =
   /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
@@ -199,8 +200,15 @@ function applyAgentTuiDetection(session, command) {
 function updateSessionModeFromInput(session, input) {
   if (!session || !input || typeof input !== 'string') return;
 
+  // W7: remember HOW the agent was launched. Typed launches (`agy` inside a
+  // bash panel) run the agent as a CHILD of the shell, so PTY exit never fires
+  // when the agent quits — the typed-agent reaper is the only cleanup path.
+  // Output-detected sessions (tmux/pre-attach) are excluded from the reaper.
+  const hadAgentType = Boolean(session.agentType);
+
   // Fast path: the whole command came in one chunk.
   if (applyAgentTuiDetection(session, input)) {
+    if (!hadAgentType) session.agentLaunchOrigin = 'typed';
     return;
   }
 
@@ -212,6 +220,7 @@ function updateSessionModeFromInput(session, input) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (applyAgentTuiDetection(session, trimmed)) {
+      if (!hadAgentType) session.agentLaunchOrigin = 'typed';
       return;
     }
   }
@@ -224,11 +233,144 @@ function detectAgentStateFromOutput(output, agentType) {
   return null;
 }
 
+// ─── Canonical agent-state frame (CJS mirror) ────────────────────────────────
+// Keep in sync with src/lib/terminal/agentStateFrame.js (ESM source of truth).
+// Frame schema (N4/N5): { type, agentTuiState, at, agentType?, wasCancelled?, reason? }
+// Optional fields are included ONLY when defined so legacy consumers that
+// assume {type, agentTuiState, at} never see unexpected nulls.
+//   - reason: terminal frames only ('exit' = PTY exited,
+//     'agent-exit' = typed-agent child reaped while shell survived).
+function buildAgentStateFrame(session, state, extra = {}) {
+  if (!state) return null;
+  const frame = {
+    type: 'agent-state',
+    agentTuiState: state,
+    at: extra.at ?? session?.agentTuiStateAt ?? Date.now(),
+  };
+  const agentType = extra.agentType ?? session?.agentType ?? null;
+  if (agentType) {
+    frame.agentType = agentType;
+  }
+  const wasCancelled = extra.wasCancelled ?? session?._lastAgentStateEvent?.wasCancelled;
+  if (wasCancelled !== undefined && wasCancelled !== null) {
+    frame.wasCancelled = Boolean(wasCancelled);
+  }
+  if (extra.reason) {
+    frame.reason = extra.reason;
+  }
+  return frame;
+}
+
+// ─── Typed-agent child-exit reaper (W7 server half, CJS mirror) ──────────────
+// Keep in sync with reapTypedAgentSessionIfExited in src/lib/terminal/ttyServer.js.
+// Conservative heuristic — ALL gates must hold:
+//   1. session.agentLaunchOrigin === 'typed' (set by updateSessionModeFromInput).
+//   2. No agent chrome in the fresh chunk AND no visible working signal for
+//      ≥ REAPER_QUIET_MS (session.lastWorkingAt).
+//   3. ≥ REAPER_MIN_PROMPT_LINES shell-prompt-looking lines spanning
+//      ≥ REAPER_QUIET_MS — a single transient line can never reap a live agent.
+const TYPED_AGENT_REAPER_MIN_PROMPT_LINES = 2;
+const TYPED_AGENT_REAPER_QUIET_MS = 3000;
+
+// Conservative shell-prompt line patterns. Deliberately does NOT match a bare
+// `>` line (ambiguous with the agy idle prompt / bash PS2 continuation).
+const TYPED_AGENT_SHELL_PROMPT_RES = [
+  /^PS [A-Za-z]:[\\/].*> ?$/, // Windows PowerShell: `PS C:\path>`
+  /^[A-Za-z]:[\\/][^\n]*>$/, // cmd.exe: `C:\path>`
+  /^\S+@\S+[^\n]*[$#] ?$/, // bash/zsh: `user@host:~/path$`
+  /^[~/][^\n]*[$#] ?$/, // bare path prompt: `/home/user$`, `~/repo$`
+  /^\s*[$#]\s*$/, // bare prompt line (git-bash second line, su/root)
+];
+
+function countTypedAgentShellPromptLines(text) {
+  if (!text || typeof text !== 'string') return 0;
+  let count = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const candidate = line.trimEnd();
+    if (!candidate || candidate.length > 160) continue;
+    if (TYPED_AGENT_SHELL_PROMPT_RES.some((re) => re.test(candidate))) count += 1;
+  }
+  return count;
+}
+
+function typedAgentChromePresent(agentType, text) {
+  switch (agentType) {
+    case 'agy':
+    case 'antigravity':
+      return detectAntigravityTuiReady(text);
+    case 'kimi':
+      return detectKimiTuiReady(text);
+    case 'opencode':
+      return detectOpenCodeTuiReady(text);
+    default:
+      // Unknown agent (grok/claude/codex/hermes have no footer detector here):
+      // rely solely on the lastWorkingAt quiet window.
+      return false;
+  }
+}
+
+/**
+ * Reap a typed-launch agent session whose child process exited while the
+ * shell survived. Returns the terminal `agent-state` frame to emit, or null.
+ * Side effect on reap: clears agent identity, hook state, and TUI mode.
+ */
+function reapTypedAgentSessionIfExited(session, chunk, now = Date.now()) {
+  if (!session?.agentType || session.agentLaunchOrigin !== 'typed') return null;
+
+  const tracker =
+    session._typedAgentReaper ||
+    (session._typedAgentReaper = { promptLines: 0, firstPromptAt: 0, lastPromptAt: 0 });
+
+  // Gate 2a: any agent chrome in the fresh chunk means the agent is alive.
+  if (typedAgentChromePresent(session.agentType, chunk)) {
+    tracker.promptLines = 0;
+    tracker.firstPromptAt = 0;
+    return null;
+  }
+
+  const promptLines = countTypedAgentShellPromptLines(chunk);
+  if (promptLines === 0) return null;
+
+  if (tracker.promptLines === 0) tracker.firstPromptAt = now;
+  tracker.promptLines += promptLines;
+  tracker.lastPromptAt = now;
+
+  // Gate 3: enough prompt-looking lines, spread over a quiet window.
+  if (tracker.promptLines < TYPED_AGENT_REAPER_MIN_PROMPT_LINES) return null;
+  if (now - tracker.firstPromptAt < TYPED_AGENT_REAPER_QUIET_MS) return null;
+  // Gate 2b: no visible working signal (or Enter) in the quiet window.
+  if (session.lastWorkingAt && now - session.lastWorkingAt < TYPED_AGENT_REAPER_QUIET_MS) {
+    return null;
+  }
+
+  // Reap: capture the frame BEFORE clearing identity so it still carries
+  // agentType for the client's final "agent finished" transition.
+  const frame = buildAgentStateFrame(session, 'idle', { reason: 'agent-exit', at: now });
+
+  session.agentType = null;
+  session.agentSessionId = null;
+  session.agentTuiState = null;
+  session.agentTuiStateAt = null;
+  session.hookState = null;
+  session.lastDetection = null;
+  session.lastWorkingAt = null;
+  session.mode = 'shell';
+  session.tuiReady = false;
+  session.historyEnabled = true;
+  session.agentLaunchOrigin = null;
+  session._typedAgentReaper = null;
+
+  return frame;
+}
+
 module.exports = {
   applyAgentTuiDetection,
+  buildAgentStateFrame,
   buildHistoryReplay,
   buildServerMessage,
+  countTypedAgentShellPromptLines,
   detectAgentStateFromOutput,
+  detectAntigravityTuiReady,
   detectKimiTuiReady,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
@@ -236,6 +378,7 @@ module.exports = {
   detectOpenCodeTuiReady,
   getTransportMode,
   parseClientMessage,
+  reapTypedAgentSessionIfExited,
   stripShellTerminalResponseNoise,
   synthesizeAgentSessionId,
   updateSessionModeFromInput,

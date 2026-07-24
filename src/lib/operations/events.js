@@ -28,8 +28,11 @@ function getEventSortValue(event) {
 
 function applyRetentionPolicy(events = [], limit = DEFAULT_LIMIT) {
   const now = Date.now();
+  // N8: retention applies to ALL events including unread ones. Previously
+  // unread events never expired, so accumulated spam (e.g. stale agent
+  // notifications) filled the cap and evicted fresh events. The list is
+  // sorted by recency before slicing, so eviction is always oldest-first.
   const filtered = events.filter((item) => {
-    if (!item.read_at) return true; // Mantener no leídas independientemente de la fecha
     const age = now - getEventSortValue(item);
     return age <= RETENTION_MS;
   });
@@ -122,7 +125,9 @@ export function markOperationalEventAsRead(eventId, { storage, dispatch = true }
   if (modified) {
     target?.setItem(STORAGE_KEY, JSON.stringify(updated));
     if (dispatch && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { action: 'mark_read', id: eventId } }));
+      window.dispatchEvent(
+        new CustomEvent(EVENT_NAME, { detail: { action: 'mark_read', id: eventId } })
+      );
     }
   }
 
@@ -143,7 +148,9 @@ export function markAllOperationalEventsAsRead({ storage, category, dispatch = t
 
   target?.setItem(STORAGE_KEY, JSON.stringify(updated));
   if (dispatch && typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { action: 'mark_all_read', category } }));
+    window.dispatchEvent(
+      new CustomEvent(EVENT_NAME, { detail: { action: 'mark_all_read', category } })
+    );
   }
 
   return updated;
@@ -152,9 +159,8 @@ export function markAllOperationalEventsAsRead({ storage, category, dispatch = t
 export function clearOperationalEvents({ storage, category, dispatch = true } = {}) {
   const target = getStorage(storage);
   const existing = readOperationalEvents({ storage: target });
-  const updated = category && category !== 'all'
-    ? existing.filter((item) => item.category !== category)
-    : [];
+  const updated =
+    category && category !== 'all' ? existing.filter((item) => item.category !== category) : [];
 
   target?.setItem(STORAGE_KEY, JSON.stringify(updated));
   if (dispatch && typeof window !== 'undefined') {

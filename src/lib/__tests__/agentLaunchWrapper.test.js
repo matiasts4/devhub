@@ -603,6 +603,25 @@ describe('agentLaunchWrapper', () => {
       expect(result).toContain('kimi TUI ready');
     });
 
+    test('wrapper polls agy-ready marker when inner command is antigravity (W8)', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        innerCommand: '/home/user/.local/bin/agy',
+      });
+      expect(result).toContain('_devhub_wait_opencode_ready');
+      expect(result).toContain('/tmp/devhub-agent-ready-agy-${_tmux_session}');
+      expect(result).toContain('agy TUI ready');
+    });
+
+    test('wrapper honors an explicit agy programId over the innerCommand heuristic', () => {
+      const result = buildAgentLaunchWrapper({
+        ...tmuxParams,
+        innerCommand: 'antigravity',
+        programId: 'agy',
+      });
+      expect(result).toContain('/tmp/devhub-agent-ready-agy-${_tmux_session}');
+    });
+
     test('wrapper uses single-shot bootstrap paste (T2.2)', () => {
       const result = buildAgentLaunchWrapper(tmuxParams);
       expect(result).toContain("tmux load-buffer - <<'DEVHUB_BOOTSTRAP_PROMPT'");

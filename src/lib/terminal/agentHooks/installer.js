@@ -29,6 +29,25 @@ export const CLAUDE_EVENTS = [
   ['Stop', 'idle'],
 ];
 
+/**
+ * Antigravity (agy) hook events — ~/.gemini/config/hooks.json.
+ * Quirk: the payload delivered on stdin does NOT include the event name, so
+ * the installed command passes it as argv[2] to the bridge.
+ * The bridge (scripts/agent-hooks/antigravity-bridge.mjs) maps:
+ *   PreInvocation → working, Pre/PostToolUse → working,
+ *   Stop + fullyIdle:true → idle, Stop + fullyIdle:false → working.
+ */
+export const ANTIGRAVITY_EVENTS = [
+  'PreInvocation',
+  'PostInvocation',
+  'PreToolUse',
+  'PostToolUse',
+  'Stop',
+];
+
+/** Marker substring identifying DevHub-managed entries in hooks.json. */
+export const ANTIGRAVITY_HOOK_MARKER = 'antigravity-bridge.mjs';
+
 function findPathUpwards(startDir, ...relativeSegments) {
   let currentDir = path.resolve(startDir);
   for (let depth = 0; depth <= 6; depth += 1) {
@@ -44,10 +63,14 @@ function findPathUpwards(startDir, ...relativeSegments) {
 export function resolveHookAssetsDir() {
   const candidate =
     findPathUpwards(process.cwd(), 'scripts', 'agent-hooks') ||
-    (typeof __dirname !== 'undefined' ? findPathUpwards(__dirname, 'scripts', 'agent-hooks') : null);
+    (typeof __dirname !== 'undefined'
+      ? findPathUpwards(__dirname, 'scripts', 'agent-hooks')
+      : null);
 
   if (!candidate || !fs.existsSync(candidate)) {
-    throw new Error(`Agent hook script assets directory not found searching upwards from ${process.cwd()}`);
+    throw new Error(
+      `Agent hook script assets directory not found searching upwards from ${process.cwd()}`
+    );
   }
 
   return candidate;
@@ -144,7 +167,11 @@ export function isKimiHooksInstalled(content = '') {
 /**
  * Merge DevHub hooks into Claude settings.json string.
  */
-export function buildClaudeSettingsWithHooks(content = '{}', scriptPath = '', agentName = 'claude') {
+export function buildClaudeSettingsWithHooks(
+  content = '{}',
+  scriptPath = '',
+  agentName = 'claude'
+) {
   let json = {};
   try {
     json = JSON.parse(content || '{}');
@@ -162,7 +189,9 @@ export function buildClaudeSettingsWithHooks(content = '{}', scriptPath = '', ag
     list = list.filter((item) => {
       const hooks = item?.hooks;
       if (!Array.isArray(hooks)) return true;
-      return !hooks.some((h) => typeof h?.command === 'string' && h.command.includes('devhub-agent-state'));
+      return !hooks.some(
+        (h) => typeof h?.command === 'string' && h.command.includes('devhub-agent-state')
+      );
     });
 
     const cmd = buildInstalledHookCommand(scriptPath, state, event, agentName);
@@ -203,7 +232,9 @@ export function removeClaudeHooks(content = '{}') {
     json.hooks[event] = json.hooks[event].filter((item) => {
       const hooks = item?.hooks;
       if (!Array.isArray(hooks)) return true;
-      return !hooks.some((h) => typeof h?.command === 'string' && h.command.includes('devhub-agent-state'));
+      return !hooks.some(
+        (h) => typeof h?.command === 'string' && h.command.includes('devhub-agent-state')
+      );
     });
   }
 
@@ -217,6 +248,108 @@ export function isClaudeHooksInstalled(content = '') {
   return content.includes('devhub-agent-state');
 }
 
+// ─── Antigravity (agy) hooks.json support ────────────────────────────────────
+
+/**
+ * Build the hook command for a given Antigravity event.
+ * The bridge receives the event name as argv[2] (payload lacks it).
+ */
+export function buildAntigravityHookCommand(bridgePath, eventName) {
+  const normalized = bridgePath.replace(/\\/g, '/');
+  return `node "${normalized}" ${eventName}`;
+}
+
+function isDevhubAntigravityEntry(entry) {
+  const hooks = entry?.hooks;
+  if (!Array.isArray(hooks)) return false;
+  return hooks.some(
+    (h) => typeof h?.command === 'string' && h.command.includes(ANTIGRAVITY_HOOK_MARKER)
+  );
+}
+
+/**
+ * Merge DevHub hook entries into an Antigravity hooks.json string.
+ * Idempotent and non-destructive:
+ *   - parses existing JSON (corrupt → returns fresh config, caller backs up)
+ *   - removes ONLY previous DevHub entries (identified by bridge marker)
+ *   - preserves third-party hooks untouched
+ *
+ * @param {string} content — existing hooks.json content ('' when absent)
+ * @param {string} bridgePath — absolute path to antigravity-bridge.mjs
+ * @returns {{ json: string, wasCorrupt: boolean }}
+ */
+export function buildAntigravityHooksConfig(content = '', bridgePath = '') {
+  let json = {};
+  let wasCorrupt = false;
+  if (content && content.trim()) {
+    try {
+      json = JSON.parse(content);
+      if (!json || typeof json !== 'object' || Array.isArray(json)) {
+        json = {};
+        wasCorrupt = true;
+      }
+    } catch {
+      json = {};
+      wasCorrupt = true;
+    }
+  }
+
+  if (!json.hooks || typeof json.hooks !== 'object' || Array.isArray(json.hooks)) {
+    json.hooks = {};
+  }
+
+  for (const eventName of ANTIGRAVITY_EVENTS) {
+    let list = Array.isArray(json.hooks[eventName]) ? json.hooks[eventName] : [];
+    // Remove only previous DevHub entries — never clobber third-party hooks.
+    list = list.filter((entry) => !isDevhubAntigravityEntry(entry));
+
+    list.push({
+      hooks: [
+        {
+          type: 'command',
+          command: buildAntigravityHookCommand(bridgePath, eventName),
+          timeout: 30,
+        },
+      ],
+    });
+
+    json.hooks[eventName] = list;
+  }
+
+  return { json: JSON.stringify(json, null, 2) + '\n', wasCorrupt };
+}
+
+/**
+ * Remove DevHub-managed entries from an Antigravity hooks.json string.
+ * Preserves third-party hooks and empty arrays.
+ */
+export function removeAntigravityHooks(content = '') {
+  let json = {};
+  try {
+    json = JSON.parse(content || '{}');
+  } catch {
+    return content;
+  }
+
+  if (!json.hooks || typeof json.hooks !== 'object') {
+    return content;
+  }
+
+  for (const event of Object.keys(json.hooks)) {
+    if (!Array.isArray(json.hooks[event])) continue;
+    json.hooks[event] = json.hooks[event].filter((entry) => !isDevhubAntigravityEntry(entry));
+  }
+
+  return JSON.stringify(json, null, 2) + '\n';
+}
+
+/**
+ * Check if an Antigravity hooks.json string has DevHub-managed entries.
+ */
+export function isAntigravityHooksInstalled(content = '') {
+  return content.includes(ANTIGRAVITY_HOOK_MARKER);
+}
+
 /**
  * Resolve target config directory for agent.
  */
@@ -228,6 +361,11 @@ export function resolveAgentConfigPath(agent) {
   if (agent === 'claude') {
     return path.join(home, '.claude', 'settings.json');
   }
+  if (agent === 'agy' || agent === 'antigravity') {
+    // Global hooks recognized by all 3 Antigravity variants (terminal agent,
+    // CLI, and IDE). Workspace-level .agents/hooks.json is NOT managed here.
+    return path.join(home, '.gemini', 'config', 'hooks.json');
+  }
   if (agent === 'opencode') {
     const custom = process.env.OPENCODE_PLUGINS_DIR;
     if (custom) return path.join(custom, 'devhub-agent-state.js');
@@ -237,7 +375,9 @@ export function resolveAgentConfigPath(agent) {
       path.join(home, '.opencode', 'plugins', 'devhub-agent-state.js'),
     ];
     if (process.platform === 'win32' && process.env.APPDATA) {
-      candidates.unshift(path.join(process.env.APPDATA, 'opencode', 'plugins', 'devhub-agent-state.js'));
+      candidates.unshift(
+        path.join(process.env.APPDATA, 'opencode', 'plugins', 'devhub-agent-state.js')
+      );
     }
     for (const cand of candidates) {
       if (fs.existsSync(path.dirname(cand))) return cand;
@@ -265,6 +405,9 @@ export function getAgentHookStatus(agent) {
     }
     if (agent === 'claude') {
       return { installed: isClaudeHooksInstalled(content), configPath, exists: true };
+    }
+    if (agent === 'agy' || agent === 'antigravity') {
+      return { installed: isAntigravityHooksInstalled(content), configPath, exists: true };
     }
   } catch (err) {
     return { installed: false, error: err.message };
@@ -307,11 +450,58 @@ export function copyHookScripts(targetDir) {
 }
 
 /**
+ * Install Antigravity hooks into ~/.gemini/config/hooks.json.
+ * Idempotent, non-destructive merge:
+ *   - creates config dir when missing (agy recognizes pre-created hooks)
+ *   - backs up existing file before every write (single .devhub-bak)
+ *   - corrupt JSON → timestamped backup + fresh config + warning
+ *   - never touches third-party hook entries
+ */
+function installAntigravityHook(configPath, configDir) {
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  const assetsDir = resolveHookAssetsDir();
+  const bridgePath = path.join(assetsDir, 'antigravity-bridge.mjs');
+  if (!fs.existsSync(bridgePath)) {
+    throw new Error(`Antigravity bridge asset missing in ${assetsDir}`);
+  }
+
+  let content = '';
+  if (fs.existsSync(configPath)) {
+    content = fs.readFileSync(configPath, 'utf8');
+    const backupPath = `${configPath}.devhub-bak`;
+    if (!fs.existsSync(backupPath)) {
+      fs.copyFileSync(configPath, backupPath);
+    }
+  }
+
+  const { json: newContent, wasCorrupt } = buildAntigravityHooksConfig(content, bridgePath);
+
+  if (wasCorrupt && content) {
+    // Never overwrite unparseable content without preserving it.
+    const corruptBackup = `${configPath}.devhub-corrupt-${Date.now()}`;
+    fs.copyFileSync(configPath, corruptBackup);
+    console.warn(
+      `[devhub-hooks] WARNING: ${configPath} contained corrupt JSON — backed up to ${corruptBackup} and writing fresh config`
+    );
+  }
+
+  fs.writeFileSync(configPath, newContent, 'utf8');
+  return { success: true, agent: 'agy', action: 'installed', configPath, bridgePath, wasCorrupt };
+}
+
+/**
  * Install agent hook.
  */
 export function installAgentHook(agent, options = {}) {
   const configPath = resolveAgentConfigPath(agent);
   const configDir = path.dirname(configPath);
+
+  if (agent === 'agy' || agent === 'antigravity') {
+    return installAntigravityHook(configPath, configDir);
+  }
 
   // P3-6: Abort if config directory does not exist
   if (!fs.existsSync(configDir)) {
@@ -381,7 +571,9 @@ export function uninstallAgentHook(agent) {
   const content = fs.readFileSync(configPath, 'utf8');
   let newContent = content;
 
-  if (agent === 'kimi') {
+  if (agent === 'agy' || agent === 'antigravity') {
+    newContent = removeAntigravityHooks(content);
+  } else if (agent === 'kimi') {
     newContent = removeKimiManagedBlock(content);
   } else if (agent === 'claude') {
     newContent = removeClaudeHooks(content);

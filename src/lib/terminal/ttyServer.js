@@ -15,6 +15,8 @@ import { buildSwarmTmuxSessionName } from './viewportReadyMarker.js';
 import { claimSessionFlagOnce, detectOpenCodeTuiReady } from './opencodeReadyMarker.js';
 import { detectKimiTuiReady } from './kimiReadyMarker.js';
 import { detectGrokSessionFromOutput } from './grokReadyMarker.js';
+import { detectAntigravityTuiReady } from './antigravityReadyMarker.js';
+import { buildAgentStateFrame } from './agentStateFrame.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
 import {
@@ -31,6 +33,8 @@ import {
   tickAgentDetection,
 } from './sessionAgentDetector.js';
 import { buildSessionHookEnv, generateSessionHookToken } from './agentHooks/hookEnv.js';
+import { writeHookBridgeConfig } from './agentHooks/bridgeConfig.js';
+import { createOpenCodeSseClient } from './opencodeSseClient.js';
 import { createScrollbackStore } from './terminalScrollbackStore.js';
 import { createOscCwdParser } from './oscCwdParser.js';
 import {
@@ -540,6 +544,131 @@ function maybeWriteAgentReadyMarker(session, program = 'opencode', payload = {})
   }
 }
 
+// ─── Typed-agent child-exit reaper (W7 server half) ──────────────────────────
+// When the user TYPES `agy` (or kimi/opencode/grok) inside a bash panel, the
+// agent runs as a CHILD of the shell: its exit never fires the PTY exit
+// handler, so without cleanup `session.agentType` stays set forever — every
+// later Enter fires a spurious `running`, and plain bash output keeps being
+// evaluated against agent rules (a bash PS2 `>` line matches the agy idle
+// rule). There is no authoritative signal for a grandchild process dying, so
+// we reap from output with a deliberately CONSERVATIVE heuristic — ALL gates
+// must hold:
+//   1. session.agentLaunchOrigin === 'typed' (set by detectSessionModeFromInput).
+//      initialCommand / launch-wrapper / output-detected sessions are excluded:
+//      for those the agent IS the PTY (exit handler covers it) or lives in a
+//      tmux pane whose lifecycle the shell prompt does not reflect.
+//   2. Agent chrome is ABSENT from the fresh chunk (per-agent footer detector)
+//      and no visible working signal arrived for ≥ REAPER_QUIET_MS
+//      (session.lastWorkingAt is refreshed by ingest on visibleWorking and by
+//      notifyUserInput on every Enter).
+//   3. ≥ REAPER_MIN_PROMPT_LINES shell-prompt-looking lines accumulated since
+//      the last agent chrome signal, spanning ≥ REAPER_QUIET_MS between the
+//      first and latest prompt line — so a single transient line can never reap
+//      a live session mid-generation.
+// On reap: agent identity/hook state is cleared, shell mode is restored, and
+// the caller emits a final `agent-state` frame (idle, reason 'agent-exit').
+const TYPED_AGENT_REAPER_MIN_PROMPT_LINES = 2;
+const TYPED_AGENT_REAPER_QUIET_MS = 3000;
+
+// Conservative shell-prompt line patterns. Deliberately does NOT match a bare
+// `>` line (ambiguous with the agy idle prompt / bash PS2 continuation).
+const TYPED_AGENT_SHELL_PROMPT_RES = [
+  /^PS [A-Za-z]:[\\/].*> ?$/, // Windows PowerShell: `PS C:\path>`
+  /^[A-Za-z]:[\\/][^\n]*>$/, // cmd.exe: `C:\path>`
+  /^\S+@\S+[^\n]*[$#] ?$/, // bash/zsh: `user@host:~/path$`
+  /^[~/][^\n]*[$#] ?$/, // bare path prompt: `/home/user$`, `~/repo$`
+  /^\s*[$#]\s*$/, // bare prompt line (git-bash second line, su/root)
+];
+
+export function countTypedAgentShellPromptLines(text) {
+  if (!text || typeof text !== 'string') return 0;
+  let count = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const candidate = line.trimEnd();
+    if (!candidate || candidate.length > 160) continue;
+    if (TYPED_AGENT_SHELL_PROMPT_RES.some((re) => re.test(candidate))) count += 1;
+  }
+  return count;
+}
+
+function typedAgentChromePresent(agentType, text) {
+  switch (agentType) {
+    case 'agy':
+    case 'antigravity':
+      return detectAntigravityTuiReady(text);
+    case 'kimi':
+      return detectKimiTuiReady(text);
+    case 'opencode':
+      return detectOpenCodeTuiReady(text);
+    case 'grok':
+      return detectGrokSessionFromOutput(text);
+    default:
+      // Unknown agent (claude/codex/hermes have no footer detector here):
+      // rely solely on the lastWorkingAt quiet window.
+      return false;
+  }
+}
+
+/**
+ * Reap a typed-launch agent session whose child process exited while the
+ * shell survived. Returns the terminal `agent-state` frame to emit, or null.
+ * Side effect on reap: clears agent identity, hook state, and TUI mode.
+ */
+export function reapTypedAgentSessionIfExited(session, chunk, now = Date.now()) {
+  if (!session?.agentType || session.agentLaunchOrigin !== 'typed') return null;
+
+  const tracker =
+    session._typedAgentReaper ||
+    (session._typedAgentReaper = { promptLines: 0, firstPromptAt: 0, lastPromptAt: 0 });
+
+  // Gate 2a: any agent chrome in the fresh chunk means the agent is alive.
+  if (typedAgentChromePresent(session.agentType, chunk)) {
+    tracker.promptLines = 0;
+    tracker.firstPromptAt = 0;
+    return null;
+  }
+
+  const promptLines = countTypedAgentShellPromptLines(chunk);
+  if (promptLines === 0) return null;
+
+  if (tracker.promptLines === 0) tracker.firstPromptAt = now;
+  tracker.promptLines += promptLines;
+  tracker.lastPromptAt = now;
+
+  // Gate 3: enough prompt-looking lines, spread over a quiet window.
+  if (tracker.promptLines < TYPED_AGENT_REAPER_MIN_PROMPT_LINES) return null;
+  if (now - tracker.firstPromptAt < TYPED_AGENT_REAPER_QUIET_MS) return null;
+  // Gate 2b: no visible working signal (or Enter) in the quiet window.
+  if (session.lastWorkingAt && now - session.lastWorkingAt < TYPED_AGENT_REAPER_QUIET_MS) {
+    return null;
+  }
+
+  // Reap: capture the frame BEFORE clearing identity so it still carries
+  // agentType for the client's final "agent finished" transition.
+  const frame = buildAgentStateFrame(session, 'idle', { reason: 'agent-exit', at: now });
+
+  session.agentType = null;
+  session.agentSessionId = null;
+  session.agentTuiState = null;
+  session.agentTuiStateAt = null;
+  session.hookState = null;
+  session.lastDetection = null;
+  session.lastWorkingAt = null;
+  session.mode = 'shell';
+  session.tuiReady = false;
+  session.historyEnabled = true;
+  session.agentLaunchOrigin = null;
+  session._typedAgentReaper = null;
+
+  ttyLog('AGENT_REAPER', `typed agent child exited — reaped session agent state`, {
+    id: session.id,
+    agentType: frame?.agentType || null,
+    promptLines: tracker.promptLines,
+  });
+
+  return frame;
+}
+
 function broadcastOpenCodeSessionDetected(session, sessionId) {
   for (const s of session.sockets) {
     if (s.readyState === s.OPEN) {
@@ -638,8 +767,16 @@ function applyAgentTuiDetection(session, command) {
 function detectSessionModeFromInput(session, input) {
   if (!input || typeof input !== 'string') return;
 
+  // W7: remember HOW the agent was launched. Typed launches (`agy` inside a
+  // bash panel) run the agent as a CHILD of the shell, so PTY exit never
+  // fires when the agent quits — the typed-agent reaper (handleSessionOutput)
+  // is the only cleanup path. initialCommand / launch-wrapper / output-detected
+  // sessions have their own exit semantics and are excluded from the reaper.
+  const hadAgentType = Boolean(session.agentType);
+
   // Fast path: the whole command came in one chunk.
   if (applyAgentTuiDetection(session, input)) {
+    if (!hadAgentType) session.agentLaunchOrigin = 'typed';
     return;
   }
 
@@ -652,6 +789,7 @@ function detectSessionModeFromInput(session, input) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (applyAgentTuiDetection(session, trimmed)) {
+      if (!hadAgentType) session.agentLaunchOrigin = 'typed';
       return;
     }
   }
@@ -665,6 +803,23 @@ export function getOrInitSessions() {
     globalThis[GLOBAL_TTY_SESSIONS_KEY] = new Map();
   }
   return globalThis[GLOBAL_TTY_SESSIONS_KEY];
+}
+
+// ─── Shared hook-bridge token (Antigravity out-of-process hooks) ─────────────
+// Bridge reports (antigravity-bridge.mjs) run outside any PTY session, so they
+// cannot carry a per-session hookToken. They authenticate with a single shared
+// token that DevHub writes to ~/.devhub/hook-bridge.json at startup (see
+// agentHooks/bridgeConfig.js + ensureTTYServer startup wiring).
+const GLOBAL_BRIDGE_TOKEN_KEY = '__devhub_hook_bridge_token__';
+
+/**
+ * Return the shared bridge token for this server instance (lazily generated).
+ */
+export function getBridgeToken() {
+  if (!globalThis[GLOBAL_BRIDGE_TOKEN_KEY]) {
+    globalThis[GLOBAL_BRIDGE_TOKEN_KEY] = generateSessionHookToken();
+  }
+  return globalThis[GLOBAL_BRIDGE_TOKEN_KEY];
 }
 
 /**
@@ -1070,7 +1225,11 @@ export function createSession({
   // Pre-detect agent TUI from the initial command so the first snapshot already
   // knows this is an agent panel, even before the user sends any input.
   if (session.initialCommand) {
-    applyAgentTuiDetection(session, session.initialCommand);
+    if (applyAgentTuiDetection(session, session.initialCommand)) {
+      // W7: initialCommand/launch-wrapper sessions are NOT typed launches —
+      // exclude them from the typed-agent child-exit reaper.
+      session.agentLaunchOrigin = 'initialCommand';
+    }
     markOpencodeDurableSession(session, { initialCommand: session.initialCommand });
   }
 
@@ -1205,9 +1364,12 @@ function handleSessionOutput(sessions, session, chunk) {
 
     // Swarm agents start OpenCode inside tmux before the DevHub client attaches,
     // so session.mode may still be 'shell' when the TUI footer first appears.
+    // W7: output-detected agents are also excluded from the typed-agent reaper
+    // (they live in tmux / pre-attached panes, not as a child of THIS shell).
     if (detectKimiTuiReady(filtered)) {
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'kimi');
+        session.agentLaunchOrigin = 'output';
       }
       session.mode = 'tui';
       session.tuiReady = true;
@@ -1219,15 +1381,26 @@ function handleSessionOutput(sessions, session, chunk) {
       }
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'opencode');
+        session.agentLaunchOrigin = 'output';
       }
       session.tuiReady = true;
       maybeWriteOpencodeReadyMarker(session, { reason: 'tty-tui-footer' });
     } else if (detectGrokSessionFromOutput(filtered)) {
       if (!session.agentType) {
         applyAgentTuiDetection(session, 'grok');
+        session.agentLaunchOrigin = 'output';
       }
       session.mode = 'tui';
       session.tuiReady = true;
+    } else if (detectAntigravityTuiReady(filtered)) {
+      // W1: Antigravity output-based start detection (tmux/swarm pre-attach).
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'agy');
+        session.agentLaunchOrigin = 'output';
+      }
+      session.mode = 'tui';
+      session.tuiReady = true;
+      maybeWriteAgentReadyMarker(session, 'agy', { reason: 'tty-tui-footer' });
     }
 
     session._lastAgentStateEvent = ingestAgentDetectionFromFilteredOutput(
@@ -1235,6 +1408,21 @@ function handleSessionOutput(sessions, session, chunk) {
       filtered,
       Date.now()
     );
+
+    // W7: reap typed-launch agents whose child process exited (shell prompt
+    // returned). Emits a terminal `agent-state` frame (idle, reason
+    // 'agent-exit') so clients get a deterministic "agent finished" signal.
+    const agentExitFrame = reapTypedAgentSessionIfExited(session, filtered, Date.now());
+    if (agentExitFrame) {
+      for (const socket of session.sockets) {
+        if (socket.readyState !== socket.OPEN) continue;
+        try {
+          socket.send(JSON.stringify(agentExitFrame));
+        } catch {
+          /* stale socket */
+        }
+      }
+    }
   }
 
   // Phase 2 terminal-engine-v2: capture cwd from OSC 7 sequences emitted by
@@ -1266,11 +1454,7 @@ function handleSessionOutput(sessions, session, chunk) {
 
   const agentStateEvent =
     session._lastAgentStateEvent?.published && session.agentTuiState
-      ? {
-          type: 'agent-state',
-          agentTuiState: session.agentTuiState,
-          at: session.agentTuiStateAt,
-        }
+      ? buildAgentStateFrame(session, session.agentTuiState)
       : null;
 
   for (const socket of session.sockets) {
@@ -1397,6 +1581,8 @@ function tryRespawnShellAfterTuiCtrlC(sessions, session, exitCode, signal) {
   session.agentTuiState = null;
   session.agentTuiStateAt = null;
   session.hookState = null;
+  session.agentLaunchOrigin = null;
+  session._typedAgentReaper = null;
   session.launchCommand = priorLaunchCommand || null;
   session.tmuxEnabled = Boolean(tmuxEnabled);
   session.tmuxSession = tmuxSession || null;
@@ -1471,8 +1657,22 @@ function handleSessionExit(sessions, session, exitCode, signal) {
     // ignore cleanup failures during shutdown
   }
 
+  // N7: when a session with an agent exits, emit a FINAL agent-state frame
+  // (idle, reason 'exit') BEFORE the exit frame so clients get a deterministic
+  // "agent finished" signal instead of a dangling running/blocked badge.
+  const finalAgentStateFrame = session.agentType
+    ? buildAgentStateFrame(session, 'idle', { reason: 'exit', at: Date.now() })
+    : null;
+
   for (const socket of session.sockets) {
     if (socket.readyState === socket.OPEN) {
+      if (finalAgentStateFrame) {
+        try {
+          socket.send(JSON.stringify(finalAgentStateFrame));
+        } catch {
+          /* stale socket */
+        }
+      }
       socket.send(JSON.stringify({ type: 'exit', exitCode, signal }));
       socket.close();
     }
@@ -1882,6 +2082,48 @@ export async function ensureTTYServer() {
 
   ttyLog('ensureTTYServer', `WSS ready`, { port, wsPath });
 
+  // Front C (W2): publish the hook-bridge discovery file so out-of-process
+  // Antigravity hooks (antigravity-bridge.mjs) can find this server. They run
+  // in the agent's own environment and never inherit per-session hook env
+  // vars, so they read ~/.devhub/hook-bridge.json at invocation time. Failures
+  // here must never block terminal startup — bridges fail-open without it.
+  try {
+    const bridgeHookUrl =
+      process.env.DEVHUB_HOOK_URL ||
+      `http://127.0.0.1:${process.env.PORT || '3000'}/api/terminal/agent-hook`;
+    writeHookBridgeConfig({ url: bridgeHookUrl, token: getBridgeToken() });
+    ttyLog('ensureTTYServer', `hook bridge config written`, { url: bridgeHookUrl });
+  } catch (bridgeErr) {
+    ttyLog('ensureTTYServer', `hook bridge config write FAILED (non-fatal)`, {
+      error: bridgeErr?.message,
+    });
+  }
+
+  // Front E (audit "Bonus — opencode"): when an OpenCode server is reachable,
+  // subscribe to its own SSE bus (GET /event) for deterministic idle/running
+  // signals instead of relying solely on PTY scraping. Opt-in via
+  // DEVHUB_OPENCODE_SSE_URL (e.g. http://127.0.0.1:4096). The client is
+  // fail-open: it reconnects silently and produces nothing while the server
+  // is down, so scraping remains the fallback.
+  if (process.env.DEVHUB_OPENCODE_SSE_URL) {
+    try {
+      const opencodeSse = createOpenCodeSseClient({
+        baseUrl: process.env.DEVHUB_OPENCODE_SSE_URL,
+        sessions: terminalSessions,
+        onFrame: (session, frame) => broadcastSessionPayload(session, frame),
+      });
+      opencodeSse.start();
+      globalThis[GLOBAL_TTY_KEY + '_opencode_sse'] = opencodeSse;
+      ttyLog('ensureTTYServer', `opencode SSE client started`, {
+        baseUrl: process.env.DEVHUB_OPENCODE_SSE_URL,
+      });
+    } catch (sseErr) {
+      ttyLog('ensureTTYServer', `opencode SSE client FAILED to start (non-fatal)`, {
+        error: sseErr?.message,
+      });
+    }
+  }
+
   wss.on('connection', (socket, request) => {
     let requestedCwd = resolveHomeDirectory();
     let terminalId = `term-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
@@ -2177,11 +2419,9 @@ export async function ensureTTYServer() {
           if (isEnter && session.agentType) {
             const published = notifyUserInput(session);
             if (published && session.agentTuiState && session.sockets) {
-              const statePayload = JSON.stringify({
-                type: 'agent-state',
-                agentTuiState: session.agentTuiState,
-                at: session.agentTuiStateAt,
-              });
+              const statePayload = JSON.stringify(
+                buildAgentStateFrame(session, session.agentTuiState)
+              );
               for (const socket of session.sockets) {
                 if (socket.readyState === socket.OPEN) {
                   try {
@@ -2519,11 +2759,11 @@ export async function ensureTTYServer() {
     // nuevo no vería badge hasta el próximo cambio de estado.
     if (session?.agentTuiState) {
       socket.send(
-        JSON.stringify({
-          type: 'agent-state',
-          agentTuiState: session.agentTuiState,
-          at: session.agentTuiStateAt ?? Date.now(),
-        })
+        JSON.stringify(
+          buildAgentStateFrame(session, session.agentTuiState, {
+            at: session.agentTuiStateAt ?? Date.now(),
+          })
+        )
       );
     }
 
@@ -2575,11 +2815,7 @@ export async function ensureTTYServer() {
       if (session.agentType) {
         const tickResult = tickAgentDetection(session, Date.now());
         if (tickResult.published && session.agentTuiState) {
-          const agentStateEvent = {
-            type: 'agent-state',
-            agentTuiState: session.agentTuiState,
-            at: session.agentTuiStateAt,
-          };
+          const agentStateEvent = buildAgentStateFrame(session, session.agentTuiState);
           for (const socket of session.sockets) {
             if (socket.readyState !== socket.OPEN) continue;
             try {

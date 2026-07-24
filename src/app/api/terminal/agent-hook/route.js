@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
-import { handleHookReport } from '@/lib/terminal/agentHooks/handleHookReport';
-import { getOrInitSessions, broadcastSessionPayload } from '@/lib/terminal/ttyServer';
+import {
+  handleHookReport,
+  handleBridgeHookReport,
+  ANTIGRAVITY_BRIDGE_SOURCE,
+} from '@/lib/terminal/agentHooks/handleHookReport';
+import {
+  getOrInitSessions,
+  broadcastSessionPayload,
+  getBridgeToken,
+} from '@/lib/terminal/ttyServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +27,17 @@ export async function POST(request) {
     }
 
     const sessions = getOrInitSessions();
-    const result = handleHookReport(sessions, body, Date.now());
+
+    // Bridge reports (antigravity-bridge.mjs) carry a shared token and no
+    // terminalId — route by conversationId/workspacePaths instead.
+    const isBridgeReport =
+      body &&
+      typeof body === 'object' &&
+      (!body.terminalId || body.source === ANTIGRAVITY_BRIDGE_SOURCE);
+
+    const result = isBridgeReport
+      ? handleBridgeHookReport(sessions, body, Date.now(), { bridgeToken: getBridgeToken() })
+      : handleHookReport(sessions, body, Date.now());
 
     if (result.status !== 204) {
       return NextResponse.json({ error: result.error }, { status: result.status });

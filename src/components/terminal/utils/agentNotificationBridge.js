@@ -1,5 +1,4 @@
 import { dispatchOperationalNotification } from '@/lib/operations/notify';
-import { playNotificationSound } from '@/lib/notifications/soundEffects';
 
 const runningStartedAtMap = new Map();
 const lastNotificationSentAtMap = new Map();
@@ -7,12 +6,16 @@ const MIN_RUNNING_DURATION_MS = 3000;
 const NOTIFICATION_COOLDOWN_MS = 10000;
 
 /**
- * Handle state transitions for terminal agents and emit notifications/sounds.
+ * Handle state transitions for terminal agents and emit notifications.
+ *
+ * Sound playback is NOT done here (N1 dedupe): NotificationToastStack is the
+ * single owner of sound (it checks user preferences). This bridge only
+ * dispatches operational notifications (desktop + in-app).
  *
  * @param {string} panelId
  * @param {string|null} prev - Previous state ('running', 'blocked', 'idle', etc.)
  * @param {string|null} next - Next state ('running', 'blocked', 'idle', etc.)
- * @param {object} [options] - Additional session info (agentType, taskTitle)
+ * @param {object} [options] - Additional session info (agentType, taskTitle, wasCancelled)
  */
 export function handleAgentStateTransition(panelId, prev, next, options = {}) {
   if (!next || prev === next) return;
@@ -31,22 +34,20 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
     rawAgent === 'agy' || rawAgent === 'antigravity'
       ? 'Anti Gravity'
       : rawAgent === 'kimi'
-      ? 'Kimiko D'
-      : rawAgent.charAt(0).toUpperCase() + rawAgent.slice(1);
+        ? 'Kimiko D'
+        : rawAgent.charAt(0).toUpperCase() + rawAgent.slice(1);
 
   const displayTitle = options.taskTitle ? `"${options.taskTitle}"` : `panel ${panelId}`;
 
-  // Transition from running -> blocked: agent needs permission/user input
-  if (next === 'blocked' && prev === 'running') {
+  // N6: notify blocked from ANY previous non-blocked state (idle, null,
+  // running…). With flaky scraping the permission prompt often arrives from
+  // 'idle' — that is exactly when the user must be notified. The prev===next
+  // guard above already excludes blocked→blocked; the per-panel cooldown
+  // prevents spam.
+  if (next === 'blocked') {
     const lastSent = lastNotificationSentAtMap.get(`${panelId}:blocked`) || 0;
     if (now - lastSent < NOTIFICATION_COOLDOWN_MS) return;
     lastNotificationSentAtMap.set(`${panelId}:blocked`, now);
-
-    try {
-      playNotificationSound('warning');
-    } catch {
-      /* ignore audio context errors */
-    }
 
     dispatchOperationalNotification({
       title: `${agentLabel} requiere atención`,
@@ -55,17 +56,25 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
       severity: 'warning',
       source: 'terminal',
       entity_id: panelId,
-      dedupe_key: `agent:blocked:${panelId}:${now}`,
+      // N3: stable dedupe_key (no timestamp) so occurrence_count aggregates.
+      dedupe_key: `agent:blocked:${panelId}`,
       delivery: { desktop: true, in_app: true },
     }).catch(() => {});
   }
   // Transition from running/blocked -> idle/completed: agent finished task
-  else if ((next === 'idle' || next === 'completed') && (prev === 'running' || prev === 'blocked')) {
+  else if (
+    (next === 'idle' || next === 'completed') &&
+    (prev === 'running' || prev === 'blocked')
+  ) {
     const runningStartedAt = runningStartedAtMap.get(panelId);
     runningStartedAtMap.delete(panelId);
 
     // Ignore transient running -> idle flickers if running duration was less than 3 seconds
-    if (prev === 'running' && runningStartedAt && now - runningStartedAt < MIN_RUNNING_DURATION_MS) {
+    if (
+      prev === 'running' &&
+      runningStartedAt &&
+      now - runningStartedAt < MIN_RUNNING_DURATION_MS
+    ) {
       return;
     }
 
@@ -83,16 +92,10 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
         severity: 'info',
         source: 'terminal',
         entity_id: panelId,
-        dedupe_key: `agent:cancelled:${panelId}:${now}`,
+        dedupe_key: `agent:cancelled:${panelId}`,
         delivery: { desktop: true, in_app: true },
       }).catch(() => {});
       return;
-    }
-
-    try {
-      playNotificationSound('info');
-    } catch {
-      /* ignore audio context errors */
     }
 
     dispatchOperationalNotification({
@@ -102,7 +105,7 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
       severity: 'info',
       source: 'terminal',
       entity_id: panelId,
-      dedupe_key: `agent:done:${panelId}:${now}`,
+      dedupe_key: `agent:done:${panelId}`,
       delivery: { desktop: true, in_app: true },
     }).catch(() => {});
   }

@@ -30,18 +30,26 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var sidecarAgentDetectionEntry_exports = {};
 __export(sidecarAgentDetectionEntry_exports, {
   ALLOWED_HOOK_STATES: () => ALLOWED_HOOK_STATES,
+  ANTIGRAVITY_BRIDGE_SOURCE: () => ANTIGRAVITY_BRIDGE_SOURCE,
   HOOK_AUTHORITY_TTL_MS: () => HOOK_AUTHORITY_TTL_MS,
+  OPENCODE_SSE_SOURCE: () => OPENCODE_SSE_SOURCE,
   buildSessionHookEnv: () => buildSessionHookEnv,
+  createOpenCodeSseClient: () => createOpenCodeSseClient,
+  createOpencodeStatusClient: () => createOpencodeStatusClient,
   ensureAgentDetectionSession: () => ensureAgentDetectionSession,
   generateSessionHookToken: () => generateSessionHookToken,
+  handleBridgeHookReport: () => handleBridgeHookReport,
   handleHookReport: () => handleHookReport,
   hasFreshHookAuthority: () => hasFreshHookAuthority,
   ingestAgentDetectionFromFilteredOutput: () => ingestAgentDetectionFromFilteredOutput,
   notifyUserInput: () => notifyUserInput,
   processOscProgress: () => processOscProgress,
   processOscTitle: () => processOscTitle,
+  readHookBridgeConfig: () => readHookBridgeConfig,
+  resolveHookBridgeConfigPath: () => resolveHookBridgeConfigPath,
   stripOscTitleSequences: () => stripOscTitleSequences,
-  tickAgentDetection: () => tickAgentDetection
+  tickAgentDetection: () => tickAgentDetection,
+  writeHookBridgeConfig: () => writeHookBridgeConfig
 });
 module.exports = __toCommonJS(sidecarAgentDetectionEntry_exports);
 
@@ -1104,7 +1112,10 @@ var antigravity_default = {
       visibleWorking: true,
       any: [
         {
-          lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s+[a-z]\\w*ing\\b"]
+          // Locale-robust (W9): braille spinner frame(s) + any Unicode word.
+          // Matches English ("Thinking") and localized TUIs ("Leyendo",
+          // "Analizando") alike; the braille frame at line start is the signal.
+          lineRegex: ["(?iu)^\\s*[\\u2800-\\u28FF]+\\s+\\p{L}[\\p{L}\\p{M}\\p{N}_]*"]
         },
         {
           lineRegex: [
@@ -1181,15 +1192,15 @@ function loadManifest(agentType) {
 }
 var UNKNOWN_DETECTION = {
   state: "unknown",
-  skipStateUpdate: false,
+  skipStateUpdate: true,
   visibleIdle: false,
   visibleWorking: false,
   visibleBlocker: false,
   matchedRule: null
 };
-var IDLE_FALLBACK_DETECTION = {
-  state: "idle",
-  skipStateUpdate: false,
+var NO_MATCH_DETECTION = {
+  state: "unknown",
+  skipStateUpdate: true,
   visibleIdle: false,
   visibleWorking: false,
   visibleBlocker: false,
@@ -1201,7 +1212,9 @@ function detectAgentState(agentType, screen, options = {}) {
     return UNKNOWN_DETECTION;
   }
   const cleanScreen = stripAnsi(screen || "");
-  const isCancellation = /(?:\^C|\binterrupted\b|\bcancelled\b|\bcanceled\b|\baborted\b)/i.test(cleanScreen);
+  const isCancellation = /(?:\^C|\binterrupted\b|\bcancelled\b|\bcanceled\b|\baborted\b)/i.test(
+    cleanScreen
+  );
   const detected = evaluateManifest(manifest, {
     screen: cleanScreen,
     oscTitle: options.oscTitle || "",
@@ -1211,7 +1224,10 @@ function detectAgentState(agentType, screen, options = {}) {
     detected.wasCancelled = true;
   }
   if (detected.state === "unknown") {
-    return IDLE_FALLBACK_DETECTION;
+    if (detected.matchedRule) {
+      return detected;
+    }
+    return { ...NO_MATCH_DETECTION, wasCancelled: detected.wasCancelled };
   }
   return detected;
 }
@@ -1284,6 +1300,9 @@ var AgentStateMachine = class {
    * @returns {object|null} published state or null if unchanged
    */
   publish(detection, now = Date.now(), options = {}) {
+    if (detection.state === "unknown" && !options.bypassHold) {
+      return null;
+    }
     const next = {
       state: detection.state,
       visibleIdle: detection.visibleIdle,
@@ -1331,7 +1350,7 @@ function processCarriageReturns(text) {
   }).join("\n");
 }
 function extractBottomViewport(buffer, options = {}) {
-  const maxLines = Math.max(1, Number(options.maxLines) || 40);
+  const maxLines = Math.max(1, Number(options.maxLines) || DEFAULT_DETECTION_VIEWPORT_LINES);
   if (!buffer || typeof buffer !== "string") return "";
   const sanitized = processCarriageReturns(buffer);
   const lines = sanitized.split("\n");
@@ -1339,11 +1358,47 @@ function extractBottomViewport(buffer, options = {}) {
   return lines.slice(-maxLines).join("\n");
 }
 var DEFAULT_DETECTION_VIEWPORT_LINES = 40;
-var MAX_DETECTION_BUFFER_CHARS = 8192;
+var DEFAULT_DETECTION_BUFFER_CHARS = 8192;
+var MAX_DETECTION_VIEWPORT_LINES = 240;
+var MAX_DETECTION_BUFFER_CHARS = 262144;
+function resolveDetectionSizing(options = {}) {
+  const rows = Math.max(0, Math.floor(Number(options.rows) || 0));
+  const cols = Math.max(0, Math.floor(Number(options.cols) || 0));
+  let viewportLines = Math.floor(Number(options.viewportLines) || 0);
+  if (!(viewportLines > 0)) {
+    viewportLines = Math.max(DEFAULT_DETECTION_VIEWPORT_LINES, rows);
+  }
+  viewportLines = Math.min(Math.max(1, viewportLines), MAX_DETECTION_VIEWPORT_LINES);
+  let bufferChars = Math.floor(Number(options.bufferChars) || 0);
+  if (!(bufferChars > 0)) {
+    bufferChars = Math.max(DEFAULT_DETECTION_BUFFER_CHARS, rows * cols * 2);
+  }
+  bufferChars = Math.min(
+    Math.max(DEFAULT_DETECTION_BUFFER_CHARS, bufferChars),
+    MAX_DETECTION_BUFFER_CHARS
+  );
+  return { viewportLines, bufferChars };
+}
 
 // src/lib/terminal/sessionAgentDetector.js
 var HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 12e4);
 var HOOK_AUTHORITY_AGENTS = ["kimi", "claude", "opencode", "agy", "antigravity"];
+var DEFAULT_AGENT_QUIESCENCE_MS = Number(process.env.DEVHUB_AGENT_QUIESCENCE_MS || 4e3);
+function getQuiescenceMs(session) {
+  const override = Number(session?.detectionQuiescenceMs);
+  return override > 0 ? override : DEFAULT_AGENT_QUIESCENCE_MS;
+}
+function getLastActivityAt(session) {
+  return session.lastActivityAt ?? session.lastWorkingAt ?? null;
+}
+function getDetectionSizing(session) {
+  return resolveDetectionSizing({
+    cols: session?.termsize?.cols,
+    rows: session?.termsize?.rows,
+    viewportLines: session?.detectionViewportLines,
+    bufferChars: session?.detectionBufferChars
+  });
+}
 function hasFreshHookAuthority(session, now = Date.now()) {
   if (!session?.hookState || typeof session.hookState.at !== "number") {
     return false;
@@ -1382,9 +1437,11 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
     return result;
   }
   session.detectionBuffer = (session.detectionBuffer || "") + filtered;
-  if (session.detectionBuffer.length > MAX_DETECTION_BUFFER_CHARS) {
-    session.detectionBuffer = session.detectionBuffer.slice(-MAX_DETECTION_BUFFER_CHARS);
+  const sizing = getDetectionSizing(session);
+  if (session.detectionBuffer.length > sizing.bufferChars) {
+    session.detectionBuffer = session.detectionBuffer.slice(-sizing.bufferChars);
   }
+  session.lastActivityAt = now;
   if (hasFreshHookAuthority(session, now)) {
     session._hadHookAuthority = true;
     return result;
@@ -1393,9 +1450,10 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
     session._hadHookAuthority = false;
     session.lastDetection = null;
   }
-  const cleanBuffer = stripAnsi(session.detectionBuffer || "");
+  const collapsedBuffer = processCarriageReturns(session.detectionBuffer || "");
+  const cleanBuffer = stripAnsi(collapsedBuffer);
   const screen = extractBottomViewport(cleanBuffer, {
-    maxLines: session.detectionViewportLines || DEFAULT_DETECTION_VIEWPORT_LINES
+    maxLines: sizing.viewportLines
   });
   const detected = detectAgentState(session.agentType, screen, {
     oscTitle: session.title || "",
@@ -1407,7 +1465,12 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
   if (detected.skipStateUpdate) {
     return result;
   }
-  const isQuiescent = session.lastWorkingAt && now - session.lastWorkingAt > 2500;
+  if (detected.state === "unknown") {
+    return result;
+  }
+  const quiescenceMs = getQuiescenceMs(session);
+  const lastActivityAt = getLastActivityAt(session);
+  const isQuiescent = lastActivityAt && now - lastActivityAt > quiescenceMs;
   if (session.agentTuiState === "running" && detected.state === "idle" && !detected.visibleIdle && !isQuiescent) {
     return result;
   }
@@ -1430,6 +1493,7 @@ function notifyUserInput(session, now = Date.now()) {
   ensureAgentDetectionSession(session);
   session.lastUserInputAt = now;
   session.lastWorkingAt = now;
+  session.lastActivityAt = now;
   const detection = {
     state: "running",
     visibleIdle: false,
@@ -1489,7 +1553,9 @@ function tickAgentDetection(session, now = Date.now()) {
   const state = session.agentTuiState;
   const isRunningOrBlocked = state === "running" || state === "blocked";
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
-  if (state === "running" && session.lastWorkingAt && now - session.lastWorkingAt > 2500) {
+  const quiescenceMs = getQuiescenceMs(session);
+  const lastActivityAt = getLastActivityAt(session);
+  if (state === "running" && lastActivityAt && now - lastActivityAt > quiescenceMs) {
     const fallbackIdle = {
       state: "idle",
       visibleIdle: false,
@@ -1586,8 +1652,31 @@ function buildSessionHookEnv({ session, hookUrl } = {}) {
   };
 }
 
+// src/lib/terminal/agentStateFrame.js
+function buildAgentStateFrame(session, state, extra = {}) {
+  if (!state) return null;
+  const frame = {
+    type: "agent-state",
+    agentTuiState: state,
+    at: extra.at ?? session?.agentTuiStateAt ?? Date.now()
+  };
+  const agentType = extra.agentType ?? session?.agentType ?? null;
+  if (agentType) {
+    frame.agentType = agentType;
+  }
+  const wasCancelled = extra.wasCancelled ?? session?._lastAgentStateEvent?.wasCancelled;
+  if (wasCancelled !== void 0 && wasCancelled !== null) {
+    frame.wasCancelled = Boolean(wasCancelled);
+  }
+  if (extra.reason) {
+    frame.reason = extra.reason;
+  }
+  return frame;
+}
+
 // src/lib/terminal/agentHooks/handleHookReport.js
 var ALLOWED_HOOK_STATES = ["working", "blocked", "idle", "session"];
+var ANTIGRAVITY_BRIDGE_SOURCE = "antigravity-hook";
 function handleHookReport(sessionsMap, body, now = Date.now()) {
   if (!body || typeof body !== "object") {
     return { status: 400, error: "Invalid JSON payload" };
@@ -1597,7 +1686,10 @@ function handleHookReport(sessionsMap, body, now = Date.now()) {
     return { status: 400, error: "Missing required fields: terminalId, token, state" };
   }
   if (!ALLOWED_HOOK_STATES.includes(state)) {
-    return { status: 400, error: `Invalid state '${state}'. Allowed: ${ALLOWED_HOOK_STATES.join(", ")}` };
+    return {
+      status: 400,
+      error: `Invalid state '${state}'. Allowed: ${ALLOWED_HOOK_STATES.join(", ")}`
+    };
   }
   const session = typeof sessionsMap.get === "function" ? sessionsMap.get(terminalId) : sessionsMap[terminalId];
   if (!session) {
@@ -1635,26 +1727,528 @@ function handleHookReport(sessionsMap, body, now = Date.now()) {
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
-  const broadcastPayload = published ? {
-    type: "agent-state",
-    agentTuiState: published.state,
-    at: now
-  } : null;
+  const broadcastPayload = published ? buildAgentStateFrame(session, published.state, { at: now }) : null;
   return { status: 204, broadcast: broadcastPayload, session };
 }
+function resolveBridgeTargetSession(sessionsMap, body) {
+  const { conversationId, workspacePaths } = body;
+  const sessions = typeof sessionsMap.values === "function" ? [...sessionsMap.values()] : Object.values(sessionsMap);
+  if (conversationId) {
+    const byConversation = sessions.find((s) => s?.agentConversationId === conversationId);
+    if (byConversation) return byConversation;
+  }
+  if (Array.isArray(workspacePaths) && workspacePaths.length > 0) {
+    const normalized = workspacePaths.map(
+      (p) => String(p).replace(/[\\/]+$/, "").toLowerCase()
+    );
+    const byWorkspace = sessions.find((s) => {
+      const cwd = String(s?.cwd || s?.workspacePath || "").replace(/[\\/]+$/, "").toLowerCase();
+      return cwd && normalized.some((wp) => cwd === wp || cwd.startsWith(wp + "/") || wp.startsWith(cwd + "/"));
+    });
+    if (byWorkspace) {
+      if (conversationId) byWorkspace.agentConversationId = conversationId;
+      return byWorkspace;
+    }
+  }
+  let best = null;
+  let bestAt = -1;
+  for (const s of sessions) {
+    if (!s || s.agentType !== "agy" && s.agentType !== "antigravity") continue;
+    const at = s.lastActivityAt ?? s.agentTuiStateAt ?? 0;
+    if (at >= bestAt) {
+      best = s;
+      bestAt = at;
+    }
+  }
+  if (best && conversationId) best.agentConversationId = conversationId;
+  return best;
+}
+function handleBridgeHookReport(sessionsMap, body, now = Date.now(), options = {}) {
+  if (!body || typeof body !== "object") {
+    return { status: 400, error: "Invalid JSON payload" };
+  }
+  const { token, state } = body;
+  if (!token || typeof token !== "string" || !state || typeof state !== "string") {
+    return { status: 400, error: "Missing required fields: token, state" };
+  }
+  if (!ALLOWED_HOOK_STATES.includes(state)) {
+    return {
+      status: 400,
+      error: `Invalid state '${state}'. Allowed: ${ALLOWED_HOOK_STATES.join(", ")}`
+    };
+  }
+  if (options.bridgeToken && token !== options.bridgeToken) {
+    return { status: 403, error: "Invalid bridge token" };
+  }
+  const session = resolveBridgeTargetSession(sessionsMap, body);
+  if (!session) {
+    return { status: 404, error: "No matching session for bridge report" };
+  }
+  if (!session.agentType) {
+    session.agentType = "agy";
+  }
+  if (body.conversationId && !session.agentConversationId) {
+    session.agentConversationId = body.conversationId;
+  }
+  if (state === "session") {
+    return { status: 204, session, broadcast: null };
+  }
+  const mappedState = state === "working" ? "running" : state;
+  session.hookState = {
+    state: mappedState,
+    rawState: state,
+    event: body.event || null,
+    at: now,
+    source: body.source || ANTIGRAVITY_BRIDGE_SOURCE,
+    agentSessionId: body.conversationId || session.agentSessionId || null,
+    conversationId: body.conversationId || null,
+    terminationReason: body.terminationReason || null,
+    transcriptPath: body.transcriptPath || null
+  };
+  const detection = {
+    state: mappedState,
+    visibleWorking: mappedState === "running",
+    visibleBlocker: mappedState === "blocked",
+    visibleIdle: mappedState === "idle"
+  };
+  const published = session.agentStateMachine ? session.agentStateMachine.publishHook(detection, now) : null;
+  if (published) {
+    session.agentTuiState = published.state;
+    session.agentTuiStateAt = now;
+  }
+  const broadcastPayload = published ? buildAgentStateFrame(session, published.state, { at: now }) : null;
+  return { status: 204, broadcast: broadcastPayload, session };
+}
+
+// src/lib/terminal/agentHooks/bridgeConfig.js
+var import_fs = __toESM(require("fs"));
+var import_path = __toESM(require("path"));
+var import_os = __toESM(require("os"));
+var HOOK_BRIDGE_CONFIG_PATH_ENV = "DEVHUB_HOOK_BRIDGE_CONFIG";
+function resolveHookBridgeConfigPath(homeDir = import_os.default.homedir()) {
+  const override = process.env[HOOK_BRIDGE_CONFIG_PATH_ENV];
+  if (override) return override;
+  return import_path.default.join(homeDir, ".devhub", "hook-bridge.json");
+}
+function writeHookBridgeConfig({ url, token } = {}, homeDir) {
+  if (!url || typeof url !== "string") {
+    throw new Error("writeHookBridgeConfig: url is required");
+  }
+  if (!token || typeof token !== "string") {
+    throw new Error("writeHookBridgeConfig: token is required");
+  }
+  const configPath = resolveHookBridgeConfigPath(homeDir);
+  const dir = import_path.default.dirname(configPath);
+  if (!import_fs.default.existsSync(dir)) {
+    import_fs.default.mkdirSync(dir, { recursive: true });
+  }
+  const body = JSON.stringify({ url, token, updatedAt: Date.now() }, null, 2) + "\n";
+  const tmpPath = `${configPath}.tmp-${process.pid}`;
+  import_fs.default.writeFileSync(tmpPath, body, { encoding: "utf8", mode: 384 });
+  import_fs.default.renameSync(tmpPath, configPath);
+  return configPath;
+}
+function readHookBridgeConfig(homeDir) {
+  const configPath = resolveHookBridgeConfigPath(homeDir);
+  try {
+    const raw = import_fs.default.readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.url !== "string" || typeof parsed.token !== "string") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+// src/lib/terminal/opencodeSseClient.js
+var import_http = __toESM(require("http"));
+var import_https = __toESM(require("https"));
+var import_url = require("url");
+var OPENCODE_SSE_SOURCE = "opencode-sse";
+var OPENCODE_EVENT_MAP = {
+  "session.idle": "idle",
+  "message.part.delta": "running",
+  "message.part.updated": "running",
+  "message.updated": "running",
+  "session.error": "blocked"
+};
+var DEFAULT_RECONNECT_BASE_MS = 1e3;
+var DEFAULT_RECONNECT_MAX_MS = 3e4;
+var DEFAULT_STATUS_POLL_MS = 5e3;
+var DEFAULT_SSE_FAILURE_THRESHOLD = 3;
+function parseSseBuffer(buffer) {
+  const events = [];
+  const segments = String(buffer).split(/\r\n|\r|\n/);
+  const rest = segments.pop() ?? "";
+  let eventName = "message";
+  let dataLines = [];
+  const dispatch = () => {
+    if (dataLines.length > 0) {
+      events.push({ event: eventName, data: dataLines.join("\n") });
+    }
+    eventName = "message";
+    dataLines = [];
+  };
+  for (const line of segments) {
+    if (line === "") {
+      dispatch();
+      continue;
+    }
+    if (line.startsWith(":")) {
+      continue;
+    }
+    const colonIdx = line.indexOf(":");
+    let field;
+    let value;
+    if (colonIdx === -1) {
+      field = line;
+      value = "";
+    } else {
+      field = line.slice(0, colonIdx);
+      value = line.slice(colonIdx + 1);
+      if (value.startsWith(" ")) value = value.slice(1);
+    }
+    if (field === "event") {
+      eventName = value || "message";
+    } else if (field === "data") {
+      dataLines.push(value);
+    }
+  }
+  return { events, rest };
+}
+function interpretOpenCodeSseEvent(sseEvent) {
+  let payload = null;
+  try {
+    payload = JSON.parse(sseEvent.data);
+  } catch {
+    payload = null;
+  }
+  const eventType = payload && payload.type || sseEvent.event || "";
+  const sessionId = payload?.properties?.sessionID ?? payload?.properties?.sessionId ?? payload?.sessionID ?? payload?.sessionId ?? null;
+  const state = Object.prototype.hasOwnProperty.call(OPENCODE_EVENT_MAP, eventType) ? OPENCODE_EVENT_MAP[eventType] : null;
+  return { sessionId: sessionId ? String(sessionId) : null, state, eventType };
+}
+function resolveOpenCodeTargetSession(sessionsMap, sessionId) {
+  if (!sessionId) return null;
+  const sessions = typeof sessionsMap.values === "function" ? [...sessionsMap.values()] : Object.values(sessionsMap);
+  return sessions.find((s) => s?.opencodeSessionId === sessionId || s?.agentSessionId === sessionId) || null;
+}
+function applyOpenCodeSseDetection(session, state, eventType, sessionId, now = Date.now()) {
+  if (!session || !state) return null;
+  if (!session.agentType) {
+    session.agentType = "opencode";
+  }
+  if (sessionId && !session.opencodeSessionId) {
+    session.opencodeSessionId = sessionId;
+  }
+  session.hookState = {
+    state,
+    rawState: state,
+    event: eventType,
+    at: now,
+    source: OPENCODE_SSE_SOURCE,
+    agentSessionId: sessionId || session.agentSessionId || null
+  };
+  const detection = {
+    state,
+    visibleWorking: state === "running",
+    visibleBlocker: state === "blocked",
+    visibleIdle: state === "idle"
+  };
+  const published = session.agentStateMachine ? session.agentStateMachine.publishHook(detection, now) : null;
+  if (published) {
+    session.agentTuiState = published.state;
+    session.agentTuiStateAt = now;
+  }
+  return published ? buildAgentStateFrame(session, published.state, { at: now }) : null;
+}
+function defaultRequestImpl(url, { onData, onError, onClose }) {
+  const parsed = new import_url.URL(url);
+  const lib = parsed.protocol === "https:" ? import_https.default : import_http.default;
+  const req = lib.get(
+    url,
+    {
+      headers: {
+        Accept: "text/event-stream",
+        "Cache-Control": "no-cache"
+      }
+    },
+    (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        onError(new Error(`opencode SSE HTTP ${res.statusCode}`));
+        return;
+      }
+      res.setEncoding("utf8");
+      res.on("data", onData);
+      res.on("end", onClose);
+      res.on("error", onError);
+    }
+  );
+  req.on("error", onError);
+  return {
+    abort: () => {
+      try {
+        req.destroy();
+      } catch {
+      }
+    }
+  };
+}
+function defaultGetJson(url) {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new import_url.URL(url);
+      const lib = parsed.protocol === "https:" ? import_https.default : import_http.default;
+      const req = lib.get(url, { headers: { Accept: "application/json" } }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve(null);
+          return;
+        }
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => {
+          body += c;
+        });
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch {
+            resolve(null);
+          }
+        });
+        res.on("error", () => resolve(null));
+      });
+      req.on("error", () => resolve(null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+function interpretSessionStatusResponse(json) {
+  if (!json || typeof json !== "object") return [];
+  const toState = (entry) => {
+    if (entry && typeof entry === "object") {
+      if (typeof entry.busy === "boolean") return entry.busy ? "running" : "idle";
+      if (typeof entry.state === "string") return entry.state;
+      if (typeof entry.status === "string") return entry.status;
+    }
+    return null;
+  };
+  const toSessionId = (entry, key) => entry && (entry.sessionID || entry.sessionId) || key || null;
+  const rows = [];
+  const source = Array.isArray(json) ? json.map((entry) => [null, entry]) : Object.entries(json.sessions && typeof json.sessions === "object" ? json.sessions : json);
+  for (const [key, entry] of source) {
+    const state = toState(entry);
+    const sessionId = toSessionId(entry, key);
+    if (state && sessionId) {
+      rows.push({ sessionId: String(sessionId), state });
+    }
+  }
+  return rows;
+}
+function createOpencodeStatusClient(options = {}) {
+  const {
+    baseUrl,
+    sessions,
+    onFrame,
+    onStatusChange,
+    onEvent,
+    logger = null,
+    requestImpl = defaultRequestImpl,
+    getJsonImpl = defaultGetJson,
+    now = () => Date.now(),
+    reconnectDelayMs = DEFAULT_RECONNECT_BASE_MS,
+    maxReconnectDelayMs = DEFAULT_RECONNECT_MAX_MS,
+    statusPollMs = DEFAULT_STATUS_POLL_MS,
+    sseFailureThreshold = DEFAULT_SSE_FAILURE_THRESHOLD,
+    scheduleTimer = (fn, ms) => setTimeout(fn, ms)
+  } = options;
+  if (!baseUrl) {
+    throw new Error("createOpencodeStatusClient: baseUrl is required");
+  }
+  const normalizedBase = String(baseUrl).replace(/\/+$/, "");
+  const eventUrl = `${normalizedBase}/event`;
+  const statusUrl = `${normalizedBase}/session/status`;
+  let active = false;
+  let connection = null;
+  let connected = false;
+  let reconnectAttempts = 0;
+  let consecutiveSseFailures = 0;
+  let buffer = "";
+  let reconnectTimer = null;
+  let statusPollTimer = null;
+  const sessionStatuses = /* @__PURE__ */ new Map();
+  function logWarn(...args) {
+    if (logger && typeof logger.warn === "function") logger.warn(...args);
+  }
+  function recordStatus(sessionId, state, eventType, source) {
+    if (!sessionId || !state) return;
+    const prev = sessionStatuses.get(sessionId);
+    sessionStatuses.set(sessionId, { sessionId, state, at: now(), source });
+    if (typeof onStatusChange === "function" && (!prev || prev.state !== state)) {
+      try {
+        onStatusChange({ sessionId, state, eventType, source });
+      } catch {
+      }
+    }
+  }
+  function applyToSession(sessionId, state, eventType) {
+    if (!sessions) return;
+    const session = resolveOpenCodeTargetSession(sessions, sessionId);
+    if (!session) return;
+    const frame = applyOpenCodeSseDetection(session, state, eventType, sessionId, now());
+    if (frame && typeof onFrame === "function") {
+      try {
+        onFrame(session, frame);
+      } catch {
+      }
+    }
+  }
+  function handleSseEvent(sseEvent) {
+    if (typeof onEvent === "function") {
+      try {
+        onEvent(sseEvent);
+      } catch {
+      }
+    }
+    const { sessionId, state, eventType } = interpretOpenCodeSseEvent(sseEvent);
+    if (!state) return;
+    recordStatus(sessionId, state, eventType, "sse");
+    applyToSession(sessionId, state, eventType);
+  }
+  function onData(chunk) {
+    reconnectAttempts = 0;
+    consecutiveSseFailures = 0;
+    buffer += chunk;
+    const { events, rest } = parseSseBuffer(buffer);
+    buffer = rest;
+    for (const ev of events) {
+      handleSseEvent(ev);
+    }
+  }
+  function stopStatusPolling() {
+    if (statusPollTimer) {
+      try {
+        if (typeof clearTimeout === "function") clearTimeout(statusPollTimer);
+      } catch {
+      }
+      statusPollTimer = null;
+    }
+  }
+  async function pollSessionStatus() {
+    if (!active) return;
+    const json = await getJsonImpl(statusUrl);
+    if (!active) return;
+    const rows = interpretSessionStatusResponse(json);
+    for (const { sessionId, state } of rows) {
+      recordStatus(sessionId, state, "session.status", "status");
+      applyToSession(sessionId, state, "session.status");
+    }
+    if (active && consecutiveSseFailures >= sseFailureThreshold) {
+      statusPollTimer = scheduleTimer(pollSessionStatus, statusPollMs);
+    } else {
+      statusPollTimer = null;
+    }
+  }
+  function maybeStartStatusPolling() {
+    if (consecutiveSseFailures >= sseFailureThreshold && !statusPollTimer && active) {
+      logWarn(
+        `[opencode-sse] ${consecutiveSseFailures} consecutive SSE failures \u2014 falling back to /session/status polling`
+      );
+      statusPollTimer = scheduleTimer(pollSessionStatus, statusPollMs);
+    }
+  }
+  function scheduleReconnect() {
+    if (!active) return;
+    const delay = Math.min(reconnectDelayMs * 2 ** reconnectAttempts, maxReconnectDelayMs);
+    reconnectAttempts += 1;
+    reconnectTimer = scheduleTimer(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  }
+  function handleFailure() {
+    connected = false;
+    connection = null;
+    buffer = "";
+    consecutiveSseFailures += 1;
+    maybeStartStatusPolling();
+    scheduleReconnect();
+  }
+  function connect() {
+    if (!active) return;
+    try {
+      connection = requestImpl(eventUrl, {
+        onData,
+        onError: handleFailure,
+        onClose: handleFailure
+      });
+      connected = true;
+    } catch {
+      handleFailure();
+    }
+  }
+  function start() {
+    if (active) return;
+    active = true;
+    reconnectAttempts = 0;
+    consecutiveSseFailures = 0;
+    connect();
+  }
+  function stop() {
+    active = false;
+    connected = false;
+    if (reconnectTimer) {
+      try {
+        if (typeof clearTimeout === "function") clearTimeout(reconnectTimer);
+      } catch {
+      }
+      reconnectTimer = null;
+    }
+    stopStatusPolling();
+    if (connection) {
+      connection.abort();
+      connection = null;
+    }
+    buffer = "";
+  }
+  function getSessionStatuses() {
+    return [...sessionStatuses.values()];
+  }
+  return {
+    start,
+    stop,
+    connect,
+    isConnected: () => connected,
+    getSessionStatuses
+  };
+}
+var createOpenCodeSseClient = createOpencodeStatusClient;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ALLOWED_HOOK_STATES,
+  ANTIGRAVITY_BRIDGE_SOURCE,
   HOOK_AUTHORITY_TTL_MS,
+  OPENCODE_SSE_SOURCE,
   buildSessionHookEnv,
+  createOpenCodeSseClient,
+  createOpencodeStatusClient,
   ensureAgentDetectionSession,
   generateSessionHookToken,
+  handleBridgeHookReport,
   handleHookReport,
   hasFreshHookAuthority,
   ingestAgentDetectionFromFilteredOutput,
   notifyUserInput,
   processOscProgress,
   processOscTitle,
+  readHookBridgeConfig,
+  resolveHookBridgeConfigPath,
   stripOscTitleSequences,
-  tickAgentDetection
+  tickAgentDetection,
+  writeHookBridgeConfig
 });

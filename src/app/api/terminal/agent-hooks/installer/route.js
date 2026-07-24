@@ -15,7 +15,10 @@ function isLocalhostRequest(request) {
 
 export async function GET(request) {
   if (!isLocalhostRequest(request)) {
-    return NextResponse.json({ ok: false, error: 'Access restricted to localhost' }, { status: 403 });
+    return NextResponse.json(
+      { ok: false, error: 'Access restricted to localhost' },
+      { status: 403 }
+    );
   }
 
   try {
@@ -23,6 +26,7 @@ export async function GET(request) {
       kimi: getAgentHookStatus('kimi'),
       claude: getAgentHookStatus('claude'),
       opencode: getAgentHookStatus('opencode'),
+      agy: getAgentHookStatus('agy'),
     };
     return NextResponse.json({ ok: true, statuses });
   } catch (error) {
@@ -32,16 +36,19 @@ export async function GET(request) {
 
 export async function POST(request) {
   if (!isLocalhostRequest(request)) {
-    return NextResponse.json({ ok: false, error: 'Access restricted to localhost' }, { status: 403 });
+    return NextResponse.json(
+      { ok: false, error: 'Access restricted to localhost' },
+      { status: 403 }
+    );
   }
 
   try {
     const body = await request.json();
     const { agent, action } = body || {};
 
-    if (!['kimi', 'claude', 'opencode'].includes(agent)) {
+    if (!['kimi', 'claude', 'opencode', 'agy', 'antigravity'].includes(agent)) {
       return NextResponse.json(
-        { ok: false, error: "Invalid agent. Allowed: 'kimi', 'claude', 'opencode'" },
+        { ok: false, error: "Invalid agent. Allowed: 'kimi', 'claude', 'opencode', 'agy'" },
         { status: 400 }
       );
     }

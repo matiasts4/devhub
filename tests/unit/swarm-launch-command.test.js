@@ -74,4 +74,43 @@ describe('swarm launch inner command', () => {
     expect(inner).toContain('do work');
     expect(inner).not.toContain('--yolo');
   });
+
+  test('uses bare agy executable for antigravity swarm launches (W8)', () => {
+    const inner = buildAgentLaunchCommand('agy', 'mission prompt', {
+      role: 'coder',
+      tmuxSessionName: 'devhub-swarm-launch-abc-coder',
+      disableTmuxWrap: true,
+      interactiveBootstrapPrompt: true,
+    });
+
+    const agyBin = resolveAgentProgramExecutable('agy');
+    expect(inner).toBe(agyBin);
+    // agy has no assumed non-interactive prompt flag — the bootstrap prompt
+    // is injected post-launch via tmux send-keys by the wrapper.
+    expect(inner).not.toContain('--prompt');
+    expect(inner).not.toContain('tmux new-session');
+  });
+
+  test('antigravity alias resolves to the same bare launch', () => {
+    const inner = buildAgentLaunchCommand('antigravity', 'mission prompt', {
+      role: 'coder',
+      disableTmuxWrap: true,
+      interactiveBootstrapPrompt: true,
+    });
+
+    const agyBin = resolveAgentProgramExecutable('antigravity');
+    expect(inner).toBe(agyBin);
+    expect(inner).toMatch(/\b(?:agy|antigravity)\b/);
+  });
+
+  test('agy launch still wraps in tmux when a session name is provided', () => {
+    const inner = buildAgentLaunchCommand('agy', 'mission prompt', {
+      role: 'coder',
+      tmuxSessionName: 'devhub-swarm-launch-abc-coder',
+    });
+
+    expect(inner).toContain('tmux new-session');
+    expect(inner).toContain('tmux attach-session');
+    expect(inner).toContain(resolveAgentProgramExecutable('agy'));
+  });
 });

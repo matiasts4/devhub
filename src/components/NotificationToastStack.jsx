@@ -5,6 +5,7 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import { EVENT_NAME } from '@/lib/operations/events';
 import { playNotificationSound } from '@/lib/notifications/soundEffects';
 import { getNotificationPreferences } from '@/lib/notifications/notificationPreferences';
+import { isDesktopHost } from '@/lib/desktop/desktopRuntime';
 
 const TOAST_TIMEOUT_MS = 6000;
 const MAX_TOASTS = 4;
@@ -50,6 +51,12 @@ export default function NotificationToastStack() {
 
   const triggerNativeOSNotification = useCallback((notification) => {
     if (typeof window === 'undefined' || !document.hidden) return;
+
+    // N2 dedupe: when running inside Electron/Tauri the `delivery.desktop`
+    // path in notify.js already shows a native OS notification. The web
+    // Notification API is kept ONLY as fallback for the pure-web runtime
+    // (no native bridge), using the same capability check as notify.js.
+    if (isDesktopHost()) return;
 
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
@@ -146,7 +153,9 @@ export default function NotificationToastStack() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-300 mt-1 line-clamp-2 leading-relaxed">{toast.message}</p>
+            <p className="text-xs text-gray-300 mt-1 line-clamp-2 leading-relaxed">
+              {toast.message}
+            </p>
 
             {toast.actions && toast.actions.length > 0 && (
               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-800/60">

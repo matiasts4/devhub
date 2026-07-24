@@ -5,13 +5,39 @@
 import { detectAgentState, AgentStateMachine } from './agentTuiMetadata.shared.js';
 import {
   extractBottomViewport,
-  MAX_DETECTION_BUFFER_CHARS,
-  DEFAULT_DETECTION_VIEWPORT_LINES,
+  processCarriageReturns,
+  resolveDetectionSizing,
 } from './extractBottomViewport.js';
 import { stripAnsi } from './stripAnsi.js';
 
 export const HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 120000);
 export const HOOK_AUTHORITY_AGENTS = ['kimi', 'claude', 'opencode', 'agy', 'antigravity'];
+
+/**
+ * W4: quiescence window — how long a session must produce ZERO PTY output
+ * before a 'running' state is treated as finished. Based on output activity
+ * (any chunk), not on rule hits. Configurable per session via
+ * session.detectionQuiescenceMs, globally via DEVHUB_AGENT_QUIESCENCE_MS.
+ */
+export const DEFAULT_AGENT_QUIESCENCE_MS = Number(process.env.DEVHUB_AGENT_QUIESCENCE_MS || 4000);
+
+function getQuiescenceMs(session) {
+  const override = Number(session?.detectionQuiescenceMs);
+  return override > 0 ? override : DEFAULT_AGENT_QUIESCENCE_MS;
+}
+
+function getLastActivityAt(session) {
+  return session.lastActivityAt ?? session.lastWorkingAt ?? null;
+}
+
+function getDetectionSizing(session) {
+  return resolveDetectionSizing({
+    cols: session?.termsize?.cols,
+    rows: session?.termsize?.rows,
+    viewportLines: session?.detectionViewportLines,
+    bufferChars: session?.detectionBufferChars,
+  });
+}
 
 /**
  * Check if a session has active, unexpired hook authority from an authorized agent type.
@@ -75,9 +101,15 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
   // Keep accumulating screen evidence even under hook authority, so that when
   // authority expires the viewport we evaluate is fresh, not minutes old.
   session.detectionBuffer = (session.detectionBuffer || '') + filtered;
-  if (session.detectionBuffer.length > MAX_DETECTION_BUFFER_CHARS) {
-    session.detectionBuffer = session.detectionBuffer.slice(-MAX_DETECTION_BUFFER_CHARS);
+  const sizing = getDetectionSizing(session);
+  if (session.detectionBuffer.length > sizing.bufferChars) {
+    session.detectionBuffer = session.detectionBuffer.slice(-sizing.bufferChars);
   }
+
+  // W4: output activity clock. ANY PTY chunk while agentType is set means the
+  // agent session is alive and producing output — refresh regardless of rule
+  // hits, hook authority, or whether the footer is currently visible.
+  session.lastActivityAt = now;
 
   if (hasFreshHookAuthority(session, now)) {
     session._hadHookAuthority = true;
@@ -90,9 +122,13 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
     session.lastDetection = null;
   }
 
-  const cleanBuffer = stripAnsi(session.detectionBuffer || '');
+  // W6: collapse CR-overwritten frames (last-write-wins per line) BEFORE
+  // stripping ANSI. stripAnsi deletes every \r, which would fuse spinner/footer
+  // frames into one concatenated line and break anchored lineRegex rules.
+  const collapsedBuffer = processCarriageReturns(session.detectionBuffer || '');
+  const cleanBuffer = stripAnsi(collapsedBuffer);
   const screen = extractBottomViewport(cleanBuffer, {
-    maxLines: session.detectionViewportLines || DEFAULT_DETECTION_VIEWPORT_LINES,
+    maxLines: sizing.viewportLines,
   });
 
   const detected = detectAgentState(session.agentType, screen, {
@@ -108,9 +144,19 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
     return result;
   }
 
-  // Do not degrade a running state to fallback idle during streaming output UNLESS
-  // an explicit idle prompt matched (visibleIdle: true) OR no working signals arrived for > 2500ms
-  const isQuiescent = session.lastWorkingAt && now - session.lastWorkingAt > 2500;
+  // W4: 'unknown' (no manifest rule matched) is non-evidence — never publish a
+  // state change for it. The last published state stays sticky; true finish is
+  // detected by the quiescence tick on real output silence.
+  if (detected.state === 'unknown') {
+    return result;
+  }
+
+  // Do not degrade a running state to a non-explicit idle during streaming
+  // output UNLESS an explicit idle prompt matched (visibleIdle: true) OR the
+  // session has produced no output at all for the quiescence window.
+  const quiescenceMs = getQuiescenceMs(session);
+  const lastActivityAt = getLastActivityAt(session);
+  const isQuiescent = lastActivityAt && now - lastActivityAt > quiescenceMs;
   if (
     session.agentTuiState === 'running' &&
     detected.state === 'idle' &&
@@ -147,6 +193,7 @@ export function notifyUserInput(session, now = Date.now()) {
   ensureAgentDetectionSession(session);
   session.lastUserInputAt = now;
   session.lastWorkingAt = now;
+  session.lastActivityAt = now;
 
   const detection = {
     state: 'running',
@@ -224,8 +271,13 @@ export function tickAgentDetection(session, now = Date.now()) {
   const isRunningOrBlocked = state === 'running' || state === 'blocked';
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
 
-  // Output Quiescence: If running and no working signals for > 2500ms, transition to idle
-  if (state === 'running' && session.lastWorkingAt && now - session.lastWorkingAt > 2500) {
+  // Output Quiescence: if running and the session has produced NO output at all
+  // for the quiescence window, transition to idle. Activity is any PTY chunk
+  // (session.lastActivityAt), so streaming output whose footer scrolled offscreen
+  // no longer causes false "finished" flips (W4).
+  const quiescenceMs = getQuiescenceMs(session);
+  const lastActivityAt = getLastActivityAt(session);
+  if (state === 'running' && lastActivityAt && now - lastActivityAt > quiescenceMs) {
     const fallbackIdle = {
       state: 'idle',
       visibleIdle: false,

@@ -1461,7 +1461,12 @@ export function buildAgentLaunchWrapper({
   preLaunchDelayMs = 0,
 }) {
   const effectiveProgramId =
-    programId || (String(innerCommand || '').includes('kimi') ? 'kimi' : 'opencode');
+    programId ||
+    (String(innerCommand || '').includes('kimi')
+      ? 'kimi'
+      : /\b(?:agy|antigravity)\b/i.test(String(innerCommand || ''))
+        ? 'agy'
+        : 'opencode');
   // Resolve Windows host paths for WSL (/mnt/d/...) and Git Bash (/d/...), then cd.
   const workspaceBootstrapBlock = buildWorkspaceBootstrapBlock(workspacePath);
 

@@ -48,6 +48,8 @@ export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   hermes: 'hermes',
   kimi: 'kimi',
   grok: 'grok',
+  agy: 'agy',
+  antigravity: 'agy',
 });
 
 /** Skill folder names under ~/.kimi-code/skills (or peers). */
@@ -178,6 +180,19 @@ function candidateBins(programId, home) {
         home && join(home, '.grok', 'bin', 'grok'),
         'grok.exe',
         'grok',
+      ].filter(Boolean);
+    case 'agy':
+    case 'antigravity':
+      return [
+        process.env.DEVHUB_AGENT_AGY_BIN,
+        process.env.DEVHUB_AGENT_ANTIGRAVITY_BIN,
+        home && join(home, '.antigravity', 'bin', 'agy.exe'),
+        home && join(home, '.antigravity', 'bin', 'agy'),
+        home && join(home, '.gemini', 'bin', 'agy'),
+        home && join(home, '.local', 'bin', 'agy'),
+        'agy.exe',
+        'agy',
+        'antigravity',
       ].filter(Boolean);
     default:
       return [programId, 'hermes'];
@@ -408,6 +423,13 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       break;
     }
     case 'grok':
+      innerCommand = executable;
+      break;
+    case 'agy':
+    case 'antigravity':
+      // Antigravity starts its interactive TUI bare (like grok); the swarm
+      // bootstrap prompt is injected post-launch via tmux send-keys by the
+      // wrapper. No non-interactive prompt flag is assumed for agy.
       innerCommand = executable;
       break;
     case 'hermes':

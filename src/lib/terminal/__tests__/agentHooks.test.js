@@ -1,5 +1,5 @@
 import { buildSessionHookEnv, generateSessionHookToken } from '../agentHooks/hookEnv.js';
-import { handleHookReport, ALLOWED_HOOK_STATES } from '../agentHooks/handleHookReport.js';
+import { handleHookReport } from '../agentHooks/handleHookReport.js';
 import {
   hasFreshHookAuthority,
   HOOK_AUTHORITY_TTL_MS,
@@ -97,10 +97,12 @@ describe('Phase 0 — Agent Lifecycle Hooks Generic Channel & P0-P3 Fixes', () =
       );
 
       expect(res.status).toBe(204);
+      // N4: frames now carry agentType when the session has one.
       expect(res.broadcast).toEqual({
         type: 'agent-state',
         agentTuiState: 'running',
         at: now,
+        agentType: 'kimi',
       });
       expect(mockSession.agentTuiState).toBe('running');
       expect(mockSession.agentType).toBe('kimi');
@@ -262,7 +264,9 @@ describe('Phase 0 — Agent Lifecycle Hooks Generic Channel & P0-P3 Fixes', () =
       // Cleanup
       try {
         session.pty?.kill();
-      } catch {}
+      } catch {
+        // ignore — pty may already be dead
+      }
       sessions.delete(session.id);
     });
   });

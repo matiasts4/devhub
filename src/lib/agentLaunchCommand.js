@@ -149,6 +149,13 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       }
       break;
     }
+    case 'agy':
+    case 'antigravity':
+      // Antigravity starts its interactive TUI bare (like grok); the swarm
+      // bootstrap prompt is injected post-launch via tmux send-keys by the
+      // wrapper. Keep in sync with agentLaunchCommand.shared.js.
+      innerCommand = executable;
+      break;
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;

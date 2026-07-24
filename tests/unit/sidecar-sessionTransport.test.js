@@ -1,7 +1,11 @@
 const {
+  buildAgentStateFrame,
   buildHistoryReplay,
   buildServerMessage,
+  countTypedAgentShellPromptLines,
+  detectAntigravityTuiReady,
   filterTerminalOutputForSession,
+  reapTypedAgentSessionIfExited,
   updateSessionModeFromInput,
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
@@ -128,5 +132,154 @@ describe('sidecar session transport contract', () => {
     expect(untouchedSession.mode).toBe('shell');
     expect(untouchedSession.historyEnabled).toBe(true);
     expect(untouchedSession.history).toEqual(['shell']);
+  });
+
+  test('marks typed agent launches with agentLaunchOrigin=typed (W7 reaper gate)', () => {
+    const session = { mode: 'shell', historyEnabled: true, history: [], pendingInput: '' };
+    updateSessionModeFromInput(session, 'agy\r');
+    expect(session.agentType).toBe('agy');
+    expect(session.agentLaunchOrigin).toBe('typed');
+
+    // A second detection while the agent is already active must not
+    // re-tag the origin (e.g. typing "agy" inside the agy prompt).
+    session.agentLaunchOrigin = 'output';
+    updateSessionModeFromInput(session, 'agy\r');
+    expect(session.agentLaunchOrigin).toBe('output');
+  });
+});
+
+describe('sidecar buildAgentStateFrame (N4/N5 schema)', () => {
+  test('builds the base shape and optional fields only when defined', () => {
+    expect(buildAgentStateFrame({ agentTuiStateAt: 10 }, 'running')).toEqual({
+      type: 'agent-state',
+      agentTuiState: 'running',
+      at: 10,
+    });
+
+    const frame = buildAgentStateFrame(
+      { agentType: 'agy', agentTuiStateAt: 10, _lastAgentStateEvent: { wasCancelled: true } },
+      'idle'
+    );
+    expect(frame.agentType).toBe('agy');
+    expect(frame.wasCancelled).toBe(true);
+    expect(frame).not.toHaveProperty('reason');
+
+    const noExtras = buildAgentStateFrame({ agentTuiStateAt: 10 }, 'idle');
+    expect(noExtras).not.toHaveProperty('agentType');
+    expect(noExtras).not.toHaveProperty('wasCancelled');
+    expect(Object.values(noExtras)).not.toContain(null);
+  });
+
+  test('supports terminal frames with explicit reason and agentType override', () => {
+    const frame = buildAgentStateFrame({ agentType: null }, 'idle', {
+      reason: 'exit',
+      agentType: 'agy',
+      at: 42,
+    });
+    expect(frame).toEqual({
+      type: 'agent-state',
+      agentTuiState: 'idle',
+      at: 42,
+      agentType: 'agy',
+      reason: 'exit',
+    });
+    expect(buildAgentStateFrame({}, null)).toBeNull();
+  });
+});
+
+describe('sidecar typed-agent child-exit reaper (W7)', () => {
+  function makeTypedAgySession() {
+    return {
+      id: 's1',
+      mode: 'tui',
+      historyEnabled: false,
+      agentType: 'agy',
+      agentSessionId: 'agy-s1',
+      agentTuiState: 'running',
+      agentTuiStateAt: 1000,
+      agentLaunchOrigin: 'typed',
+      hookState: null,
+      lastWorkingAt: 1000,
+    };
+  }
+
+  test('detectAntigravityTuiReady matches agy chrome', () => {
+    expect(detectAntigravityTuiReady('? for shortcuts')).toBe(true);
+    expect(detectAntigravityTuiReady('accept-edits · Gemini 3.5 Flash')).toBe(true);
+    expect(detectAntigravityTuiReady('esc to cancel')).toBe(true);
+    expect(detectAntigravityTuiReady('antigravity>')).toBe(true);
+    expect(detectAntigravityTuiReady('plain shell output')).toBe(false);
+  });
+
+  test('countTypedAgentShellPromptLines recognizes common prompts, not PS2', () => {
+    expect(countTypedAgentShellPromptLines('PS C:\\Users\\PC> ')).toBe(1);
+    expect(countTypedAgentShellPromptLines('C:\\dev\\devhub>')).toBe(1);
+    expect(countTypedAgentShellPromptLines('user@host:~/repo$ ')).toBe(1);
+    expect(countTypedAgentShellPromptLines('/home/user$')).toBe(1);
+    expect(countTypedAgentShellPromptLines('$')).toBe(1);
+    // Bash PS2 continuation must NOT count (it matches the agy idle rule too).
+    expect(countTypedAgentShellPromptLines('> ')).toBe(0);
+    expect(countTypedAgentShellPromptLines('some regular output')).toBe(0);
+  });
+
+  test('reaps only after 2 prompt lines spanning the quiet window', () => {
+    const session = makeTypedAgySession();
+    const t0 = 10_000;
+
+    // Single prompt line — no reap.
+    expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0)).toBeNull();
+    expect(session.agentType).toBe('agy');
+
+    // Second line too soon after the first — no reap (needs >= 3s span).
+    expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0 + 500)).toBeNull();
+    expect(session.agentType).toBe('agy');
+
+    // Second prompt-looking chunk after the quiet window — reap fires.
+    const frame = reapTypedAgentSessionIfExited(session, 'output\nPS C:\\Users\\PC> ', t0 + 4000);
+    expect(frame).toMatchObject({
+      type: 'agent-state',
+      agentTuiState: 'idle',
+      agentType: 'agy',
+      reason: 'agent-exit',
+    });
+    expect(session.agentType).toBeNull();
+    expect(session.mode).toBe('shell');
+    expect(session.tuiReady).toBe(false);
+    expect(session.historyEnabled).toBe(true);
+    expect(session.agentLaunchOrigin).toBeNull();
+  });
+
+  test('agent chrome in fresh output resets the reaper', () => {
+    const session = makeTypedAgySession();
+    const t0 = 10_000;
+
+    expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0)).toBeNull();
+    expect(reapTypedAgentSessionIfExited(session, 'esc to cancel', t0 + 1000)).toBeNull();
+    // Counter was reset; the next prompt line is line #1 of a new window.
+    expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0 + 5000)).toBeNull();
+    expect(session.agentType).toBe('agy');
+    expect(session._typedAgentReaper.promptLines).toBe(1);
+  });
+
+  test('recent working signals block the reap (quiet window gate)', () => {
+    const session = makeTypedAgySession();
+    const t0 = 10_000;
+
+    expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0)).toBeNull();
+    // Simulate visible working output arriving between prompt lines.
+    session.lastWorkingAt = t0 + 3500;
+    expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0 + 4000)).toBeNull();
+    expect(session.agentType).toBe('agy');
+  });
+
+  test('never reaps non-typed launch origins', () => {
+    for (const origin of ['initialCommand', 'output', null, undefined]) {
+      const session = makeTypedAgySession();
+      session.agentLaunchOrigin = origin;
+      const t0 = 10_000;
+      expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0)).toBeNull();
+      expect(reapTypedAgentSessionIfExited(session, 'PS C:\\Users\\PC> ', t0 + 5000)).toBeNull();
+      expect(session.agentType).toBe('agy');
+    }
   });
 });

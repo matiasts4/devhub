@@ -1,6 +1,8 @@
 // Ported from herdr .research/herdr/src/detect/manifests/antigravity.toml (2026.06.24.1).
-// Note: herdr's spinner_working regex uses \p{Alphabetic} (Rust regex); the JS engine
-// compiles patterns without the `u` flag, so it is approximated with ASCII letters.
+// W9: the spinner verb group is locale-robust — herdr's \p{Alphabetic} is compiled
+// via the JS `u` flag ((?iu) inline flags are supported by ruleEngine.compileRegex)
+// as \p{L}, so non-English gerunds ("Leyendo", "Analizando") match too. A braille
+// spinner frame at line start followed by any Unicode word is treated as working.
 export default {
   id: 'agy',
   version: '2026.07.23.1',
@@ -80,7 +82,10 @@ export default {
       visibleWorking: true,
       any: [
         {
-          lineRegex: ['(?i)^\\s*[\\u2800-\\u28FF]+\\s+[a-z]\\w*ing\\b'],
+          // Locale-robust (W9): braille spinner frame(s) + any Unicode word.
+          // Matches English ("Thinking") and localized TUIs ("Leyendo",
+          // "Analizando") alike; the braille frame at line start is the signal.
+          lineRegex: ['(?iu)^\\s*[\\u2800-\\u28FF]+\\s+\\p{L}[\\p{L}\\p{M}\\p{N}_]*'],
         },
         {
           lineRegex: [

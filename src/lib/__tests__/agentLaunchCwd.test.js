@@ -156,6 +156,20 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
       expect(result).not.toContain('--prompt');
     });
 
+    test('buildAgentLaunchCommand starts agy bare (no prompt flag) for post-launch bootstrap (W8)', () => {
+      const AGY_BIN = resolveAgentProgramExecutable('agy');
+      for (const programId of ['agy', 'antigravity']) {
+        const result = buildAgentLaunchCommand(programId, 'do work', {
+          tmuxSessionName: 'sess-test',
+          interactiveBootstrapPrompt: true,
+        });
+        // Antigravity launches its interactive TUI bare; the swarm prompt is
+        // injected post-launch via tmux send-keys, so no prompt flag is assumed.
+        expect(result).toContain(AGY_BIN);
+        expect(result).not.toContain('--prompt');
+      }
+    });
+
     test('buildAgentLaunchCommand does not inherit SDD session injection from env', () => {
       const original = process.env.SDD_ENABLED;
       process.env.SDD_ENABLED = 'true';

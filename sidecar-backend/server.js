@@ -29,11 +29,17 @@ const {
   processOscProgress,
   generateSessionHookToken,
   handleHookReport,
+  handleBridgeHookReport,
+  ANTIGRAVITY_BRIDGE_SOURCE,
+  writeHookBridgeConfig,
+  createOpenCodeSseClient,
 } = require('./bundled/agentDetection.cjs');
 const {
   applyAgentTuiDetection,
+  buildAgentStateFrame,
   buildHistoryReplay,
   buildServerMessage,
+  detectAntigravityTuiReady,
   detectKimiTuiReady,
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
@@ -41,10 +47,12 @@ const {
   filterTerminalOutputForSession,
   getTransportMode,
   parseClientMessage,
+  reapTypedAgentSessionIfExited,
   synthesizeAgentSessionId,
   updateSessionModeFromInput,
 } = require('./sessionTransport');
 const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
+const { writeAntigravityReadyMarker } = require('./antigravityReadyMarker');
 const {
   shouldRespawnShellAfterPtyExit,
   shouldRelaunchAgentAfterCtrlCRespawn,
@@ -93,6 +101,30 @@ process.on('SIGINT', () => cleanup(0));
 // ─── Sesiones PTY persistentes ────────────────────────────────────────────────
 // Clave: sessionId → { ptyProcess, history: string[], clients: Set<WebSocket> }
 const sessions = new Map();
+
+// ─── Token compartido para hooks bridge (Antigravity out-of-process) ─────────
+// Los hooks de Antigravity corren fuera de cualquier sesión PTY, así que no
+// heredan el hookToken por sesión. Autentican con un único token compartido que
+// se escribe en ~/.devhub/hook-bridge.json al arrancar (ver bridgeConfig).
+// Paridad con getBridgeToken() de src/lib/terminal/ttyServer.js.
+let sidecarBridgeToken = null;
+function getSidecarBridgeToken() {
+  if (!sidecarBridgeToken) {
+    sidecarBridgeToken = generateSessionHookToken();
+  }
+  return sidecarBridgeToken;
+}
+
+function writeSidecarHookBridgeConfig() {
+  try {
+    const bridgeHookUrl = process.env.DEVHUB_HOOK_URL || `http://127.0.0.1:${PORT}/agent-hook`;
+    writeHookBridgeConfig({ url: bridgeHookUrl, token: getSidecarBridgeToken() });
+    console.log(`[Sidecar] hook bridge config → ${bridgeHookUrl}`);
+  } catch (err) {
+    // Non-fatal: los bridges hacen fail-open sin el archivo de discovery.
+    console.warn('[Sidecar] hook bridge config write FAILED (non-fatal):', err?.message);
+  }
+}
 
 function killTmuxSessionBestEffort(sessionName) {
   const normalized = String(sessionName || '').trim();
@@ -192,6 +224,8 @@ function resetSessionAfterTuiPtyDeath(session) {
   session.agentTuiState = null;
   session.agentTuiStateAt = null;
   session.hookState = null;
+  session.agentLaunchOrigin = null;
+  session._typedAgentReaper = null;
   // Keep opencodeSessionId for Relanzar; drop live TUI markers so a later
   // intentional `exit` is not treated as another Ctrl+C TUI death.
   session.agentType = null;
@@ -200,6 +234,15 @@ function resetSessionAfterTuiPtyDeath(session) {
 
 function finalizeSidecarSessionExit(session, exitCode, signal) {
   console.log(`[Sidecar] Session ${session.id} exited.`, { exitCode, signal });
+  // N7: final agent-state frame (idle, reason 'exit') BEFORE the exit frame so
+  // clients get a deterministic "agent finished" signal instead of a dangling
+  // running/blocked badge.
+  if (session.agentType) {
+    broadcastSessionPayload(
+      session,
+      buildAgentStateFrame(session, 'idle', { reason: 'exit', at: Date.now() })
+    );
+  }
   broadcastSessionPayload(session, {
     type: 'exit',
     exitCode: exitCode ?? 0,
@@ -351,9 +394,12 @@ function attachSidecarPtyHandlers(session) {
       }
 
       // Detect TUI readiness for agents started without an explicit initialCommand.
+      // W7: output-detected agents live in tmux/pre-attached panes — mark the
+      // origin so the typed-agent reaper never touches them.
       if (detectKimiTuiReady(filteredData)) {
         if (!session.agentType) {
           applyAgentTuiDetection(session, 'kimi');
+          session.agentLaunchOrigin = 'output';
         }
       } else if (detectOpenCodeTuiReady(filteredData)) {
         if (session.mode !== 'tui') {
@@ -362,6 +408,7 @@ function attachSidecarPtyHandlers(session) {
         }
         if (!session.agentType) {
           applyAgentTuiDetection(session, 'opencode');
+          session.agentLaunchOrigin = 'output';
         }
         if (session.tmuxSession && !session._opencodeReadyMarkerWritten) {
           writeOpencodeReadyMarker(session.tmuxSession, {
@@ -371,16 +418,34 @@ function attachSidecarPtyHandlers(session) {
           });
           session._opencodeReadyMarkerWritten = true;
         }
+      } else if (detectAntigravityTuiReady(filteredData)) {
+        // W1: Antigravity output-based start detection (tmux/swarm pre-attach).
+        if (!session.agentType) {
+          applyAgentTuiDetection(session, 'agy');
+          session.agentLaunchOrigin = 'output';
+        }
+        if (session.tmuxSession && !session._antigravityReadyMarkerWritten) {
+          writeAntigravityReadyMarker(session.tmuxSession, {
+            sessionId,
+            reason: 'sidecar-tui-footer',
+          });
+          session._antigravityReadyMarkerWritten = true;
+        }
       }
 
       if (filteredData.length > 0) {
         const ingestResult = ingestAgentDetectionFromFilteredOutput(session, filteredData, now);
+        session._lastAgentStateEvent = ingestResult;
         if (ingestResult.published && session.agentTuiState) {
-          broadcastSessionPayload(session, {
-            type: 'agent-state',
-            agentTuiState: session.agentTuiState,
-            at: session.agentTuiStateAt,
-          });
+          broadcastSessionPayload(session, buildAgentStateFrame(session, session.agentTuiState));
+        }
+
+        // W7: reap typed-launch agents whose child process exited (shell
+        // prompt returned). Emits a terminal agent-state frame (idle, reason
+        // 'agent-exit') so clients get a deterministic "agent finished".
+        const agentExitFrame = reapTypedAgentSessionIfExited(session, filteredData, now);
+        if (agentExitFrame) {
+          broadcastSessionPayload(session, agentExitFrame);
         }
       }
     }
@@ -609,7 +674,23 @@ app.post('/agent-hook', (req, res) => {
   if (jsonStr.length > 4096) {
     return res.status(400).json({ error: 'Payload size exeeded 4KB limit' });
   }
-  const result = handleHookReport(sessions, req.body, Date.now());
+
+  // Los reportes del bridge (antigravity-bridge.mjs) llevan un token compartido
+  // y SIN terminalId — se rutean por conversationId/workspacePaths. Paridad con
+  // src/app/api/terminal/agent-hook/route.js.
+  const body = req.body || {};
+  const isBridgeReport =
+    body &&
+    typeof body === 'object' &&
+    body.source === ANTIGRAVITY_BRIDGE_SOURCE &&
+    !body.terminalId;
+
+  const result = isBridgeReport
+    ? handleBridgeHookReport(sessions, body, Date.now(), {
+        bridgeToken: getSidecarBridgeToken(),
+      })
+    : handleHookReport(sessions, body, Date.now());
+
   if (result.status !== 204) {
     return res.status(result.status).json({ error: result.error });
   }
@@ -680,11 +761,12 @@ wss.on('connection', (ws, req) => {
   // estable (p.ej. idle/running sostenido) no vería badge hasta el próximo
   // cambio o hasta que el poll HTTP responda.
   if (session.agentTuiState) {
-    sendToClient(ws, {
-      type: 'agent-state',
-      agentTuiState: session.agentTuiState,
-      at: session.agentTuiStateAt ?? Date.now(),
-    });
+    sendToClient(
+      ws,
+      buildAgentStateFrame(session, session.agentTuiState, {
+        at: session.agentTuiStateAt ?? Date.now(),
+      })
+    );
   }
 
   if (session.opencodeSessionId) {
@@ -776,11 +858,7 @@ wss.on('connection', (ws, req) => {
       if (isEnter && session.agentType) {
         const published = notifyUserInput(session);
         if (published && session.agentTuiState) {
-          broadcastSessionPayload(session, {
-            type: 'agent-state',
-            agentTuiState: session.agentTuiState,
-            at: session.agentTuiStateAt,
-          });
+          broadcastSessionPayload(session, buildAgentStateFrame(session, session.agentTuiState));
         }
       }
     }
@@ -822,6 +900,34 @@ server.on('error', (error) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   writeRuntimeFiles();
+  writeSidecarHookBridgeConfig();
+
+  // Front E (paridad con ttyServer): suscribirse al bus SSE de OpenCode cuando
+  // hay un servidor configurado (DEVHUB_OPENCODE_SSE_URL). Fail-open: si el
+  // servidor no está, el cliente reintenta en silencio y el scraping sigue
+  // siendo el fallback.
+  if (process.env.DEVHUB_OPENCODE_SSE_URL) {
+    try {
+      const opencodeSse = createOpenCodeSseClient({
+        baseUrl: process.env.DEVHUB_OPENCODE_SSE_URL,
+        sessions,
+        onFrame: (session, frame) => {
+          for (const client of session.clients || []) {
+            if (client.readyState === WebSocket.OPEN) {
+              try {
+                client.send(JSON.stringify(frame));
+              } catch (_) {}
+            }
+          }
+        },
+      });
+      opencodeSse.start();
+      console.log(`[Sidecar] opencode SSE client → ${process.env.DEVHUB_OPENCODE_SSE_URL}`);
+    } catch (sseErr) {
+      console.warn('[Sidecar] opencode SSE client FAILED (non-fatal):', sseErr?.message);
+    }
+  }
+
   console.log(`[Sidecar] ✅ Sidecar escuchando en http://127.0.0.1:${PORT}`);
   console.log(`[Sidecar]    PID: ${process.pid}`);
   console.log(`[Sidecar]    Shell: ${process.env.SHELL || 'bash'}`);
@@ -833,11 +939,7 @@ server.listen(PORT, '127.0.0.1', () => {
       if (session.agentType) {
         const tickResult = tickAgentDetection(session, Date.now());
         if (tickResult.published && session.agentTuiState) {
-          const payload = {
-            type: 'agent-state',
-            agentTuiState: session.agentTuiState,
-            at: session.agentTuiStateAt,
-          };
+          const payload = buildAgentStateFrame(session, session.agentTuiState);
           for (const client of session.clients) {
             if (client.readyState === WebSocket.OPEN) {
               try {

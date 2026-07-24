@@ -71,16 +71,21 @@ export function hasManifest(agentType) {
 
 const UNKNOWN_DETECTION = {
   state: 'unknown',
-  skipStateUpdate: false,
+  skipStateUpdate: true,
   visibleIdle: false,
   visibleWorking: false,
   visibleBlocker: false,
   matchedRule: null,
 };
 
-const IDLE_FALLBACK_DETECTION = {
-  state: 'idle',
-  skipStateUpdate: false,
+// W4: for an agent WITH a manifest, "no rule matched" is genuinely unknown —
+// NOT idle. Publishing fallback idle here caused false "finished" flips while
+// the agent's footer scrolled offscreen mid-generation. The ingest layer keeps
+// the last published state sticky for 'unknown'; true finish is detected via
+// output quiescence.
+const NO_MATCH_DETECTION = {
+  state: 'unknown',
+  skipStateUpdate: true,
   visibleIdle: false,
   visibleWorking: false,
   visibleBlocker: false,
@@ -106,7 +111,9 @@ export function detectAgentState(agentType, screen, options = {}) {
   }
 
   const cleanScreen = stripAnsi(screen || '');
-  const isCancellation = /(?:\^C|\binterrupted\b|\bcancelled\b|\bcanceled\b|\baborted\b)/i.test(cleanScreen);
+  const isCancellation = /(?:\^C|\binterrupted\b|\bcancelled\b|\bcanceled\b|\baborted\b)/i.test(
+    cleanScreen
+  );
 
   const detected = evaluateManifest(manifest, {
     screen: cleanScreen,
@@ -118,9 +125,15 @@ export function detectAgentState(agentType, screen, options = {}) {
     detected.wasCancelled = true;
   }
 
-  // Known agent with no manifest match → assume idle, not unknown.
+  // Known agent with manifest but no rule match → 'unknown' (sticky, non-evidence),
+  // never fallback idle (W4). Explicit manifest rules with state 'unknown'
+  // (e.g. claude transcript_viewer / model_picker) are returned as-is so their
+  // matchedRule and skipStateUpdate semantics survive.
   if (detected.state === 'unknown') {
-    return IDLE_FALLBACK_DETECTION;
+    if (detected.matchedRule) {
+      return detected;
+    }
+    return { ...NO_MATCH_DETECTION, wasCancelled: detected.wasCancelled };
   }
 
   return detected;

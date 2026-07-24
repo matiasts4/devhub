@@ -48,9 +48,12 @@ describe('agentStateDetection', () => {
       expect(result.visibleBlocker).toBe(false);
     });
 
-    test('returns idle fallback for known agents with no rule match', () => {
+    test('returns unknown (sticky, non-evidence) for known agents with no rule match', () => {
+      // W4: no-match for an agent WITH a manifest is 'unknown', never fallback idle.
       const result = detectAgentState('kimi', 'plain unrelated output');
-      expect(result.state).toBe('idle');
+      expect(result.state).toBe('unknown');
+      expect(result.skipStateUpdate).toBe(true);
+      expect(result.visibleIdle).toBe(false);
     });
 
     test('kimi detects approval blocker', () => {
@@ -87,9 +90,34 @@ describe('agentStateDetection', () => {
       expect(result.visibleWorking).toBe(true);
     });
 
-    test('agy falls back to idle with no rule match', () => {
+    test('agy returns unknown (not idle) with no rule match', () => {
       const result = detectAgentState('agy', 'plain unrelated output');
-      expect(result.state).toBe('idle');
+      expect(result.state).toBe('unknown');
+      expect(result.skipStateUpdate).toBe(true);
+    });
+
+    test('agy detects localized (Spanish) spinner verbs as running (W9)', () => {
+      for (const line of [
+        '⠋ Leyendo',
+        '⠇ Analizando',
+        '⠏ Generando la respuesta',
+        '  ⠴ Escribiendo',
+      ]) {
+        const result = detectAgentState('agy', line);
+        expect(result.state).toBe('running');
+        expect(result.visibleWorking).toBe(true);
+      }
+    });
+
+    test('agy detects Spanish spinner from fixture', () => {
+      const fixturePath = path.resolve(
+        __dirname,
+        '../../../../../tests/fixtures/agent-screens/antigravity-working-spanish.txt'
+      );
+      const screen = fs.readFileSync(fixturePath, 'utf8');
+      const result = detectAgentState('agy', screen);
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
     });
 
     test('agy does not stay running from stale spinner lines in scrollback', () => {
@@ -346,6 +374,45 @@ describe('agentStateDetection', () => {
         visibleWorking: true,
         visibleBlocker: false,
       });
+    });
+
+    test('unknown detections never publish and keep the stable state sticky (W4)', () => {
+      const sm = new AgentStateMachine();
+      sm.publish(
+        { state: 'running', visibleIdle: false, visibleWorking: true, visibleBlocker: false },
+        0
+      );
+      const published = sm.publish(
+        { state: 'unknown', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
+        1000
+      );
+      expect(published).toBeNull();
+      expect(sm.state).toBe('running');
+    });
+
+    test('unknown does not confirm nor cancel a pending running->idle transition (W4)', () => {
+      const sm = new AgentStateMachine();
+      sm.publish(
+        { state: 'running', visibleIdle: false, visibleWorking: true, visibleBlocker: false },
+        0
+      );
+      // Start a pending idle
+      sm.publish(
+        { state: 'idle', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
+        100
+      );
+      expect(sm.pendingIdle).not.toBeNull();
+      // Unknown screens in between must not advance the confirmation counter
+      sm.publish(
+        { state: 'unknown', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
+        200
+      );
+      sm.publish(
+        { state: 'unknown', visibleIdle: false, visibleWorking: false, visibleBlocker: false },
+        300
+      );
+      expect(sm.pendingIdle.confirmations).toBe(0);
+      expect(sm.state).toBe('running');
     });
   });
 });
