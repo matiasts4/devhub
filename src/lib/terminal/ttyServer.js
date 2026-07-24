@@ -27,6 +27,7 @@ import { processOscTitle, stripOscTitleSequences } from './oscTitleParser.js';
 import { processOscProgress } from './oscProgressParser.js';
 import {
   ingestAgentDetectionFromFilteredOutput,
+  notifyUserInput,
   tickAgentDetection,
 } from './sessionAgentDetector.js';
 import { buildSessionHookEnv, generateSessionHookToken } from './agentHooks/hookEnv.js';
@@ -282,7 +283,9 @@ function resolvePtyRespawnPolicy() {
       agentType = null,
     } = {}) {
       if (inputFocused) return false;
-      return (typeof launchCommand === 'string' && launchCommand.trim().length > 0) || Boolean(agentType);
+      return (
+        (typeof launchCommand === 'string' && launchCommand.trim().length > 0) || Boolean(agentType)
+      );
     },
   };
 }
@@ -861,7 +864,8 @@ function buildSessionSpawnConfig(
   const resolvedShell = resolveShell();
   // Hook environment for agent lifecycle state reporting
   const ttyPort = process.env.PORT || '3000';
-  const hookUrl = process.env.DEVHUB_HOOK_URL || `http://127.0.0.1:${ttyPort}/api/terminal/agent-hook`;
+  const hookUrl =
+    process.env.DEVHUB_HOOK_URL || `http://127.0.0.1:${ttyPort}/api/terminal/agent-hook`;
   const hookEnv = buildSessionHookEnv({
     session: { id: terminalId, hookToken: options.hookToken },
     hookUrl,
@@ -924,9 +928,10 @@ function buildSessionSpawnConfig(
 
 /**
  * createSession — creates a PTY session and adds it to the sessions map.
- * Calls saveSessions after creation.
+ * Calls saveSessions after creation unless skipSave is set (bulk callers such as
+ * restoreSessions persist once at the end instead of once per session).
  *
- * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean }} opts
+ * @param {{ id: string, cwd?: string, shell?: string, restored?: boolean, skipSave?: boolean }} opts
  */
 export function createSession({
   id,
@@ -935,6 +940,7 @@ export function createSession({
   restored = false,
   swarmContext = null,
   initialCommand = null,
+  skipSave = false,
 } = {}) {
   // Auto-generate id when caller does not provide one (e.g. POST /api/terminal/session).
   // Without this, the route returns { id: undefined } → JSON.stringify drops the key → the
@@ -1078,7 +1084,9 @@ export function createSession({
 
   wireSessionPty(session, sessions);
 
-  saveSessions(sessions);
+  if (!skipSave) {
+    saveSessions(sessions);
+  }
   return session;
 }
 
@@ -1625,10 +1633,14 @@ function startIdleCleanup(sessions) {
  * clears it after all restores complete. React reads this flag to block relaunch dispatches.
  */
 export function restoreSessions() {
+  const restoreStartMs = Date.now();
   const saved = loadSessions();
   let zombieCount = 0;
   let skippedNoPid = 0;
   let shellEphemeralRestored = 0;
+  // Tracks whether the sessions map changed so the restore persists once at the
+  // end instead of paying one sync disk write per createSession call.
+  let restoreDirty = false;
   const sessions = getOrInitSessions();
 
   // Set mutex flag before restore begins
@@ -1682,6 +1694,7 @@ export function restoreSessions() {
           cwd: s.cwd,
           shell: s.shell,
           restored: true,
+          skipSave: true,
           swarmContext:
             s.swarmRole || s.swarmId
               ? {
@@ -1691,6 +1704,7 @@ export function restoreSessions() {
                 }
               : null,
         });
+        restoreDirty = true;
 
         // Verify the newly spawned PTY is actually alive
         if (restored.ptyPid && typeof process.kill === 'function') {
@@ -1727,6 +1741,7 @@ export function restoreSessions() {
             cwd: s.cwd,
             shell: s.shell,
             restored: true,
+            skipSave: true,
             swarmContext:
               s.swarmRole || s.swarmId
                 ? {
@@ -1736,6 +1751,7 @@ export function restoreSessions() {
                   }
                 : null,
           });
+          restoreDirty = true;
           ttyLog('RESTORE', `restored shell-ephemeral session`, {
             id: s.id,
             cwd: s.cwd,
@@ -1774,6 +1790,7 @@ export function restoreSessions() {
         cwd: s.cwd,
         shell: s.shell,
         restored: true,
+        skipSave: true,
         swarmContext:
           s.swarmRole || s.swarmId
             ? {
@@ -1783,6 +1800,7 @@ export function restoreSessions() {
               }
             : null,
       });
+      restoreDirty = true;
       if (restored.ptyPid && typeof process.kill === 'function') {
         try {
           process.kill(restored.ptyPid, 0);
@@ -1795,6 +1813,12 @@ export function restoreSessions() {
       console.warn(`[ttyServer] Failed to restore session ${s.id}:`, err);
       ttyLog('RESTORE', `restore failed`, { id: s.id, error: err?.message });
     }
+  }
+
+  // Persist the whole restore in a single disk write (after any zombie deletes
+  // above) instead of one sync write per restored session inside createSession.
+  if (restoreDirty) {
+    saveSessions(sessions);
   }
 
   // Clear mutex flag after all restores complete
@@ -1820,6 +1844,14 @@ export function restoreSessions() {
       `[ttyServer][RESTORE] Restored ${shellEphemeralRestored} shell-ephemeral session(s)`
     );
   }
+
+  ttyLog('RESTORE', `restoreSessions completed`, {
+    durationMs: Date.now() - restoreStartMs,
+    savedCount: saved.length,
+    zombieCount,
+    skippedNoPid,
+    shellEphemeralRestored,
+  });
 }
 
 export async function ensureTTYServer() {
@@ -1960,6 +1992,7 @@ export async function ensureTTYServer() {
       });
 
       let terminal;
+      const spawnStartMs = Date.now();
       try {
         terminal = pty.spawn(shell, spawnArgs, {
           name: 'xterm-256color',
@@ -1968,9 +2001,17 @@ export async function ensureTTYServer() {
           cwd,
           env,
         });
-        ttyLog('WS_CONN', `PTY spawned`, { terminalId, pid: terminal.pid });
+        ttyLog('WS_CONN', `PTY spawned`, {
+          terminalId,
+          pid: terminal.pid,
+          durationMs: Date.now() - spawnStartMs,
+        });
       } catch (spawnErr) {
-        ttyLog('WS_CONN', `PTY spawn FAILED`, { terminalId, error: spawnErr?.message });
+        ttyLog('WS_CONN', `PTY spawn FAILED`, {
+          terminalId,
+          error: spawnErr?.message,
+          durationMs: Date.now() - spawnStartMs,
+        });
         socket.close();
         return;
       }
@@ -2067,21 +2108,36 @@ export async function ensureTTYServer() {
         );
       }
 
-      // Full-screen TUIs and live shell reattaches: redraw from the live PTY instead of
-      // replaying stale history onto a fresh canvas (double PS1). Skip redraw on the first
-      // client attach after a server-only pre-spawn — the canvas is empty and Ctrl+L duplicates prompts.
+      // Full-screen TUIs and live shell reattaches: local xterm repaint is used
+      // instead of sending Ctrl+\x0c to the PTY process, preserving TUI scrollback.
+      // Exception: TUI session WITHOUT a stored snapshot, on reattach (panel
+      // remount) or on first attach after a server-side restore — the v2
+      // subscribe starts at the live offset, so without a redraw the fresh
+      // canvas stays black except for new output (black transcript + live
+      // footer). Arm a one-shot Ctrl+L that fires right after the client
+      // subscribes (ordering guaranteed) so Ink/readline TUIs repaint their
+      // full frame. Shells never get it (Ctrl+L duplicates the prompt); TUI
+      // reattach WITH a snapshot restores the serialized screen instead
+      // (Ctrl+L can clear TUI scrollback).
+      // Note: isFirstClientAttach is always true here because
+      // replaceSessionSockets evicts prior sockets — do not gate on it.
+      const armTuiReattachRedraw =
+        session.mode === 'tui' &&
+        !session.snapshot?.serialized &&
+        (isSessionReattach || session.restored === true);
+      if (armTuiReattachRedraw) {
+        session._pendingTuiReattachRedraw = true;
+      }
       if (
         isSessionReattach &&
         !isFirstClientAttach &&
         (session.mode === 'tui' || session.mode === 'shell')
       ) {
-        setTimeout(() => {
-          try {
-            session.pty.write('\x0c'); // Ctrl+L redraw
-          } catch {
-            // Ignore redraw errors on stale PTY handles.
-          }
-        }, 30);
+        ttyLog('WS_CONN', `reattached to live session — relying on local canvas repaint`, {
+          terminalId,
+          mode: session.mode,
+          tuiRedrawArmed: armTuiReattachRedraw,
+        });
       }
     }
 
@@ -2113,7 +2169,35 @@ export async function ensureTTYServer() {
           message.data
         );
         if (filteredInput === null) return;
+
         detectSessionModeFromInput(session, filteredInput);
+
+        if (typeof filteredInput === 'string' && filteredInput.length > 0) {
+          const isEnter = filteredInput.includes('\r') || filteredInput.includes('\n');
+          if (isEnter && session.agentType) {
+            const published = notifyUserInput(session);
+            if (published && session.agentTuiState && session.sockets) {
+              const statePayload = JSON.stringify({
+                type: 'agent-state',
+                agentTuiState: session.agentTuiState,
+                at: session.agentTuiStateAt,
+              });
+              for (const socket of session.sockets) {
+                if (socket.readyState === socket.OPEN) {
+                  try {
+                    socket.send(statePayload);
+                  } catch (err) {
+                    ttyLog('WARN', 'Failed to send agent-state frame', {
+                      id: session.id,
+                      error: err?.message,
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+
         session.lastActivityAt = Date.now();
         try {
           session.pty.write(filteredInput);
@@ -2220,6 +2304,41 @@ export async function ensureTTYServer() {
         }
 
         session.v2Subscribers.add(socket);
+
+        // One-shot TUI reattach redraw (armed at WS connect when there is no
+        // snapshot): fires only after this subscribe, so the Ink/readline
+        // full-frame repaint streams live to the just-subscribed client.
+        if (session._pendingTuiReattachRedraw) {
+          session._pendingTuiReattachRedraw = false;
+          setTimeout(() => {
+            try {
+              session.pty.write('\x0c'); // Ctrl+L full-frame redraw
+            } catch {
+              // Ignore redraw errors on stale PTY handles.
+            }
+            // kimi (Ink) only repaints its status bar on Ctrl+L — verified live:
+            // ~214 bytes vs ~11.5KB full frame after a real SIGWINCH. A resize
+            // wobble (rows-1 → rows) forces the full transcript repaint and
+            // lands back on the session's real dims. Mirrors sidecar-backend.
+            if (session.agentType === 'kimi') {
+              const { cols, rows } = session.termsize || {};
+              if (Number.isInteger(cols) && Number.isInteger(rows) && rows > 1) {
+                try {
+                  session.pty.resize(cols, rows - 1);
+                } catch {
+                  // ignore resize errors on stale PTY handles
+                }
+                setTimeout(() => {
+                  try {
+                    session.pty.resize(cols, rows);
+                  } catch {
+                    // ignore resize errors on stale PTY handles
+                  }
+                }, 150);
+              }
+            }
+          }, 50);
+        }
 
         // Phase 2 terminal-engine-v2: send canonical metadata so the frontend
         // can apply termsize + cwd after replaying buffered output. The

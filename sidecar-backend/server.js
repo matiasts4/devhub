@@ -22,6 +22,7 @@ const { buildSidecarSpawnConfig, parseBooleanQueryFlag } = require('./sessionSpa
 const {
   ensureAgentDetectionSession,
   ingestAgentDetectionFromFilteredOutput,
+  notifyUserInput,
   tickAgentDetection,
   processOscTitle,
   stripOscTitleSequences,
@@ -314,13 +315,14 @@ function attachSidecarPtyHandlers(session) {
       return;
     }
 
-    // Guardar en buffer (máx 10000 chars)
+    // Guardar en buffer (máx 10000 chars) con seguimiento incremental O(1)
     if (session.historyEnabled) {
       session.history.push(filteredData);
-    }
-    const totalLen = session.history.reduce((acc, s) => acc + s.length, 0);
-    while (session.history.length > 1 && totalLen > 10000) {
-      session.history.shift();
+      session.historyTotalLen = (session.historyTotalLen || 0) + filteredData.length;
+      while (session.history.length > 1 && session.historyTotalLen > 10000) {
+        const shifted = session.history.shift();
+        if (shifted) session.historyTotalLen -= shifted.length;
+      }
     }
 
     // Las TUIs de agentes apagan historyEnabled (para no re-pintar frames en el
@@ -330,47 +332,56 @@ function attachSidecarPtyHandlers(session) {
       session.outputTail = (session.outputTail + filteredData).slice(-32768);
     }
 
-    // Enviar a todos los clientes activos
-    const detectedSessionId = detectOpenCodeSessionId(filteredData);
-    if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
-      session.opencodeSessionId = detectedSessionId;
-      broadcastSessionPayload(session, {
-        type: 'opencode-session-detected',
-        sessionId: detectedSessionId,
-      });
-    }
+    // Fast-path: micro-chunks (tecleo estándar de 1-4 caracteres sin ESC) no requieren parser pesado de TUIs
+    const isMicroChunk =
+      typeof filteredData === 'string' &&
+      filteredData.length <= 4 &&
+      !filteredData.includes('\x1b');
 
-    // Detect TUI readiness for agents started without an explicit initialCommand.
-    if (detectKimiTuiReady(filteredData)) {
-      if (!session.agentType) {
-        applyAgentTuiDetection(session, 'kimi');
+    if (!isMicroChunk && typeof filteredData === 'string') {
+      if (filteredData.includes('ses_') || filteredData.includes('opencode')) {
+        const detectedSessionId = detectOpenCodeSessionId(filteredData);
+        if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
+          session.opencodeSessionId = detectedSessionId;
+          broadcastSessionPayload(session, {
+            type: 'opencode-session-detected',
+            sessionId: detectedSessionId,
+          });
+        }
       }
-    } else if (detectOpenCodeTuiReady(filteredData)) {
-      if (session.mode !== 'tui') {
-        session.mode = 'tui';
-        session.historyEnabled = false;
-      }
-      if (!session.agentType) {
-        applyAgentTuiDetection(session, 'opencode');
-      }
-      if (session.tmuxSession && !session._opencodeReadyMarkerWritten) {
-        writeOpencodeReadyMarker(session.tmuxSession, {
-          sessionId,
-          opencodeSessionId: session.opencodeSessionId || null,
-          reason: 'sidecar-tui-footer',
-        });
-        session._opencodeReadyMarkerWritten = true;
-      }
-    }
 
-    if (typeof filteredData === 'string' && filteredData.length > 0) {
-      const ingestResult = ingestAgentDetectionFromFilteredOutput(session, filteredData, now);
-      if (ingestResult.published && session.agentTuiState) {
-        broadcastSessionPayload(session, {
-          type: 'agent-state',
-          agentTuiState: session.agentTuiState,
-          at: session.agentTuiStateAt,
-        });
+      // Detect TUI readiness for agents started without an explicit initialCommand.
+      if (detectKimiTuiReady(filteredData)) {
+        if (!session.agentType) {
+          applyAgentTuiDetection(session, 'kimi');
+        }
+      } else if (detectOpenCodeTuiReady(filteredData)) {
+        if (session.mode !== 'tui') {
+          session.mode = 'tui';
+          session.historyEnabled = false;
+        }
+        if (!session.agentType) {
+          applyAgentTuiDetection(session, 'opencode');
+        }
+        if (session.tmuxSession && !session._opencodeReadyMarkerWritten) {
+          writeOpencodeReadyMarker(session.tmuxSession, {
+            sessionId,
+            opencodeSessionId: session.opencodeSessionId || null,
+            reason: 'sidecar-tui-footer',
+          });
+          session._opencodeReadyMarkerWritten = true;
+        }
+      }
+
+      if (filteredData.length > 0) {
+        const ingestResult = ingestAgentDetectionFromFilteredOutput(session, filteredData, now);
+        if (ingestResult.published && session.agentTuiState) {
+          broadcastSessionPayload(session, {
+            type: 'agent-state',
+            agentTuiState: session.agentTuiState,
+            at: session.agentTuiStateAt,
+          });
+        }
       }
     }
 
@@ -693,6 +704,42 @@ wss.on('connection', (ws, req) => {
     lastActivityAgeMs: Date.now() - (session?.lastActivityAt || 0),
   });
 
+  // Reattach de TUI de agente (kimi/grok/opencode): el cliente monta un canvas
+  // xterm nuevo y VACÍO — las TUIs apagan historyEnabled, así que el replay de
+  // arriba no trae nada y el panel queda negro salvo por output nuevo (p.ej.
+  // solo el footer). Pedimos a la app que repinte (Ctrl+L); shells excluidos:
+  // Ctrl+L duplicaría el prompt (su history replay sí cubre el reattach).
+  // Este contrato debe mantenerse en paralelo con src/lib/terminal/ttyServer.js
+  // (_pendingTuiReattachRedraw, que además lo salta cuando hay snapshot v2).
+  if (isReattach && session.mode === 'tui') {
+    setTimeout(() => {
+      try {
+        if (!sessions.has(sessionId)) return;
+        if (!session.ptyProcess) return;
+        session.ptyProcess.write('\x0c'); // Ctrl+L → repintado de la TUI
+
+        // kimi (Ink) solo repinta su status bar con Ctrl+L — verificado en vivo:
+        // ~214 bytes vs ~11.5KB de frame completo tras un SIGWINCH real. Un
+        // wobble de resize (rows-1 → rows) fuerza el repaint completo del
+        // transcript. El resize propio del cliente al conectar ya corrió, así
+        // que terminamos de vuelta en las dims reales de la sesión.
+        if (session.agentType === 'kimi') {
+          const { cols, rows } = session.termsize || {};
+          if (Number.isInteger(cols) && Number.isInteger(rows) && rows > 1) {
+            session.ptyProcess.resize(cols, rows - 1);
+            setTimeout(() => {
+              try {
+                if (!sessions.has(sessionId)) return;
+                if (!session.ptyProcess) return;
+                session.ptyProcess.resize(cols, rows);
+              } catch (_) {}
+            }, 150);
+          }
+        }
+      } catch (_) {}
+    }, 250);
+  }
+
   ws.on('message', (msg) => {
     const payload = parseClientMessage(msg, ws.__devhubTransport || 'raw');
 
@@ -723,6 +770,20 @@ wss.on('connection', (ws, req) => {
     if (filteredInput === null) return;
 
     updateSessionModeFromInput(session, filteredInput);
+
+    if (typeof filteredInput === 'string' && filteredInput.length > 0) {
+      const isEnter = filteredInput.includes('\r') || filteredInput.includes('\n');
+      if (isEnter && session.agentType) {
+        const published = notifyUserInput(session);
+        if (published && session.agentTuiState) {
+          broadcastSessionPayload(session, {
+            type: 'agent-state',
+            agentTuiState: session.agentTuiState,
+            at: session.agentTuiStateAt,
+          });
+        }
+      }
+    }
 
     const detectedSessionId = detectOpenCodeSessionId(filteredInput);
     if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {

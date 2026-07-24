@@ -37,6 +37,7 @@ __export(sidecarAgentDetectionEntry_exports, {
   handleHookReport: () => handleHookReport,
   hasFreshHookAuthority: () => hasFreshHookAuthority,
   ingestAgentDetectionFromFilteredOutput: () => ingestAgentDetectionFromFilteredOutput,
+  notifyUserInput: () => notifyUserInput,
   processOscProgress: () => processOscProgress,
   processOscTitle: () => processOscTitle,
   stripOscTitleSequences: () => stripOscTitleSequences,
@@ -1400,10 +1401,14 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
     oscTitle: session.title || "",
     oscProgress: session.oscProgress || ""
   });
+  if (detected.visibleWorking) {
+    session.lastWorkingAt = now;
+  }
   if (detected.skipStateUpdate) {
     return result;
   }
-  if (session.agentTuiState === "running" && detected.state === "idle" && !detected.visibleIdle) {
+  const isQuiescent = session.lastWorkingAt && now - session.lastWorkingAt > 2500;
+  if (session.agentTuiState === "running" && detected.state === "idle" && !detected.visibleIdle && !isQuiescent) {
     return result;
   }
   session.lastDetection = detected;
@@ -1421,6 +1426,24 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
   }
   return result;
 }
+function notifyUserInput(session, now = Date.now()) {
+  ensureAgentDetectionSession(session);
+  session.lastUserInputAt = now;
+  session.lastWorkingAt = now;
+  const detection = {
+    state: "running",
+    visibleIdle: false,
+    visibleWorking: true,
+    visibleBlocker: false
+  };
+  session.lastDetection = detection;
+  const published = session.agentStateMachine.publish(detection, now, { bypassHold: true });
+  if (published) {
+    session.agentTuiState = published.state;
+    session.agentTuiStateAt = now;
+  }
+  return published;
+}
 function tickAgentDetection(session, now = Date.now()) {
   ensureAgentDetectionSession(session);
   const result = {
@@ -1435,12 +1458,15 @@ function tickAgentDetection(session, now = Date.now()) {
   const ptyPid = session.ptyPid || pty && pty.pid;
   if (!pty || !ptyPid) {
     session.hookState = null;
-    const published = session.agentStateMachine.publish({
-      state: "idle",
-      visibleIdle: true,
-      visibleWorking: false,
-      visibleBlocker: false
-    }, now);
+    const published = session.agentStateMachine.publish(
+      {
+        state: "idle",
+        visibleIdle: true,
+        visibleWorking: false,
+        visibleBlocker: false
+      },
+      now
+    );
     if (published) {
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
@@ -1463,6 +1489,24 @@ function tickAgentDetection(session, now = Date.now()) {
   const state = session.agentTuiState;
   const isRunningOrBlocked = state === "running" || state === "blocked";
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
+  if (state === "running" && session.lastWorkingAt && now - session.lastWorkingAt > 2500) {
+    const fallbackIdle = {
+      state: "idle",
+      visibleIdle: false,
+      visibleWorking: false,
+      visibleBlocker: false
+    };
+    session.lastDetection = fallbackIdle;
+    const published = session.agentStateMachine.publish(fallbackIdle, now, { bypassHold: true });
+    if (published) {
+      session.agentTuiState = published.state;
+      session.agentTuiStateAt = now;
+      result.published = published;
+      result.agentTuiState = published.state;
+      result.agentTuiStateAt = now;
+    }
+    return result;
+  }
   if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle) {
     return result;
   }
@@ -1608,6 +1652,7 @@ function handleHookReport(sessionsMap, body, now = Date.now()) {
   handleHookReport,
   hasFreshHookAuthority,
   ingestAgentDetectionFromFilteredOutput,
+  notifyUserInput,
   processOscProgress,
   processOscTitle,
   stripOscTitleSequences,

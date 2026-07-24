@@ -4,6 +4,7 @@
 export {
   ensureAgentDetectionSession,
   ingestAgentDetectionFromFilteredOutput,
+  notifyUserInput,
   tickAgentDetection,
   HOOK_AUTHORITY_TTL_MS,
   hasFreshHookAuthority,
