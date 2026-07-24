@@ -22,7 +22,9 @@ export function hasFreshHookAuthority(session, now = Date.now()) {
   }
 
   // P3-2: Only agents in authority allowlist (kimi, claude, opencode) take precedence over screen detection
-  const sourceAgent = session.hookState.source ? session.hookState.source.replace(/^devhub:/, '') : null;
+  const sourceAgent = session.hookState.source
+    ? session.hookState.source.replace(/^devhub:/, '')
+    : null;
   const agentType = session.agentType || sourceAgent;
   if (!agentType || !HOOK_AUTHORITY_AGENTS.includes(agentType)) {
     return false;
@@ -98,13 +100,23 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
     oscProgress: session.oscProgress || '',
   });
 
+  if (detected.visibleWorking) {
+    session.lastWorkingAt = now;
+  }
+
   if (detected.skipStateUpdate) {
     return result;
   }
 
-  // Do not degrade a running state to fallback idle during streaming output unless
-  // an explicit idle prompt matched (visibleIdle: true) or process/hook authority changed.
-  if (session.agentTuiState === 'running' && detected.state === 'idle' && !detected.visibleIdle) {
+  // Do not degrade a running state to fallback idle during streaming output UNLESS
+  // an explicit idle prompt matched (visibleIdle: true) OR no working signals arrived for > 2500ms
+  const isQuiescent = session.lastWorkingAt && now - session.lastWorkingAt > 2500;
+  if (
+    session.agentTuiState === 'running' &&
+    detected.state === 'idle' &&
+    !detected.visibleIdle &&
+    !isQuiescent
+  ) {
     return result;
   }
 
@@ -128,6 +140,33 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
 }
 
 /**
+ * Notify the detector that the user submitted input (Enter key / stdin) to the agent session.
+ * Immediately transitions session state to 'running' to eliminate API TTFT detection lag.
+ */
+export function notifyUserInput(session, now = Date.now()) {
+  ensureAgentDetectionSession(session);
+  session.lastUserInputAt = now;
+  session.lastWorkingAt = now;
+
+  const detection = {
+    state: 'running',
+    visibleIdle: false,
+    visibleWorking: true,
+    visibleBlocker: false,
+  };
+
+  session.lastDetection = detection;
+
+  const published = session.agentStateMachine.publish(detection, now, { bypassHold: true });
+  if (published) {
+    session.agentTuiState = published.state;
+    session.agentTuiStateAt = now;
+  }
+
+  return published;
+}
+
+/**
  * Tick agent detection logic on an active session.
  */
 export function tickAgentDetection(session, now = Date.now()) {
@@ -148,12 +187,15 @@ export function tickAgentDetection(session, now = Date.now()) {
   const ptyPid = session.ptyPid || (pty && pty.pid);
   if (!pty || !ptyPid) {
     session.hookState = null; // Clear hook authority on dead PTY
-    const published = session.agentStateMachine.publish({
-      state: 'idle',
-      visibleIdle: true,
-      visibleWorking: false,
-      visibleBlocker: false
-    }, now);
+    const published = session.agentStateMachine.publish(
+      {
+        state: 'idle',
+        visibleIdle: true,
+        visibleWorking: false,
+        visibleBlocker: false,
+      },
+      now
+    );
     if (published) {
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
@@ -181,6 +223,26 @@ export function tickAgentDetection(session, now = Date.now()) {
   const state = session.agentTuiState;
   const isRunningOrBlocked = state === 'running' || state === 'blocked';
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
+
+  // Output Quiescence: If running and no working signals for > 2500ms, transition to idle
+  if (state === 'running' && session.lastWorkingAt && now - session.lastWorkingAt > 2500) {
+    const fallbackIdle = {
+      state: 'idle',
+      visibleIdle: false,
+      visibleWorking: false,
+      visibleBlocker: false,
+    };
+    session.lastDetection = fallbackIdle;
+    const published = session.agentStateMachine.publish(fallbackIdle, now, { bypassHold: true });
+    if (published) {
+      session.agentTuiState = published.state;
+      session.agentTuiStateAt = now;
+      result.published = published;
+      result.agentTuiState = published.state;
+      result.agentTuiStateAt = now;
+    }
+    return result;
+  }
 
   if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle) {
     return result;

@@ -1106,16 +1106,22 @@ var antigravity_default = {
           lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s+[a-z]\\w*ing\\b"]
         },
         {
-          lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"]
+          lineRegex: [
+            "(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"
+          ]
         },
         {
-          lineRegex: ["(?i)^\\s*\xB7\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"]
+          lineRegex: [
+            "(?i)^\\s*\xB7\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"
+          ]
         },
         {
           lineRegex: ["(?i)^\\s*tool\\s+call\\b"]
         },
         {
-          lineRegex: ["(?i)\\b(thinking|analyzing|executing|reading|writing|searching|working|processing)..."]
+          lineRegex: [
+            "(?i)\\b(thinking|analyzing|executing|reading|writing|searching|working|processing)..."
+          ]
         }
       ]
     },
