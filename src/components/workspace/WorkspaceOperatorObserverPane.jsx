@@ -7,17 +7,6 @@ import { getOperatorSidebarModel } from '@/lib/operations/swarmControl';
 import { persistMissionControlComposerMessage } from '@/lib/operations/swarmControl';
 
 const POLL_INTERVAL_MS = 2000;
-const SSE_RECONNECT_DELAY_MS = 2000;
-
-function formatTime(isoString) {
-  if (!isoString) return '';
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch {
-    return '';
-  }
-}
 
 function OperatorErrorBanner({ message, onRetry }) {
   return (
@@ -77,7 +66,7 @@ function ReconnectingIndicator() {
   );
 }
 
-export default function WorkspaceOperatorObserverPane({ sessionId, onClose }) {
+export default function WorkspaceOperatorObserverPane({ sessionId, onClose: _onClose }) {
   const [feedItems, setFeedItems] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -167,7 +156,7 @@ export default function WorkspaceOperatorObserverPane({ sessionId, onClose }) {
 
     es.addEventListener('session-end', (e) => {
       try {
-        const data = JSON.parse(e.data);
+        JSON.parse(e.data);
         setSessionEnded(true);
         setIsSubmitting(true);
         setIsReconnecting(false);
@@ -176,7 +165,7 @@ export default function WorkspaceOperatorObserverPane({ sessionId, onClose }) {
       }
     });
 
-    es.addEventListener('heartbeat', (e) => {
+    es.addEventListener('heartbeat', () => {
       setIsReconnecting(false);
     });
 
@@ -220,7 +209,7 @@ export default function WorkspaceOperatorObserverPane({ sessionId, onClose }) {
             model.feedItems[model.feedItems.length - 1]?.occurredAt ||
             watermarkRef.current;
         }
-      } catch (err) {
+      } catch (_err) {
         // Polling errors are silent — SSE will retry
       }
     }, POLL_INTERVAL_MS);
