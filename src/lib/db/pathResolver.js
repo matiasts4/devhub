@@ -37,19 +37,68 @@ function getNewestMtimeMs(dbPath) {
   }, 0);
 }
 
+const SQLITE_COPY_ATTEMPTS = 4;
+const SQLITE_COPY_RETRY_DELAY_MS = 200;
+
+function sleepSync(ms) {
+  // resolveDbPath runs in a sync module-load context; a short bounded wait
+  // between copy retries is acceptable (cold start only).
+  const sab = new SharedArrayBuffer(4);
+  const int32 = new Int32Array(sab);
+  Atomics.wait(int32, 0, 0, ms);
+}
+
+/**
+ * Copy with a small retry loop: on Windows a live WAL writer can hold
+ * transient locks on sqlite family files (EBUSY/EPERM/UNKNOWN copyfile).
+ * Returns true on success, false after all attempts (never throws).
+ */
+function copyFileWithRetries(sourcePath, targetPath, attempts = SQLITE_COPY_ATTEMPTS) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      fs.copyFileSync(sourcePath, targetPath);
+      return true;
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) sleepSync(SQLITE_COPY_RETRY_DELAY_MS);
+    }
+  }
+  console.warn(
+    `[pathResolver] copy failed after ${attempts} attempts: ${sourcePath} → ${targetPath}: ${lastError?.message}`
+  );
+  return false;
+}
+
 function copySqliteFamily(sourceDbPath, targetDbPath) {
   ensureDirectory(path.dirname(targetDbPath));
 
-  for (const [index, sourcePath] of sqliteFamilyPaths(sourceDbPath).entries()) {
-    const targetPath = sqliteFamilyPaths(targetDbPath)[index];
-    if (fs.existsSync(sourcePath)) {
-      fs.copyFileSync(sourcePath, targetPath);
-      continue;
-    }
+  const [sourceDb, sourceWal] = sqliteFamilyPaths(sourceDbPath);
+  const [targetDb, targetWal, targetShm] = sqliteFamilyPaths(targetDbPath);
 
-    if (fs.existsSync(/*turbopackIgnore: true*/ targetPath)) {
-      fs.rmSync(/*turbopackIgnore: true*/ targetPath, { force: true });
+  // The main .db file is the source of truth. If it cannot be copied at all,
+  // the family copy fails — callers treat migrations as best-effort.
+  const dbCopied = copyFileWithRetries(sourceDb, targetDb);
+  if (!dbCopied) {
+    throw new Error(`copySqliteFamily: unable to copy ${sourceDb} → ${targetDb}`);
+  }
+
+  // -wal is best-effort: it only carries un-checkpointed frames. A torn or
+  // partial WAL at the target is worse than none — remove on failure.
+  if (fs.existsSync(sourceWal)) {
+    const walCopied = copyFileWithRetries(sourceWal, targetWal, 2);
+    if (!walCopied && fs.existsSync(/*turbopackIgnore: true*/ targetWal)) {
+      fs.rmSync(/*turbopackIgnore: true*/ targetWal, { force: true });
     }
+  } else if (fs.existsSync(/*turbopackIgnore: true*/ targetWal)) {
+    fs.rmSync(/*turbopackIgnore: true*/ targetWal, { force: true });
+  }
+
+  // -shm is NEVER copied: it is a shared-memory index that SQLite rebuilds on
+  // open. A stale one at the target is invalid by definition (and copying it
+  // raced live writers — the original 500-producing bug).
+  if (fs.existsSync(/*turbopackIgnore: true*/ targetShm)) {
+    fs.rmSync(/*turbopackIgnore: true*/ targetShm, { force: true });
   }
 }
 
@@ -297,8 +346,15 @@ function resolveDbPath(options = {}) {
     ensureDirectory(path.dirname(dbPath));
   }
 
-  maybeMigrateLegacyDb(dbPath, options);
-  maybeSyncDevDatabaseFromProduction(dbPath, options);
+  // Migration/sync are best-effort optimizations: a transient lock or IO error
+  // on a candidate DB must never take down the API (observed as 500s on
+  // /api/db/query when the -shm copy raced a live WAL writer on Windows).
+  try {
+    maybeMigrateLegacyDb(dbPath, options);
+    maybeSyncDevDatabaseFromProduction(dbPath, options);
+  } catch (err) {
+    console.warn(`[pathResolver] DB migration/sync skipped: ${err?.message || err}`);
+  }
   return dbPath;
 }
 
