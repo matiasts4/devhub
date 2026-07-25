@@ -57,7 +57,7 @@ afterEach(() => {
   if (dom && dom.window && dom.window.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }
@@ -112,7 +112,6 @@ jest.mock('@/components/pizarra/PizarraPropertyInspector', () => {
 });
 
 jest.mock('@/components/commandBar/CommandBar', () => {
-  const ReactLocal = require('react');
   return {
     __esModule: true,
     default: () => null,
@@ -204,7 +203,7 @@ describe('ModeTransitionShell wiring — PizarraPane', () => {
     const restore = setEnvFlag('true');
     try {
       const PizarraPane = require('@/components/pizarra/PizarraPane').default;
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       renderInto(
         root,
         React.createElement(PizarraPane, {
@@ -224,7 +223,7 @@ describe('ModeTransitionShell wiring — PizarraPane', () => {
     const restore = setEnvFlag('false');
     try {
       const PizarraPane = require('@/components/pizarra/PizarraPane').default;
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       renderInto(
         root,
         React.createElement(PizarraPane, {
@@ -246,7 +245,7 @@ describe('ModeTransitionShell wiring — WorkspaceRightDock', () => {
     const restore = setEnvFlag('true');
     try {
       const WorkspaceRightDock = require('@/components/workspace/WorkspaceRightDock').default;
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       renderInto(
         root,
         React.createElement(WorkspaceRightDock, {
@@ -278,7 +277,7 @@ describe('ModeTransitionShell wiring — WorkspaceRightDock', () => {
     const restore = setEnvFlag('false');
     try {
       const WorkspaceRightDock = require('@/components/workspace/WorkspaceRightDock').default;
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       renderInto(
         root,
         React.createElement(WorkspaceRightDock, {
@@ -308,7 +307,7 @@ describe('ModeTransitionShell wiring — WorkspaceRightDock', () => {
 describe('ModeTransitionShell wiring — phase machine drives the shell', () => {
   test('5. maximizedView change at the parent drives the shell into the leaving phase', () => {
     jest.useFakeTimers('modern');
-    const restore = setEnvFlag('true');
+    setEnvFlag('true');
 
     // We assert end-to-end via the shell's `data-transition-phase`
     // attribute (driven by `useModeTransition.phase`) and the
@@ -342,7 +341,7 @@ describe('ModeTransitionShell wiring — phase machine drives the shell', () => 
       });
     }
 
-    const { container, root } = makeRoot();
+    const { root } = makeRoot();
     renderInto(root, React.createElement(Tree, { view: 'browser' }));
 
     // Initial: shell exists, in 'idle' phase, pointer-events auto.
@@ -434,7 +433,7 @@ describe('ModeTransitionShell wiring — reduced motion', () => {
           onWorkspaceWindowRemove: () => {},
         });
       }
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       renderInto(root, React.createElement(Tree));
 
       act(() => {

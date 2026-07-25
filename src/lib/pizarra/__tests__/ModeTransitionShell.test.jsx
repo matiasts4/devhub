@@ -24,7 +24,7 @@
  */
 
 const React = require('react');
-const { render, act } = require('@testing-library/react');
+const { act } = require('@testing-library/react');
 
 const domHarness = require('@/test-support/domHarness');
 
@@ -41,7 +41,7 @@ afterEach(() => {
   if (dom && dom.window && dom.window.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }
@@ -71,7 +71,7 @@ describe('ModeTransitionShell — idle state', () => {
   test('renders with phase=idle, data-transition-active=false, pointer-events auto', () => {
     jest.useFakeTimers('modern');
     try {
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       act(() => {
         root.render(React.createElement(Probe, { view: 'workspace' }));
       });
@@ -96,14 +96,7 @@ describe('ModeTransitionShell — pointer-events guard', () => {
   test('during leaving/entering, pointer-events is none; at idle, auto', () => {
     jest.useFakeTimers('modern');
     try {
-      const { container, root } = makeRoot();
-      let probe;
-      function Wrapper() {
-        return React.createElement(Probe, { view: 'workspace' });
-      }
-      function SwitchingWrapper({ view }) {
-        return React.createElement(Probe, { view });
-      }
+      const { root } = makeRoot();
       let setView;
       function Stateful() {
         const [view, set] = React.useState('workspace');
@@ -157,7 +150,7 @@ describe('ModeTransitionShell — does not unmount children during transition', 
         setView = set;
         return React.createElement(Probe, { view });
       }
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       act(() => {
         root.render(React.createElement(Stateful));
       });
@@ -206,7 +199,7 @@ describe('ModeTransitionShell — reduced motion', () => {
         setView = set;
         return React.createElement(Probe, { view });
       }
-      const { container, root } = makeRoot();
+      const { root } = makeRoot();
       act(() => {
         root.render(React.createElement(Stateful));
       });
