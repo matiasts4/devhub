@@ -1,4 +1,9 @@
-export const OPERATIONAL_EVENT_SEVERITIES = Object.freeze(['info', 'warning', 'critical']);
+export const OPERATIONAL_EVENT_SEVERITIES = Object.freeze([
+  'info',
+  'success',
+  'warning',
+  'critical',
+]);
 export const OPERATIONAL_SOURCE_AUTHORITIES = Object.freeze([
   'authoritative',
   'inferred',
@@ -189,7 +194,9 @@ export function createAgentPresenceEvent({
   let severity = 'info';
   let title = `Agente ${agentId}: ${newState}`;
   let body = statusSummary || `Transición de estado de ${prevState} a ${newState}.`;
-  let actions = [{ label: 'Ver Agente', action_type: 'navigate', target: `/control-room?agent=${agentId}` }];
+  const actions = [
+    { label: 'Ver Agente', action_type: 'navigate', target: `/control-room?agent=${agentId}` },
+  ];
 
   if (newState === 'blocked') {
     severity = 'warning';
@@ -199,7 +206,11 @@ export function createAgentPresenceEvent({
     severity = 'critical';
     title = `Fallo Crítico en Agente (${agentId})`;
     body = `El agente se ha detenido o ha fallado.${statusSummary ? ` Detalle: ${statusSummary}` : ''}`;
-    actions.push({ label: 'Inspeccionar Logs', action_type: 'navigate', target: `/control-room?agent=${agentId}&tab=logs` });
+    actions.push({
+      label: 'Inspeccionar Logs',
+      action_type: 'navigate',
+      target: `/control-room?agent=${agentId}&tab=logs`,
+    });
   } else if (newState === 'completed') {
     severity = 'info';
     title = `Tarea Completada (${agentId})`;

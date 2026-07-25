@@ -61,6 +61,11 @@ The following skills are shipped inside this repo and should be loaded when the 
 - Do not push automatically; push only when a human asks or when publishing the task branch is operationally necessary for QA/handoff.
 - Keep Engram and DevHub distinct: Engram is memory; DevHub is planning/execution state.
 
+## Terminal keep-alive (terminal-load-performance)
+
+- Terminals are **keep-alive**: workspace shells mount on first activation and never unmount on tab/pizarra transitions; v2 panels behave like v1 (no graveyard on hide). Kill-switch: `localStorage.devhub_terminal_keepalive=off` (WebKitGTK defaults off). See `openspec/changes/terminal-load-performance/`.
+- Perf/transition telemetry: `localStorage.devhub_perf=1`; reports land in `data/logs/startup-perf/latest.json`.
+
 ## graphify
 
 This project has a **large** knowledge graph under `graphify-out/` (~tens of thousands of nodes). Using it correctly saves tokens and finds symbols faster than broad grep/read.

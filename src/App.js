@@ -48,7 +48,7 @@ import {
   getStoredTerminalHeaderStyle,
   getStoredTerminalAccentBarVisible,
 } from '@/lib/theme/themes';
-import TerminalWorkspacesManager from './components/TerminalWorkspacesManager';
+import dynamic from 'next/dynamic';
 import { OperatorActionsDispatchProvider } from './lib/operator/OperatorActionsDispatchContext';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
 import PageHeader from './components/PageHeader';
@@ -68,6 +68,10 @@ import { MotionProvider } from '@/components/ui/motion/MotionProvider';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition, TRANSITION } from '@/components/ui/system/motion-tokens';
 import {
+  preloadActiveSceneryPrefs,
+  warmAllBundledWallpapers,
+} from '@/lib/sceneries/sceneryPreferences';
+import {
   exposePerfSnapshotOnWindow,
   markAppShellStart,
   markProjectReady,
@@ -79,6 +83,22 @@ import {
   scheduleTerminalWarm,
   warmTtySidecarViaApi,
 } from '@/lib/terminal/terminalWarmPolicy';
+
+// TerminalWorkspacesManager (with its whole xterm/hooks graph) loads
+// dynamically so the app shell's first compile/paint does not include the
+// terminal module graph — on cold Turbopack boots that graph compiles on
+// demand (terminal route mount / Tier3 soft-mount) instead of blocking the
+// shell. Warm behavior is unchanged: the Tier3 soft-mount still mounts it
+// off-route, which now also pre-compiles the chunk.
+const TerminalWorkspacesManager = dynamic(() => import('./components/TerminalWorkspacesManager'), {
+  ssr: false,
+});
+
+// Quick Actions palette (Ctrl+Shift+P) — app-level overlay, works in both
+// normal and pizarra modes. Uses cmdk + window listeners, so no SSR.
+const QuickActionsPalette = dynamic(() => import('./components/quickActions/QuickActionsPalette'), {
+  ssr: false,
+});
 
 const PAGE_LABELS = {
   dashboard: 'dashboard',
@@ -396,6 +416,10 @@ function WorkspaceLayout() {
         borderRadius: '22px',
       }}
     >
+      {/* Quick Actions palette (Ctrl+Shift+P) — portaled modal, works in both
+          normal and pizarra modes within the project workspace. */}
+      <QuickActionsPalette cwd={effectiveTerminalCwd} />
+
       {/* ── Inner layout: sidebar + content ── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {isTerminalRoute ? (

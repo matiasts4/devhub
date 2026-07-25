@@ -90,12 +90,16 @@ describe('CSS Tokens — globals.css', () => {
     expect(css).toMatch(/\.kanban-column-scrollbar::-webkit-scrollbar\s*\{[\s\S]*width:\s*10px;/);
   });
 
-  test('xterm viewport no longer uses transparent background that corrupts TUI canvas rendering', () => {
+  test('xterm viewport is solid by default and transparent only under an active scenery', () => {
+    // Default (no scenery): opaque app-surface backdrop so TUI canvas rendering
+    // is never corrupted by a see-through viewport.
     expect(css).toMatch(
       /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*var\(--surface-app\)\s*!important;/
     );
-    expect(css).not.toMatch(
-      /\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*background-color:\s*transparent\s*!important;/
+    // Active scenery: the workspace shell sets [data-scenery-active='true'] and the
+    // xterm layers go transparent so the wallpaper glows through the panel.
+    expect(css).toMatch(
+      /\[data-scenery-active='true'\][\s\S]*?\.devhub-xterm-container \.xterm-viewport\s*\{[\s\S]*?background-color:\s*transparent\s*!important;/
     );
   });
 

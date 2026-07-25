@@ -428,7 +428,12 @@ export default function ZedAmbientOverlay({
   const motionMode = useMotionMode();
   const isReduced = motionMode === 'reduced';
   const isAmplified = motionMode === 'amplified';
-  const { isOpen, close, open, toggle } = useZedOverlay();
+  const {
+    isOpen = false,
+    close = () => {},
+    open = () => {},
+    toggle = () => {},
+  } = useZedOverlay() || {};
 
   // Soft-mount keeps this tree alive off /terminales. Never leave the composer open
   // across route hide/show — only an explicit user open while visible should expand it.
@@ -436,45 +441,54 @@ export default function ZedAmbientOverlay({
   useEffect(() => {
     if (!managerVisible) close();
   }, [managerVisible, isOpen, close]);
+  const zedChat =
+    useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals, getWorkspaceWindows }) ||
+    {};
   const {
-    input,
-    setInput,
-    isLoading,
-    handleSend,
-    handleStop,
-    handleKeyDown,
-    handlePaste,
-    lastAssistantMessage,
-    lastToolType,
-    currentStep,
-    activityExpanded,
-    setActivityExpanded,
-    pendingApproval,
-    handleApproveCommand,
-    handleRejectApproval,
-    quickSuggestions,
-    messages,
-    restoredFromStorage,
-    auditTrail,
-    sendFromVoice,
-    voiceSettings,
-    metrics,
-    agentStatus,
-    streamingMessage,
-    planState,
-    planControls,
-    pendingStepApproval,
-  } = useZedChat({ sessionKey, getTerminalPanelCount, getWorkspaceTerminals, getWorkspaceWindows });
+    input = '',
+    setInput = () => {},
+    isLoading = false,
+    handleSend = () => {},
+    handleStop = () => {},
+    handleKeyDown = () => {},
+    handlePaste = () => {},
+    lastAssistantMessage = null,
+    lastToolType = null,
+    currentStep = null,
+    activityExpanded = false,
+    setActivityExpanded = () => {},
+    pendingApproval = null,
+    handleApproveCommand = () => {},
+    handleRejectApproval = () => {},
+    quickSuggestions = [],
+    messages = [],
+    restoredFromStorage = false,
+    auditTrail = [],
+    sendFromVoice = () => {},
+    voiceSettings = null,
+    metrics = null,
+    agentStatus = null,
+    streamingMessage = null,
+    planState = null,
+    planControls = null,
+    pendingStepApproval = null,
+  } = zedChat;
 
   const voiceFeatureEnabled = isVoiceFeatureEnabled();
   const voiceEnabled = voiceFeatureEnabled && voiceSettings?.voiceEnabled;
   const ttsEnabled = voiceFeatureEnabled && voiceSettings?.ttsEnabled;
-  const { speak, speaking, stopSpeaking, ttsError, clearTtsError } = useVoiceTts({
+  const {
+    speak = () => {},
+    speaking = false,
+    stopSpeaking = () => {},
+    ttsError = '',
+    clearTtsError = () => {},
+  } = useVoiceTts({
     enabled: ttsEnabled,
     voice: voiceSettings?.ttsVoice,
     rate: voiceSettings?.ttsRate,
     systemVoiceURI: voiceSettings?.ttsSystemVoiceURI || '',
-  });
+  }) || {};
 
   const onFinalTranscript = useCallback(
     (text) => {
@@ -489,20 +503,20 @@ export default function ZedAmbientOverlay({
   }, []);
 
   const {
-    recording,
-    available,
-    enginePhase,
-    engineReady,
-    statusText,
-    errorText,
-    liveTranscript,
-    vuLevel,
-    toggleRecording,
-    startEngine,
+    recording = false,
+    available = false,
+    enginePhase = 'idle',
+    engineReady = false,
+    statusText = '',
+    errorText = '',
+    liveTranscript = '',
+    vuLevel = 0,
+    toggleRecording = () => {},
+    startEngine = () => {},
   } = useVoiceCapture({
     onFinalTranscript,
     onPartial: onPartialTranscript,
-  });
+  }) || {};
 
   const voiceActive = recording;
   const composerValue = recording ? liveTranscript : input;
@@ -713,17 +727,6 @@ export default function ZedAmbientOverlay({
     [streamingMessage, lastAssistantMessage]
   );
 
-  const isFirstMountRef = useRef(true);
-  useEffect(() => {
-    if (isFirstMountRef.current && displayAssistantMessage) {
-      if (displayAssistantMessage.timestamp) {
-        lastSpokenRef.current = displayAssistantMessage.timestamp;
-        lastStatusTurnRef.current = displayAssistantMessage.timestamp;
-      }
-      isFirstMountRef.current = false;
-    }
-  }, [displayAssistantMessage]);
-
   const streamingText = streamingMessage?.content || '';
   const hasSpeakableResponse = Boolean(
     displayAssistantMessage?.content &&
@@ -751,11 +754,11 @@ export default function ZedAmbientOverlay({
 
   const { showAura, showPill, collapsed, pillState } = useMemo(() => {
     const _showAura = managerVisible && (shouldShowZedAura(phase) || speaking || recording);
-    // Do not resurface the pill on Ctrl+R from persisted activityExpanded —
-    // only show for an explicit open or live activity while Terminales is visible.
+    // Do not resurface the pill on Ctrl+R or app start —
+    // only show for an explicit open or active execution/status while Terminales is visible.
     const _showPill =
       managerVisible &&
-      (isOpen || isLoading || speaking || Boolean(statusLine) || Boolean(currentStep));
+      (isOpen || isLoading || (speaking && isOpen) || Boolean(statusLine) || Boolean(currentStep));
     return {
       showAura: _showAura,
       showPill: _showPill,
@@ -769,8 +772,8 @@ export default function ZedAmbientOverlay({
       ? displayAssistantMessage.timestamp
       : null;
 
-  // Cold boot from sessionStorage: treat restored assistant turns as seen so
-  // status/TTS do not resurface the pill after Ctrl+R.
+  // Cold boot from sessionStorage: treat restored assistant turns as seen on mount so
+  // status/TTS do not resurface the pill or auto-speak old messages after launch / Ctrl+R.
   useLayoutEffect(() => {
     if (!restoredFromStorage) return;
     for (let i = messages.length - 1; i >= 0; i -= 1) {

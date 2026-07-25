@@ -1,8 +1,8 @@
 /**
  * Agent launcher tools for Zed.
  *
- * Lets Zed open external agent sessions (OpenCode, Codex, Kimi, Hermes, Grok)
- * with a detailed prompt, using the existing agent launch command builder.
+ * Lets Zed open external agent sessions (OpenCode, Codex, Kimi, Hermes, Grok,
+ * Qoder) with a detailed prompt, using the existing agent launch command builder.
  */
 
 import { buildAgentLaunchCommand } from '@/lib/agentLaunchCommand.shared';
@@ -10,7 +10,7 @@ import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { zedLog } from '../utils/zed-logger';
 
 /** Keep in sync with terminal.js AGENT_PROGRAMS and zedFastPath AGENT_PROGRAMS. */
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok']);
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok', 'qodercli']);
 
 function normalizeProgram(program) {
   const p = typeof program === 'string' ? program.trim().toLowerCase() : '';
@@ -20,16 +20,16 @@ function normalizeProgram(program) {
 export const launchAgentSessionTool = {
   name: 'launch_agent_session',
   description:
-    'Launch an external agent session (OpenCode, Codex, Kimi, Hermes, Grok) with a detailed prompt. The agent opens in a new workspace terminal panel.',
+    'Launch an external agent session (OpenCode, Codex, Kimi, Hermes, Grok, Qoder) with a detailed prompt. The agent opens in a new workspace terminal panel.',
   parameters: {
     program: {
       type: 'string',
-      description: 'Agent program to launch: opencode, codex, hermes, kimi, grok.',
+      description: 'Agent program to launch: opencode, codex, hermes, kimi, grok, qodercli.',
     },
     prompt: {
       type: 'string',
       description:
-        'Detailed prompt/context to pass to the agent. For Grok (interactive TUI), the prompt is reserved for a follow-up inject; the launch starts the TUI.',
+        'Detailed prompt/context to pass to the agent. For Grok/Qoder (interactive TUI), the prompt is reserved for a follow-up inject; the launch starts the TUI.',
     },
     cwd: { type: 'string', description: 'Working directory (optional).' },
     name: { type: 'string', description: 'Optional display name for the new terminal panel.' },
@@ -42,8 +42,8 @@ export const launchAgentSessionTool = {
 
     const prompt = typeof params?.prompt === 'string' ? params.prompt.trim() : '';
     // All agent TUIs open interactively; task text is reserved for native paste
-    // after readiness (bootstrap_input). Grok allows empty prompt ("just open").
-    if (!prompt && program !== 'grok') {
+    // after readiness (bootstrap_input). Grok/Qoder allow empty prompt ("just open").
+    if (!prompt && program !== 'grok' && program !== 'qodercli') {
       return { error: 'missing_prompt', message: 'Se requiere un prompt detallado.' };
     }
 

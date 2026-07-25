@@ -30,6 +30,15 @@ export default function Home() {
         }}
       >
         <div style={{ textAlign: 'center', opacity: 0.9 }}>
+          {/* Tiny pre-resized logo (7 KB, preloaded via layout head) so the
+              brand paints with the first SSR frame instead of after the app. */}
+          <img
+            src="/icons/logo-64.png"
+            width={52}
+            height={52}
+            alt="DevHub"
+            style={{ margin: '0 auto 12px', display: 'block', borderRadius: '50%' }}
+          />
           <div style={{ marginBottom: 8, fontWeight: 600 }}>DevHub</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>preparing workspace…</div>
         </div>

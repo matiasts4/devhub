@@ -25,8 +25,40 @@ import {
 } from '@/lib/notifications/notificationPreferences';
 import { clearOperationalEvents, readOperationalEvents } from '@/lib/operations/events';
 import { dispatchOperationalNotification } from '@/lib/operations/notify';
-import { playNotificationSound, previewSoundPreset } from '@/lib/notifications/soundEffects';
-import { Button } from '@/components/ui/button';
+import { previewSoundPreset } from '@/lib/notifications/soundEffects';
+import {
+  panelStyle,
+  btnSecondaryStyle,
+  btnDangerStyle,
+  pillStyle,
+  inputStyle,
+  selectStyle,
+  codeBlockStyle,
+} from '@/chrome/morphology';
+
+/* ─── Shared toggle switch (same pattern as TerminalSettingsSection) ─────── */
+
+function ToggleSwitch({ checked, onChange, testId, label }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      data-testid={testId}
+      onClick={onChange}
+      className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+      style={{ background: checked ? 'var(--accent-primary)' : 'var(--surface-muted)' }}
+    >
+      <span
+        className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+        style={{ transform: checked ? 'translateX(22px)' : 'translateX(2px)' }}
+      />
+    </button>
+  );
+}
+
+/* ─── Main section ───────────────────────────────────────────────────────── */
 
 export default function NotificationSettingsSection() {
   const [prefs, setPrefs] = useState(() => getNotificationPreferences());
@@ -148,99 +180,140 @@ export default function NotificationSettingsSection() {
     setTestLog('Historial de notificaciones limpiado exitosamente.');
   };
 
+  const CHANNELS = [
+    {
+      key: 'enableToasts',
+      icon: Monitor,
+      label: 'Toasts In-App',
+      description: 'Alertas flotantes dentro de la aplicación',
+    },
+    {
+      key: 'enableSound',
+      icon: prefs.enableSound ? Volume2 : VolumeX,
+      label: 'Sonido Sintético',
+      description: 'Web Audio API / MP3 personalizado',
+    },
+    {
+      key: 'enableNativeOS',
+      icon: ShieldAlert,
+      label: 'SO Nativo',
+      description: 'Notificaciones de Electron / Tauri',
+    },
+  ];
+
+  const SEVERITY_ROWS = [
+    { id: 'info', name: 'Informativa (Info)', icon: Info, tone: 'accent' },
+    { id: 'warning', name: 'Advertencia (Stalled)', icon: AlertTriangle, tone: 'warning' },
+    { id: 'critical', name: 'Fallo Crítico (Critical)', icon: AlertCircle, tone: 'danger' },
+    { id: 'success', name: 'Éxito (Completed)', icon: CheckCircle2, tone: 'success' },
+  ];
+
   return (
-    <div className="space-y-6 text-sm">
-      {/* Quiet Hours Banner */}
-      <div className="flex items-center justify-between p-4 rounded-xl border border-borders-subtle bg-gray-900/40">
+    <div className="space-y-6">
+      {/* Intro */}
+      <div>
+        <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          Notificaciones del workspace
+        </h4>
+        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          Controla cómo se entregan las alertas operativas: toasts in-app, sonido sintético y
+          notificaciones nativas del sistema operativo. Los cambios se guardan al instante.
+        </p>
+      </div>
+
+      {/* Quiet Hours */}
+      <div
+        className="flex items-center justify-between gap-4 p-4"
+        style={panelStyle({ emphasized: false })}
+      >
         <div className="flex items-center gap-3">
           {prefs.quietHours ? (
-            <BellOff className="w-6 h-6 text-amber-400 shrink-0" />
+            <BellOff className="w-5 h-5 shrink-0" style={{ color: 'var(--warning, #e3b341)' }} />
           ) : (
-            <Bell className="w-6 h-6 text-blue-400 shrink-0" />
+            <Bell className="w-5 h-5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
           )}
           <div>
-            <h4 className="font-semibold text-gray-100">Modo No Molestar (Quiet Hours)</h4>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Silencia Toasts emergentes y alertas auditivas sin perder el registro de notificaciones.
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Modo No Molestar (Quiet Hours)
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Silencia toasts emergentes y alertas auditivas sin perder el registro de
+              notificaciones.
             </p>
           </div>
         </div>
-        <input
-          type="checkbox"
+        <ToggleSwitch
           checked={prefs.quietHours}
           onChange={() => handleToggle('quietHours')}
-          className="w-5 h-5 accent-blue-500 rounded cursor-pointer"
+          testId="notification-quiet-hours-toggle"
+          label="Modo No Molestar"
         />
       </div>
 
-      {/* Channels Config */}
-      <div className="p-4 rounded-xl border border-borders-subtle bg-gray-900/30 space-y-4">
-        <div className="flex items-center gap-2">
-          <Sliders className="w-4 h-4 text-blue-400" />
-          <h4 className="font-semibold text-gray-200">Canales de Notificación</h4>
+      {/* Channels */}
+      <div style={panelStyle({ emphasized: false })}>
+        <div
+          className="flex items-center gap-2 px-4 py-3"
+          style={{ borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)' }}
+        >
+          <Sliders className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+          <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Canales de Notificación
+          </h4>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="flex items-center justify-between p-3 rounded-lg border border-borders-subtle bg-gray-900/50">
-            <div className="flex items-center gap-2.5">
-              <Monitor className="w-4 h-4 text-gray-400" />
-              <div>
-                <p className="font-medium text-xs text-gray-200">Toasts In-App</p>
-                <p className="text-[10px] text-gray-500">Alertas flotantes</p>
+        <div>
+          {CHANNELS.map(({ key, icon: Icon, label, description }, idx) => (
+            <div
+              key={key}
+              className="flex items-center justify-between gap-4 px-4 py-3"
+              style={
+                idx > 0
+                  ? { borderTop: 'var(--chrome-border-width) solid var(--chrome-border-color)' }
+                  : undefined
+              }
+            >
+              <div className="flex items-center gap-3">
+                <Icon className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {label}
+                  </p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {description}
+                  </p>
+                </div>
               </div>
+              <ToggleSwitch
+                checked={prefs[key]}
+                onChange={() => handleToggle(key)}
+                testId={`notification-channel-toggle-${key}`}
+                label={label}
+              />
             </div>
-            <input
-              type="checkbox"
-              checked={prefs.enableToasts}
-              onChange={() => handleToggle('enableToasts')}
-              className="w-4 h-4 accent-blue-500 rounded cursor-pointer"
-            />
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-borders-subtle bg-gray-900/50">
-            <div className="flex items-center gap-2.5">
-              {prefs.enableSound ? <Volume2 className="w-4 h-4 text-gray-400" /> : <VolumeX className="w-4 h-4 text-gray-500" />}
-              <div>
-                <p className="font-medium text-xs text-gray-200">Sonido Sintético</p>
-                <p className="text-[10px] text-gray-500">Web Audio API / MP3</p>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={prefs.enableSound}
-              onChange={() => handleToggle('enableSound')}
-              className="w-4 h-4 accent-blue-500 rounded cursor-pointer"
-            />
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-borders-subtle bg-gray-900/50">
-            <div className="flex items-center gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-gray-400" />
-              <div>
-                <p className="font-medium text-xs text-gray-200">SO Nativo</p>
-                <p className="text-[10px] text-gray-500">Electron / Tauri</p>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={prefs.enableNativeOS}
-              onChange={() => handleToggle('enableNativeOS')}
-              className="w-4 h-4 accent-blue-500 rounded cursor-pointer"
-            />
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Sound Customization Section */}
+      {/* Sound Customization */}
       {prefs.enableSound && (
-        <div className="p-4 rounded-xl border border-borders-subtle bg-gray-900/30 space-y-4">
-          <div className="flex items-center justify-between">
+        <div style={panelStyle({ emphasized: false })}>
+          <div
+            className="flex items-center justify-between gap-4 px-4 py-3"
+            style={{ borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)' }}
+          >
             <div className="flex items-center gap-2">
-              <Music className="w-4 h-4 text-purple-400" />
-              <h4 className="font-semibold text-gray-200">Personalización de Sonidos y Tonos</h4>
+              <Music className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+              <h4
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Personalización de Sonidos
+              </h4>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">Volumen General: {Math.round((prefs.soundVolume ?? 0.5) * 100)}%</span>
+              <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                Volumen: {Math.round((prefs.soundVolume ?? 0.5) * 100)}%
+              </span>
               <input
                 type="range"
                 min="0"
@@ -248,33 +321,42 @@ export default function NotificationSettingsSection() {
                 step="0.05"
                 value={prefs.soundVolume ?? 0.5}
                 onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                className="w-24 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                aria-label="Volumen general"
+                className="w-24 h-1.5 rounded-lg appearance-none cursor-pointer"
+                style={{ background: 'var(--surface-muted)', accentColor: 'var(--accent-primary)' }}
               />
             </div>
           </div>
 
-          <div className="space-y-3 pt-1">
-            {[
-              { id: 'info', name: 'Informativa (Info)', icon: Info, iconColor: 'text-blue-400' },
-              { id: 'warning', name: 'Advertencia (Warning / Stalled)', icon: AlertTriangle, iconColor: 'text-amber-400' },
-              { id: 'critical', name: 'Fallo Crítico (Critical)', icon: AlertCircle, iconColor: 'text-rose-400' },
-              { id: 'success', name: 'Éxito (Success / Completed)', icon: CheckCircle2, iconColor: 'text-emerald-400' },
-            ].map(({ id, name, icon: Icon, iconColor }) => {
+          <div className="space-y-3 p-4">
+            {SEVERITY_ROWS.map(({ id, name, icon: Icon, tone }) => {
               const currentConfig = prefs.soundPresets?.[id] || { preset: 'chime', customUrl: '' };
 
               return (
-                <div key={id} className="p-3 rounded-lg border border-borders-subtle bg-gray-900/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Icon className={`w-4 h-4 ${iconColor}`} />
-                      <span className="font-medium text-xs text-gray-200">{name}</span>
+                <div key={id} className="p-3 space-y-2" style={panelStyle({ emphasized: true })}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className="inline-flex items-center justify-center w-7 h-7"
+                        style={pillStyle({ tone })}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                      </span>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {name}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <select
                         value={currentConfig.preset}
                         onChange={(e) => handlePresetChange(id, e.target.value)}
-                        className="bg-gray-950 border border-borders-subtle text-gray-200 text-xs rounded px-2.5 py-1 focus:outline-none focus:border-purple-500"
+                        aria-label={`Sonido para ${name}`}
+                        className="text-xs"
+                        style={selectStyle()}
                       >
                         {Object.entries(SOUND_PRESETS).map(([key, item]) => (
                           <option key={key} value={key}>
@@ -283,19 +365,21 @@ export default function NotificationSettingsSection() {
                         ))}
                       </select>
 
-                      <Button
+                      <button
                         type="button"
-                        size="sm"
-                        variant="secondary"
                         onClick={() =>
-                          previewSoundPreset(currentConfig.preset, currentConfig.customUrl, prefs.soundVolume ?? 0.5)
+                          previewSoundPreset(
+                            currentConfig.preset,
+                            currentConfig.customUrl,
+                            prefs.soundVolume ?? 0.5
+                          )
                         }
-                        className="text-[11px] h-7 px-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200"
+                        style={btnSecondaryStyle({ size: 'xs' })}
                         title="Escuchar vista previa"
                       >
-                        <Play className="w-3 h-3 mr-1 text-purple-400 fill-purple-400" />
+                        <Play className="w-3 h-3" />
                         Escuchar
-                      </Button>
+                      </button>
                     </div>
                   </div>
 
@@ -305,12 +389,16 @@ export default function NotificationSettingsSection() {
                         type="text"
                         value={currentConfig.customUrl || ''}
                         onChange={(e) => handleCustomUrlChange(id, e.target.value)}
-                        placeholder="Ruta local, URL mp3/wav o Data URI..."
-                        className="flex-1 bg-gray-950 border border-borders-subtle text-gray-300 text-xs rounded px-2.5 py-1 focus:outline-none focus:border-purple-500 font-mono"
+                        placeholder="Ruta local, URL mp3/wav o Data URI…"
+                        className="flex-1 font-mono text-xs"
+                        style={inputStyle()}
                       />
-                      <label className="cursor-pointer bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-2.5 py-1 rounded border border-borders-subtle flex items-center gap-1.5 transition-colors">
-                        <FolderOpen className="w-3.5 h-3.5" />
-                        <span>Subir Audio</span>
+                      <label
+                        className="cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+                        style={btnSecondaryStyle({ size: 'xs' })}
+                      >
+                        <FolderOpen className="w-3 h-3" />
+                        Subir Audio
                         <input
                           type="file"
                           accept="audio/*"
@@ -328,103 +416,112 @@ export default function NotificationSettingsSection() {
       )}
 
       {/* Severity Filter */}
-      <div className="p-4 rounded-xl border border-borders-subtle bg-gray-900/30 space-y-3">
-        <h4 className="font-semibold text-gray-200">Filtro de Severidad Mínima</h4>
-        <p className="text-xs text-gray-400">
-          Determina el nivel mínimo de importancia que activará avisos sonoros y emergentes.
-        </p>
-
-        <div className="grid grid-cols-3 gap-2">
+      <div style={panelStyle({ emphasized: false })}>
+        <div className="px-4 pt-4 pb-2">
+          <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Filtro de Severidad Mínima
+          </h4>
+          <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            Determina el nivel mínimo de importancia que activará avisos sonoros y emergentes.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 p-4 pt-2">
           {[
             { id: 'info', label: 'Informativa (Todas)' },
             { id: 'warning', label: 'Advertencias & Errores' },
             { id: 'critical', label: 'Solo Críticas' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleSeverityChange(item.id)}
-              className={`py-2 px-3 rounded-lg text-xs font-medium border transition-colors ${
-                prefs.minSeverity === item.id
-                  ? 'border-blue-500 bg-blue-500/10 text-blue-400 font-semibold'
-                  : 'border-borders-subtle bg-gray-900/40 text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+          ].map((item) => {
+            const isActive = prefs.minSeverity === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleSeverityChange(item.id)}
+                className="py-2 px-3 text-xs font-medium transition-all"
+                style={{
+                  ...panelStyle({ emphasized: isActive, tone: isActive ? 'accent' : 'neutral' }),
+                  color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Live Test Bench */}
-      <div className="p-4 rounded-xl border border-borders-subtle bg-gray-900/30 space-y-4">
-        <div className="flex items-center justify-between">
+      <div style={panelStyle({ emphasized: false })}>
+        <div
+          className="flex items-center justify-between gap-4 px-4 py-3"
+          style={{ borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)' }}
+        >
           <div className="flex items-center gap-2">
-            <Play className="w-4 h-4 text-emerald-400" />
-            <h4 className="font-semibold text-gray-200">Probador en Vivo (Live Test Bench)</h4>
+            <Play className="w-4 h-4" style={{ color: 'var(--success)' }} />
+            <h4
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Probador en Vivo
+            </h4>
           </div>
-          <span className="text-xs text-gray-400 font-mono">
+          <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
             {eventsCount} evento(s) en almacén
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <Button
-            onClick={() => triggerTestNotification('stalled')}
-            variant="outline"
-            size="sm"
-            className="text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 mr-1" />
-            Probar Warning
-          </Button>
-
-          <Button
-            onClick={() => triggerTestNotification('critical')}
-            variant="outline"
-            size="sm"
-            className="text-xs border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
-          >
-            <AlertCircle className="w-3.5 h-3.5 mr-1" />
-            Probar Critical
-          </Button>
-
-          <Button
-            onClick={() => triggerTestNotification('completed')}
-            variant="outline"
-            size="sm"
-            className="text-xs border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-            Probar Success
-          </Button>
-
-          <Button
-            onClick={() => triggerTestNotification('native')}
-            variant="outline"
-            size="sm"
-            className="text-xs border-blue-500/40 text-blue-300 hover:bg-blue-500/10"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 mr-1" />
-            Probar Nativa SO
-          </Button>
-        </div>
-
-        {testLog && (
-          <div className="p-2.5 rounded bg-gray-950 border border-gray-800 text-[11px] font-mono text-gray-300 flex items-center justify-between">
-            <span>{testLog}</span>
+        <div className="p-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              { type: 'stalled', label: 'Probar Warning', icon: AlertTriangle, tone: 'warning' },
+              { type: 'critical', label: 'Probar Critical', icon: AlertCircle, tone: 'danger' },
+              { type: 'completed', label: 'Probar Success', icon: CheckCircle2, tone: 'success' },
+              { type: 'native', label: 'Probar Nativa SO', icon: ShieldAlert, tone: 'accent' },
+            ].map(({ type, label, icon: Icon, tone }) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => triggerTestNotification(type)}
+                className="transition-all"
+                style={{
+                  ...btnSecondaryStyle({ size: 'sm' }),
+                  borderColor: `color-mix(in srgb, ${
+                    tone === 'warning'
+                      ? 'var(--warning, #e3b341)'
+                      : tone === 'danger'
+                        ? 'var(--danger)'
+                        : tone === 'success'
+                          ? 'var(--success)'
+                          : 'var(--accent-primary)'
+                  } 40%, var(--chrome-border-color))`,
+                }}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
           </div>
-        )}
 
-        <div className="pt-2 border-t border-borders-subtle flex justify-end">
-          <Button
-            onClick={handleClearHistory}
-            variant="destructive"
-            size="sm"
-            className="text-xs bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/30"
+          {testLog && (
+            <div className="text-[11px]" style={codeBlockStyle()}>
+              <span style={{ color: 'var(--text-secondary)' }}>{testLog}</span>
+            </div>
+          )}
+
+          <div
+            className="flex justify-end pt-1"
+            style={{ borderTop: 'var(--chrome-border-width) solid var(--chrome-border-color)' }}
           >
-            <Trash2 className="w-3.5 h-3.5 mr-1" />
-            Limpiar Historial de Alertas
-          </Button>
+            <button
+              type="button"
+              onClick={handleClearHistory}
+              className="mt-3 transition-all"
+              style={btnDangerStyle({ size: 'sm' })}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Limpiar Historial de Alertas
+            </button>
+          </div>
         </div>
       </div>
     </div>

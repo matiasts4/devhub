@@ -28,6 +28,7 @@ jest.mock('@tauri-apps/api/event', () => ({
 describe('ZedVoiceSettings', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.__TAURI_INTERNALS__ = {};
     mockInvoke.mockClear();
     mockListen.mockClear();
     // jsdom has no mediaDevices by default; keep the mic-device effect a no-op.

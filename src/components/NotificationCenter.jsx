@@ -1,7 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, AlertTriangle, Bell, CheckCheck, CheckCircle2, Clock3, Info, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bell,
+  CheckCheck,
+  CheckCircle2,
+  Clock3,
+  Info,
+  RefreshCw,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import HealthCenter from '@/components/HealthCenter';
 import {
@@ -12,7 +23,6 @@ import {
   readOperationalEvents,
 } from '@/lib/operations/events';
 import { dispatchOperationalNotification } from '@/lib/operations/notify';
-import NotificationSettingsModal from '@/components/NotificationSettingsModal';
 import { Button } from '@/components/ui/button';
 
 const DEADLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -50,12 +60,16 @@ function getNotificationIcon(severity) {
   }
 }
 
-export default function NotificationCenter({ projectId, collapsed = false, variant = 'sidebar' }) {
+export default function NotificationCenter({
+  projectId,
+  collapsed = false,
+  variant = 'sidebar',
+  onOpenSettings,
+}) {
   const db = useMemo(() => createClient(), []);
   const isTopbar = variant === 'topbar';
 
   const [open, setOpen] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'agents' | 'tasks' | 'system'
 
@@ -103,7 +117,9 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
           source: 'tasks',
           entity_id: task.id,
           dedupe_key: `task:deadline:${task.id}`,
-          actions: [{ label: 'Ir a Tarea', action_type: 'navigate', target: `/tasks?id=${task.id}` }],
+          actions: [
+            { label: 'Ir a Tarea', action_type: 'navigate', target: `/tasks?id=${task.id}` },
+          ],
           delivery: { desktop: false, in_app: true },
         });
       });
@@ -262,14 +278,19 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => setShowSettings(true)}
-                className="p-1 text-gray-400 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
-                title="Ajustes de notificaciones"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-              </button>
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenSettings();
+                  }}
+                  className="p-1 text-gray-400 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
+                  title="Ajustes de notificaciones"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -323,13 +344,19 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className={`font-semibold text-xs ${!item.read_at ? 'text-gray-100' : 'text-gray-300'}`}>
+                      <span
+                        className={`font-semibold text-xs ${!item.read_at ? 'text-gray-100' : 'text-gray-300'}`}
+                      >
                         {item.title}
                       </span>
-                      <span className="text-[10px] text-gray-500 shrink-0">{formatRelativeTime(item.created_at)}</span>
+                      <span className="text-[10px] text-gray-500 shrink-0">
+                        {formatRelativeTime(item.created_at)}
+                      </span>
                     </div>
 
-                    <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">{item.message}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                      {item.message}
+                    </p>
 
                     {item.occurrence_count > 1 && (
                       <span className="inline-block mt-1 text-[9px] font-mono px-1.5 py-0.2 rounded bg-gray-800 text-gray-400 border border-gray-700">
@@ -354,7 +381,10 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
                   </div>
 
                   {!item.read_at && (
-                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1" title="No leída" />
+                    <span
+                      className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1"
+                      title="No leída"
+                    />
                   )}
                 </div>
               ))
@@ -362,7 +392,6 @@ export default function NotificationCenter({ projectId, collapsed = false, varia
           </div>
         </div>
       )}
-      <NotificationSettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   );
 }

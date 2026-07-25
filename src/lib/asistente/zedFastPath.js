@@ -15,7 +15,7 @@ import {
 import { buildZedTerminalCatalog } from './workspaceTerminalRegistry';
 import { stripDiacritics } from '../text';
 
-const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok']);
+const AGENT_PROGRAMS = new Set(['opencode', 'codex', 'hermes', 'kimi', 'grok', 'qodercli']);
 const OPEN_VERBS = /\b(abre|abr[eía]s?|abrir|abramos|open|crea|crear|nueva|lanza|lanzar)\b/;
 const CLOSE_VERBS =
   /\b(cierra|cerra|cerr[aá]|cerrar|cerralas|cerralos|cerramen|close|cierres|cierren|mata)\b/;
@@ -715,6 +715,7 @@ const AGENT_PROGRAM_ALIASES = {
   hermes: ['hermes'],
   kimi: ['kimi', 'kimy', 'quimy'],
   grok: ['grok', 'groc'],
+  qodercli: ['qodercli', 'qoder cli', 'qoder'],
 };
 
 function extractLaunchAgentProgram(message) {

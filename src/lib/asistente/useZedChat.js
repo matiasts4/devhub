@@ -817,14 +817,7 @@ export function useZedChat({
     const persisted = readPersistedZedMessages(sessionKey);
     if (persisted) {
       setMessages(persisted);
-      return;
     }
-    setMessages((prev) => {
-      if (prev.length === 0 || prev[0].timestamp !== 'initial') return prev;
-      const updated = [...prev];
-      updated[0] = { ...updated[0], timestamp: new Date().toISOString() };
-      return updated;
-    });
   }, [sessionKey]);
 
   useEffect(() => {

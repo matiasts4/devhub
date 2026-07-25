@@ -1363,6 +1363,61 @@ code {
   background-color: var(--surface-app) !important;
 }
 
+/* scenery-wallpapers: when a wallpaper is active, let the xterm layers go
+   transparent so the scenery glows through the panel. The attribute is set on
+   <body> by SceneryBackground (and mirrored on the workspace shell), so it
+   reaches every xterm container regardless of render path — workspace grid,
+   pizarra canvas, or dock. Higher specificity than the default opaque rule
+   above, so it only wins while a scenery is active. */
+[data-scenery-active='true'] .devhub-xterm-container .xterm,
+[data-scenery-active='true'] .devhub-xterm-container .xterm-screen,
+[data-scenery-active='true'] .devhub-xterm-container .xterm-viewport {
+  background-color: transparent !important;
+}
+
+/* scenery-wallpapers: the terminal panel chrome sits between the wallpaper and
+   the xterm layers and must go transparent too, or the wallpaper never reaches
+   the glass. The rules are scoped to the surface ancestor that actually hosts a
+   wallpaper — the workspace shell (terminal scope) or the pizarra canvas
+   container (pizarra scope) — so terminals on surfaces WITHOUT a wallpaper
+   behind them (e.g. normal mode while scope=pizarra, or the right dock) keep
+   their opaque chrome. `terminal-root-body` gets the adjustable dark glass tint
+   (--scenery-terminal-tint, published on <body> by SceneryBackground) instead
+   of full transparency: the wallpaper glows through the terminal but text
+   contrast survives. `!important` is required to beat the inline backgrounds on
+   the viewport shell, the workspace window visibility style and the TerminalTTY
+   app shell. Borders, shadows and title bars are untouched so the panel keeps
+   its outline. */
+[data-testid^='workspace-shell-'][data-scenery-active='true'] [data-testid='terminal-root-body'],
+[data-testid='pizarra-canvas-container'][data-scenery-active='true']
+  [data-testid='terminal-root-body'] {
+  background: var(--scenery-terminal-tint, rgba(8, 10, 16, 0.3)) !important;
+  background-color: var(--scenery-terminal-tint, rgba(8, 10, 16, 0.3)) !important;
+}
+
+[data-testid^='workspace-shell-'][data-scenery-active='true'] [data-testid='terminal-app-shell'],
+[data-testid^='workspace-shell-'][data-scenery-active='true']
+  [data-testid='terminal-viewport-shell'],
+[data-testid^='workspace-shell-'][data-scenery-active='true']
+  [data-testid^='workspace-window-active-'],
+[data-testid^='workspace-shell-'][data-scenery-active='true']
+  [data-testid^='workspace-window-parked-'],
+[data-testid^='workspace-shell-'][data-scenery-active='true']
+  [data-testid^='panel-body-'][data-panel-kind='terminal'],
+[data-testid^='workspace-shell-'][data-scenery-active='true']
+  [data-testid^='panel-body-'][data-panel-kind='terminal']
+  > div,
+[data-testid='pizarra-canvas-container'][data-scenery-active='true']
+  [data-testid='terminal-app-shell'],
+[data-testid='pizarra-canvas-container'][data-scenery-active='true']
+  [data-testid='terminal-viewport-shell'],
+[data-testid='pizarra-canvas-container'][data-scenery-active='true']
+  [data-testid='canvas-terminal-container']
+  > div {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 /* Anchor GPU/DOM terminal layers to the top-left of the panel (no vertical drift). */
 .devhub-xterm-container .xterm .xterm-screen,
 .devhub-xterm-container .xterm .xterm-viewport {

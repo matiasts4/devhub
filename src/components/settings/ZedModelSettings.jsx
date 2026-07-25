@@ -429,11 +429,57 @@ export default function ZedModelSettings() {
 
   if (loading) {
     return (
-      <div
-        className="flex items-center gap-2 px-6 py-4 text-sm"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        <Loader2 className="h-4 w-4 animate-spin" /> Cargando configuración del modelo…
+      <div className="space-y-6" aria-busy="true" aria-label="Cargando configuración del modelo">
+        {/* Skeleton mirroring the final panel chrome so the section loads
+            visually consistent with the rest of the settings modal. */}
+        {[0, 1].map((block) => (
+          <div
+            key={block}
+            className="overflow-hidden"
+            style={chromeSurfaceStyle({ surface: 'panel', emphasized: true })}
+          >
+            <div
+              className="flex items-center gap-3 px-6 py-4"
+              style={{
+                borderBottom: 'var(--chrome-border-width) solid var(--chrome-border-color)',
+                background: 'var(--chrome-panel-fill-emphasis)',
+              }}
+            >
+              <div
+                className="h-9 w-9 animate-pulse"
+                style={{ background: 'var(--surface-muted)' }}
+              />
+              <div className="flex-1 space-y-2">
+                <div
+                  className="h-3.5 w-44 animate-pulse rounded"
+                  style={{ background: 'var(--surface-muted)' }}
+                />
+                <div
+                  className="h-2.5 w-64 max-w-full animate-pulse rounded"
+                  style={{ background: 'var(--surface-muted)' }}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <div
+                className="h-9 animate-pulse rounded"
+                style={{ background: 'var(--surface-muted)' }}
+              />
+              <div
+                className="h-9 w-4/5 animate-pulse rounded"
+                style={{ background: 'var(--surface-muted)' }}
+              />
+              <div
+                className="h-9 w-3/5 animate-pulse rounded"
+                style={{ background: 'var(--surface-muted)' }}
+              />
+            </div>
+          </div>
+        ))}
+        <p className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Cargando configuración del modelo…
+        </p>
       </div>
     );
   }

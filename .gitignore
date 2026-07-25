@@ -115,8 +115,11 @@ data/audit-trails/
 .codex
 
 # Research externals vendored locally, not tracked
-research/external/
+research/
 .research/
+
+# Editor local settings
+.qoder/
 devhub-cli/node_modules/
 vendor/ponytail/
 

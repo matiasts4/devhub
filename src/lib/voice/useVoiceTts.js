@@ -207,7 +207,7 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
 
   const speak = useCallback(
     async (text, { full = false } = {}) => {
-      if (!enabled) return { ok: false, error: 'tts-disabled' };
+      if (!enabled && !full) return { ok: false, error: 'tts-disabled' };
       const cleaned = stripMarkdownForSpeech(text);
       if (!cleaned) return { ok: false, error: 'empty-text' };
       const clipped = clipForSpeech(cleaned, full ? MAX_MANUAL_TTS_CHARS : MAX_TTS_CHARS);
