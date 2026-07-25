@@ -148,7 +148,6 @@ export default function TerminalWorkspacesManager({
   const [heavySurfacesReady, setHeavySurfacesReady] = useState(false);
   const [reopenActionError, setReopenActionError] = useState(null);
   const pendingReopenPanelsRef = useRef(new Map());
-  const swarmLaunchScheduledTimersRef = useRef(new Map());
   const pendingSwarmLaunchByLaunchIdRef = useRef(new Map());
   const materializedSwarmLaunchIdsRef = useRef(new Set());
   const swarmProjectionBurstCleanupRef = useRef(null);
@@ -335,7 +334,6 @@ export default function TerminalWorkspacesManager({
     error: resumableError,
     isLoading: isLoadingResumableSessions,
     refresh: refreshResumableSessions,
-    retry: retryResumableSessions,
   } = useResumableSessionCatalog({ cwd });
   const swarmLaunchProject = useMemo(
     () => ({ id: projectId, name: 'Terminal Workspace', local_path: cwd }),
@@ -344,7 +342,7 @@ export default function TerminalWorkspacesManager({
   const swarmLaunchCatalog = useMemo(() => selectSwarmLaunchCatalog(), []);
 
   // Maximize state
-  const [isMaximized, setIsMaximized] = useState(() => {
+  const [isMaximized] = useState(() => {
     try {
       return storage?.getItem('devhub_terminal_maximized') === 'true';
     } catch {
@@ -597,7 +595,7 @@ export default function TerminalWorkspacesManager({
     [storage, terminalStateStorageKey]
   );
 
-  const { flushTerminalPersistenceNow } = useWorkspaceBootstrapEffect({
+  useWorkspaceBootstrapEffect({
     projectId,
     storage,
     isVisible,
