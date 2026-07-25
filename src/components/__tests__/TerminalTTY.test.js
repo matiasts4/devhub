@@ -91,7 +91,6 @@ const TerminalTTY = TerminalTTYModule.default;
 
 const {
   buildTerminalViewportDiagnosticPayload,
-  getNativeTerminalBounds,
   createTerminalViewportDiagnosticLogger,
   fitTerminalViewport,
   proposeTerminalViewportDimensions,
@@ -100,14 +99,11 @@ const {
   clampTerminalViewportDimensions,
   isPlausibleTerminalCellSize,
   shouldReleaseWebglRendererOnLayoutHide,
-  getTerminalRendererRecoveryActionLabel,
   getTerminalRendererStatusCopy,
   getXtermContainerAnimProps,
   refreshTerminalViewport,
   forceTerminalViewportRepaint,
   isWebglAddonContextLost,
-  resolveTerminalRuntimePhase,
-  resolveTerminalConnectionCloseState,
   resolveTerminalRendererViewModel,
   shouldShowTerminalStatusOverlay,
   shouldLogTerminalViewportDiagnostic,
@@ -120,9 +116,7 @@ const {
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldSkipGpuVisibilityReveal,
   shouldSoftGpuWorkspaceReveal,
-  shouldPureGpuWorkspaceReveal,
   resolveWorkspaceLayoutShowRevealMode,
-  performSoftGpuVisibilityReveal,
   flushHiddenTerminalCatchupToTerm,
   shouldFreezeDomViewportOnWorkspaceShow,
   shouldAttachCanvasRenderer,
@@ -148,58 +142,15 @@ const {
   shouldForcePtyNudgeOnSurvivorSoftReveal,
   shouldClearGpuAtlasOnWorkspaceShow,
   shouldClearAtlasForSplitCanvas,
-  shouldBlockLateInitialCommandSend,
   shouldReleaseCanvasRendererOnLayoutHide,
   shouldShowTerminalLoadingOverlay,
   shouldShowTerminalViewport,
   shouldAutoReconnectTerminal,
   shouldReconnectTerminalOnOsResume,
-  shouldReinitializeTerminalForRenderer,
-  shouldBlockTerminalViewportForWebglFallback,
   resolveTerminalFontFamily,
   isTerminalViewportNearBottom,
-  getTerminalViewportScrollOffset,
-  restoreTerminalViewportScroll,
-  shouldUseTerminalScrollbackWheel,
-  shouldInjectTerminalWheelIntoPty,
-  scrollTerminalViewport,
-  resolveTerminalWheelScrollDirection,
-  resolveTerminalWheelPageSteps,
-  buildTerminalWheelPageSequence,
-  isTerminalTranscriptCell,
-  resolveTerminalCellFromPointer,
-  shouldRouteWheelToTranscript,
-  resolveTerminalWheelScrollPrefer,
-  shouldPassthroughNativeTuiWheel,
-  shouldInjectGrokWheelSgr,
-  shouldScrollKimiWheelLocally,
-  resolveGrokWheelSgrCoords,
-  buildGrokWheelScrollPayload,
-  resolveTerminalWheelInputZoneRows,
-  resolveTerminalPointerElement,
-  resolveTerminalScreenElement,
-  forwardTerminalWheelToXterm,
-  isForwardedTerminalWheelEvent,
-  TERMINAL_WHEEL_FORWARD_FLAG,
-  TERMINAL_GROK_INPUT_ZONE_ROWS,
-  isLikelyTuiInitialCommand,
-  isGrokTuiInitialCommand,
-  detectGrokTuiReady,
-  detectGrokSessionFromOutput,
-  buildTerminalWheelArrowSequence,
-  buildTerminalWheelScrollPayload,
-  buildTerminalWheelSgrSequence,
-  disableTerminalFocusReporting,
-  prepareActiveTuiTerminalFocus,
   resolveTerminalClipboardShortcut,
-  TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
-  TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
-  TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,
-  TERMINAL_PAGE_UP_SEQ,
-  TERMINAL_PAGE_DOWN_SEQ,
   stabilizeTerminalRenderer,
-  TERMINAL_NATIVE_CONTENT_BODY_STYLE,
-  TERMINAL_VIEWPORT_SHELL_STYLE,
 } = TerminalTTYModule;
 
 function installTerminalDom() {
@@ -256,13 +207,6 @@ async function renderIntoDom(element) {
   await flushTerminalEffects();
 
   return { container, root };
-}
-
-async function rerenderIntoRoot(root, element) {
-  flushSync(() => {
-    root.render(element);
-  });
-  await flushTerminalEffects();
 }
 
 function cleanupMountedRoots() {

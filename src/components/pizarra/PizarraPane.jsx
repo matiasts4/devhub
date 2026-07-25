@@ -52,7 +52,6 @@ import {
   computeAdaptiveSnapZones,
   computeAdaptiveRectLayout,
   computeAdaptiveViewLayout,
-  computeAdaptiveVisibleLayout,
   getViewportAnchoredLayoutRegion,
   PIZARRA_AUTOFIT_CAMERA,
   PIZARRA_AUTOFIT_LAYOUT,
@@ -256,12 +255,6 @@ export default function PizarraPane({
   // canvasContainerRef is passed to CanvasViewportProvider so ResizeObserver
   // tracks the canvas container position for coordinate translation.
   const canvasContainerRef = useRef(null);
-
-  // pizarra-divider-fluid: last committed values captured during rAF-batched
-  // divider drag so that on mouseup we can force a final model update even
-  // if the last rAF was cancelled. Declared at component level (hooks rule).
-  const lastDividerVRef = useRef(null);
-  const lastDividerHRef = useRef(null);
 
   // Measure before paint when possible, then keep ResizeObserver in sync.
   React.useLayoutEffect(() => {
@@ -842,7 +835,7 @@ function PizarraInner({
   updateElement,
   resetElements,
   selectElement,
-  selectedElements,
+  selectedElements: _selectedElements,
   activeTerminalId,
   setActiveTerminalId,
   canvasSize,
@@ -1121,19 +1114,6 @@ function PizarraInner({
     };
   }, [canvasSize, zoom, viewportToCanvas]);
 
-  /** Viewport-sized world rect at zoom 1, anchored to the current screen center. */
-  const getViewportLayoutRegionAtUnitZoom = useCallback(() => {
-    const z = zoom > 0 ? zoom : 1;
-    const worldCenterX = (canvasSize.width / 2 - pan.x) / z;
-    const worldCenterY = (canvasSize.height / 2 - pan.y) / z;
-    return {
-      x: worldCenterX - canvasSize.width / 2,
-      y: worldCenterY - canvasSize.height / 2,
-      width: canvasSize.width,
-      height: canvasSize.height,
-    };
-  }, [canvasSize.width, canvasSize.height, zoom, pan.x, pan.y]);
-
   const postViewSwitchFitRef = useRef(null);
 
   const finishViewSwitch = useCallback(
@@ -1194,7 +1174,6 @@ function PizarraInner({
       animateToPan,
       activeWorkspaceWindowId,
       fallbackViewId,
-      viewTransitionPair,
       pendingViewId,
       isViewTransitioning,
       finishViewSwitch,
@@ -1392,37 +1371,6 @@ function PizarraInner({
   }, [handleWheelViewNavigate, setWheelViewNavigateHandler]);
 
   useEffect(() => () => clearWheelIdleTimer(), [clearWheelIdleTimer]);
-
-  const applyAdaptiveVisibleLayout = useCallback(
-    (surfaces = liveSurfacesForZones, region = null) => {
-      if (!surfaces.length) return { layouts: [], hiddenBrowserIds: [] };
-      const vis = region || getVisibleCanvasRegion();
-      const { layouts, hiddenBrowserIds } = computeAdaptiveVisibleLayout(vis, surfaces);
-      layouts.forEach(({ id, x, y, width, height }) => {
-        onUpdateElement?.(id, { x, y, width, height, visible: true });
-      });
-      hiddenBrowserIds.forEach((id) => {
-        registry.updatePizarraLayout?.(id, { visible: false });
-      });
-      return { layouts, hiddenBrowserIds, visibleRegion: vis };
-    },
-    [liveSurfacesForZones, getVisibleCanvasRegion, onUpdateElement, registry]
-  );
-
-  const applyAdaptiveViewLayout = useCallback(
-    (surfaces = liveSurfacesForZones) => {
-      if (!surfaces.length) return { layouts: [], hiddenBrowserIds: [] };
-      const { layouts, hiddenBrowserIds } = computeAdaptiveViewLayout(viewOrigin, surfaces);
-      layouts.forEach(({ id, x, y, width, height }) => {
-        onUpdateElement?.(id, { x, y, width, height, visible: true });
-      });
-      hiddenBrowserIds.forEach((id) => {
-        registry.updatePizarraLayout?.(id, { visible: false });
-      });
-      return { layouts, hiddenBrowserIds };
-    },
-    [viewOrigin, liveSurfacesForZones, onUpdateElement, registry]
-  );
 
   const fitCameraToBounds = useCallback(
     (fitBounds, options = {}) => {
@@ -1648,23 +1596,6 @@ function PizarraInner({
       );
     },
     [handleFitAllView, collectTerminalPanelIds, liveSurfacesForZones]
-  );
-
-  const scheduleCameraFitView = useCallback(
-    (delayMs = 0) => {
-      if (autoFitTimerRef.current) {
-        clearTimeout(autoFitTimerRef.current);
-        autoFitTimerRef.current = null;
-      }
-      autoFitTimerRef.current = setTimeout(
-        () => {
-          autoFitTimerRef.current = null;
-          fitCameraToActiveView();
-        },
-        Math.max(0, delayMs)
-      );
-    },
-    [fitCameraToActiveView]
   );
 
   useEffect(
@@ -1906,7 +1837,6 @@ function PizarraInner({
     registry.surfaces,
     registry.updatePizarraLayout,
     canvasSize,
-    SHAPE_TYPES,
     views,
     fallbackViewId,
     handleFitAllView,
@@ -1922,7 +1852,6 @@ function PizarraInner({
 
       // Compute visible region in canvas space
       const vis = getVisibleCanvasRegion();
-      const visCenterX = vis.x + vis.width / 2;
       const visCenterY = vis.y + vis.height / 2;
 
       // Split the visible area into left (browser) and right (terminal) zones.
@@ -1963,7 +1892,7 @@ function PizarraInner({
 
       // Create shape with position and extra props (label, initialCommand, url).
       // Ignore x/y from extraProps to preserve viewport-aware smart placement zones.
-      const { x: ignoredX, y: ignoredY, ...cleanedExtraProps } = extraProps;
+      const { x: _ignoredX, y: _ignoredY, ...cleanedExtraProps } = extraProps;
 
       if (isTerminal || type === 'browser') {
         const surfaceData = {
@@ -2147,111 +2076,6 @@ function PizarraInner({
         { x: rightX, y: topY, width: bw, height: usableH },
       ],
     };
-  };
-
-  // ── computeAutoFitSlots — smart adaptive layout based on surface count/type ──
-  // Picks the best layout strategy given the current set of live surfaces and
-  // the visible canvas region. This is the heart of "Fit All" / auto-refit.
-  // Returns an array of { id, x, y, width, height } updates to apply.
-  const computeAutoFitSlots = (vis, surfaces) => {
-    const cx = vis.x + vis.width / 2;
-    const cy = vis.y + vis.height / 2;
-    const PAD = 20;
-    const GAP = 16;
-    const maxH = Math.max(200, Math.round(vis.height * 0.88));
-
-    const browsers = surfaces.filter((s) => s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER);
-    const terminals = surfaces.filter(
-      (s) => s.type === 'terminal' || s.type === SHAPE_TYPES.TERMINAL
-    );
-    const n = surfaces.length;
-
-    // 1 surface: center and fill
-    if (n === 1) {
-      const s = surfaces[0];
-      const isBrowser = s.type === 'browser' || s.type === SHAPE_TYPES.BROWSER;
-      const w = Math.max(400, Math.round(vis.width * 0.86));
-      const h = Math.max(300, Math.min(Math.round(vis.height * 0.86), isBrowser ? 800 : 600));
-      return [
-        { id: s.id, x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), width: w, height: h },
-      ];
-    }
-
-    // 1 browser + 1 terminal → dev-split (~58/42 split)
-    if (browsers.length === 1 && terminals.length === 1) {
-      const slots = computeDevSplitSlots(vis);
-      return [
-        { id: browsers[0].id, ...slots.browser },
-        { id: terminals[0].id, ...slots.terminals[0] },
-      ];
-    }
-
-    // 1 browser + 2 terminals → trio
-    if (browsers.length === 1 && terminals.length === 2) {
-      const slots = computeDevTrioSlots(vis);
-      return [
-        { id: browsers[0].id, ...slots.browser },
-        { id: terminals[0].id, ...slots.terminals[0] },
-        { id: terminals[1].id, ...slots.terminals[1] },
-      ];
-    }
-
-    // 2 browsers + 0 terminals → dual column
-    if (browsers.length === 2 && terminals.length === 0) {
-      const slots = computeDualBrowserSlots(vis);
-      return [
-        { id: browsers[0].id, ...slots.browsers[0] },
-        { id: browsers[1].id, ...slots.browsers[1] },
-      ];
-    }
-
-    // 0 browsers + N terminals → stack vertically or horizontal depending on count
-    if (browsers.length === 0 && terminals.length > 0) {
-      if (terminals.length <= 3) {
-        // Side by side
-        const tw = Math.max(
-          200,
-          Math.round((vis.width - PAD * 2 - GAP * (terminals.length - 1)) / terminals.length)
-        );
-        const th = Math.max(240, Math.min(maxH, Math.round(vis.height * 0.82)));
-        const totalW = tw * terminals.length + GAP * (terminals.length - 1);
-        const startX = Math.round(cx - totalW / 2);
-        const startY = Math.round(cy - th / 2);
-        return terminals.map((t, i) => ({
-          id: t.id,
-          x: startX + i * (tw + GAP),
-          y: startY,
-          width: tw,
-          height: th,
-        }));
-      }
-    }
-
-    // Generic: 2-column responsive grid centered in viewport
-    const cols = n <= 2 ? n : Math.min(2, Math.ceil(Math.sqrt(n)));
-    const rows = Math.ceil(n / cols);
-    const usableW = vis.width - PAD * 2 - GAP * (cols - 1);
-    const usableH = vis.height - PAD * 2 - GAP * (rows - 1);
-    const cellW = Math.max(200, Math.round(usableW / cols));
-    const cellH = Math.max(160, Math.round(usableH / rows));
-    const totalGridW = cols * cellW + GAP * (cols - 1);
-    const totalGridH = rows * cellH + GAP * (rows - 1);
-    const startX = Math.round(vis.x + (vis.width - totalGridW) / 2);
-    const startY = Math.round(vis.y + (vis.height - totalGridH) / 2);
-
-    // Sort: browsers first, then terminals
-    const sorted = [...browsers, ...terminals];
-    return sorted.map((s, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      return {
-        id: s.id,
-        x: startX + col * (cellW + GAP),
-        y: startY + row * (cellH + GAP),
-        width: cellW,
-        height: cellH,
-      };
-    });
   };
 
   // ── Apply layout preset (or arrange action) ──────────────────────────────
@@ -2468,8 +2292,6 @@ function PizarraInner({
       handleFitAllView,
     ]
   );
-
-  const selectedElement = selectedElements.length === 1 ? selectedElements[0] : null;
 
   // --- Draggable layout dividers (zonas arrastrables) ---
   // Pure computation: find pairs of live surfaces whose edges are close and
