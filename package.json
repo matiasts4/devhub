@@ -179,5 +179,11 @@
     "prettier": "^3.8.1",
     "tailwindcss": "^4.2.2"
   },
-  "packageManager": "pnpm@10.29.3"
+  "packageManager": "pnpm@10.29.3",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-winstaller"
+    ]
+  }
 }
