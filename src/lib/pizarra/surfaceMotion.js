@@ -48,9 +48,11 @@ export const SURFACE_BORDER = {
   selected: '1.5px solid rgba(88, 166, 255, 0.95)',
 };
 
-/** Pizarra surface container chrome — compact but readable headers. */
+/** Pizarra surface container chrome — compact but readable headers.
+ * pizarra-drag-fluidity-2: header bumped 26→30px so the drag target is
+ * easier to grab (user feedback: "es muy delicado seleccionar para mover"). */
 export const PIZARRA_SURFACE_FRAME_INSET = 6;
-export const PIZARRA_SURFACE_HEADER_HEIGHT = 26;
+export const PIZARRA_SURFACE_HEADER_HEIGHT = 30;
 export const PIZARRA_SURFACE_BORDER_RADIUS = 12;
 
 export const PIZARRA_SURFACE_HEADER_STYLE = {

@@ -25,6 +25,7 @@ import { GripVertical, RefreshCw, X } from 'lucide-react';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
+import SurfaceDragRing from './SurfaceDragRing';
 import {
   raiseNativeBrowser,
   resizeNativeBrowser,
@@ -68,7 +69,10 @@ function resolveBrowserUrl(url) {
 }
 
 function canonicalBrowserUrl(url) {
-  return sanitizeBrowserUrl(normalizeBrowserUrl(url) || resolveBrowserUrl(url), DEFAULT_BROWSER_URL);
+  return sanitizeBrowserUrl(
+    normalizeBrowserUrl(url) || resolveBrowserUrl(url),
+    DEFAULT_BROWSER_URL
+  );
 }
 
 function isElectronDesktopHost() {
@@ -698,7 +702,11 @@ export default function PizarraBrowserSurface({
             // direct style mutations on the ancestors. This makes the "cuerpo"
             // (web content / terminal lines) follow the header without pop-in on release.
             suspendNativeSurface={
-              isDragging || isSurfaceDragging || hudRevealed || suspendDuringViewTransition || suspendDuringCanvasPan
+              isDragging ||
+              isSurfaceDragging ||
+              hudRevealed ||
+              suspendDuringViewTransition ||
+              suspendDuringCanvasPan
             }
             // Electron webview: keep guest warm during card drag/resize; only park when
             // the whole pizarra view transition or canvas pan would leave a ghost guest.
@@ -723,8 +731,10 @@ export default function PizarraBrowserSurface({
                 title={`Mover ${shape.label || 'navegador'}`}
                 onMouseDown={handleDragStart}
                 style={{
-                  width: 22,
-                  height: 24,
+                  // pizarra-drag-fluidity-2: enlarged 22x24 → 30x30 so the
+                  // grip is an easier target (complement to the border ring).
+                  width: 30,
+                  height: 30,
                   flexShrink: 0,
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -735,7 +745,7 @@ export default function PizarraBrowserSurface({
                   userSelect: 'none',
                 }}
               >
-                <GripVertical size={13} />
+                <GripVertical size={14} />
               </div>
             }
             toolbarTrailingContent={
@@ -824,11 +834,24 @@ export default function PizarraBrowserSurface({
         ) : null}
       </div>
 
+      {/* pizarra-drag-fluidity-2: border drag ring — the entire perimeter of
+          the browser card is now a move target (cursor: move on hover).
+          Complements the enlarged grip icon; users can grab any border edge
+          to move the card without hunting for the small grip. */}
+      <SurfaceDragRing
+        onMouseDown={handleDragStart}
+        locked={!!shape.locked}
+        testIdPrefix="pizarra-browser"
+      />
+
       {/* pizarra-resize-affordance: zoom-aware resize handles (browser surface).
           Same approach as CanvasTerminal: large hit areas for easy grab,
           but no permanent visible rails or corner cuadritos to keep the
           aesthetic clean. The frame selection chrome + cursor on hit areas
-          are the affordances. data-testids and drag-handle exclusion kept. */}
+          are the affordances. data-testids and drag-handle exclusion kept.
+          pizarra-drag-fluidity-2: handles centered on the ROOT outer edge so
+          ~half the hit area sits outside the card (less content overlap,
+          easier to reach from outside). */}
       {selected &&
         (() => {
           const eg = handleSizing.edge;
@@ -854,7 +877,7 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-n"
                 onMouseDown={(ev) => handleResizeStart(ev, 'n')}
                 style={edgeStyle({
-                  top: FRAME_INSET - eg / 2,
+                  top: -eg / 2,
                   left: ins,
                   right: ins,
                   height: eg,
@@ -865,7 +888,7 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
                 style={edgeStyle({
-                  bottom: FRAME_INSET - eg / 2,
+                  bottom: -eg / 2,
                   left: ins,
                   right: ins,
                   height: eg,
@@ -876,7 +899,7 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
                 style={edgeStyle({
-                  left: FRAME_INSET - eg / 2,
+                  left: -eg / 2,
                   top: ins,
                   bottom: ins,
                   width: eg,
@@ -887,7 +910,7 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
                 style={edgeStyle({
-                  right: FRAME_INSET - eg / 2,
+                  right: -eg / 2,
                   top: ins,
                   bottom: ins,
                   width: eg,
@@ -898,8 +921,8 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
                 style={cornerStyle({
-                  top: FRAME_INSET - c / 2,
-                  left: FRAME_INSET - c / 2,
+                  top: -c / 2,
+                  left: -c / 2,
                   cursor: 'nwse-resize',
                 })}
               />
@@ -907,8 +930,8 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
                 style={cornerStyle({
-                  top: FRAME_INSET - c / 2,
-                  right: FRAME_INSET - c / 2,
+                  top: -c / 2,
+                  right: -c / 2,
                   cursor: 'nesw-resize',
                 })}
               />
@@ -916,8 +939,8 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
                 style={cornerStyle({
-                  bottom: FRAME_INSET - c / 2,
-                  left: FRAME_INSET - c / 2,
+                  bottom: -c / 2,
+                  left: -c / 2,
                   cursor: 'nesw-resize',
                 })}
               />
@@ -925,8 +948,8 @@ export default function PizarraBrowserSurface({
                 data-testid="pizarra-browser-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
                 style={cornerStyle({
-                  bottom: FRAME_INSET - c / 2,
-                  right: FRAME_INSET - c / 2,
+                  bottom: -c / 2,
+                  right: -c / 2,
                   cursor: 'nwse-resize',
                 })}
               />

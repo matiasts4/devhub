@@ -20,6 +20,8 @@ const DEFAULT_BACKGROUND = {
   value: '#1a1f2e',
 };
 
+import { preloadSceneryImage } from '@/lib/sceneries/sceneryPreferences';
+
 export function readPizarraBackground() {
   if (typeof window === 'undefined') return DEFAULT_BACKGROUND;
   try {
@@ -29,10 +31,14 @@ export function readPizarraBackground() {
     if (!parsed || !Object.values(PIZARRA_BACKGROUND_TYPES).includes(parsed.type)) {
       return DEFAULT_BACKGROUND;
     }
-    return {
+    const bg = {
       type: parsed.type,
       value: parsed.value || '',
     };
+    if (bg.type === PIZARRA_BACKGROUND_TYPES.IMAGE && bg.value) {
+      preloadSceneryImage(bg.value);
+    }
+    return bg;
   } catch {
     return DEFAULT_BACKGROUND;
   }
@@ -44,6 +50,9 @@ export function writePizarraBackground(background) {
     window.localStorage.setItem(PIZARRA_BACKGROUND_KEY, JSON.stringify(background));
   } catch {
     /* ignore */
+  }
+  if (background && background.type === PIZARRA_BACKGROUND_TYPES.IMAGE && background.value) {
+    preloadSceneryImage(background.value);
   }
 }
 

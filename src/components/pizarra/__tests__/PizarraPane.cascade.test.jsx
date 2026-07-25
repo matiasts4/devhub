@@ -77,6 +77,7 @@ function installDom() {
   global.HTMLElement = dom.window.HTMLElement;
   global.MouseEvent = dom.window.MouseEvent;
   global.Event = dom.window.Event;
+  global.CustomEvent = dom.window.CustomEvent;
   global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
   global.cancelAnimationFrame = (id) => clearTimeout(id);
   // ResizeObserver shim — PizarraPane uses it in useEffect.

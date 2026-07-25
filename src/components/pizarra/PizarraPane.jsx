@@ -5,7 +5,7 @@
  * Uses usePizarraState for state management.
  *
  * Architecture note: PizarraInner is a child of CanvasViewportProvider so that
- * spawn (handleAddElement) and magnetic snap (handleMoveElement) are viewport-aware
+ * spawn (handleAddElement) and camera-fit logic are viewport-aware
  * — they account for current pan and zoom when computing canvas coordinates.
  */
 
@@ -17,7 +17,6 @@ import PizarraToolPalette from './PizarraToolPalette';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
 import PizarraContextMenu from './PizarraContextMenu';
 import PizarraMinimap from './PizarraMinimap';
-import PizarraZoneGuides from './PizarraZoneGuides';
 import PizarraEdgeSwipeZones from './PizarraEdgeSwipeZones';
 import PizarraZoomControls from './PizarraZoomControls';
 import usePizarraCanvasPan, { isEditableTarget } from './hooks/usePizarraCanvasPan';
@@ -47,7 +46,6 @@ import {
   computeLayoutsBounds,
   computeViewportFitToBounds,
   resolveFitBoundsForView,
-  resolveZoneSnap,
 } from '@/lib/pizarra/canvasBounds';
 import {
   computeAdaptiveSnapZones,
@@ -100,6 +98,9 @@ import {
   readPizarraViewport,
   writePizarraViewport,
 } from '@/lib/pizarra/pizarraViewportPersistence';
+import SceneryBackground from '@/components/scenery/SceneryBackground';
+import { useSceneryPrefs } from '@/lib/sceneries/useSceneryPrefs';
+import { resolveSceneryStyle } from '@/lib/sceneries/sceneryPreferences';
 
 // SSR-safe canvas import
 const PizarraCanvas = dynamic(() => import('./PizarraCanvas'), {
@@ -249,6 +250,12 @@ export default function PizarraPane({
   }, []);
 
   const [activeTerminalId, setActiveTerminalId] = useState(null);
+  // scenery-wallpapers: live scenery prefs so the canvas container can mirror
+  // "wallpaper active for the pizarra scope" as a data attribute — globals.css
+  // scopes the terminal glass/tint rules to that marker (same pattern as the
+  // workspace shell in normal mode).
+  const sceneryPrefs = useSceneryPrefs();
+  const sceneryPizarraActive = resolveSceneryStyle(sceneryPrefs, 'pizarra') !== null;
   // Seed 800×600 for SSR/jsdom; useLayoutEffect overwrites with the real pane
   // size before the first paint whenever the host has layout.
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -397,6 +404,21 @@ export default function PizarraPane({
 
   const handleUpdateElement = useCallback(
     (id, changes) => {
+      const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
+
+      // Live surfaces (terminal/browser) get COMPLETE FREEDOM — no grid snap.
+      // Snapping here fought the smooth rAF/direct-DOM resize+move mutations:
+      // every live commit was re-rounded to a 20px grid, so React re-rendered
+      // with quantized bounds that overwrote the pointer-speed DOM values.
+      // That produced the resize flicker and made the "anchored" edge drift
+      // (x/y were re-snapped on every commit even though they were logically
+      // unchanged). In unlocked mode the user expects free placement/sizing.
+      if (isRegistrySurface) {
+        registry.updatePizarraLayout(id, changes);
+        return;
+      }
+
+      // Simple Konva shapes keep grid alignment for tidy boards.
       const GRID_SIZE = 20;
       const snappedChanges = { ...changes };
       if (typeof snappedChanges.x === 'number') {
@@ -411,13 +433,7 @@ export default function PizarraPane({
       if (typeof snappedChanges.height === 'number') {
         snappedChanges.height = Math.round(snappedChanges.height / GRID_SIZE) * GRID_SIZE;
       }
-
-      const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
-      if (isRegistrySurface) {
-        registry.updatePizarraLayout(id, snappedChanges);
-      } else {
-        updateElement(id, snappedChanges);
-      }
+      updateElement(id, snappedChanges);
     },
     [updateElement, registry.surfaces, registry.updatePizarraLayout]
   );
@@ -810,6 +826,7 @@ export default function PizarraPane({
           onWorkspaceWindowAdd={onWorkspaceWindowAdd}
           onWorkspaceWindowRemove={onWorkspaceWindowRemove}
           initialHudRevealed={initialHudRevealed}
+          sceneryPizarraActive={sceneryPizarraActive}
           hasRestoredViewport={Boolean(savedViewport)}
         />
       </CanvasViewportProvider>
@@ -859,6 +876,7 @@ function PizarraInner({
   onWorkspaceWindowAdd,
   onWorkspaceWindowRemove,
   initialHudRevealed = false,
+  sceneryPizarraActive = false,
   hasRestoredViewport = false,
 }) {
   const { zoom, pan, setZoom, setPan, viewportToCanvas, setWheelViewNavigateHandler } =
@@ -896,7 +914,6 @@ function PizarraInner({
   const viewIndex = getViewIndex(activeWorkspaceWindowId || views[0]?.id, views);
   const viewOrigin = useMemo(() => getViewWorldOrigin(viewIndex), [viewIndex]);
 
-  const [highlightZone, setHighlightZone] = useState(null);
   const [isSurfaceDragging, setIsSurfaceDragging] = useState(false);
   const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const surfaceDragCountRef = useRef(0);
@@ -1847,7 +1864,8 @@ function PizarraInner({
 
       if (!didAutoStructureRef.current && bNeeds.length === 1 && tNeeds.length === 1) {
         didAutoStructureRef.current = groupsByView.size === 1;
-        const slots = computeViewDevSplitSlots(viewOrigin);
+        const dockSide = bNeeds[0]?.pizarra?.dockSide || bNeeds[0]?.dockSide || 'left';
+        const slots = computeViewDevSplitSlots(viewOrigin, dockSide);
         registry.updatePizarraLayout(bNeeds[0].id, { ...slots.browser, visible: true });
         registry.updatePizarraLayout(tNeeds[0].id, { ...slots.terminals[0], visible: true });
         laidOutRegistryRef.current.add(bNeeds[0].id);
@@ -1966,8 +1984,7 @@ function PizarraInner({
             viewId: fallbackViewId || undefined,
           },
           url:
-            cleanedExtraProps.url ||
-            (type === 'browser' ? 'https://duckduckgo.com/' : undefined),
+            cleanedExtraProps.url || (type === 'browser' ? 'https://duckduckgo.com/' : undefined),
           initialCommand: cleanedExtraProps.initialCommand,
           label: cleanedExtraProps.label || (isTerminal ? `Terminal` : `Browser`),
           // terminal-renderer-default-xterm-webgl: defensive pin — even if
@@ -2014,102 +2031,55 @@ function PizarraInner({
     ]
   );
 
-  // ── handleMoveElement — zone snap on drop (adaptive layout slots) ────────
-  // pizarra-free-placement: the surface lands exactly where the user dropped
-  // it. The previous 2×3 magnetic snap-zone grid yanked cards to fixed slots,
-  // which felt like the card was being "thrown" away from the drop point and
-  // left badly positioned. Free placement is predictable and intuitive: where
-  // you release is where it stays. Coordinates are rounded to whole pixels so
-  // the native VTE/WebKit surfaces don't land on sub-pixel offsets (which
-  // causes blurry text on those real OS windows).
+  // ── Surface drag lifecycle ────────────────────────────────────────────────
+  // pizarra-free-placement: no zone snap on drop. Surfaces land exactly where
+  // the user releases them — predictable and intuitive. Auto-arrange actions
+  // in the tool palette are the explicit way to organize the board.
   const handleSurfaceDragStart = useCallback(() => {
     surfaceDragCountRef.current += 1;
     setIsSurfaceDragging(true);
   }, []);
 
-  const handleSurfaceDragMove = useCallback(
-    (id, position) => {
-      const shape = mergedElements.find((el) => el.id === id);
-      if (!shape || !activeSnapZones) {
-        setHighlightZone(null);
-        return;
-      }
-
-      const snapped = resolveZoneSnap(
-        {
-          x: position.x,
-          y: position.y,
-          width: shape.width || 640,
-          height: shape.height || 400,
-        },
-        activeSnapZones
-      );
-      setHighlightZone(snapped?.zone ?? null);
-    },
-    [mergedElements, activeSnapZones]
-  );
+  const handleSurfaceDragMove = useCallback(() => {
+    // No-op: zone highlighting removed (pizarra-free-placement). Kept as a
+    // stable callback so the live surface layer wiring stays intact.
+  }, []);
 
   const handleSurfaceDragEnd = useCallback(() => {
     surfaceDragCountRef.current = Math.max(0, surfaceDragCountRef.current - 1);
     if (surfaceDragCountRef.current === 0) {
       setIsSurfaceDragging(false);
-      setHighlightZone(null);
     }
   }, []);
 
   const handleMoveElement = useCallback(
     (id, position) => {
-      const shape = mergedElements.find((el) => el.id === id);
-      const shapeWidth = shape?.width || 640;
-      const shapeHeight = shape?.height || 400;
-
-      let finalX = Math.round(position.x);
-      let finalY = Math.round(position.y);
-      let finalW = shapeWidth;
-      let finalH = shapeHeight;
-
-      const snapped = activeSnapZones
-        ? resolveZoneSnap(
-            { x: position.x, y: position.y, width: shapeWidth, height: shapeHeight },
-            activeSnapZones
-          )
-        : null;
-
-      if (snapped) {
-        finalX = snapped.x;
-        finalY = snapped.y;
-        finalW = snapped.width;
-        finalH = snapped.height;
-        setHighlightZone(snapped.zone);
-      } else {
-        setHighlightZone(null);
-      }
-
+      // pizarra-free-placement: the surface lands exactly where the user
+      // dropped it. Zone snapping was removed — it yanked cards away from
+      // the drop point and interfered with free movement. Auto-arrange
+      // actions (arrange-fit/h/v/equal/grid) are the explicit way to
+      // organize surfaces. Coordinates are rounded to whole pixels so the
+      // native VTE/WebKit surfaces don't land on sub-pixel offsets (which
+      // causes blurry text on those real OS windows).
       const layoutPatch = {
-        x: finalX,
-        y: finalY,
-        ...(snapped ? { width: finalW, height: finalH } : {}),
+        x: Math.round(position.x),
+        y: Math.round(position.y),
         userPlaced: true,
       };
 
       const isRegistrySurface = registry.surfaces.some((s) => s.id === id);
       if (isRegistrySurface) {
         registry.updatePizarraLayout(id, layoutPatch);
-      } else if (shape) {
-        updateElement(id, layoutPatch);
       } else {
-        registry.updatePizarraLayout(id, layoutPatch);
+        const shape = mergedElements.find((el) => el.id === id);
+        if (shape) {
+          updateElement(id, layoutPatch);
+        } else {
+          registry.updatePizarraLayout(id, layoutPatch);
+        }
       }
-
-      requestAnimationFrame(() => setHighlightZone(null));
     },
-    [
-      updateElement,
-      mergedElements,
-      activeSnapZones,
-      registry.surfaces,
-      registry.updatePizarraLayout,
-    ]
+    [updateElement, mergedElements, registry.surfaces, registry.updatePizarraLayout]
   );
 
   // ── Surface Controller for CommandBar ─────────────────────────────────────
@@ -2414,7 +2384,8 @@ function PizarraInner({
             });
         }
 
-        // Apply (handleUpdateElement will grid-snap + route to registry/reducer)
+        // Apply (handleUpdateElement routes to registry/reducer; live surfaces
+        // keep these exact computed positions — no grid re-snap).
         updates.forEach((u) => onUpdateElement?.(u.id, u));
         if (updates.length) onSelect?.(updates[0].id, true);
         return;
@@ -2821,6 +2792,7 @@ function PizarraInner({
           ref={canvasContainerRef}
           data-testid="pizarra-canvas-container"
           data-view-transitioning={isViewTransitioning ? 'true' : 'false'}
+          data-scenery-active={sceneryPizarraActive ? 'true' : 'false'}
           style={{
             position: 'absolute',
             top: 0,
@@ -2831,13 +2803,8 @@ function PizarraInner({
             cursor: isCanvasPanning ? 'grabbing' : undefined,
           }}
         >
-          <PizarraZoneGuides
-            canvasWidth={canvasSize.width}
-            canvasHeight={canvasSize.height}
-            visible={isSurfaceDragging && liveSurfacesForZones.length > 0}
-            highlightZone={highlightZone}
-            snapZones={activeSnapZones}
-          />
+          {/* Scenery wallpaper — fixed full-space layer behind the canvas */}
+          <SceneryBackground scope="pizarra" zIndex={0} />
 
           <PizarraCanvas
             elements={mergedElements}

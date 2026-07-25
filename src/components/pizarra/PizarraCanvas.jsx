@@ -26,6 +26,11 @@ import {
   readPizarraBackground,
   resolvePizarraBackgroundStyle,
 } from '@/lib/pizarra/pizarraPreferences';
+import {
+  readSceneryPrefs,
+  resolveSceneryStyle as resolveSceneryBgStyle,
+  SCENERY_CHANGED_EVENT,
+} from '@/lib/sceneries/sceneryPreferences';
 import ShapePreviewOverlay from './ShapePreviewOverlay';
 
 // pizarra-multi-select: AABB overlap test used by the marquee to decide
@@ -78,6 +83,7 @@ export default function PizarraCanvas({
   const panDragRef = useRef(null);
   const panWindowListenersRef = useRef(null);
   const [pizarraBackground, setPizarraBackground] = useState(() => readPizarraBackground());
+  const [sceneryPrefs, setSceneryPrefs] = useState(() => readSceneryPrefs());
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
 
   // Sync pizarra background preferences and listen for live changes.
@@ -90,6 +96,21 @@ export default function PizarraCanvas({
     window.addEventListener('devhub:pizarra-background-changed', handleBackgroundChanged);
     return () => {
       window.removeEventListener('devhub:pizarra-background-changed', handleBackgroundChanged);
+    };
+  }, []);
+
+  // Sync scenery wallpaper preferences — when a scenery is active for the
+  // pizarra scope the canvas wrapper becomes transparent so the fixed
+  // SceneryBackground layer (mounted by PizarraPane) shows through.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    setSceneryPrefs(readSceneryPrefs());
+    const handleSceneryChanged = (event) => {
+      setSceneryPrefs(event.detail || readSceneryPrefs());
+    };
+    window.addEventListener(SCENERY_CHANGED_EVENT, handleSceneryChanged);
+    return () => {
+      window.removeEventListener(SCENERY_CHANGED_EVENT, handleSceneryChanged);
     };
   }, []);
 
@@ -550,7 +571,13 @@ export default function PizarraCanvas({
 
   // pizarra-ux-overhaul: background is now driven by user preferences.
   // The default matches the previous radial dot pattern.
-  const pizarraBgStyle = resolvePizarraBackgroundStyle(pizarraBackground);
+  // scenery-wallpapers: when a scenery wallpaper is active for the pizarra
+  // scope, the wrapper goes transparent so the fixed SceneryBackground
+  // layer behind it shows through (wallpaper stays still during pan/zoom).
+  const sceneryActiveForPizarra = resolveSceneryBgStyle(sceneryPrefs, 'pizarra') !== null;
+  const pizarraBgStyle = sceneryActiveForPizarra
+    ? { backgroundColor: 'transparent', backgroundImage: 'none' }
+    : resolvePizarraBackgroundStyle(pizarraBackground);
 
   // ── Early return: loading state ─────────────────────────────────────────
   // All hooks MUST be declared before this point to maintain consistent

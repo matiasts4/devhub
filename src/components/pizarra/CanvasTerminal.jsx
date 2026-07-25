@@ -12,6 +12,7 @@ import {
   useSharedTerminalSurfacesEnabled,
 } from '@/components/terminal/SharedTerminalSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
+import SurfaceDragRing from './SurfaceDragRing';
 import {
   ensureSurfaceMotionKeyframes,
   resolveFrameVisual,
@@ -554,6 +555,16 @@ export default function CanvasTerminal({
         </div>
       </div>
 
+      {/* pizarra-drag-fluidity-2: border drag ring — the entire perimeter of
+          the surface is now a move target (cursor: move on hover). Solves the
+          "es muy delicado / no puedo mover" feedback: previously only the 26px
+          header initiated drags; now any border edge works. */}
+      <SurfaceDragRing
+        onMouseDown={handleHeaderMouseDown}
+        locked={locked}
+        testIdPrefix="canvas-terminal"
+      />
+
       {/* pizarra-resize-affordance: zoom-aware resize handles.
           Hit areas (edge ~28px base, corner ~38px base, inverse-scaled with zoom)
           are kept large so the resize is easy to grab (cursor changes when the
@@ -563,13 +574,16 @@ export default function CanvasTerminal({
           Selection indication comes from the frame chrome (resolveFrameVisual
           selected border + shadow). The large hit areas + cursor provide the
           easy targeting the user liked ("puedo seleccionarla mucho mas facil").
-          data-testids preserved. */}
+          pizarra-drag-fluidity-2: handles are now centered on the ROOT outer
+          edge (not the frame inset), so ~half the hit area sits OUTSIDE the
+          surface. This reduces overlap with terminal content (was ~8px of
+          blocked edge text) and lets the user reach the handle from outside
+          the card. data-testids preserved. */}
       {selected &&
         (() => {
           const e = handleSizing.edge;
           const c = handleSizing.corner;
           const ins = handleSizing.inset;
-          const FI = frameInset;
           const edgeStyle = (extra) => ({
             position: 'absolute',
             pointerEvents: 'auto',
@@ -590,7 +604,7 @@ export default function CanvasTerminal({
                 data-testid="canvas-terminal-resize-n"
                 onMouseDown={(ev) => handleResizeStart(ev, 'n')}
                 style={edgeStyle({
-                  top: FI - e / 2,
+                  top: -e / 2,
                   left: ins,
                   right: ins,
                   height: e,
@@ -601,7 +615,7 @@ export default function CanvasTerminal({
                 data-testid="canvas-terminal-resize-s"
                 onMouseDown={(ev) => handleResizeStart(ev, 's')}
                 style={edgeStyle({
-                  bottom: FI - e / 2,
+                  bottom: -e / 2,
                   left: ins,
                   right: ins,
                   height: e,
@@ -612,7 +626,7 @@ export default function CanvasTerminal({
                 data-testid="canvas-terminal-resize-w"
                 onMouseDown={(ev) => handleResizeStart(ev, 'w')}
                 style={edgeStyle({
-                  left: FI - e / 2,
+                  left: -e / 2,
                   top: ins,
                   bottom: ins,
                   width: e,
@@ -623,7 +637,7 @@ export default function CanvasTerminal({
                 data-testid="canvas-terminal-resize-e"
                 onMouseDown={(ev) => handleResizeStart(ev, 'e')}
                 style={edgeStyle({
-                  right: FI - e / 2,
+                  right: -e / 2,
                   top: ins,
                   bottom: ins,
                   width: e,
@@ -633,24 +647,24 @@ export default function CanvasTerminal({
               <div
                 data-testid="canvas-terminal-resize-nw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'nw')}
-                style={cornerStyle({ top: FI - c / 2, left: FI - c / 2, cursor: 'nwse-resize' })}
+                style={cornerStyle({ top: -c / 2, left: -c / 2, cursor: 'nwse-resize' })}
               />
               <div
                 data-testid="canvas-terminal-resize-ne"
                 onMouseDown={(ev) => handleResizeStart(ev, 'ne')}
-                style={cornerStyle({ top: FI - c / 2, right: FI - c / 2, cursor: 'nesw-resize' })}
+                style={cornerStyle({ top: -c / 2, right: -c / 2, cursor: 'nesw-resize' })}
               />
               <div
                 data-testid="canvas-terminal-resize-sw"
                 onMouseDown={(ev) => handleResizeStart(ev, 'sw')}
-                style={cornerStyle({ bottom: FI - c / 2, left: FI - c / 2, cursor: 'nesw-resize' })}
+                style={cornerStyle({ bottom: -c / 2, left: -c / 2, cursor: 'nesw-resize' })}
               />
               <div
                 data-testid="canvas-terminal-resize-se"
                 onMouseDown={(ev) => handleResizeStart(ev, 'se')}
                 style={cornerStyle({
-                  bottom: FI - c / 2,
-                  right: FI - c / 2,
+                  bottom: -c / 2,
+                  right: -c / 2,
                   cursor: 'nwse-resize',
                 })}
               />

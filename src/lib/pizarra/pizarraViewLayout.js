@@ -239,39 +239,77 @@ export function computeAdaptiveRectLayout(
 
   // Mixed: browser + terminal(s)
   if (bCount === 1 && tCount === 1) {
+    const browser = browsers[0];
+    const dockSide = browser?.pizarra?.dockSide || browser?.dockSide || 'left';
     const browserW = Math.round(inner.width * BROWSER_PRIMARY_WIDTH_RATIO);
-    const browserRect = {
-      x: inner.x,
-      y: inner.y,
-      width: browserW - Math.round(gap / 2),
-      height: inner.height,
-    };
-    const termRect = {
-      x: inner.x + browserW + Math.round(gap / 2),
-      y: inner.y,
-      width: inner.width - browserW - Math.round(gap / 2),
-      height: inner.height,
-    };
-    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
+    const termW = inner.width - browserW - Math.round(gap / 2);
+    let browserRect, termRect;
+    if (dockSide === 'right') {
+      termRect = {
+        x: inner.x,
+        y: inner.y,
+        width: termW,
+        height: inner.height,
+      };
+      browserRect = {
+        x: inner.x + termW + Math.round(gap / 2),
+        y: inner.y,
+        width: browserW - Math.round(gap / 2),
+        height: inner.height,
+      };
+    } else {
+      browserRect = {
+        x: inner.x,
+        y: inner.y,
+        width: browserW - Math.round(gap / 2),
+        height: inner.height,
+      };
+      termRect = {
+        x: inner.x + browserW + Math.round(gap / 2),
+        y: inner.y,
+        width: termW,
+        height: inner.height,
+      };
+    }
+    layouts.push({ id: browser.id, ...padRect(browserRect, 2) });
     layouts.push({ id: terminals[0].id, ...padRect(termRect, 2) });
     return { layouts, hiddenBrowserIds: hiddenBrowsers.map((b) => b.id) };
   }
 
   if (bCount === 1 && tCount === 2) {
+    const browser = browsers[0];
+    const dockSide = browser?.pizarra?.dockSide || browser?.dockSide || 'left';
     const browserW = Math.round(inner.width * BROWSER_PRIMARY_WIDTH_RATIO);
-    const browserRect = {
-      x: inner.x,
-      y: inner.y,
-      width: browserW - Math.round(gap / 2),
-      height: inner.height,
-    };
-    const termRect = {
-      x: inner.x + browserW + Math.round(gap / 2),
-      y: inner.y,
-      width: inner.width - browserW - Math.round(gap / 2),
-      height: inner.height,
-    };
-    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
+    const termW = inner.width - browserW - Math.round(gap / 2);
+    let browserRect, termRect;
+    if (dockSide === 'right') {
+      termRect = {
+        x: inner.x,
+        y: inner.y,
+        width: termW,
+        height: inner.height,
+      };
+      browserRect = {
+        x: inner.x + termW + Math.round(gap / 2),
+        y: inner.y,
+        width: browserW - Math.round(gap / 2),
+        height: inner.height,
+      };
+    } else {
+      browserRect = {
+        x: inner.x,
+        y: inner.y,
+        width: browserW - Math.round(gap / 2),
+        height: inner.height,
+      };
+      termRect = {
+        x: inner.x + browserW + Math.round(gap / 2),
+        y: inner.y,
+        width: termW,
+        height: inner.height,
+      };
+    }
+    layouts.push({ id: browser.id, ...padRect(browserRect, 2) });
     splitVertical(padRect(termRect, 2), 2, gap).forEach((slot, i) => {
       layouts.push({ id: terminals[i].id, ...slot });
     });
@@ -279,20 +317,39 @@ export function computeAdaptiveRectLayout(
   }
 
   if (bCount === 1 && tCount >= 3) {
+    const browser = browsers[0];
+    const dockSide = browser?.pizarra?.dockSide || browser?.dockSide || 'left';
     const browserW = Math.round(inner.width * BROWSER_PRIMARY_WIDTH_RATIO_DENSE);
-    const browserRect = {
-      x: inner.x,
-      y: inner.y,
-      width: browserW - Math.round(gap / 2),
-      height: inner.height,
-    };
-    const termRect = {
-      x: inner.x + browserW + Math.round(gap / 2),
-      y: inner.y,
-      width: inner.width - browserW - Math.round(gap / 2),
-      height: inner.height,
-    };
-    layouts.push({ id: browsers[0].id, ...padRect(browserRect, 2) });
+    const termW = inner.width - browserW - Math.round(gap / 2);
+    let browserRect, termRect;
+    if (dockSide === 'right') {
+      termRect = {
+        x: inner.x,
+        y: inner.y,
+        width: termW,
+        height: inner.height,
+      };
+      browserRect = {
+        x: inner.x + termW + Math.round(gap / 2),
+        y: inner.y,
+        width: browserW - Math.round(gap / 2),
+        height: inner.height,
+      };
+    } else {
+      browserRect = {
+        x: inner.x,
+        y: inner.y,
+        width: browserW - Math.round(gap / 2),
+        height: inner.height,
+      };
+      termRect = {
+        x: inner.x + browserW + Math.round(gap / 2),
+        y: inner.y,
+        width: termW,
+        height: inner.height,
+      };
+    }
+    layouts.push({ id: browser.id, ...padRect(browserRect, 2) });
     const termInner = padRect(termRect, 2);
     if (tCount === 3) {
       splitHorizontal(termInner, 3, gap).forEach((slot, i) => {
@@ -550,16 +607,38 @@ export function getWorldBoundsForViewCount(viewCount = 1) {
 }
 
 /** Dev-split slots anchored to a fixed view region (not viewport). */
-export function computeViewDevSplitSlots(viewOrigin) {
+export function computeViewDevSplitSlots(viewOrigin, dockSide = 'left') {
   const zones = computeViewZones(viewOrigin);
+  if (dockSide === 'right') {
+    return {
+      browser: fitSurfaceToViewZone(zones.right, 'browser'),
+      terminals: [fitSurfaceToViewZone(zones.left, 'terminal')],
+    };
+  }
   return {
     browser: fitSurfaceToViewZone(zones.left, 'browser'),
     terminals: [fitSurfaceToViewZone(zones.right, 'terminal')],
   };
 }
 
-export function computeViewDevTrioSlots(viewOrigin) {
+export function computeViewDevTrioSlots(viewOrigin, dockSide = 'left') {
   const zones = computeViewZones(viewOrigin);
+  if (dockSide === 'right') {
+    const left = zones.left;
+    const th = Math.max(140, Math.round((left.height - 14) / 2));
+    return {
+      browser: fitSurfaceToViewZone(zones.right, 'browser'),
+      terminals: [
+        { ...fitSurfaceToViewZone(left, 'terminal'), height: th },
+        {
+          x: Math.round(left.x + 12),
+          y: Math.round(left.y + 12 + th + 14),
+          width: Math.round(left.width - 24),
+          height: th,
+        },
+      ],
+    };
+  }
   const right = zones.right;
   const th = Math.max(140, Math.round((right.height - 14) / 2));
   return {

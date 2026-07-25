@@ -26,7 +26,7 @@ export function isLiveElementPositioned(el = {}) {
   return isSurfacePositioned(el.pizarra || {}) || isSurfacePositioned(el);
 }
 
-export function computeDevSplitSlots(vis) {
+export function computeDevSplitSlots(vis, dockSide = 'left') {
   const edgePad = 4;
   const gap = 12;
   const usableW = Math.max(640, vis.width - edgePad * 2);
@@ -34,15 +34,21 @@ export function computeDevSplitSlots(vis) {
   const bw = Math.round(usableW * 0.58);
   const tw = usableW - bw - gap;
   const leftX = vis.x + edgePad;
-  const rightX = leftX + bw + gap;
+  const rightX = leftX + (dockSide === 'right' ? tw + gap : bw + gap);
   const topY = vis.y + edgePad;
+  if (dockSide === 'right') {
+    return {
+      browser: { x: rightX, y: topY, width: bw, height: usableH },
+      terminals: [{ x: leftX, y: topY, width: tw, height: usableH }],
+    };
+  }
   return {
     browser: { x: leftX, y: topY, width: bw, height: usableH },
     terminals: [{ x: rightX, y: topY, width: tw, height: usableH }],
   };
 }
 
-export function computeDevTrioSlots(vis) {
+export function computeDevTrioSlots(vis, dockSide = 'left') {
   const edgePad = 4;
   const gap = 12;
   const rowGap = 12;
@@ -52,8 +58,17 @@ export function computeDevTrioSlots(vis) {
   const tw = usableW - bw - gap;
   const th = Math.max(140, Math.round((usableH - rowGap) / 2));
   const leftX = vis.x + edgePad;
-  const rightX = leftX + bw + gap;
+  const rightX = leftX + (dockSide === 'right' ? tw + gap : bw + gap);
   const topY = vis.y + edgePad;
+  if (dockSide === 'right') {
+    return {
+      browser: { x: rightX, y: topY, width: bw, height: usableH },
+      terminals: [
+        { x: leftX, y: topY, width: tw, height: th },
+        { x: leftX, y: topY + th + rowGap, width: tw, height: th },
+      ],
+    };
+  }
   return {
     browser: { x: leftX, y: topY, width: bw, height: usableH },
     terminals: [
@@ -112,14 +127,16 @@ export function computeAutoFitSlotMap(vis, surfaces = []) {
   }
 
   if (browsers.length === 1 && terminals.length === 1) {
-    const slots = computeDevSplitSlots(vis);
+    const dockSide = browsers[0]?.pizarra?.dockSide || browsers[0]?.dockSide || 'left';
+    const slots = computeDevSplitSlots(vis, dockSide);
     put(browsers[0].id, slots.browser);
     put(terminals[0].id, slots.terminals[0]);
     return slotMap;
   }
 
   if (browsers.length === 1 && terminals.length === 2) {
-    const slots = computeDevTrioSlots(vis);
+    const dockSide = browsers[0]?.pizarra?.dockSide || browsers[0]?.dockSide || 'left';
+    const slots = computeDevTrioSlots(vis, dockSide);
     put(browsers[0].id, slots.browser);
     put(terminals[0].id, slots.terminals[0]);
     put(terminals[1].id, slots.terminals[1]);

@@ -130,4 +130,29 @@ describe('pizarra adaptive layout', () => {
     expect(browsers).toHaveLength(0);
     expect(hiddenBrowsers).toHaveLength(1);
   });
+
+  test('one browser with dockSide right places terminal on left and browser on right', () => {
+    const surfaces = [
+      { id: 'b1', type: 'browser', panelId: 'pizarra-browser-1', pizarra: { dockSide: 'right' } },
+      { id: 't1', type: 'terminal' },
+    ];
+
+    const { layouts } = computeAdaptiveViewLayout({ x: 0, y: 0 }, surfaces);
+    const browser = layouts.find((l) => l.id === 'b1');
+    const terminal = layouts.find((l) => l.id === 't1');
+    expect(terminal.x).toBeLessThan(browser.x);
+  });
+
+  test('one browser with dockSide right and two terminals places stacked terminals on left and browser on right', () => {
+    const surfaces = [
+      { id: 'b1', type: 'browser', panelId: 'pizarra-browser-1', pizarra: { dockSide: 'right' } },
+      { id: 't1', type: 'terminal' },
+      { id: 't2', type: 'terminal' },
+    ];
+
+    const { layouts } = computeAdaptiveViewLayout({ x: 0, y: 0 }, surfaces);
+    const browser = layouts.find((l) => l.id === 'b1');
+    const t1 = layouts.find((l) => l.id === 't1');
+    expect(t1.x).toBeLessThan(browser.x);
+  });
 });
