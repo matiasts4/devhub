@@ -446,10 +446,7 @@ var kimi_default = {
       priority: 200,
       region: "bottom_lines(3)",
       visibleIdle: true,
-      any: [
-        { contains: ["ctrl+p commands"] },
-        { lineRegex: ["(?i)^\\s*kimi>"] }
-      ]
+      any: [{ contains: ["ctrl+p commands"] }, { lineRegex: ["(?i)^\\s*kimi>"] }]
     },
     {
       id: "background_agent_status_working",
@@ -489,7 +486,9 @@ var kimi_default = {
       priority: 90,
       region: "bottom_lines(8)",
       visibleWorking: true,
-      lineRegex: ["(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|working|using|analyzing|executing|reading|writing|searching)"]
+      lineRegex: [
+        "(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|working|using|analyzing|executing|reading|writing|searching)"
+      ]
     }
   ]
 };
@@ -1416,7 +1415,11 @@ var AgentStateMachine = class {
       state: detection.state,
       visibleIdle: detection.visibleIdle,
       visibleWorking: detection.visibleWorking,
-      visibleBlocker: detection.visibleBlocker
+      visibleBlocker: detection.visibleBlocker,
+      // Evidence tag (DONE-EVIDENCE-01): 'manifest' | 'prompt-visible' |
+      // 'user-input' | 'quiescence' | 'hook:<event>' | ... Propagated so
+      // consumers can tell evidence-based transitions from silence-based ones.
+      reason: detection.reason ?? null
     };
     const previous = {
       state: this.state,
@@ -1498,14 +1501,101 @@ function resolveDetectionSizing(options = {}) {
   return { viewportLines, bufferChars };
 }
 
+// src/lib/terminal/agentStateTrace.js
+var import_fs = __toESM(require("fs"));
+var import_path = __toESM(require("path"));
+var MAX_TRACE_BYTES = 5 * 1024 * 1024;
+var cachedDir = null;
+function resolveTraceDir() {
+  if (cachedDir) return cachedDir;
+  cachedDir = process.env.DEVHUB_AGENT_TRACE_DIR || import_path.default.join(process.cwd(), "data", "logs", "agent-state");
+  return cachedDir;
+}
+function isAgentStateTraceEnabled() {
+  return process.env.DEVHUB_AGENT_TRACE !== "off";
+}
+function traceAgentStateTransition(entry) {
+  if (!isAgentStateTraceEnabled()) return;
+  try {
+    const dir = resolveTraceDir();
+    import_fs.default.mkdirSync(dir, { recursive: true });
+    const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const file = import_path.default.join(dir, `${day}.jsonl`);
+    try {
+      const stat = import_fs.default.statSync(file);
+      if (stat.size > MAX_TRACE_BYTES) {
+        import_fs.default.renameSync(file, `${file}.1`);
+      }
+    } catch {
+    }
+    import_fs.default.appendFileSync(file, `${JSON.stringify({ at: Date.now(), ...entry })}
+`);
+  } catch {
+  }
+}
+function tracePublishedTransition(session, published, extra = {}) {
+  if (!published) return;
+  const now = extra.now ?? Date.now();
+  const prevState = extra.prev ?? session?.agentTuiState ?? null;
+  const prevReason = session?.agentTuiStateReason ?? null;
+  if (!extra.upgrade && published.state === prevState && (published.reason ?? null) === prevReason) {
+    return;
+  }
+  const hookAt = Number(session?.hookState?.at) || null;
+  const lastActivityAt = Number(session?.lastActivityAt) || null;
+  traceAgentStateTransition({
+    terminalId: session?.id ?? null,
+    agentType: session?.agentType ?? null,
+    prev: prevState,
+    next: published.state,
+    reason: published.reason ?? null,
+    hookEvent: session?.hookState?.event ?? null,
+    hookAgeMs: hookAt ? now - hookAt : null,
+    lastActivityAgeMs: lastActivityAt ? now - lastActivityAt : null,
+    source: extra.source ?? null,
+    upgrade: Boolean(extra.upgrade)
+  });
+}
+
 // src/lib/terminal/sessionAgentDetector.js
 var HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 12e4);
-var HOOK_AUTHORITY_AGENTS = ["kimi", "claude", "opencode", "agy", "antigravity", "qodercli"];
+var HOOK_AUTHORITY_AGENTS = [
+  "kimi",
+  "claude",
+  "opencode",
+  "agy",
+  "antigravity",
+  "qodercli"
+];
 var AGENT_STARTUP_GRACE_MS = Number(process.env.DEVHUB_AGENT_STARTUP_GRACE_MS || 3500);
 var DEFAULT_AGENT_QUIESCENCE_MS = Number(process.env.DEVHUB_AGENT_QUIESCENCE_MS || 4e3);
+var DEFAULT_AGENT_QUIESCENCE_CONFIRM_MS = Number(
+  process.env.DEVHUB_AGENT_QUIESCENCE_CONFIRM_MS || 12e3
+);
+var HOOK_TOOL_ACTIVE_VETO_CAP_MS = Number(
+  process.env.DEVHUB_HOOK_TOOL_ACTIVE_VETO_CAP_MS || 30 * 60 * 1e3
+);
 function getQuiescenceMs(session) {
   const override = Number(session?.detectionQuiescenceMs);
   return override > 0 ? override : DEFAULT_AGENT_QUIESCENCE_MS;
+}
+function getQuiescenceConfirmMs(session) {
+  const override = Number(session?.detectionQuiescenceConfirmMs);
+  return override > 0 ? override : DEFAULT_AGENT_QUIESCENCE_CONFIRM_MS;
+}
+function hasActiveHookTool(session, now = Date.now()) {
+  if (!session?.hookToolActive) return false;
+  const since = Number(session.hookToolActiveAt);
+  if (!since) return true;
+  return now - since < HOOK_TOOL_ACTIVE_VETO_CAP_MS;
+}
+function trackPublishedReason(session, published, extra = {}) {
+  if (!published) return;
+  tracePublishedTransition(session, published, extra);
+  session.agentTuiStateReason = published.reason ?? null;
+  if (published.state === "idle") {
+    session._lastIdleReason = published.reason ?? null;
+  }
 }
 function getLastActivityAt(session) {
   return session.lastActivityAt ?? session.lastWorkingAt ?? null;
@@ -1527,7 +1617,8 @@ function hasFreshHookAuthority(session, now = Date.now()) {
   if (!agentType || !HOOK_AUTHORITY_AGENTS.includes(agentType)) {
     return false;
   }
-  return now - session.hookState.at < HOOK_AUTHORITY_TTL_MS;
+  const ttl = hasActiveHookTool(session, now) ? Math.max(HOOK_AUTHORITY_TTL_MS, HOOK_TOOL_ACTIVE_VETO_CAP_MS) : HOOK_AUTHORITY_TTL_MS;
+  return now - session.hookState.at < ttl;
 }
 function ensureAgentDetectionSession(session) {
   if (!session) return session;
@@ -1596,9 +1687,11 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
   if (detected.state === "running" && session.agentDetectedAt && !session.lastUserInputAt && now - session.agentDetectedAt < AGENT_STARTUP_GRACE_MS) {
     return result;
   }
+  detected.reason = detected.state === "idle" && detected.visibleIdle ? "prompt-visible" : "manifest";
   session.lastDetection = detected;
   const published = session.agentStateMachine.publish(detected, now);
   if (published) {
+    trackPublishedReason(session, published, { source: "ingest", now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
     result.published = {
@@ -1620,11 +1713,13 @@ function notifyUserInput(session, now = Date.now()) {
     state: "running",
     visibleIdle: false,
     visibleWorking: true,
-    visibleBlocker: false
+    visibleBlocker: false,
+    reason: "user-input"
   };
   session.lastDetection = detection;
   const published = session.agentStateMachine.publish(detection, now, { bypassHold: true });
   if (published) {
+    trackPublishedReason(session, published, { source: "user-input", now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
@@ -1644,16 +1739,19 @@ function tickAgentDetection(session, now = Date.now()) {
   const ptyPid = session.ptyPid || pty && pty.pid;
   if (!pty || !ptyPid) {
     session.hookState = null;
+    session.hookToolActive = false;
     const published = session.agentStateMachine.publish(
       {
         state: "idle",
         visibleIdle: true,
         visibleWorking: false,
-        visibleBlocker: false
+        visibleBlocker: false,
+        reason: "pty-dead"
       },
       now
     );
     if (published) {
+      trackPublishedReason(session, published, { source: "tick", now });
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
       result.published = published;
@@ -1676,17 +1774,22 @@ function tickAgentDetection(session, now = Date.now()) {
   const isRunningOrBlocked = state === "running" || state === "blocked";
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
   const quiescenceMs = getQuiescenceMs(session);
+  const quiescenceConfirmMs = getQuiescenceConfirmMs(session);
   const lastActivityAt = getLastActivityAt(session);
-  if (state === "running" && lastActivityAt && now - lastActivityAt > quiescenceMs) {
+  const silentForMs = lastActivityAt ? now - lastActivityAt : 0;
+  const quiescenceVetoed = hasActiveHookTool(session, now);
+  if (!quiescenceVetoed && state === "running" && lastActivityAt && silentForMs > quiescenceMs) {
     const fallbackIdle = {
       state: "idle",
       visibleIdle: false,
       visibleWorking: false,
-      visibleBlocker: false
+      visibleBlocker: false,
+      reason: silentForMs > quiescenceConfirmMs ? "quiescence-confirmed" : "quiescence"
     };
     session.lastDetection = fallbackIdle;
     const published = session.agentStateMachine.publish(fallbackIdle, now, { bypassHold: true });
     if (published) {
+      trackPublishedReason(session, published, { source: "tick", now });
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
       result.published = published;
@@ -1695,12 +1798,30 @@ function tickAgentDetection(session, now = Date.now()) {
     }
     return result;
   }
+  if (!quiescenceVetoed && state === "idle" && session._lastIdleReason === "quiescence" && lastActivityAt && silentForMs > quiescenceConfirmMs) {
+    const upgraded = {
+      state: "idle",
+      visibleIdle: false,
+      visibleWorking: false,
+      visibleBlocker: false,
+      reason: "quiescence-confirmed"
+    };
+    session.lastDetection = upgraded;
+    trackPublishedReason(session, upgraded, { source: "tick", now, upgrade: true });
+    session.agentTuiState = "idle";
+    session.agentTuiStateAt = now;
+    result.published = upgraded;
+    result.agentTuiState = "idle";
+    result.agentTuiStateAt = now;
+    return result;
+  }
   if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle) {
     return result;
   }
   if (session.lastDetection) {
     const published = session.agentStateMachine.publish(session.lastDetection, now);
     if (published) {
+      trackPublishedReason(session, published, { source: "tick", now });
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
       result.published = published;
@@ -1761,7 +1882,9 @@ function buildSessionHookEnv({ session, hookUrl } = {}) {
   if (!session) return {};
   const url = hookUrl || process.env.DEVHUB_HOOK_URL;
   if (!url) {
-    throw new Error("hookUrl is required in buildSessionHookEnv (pass hookUrl or set DEVHUB_HOOK_URL)");
+    throw new Error(
+      "hookUrl is required in buildSessionHookEnv (pass hookUrl or set DEVHUB_HOOK_URL)"
+    );
   }
   if (!session.hookToken) {
     session.hookToken = generateSessionHookToken();
@@ -1790,8 +1913,9 @@ function buildAgentStateFrame(session, state, extra = {}) {
   if (wasCancelled !== void 0 && wasCancelled !== null) {
     frame.wasCancelled = Boolean(wasCancelled);
   }
-  if (extra.reason) {
-    frame.reason = extra.reason;
+  const reason = extra.reason ?? session?.agentTuiStateReason ?? null;
+  if (reason) {
+    frame.reason = reason;
   }
   return frame;
 }
@@ -1799,6 +1923,35 @@ function buildAgentStateFrame(session, state, extra = {}) {
 // src/lib/terminal/agentHooks/handleHookReport.js
 var ALLOWED_HOOK_STATES = ["working", "blocked", "idle", "session"];
 var ANTIGRAVITY_BRIDGE_SOURCE = "antigravity-hook";
+var HOOK_TOOL_START_EVENTS = ["PreToolUse", "SubagentStart"];
+var HOOK_TOOL_END_EVENTS = ["PostToolUse", "PostToolUseFailure", "SubagentStop"];
+var HOOK_TURN_END_EVENTS = ["Stop", "Interrupt", "StopFailure", "SessionEnd"];
+function updateHookToolActive(session, event, now) {
+  if (!event) return;
+  if (HOOK_TOOL_START_EVENTS.includes(event)) {
+    session.hookToolActive = true;
+    session.hookToolActiveAt = now;
+  } else if (HOOK_TOOL_END_EVENTS.includes(event) || HOOK_TURN_END_EVENTS.includes(event)) {
+    session.hookToolActive = false;
+    session.hookToolActiveAt = null;
+  }
+}
+function trackHookPublishedReason(session, published, extra = {}) {
+  if (!published) return;
+  tracePublishedTransition(session, published, extra);
+  session.agentTuiStateReason = published.reason ?? null;
+  if (published.state === "idle") {
+    session._lastIdleReason = published.reason ?? null;
+  }
+}
+function buildReasonUpgradeFrame(session, mappedState, reason, now, source) {
+  const isAuthoritativeIdle = mappedState === "idle" && session.agentTuiState === "idle" && (session._lastIdleReason === "quiescence" || session._lastIdleReason === "quiescence-confirmed");
+  if (!isAuthoritativeIdle) return null;
+  tracePublishedTransition(session, { state: "idle", reason }, { source, upgrade: true, now });
+  session.agentTuiStateReason = reason;
+  session._lastIdleReason = reason;
+  return buildAgentStateFrame(session, "idle", { at: now, reason });
+}
 function handleHookReport(sessionsMap, body, now = Date.now()) {
   if (!body || typeof body !== "object") {
     return { status: 400, error: "Invalid JSON payload" };
@@ -1830,6 +1983,7 @@ function handleHookReport(sessionsMap, body, now = Date.now()) {
     return { status: 204, session, broadcast: null };
   }
   const mappedState = state === "working" ? "running" : state;
+  updateHookToolActive(session, event || null, now);
   session.hookState = {
     state: mappedState,
     rawState: state,
@@ -1842,14 +1996,16 @@ function handleHookReport(sessionsMap, body, now = Date.now()) {
     state: mappedState,
     visibleWorking: mappedState === "running",
     visibleBlocker: mappedState === "blocked",
-    visibleIdle: mappedState === "idle"
+    visibleIdle: mappedState === "idle",
+    reason: `hook:${event || state}`
   };
   const published = session.agentStateMachine ? session.agentStateMachine.publishHook(detection, now) : null;
   if (published) {
+    trackHookPublishedReason(session, published, { source: "hook", now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
-  const broadcastPayload = published ? buildAgentStateFrame(session, published.state, { at: now }) : null;
+  const broadcastPayload = published ? buildAgentStateFrame(session, published.state, { at: now }) : buildReasonUpgradeFrame(session, mappedState, detection.reason, now, "hook");
   return { status: 204, broadcast: broadcastPayload, session };
 }
 function resolveBridgeTargetSession(sessionsMap, body) {
@@ -1916,6 +2072,7 @@ function handleBridgeHookReport(sessionsMap, body, now = Date.now(), options = {
     return { status: 204, session, broadcast: null };
   }
   const mappedState = state === "working" ? "running" : state;
+  updateHookToolActive(session, body.event || null, now);
   session.hookState = {
     state: mappedState,
     rawState: state,
@@ -1931,26 +2088,28 @@ function handleBridgeHookReport(sessionsMap, body, now = Date.now(), options = {
     state: mappedState,
     visibleWorking: mappedState === "running",
     visibleBlocker: mappedState === "blocked",
-    visibleIdle: mappedState === "idle"
+    visibleIdle: mappedState === "idle",
+    reason: `hook:${body.event || state}`
   };
   const published = session.agentStateMachine ? session.agentStateMachine.publishHook(detection, now) : null;
   if (published) {
+    trackHookPublishedReason(session, published, { source: "hook-bridge", now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
-  const broadcastPayload = published ? buildAgentStateFrame(session, published.state, { at: now }) : null;
+  const broadcastPayload = published ? buildAgentStateFrame(session, published.state, { at: now }) : buildReasonUpgradeFrame(session, mappedState, detection.reason, now, "hook-bridge");
   return { status: 204, broadcast: broadcastPayload, session };
 }
 
 // src/lib/terminal/agentHooks/bridgeConfig.js
-var import_fs = __toESM(require("fs"));
-var import_path = __toESM(require("path"));
+var import_fs2 = __toESM(require("fs"));
+var import_path2 = __toESM(require("path"));
 var import_os = __toESM(require("os"));
 var HOOK_BRIDGE_CONFIG_PATH_ENV = "DEVHUB_HOOK_BRIDGE_CONFIG";
 function resolveHookBridgeConfigPath(homeDir = import_os.default.homedir()) {
   const override = process.env[HOOK_BRIDGE_CONFIG_PATH_ENV];
   if (override) return override;
-  return import_path.default.join(homeDir, ".devhub", "hook-bridge.json");
+  return import_path2.default.join(homeDir, ".devhub", "hook-bridge.json");
 }
 function writeHookBridgeConfig({ url, token } = {}, homeDir) {
   if (!url || typeof url !== "string") {
@@ -1960,20 +2119,20 @@ function writeHookBridgeConfig({ url, token } = {}, homeDir) {
     throw new Error("writeHookBridgeConfig: token is required");
   }
   const configPath = resolveHookBridgeConfigPath(homeDir);
-  const dir = import_path.default.dirname(configPath);
-  if (!import_fs.default.existsSync(dir)) {
-    import_fs.default.mkdirSync(dir, { recursive: true });
+  const dir = import_path2.default.dirname(configPath);
+  if (!import_fs2.default.existsSync(dir)) {
+    import_fs2.default.mkdirSync(dir, { recursive: true });
   }
   const body = JSON.stringify({ url, token, updatedAt: Date.now() }, null, 2) + "\n";
   const tmpPath = `${configPath}.tmp-${process.pid}`;
-  import_fs.default.writeFileSync(tmpPath, body, { encoding: "utf8", mode: 384 });
-  import_fs.default.renameSync(tmpPath, configPath);
+  import_fs2.default.writeFileSync(tmpPath, body, { encoding: "utf8", mode: 384 });
+  import_fs2.default.renameSync(tmpPath, configPath);
   return configPath;
 }
 function readHookBridgeConfig(homeDir) {
   const configPath = resolveHookBridgeConfigPath(homeDir);
   try {
-    const raw = import_fs.default.readFileSync(configPath, "utf8");
+    const raw = import_fs2.default.readFileSync(configPath, "utf8");
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.url !== "string" || typeof parsed.token !== "string") {
       return null;

@@ -20,7 +20,7 @@ describe('agentNotificationBridge', () => {
 
     expect(dispatchOperationalNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Anti Gravity requiere atención',
+        title: 'Antigravity requiere atención',
         severity: 'warning',
         category: 'agents',
         entity_id: 'panel-1',
@@ -35,7 +35,7 @@ describe('agentNotificationBridge', () => {
 
     expect(dispatchOperationalNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Anti Gravity requiere atención',
+        title: 'Antigravity requiere atención',
         severity: 'warning',
         entity_id: 'panel-6',
       })
@@ -47,7 +47,7 @@ describe('agentNotificationBridge', () => {
 
     expect(dispatchOperationalNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Kimiko D requiere atención',
+        title: 'Kimi Code requiere atención',
         severity: 'warning',
         entity_id: 'panel-7',
       })
@@ -75,7 +75,7 @@ describe('agentNotificationBridge', () => {
 
     expect(dispatchOperationalNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Kimiko D completó su respuesta',
+        title: 'Kimi Code completó su respuesta',
         severity: 'info',
         category: 'agents',
         entity_id: 'panel-2',
@@ -98,7 +98,7 @@ describe('agentNotificationBridge', () => {
 
     expect(dispatchOperationalNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Anti Gravity — Respuesta cancelada',
+        title: 'Antigravity — Respuesta cancelada',
         severity: 'info',
         category: 'agents',
         entity_id: 'panel-5',
@@ -140,6 +140,129 @@ describe('agentNotificationBridge', () => {
     jest.advanceTimersByTime(11000);
     handleAgentStateTransition('panel-9', 'working', 'blocked', { agentType: 'agy' });
     expect(dispatchOperationalNotification).toHaveBeenCalledTimes(2);
+
+    jest.useRealTimers();
+  });
+
+  // ─── DONE-EVIDENCE-01: evidence-gated "done" notifications ────────────────
+
+  test("DONE-EVIDENCE: silence-based 'quiescence' idle does NOT notify done", () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-q1', 'idle', 'running', { agentType: 'kimi' });
+    jest.advanceTimersByTime(30000);
+    handleAgentStateTransition('panel-q1', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'quiescence',
+    });
+
+    expect(dispatchOperationalNotification).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  test("DONE-EVIDENCE: 'quiescence-confirmed' idle notifies done (hook-less fallback)", () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-q2', 'idle', 'running', { agentType: 'grok' });
+    jest.advanceTimersByTime(30000);
+    handleAgentStateTransition('panel-q2', 'running', 'idle', {
+      agentType: 'grok',
+      reason: 'quiescence-confirmed',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Grok completó su respuesta',
+        entity_id: 'panel-q2',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('DONE-EVIDENCE: hook:Stop reason notifies done', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-q3', 'idle', 'running', { agentType: 'kimi' });
+    jest.advanceTimersByTime(30000);
+    handleAgentStateTransition('panel-q3', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'hook:Stop',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Kimi Code completó su respuesta',
+        entity_id: 'panel-q3',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('DONE-EVIDENCE: hook:Interrupt reason routes to cancelled notification', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-q4', 'idle', 'running', { agentType: 'kimi' });
+    jest.advanceTimersByTime(30000);
+    handleAgentStateTransition('panel-q4', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'hook:Interrupt',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Kimi Code — Respuesta cancelada',
+        entity_id: 'panel-q4',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('DONE-EVIDENCE: reason-upgrade idle->idle with hook:Stop notifies exactly once', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-q5', 'idle', 'running', { agentType: 'kimi' });
+    jest.advanceTimersByTime(30000);
+    // Stage-1 quiescence: badge flips, no notification.
+    handleAgentStateTransition('panel-q5', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'quiescence',
+    });
+    expect(dispatchOperationalNotification).not.toHaveBeenCalled();
+
+    // The real Stop arrives later as a same-state reason upgrade.
+    jest.advanceTimersByTime(2000);
+    handleAgentStateTransition('panel-q5', 'idle', 'idle', {
+      agentType: 'kimi',
+      reason: 'hook:Stop',
+      reasonChanged: true,
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledTimes(1);
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Kimi Code completó su respuesta',
+        entity_id: 'panel-q5',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('DONE-EVIDENCE: unknown non-evidence reason does not notify done', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-q6', 'idle', 'running', { agentType: 'kimi' });
+    jest.advanceTimersByTime(30000);
+    handleAgentStateTransition('panel-q6', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'manifest',
+    });
+
+    expect(dispatchOperationalNotification).not.toHaveBeenCalled();
 
     jest.useRealTimers();
   });

@@ -104,6 +104,10 @@ export class AgentStateMachine {
       visibleIdle: detection.visibleIdle,
       visibleWorking: detection.visibleWorking,
       visibleBlocker: detection.visibleBlocker,
+      // Evidence tag (DONE-EVIDENCE-01): 'manifest' | 'prompt-visible' |
+      // 'user-input' | 'quiescence' | 'hook:<event>' | ... Propagated so
+      // consumers can tell evidence-based transitions from silence-based ones.
+      reason: detection.reason ?? null,
     };
 
     const previous = {

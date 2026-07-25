@@ -1,9 +1,64 @@
 import { buildAgentStateFrame } from '../agentStateFrame.js';
+import { tracePublishedTransition } from '../agentStateTrace.js';
 
 export const ALLOWED_HOOK_STATES = ['working', 'blocked', 'idle', 'session'];
 
 /** Source tag sent by scripts/agent-hooks/antigravity-bridge.mjs. */
 export const ANTIGRAVITY_BRIDGE_SOURCE = 'antigravity-hook';
+
+/**
+ * DONE-EVIDENCE-01: hook lifecycle event sets driving the tool-active veto.
+ * While a tool call is active, the quiescence path is suppressed — a silent
+ * long-running tool (builds, tests) must never read as "done".
+ */
+export const HOOK_TOOL_START_EVENTS = ['PreToolUse', 'SubagentStart'];
+export const HOOK_TOOL_END_EVENTS = ['PostToolUse', 'PostToolUseFailure', 'SubagentStop'];
+export const HOOK_TURN_END_EVENTS = ['Stop', 'Interrupt', 'StopFailure', 'SessionEnd'];
+
+function updateHookToolActive(session, event, now) {
+  if (!event) return;
+  if (HOOK_TOOL_START_EVENTS.includes(event)) {
+    session.hookToolActive = true;
+    session.hookToolActiveAt = now;
+  } else if (HOOK_TOOL_END_EVENTS.includes(event) || HOOK_TURN_END_EVENTS.includes(event)) {
+    session.hookToolActive = false;
+    session.hookToolActiveAt = null;
+  }
+}
+
+/**
+ * Track the reason of the last published idle so a later authoritative idle
+ * can detect it is upgrading a silence-based one (reason-upgrade). Emits the
+ * JSONL transition trace — MUST be called BEFORE assigning
+ * session.agentTuiState so the trace captures the real prev state.
+ */
+function trackHookPublishedReason(session, published, extra = {}) {
+  if (!published) return;
+  tracePublishedTransition(session, published, extra);
+  session.agentTuiStateReason = published.reason ?? null;
+  if (published.state === 'idle') {
+    session._lastIdleReason = published.reason ?? null;
+  }
+}
+
+/**
+ * DONE-EVIDENCE-01 reason-upgrade: an authoritative idle (hook Stop /
+ * Interrupt / ...) arriving while the session is already idle from a
+ * silence-based quiescence must still emit a frame — idle→idle publishes
+ * nothing, and the true "done" would never reach the notification bridge.
+ */
+function buildReasonUpgradeFrame(session, mappedState, reason, now, source) {
+  const isAuthoritativeIdle =
+    mappedState === 'idle' &&
+    session.agentTuiState === 'idle' &&
+    (session._lastIdleReason === 'quiescence' ||
+      session._lastIdleReason === 'quiescence-confirmed');
+  if (!isAuthoritativeIdle) return null;
+  tracePublishedTransition(session, { state: 'idle', reason }, { source, upgrade: true, now });
+  session.agentTuiStateReason = reason;
+  session._lastIdleReason = reason;
+  return buildAgentStateFrame(session, 'idle', { at: now, reason });
+}
 
 /**
  * Process a hook payload against a session map.
@@ -63,6 +118,8 @@ export function handleHookReport(sessionsMap, body, now = Date.now()) {
 
   const mappedState = state === 'working' ? 'running' : state;
 
+  updateHookToolActive(session, event || null, now);
+
   session.hookState = {
     state: mappedState,
     rawState: state,
@@ -77,6 +134,7 @@ export function handleHookReport(sessionsMap, body, now = Date.now()) {
     visibleWorking: mappedState === 'running',
     visibleBlocker: mappedState === 'blocked',
     visibleIdle: mappedState === 'idle',
+    reason: `hook:${event || state}`,
   };
 
   // P2-2: Publish and check if there was an actual state change
@@ -85,14 +143,17 @@ export function handleHookReport(sessionsMap, body, now = Date.now()) {
     : null;
 
   if (published) {
+    trackHookPublishedReason(session, published, { source: 'hook', now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
 
-  // P2-2: Only broadcast when published state change occurs
+  // P2-2: Only broadcast when published state change occurs — OR when an
+  // authoritative idle upgrades a silence-based quiescence idle (same state,
+  // new evidence: the true "done" must reach the client exactly once).
   const broadcastPayload = published
     ? buildAgentStateFrame(session, published.state, { at: now })
-    : null;
+    : buildReasonUpgradeFrame(session, mappedState, detection.reason, now, 'hook');
 
   return { status: 204, broadcast: broadcastPayload, session };
 }
@@ -208,6 +269,8 @@ export function handleBridgeHookReport(sessionsMap, body, now = Date.now(), opti
 
   const mappedState = state === 'working' ? 'running' : state;
 
+  updateHookToolActive(session, body.event || null, now);
+
   session.hookState = {
     state: mappedState,
     rawState: state,
@@ -225,6 +288,7 @@ export function handleBridgeHookReport(sessionsMap, body, now = Date.now(), opti
     visibleWorking: mappedState === 'running',
     visibleBlocker: mappedState === 'blocked',
     visibleIdle: mappedState === 'idle',
+    reason: `hook:${body.event || state}`,
   };
 
   const published = session.agentStateMachine
@@ -232,13 +296,14 @@ export function handleBridgeHookReport(sessionsMap, body, now = Date.now(), opti
     : null;
 
   if (published) {
+    trackHookPublishedReason(session, published, { source: 'hook-bridge', now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
 
   const broadcastPayload = published
     ? buildAgentStateFrame(session, published.state, { at: now })
-    : null;
+    : buildReasonUpgradeFrame(session, mappedState, detection.reason, now, 'hook-bridge');
 
   return { status: 204, broadcast: broadcastPayload, session };
 }

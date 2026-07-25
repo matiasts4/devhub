@@ -129,6 +129,38 @@ describe('Agent Hook Installers — Golden File Tests & P1-P3 Fixes', () => {
       const occurrences = second.split(KIMI_BLOCK_BEGIN).length - 1;
       expect(occurrences).toBe(1);
     });
+
+    test('DONE-EVIDENCE: v2 block installs the full hook lifecycle event set', () => {
+      const result = buildKimiConfigWithHooks('', scriptPath, 'kimi');
+
+      for (const event of [
+        'PostToolUse',
+        'PostToolUseFailure',
+        'SubagentStop',
+        'StopFailure',
+        'SessionEnd',
+      ]) {
+        expect(result).toContain(`event = "${event}"`);
+      }
+      expect(result).toContain('event = "Stop"');
+      expect(result).toContain('event = "Interrupt"');
+    });
+
+    test('DONE-EVIDENCE: legacy v1 block is replaced on re-merge and reported as outdated', () => {
+      // Simulate a v1 install: swap the current begin marker for the legacy one.
+      const v2 = buildKimiConfigWithHooks('[model]\nname = "k1"\n', scriptPath, 'kimi');
+      const legacyV1 = v2.replace(KIMI_BLOCK_BEGIN, '# >>> devhub hooks (v1) >>>');
+
+      // v1 installs are detected as NOT installed → triggers re-install.
+      expect(isKimiHooksInstalled(legacyV1)).toBe(false);
+
+      // Re-merging removes the v1 block entirely and writes a single v2 block.
+      const upgraded = buildKimiConfigWithHooks(legacyV1, scriptPath, 'kimi');
+      expect(upgraded).toBe(v2);
+      expect(upgraded).not.toContain('(v1)');
+      expect(upgraded.split(KIMI_BLOCK_BEGIN).length - 1).toBe(1);
+      expect(upgraded).toContain('event = "PostToolUse"');
+    });
   });
 
   describe('Claude JSON Merger', () => {

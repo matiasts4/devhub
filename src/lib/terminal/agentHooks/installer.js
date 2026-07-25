@@ -3,19 +3,31 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 
-export const KIMI_BLOCK_BEGIN = '# >>> devhub hooks (v1) >>>';
+export const KIMI_BLOCK_BEGIN = '# >>> devhub hooks (v2) >>>';
+export const KIMI_BLOCK_BEGIN_LEGACY_V1 = '# >>> devhub hooks (v1) >>>';
 export const KIMI_BLOCK_END = '# <<< devhub hooks <<<';
 
+/**
+ * Kimi Code hook events (full reference: kimi.com/code/docs hooks page).
+ * DONE-EVIDENCE-01 adds the tool/turn lifecycle events so hook authority
+ * stays fresh across long tool calls (PostToolUse*, SubagentStop) and failed
+ * or closed turns settle to idle deterministically (StopFailure, SessionEnd).
+ */
 export const KIMI_EVENTS = [
   ['SessionStart', 'session'],
   ['UserPromptSubmit', 'working'],
   ['PreToolUse', 'working'],
+  ['PostToolUse', 'working'],
+  ['PostToolUseFailure', 'working'],
   ['SubagentStart', 'working'],
+  ['SubagentStop', 'working'],
   ['PreCompact', 'working'],
   ['PermissionRequest', 'blocked'],
   ['PermissionResult', 'working'],
   ['Stop', 'idle'],
+  ['StopFailure', 'idle'],
   ['Interrupt', 'idle'],
+  ['SessionEnd', 'idle'],
 ];
 
 export const CLAUDE_EVENTS = [
@@ -120,10 +132,14 @@ export function checkKimiVersion() {
 
 /**
  * Remove DevHub managed block from Kimi TOML configuration string — byte-faithful to surrounding text.
+ * Matches both the current (v2) and legacy (v1) begin markers so upgrades
+ * cleanly replace older installs.
  */
 export function removeKimiManagedBlock(content = '') {
   const lines = content.split(/\r?\n/);
-  const startIdx = lines.findIndex((l) => l.trim() === KIMI_BLOCK_BEGIN);
+  const startIdx = lines.findIndex(
+    (l) => l.trim() === KIMI_BLOCK_BEGIN || l.trim() === KIMI_BLOCK_BEGIN_LEGACY_V1
+  );
   if (startIdx === -1) return content;
 
   let endIdx = lines.findIndex((l) => l.trim() === KIMI_BLOCK_END);

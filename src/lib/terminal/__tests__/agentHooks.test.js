@@ -97,12 +97,14 @@ describe('Phase 0 — Agent Lifecycle Hooks Generic Channel & P0-P3 Fixes', () =
       );
 
       expect(res.status).toBe(204);
-      // N4: frames now carry agentType when the session has one.
+      // N4: frames now carry agentType when the session has one;
+      // DONE-EVIDENCE-01: frames also carry the evidence reason.
       expect(res.broadcast).toEqual({
         type: 'agent-state',
         agentTuiState: 'running',
         at: now,
         agentType: 'kimi',
+        reason: 'hook:UserPromptSubmit',
       });
       expect(mockSession.agentTuiState).toBe('running');
       expect(mockSession.agentType).toBe('kimi');
@@ -191,6 +193,101 @@ describe('Phase 0 — Agent Lifecycle Hooks Generic Channel & P0-P3 Fixes', () =
       expect(mockSession.agentSessionId).toBe('sess-abc-123');
       expect(mockSession.hookState).toBeNull();
       expect(hasFreshHookAuthority(mockSession, 300000)).toBe(false);
+    });
+
+    test('DONE-EVIDENCE: tool lifecycle events track hookToolActive', () => {
+      const token = 'test-token-1234567890123456789012';
+      const now = 100000;
+
+      handleHookReport(
+        sessionsMap,
+        { terminalId: 'term-1', token, state: 'working', agent: 'kimi', event: 'PreToolUse' },
+        now
+      );
+      expect(mockSession.hookToolActive).toBe(true);
+      expect(mockSession.hookToolActiveAt).toBe(now);
+
+      handleHookReport(
+        sessionsMap,
+        { terminalId: 'term-1', token, state: 'working', agent: 'kimi', event: 'PostToolUse' },
+        now + 1000
+      );
+      expect(mockSession.hookToolActive).toBe(false);
+
+      handleHookReport(
+        sessionsMap,
+        { terminalId: 'term-1', token, state: 'working', agent: 'kimi', event: 'SubagentStart' },
+        now + 2000
+      );
+      expect(mockSession.hookToolActive).toBe(true);
+
+      handleHookReport(
+        sessionsMap,
+        { terminalId: 'term-1', token, state: 'idle', agent: 'kimi', event: 'Stop' },
+        now + 3000
+      );
+      expect(mockSession.hookToolActive).toBe(false);
+    });
+
+    test('DONE-EVIDENCE: authoritative Stop after a quiescence idle re-emits a frame (reason-upgrade)', () => {
+      // Session already idle from silence-based quiescence: idle→idle would
+      // normally publish nothing and the true "done" would be lost. The state
+      // machine flags mirror the quiescence idle (visibleIdle true from the
+      // fallback detection), so publishHook is a genuine no-op and only the
+      // upgrade path can emit.
+      mockSession.agentTuiState = 'idle';
+      mockSession.agentTuiStateReason = 'quiescence';
+      mockSession._lastIdleReason = 'quiescence';
+      mockSession.agentStateMachine.state = 'idle';
+      mockSession.agentStateMachine.lastVisibleIdle = true;
+
+      const now = 400000;
+      const res = handleHookReport(
+        sessionsMap,
+        {
+          terminalId: 'term-1',
+          token: 'test-token-1234567890123456789012',
+          state: 'idle',
+          agent: 'kimi',
+          event: 'Stop',
+        },
+        now
+      );
+
+      expect(res.status).toBe(204);
+      expect(res.broadcast).not.toBeNull();
+      expect(res.broadcast).toEqual({
+        type: 'agent-state',
+        agentTuiState: 'idle',
+        at: now,
+        agentType: 'kimi',
+        reason: 'hook:Stop',
+      });
+      expect(mockSession._lastIdleReason).toBe('hook:Stop');
+    });
+
+    test('DONE-EVIDENCE: hook idle after a prompt-visible idle does NOT re-emit', () => {
+      // The prompt-visible idle was already positive evidence — no upgrade.
+      mockSession.agentTuiState = 'idle';
+      mockSession.agentTuiStateReason = 'prompt-visible';
+      mockSession._lastIdleReason = 'prompt-visible';
+      mockSession.agentStateMachine.state = 'idle';
+      mockSession.agentStateMachine.lastVisibleIdle = true;
+
+      const res = handleHookReport(
+        sessionsMap,
+        {
+          terminalId: 'term-1',
+          token: 'test-token-1234567890123456789012',
+          state: 'idle',
+          agent: 'kimi',
+          event: 'Stop',
+        },
+        400000
+      );
+
+      expect(res.status).toBe(204);
+      expect(res.broadcast).toBeNull();
     });
   });
 

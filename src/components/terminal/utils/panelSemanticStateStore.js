@@ -18,6 +18,7 @@ export function setPanelSemanticState(panelId, next, options = {}) {
       ? {
           agentTuiState: next.agentTuiState,
           agentTuiStateAt: next.agentTuiStateAt ?? Date.now(),
+          reason: options.reason ?? null,
         }
       : null;
 
@@ -32,6 +33,8 @@ export function setPanelSemanticState(panelId, next, options = {}) {
 
   const prevStateStr = prev?.agentTuiState || null;
   const nextStateStr = normalized?.agentTuiState || null;
+  const prevReason = prev?.reason || null;
+  const nextReason = normalized?.reason || null;
 
   if (!normalized) {
     states.delete(panelId);
@@ -50,8 +53,17 @@ export function setPanelSemanticState(panelId, next, options = {}) {
     }
   }
 
-  if (prevStateStr !== nextStateStr && nextStateStr) {
-    handleAgentStateTransition(panelId, prevStateStr, nextStateStr, options);
+  const stateChanged = prevStateStr !== nextStateStr;
+  // DONE-EVIDENCE-01 reason-upgrade: same state but new evidence (e.g. a
+  // quiescence idle upgraded by the real hook Stop) must still reach the
+  // bridge so the true "done" can notify exactly once.
+  const reasonChanged = !stateChanged && Boolean(nextStateStr) && nextReason !== prevReason;
+  if ((stateChanged || reasonChanged) && nextStateStr) {
+    handleAgentStateTransition(panelId, prevStateStr, nextStateStr, {
+      ...options,
+      reason: nextReason,
+      reasonChanged,
+    });
   }
 }
 

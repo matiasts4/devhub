@@ -260,4 +260,87 @@ describe('sessionAgentDetector', () => {
       expect(session.detectionBuffer.length).toBe(9000);
     });
   });
+
+  describe('DONE-EVIDENCE-01 — two-stage quiescence + tool-active veto', () => {
+    const AGY_WORKING = 'writing a story…\n\nesc to cancel\naccept-edits · Gemini 3.5 Flash';
+
+    test('stage 1 idle carries reason quiescence; stage 2 upgrades to quiescence-confirmed', () => {
+      const session = makeSession('agy');
+      ingestAgentDetectionFromFilteredOutput(session, AGY_WORKING, 1000);
+      expect(session.agentTuiState).toBe('running');
+
+      const stage1 = tickAgentDetection(session, 1000 + DEFAULT_AGENT_QUIESCENCE_MS + 1);
+      expect(stage1.published).not.toBeNull();
+      expect(stage1.published.state).toBe('idle');
+      expect(stage1.published.reason).toBe('quiescence');
+      expect(session._lastIdleReason).toBe('quiescence');
+
+      // Same state, still silent past the confirm window → reason upgrade.
+      const stage2 = tickAgentDetection(session, 1000 + 12001);
+      expect(stage2.published).not.toBeNull();
+      expect(stage2.published.state).toBe('idle');
+      expect(stage2.published.reason).toBe('quiescence-confirmed');
+      expect(session._lastIdleReason).toBe('quiescence-confirmed');
+      expect(session.agentTuiStateReason).toBe('quiescence-confirmed');
+    });
+
+    test('silence already past the confirm window flips straight to quiescence-confirmed', () => {
+      const session = makeSession('agy');
+      ingestAgentDetectionFromFilteredOutput(session, AGY_WORKING, 1000);
+      expect(session.agentTuiState).toBe('running');
+
+      const late = tickAgentDetection(session, 1000 + 13000);
+      expect(late.published).not.toBeNull();
+      expect(late.published.state).toBe('idle');
+      expect(late.published.reason).toBe('quiescence-confirmed');
+    });
+
+    test('active hook tool vetoes quiescence even past the confirm window', () => {
+      const session = makeSession('kimi', {
+        hookToolActive: true,
+        hookToolActiveAt: 1000,
+      });
+      notifyUserInput(session, 1000);
+      expect(session.agentTuiState).toBe('running');
+
+      const tick = tickAgentDetection(session, 1000 + 60000);
+      expectNotIdle(tick);
+      expect(session.agentTuiState).toBe('running');
+    });
+
+    test('tool-active veto expires after its safety cap', () => {
+      const session = makeSession('kimi', {
+        hookToolActive: true,
+        hookToolActiveAt: 1000,
+      });
+      notifyUserInput(session, 1000);
+      expect(session.agentTuiState).toBe('running');
+
+      const beyondCap = tickAgentDetection(session, 1000 + 31 * 60 * 1000);
+      expect(beyondCap.published).not.toBeNull();
+      expect(beyondCap.published.state).toBe('idle');
+      expect(beyondCap.published.reason).toBe('quiescence-confirmed');
+    });
+
+    test('manifest idle with a visible prompt is tagged prompt-visible', () => {
+      const session = makeSession('kimi');
+      notifyUserInput(session, 1000);
+      expect(session.agentTuiState).toBe('running');
+
+      const res = ingestAgentDetectionFromFilteredOutput(session, 'kimi> ', 2000);
+      expect(res.published).not.toBeNull();
+      expect(res.published.state).toBe('idle');
+      expect(res.published.reason).toBe('prompt-visible');
+      expect(session._lastIdleReason).toBe('prompt-visible');
+    });
+
+    test('dead PTY idle is tagged pty-dead', () => {
+      const session = makeSession('kimi', { pty: null, ptyPid: null });
+      session.agentTuiState = 'running';
+      const res = tickAgentDetection(session, 5000);
+      expect(res.published).not.toBeNull();
+      expect(res.published.state).toBe('idle');
+      expect(res.published.reason).toBe('pty-dead');
+    });
+  });
 });

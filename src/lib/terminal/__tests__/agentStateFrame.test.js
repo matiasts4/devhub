@@ -61,14 +61,27 @@ describe('buildAgentStateFrame (frame schema, N4/N5)', () => {
     });
   });
 
-  test('includes reason only for terminal frames', () => {
+  test('reason: explicit extra wins; otherwise falls back to session.agentTuiStateReason (DONE-EVIDENCE-01)', () => {
     const plain = buildAgentStateFrame({ agentType: 'kimi', agentTuiStateAt: 1 }, 'idle');
     expect(plain).not.toHaveProperty('reason');
 
-    const exit = buildAgentStateFrame({ agentType: 'kimi', agentTuiStateAt: 1 }, 'idle', {
-      reason: 'exit',
-    });
-    expect(exit.reason).toBe('exit');
+    const fromSession = buildAgentStateFrame(
+      { agentType: 'kimi', agentTuiStateAt: 1, agentTuiStateReason: 'quiescence' },
+      'idle'
+    );
+    expect(fromSession.reason).toBe('quiescence');
+
+    const explicit = buildAgentStateFrame(
+      { agentType: 'kimi', agentTuiStateAt: 1, agentTuiStateReason: 'quiescence' },
+      'idle',
+      { reason: 'exit' }
+    );
+    expect(explicit.reason).toBe('exit');
+  });
+
+  test('sidecar CJS mirror resolves reason from the session identically', () => {
+    const session = { agentType: 'kimi', agentTuiStateAt: 7, agentTuiStateReason: 'hook:Stop' };
+    expect(buildSidecarFrame(session, 'idle')).toEqual(buildAgentStateFrame(session, 'idle'));
   });
 
   test('returns null without a state (callers skip emission)', () => {

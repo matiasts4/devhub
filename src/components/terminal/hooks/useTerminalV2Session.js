@@ -709,8 +709,12 @@ export default function useTerminalV2Session({ ctxRef }) {
                 agentTuiStateAt: payload.at ?? Date.now(),
               },
               {
-                agentType: payload.agentType || initialCommand || null,
+                // DONE-EVIDENCE-01: only the server-detected type is a valid
+                // agent identity — the raw initialCommand is NOT (it produced
+                // garbage labels like the full command string in titles).
+                agentType: payload.agentType || null,
                 wasCancelled: Boolean(payload.wasCancelled),
+                reason: payload.reason || null,
               }
             );
             return;

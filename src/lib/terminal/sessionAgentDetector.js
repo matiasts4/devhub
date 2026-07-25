@@ -9,6 +9,7 @@ import {
   resolveDetectionSizing,
 } from './extractBottomViewport.js';
 import { stripAnsi } from './stripAnsi.js';
+import { tracePublishedTransition } from './agentStateTrace.js';
 
 export const HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 120000);
 export const HOOK_AUTHORITY_AGENTS = [
@@ -38,9 +39,62 @@ export const AGENT_STARTUP_GRACE_MS = Number(process.env.DEVHUB_AGENT_STARTUP_GR
  */
 export const DEFAULT_AGENT_QUIESCENCE_MS = Number(process.env.DEVHUB_AGENT_QUIESCENCE_MS || 4000);
 
+/**
+ * DONE-EVIDENCE-01: second quiescence stage. After the first silence window
+ * flips running→idle (reason 'quiescence', badge only — the bridge does NOT
+ * notify on it), continued silence past this confirm window upgrades the
+ * reason to 'quiescence-confirmed', which IS allowed to notify as a low
+ * confidence "done probable" fallback for agents without hooks.
+ */
+export const DEFAULT_AGENT_QUIESCENCE_CONFIRM_MS = Number(
+  process.env.DEVHUB_AGENT_QUIESCENCE_CONFIRM_MS || 12000
+);
+
+/**
+ * While a hook-reported tool call is in flight (PreToolUse/SubagentStart with
+ * no matching PostToolUse / SubagentStop / Stop yet), quiescence is vetoed: the
+ * agent is provably busy even when fully silent. The cap bounds the veto in
+ * case the matching end-event hook is ever lost (fail-open hooks).
+ */
+export const HOOK_TOOL_ACTIVE_VETO_CAP_MS = Number(
+  process.env.DEVHUB_HOOK_TOOL_ACTIVE_VETO_CAP_MS || 30 * 60 * 1000
+);
+
 function getQuiescenceMs(session) {
   const override = Number(session?.detectionQuiescenceMs);
   return override > 0 ? override : DEFAULT_AGENT_QUIESCENCE_MS;
+}
+
+function getQuiescenceConfirmMs(session) {
+  const override = Number(session?.detectionQuiescenceConfirmMs);
+  return override > 0 ? override : DEFAULT_AGENT_QUIESCENCE_CONFIRM_MS;
+}
+
+/**
+ * True while a hook-reported tool call is active and the veto has not exceeded
+ * its safety cap.
+ */
+export function hasActiveHookTool(session, now = Date.now()) {
+  if (!session?.hookToolActive) return false;
+  const since = Number(session.hookToolActiveAt);
+  if (!since) return true;
+  return now - since < HOOK_TOOL_ACTIVE_VETO_CAP_MS;
+}
+
+/**
+ * Record the reason of the last published idle on the session, so a later
+ * authoritative idle (hook Stop, visible prompt) can detect it is upgrading a
+ * silence-based idle and re-emit the frame (reason-upgrade). Also emits the
+ * JSONL transition trace — MUST be called BEFORE assigning
+ * session.agentTuiState so the trace captures the real prev state.
+ */
+function trackPublishedReason(session, published, extra = {}) {
+  if (!published) return;
+  tracePublishedTransition(session, published, extra);
+  session.agentTuiStateReason = published.reason ?? null;
+  if (published.state === 'idle') {
+    session._lastIdleReason = published.reason ?? null;
+  }
 }
 
 function getLastActivityAt(session) {
@@ -73,7 +127,13 @@ export function hasFreshHookAuthority(session, now = Date.now()) {
     return false;
   }
 
-  return now - session.hookState.at < HOOK_AUTHORITY_TTL_MS;
+  // DONE-EVIDENCE-01: while a tool call is hook-active (PreToolUse without its
+  // PostToolUse yet), the authority window stretches so a long silent tool
+  // call never falls back to the 4s quiescence path.
+  const ttl = hasActiveHookTool(session, now)
+    ? Math.max(HOOK_AUTHORITY_TTL_MS, HOOK_TOOL_ACTIVE_VETO_CAP_MS)
+    : HOOK_AUTHORITY_TTL_MS;
+  return now - session.hookState.at < ttl;
 }
 
 /**
@@ -198,11 +258,19 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
     return result;
   }
 
+  // DONE-EVIDENCE-01: tag the evidence source. An idle is only positive
+  // evidence of "done" when the agent's prompt is visibly back on screen
+  // (visibleIdle rule matched); everything else from the manifest is a
+  // neutral signal.
+  detected.reason =
+    detected.state === 'idle' && detected.visibleIdle ? 'prompt-visible' : 'manifest';
+
   // Cache only publishable detections
   session.lastDetection = detected;
 
   const published = session.agentStateMachine.publish(detected, now);
   if (published) {
+    trackPublishedReason(session, published, { source: 'ingest', now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
     result.published = {
@@ -232,12 +300,14 @@ export function notifyUserInput(session, now = Date.now()) {
     visibleIdle: false,
     visibleWorking: true,
     visibleBlocker: false,
+    reason: 'user-input',
   };
 
   session.lastDetection = detection;
 
   const published = session.agentStateMachine.publish(detection, now, { bypassHold: true });
   if (published) {
+    trackPublishedReason(session, published, { source: 'user-input', now });
     session.agentTuiState = published.state;
     session.agentTuiStateAt = now;
   }
@@ -266,16 +336,19 @@ export function tickAgentDetection(session, now = Date.now()) {
   const ptyPid = session.ptyPid || (pty && pty.pid);
   if (!pty || !ptyPid) {
     session.hookState = null; // Clear hook authority on dead PTY
+    session.hookToolActive = false;
     const published = session.agentStateMachine.publish(
       {
         state: 'idle',
         visibleIdle: true,
         visibleWorking: false,
         visibleBlocker: false,
+        reason: 'pty-dead',
       },
       now
     );
     if (published) {
+      trackPublishedReason(session, published, { source: 'tick', now });
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
       result.published = published;
@@ -303,28 +376,66 @@ export function tickAgentDetection(session, now = Date.now()) {
   const isRunningOrBlocked = state === 'running' || state === 'blocked';
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
 
-  // Output Quiescence: if running and the session has produced NO output at all
-  // for the quiescence window, transition to idle. Activity is any PTY chunk
-  // (session.lastActivityAt), so streaming output whose footer scrolled offscreen
-  // no longer causes false "finished" flips (W4).
+  // Output Quiescence (two stages, DONE-EVIDENCE-01). Activity is any PTY
+  // chunk (session.lastActivityAt), so streaming output whose footer scrolled
+  // offscreen no longer causes false "finished" flips (W4).
+  //   stage 1 (> quiescenceMs silent): running→idle, reason 'quiescence' —
+  //     the badge flips but the notification bridge does NOT treat it as done.
+  //   stage 2 (> confirmMs silent): reason upgrades to 'quiescence-confirmed'
+  //     — a low-confidence "done probable" that MAY notify (fallback for
+  //     hook-less agents).
+  // Vetoed entirely while a hook-reported tool call is active: the agent is
+  // provably busy even when fully silent (long builds/tests).
   const quiescenceMs = getQuiescenceMs(session);
+  const quiescenceConfirmMs = getQuiescenceConfirmMs(session);
   const lastActivityAt = getLastActivityAt(session);
-  if (state === 'running' && lastActivityAt && now - lastActivityAt > quiescenceMs) {
+  const silentForMs = lastActivityAt ? now - lastActivityAt : 0;
+  const quiescenceVetoed = hasActiveHookTool(session, now);
+  if (!quiescenceVetoed && state === 'running' && lastActivityAt && silentForMs > quiescenceMs) {
     const fallbackIdle = {
       state: 'idle',
       visibleIdle: false,
       visibleWorking: false,
       visibleBlocker: false,
+      reason: silentForMs > quiescenceConfirmMs ? 'quiescence-confirmed' : 'quiescence',
     };
     session.lastDetection = fallbackIdle;
     const published = session.agentStateMachine.publish(fallbackIdle, now, { bypassHold: true });
     if (published) {
+      trackPublishedReason(session, published, { source: 'tick', now });
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
       result.published = published;
       result.agentTuiState = published.state;
       result.agentTuiStateAt = now;
     }
+    return result;
+  }
+
+  // Stage-2 reason upgrade: already idle from stage 1 and silence continued
+  // past the confirm window. The state does not change, so the state machine
+  // would never republish on its own — emit the upgraded frame explicitly.
+  if (
+    !quiescenceVetoed &&
+    state === 'idle' &&
+    session._lastIdleReason === 'quiescence' &&
+    lastActivityAt &&
+    silentForMs > quiescenceConfirmMs
+  ) {
+    const upgraded = {
+      state: 'idle',
+      visibleIdle: false,
+      visibleWorking: false,
+      visibleBlocker: false,
+      reason: 'quiescence-confirmed',
+    };
+    session.lastDetection = upgraded;
+    trackPublishedReason(session, upgraded, { source: 'tick', now, upgrade: true });
+    session.agentTuiState = 'idle';
+    session.agentTuiStateAt = now;
+    result.published = upgraded;
+    result.agentTuiState = 'idle';
+    result.agentTuiStateAt = now;
     return result;
   }
 
@@ -335,6 +446,7 @@ export function tickAgentDetection(session, now = Date.now()) {
   if (session.lastDetection) {
     const published = session.agentStateMachine.publish(session.lastDetection, now);
     if (published) {
+      trackPublishedReason(session, published, { source: 'tick', now });
       session.agentTuiState = published.state;
       session.agentTuiStateAt = now;
       result.published = published;

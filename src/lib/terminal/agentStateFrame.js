@@ -16,8 +16,11 @@
  *     it on the ingest result (ttyServer stores it on
  *     session._lastAgentStateEvent.wasCancelled); tick/notify publishes have
  *     no detection context, so their frames omit it unless passed explicitly.
- *   - reason:       terminal frames only ('exit' = PTY exited,
- *     'agent-exit' = typed-agent child reaped while shell survived).
+ *   - reason:       evidence tag (DONE-EVIDENCE-01). Explicit terminal frames
+ *     pass it ('exit' = PTY exited, 'agent-exit' = typed-agent child reaped
+ *     while shell survived); otherwise it falls back to
+ *     session.agentTuiStateReason ('quiescence', 'quiescence-confirmed',
+ *     'prompt-visible', 'hook:<event>', 'manifest', 'user-input', 'pty-dead').
  *
  * @param {object|null} session
  * @param {string} state - agentTuiState to publish (e.g. 'idle', 'running', 'blocked')
@@ -44,8 +47,9 @@ export function buildAgentStateFrame(session, state, extra = {}) {
   if (wasCancelled !== undefined && wasCancelled !== null) {
     frame.wasCancelled = Boolean(wasCancelled);
   }
-  if (extra.reason) {
-    frame.reason = extra.reason;
+  const reason = extra.reason ?? session?.agentTuiStateReason ?? null;
+  if (reason) {
+    frame.reason = reason;
   }
   return frame;
 }

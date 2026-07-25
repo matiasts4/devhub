@@ -339,6 +339,7 @@ describe('agentStateDetection', () => {
         visibleIdle: false,
         visibleWorking: true,
         visibleBlocker: false,
+        reason: null,
       });
       expect(sm.state).toBe('running');
     });
@@ -387,6 +388,7 @@ describe('agentStateDetection', () => {
         visibleIdle: false,
         visibleWorking: false,
         visibleBlocker: true,
+        reason: null,
       });
     });
 
@@ -418,6 +420,7 @@ describe('agentStateDetection', () => {
         visibleIdle: false,
         visibleWorking: true,
         visibleBlocker: false,
+        reason: null,
       });
     });
 

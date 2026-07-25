@@ -240,8 +240,11 @@ function detectAgentStateFromOutput(output, agentType) {
 // Frame schema (N4/N5): { type, agentTuiState, at, agentType?, wasCancelled?, reason? }
 // Optional fields are included ONLY when defined so legacy consumers that
 // assume {type, agentTuiState, at} never see unexpected nulls.
-//   - reason: terminal frames only ('exit' = PTY exited,
-//     'agent-exit' = typed-agent child reaped while shell survived).
+//   - reason: evidence tag (DONE-EVIDENCE-01). Explicit terminal frames pass
+//     it ('exit' = PTY exited, 'agent-exit' = typed-agent child reaped while
+//     shell survived); otherwise falls back to session.agentTuiStateReason
+//     ('quiescence', 'quiescence-confirmed', 'prompt-visible', 'hook:<event>',
+//     'manifest', 'user-input', 'pty-dead').
 function buildAgentStateFrame(session, state, extra = {}) {
   if (!state) return null;
   const frame = {
@@ -257,8 +260,9 @@ function buildAgentStateFrame(session, state, extra = {}) {
   if (wasCancelled !== undefined && wasCancelled !== null) {
     frame.wasCancelled = Boolean(wasCancelled);
   }
-  if (extra.reason) {
-    frame.reason = extra.reason;
+  const reason = extra.reason ?? session?.agentTuiStateReason ?? null;
+  if (reason) {
+    frame.reason = reason;
   }
   return frame;
 }
