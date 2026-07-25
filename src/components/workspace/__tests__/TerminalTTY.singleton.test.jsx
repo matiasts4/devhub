@@ -55,7 +55,7 @@ afterEach(() => {
   if (dom && dom.window && dom.window.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }
@@ -268,7 +268,7 @@ describe('TerminalTTY â€” singleton lifecycle (Phase 4)', () => {
 
   test('a target switch (workspace-dock â†’ pizarra-canvas) does NOT close the WebSocket', () => {
     const onDestroy = jest.fn();
-    const { container, root } = renderApp(
+    const { root } = renderApp(
       React.createElement(App, {
         surfaceId: 'term-1',
         hostIds: ['workspace-dock'],
@@ -301,7 +301,7 @@ describe('TerminalTTY â€” singleton lifecycle (Phase 4)', () => {
 
   test('5 consecutive target switches open the WebSocket exactly once', () => {
     const onDestroy = jest.fn();
-    const { container, root } = renderApp(
+    const { root } = renderApp(
       React.createElement(App, {
         surfaceId: 'term-1',
         hostIds: ['workspace-dock'],
@@ -381,7 +381,7 @@ describe('TerminalTTY â€” singleton lifecycle (Phase 4)', () => {
       );
     }
     const triggerRef = React.createRef();
-    const { container, root } = renderApp(React.createElement(ClosableApp, { triggerRef }));
+    renderApp(React.createElement(ClosableApp, { triggerRef }));
     return new Promise((resolve) => setTimeout(resolve, 10)).then(() => {
       expect(wsOpenSink).toHaveLength(1);
       // Explicit destroy: WS closes AND onSurfaceDestroy is fired.

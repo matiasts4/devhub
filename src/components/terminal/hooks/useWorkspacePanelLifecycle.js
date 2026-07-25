@@ -584,13 +584,6 @@ export default function useWorkspacePanelLifecycle({
           navAction === 'previousWorkspace' ? 'previous' : 'next'
         );
         if (!nextWorkspaceId || nextWorkspaceId === currentWorkspaceId) return false;
-        const nextWorkspace = workspacesRef.current.find(
-          (workspace) => workspace.id === nextWorkspaceId
-        );
-        const nextPanelId = resolveWorkspacePanelId(
-          nextWorkspace,
-          activePanelIdsRef.current[nextWorkspaceId]
-        );
         switchWorkspace(nextWorkspaceId);
         return true;
       }
@@ -627,13 +620,6 @@ export default function useWorkspacePanelLifecycle({
 
       const nextWorkspaceId = navigationTarget.workspaceId;
       if (!nextWorkspaceId || nextWorkspaceId === currentWorkspaceId) return false;
-      const nextWorkspace = workspacesRef.current.find(
-        (workspace) => workspace.id === nextWorkspaceId
-      );
-      const nextPanelId = resolveWorkspacePanelId(
-        nextWorkspace,
-        activePanelIdsRef.current[nextWorkspaceId]
-      );
       switchWorkspace(nextWorkspaceId);
       return true;
     },
