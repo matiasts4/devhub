@@ -118,7 +118,7 @@ export default function AgentHub() {
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
 
-  const [llmConfig, setLlmConfig] = useState(null);
+  const [_llmConfig, setLlmConfig] = useState(null);
   const [activeProviderName, setActiveProviderName] = useState(null);
   const [activeModelOverride, setActiveModelOverride] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -389,7 +389,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
           loadSessions();
           clearStaleSubagentMessages(data.stale_sessions || []);
         }
-      } catch (err) {
+      } catch (_err) {
         // Silently fail — health check is non-critical
       }
     };
@@ -398,10 +398,6 @@ Dale, empezá leyendo el contexto del proyecto.`;
     return () => clearInterval(interval);
   }, [clearStaleSubagentMessages]);
 
-  // Phase 4: Trace Enhancement state
-  const [traceSearch, setTraceSearch] = useState('');
-  const [traceFilterType, setTraceFilterType] = useState('all');
-  const [traceFilterStatus, setTraceFilterStatus] = useState('all');
   const [showSessionList, setShowSessionList] = useState(false);
   const [showMCPPanel, setShowMCPPanel] = useState(false);
   const [permissionRequest, setPermissionRequest] = useState(null);
@@ -921,7 +917,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
       let args = {};
       try {
         args = JSON.parse(matchEngram[2]);
-      } catch (e) {
+      } catch (_e) {
         sileo.error({ title: 'Error al parsear argumentos de Engram (JSON inválido)' });
         return;
       }
@@ -972,7 +968,7 @@ Dale, empezá leyendo el contexto del proyecto.`;
       let args = {};
       try {
         args = JSON.parse(matchDevHub[2]);
-      } catch (e) {
+      } catch (_e) {
         sileo.error({ title: 'Error al parsear argumentos de DevHub MCP (JSON inválido)' });
         return;
       }
@@ -1131,33 +1127,6 @@ Dale, empezá leyendo el contexto del proyecto.`;
           ? existing.map((p, i) => (i === idx ? { ...p, ...part } : p))
           : [...existing, part],
     };
-  };
-
-  const appendTracePart = (msgId, part) => {
-    tracesRef.current = {
-      ...tracesRef.current,
-      [msgId]: [...(tracesRef.current[msgId] || []), part],
-    };
-  };
-
-  const updateLastTextPart = (msgId, delta) => {
-    const existing = [...(tracesRef.current[msgId] || [])];
-    const lastText = [...existing].reverse().find((p) => p.type === 'text');
-    if (lastText) {
-      tracesRef.current = {
-        ...tracesRef.current,
-        [msgId]: existing.map((p) =>
-          p.id === lastText.id ? { ...p, content: p.content + delta } : p
-        ),
-      };
-    } else {
-      // No text part yet — crear uno
-      const newPart = { id: crypto.randomUUID(), type: 'text', content: delta };
-      tracesRef.current = {
-        ...tracesRef.current,
-        [msgId]: [...existing, newPart],
-      };
-    }
   };
 
   const dispatchOpenCode = async (selectedAgent, commandPrompt) => {
@@ -1426,23 +1395,6 @@ Dale, empezá leyendo el contexto del proyecto.`;
     },
     [permissionRequest]
   );
-
-  // Phase 4: Trace filter handlers
-  const handleTraceSearch = useCallback((term) => {
-    setTraceSearch(term);
-  }, []);
-
-  const handleTraceFilter = useCallback((filters) => {
-    if (filters.trace_type) setTraceFilterType(filters.trace_type);
-    if (filters.tool_status) setTraceFilterStatus(filters.tool_status);
-    if (filters.tool_name) setTraceFilterStatus(filters.tool_name); // reuse status filter
-  }, []);
-
-  const handleTraceClear = useCallback(() => {
-    setTraceSearch('');
-    setTraceFilterType('all');
-    setTraceFilterStatus('all');
-  }, []);
 
   // Phase 4: MCP server refresh
   const handleMCPRefresh = useCallback(async () => {
