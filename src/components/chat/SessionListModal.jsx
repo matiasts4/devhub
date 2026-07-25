@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react';
 import { X, Search, Plus, MessageSquare, Send, Calendar } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 

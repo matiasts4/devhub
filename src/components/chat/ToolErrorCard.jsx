@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   XCircle,
   AlertTriangle,
@@ -64,15 +64,9 @@ export default function ToolErrorCard({ tool }) {
       : null;
 
   return (
-    <div 
-      className="pl-3 transition-all duration-200"
-      style={{ borderLeft: '2px solid #f87171' }}
-    >
+    <div className="pl-3 transition-all duration-200" style={{ borderLeft: '2px solid #f87171' }}>
       {/* Header */}
-      <button
-        onClick={handleToggle}
-        className="w-full flex items-center gap-2 py-1 text-left"
-      >
+      <button onClick={handleToggle} className="w-full flex items-center gap-2 py-1 text-left">
         {/* Error icon */}
         <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center text-red-400">
           <XCircle className="w-3 h-3" />

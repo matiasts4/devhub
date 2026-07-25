@@ -1,12 +1,17 @@
 /**
  * Shared Tailwind animation class fragments for Radix overlays.
- * Tuned for a soft premium feel: light blurred scrim, short zoom modals,
+ * Tuned for a soft premium feel: dimmed scrim, short zoom modals,
  * short-travel sheets. Structural chrome stays instant elsewhere.
+ *
+ * perf: backdrop-blur removed from the scrim — it forced per-frame GPU
+ * recomposition over live WebGL terminal canvases, causing visible
+ * latency in every dialog. A flat semi-transparent scrim composites
+ * in a single cached layer instead.
  */
 
-/** Overlay scrim — light dim + blur, fade only. */
+/** Overlay scrim — flat dim, fade only (no backdrop-filter). */
 export const OVERLAY_SCRIM_MOTION =
-  'bg-black/30 supports-[backdrop-filter]:backdrop-blur-sm duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0';
+  'bg-black/40 duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0';
 
 /**
  * Centered modal panel — fade + slight zoom (no diagonal slide).

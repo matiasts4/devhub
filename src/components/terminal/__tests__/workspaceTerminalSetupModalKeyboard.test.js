@@ -1,6 +1,4 @@
-const {
-  installDom,
-} = require('@/test-support/domHarness');
+const { installDom } = require('@/test-support/domHarness');
 const {
   clampTerminalCount,
   getAdjacentCircularIndex,
@@ -40,22 +38,22 @@ describe('workspaceTerminalSetupModalKeyboard', () => {
   });
 
   test('getAdjacentWorkspaceSetupSection walks terminals → presets → custom command', () => {
-    expect(
-      getAdjacentWorkspaceSetupSection('terminals', 1, { commandApplies: true })
-    ).toBe('commandPresets');
-    expect(
-      getAdjacentWorkspaceSetupSection('commandPresets', 1, { commandApplies: true })
-    ).toBe('customCommand');
-    expect(
-      getAdjacentWorkspaceSetupSection('customCommand', -1, { commandApplies: true })
-    ).toBe('commandPresets');
+    expect(getAdjacentWorkspaceSetupSection('terminals', 1, { commandApplies: true })).toBe(
+      'commandPresets'
+    );
+    expect(getAdjacentWorkspaceSetupSection('commandPresets', 1, { commandApplies: true })).toBe(
+      'customCommand'
+    );
+    expect(getAdjacentWorkspaceSetupSection('customCommand', -1, { commandApplies: true })).toBe(
+      'commandPresets'
+    );
   });
 
   test('command sections are skipped when no terminals are selected', () => {
     expect(getWorkspaceSetupSections({ commandApplies: false })).toEqual(['terminals']);
-    expect(
-      getAdjacentWorkspaceSetupSection('terminals', 1, { commandApplies: false })
-    ).toBe('terminals');
+    expect(getAdjacentWorkspaceSetupSection('terminals', 1, { commandApplies: false })).toBe(
+      'terminals'
+    );
   });
 
   test('shouldAdjustTerminalCountFromKeyboard only applies in the terminals section', () => {
@@ -120,16 +118,10 @@ describe('workspaceTerminalSetupModalKeyboard', () => {
     modalRoot.appendChild(cancel);
 
     expect(
-      shouldConfirmWorkspaceTerminalSetup(
-        { key: 'Enter' },
-        { activeElement: confirm, modalRoot }
-      )
+      shouldConfirmWorkspaceTerminalSetup({ key: 'Enter' }, { activeElement: confirm, modalRoot })
     ).toBe(true);
     expect(
-      shouldConfirmWorkspaceTerminalSetup(
-        { key: 'Enter' },
-        { activeElement: cancel, modalRoot }
-      )
+      shouldConfirmWorkspaceTerminalSetup({ key: 'Enter' }, { activeElement: cancel, modalRoot })
     ).toBe(false);
   });
 

@@ -1,4 +1,3 @@
-import React, { useState, useCallback, useMemo } from 'react';
 import {
   Terminal,
   ChevronDown,
@@ -10,8 +9,9 @@ import {
   Check,
   Maximize2,
 } from 'lucide-react';
-import { ansiToHtml } from './utils/ansiToHtml';
 import OutputViewerModal from './OutputViewerModal';
+import { useState, useCallback, useMemo } from 'react';
+import { ansiToHtml } from './utils/ansiToHtml';
 
 // Strip ANSI codes for plain-text display
 // eslint-disable-next-line no-control-regex
@@ -64,11 +64,7 @@ export default function BashToolCard({ tool }) {
         ? 'text-red-400'
         : 'text-[color:var(--text-muted)]';
 
-  const lineBorderColor = isRunning
-    ? '#f59e0b'
-    : isError
-      ? '#f87171'
-      : 'var(--border-strong)';
+  const lineBorderColor = isRunning ? '#f59e0b' : isError ? '#f87171' : 'var(--border-strong)';
 
   return (
     <>
@@ -77,10 +73,7 @@ export default function BashToolCard({ tool }) {
         style={{ borderLeft: `2px solid ${lineBorderColor}` }}
       >
         {/* Header */}
-        <button
-          onClick={handleToggle}
-          className="w-full flex items-center gap-2 py-1 text-left"
-        >
+        <button onClick={handleToggle} className="w-full flex items-center gap-2 py-1 text-left">
           {/* Status icon */}
           <div className={`w-4 h-4 flex-shrink-0 flex items-center justify-center ${statusColor}`}>
             {isRunning ? (

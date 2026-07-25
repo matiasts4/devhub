@@ -9,13 +9,7 @@ import { cn } from '@/lib/utils';
 
 export function MotionSkeleton({ className, ...props }) {
   return (
-    <Skeleton
-      className={cn(
-        'bg-primary/10 motion-safe:animate-pulse',
-        className
-      )}
-      {...props}
-    />
+    <Skeleton className={cn('bg-primary/10 motion-safe:animate-pulse', className)} {...props} />
   );
 }
 
@@ -24,11 +18,7 @@ export function MotionSkeletonGrid({ rows = 3, className }) {
   return (
     <div className={cn('flex flex-col gap-3 p-6', className)}>
       {Array.from({ length: rows }).map((_, i) => (
-        <MotionSkeleton
-          key={i}
-          className="h-4"
-          style={{ width: `${88 - i * 12}%` }}
-        />
+        <MotionSkeleton key={i} className="h-4" style={{ width: `${88 - i * 12}%` }} />
       ))}
     </div>
   );

@@ -120,7 +120,11 @@ describe('circleMigration — first run (P-MP-9)', () => {
 
 describe('circleMigration — re-runs are no-ops (P-MP-9)', () => {
   test('when the flag is already "done", no shape is mutated and .bak is NOT overwritten', () => {
-    const { store, getItem, setItem } = makeStorage({
+    const {
+      store: _store,
+      getItem,
+      setItem,
+    } = makeStorage({
       [CIRCLE_MIGRATION_FLAG]: 'done',
     });
     const originalBak = JSON.stringify([{ type: 'rect', x: 0, y: 0, width: 10, height: 10 }]);

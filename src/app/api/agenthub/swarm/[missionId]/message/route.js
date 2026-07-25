@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db/localDb.js';
 import { withAuth } from '@/lib/swarm/withAuth.js';
-import { persistSession, reactivateSession, getSession } from '@/lib/sdd/SessionPersistence.js';
+import { reactivateSession } from '@/lib/sdd/SessionPersistence.js';
 import { broadcastEvent } from '@/app/api/swarm-phase-events/route.js';
 
 // ---------------------------------------------------------------------------

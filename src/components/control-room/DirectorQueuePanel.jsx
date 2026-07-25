@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   CountBadge,
   StatusPill,
@@ -40,11 +39,7 @@ export default function DirectorQueuePanel({
   const canClaim = !handoffDisabled && typeof onClaimNext === 'function' && !isSubmitting;
 
   return (
-    <section
-      className="border p-4"
-      style={panelShellStyle()}
-      aria-label="Cola del director"
-    >
+    <section className="border p-4" style={panelShellStyle()} aria-label="Cola del director">
       <header className="mb-4 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>

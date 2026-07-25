@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
-import { createReadStream } from 'fs';
 import path from 'path';
 
 const mimeTypes = {
@@ -14,7 +13,7 @@ const mimeTypes = {
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.mp4': 'video/mp4',
-  '.mp3': 'audio/mpeg'
+  '.mp3': 'audio/mpeg',
 };
 
 export async function GET(request) {
@@ -36,15 +35,14 @@ export async function GET(request) {
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
     const fileBuffer = await fs.readFile(/*turbopackIgnore: true*/ absolutePath);
-    
+
     return new NextResponse(fileBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=86400',
-      }
+      },
     });
-
   } catch (error) {
     console.error('Error in /api/fs/file:', error);
     return NextResponse.json({ error: 'Error al cargar archivo' }, { status: 500 });

@@ -58,7 +58,9 @@ describe('serialize', () => {
     state.boards.set('board-1', { id: 'board-1', name: 'Main', createdAt: 1234567890 });
     const json = serialize(state);
     const parsed = JSON.parse(json);
-    expect(parsed.boards).toEqual({ 'board-1': { id: 'board-1', name: 'Main', createdAt: 1234567890 } });
+    expect(parsed.boards).toEqual({
+      'board-1': { id: 'board-1', name: 'Main', createdAt: 1234567890 },
+    });
   });
 
   test('includes schemaVersion field', () => {
@@ -133,7 +135,13 @@ describe('validateState', () => {
   });
 
   test('returns false for missing viewport', () => {
-    const state = { elements: new Map(), activeTool: 'select', toolSettings: { color: '#000', strokeWidth: 2, fontSize: 16 }, activeBoardId: 'x', boards: new Map() };
+    const state = {
+      elements: new Map(),
+      activeTool: 'select',
+      toolSettings: { color: '#000', strokeWidth: 2, fontSize: 16 },
+      activeBoardId: 'x',
+      boards: new Map(),
+    };
     expect(validateState(state)).toBe(false);
   });
 

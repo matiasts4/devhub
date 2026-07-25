@@ -38,9 +38,15 @@ export async function GET(_req, { params }) {
     }
 
     const messages = await res.json();
-    return NextResponse.json({ messages: Array.isArray(messages) ? messages : [], status: session.status });
+    return NextResponse.json({
+      messages: Array.isArray(messages) ? messages : [],
+      status: session.status,
+    });
   } catch (err) {
     // OpenCode unreachable — return empty, not an error (session may have ended)
-    return NextResponse.json({ messages: [], status: 'unknown', error: err.message }, { status: 200 });
+    return NextResponse.json(
+      { messages: [], status: 'unknown', error: err.message },
+      { status: 200 }
+    );
   }
 }

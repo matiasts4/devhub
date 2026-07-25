@@ -140,8 +140,11 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
 
     async function setup() {
       try {
-        const { isElectronDesktop, subscribeDesktopEvent, detectDesktopRuntime } =
-          await import('@/lib/desktop/desktopBridge');
+        const {
+          isElectronDesktop,
+          subscribeDesktopEvent: _subscribeDesktopEvent,
+          detectDesktopRuntime,
+        } = await import('@/lib/desktop/desktopBridge');
 
         if (isElectronDesktop()) {
           // Events may no-op until preload wires VOICE_EVENT; still mark desktop available
@@ -189,7 +192,7 @@ export function useVoiceCapture({ onFinalTranscript, onPartial } = {}) {
             setErrorText('');
           } else if (status === 'stopped') {
             flushVoiceSend();
-            setEnginePhase((prev) => (wasRecordingRef.current ? 'listening' : 'ready'));
+            setEnginePhase((_prev) => (wasRecordingRef.current ? 'listening' : 'ready'));
           } else if (INFO_VOICE_STATUSES.has(status)) {
             /* status line only — STT already ready */
           } else if (PREPARING_STATUSES.has(status) || status.includes('Configuring Python')) {

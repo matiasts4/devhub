@@ -12,7 +12,7 @@ describe('terminalRun action', () => {
   beforeEach(() => {
     jest.resetModules();
     global.fetch.mockClear();
-    
+
     const module = require('../terminalRun');
     terminalRun = module.terminalRun;
 
@@ -109,6 +109,8 @@ describe('terminalRun action', () => {
       statusText: 'Internal Server Error',
     });
 
-    await expect(terminalRun(intent, fakeSurfaceController)).rejects.toThrow(/Failed to send command/i);
+    await expect(terminalRun(intent, fakeSurfaceController)).rejects.toThrow(
+      /Failed to send command/i
+    );
   });
 });

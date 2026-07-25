@@ -123,7 +123,15 @@ function MockViewportProvider({
 
 // ── Test harness ──────────────────────────────────────────────────────────
 
-function renderComponent({ elements, onSelectElement, idleMs, initialPan, initialZoom, canvasRect, settersRef: externalSettersRef } = {}) {
+function renderComponent({
+  elements,
+  onSelectElement,
+  idleMs,
+  initialPan,
+  initialZoom,
+  canvasRect,
+  settersRef: externalSettersRef,
+} = {}) {
   const PizarraMinimap = require('../PizarraMinimap').default;
   const container = document.createElement('div');
   // The component uses position:fixed with bottom: 36, right: 12; we
@@ -235,7 +243,9 @@ describe('PizarraMinimap — pizarra-minimap component contract', () => {
         { id: 'c1', type: 'circle', x: 100, y: 400, radius: 50 },
       ];
       const harness = renderComponent({ elements });
-      const elementDivs = harness.container.querySelectorAll('[data-testid="pizarra-minimap-element"]');
+      const elementDivs = harness.container.querySelectorAll(
+        '[data-testid="pizarra-minimap-element"]'
+      );
       expect(elementDivs.length).toBe(3);
       // Each element div has the right id and type attributes.
       const ids = Array.from(elementDivs).map((d) => d.getAttribute('data-element-id'));
@@ -367,9 +377,7 @@ describe('PizarraMinimap — pizarra-minimap component contract', () => {
 
     test('clicking an element minimap div calls onSelectElement with the id', () => {
       const onSelectElement = jest.fn();
-      const elements = [
-        { id: 'r1', type: 'rect', x: 0, y: 0, width: 200, height: 200 },
-      ];
+      const elements = [{ id: 'r1', type: 'rect', x: 0, y: 0, width: 200, height: 200 }];
       const harness = renderComponent({ elements, onSelectElement });
 
       // Force visible so pointer-events are enabled.
@@ -378,9 +386,7 @@ describe('PizarraMinimap — pizarra-minimap component contract', () => {
       });
       flushSync();
 
-      const elementDiv = harness.container.querySelector(
-        '[data-element-id="r1"]'
-      );
+      const elementDiv = harness.container.querySelector('[data-element-id="r1"]');
       expect(elementDiv).toBeTruthy();
 
       act(() => {

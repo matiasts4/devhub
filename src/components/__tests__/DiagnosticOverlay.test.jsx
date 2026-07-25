@@ -1,5 +1,10 @@
 const React = require('react');
-const { installDom, renderIntoDom, cleanupMountedRoots, click } = require('@/test-support/domHarness');
+const {
+  installDom,
+  renderIntoDom,
+  cleanupMountedRoots,
+  click,
+} = require('@/test-support/domHarness');
 
 const DiagnosticOverlay = require('../control-room/DiagnosticOverlay').default;
 
@@ -95,11 +100,11 @@ describe('DiagnosticOverlay runtime evidence actions', () => {
     expect(restoreSummary?.textContent).toContain('Registro vencido: 1');
     expect(restoreSummary?.textContent).toContain('Cuota: bloqueada');
 
-    const summaryButton = Array.from(restoreSummary?.querySelectorAll('button') || []).find((button) =>
-      button.textContent.includes('Copiar resumen runtime')
+    const summaryButton = Array.from(restoreSummary?.querySelectorAll('button') || []).find(
+      (button) => button.textContent.includes('Copiar resumen runtime')
     );
-    const exportButton = Array.from(restoreSummary?.querySelectorAll('button') || []).find((button) =>
-      button.textContent.includes('Exportar runtime JSON')
+    const exportButton = Array.from(restoreSummary?.querySelectorAll('button') || []).find(
+      (button) => button.textContent.includes('Exportar runtime JSON')
     );
 
     await click(summaryButton);

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
 import OperatorTimelineItem from './OperatorTimelineItem.jsx';
 import ExecutionRollupCard from './ExecutionRollupCard.jsx';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
  * OperatorTimelineFeed — main container (D-7, T14).
@@ -119,7 +119,9 @@ export default function OperatorTimelineFeed({
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [executionId, actorId, limit, rollup]);
 
   // ── SSE stream
@@ -137,7 +139,9 @@ export default function OperatorTimelineFeed({
       try {
         const data = JSON.parse(e.data);
         setLastDurableSeq(data.last_durable_sequence || 0);
-      } catch (_) {}
+      } catch {
+        /* ignore malformed SSE event */
+      }
     });
 
     es.addEventListener('timeline_item', (e) => {
@@ -164,7 +168,9 @@ export default function OperatorTimelineFeed({
           }, 2000);
           hintTimersRef.current.set(item.item_id, timer);
         }
-      } catch (_) {}
+      } catch {
+        /* ignore malformed SSE event */
+      }
     });
 
     es.onerror = () => {

@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback, useRef } from 'react';
 import { X, Copy, Check } from 'lucide-react';
+import React, { useEffect, useCallback, useRef } from 'react';
 
 // Language detection from title/content
 function detectLanguage(language, title) {

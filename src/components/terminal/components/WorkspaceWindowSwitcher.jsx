@@ -1,5 +1,4 @@
 'use client';
-
 import { Layers, Plus } from 'lucide-react';
 
 export const MAX_WORKSPACE_WINDOWS = 5;

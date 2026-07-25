@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
 import { Hourglass } from 'lucide-react';
+import { QuotaProgressRing } from './QuotaProgressRing.jsx';
+import { QuotaInspectorPopover } from './QuotaInspectorPopover.jsx';
+import { useState, useEffect } from 'react';
 import { quotaManager } from '../../lib/quota/quotaManager.js';
 import { detectProviderFromSession } from '../../lib/quota/activeSessionSensor.js';
 import { PROVIDER_LABELS } from '../../lib/quota/types.js';
@@ -8,8 +10,6 @@ import {
   readQuotaPreferences,
   resolveBadgeProvider,
 } from '../../lib/quota/quotaPreferences.js';
-import { QuotaProgressRing } from './QuotaProgressRing.jsx';
-import { QuotaInspectorPopover } from './QuotaInspectorPopover.jsx';
 
 export function QuotaHeaderBadge({ activeSessionTitle = null }) {
   const [quotas, setQuotas] = useState({});
@@ -90,7 +90,10 @@ export function QuotaHeaderBadge({ activeSessionTitle = null }) {
             {remPct}%
           </span>
         ) : (
-          <span className="text-[11px] font-bold text-zinc-500" title={currentQuota?.error || undefined}>
+          <span
+            className="text-[11px] font-bold text-zinc-500"
+            title={currentQuota?.error || undefined}
+          >
             --
           </span>
         )}

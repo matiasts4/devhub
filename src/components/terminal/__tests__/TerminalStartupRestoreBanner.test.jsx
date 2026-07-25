@@ -1,9 +1,5 @@
 const React = require('react');
-const {
-  cleanupMountedRoots,
-  installDom,
-  renderIntoDom,
-} = require('@/test-support/domHarness');
+const { cleanupMountedRoots, installDom, renderIntoDom } = require('@/test-support/domHarness');
 const TerminalStartupRestoreBanner = require('../TerminalStartupRestoreBanner').default;
 const { STARTUP_RESTORE_PHASE } = require('@/lib/terminal/startupRestoreProgress');
 

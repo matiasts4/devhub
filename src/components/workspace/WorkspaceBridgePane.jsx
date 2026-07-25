@@ -1,5 +1,4 @@
 'use client';
-
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 
 export default function WorkspaceBridgePane({ dockState, onDockStateChange }) {

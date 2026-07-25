@@ -14,9 +14,7 @@ import {
 } from '@/lib/terminal/grokReadyMarker';
 
 /** Delays (ms) from session `ready` — promote flags as Grok finishes booting. */
-export const GROK_WHEEL_BOOTSTRAP_DELAYS_MS = Object.freeze([
-  800, 2000, 4000, 7000, 11000,
-]);
+export const GROK_WHEEL_BOOTSTRAP_DELAYS_MS = Object.freeze([800, 2000, 4000, 7000, 11000]);
 
 /**
  * @param {object} opts

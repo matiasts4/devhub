@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { X, Send, FileText, ChevronDown, AlertCircle } from 'lucide-react';
+import { X, Send, ChevronDown, AlertCircle } from 'lucide-react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 // ─── Agent Profile Options ────────────────────────────────────────────────────
 

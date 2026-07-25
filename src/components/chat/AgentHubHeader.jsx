@@ -1,6 +1,5 @@
 import { Brain, Server, History, ChevronDown, Plus, Archive, Loader2, Trash2 } from 'lucide-react';
 import { UiHeader } from '@/components/ui/system';
-import { MIN_MESSAGES_FOR_COMPRESSION } from '@/lib/agenthubCompression';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { MIN_MESSAGES_FOR_COMPRESSION } from '@/lib/agenthubCompression';
 
 export default function AgentHubHeader({
   currentSession,

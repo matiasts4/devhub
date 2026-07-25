@@ -58,9 +58,7 @@ describe('restoreManifest', () => {
     expect(manifest.appSessionId).toBe('app-2');
     expect(manifest.activeProjectId).toBe('project-2');
     expect(manifest.workspaces).toHaveLength(1);
-    expect(manifest.workspaces[0]).toEqual(
-      expect.objectContaining({ workspaceId: 'ws-2' })
-    );
+    expect(manifest.workspaces[0]).toEqual(expect.objectContaining({ workspaceId: 'ws-2' }));
     expect(manifest.terminalSessions[0]).toEqual(
       expect.objectContaining({ terminalId: 'term-2', cwd: '/tmp' })
     );

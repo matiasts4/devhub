@@ -1,10 +1,10 @@
+import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ZED_ORCHESTRATOR_TEMPLATE_ID,
   filterModelsForProgram,
 } from '@/lib/operations/swarmControl';
-import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import {
   btnDangerStyle,
   codeBlockStyle,

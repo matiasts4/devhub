@@ -86,7 +86,15 @@ function resetDb() {
 /**
  * Persist a swarm session to SQLite.
  */
-async function persistSession({ sessionId, agentId, missionId, phase, artifacts = {}, context = {}, checkpoint = null } = {}) {
+async function persistSession({
+  sessionId,
+  agentId,
+  missionId,
+  phase,
+  artifacts = {},
+  context = {},
+  checkpoint = null,
+} = {}) {
   const db = getDb();
   const now = new Date().toISOString();
 
@@ -160,7 +168,9 @@ async function reactivateSession({ sessionId }) {
   if (!sessionId) return null;
 
   const db = getDb();
-  const row = db.prepare('SELECT * FROM swarm_sessions WHERE session_id = ? LIMIT 1').get(sessionId);
+  const row = db
+    .prepare('SELECT * FROM swarm_sessions WHERE session_id = ? LIMIT 1')
+    .get(sessionId);
 
   if (!row) return null;
 
@@ -189,7 +199,9 @@ async function getSession({ sessionId }) {
   if (!sessionId) return null;
 
   const db = getDb();
-  const row = db.prepare('SELECT * FROM swarm_sessions WHERE session_id = ? LIMIT 1').get(sessionId);
+  const row = db
+    .prepare('SELECT * FROM swarm_sessions WHERE session_id = ? LIMIT 1')
+    .get(sessionId);
 
   if (!row) return null;
 
@@ -246,9 +258,11 @@ async function completeSession({ sessionId, status = 'completed' }) {
  */
 async function listActiveSessions({ missionId }) {
   const db = getDb();
-  const rows = db.prepare(
-    'SELECT * FROM swarm_sessions WHERE mission_id = ? AND status = ? ORDER BY updated_at DESC'
-  ).all(missionId, 'active');
+  const rows = db
+    .prepare(
+      'SELECT * FROM swarm_sessions WHERE mission_id = ? AND status = ? ORDER BY updated_at DESC'
+    )
+    .all(missionId, 'active');
 
   return rows.map((row) => ({
     sessionId: row.session_id,
@@ -267,7 +281,13 @@ async function listActiveSessions({ missionId }) {
 /**
  * Register or update a phase branch mapping.
  */
-async function upsertPhaseBranch({ missionId, phase, branchName, worktreePath = null, baselineCommit = null }) {
+async function upsertPhaseBranch({
+  missionId,
+  phase,
+  branchName,
+  worktreePath = null,
+  baselineCommit = null,
+}) {
   const db = getDb();
   const now = new Date().toISOString();
 
@@ -288,9 +308,9 @@ async function upsertPhaseBranch({ missionId, phase, branchName, worktreePath = 
  */
 async function getPhaseBranch({ missionId, phase }) {
   const db = getDb();
-  const row = db.prepare(
-    'SELECT * FROM phase_branch_map WHERE mission_id = ? AND phase = ? LIMIT 1'
-  ).get(missionId, phase);
+  const row = db
+    .prepare('SELECT * FROM phase_branch_map WHERE mission_id = ? AND phase = ? LIMIT 1')
+    .get(missionId, phase);
 
   if (!row) return null;
   return {
@@ -338,9 +358,9 @@ async function cleanupMissionPhaseBranches({ missionId }) {
  */
 async function listPhaseBranches({ missionId }) {
   const db = getDb();
-  const rows = db.prepare(
-    'SELECT * FROM phase_branch_map WHERE mission_id = ? ORDER BY created_at ASC'
-  ).all(missionId);
+  const rows = db
+    .prepare('SELECT * FROM phase_branch_map WHERE mission_id = ? ORDER BY created_at ASC')
+    .all(missionId);
 
   return rows.map((row) => ({
     missionId: row.mission_id,

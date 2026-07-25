@@ -19,9 +19,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-// eslint-disable-next-line no-unused-vars -- false positive: these icon names are JSX-tag references (lucide-react proxies)
 import { GripVertical, RefreshCw, X } from 'lucide-react';
-// eslint-disable-next-line no-unused-vars -- false positive: WorkspaceBrowserPane is rendered inside the JSX below; eslint-plugin-react v7.37.5 + ESLint 9.23.0 fails to track the JSX usage
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import * as useNativeBrowserSurfaceModule from '@/components/workspace/useNativeBrowserSurface';
 import usePizarraSurfaceDrag from './usePizarraSurfaceDrag';
@@ -36,7 +34,7 @@ import {
   resolveFrameVisual,
   resolveHandleSizing,
   FRAME_TRANSITION,
-  SURFACE_ENTER_OPACITY_ONLY,
+  SURFACE_ENTER_OPACITY_ONLY, // eslint-disable-line no-unused-vars
   PIZARRA_SURFACE_FRAME_INSET,
   PIZARRA_SURFACE_BORDER_RADIUS,
   PIZARRA_SURFACE_FRAME_BG,
@@ -581,6 +579,7 @@ export default function PizarraBrowserSurface({
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: nativePanelId derives from shape/projectId/workspaceId already listed
     [bounds, onSelect, onUpdateElement, projectId, shape, workspaceId, zoom]
   );
 

@@ -1,6 +1,5 @@
 // WorkspaceRenderAssembly — main workspace shell JSX extracted from TerminalWorkspacesManager.jsx (Slice 8).
 
-import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Plus,
@@ -23,6 +22,26 @@ import {
   Settings,
   PanelLeft,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import NotificationCenter from '../../NotificationCenter';
+import TerminalSettingsModal from '../../TerminalSettingsModal';
+import TerminalRestoreSettingsModal from '../../TerminalRestoreSettingsModal';
+import WorkspaceTerminalSetupModal from '../../WorkspaceTerminalSetupModal';
+import ZedAmbientOverlay from '../../asistente/ZedAmbientOverlay';
+import WorkspaceRightDock from '../../workspace/WorkspaceRightDock';
+import WorkspaceWindowSwitcher from './WorkspaceWindowSwitcher';
+import WorkspaceWindowTabBar from './WorkspaceWindowTabBar';
+import WorkspaceTerminalSurface from './WorkspaceTerminalSurface';
+import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
+import { QuotaHeaderBadge } from '../../quota/QuotaHeaderBadge';
+import { useState, useEffect, useCallback } from 'react';
 import { getWorkspaceAnimProps, resolveRightDockTakeoverChromeStyle } from '../workspaceAnimProps';
 import { getWorkspaceShellChromeStyle, getWorkspaceTopBarStyle } from '../terminalChromeStyles';
 import {
@@ -45,29 +64,10 @@ import { resolveVisibleTerminalPanelCountForRenderer } from '../terminalRenderer
 import { dispatchZedOverlayToggle } from '@/lib/asistente/zedOverlayEvents';
 import { isElectronDesktop } from '@/lib/desktop/desktopBridge';
 import * as windowControls from '@/lib/desktop/windowControls';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import NotificationCenter from '../../NotificationCenter';
-import TerminalSettingsModal from '../../TerminalSettingsModal';
-import TerminalRestoreSettingsModal from '../../TerminalRestoreSettingsModal';
-import WorkspaceTerminalSetupModal from '../../WorkspaceTerminalSetupModal';
-import ZedAmbientOverlay from '../../asistente/ZedAmbientOverlay';
-import WorkspaceRightDock from '../../workspace/WorkspaceRightDock';
-import WorkspaceWindowSwitcher from './WorkspaceWindowSwitcher';
-import WorkspaceWindowTabBar from './WorkspaceWindowTabBar';
-import WorkspaceTerminalSurface from './WorkspaceTerminalSurface';
 import { renderWorkspacePanel } from './renderWorkspacePanel';
-import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
 import { DEFAULT_RIGHT_DOCK_STATE } from '../../workspace/rightDockState';
 import { applyWorkspaceWindowSelectDockState } from '../../workspace/rightDockLayout';
 import { resolveWorkspaceAllWindowsPanelCount } from '../models/workspaceStateModel';
-import { QuotaHeaderBadge } from '../../quota/QuotaHeaderBadge';
 import useActivatedWorkspaceIds from '../hooks/useActivatedWorkspaceIds';
 import useWorkspaceAgentActivity from '../hooks/useWorkspaceAgentActivity';
 
@@ -208,6 +208,17 @@ export default function WorkspaceRenderAssembly(props) {
       return null;
     }
   }, []);
+
+  // Stable close handler so the memoized settings modal never re-renders from
+  // parent reconciliation churn (inline arrows defeat React.memo).
+  const closeRestoreSettingsModal = useCallback(
+    () => setRestoreSettingsModal({ open: false }),
+    [setRestoreSettingsModal]
+  );
+  const closeTerminalSettingsModal = useCallback(
+    () => setTerminalSettingsModal((prev) => ({ ...prev, open: false })),
+    [setTerminalSettingsModal]
+  );
 
   const [isWinMaximized, setIsWinMaximized] = useState(false);
 
@@ -1181,7 +1192,7 @@ export default function WorkspaceRenderAssembly(props) {
 
       <TerminalSettingsModal
         open={terminalSettingsModal.open}
-        onClose={() => setTerminalSettingsModal((prev) => ({ ...prev, open: false }))}
+        onClose={closeTerminalSettingsModal}
         panelId={terminalSettingsModal.panelId}
         sessionId={terminalSettingsModal.sessionId}
         sessionType={terminalSettingsModal.sessionType}
@@ -1192,7 +1203,7 @@ export default function WorkspaceRenderAssembly(props) {
       <TerminalRestoreSettingsModal
         open={restoreSettingsModal.open}
         initialSection={restoreSettingsModal.section}
-        onClose={() => setRestoreSettingsModal({ open: false })}
+        onClose={closeRestoreSettingsModal}
       />
 
       <WorkspaceTerminalSetupModal

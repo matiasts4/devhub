@@ -7,7 +7,9 @@ describe('GET /api/preview-proxy', () => {
       status: 200,
       ok: true,
       headers: {
-        get: jest.fn((name) => (name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null)),
+        get: jest.fn((name) =>
+          name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null
+        ),
       },
       text: jest.fn().mockResolvedValue(html),
     };
@@ -36,11 +38,15 @@ describe('GET /api/preview-proxy', () => {
       status: 200,
       ok: true,
       headers: {
-        get: jest.fn((name) => (name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null)),
+        get: jest.fn((name) =>
+          name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null
+        ),
       },
-      text: jest.fn().mockResolvedValue(
-        '<!doctype html><html><head><title>Preview</title></head><body><img src="/logo.png"></body></html>'
-      ),
+      text: jest
+        .fn()
+        .mockResolvedValue(
+          '<!doctype html><html><head><title>Preview</title></head><body><img src="/logo.png"></body></html>'
+        ),
     });
 
     const { GET } = await import('./route.js');
@@ -68,17 +74,23 @@ describe('GET /api/preview-proxy', () => {
       status: 200,
       ok: true,
       headers: {
-        get: jest.fn((name) => (name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null)),
+        get: jest.fn((name) =>
+          name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null
+        ),
       },
-      text: jest.fn().mockResolvedValue(
-        '<!doctype html><html><head><title>Preview</title></head><body><a href="/pricing">Pricing</a></body></html>'
-      ),
+      text: jest
+        .fn()
+        .mockResolvedValue(
+          '<!doctype html><html><head><title>Preview</title></head><body><a href="/pricing">Pricing</a></body></html>'
+        ),
     });
 
     const { GET } = await import('./route.js');
     const request = {
       url: 'http://0.0.0.0:3400/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2F',
-      nextUrl: new URL('http://0.0.0.0:3400/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2F'),
+      nextUrl: new URL(
+        'http://0.0.0.0:3400/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2F'
+      ),
       headers: buildHeaders({
         host: '127.0.0.1:3400',
         'x-forwarded-proto': 'http',
@@ -94,14 +106,20 @@ describe('GET /api/preview-proxy', () => {
   });
 
   it('keeps a stable proxy marker and canonical proxy base across localhost rewrites', async () => {
-    global.fetch = jest.fn().mockResolvedValue(
-      buildHtmlResponse('<!doctype html><html><head></head><body><a href="/catalog">Catalog</a><img src="/logo.png"></body></html>')
-    );
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        buildHtmlResponse(
+          '<!doctype html><html><head></head><body><a href="/catalog">Catalog</a><img src="/logo.png"></body></html>'
+        )
+      );
 
     const { GET } = await import('./route.js');
     const request = {
       url: 'https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fshop',
-      nextUrl: new URL('https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fshop'),
+      nextUrl: new URL(
+        'https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fshop'
+      ),
       headers: buildHeaders({ host: 'devhub.test' }),
     };
 
@@ -116,14 +134,20 @@ describe('GET /api/preview-proxy', () => {
   });
 
   it('uses forwarded host and proto when generating proxy navigation bases for rewritten previews', async () => {
-    global.fetch = jest.fn().mockResolvedValue(
-      buildHtmlResponse('<!doctype html><html><head></head><body><a href="/pricing">Pricing</a></body></html>')
-    );
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        buildHtmlResponse(
+          '<!doctype html><html><head></head><body><a href="/pricing">Pricing</a></body></html>'
+        )
+      );
 
     const { GET } = await import('./route.js');
     const request = {
       url: 'http://0.0.0.0:3400/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2F',
-      nextUrl: new URL('http://0.0.0.0:3400/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2F'),
+      nextUrl: new URL(
+        'http://0.0.0.0:3400/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2F'
+      ),
       headers: buildHeaders({
         host: '127.0.0.1:3400',
         'x-forwarded-proto': 'https',
@@ -140,14 +164,20 @@ describe('GET /api/preview-proxy', () => {
   });
 
   it('logs deterministic diagnostics when upstream rewrites cannot keep navigation proxied', async () => {
-    global.fetch = jest.fn().mockResolvedValue(
-      buildHtmlResponse('<!doctype html><html><head></head><body><a href="https://example.com/outside">Outside</a></body></html>')
-    );
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        buildHtmlResponse(
+          '<!doctype html><html><head></head><body><a href="https://example.com/outside">Outside</a></body></html>'
+        )
+      );
 
     const { GET } = await import('./route.js');
     const request = {
       url: 'https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fdanger',
-      nextUrl: new URL('https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fdanger'),
+      nextUrl: new URL(
+        'https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fdanger'
+      ),
       headers: buildHeaders({ host: 'devhub.test' }),
     };
 
@@ -188,14 +218,20 @@ describe('GET /api/preview-proxy', () => {
   });
 
   it('logs deterministic diagnostics when html rewrite fails before response generation', async () => {
-    const nextUrl = new URL('https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fbroken');
+    const nextUrl = new URL(
+      'https://devhub.test/api/preview-proxy?url=http%3A%2F%2Flocalhost%3A3200%2Fbroken'
+    );
     global.fetch = jest.fn().mockResolvedValue({
       status: 200,
       ok: true,
       headers: {
-        get: jest.fn((name) => (name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null)),
+        get: jest.fn((name) =>
+          name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null
+        ),
       },
-      text: jest.fn().mockResolvedValue('<!doctype html><html><head></head><body>broken</body></html>'),
+      text: jest
+        .fn()
+        .mockResolvedValue('<!doctype html><html><head></head><body>broken</body></html>'),
     });
 
     const realURL = global.URL;

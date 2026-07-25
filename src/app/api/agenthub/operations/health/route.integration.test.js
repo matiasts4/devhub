@@ -211,10 +211,7 @@ describe('gatherOperationalHealth runtime diagnostics integration', () => {
 describe('createLocalMissionMessage broadcast fan-out', () => {
   const Database = require('better-sqlite3');
   const { ensureRuntimeSchema } = require('@/lib/db/core');
-  const {
-    createSwarmMission,
-    registerMissionParticipant,
-  } = require('@/lib/db/swarmMissions');
+  const { createSwarmMission, registerMissionParticipant } = require('@/lib/db/swarmMissions');
 
   let db;
 
@@ -270,7 +267,9 @@ describe('createLocalMissionMessage broadcast fan-out', () => {
 
     expect(snapshot).not.toBeNull();
     // Director snapshot returned; deliveries verified in DB directly
-    const deliveries = db.prepare('SELECT * FROM message_deliveries WHERE recipient_agent_id IN (?, ?)').all('agent-worker-1', 'agent-worker-2');
+    const deliveries = db
+      .prepare('SELECT * FROM message_deliveries WHERE recipient_agent_id IN (?, ?)')
+      .all('agent-worker-1', 'agent-worker-2');
     expect(deliveries).toHaveLength(2);
     const recipientIds = deliveries.map((d) => d.recipient_agent_id).sort();
     expect(recipientIds).toEqual(['agent-worker-1', 'agent-worker-2']);
@@ -299,7 +298,9 @@ describe('createLocalMissionMessage broadcast fan-out', () => {
     });
 
     expect(snapshot).not.toBeNull();
-    const deliveries = db.prepare('SELECT * FROM message_deliveries WHERE recipient_agent_id = ?').all('agent-worker-1');
+    const deliveries = db
+      .prepare('SELECT * FROM message_deliveries WHERE recipient_agent_id = ?')
+      .all('agent-worker-1');
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0].recipient_agent_id).toBe('agent-worker-1');
   });

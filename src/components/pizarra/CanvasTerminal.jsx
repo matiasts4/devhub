@@ -1,10 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react'; // eslint-disable-line no-unused-vars
-import TerminalTTY from '@/components/TerminalTTY'; // eslint-disable-line no-unused-vars
+import { X } from 'lucide-react';
+import TerminalTTY from '@/components/TerminalTTY';
 import {
-  // eslint-disable-next-line no-unused-vars
   SharedTerminalSurfacePortal,
   hasSharedTerminalSurfaceProps,
   mergeSharedTerminalSurfaceProps,
@@ -18,7 +17,7 @@ import {
   resolveFrameVisual,
   resolveHandleSizing,
   FRAME_TRANSITION,
-  SURFACE_ENTER_OPACITY_ONLY, // eslint-disable-line no-unused-vars
+  SURFACE_ENTER_OPACITY_ONLY,
   PIZARRA_SURFACE_FRAME_INSET,
   PIZARRA_SURFACE_HEADER_HEIGHT,
   PIZARRA_SURFACE_BORDER_RADIUS,
@@ -38,7 +37,7 @@ import {
 // xterm). We pass the requested mode through to TerminalTTY as-is and
 // let IT run the live WebGL probe in its own mount; TerminalTTY
 // already surfaces a visible demotion warning if the probe fails.
-import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect'; // eslint-disable-line no-unused-vars
+import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect';
 import { SHOW_RENDERER_SWITCH } from '@/components/terminal/terminalRendererPreferences';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
@@ -88,6 +87,7 @@ export default function CanvasTerminal({
   // The native VTE path has been removed; requestedRendererMode is
   // passed through to TerminalTTY, which performs the live WebGL probe.
   const sharedSurfacesEnabled = useSharedTerminalSurfacesEnabled();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: fallback shape object is stable in practice
   const resolvedShape = shape || { id: terminalId, label: 'Terminal' };
   const resolvedBounds = useMemo(
     () =>

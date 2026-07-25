@@ -1,9 +1,6 @@
 'use client';
 import TaskComments from '../components/TaskComments';
 import PresenceAvatars from '../components/PresenceAvatars';
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
-import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import {
   ListTodo,
   Plus,
@@ -24,11 +21,14 @@ import {
   Milestone,
   ChevronRight,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localClient';
-import { sileo } from 'sileo';
 import Select from 'react-select';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useOutletContext, useNavigate } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
+import { createClient } from '@/lib/db/localClient';
+import { sileo } from 'sileo';
 import { chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   btnDangerStyle,

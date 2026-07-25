@@ -1,8 +1,8 @@
 'use client';
 
-import { Terminal } from 'lucide-react';
 import { ProviderCardShell } from '@/components/settings/shared/ProviderCardShell';
 import { ModelPicker } from '@/components/settings/shared/ModelPicker';
+import { Terminal } from 'lucide-react';
 
 export function OpenCodeProvider({
   providerData,

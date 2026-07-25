@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { selectDirectorBriefingPreview } from '@/lib/operations/swarmControl';
 import { codeBlockStyle } from '../../chrome/morphology.js';
 import { formatToken, metaTextStyle, panelShellStyle, renderEmptyCopy } from './utils';

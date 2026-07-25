@@ -1,64 +1,27 @@
-import React, { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useNativeBrowserHostEffects } from '@/lib/desktop/useNativeBrowserHostEffects';
+import WorkspaceRenderAssembly from './terminal/components/WorkspaceRenderAssembly';
 import {
-  getRightDockAnimProps,
-  getWorkspaceAnimProps,
-  resolveRightDockTakeoverChromeStyle,
-  resolveWorkspaceShellVisibilityStyle,
-  resolveWorkspaceWindowVisibilityStyle,
-} from './terminal/workspaceAnimProps';
+  createDefaultTerminalRendererPreferences,
+  resolveRequestedRenderer,
+  setPanelRendererPreference,
+  TERMINAL_RENDERER_INHERIT_MODE,
+} from './terminal/terminalRendererPreferences';
+import WorkspaceSurfaceRegistryProvider from '@/components/workspace/WorkspaceSurfaceRegistryProvider';
+import { SharedDockStoreProvider } from './workspace/hooks/useSharedDockState';
+import RightDockSharedMirror from './workspace/RightDockSharedMirror';
+import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import { useNativeBrowserHostEffects } from '@/lib/desktop/useNativeBrowserHostEffects';
 import {
   applyRightDockLayerBounds,
   shouldDeferRightDockSizePersist,
 } from './terminal/rightDockLayerSync';
-import {
-  getTerminalFloatingControlStyle,
-  getTerminalGridShellStyle,
-  getTerminalPanelBodyStyle,
-  getTerminalPanelHeaderStyle,
-  getWorkspaceShellChromeStyle,
-  getWorkspaceTopBarStyle,
-  getWorkspaceTabChromeStyle,
-} from './terminal/terminalChromeStyles';
-import {
-  Plus,
-  X,
-  Minus,
-  LayoutGrid,
-  SplitSquareHorizontal,
-  SplitSquareVertical,
-  Folder,
-  Bot,
-  History,
-  RefreshCw,
-  Clock3,
-  ExternalLink,
-  Maximize2,
-  Minimize2,
-  Grip,
-  Globe,
-  FileCode2,
-  Wand2,
-  Terminal,
-  Settings,
-} from 'lucide-react';
-import TerminalTTY from './TerminalTTY';
-import {
-  SharedTerminalSurfacePortal,
-  SharedTerminalSurfaceRegistrar,
-} from './terminal/SharedTerminalSurface';
 
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { enforceDocOpsGateOnLaunchCommand } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import {
   createPanel,
   createDefaultWorkspaceState,
   getPanelIdsFromColumns,
-  resolveWorkspaceVisibleTerminalPanelCount,
-  resolveWorkspaceAllWindowsTerminalPanelCount,
-  buildStableWorkspaceShellKey,
   resolveWorkspacePanelId,
   normalizePanelKind,
   setPanelKindInWorkspaceTree,
@@ -66,48 +29,15 @@ import {
 import {
   getSwarmSnapshotStorageKey,
   readAgentRunsByPanel,
-  inferSwarmRoleKey,
-  derivePanelSemanticMetadata,
   resolvePanelStartupConnectionState,
-  shortPath,
 } from './terminal/models/swarmRoleModel';
 import {
   getDisplayName as getPanelDisplayNameFromStore,
   setDisplayName as setPanelDisplayNameInStore,
 } from '@/lib/terminal/panelDisplayName';
-import { buildPanelHeaderDisplay } from './terminal/utils/panelHeaderDisplay';
 import { nameFromId } from '@/lib/asistente/zedTerminalResolver';
-import NotificationCenter from './NotificationCenter';
-import TerminalSettingsModal from './TerminalSettingsModal';
-import TerminalRestoreSettingsModal from './TerminalRestoreSettingsModal';
-import WorkspaceTerminalSetupModal from './WorkspaceTerminalSetupModal';
-import { isValidZedOpenTerminalEvent, resolveZedOpenTerminalPanelId } from './zedOpenTerminalEvent';
-import { applyZedOpenTerminalFocus } from './asistente/zedOpenTerminalFocus';
-import {
-  buildTerminalSurfacesFromWindows,
-  countPanelsInColumns,
-} from '@/lib/terminal/workspaceSurfaceReconcile';
-import { subscribeZedWorkspaceAction } from '@/lib/asistente/zedWorkspaceActionEvent';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { formatDistanceToNow } from 'date-fns';
-import WorkspaceRightDock from './workspace/WorkspaceRightDock';
-import WorkspaceWindowSwitcher, {
-  MAX_WORKSPACE_WINDOWS,
-} from './terminal/components/WorkspaceWindowSwitcher';
-import WorkspaceWindowTabBar from './terminal/components/WorkspaceWindowTabBar';
-import WorkspaceTerminalSurface from './terminal/components/WorkspaceTerminalSurface';
-import WorkspaceRenderAssembly from './terminal/components/WorkspaceRenderAssembly';
-import useRightDockController, {
-  resolveMeasuredRightDockBounds,
-  resolveRightDockLayerStyle,
-} from './terminal/hooks/useRightDockController';
+import { countPanelsInColumns } from '@/lib/terminal/workspaceSurfaceReconcile';
+import useRightDockController from './terminal/hooks/useRightDockController';
 import useWorkspaceWindowsController from './terminal/hooks/useWorkspaceWindowsController';
 import useSwarmLaunchController from './terminal/hooks/useSwarmLaunchController';
 import useWorkspaceLifecycle from './terminal/hooks/useWorkspaceLifecycle';
@@ -121,90 +51,20 @@ import useWorkspaceRightDockSync from './terminal/hooks/useWorkspaceRightDockSyn
 import useWorkspaceSurfaceRegistry from './terminal/hooks/useWorkspaceSurfaceRegistry';
 import useWorkspaceEventBridge from './terminal/hooks/useWorkspaceEventBridge';
 import useWorkspaceBootstrapEffect from './terminal/hooks/useWorkspaceBootstrapEffect';
-import { renderWorkspacePanel } from './terminal/components/renderWorkspacePanel';
-import PanelStatusBadge from './terminal/components/PanelStatusBadge';
 import { useOperatorActionsDispatch } from '@/lib/operator/OperatorActionsDispatchContext';
 import useResumableSessionCatalog from '@/hooks/useResumableSessionCatalog';
-import {
-  DEFAULT_RIGHT_DOCK_STATE,
-  MIN_RIGHT_DOCK_SIZE,
-  rightDockStatesEqual,
-  sanitizeRightDockState,
-  writeRightDockState,
-} from './workspace/rightDockState';
-import {
-  applyRightDockTabSelect,
-  applyWorkspaceWindowSelectDockState,
-  applyZedOpenUrlDockUpdate,
-} from './workspace/rightDockLayout';
-import { coerceZedOpenUrlFocus, isValidZedOpenUrlEvent } from './zedOpenUrlEvent';
-import { buildBrowserWindowLabel } from './workspace/browserWindowState';
-import {
-  isTerminalWorkspaceUiAction,
-  resolveTerminalNavigationAction,
-  resolveTerminalShortcutAction,
-  resolveTerminalWorkspaceAction,
-  shouldHandleTerminalFocusExitShortcut,
-  shouldHandleTerminalFocusShortcut,
-  shouldHandleTerminalNavigationShortcut,
-  shouldHandleTerminalShortcut,
-  shouldHandleTerminalWorkspaceShortcut,
-  TERMINAL_WORKSPACE_SHORTCUTS,
-} from './terminal/workspaceShortcuts';
-import {
-  createDefaultTerminalRendererPreferences,
-  resolveRequestedRenderer,
-  setPanelRendererPreference,
-  TERMINAL_RENDERER_INHERIT_MODE,
-} from './terminal/terminalRendererPreferences';
-import PanelRendererSelect from './terminal/components/PanelRendererSelect';
-import { SHOW_RENDERER_SWITCH } from './terminal/terminalRendererPreferences';
-import {
-  createSwarmLaunchDraft,
-  deriveSwarmLaunchPreview,
-  selectSwarmLaunchCatalog,
-} from '@/lib/operations/swarmControl';
-import {
-  resolveSwarmDelegatedRoleKeys,
-  shouldShowSwarmStandbyOverlay,
-} from '@/lib/operations/swarmDelegatedRoles';
-import { collectWorkspacePanelIds } from '@/lib/terminal/startupRestoreCoordinator';
+import { applyRightDockTabSelect } from './workspace/rightDockLayout';
+import { selectSwarmLaunchCatalog } from '@/lib/operations/swarmControl';
 
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
-import {
-  isOpenCodePanel,
-  resolveOpenCodeSessionIdForPanel,
-  shouldPersistOpenCodeSessionForPanel,
-} from '@/lib/terminal/restorePolicyResolver';
-import {
-  dispatchStartupRestoreQueue,
-  runOpenCodeStartupRestoreMutex,
-  shouldBumpRelaunchCommand,
-} from '@/lib/terminal/startupRestoreRunner';
-import {
-  enrichOpenCodeRestoreContext,
-  fetchOpenCodeSessionCatalog,
-  mergeDiscoveryIntoAgentRunsRecord,
-  patchTerminalStateWithDiscoveredCommands,
-  collectOpenCodePanelsNeedingDiscovery,
-} from '@/lib/terminal/opencodeSessionDiscovery';
+import { shouldBumpRelaunchCommand } from '@/lib/terminal/startupRestoreRunner';
 
-import {
-  dispatchSwarmLaunchMaterialized,
-  SWARM_LAUNCH_MATERIALIZED_EVENT,
-} from '@/lib/terminal/swarmLaunchBatch';
+import { SWARM_LAUNCH_MATERIALIZED_EVENT } from '@/lib/terminal/swarmLaunchBatch';
 import {
   applyActiveWindowColumnSnapshot,
-  createSwarmLaunchQueueHandlers,
   createSyncActiveWindowSnapshot,
-  createWorkspaceForSwarmLaunchRequestsFn,
   resolveSwarmPanelStandbyFlag,
 } from '@/lib/terminal/swarmLaunchWorkspace';
-import {
-  resolveActiveWorkspaceWindowId,
-  resolvePanelVisibleInLayout,
-  resolveWorkspaceWindowsForRender,
-} from '@/lib/terminal/workspaceWindowRender';
 
 import {
   LIFECYCLE_BURST_PHASES,
@@ -212,26 +72,17 @@ import {
   scheduleSwarmProjectionReadyBurst,
   scheduleTerminalLifecycleSync,
 } from '@/lib/terminal/terminalLifecycleSync';
-import SwarmLaunchWizardModal from './control-room/SwarmLaunchWizardModal';
-import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
 
-import {
-  clearSwarmLaunchWrapperDispatchForLaunch,
-  markSwarmLaunchWrapperDispatched,
-} from '@/lib/terminal/swarmLaunchWrapperLifecycle';
-import WorkspaceSurfaceRegistryProvider from '@/components/workspace/WorkspaceSurfaceRegistryProvider';
+import { clearSwarmLaunchWrapperDispatchForLaunch } from '@/lib/terminal/swarmLaunchWrapperLifecycle';
 // pizarra-shared-view-state Phase 2: TWM is the canonical owner
 // of sharedDockState. Mounting SharedDockStoreProvider at the
 // TWM root gives every workspace + pizarra consumer in the same
 // tab the same store instance.
-import { SharedDockStoreProvider } from './workspace/hooks/useSharedDockState';
-import RightDockSharedMirror from './workspace/RightDockSharedMirror';
 // Phase 4: SharedSurfacesProvider sits ABOVE the dock store.
 // It owns the singleton lifecycle of every terminal/browser
 // surface mounted in workspace + pizarra. Toggling the
 // maximizedView re-targets the active host, never the
 // surface.
-import SharedSurfacesProvider from './workspace/SharedSurfacesProvider';
 
 // Bump alongside TERMINAL_TTY_BUILD_MARKER (TerminalTTY.jsx) to prove the running
 // dev server picked up a fresh edit: watch `pnpm tauri dev` stdout for
@@ -829,7 +680,7 @@ export default function TerminalWorkspacesManager({
   const activeWorkspace = workspaces.find((w) => w.id === activeWsId) || workspaces[0];
   const {
     activeSwarmLaunchSummary,
-    swarmBusSnapshot,
+    swarmBusSnapshot: _swarmBusSnapshot,
     swarmInboxPendingByRole,
     swarmDelegatedRoleKeys,
     effectiveRightDockState,
@@ -838,7 +689,7 @@ export default function TerminalWorkspacesManager({
     hideRightDockPanel,
     dockLayerVisible,
     rightDockAnimProps,
-    rightDockLayerStyle,
+    rightDockLayerStyle: _rightDockLayerStyle,
     rightDockLayerChromeStyle,
   } = useWorkspaceRightDockSync({
     activeWorkspace,
@@ -909,7 +760,7 @@ export default function TerminalWorkspacesManager({
     coldMountOrdinalsRef.current = ordinals;
     return ordinals;
   }, [workspaces, workspaceWindows]);
-  const requestedRendererMode = resolveRequestedRenderer({
+  const _requestedRendererMode = resolveRequestedRenderer({
     workspaceId: activeWsId,
     panelId: activePanelId,
     prefs: terminalRendererPreferences,
@@ -1040,7 +891,7 @@ export default function TerminalWorkspacesManager({
   }, [inferProgramFromPanelCommand]);
 
   const {
-    buildNativeWorkspaceSyncDetail,
+    buildNativeWorkspaceSyncDetail: _buildNativeWorkspaceSyncDetail,
     notifyNativeWorkspaceSurfaceSync,
     notifyNativeLayoutSettled,
   } = useWorkspaceNativeSync({
@@ -1066,7 +917,7 @@ export default function TerminalWorkspacesManager({
     markPanelsClosing,
     syncPanelLifecycleLayout,
     activateWorkspacePanel,
-    navigateToPanel,
+    navigateToPanel: _navigateToPanel,
     switchWorkspace,
     togglePanelFocus,
     clearPanelFocusMode,
@@ -1135,7 +986,7 @@ export default function TerminalWorkspacesManager({
     [updateRightDockState]
   );
 
-  const findPanelInWorkspace = (workspace, panelId) => {
+  const _findPanelInWorkspace = (workspace, panelId) => {
     if (!workspace || !panelId) return null;
     for (const column of workspace.columns || []) {
       const panel = (column.panels || []).find((candidate) => candidate.id === panelId);
@@ -1303,7 +1154,7 @@ export default function TerminalWorkspacesManager({
     setSwarmLaunchWizardOpen,
     swarmLaunchWizardStep,
     setSwarmLaunchWizardStep,
-    swarmLaunchDraft,
+    swarmLaunchDraft: _swarmLaunchDraft,
     swarmLaunchSubmitState,
     setSwarmLaunchSubmitState,
     updateSwarmLaunchDraft,
@@ -1311,7 +1162,7 @@ export default function TerminalWorkspacesManager({
     handleTerminalSwarmLaunch,
     enqueueSwarmLaunchRequest,
     createWorkspaceForSwarmLaunchRequests,
-    resolvedSwarmLaunchDraft,
+    resolvedSwarmLaunchDraft: _resolvedSwarmLaunchDraft,
     swarmLaunchPreview,
   } = useSwarmLaunchController({
     projectId,
@@ -1940,7 +1791,7 @@ export default function TerminalWorkspacesManager({
           // chrome / pizarra canvas both see the removal.
           try {
             registryValue.removeSurface(surfaceId);
-          } catch (err) {
+          } catch (_err) {
             // ignore — registry may already be in the right state
           }
         }}

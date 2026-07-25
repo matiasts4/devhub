@@ -1,7 +1,12 @@
 /**
  * Circular progress ring for quota percentage remaining
  */
-export function QuotaProgressRing({ percentage = 100, size = 18, strokeWidth = 2.5, dimmed = false }) {
+export function QuotaProgressRing({
+  percentage = 100,
+  size = 18,
+  strokeWidth = 2.5,
+  dimmed = false,
+}) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =

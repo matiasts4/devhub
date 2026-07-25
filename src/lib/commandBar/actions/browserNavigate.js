@@ -1,14 +1,14 @@
 /**
  * Browser-navigate action implementation.
- * 
+ *
  * Opens or re-navigates a native browser surface to the specified URL.
- * 
+ *
  * @module commandBar/actions/browserNavigate
  */
 
 /**
  * Normalize a URL by adding protocol if missing.
- * 
+ *
  * @param {string} url - Raw URL from user input
  * @returns {string} Normalized URL with protocol
  */
@@ -29,7 +29,7 @@ function normalizeUrl(url) {
 
 /**
  * Execute a browser-navigate action.
- * 
+ *
  * @param {import('../types').ResolvedIntent} intent - Resolved intent with browser-navigate type
  * @param {import('../types').SurfaceController} controller - Surface controller instance
  * @returns {Promise<{id: string}>} Browser surface info
@@ -52,7 +52,7 @@ export async function browserNavigate(intent, controller) {
     // Reuse existing browser: focus + update URL
     controller.focusBrowser(existingBrowser.id);
     controller.updateElement(existingBrowser.id, { url: normalizedUrl });
-    
+
     return { id: existingBrowser.id };
   }
 

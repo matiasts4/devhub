@@ -14,7 +14,7 @@
 
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import usePizarraMinimap from './hooks/usePizarraMinimap';
 
 // Minimap pixel dimensions (matches the CSS below). The label is 12px

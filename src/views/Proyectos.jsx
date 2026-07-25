@@ -1,5 +1,6 @@
+import { Plus, Clock, ExternalLink, Loader2 } from 'lucide-react';
+import { UiHeader } from '@/components/ui/system';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderKanban, Plus, Clock, ExternalLink, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { sileo } from 'sileo';
@@ -7,7 +8,6 @@ import { createClient } from '@/lib/db/localClient';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { LOCAL_USER_ID } from '@/lib/constants/local';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
-import { UiHeader } from '@/components/ui/system';
 
 const STATUS_LABELS = {
   active: 'Activo',
@@ -67,7 +67,9 @@ export default function Proyectos() {
       if (error) {
         const errorMsg =
           error.message ||
-          (typeof error === 'object' && Object.keys(error).length > 0 ? JSON.stringify(error) : String(error || 'Error desconocido'));
+          (typeof error === 'object' && Object.keys(error).length > 0
+            ? JSON.stringify(error)
+            : String(error || 'Error desconocido'));
         sileo.error({ title: 'Error al cargar proyectos: ' + errorMsg });
       } else {
         setProjects(data || []);

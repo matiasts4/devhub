@@ -96,7 +96,15 @@ function MockViewportProvider({
 
 // ── Test harness ──────────────────────────────────────────────────────────
 
-function renderHook({ elements, onSelectElement, idleMs, padding, initialPan, initialZoom, canvasRect } = {}) {
+function renderHook({
+  elements,
+  onSelectElement,
+  idleMs,
+  padding,
+  initialPan,
+  initialZoom,
+  canvasRect,
+} = {}) {
   // Require the hook INSIDE the test function so the jest.mock above is in
   // place when the module is first evaluated.
   const usePizarraMinimap = require('../hooks/usePizarraMinimap').default;
@@ -251,9 +259,7 @@ describe('usePizarraMinimap — pizarra-minimap hook contract', () => {
     });
 
     test('handles terminal with composite default 640x400', () => {
-      const elements = [
-        { id: 'tm', type: 'terminal', x: 0, y: 0 },
-      ];
+      const elements = [{ id: 'tm', type: 'terminal', x: 0, y: 0 }];
       const harness = renderHook({ elements, padding: 0 });
       const { worldBounds } = harness.getResult();
       expect(worldBounds.x).toBe(0);
@@ -264,9 +270,7 @@ describe('usePizarraMinimap — pizarra-minimap hook contract', () => {
     });
 
     test('handles browser with composite default 1024x700', () => {
-      const elements = [
-        { id: 'br', type: 'browser', x: 0, y: 0 },
-      ];
+      const elements = [{ id: 'br', type: 'browser', x: 0, y: 0 }];
       const harness = renderHook({ elements, padding: 0 });
       const { worldBounds } = harness.getResult();
       expect(worldBounds.width).toBe(1024);
@@ -277,9 +281,7 @@ describe('usePizarraMinimap — pizarra-minimap hook contract', () => {
     test('clamps worldBounds to a minimum 400x300', () => {
       // A single tiny element with padding=0 would still produce a small bbox,
       // but the design says the minimap should always be at least 400x300.
-      const elements = [
-        { id: 's', type: 'rect', x: 0, y: 0, width: 10, height: 10 },
-      ];
+      const elements = [{ id: 's', type: 'rect', x: 0, y: 0, width: 10, height: 10 }];
       const harness = renderHook({ elements, padding: 0 });
       const { worldBounds } = harness.getResult();
       expect(worldBounds.width).toBeGreaterThanOrEqual(400);
@@ -401,9 +403,7 @@ describe('usePizarraMinimap — pizarra-minimap hook contract', () => {
 
   describe('coordinate translators', () => {
     test('minimapToWorld and worldToMinimap are inverse', () => {
-      const elements = [
-        { id: 'a', type: 'rect', x: 0, y: 0, width: 400, height: 300 },
-      ];
+      const elements = [{ id: 'a', type: 'rect', x: 0, y: 0, width: 400, height: 300 }];
       const harness = renderHook({ elements, padding: 0 });
       const { minimapToWorld, worldToMinimap } = harness.getResult();
 

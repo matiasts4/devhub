@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 const LATEX_PREVIEW_TAG = 'devhub-latex-preview';
 const LATEX_ASSET_BASE_URL = '/vendor/latexjs/';

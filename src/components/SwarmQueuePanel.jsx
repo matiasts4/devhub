@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Activity, AlertTriangle, Clock, X, Cpu, Layers } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { sileo } from 'sileo';
 
 // ─── Pure helper functions (exported for unit testing) ─────────────────────

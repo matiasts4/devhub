@@ -389,7 +389,12 @@ export function timelineItemStyle({ active = false } = {}) {
 
 // ─── Brutalist factories ─────────────────────────────────────────────────────
 
-export function brutalPanelStyle({ emphasized = false, tone = 'neutral', boxShadow, borderRadius = 0 } = {}) {
+export function brutalPanelStyle({
+  emphasized = false,
+  tone = 'neutral',
+  boxShadow,
+  borderRadius = 0,
+} = {}) {
   const base = {
     background: emphasized ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-panel-fill)',
     border: `2px solid ${tone === 'accent' ? 'var(--accent-primary)' : 'var(--border-strong)'}`,

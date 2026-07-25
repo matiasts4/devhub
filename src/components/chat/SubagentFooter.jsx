@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
 import { ChevronUp, ChevronLeft, ChevronRight, Loader2, Cpu } from 'lucide-react';
+import { useMemo } from 'react';
 import { normalizeSubagentStatus } from '@/lib/agenthubSubagentState';
 
 /**

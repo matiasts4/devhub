@@ -363,7 +363,10 @@ export default function useWorkspaceWindowsController({
       if (targetWindow?.columns?.length) {
         const panelIds = getAllPanelIds(targetWindow.columns);
         closeTerminalSessions(panelIds).catch((err) => {
-          console.error('[removeWindowFromWorkspace] Error closing terminal sessions in background:', err);
+          console.error(
+            '[removeWindowFromWorkspace] Error closing terminal sessions in background:',
+            err
+          );
         });
       }
 

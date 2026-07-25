@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Minus, Plus, RotateCcw } from 'lucide-react'; // eslint-disable-line no-unused-vars
-import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface'; // eslint-disable-line no-unused-vars
+import { Minus, Plus, RotateCcw } from 'lucide-react';
+import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   readTerminalRendererDefaultModeSetting,
   writeTerminalRendererDefaultModeSetting,
@@ -209,7 +209,7 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
                     data-testid={`terminal-header-style-${option.id}`}
                     type="button"
                     onClick={() => handleHeaderStyleChange(option.id)}
-                    className="group text-left rounded-xl border p-3 transition-all"
+                    className="group text-left rounded-xl border p-3 transition-colors duration-150"
                     style={chromeSurfaceStyle({
                       surface: 'panel',
                       emphasized: isActive,
@@ -341,7 +341,7 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
               <button
                 onClick={() => handleZoomChange(zoom - 0.1)}
                 disabled={zoom <= 0.5}
-                className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-10 h-10 rounded-xl border flex items-center justify-center transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
                 style={chromeSurfaceStyle({ surface: 'pill' })}
                 aria-label="zoom-out"
               >
@@ -356,7 +356,7 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
                 }}
               >
                 <div
-                  className="absolute inset-y-0 left-0 transition-all duration-300"
+                  className="absolute inset-y-0 left-0 transition-[width] duration-300"
                   style={{
                     background: 'var(--accent-primary)',
                     width: `${((zoom - 0.5) / 1.5) * 100}%`,
@@ -366,7 +366,7 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
               <button
                 onClick={() => handleZoomChange(zoom + 0.1)}
                 disabled={zoom >= 2}
-                className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-10 h-10 rounded-xl border flex items-center justify-center transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
                 style={chromeSurfaceStyle({ surface: 'pill' })}
                 aria-label="zoom-in"
               >
@@ -375,7 +375,7 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
               <button
                 onClick={() => handleZoomChange(1)}
                 title="Reset to 100%"
-                className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all"
+                className="w-10 h-10 rounded-xl border flex items-center justify-center transition-opacity"
                 style={chromeSurfaceStyle({ surface: 'pill' })}
                 aria-label="zoom-reset"
               >

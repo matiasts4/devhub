@@ -96,10 +96,7 @@ export async function GET() {
       const config = await getLlmProviderConfig(key);
       const why = explainWhyNotReady(key, config);
       if (why === null) {
-        return NextResponse.json(
-          { ready: true, provider: name, reason: null },
-          { status: 200 }
-        );
+        return NextResponse.json({ ready: true, provider: name, reason: null }, { status: 200 });
       }
       if (firstSpecificReason === null) {
         firstSpecificReason = why;
@@ -111,13 +108,9 @@ export async function GET() {
     // deshabilitado") wins over the generic "no provider" stub. This gives
     // the preflight banner enough context to point at a concrete fix.
     const reason =
-      firstSpecificReason ||
-      'No hay proveedor LLM habilitado. Configurá uno en Ajustes → LLM.';
+      firstSpecificReason || 'No hay proveedor LLM habilitado. Configurá uno en Ajustes → LLM.';
 
-    return NextResponse.json(
-      { ready: false, provider: null, reason },
-      { status: 200 }
-    );
+    return NextResponse.json({ ready: false, provider: null, reason }, { status: 200 });
   } catch (err) {
     console.error('[llm/status/route] Error:', err.message);
     return NextResponse.json(

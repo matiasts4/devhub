@@ -2,9 +2,8 @@
  * @jest-environment jsdom
  */
 
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ZedModelSettings from '../ZedModelSettings';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 jest.mock('lucide-react', () => {
   const ReactLocal = require('react');

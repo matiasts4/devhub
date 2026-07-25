@@ -29,7 +29,9 @@ async function callEngramTool(toolName, args = {}) {
   if (!response.ok) {
     const errorText = await response.text();
     if (response.status === 404) {
-      throw new Error(`MCP client 'engram' not found in OpenCode. Ensure it is configured and connected.`);
+      throw new Error(
+        `MCP client 'engram' not found in OpenCode. Ensure it is configured and connected.`
+      );
     }
     throw new Error(`OpenCode Engram MCP error (${response.status}): ${errorText}`);
   }
@@ -103,12 +105,7 @@ async function engram_mem_save({
  * @param {number} [args.limit=10] - Max results
  * @returns {Promise<{success: boolean, content: string}>}
  */
-async function engram_mem_search({
-  query,
-  project,
-  scope = 'project',
-  limit = 10,
-} = {}) {
+async function engram_mem_search({ query, project, scope = 'project', limit = 10 } = {}) {
   try {
     const args = {
       query,
@@ -165,10 +162,7 @@ async function engram_mem_get_observation({ id } = {}) {
  * @param {string} [args.session_id] - Session identifier
  * @returns {Promise<{success: boolean, content: string}>}
  */
-async function engram_mem_session_summary({
-  content,
-  session_id,
-} = {}) {
+async function engram_mem_session_summary({ content, session_id } = {}) {
   try {
     const args = {
       content,

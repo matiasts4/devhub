@@ -105,7 +105,7 @@ export default function PizarraSettings() {
                     type="button"
                     data-testid={`pizarra-bg-option-${option.key}`}
                     onClick={() => handleTypeChange(option.key)}
-                    className="group text-left rounded-xl border p-3 transition-all"
+                    className="group text-left rounded-xl border p-3 transition-colors duration-150"
                     style={chromeSurfaceStyle({
                       surface: 'panel',
                       emphasized: isActive,

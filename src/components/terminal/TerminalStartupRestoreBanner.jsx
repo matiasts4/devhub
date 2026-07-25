@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react';
 import { buildStartupRestoreBannerMessage } from '@/lib/terminal/startupRestoreProgress';

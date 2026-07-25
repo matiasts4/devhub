@@ -187,12 +187,11 @@ function injectContext(prompt, artifacts = [], role, phase, options = {}) {
     };
   }
 
-  const { artifacts: filtered, totalTokens, truncated } = filterArtifacts(
-    role,
-    phase,
-    artifacts,
-    availableBudget
-  );
+  const {
+    artifacts: filtered,
+    totalTokens,
+    truncated,
+  } = filterArtifacts(role, phase, artifacts, availableBudget);
 
   if (filtered.length === 0) {
     return { prompt, artifacts: [], injected: false, reason: 'No relevant artifacts' };

@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -129,7 +128,9 @@ export default function ProjectHub() {
     if (error) {
       const errorMsg =
         error.message ||
-        (typeof error === 'object' && Object.keys(error).length > 0 ? JSON.stringify(error) : String(error || 'Error desconocido'));
+        (typeof error === 'object' && Object.keys(error).length > 0
+          ? JSON.stringify(error)
+          : String(error || 'Error desconocido'));
       console.error('[devhub] fetchProjects ERROR:', errorMsg, error);
       sileo.error({ title: 'Error al cargar proyectos: ' + errorMsg });
     }
@@ -456,7 +457,7 @@ export default function ProjectHub() {
 
       {showNewModal && (
         <div
-          className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          className="fixed inset-x-0 bottom-0 top-[46px] z-50 flex items-center justify-center p-4"
           style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
           onClick={() => setShowNewModal(false)}
         >

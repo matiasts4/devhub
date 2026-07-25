@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { MotionConfig } from 'framer-motion';
 import { MotionModeProvider } from '@/components/motion-lab/MotionModeContext';
 import { MotionModeToggle } from '@/components/motion-lab/MotionModeToggle';
 import { DemoCard } from '@/components/motion-lab/DemoCard';
+import { useState, useEffect } from 'react';
 import { demos } from '@/components/motion-lab/demos';
 import { spring, amplified } from '@/components/ui/motion/motionPresets';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';

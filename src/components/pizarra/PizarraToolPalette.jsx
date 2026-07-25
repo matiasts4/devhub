@@ -5,8 +5,8 @@
  * full palette on hover; no extra canvas width is reserved while collapsed.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   MousePointer,
   Type,

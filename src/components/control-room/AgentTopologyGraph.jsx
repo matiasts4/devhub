@@ -54,7 +54,10 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
     return () => observer.disconnect();
   }, []);
 
-  const director = useMemo(() => roster.find((member) => member?.isDirector) || roster[0] || null, [roster]);
+  const director = useMemo(
+    () => roster.find((member) => member?.isDirector) || roster[0] || null,
+    [roster]
+  );
   const workers = useMemo(
     () => roster.filter((member) => member?.id && member.id !== director?.id),
     [roster, director]
@@ -143,18 +146,24 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
   );
 
   const activeCount = roster.filter((member) =>
-    ['active', 'working', 'lease_active', 'online', 'thinking', 'asking_questions', 'running'].includes(
-      member?.status
-    )
+    [
+      'active',
+      'working',
+      'lease_active',
+      'online',
+      'thinking',
+      'asking_questions',
+      'running',
+    ].includes(member?.status)
   ).length;
   const staleCount = roster.length - activeCount;
 
   if (!director) {
     return (
-    <div
-      className="flex h-28 items-center justify-center border text-xs"
-      style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
-    >
+      <div
+        className="flex h-28 items-center justify-center border text-xs"
+        style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
+      >
         Sin topología activa: no hay Director ni agentes vivos en este snapshot.
       </div>
     );
@@ -184,7 +193,10 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <div
+          className="flex flex-wrap items-center gap-2 text-[10px]"
+          style={{ color: 'var(--text-muted)' }}
+        >
           {topology?.label ? <span>{topology.label}</span> : null}
           <span>{activeCount} vivos</span>
           {staleCount ? <span>{staleCount} vencidos/fuera de línea</span> : null}
@@ -246,12 +258,8 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
                   height: `${node.r * 2}px`,
                   color: node.isDirector ? '#fbbf24' : 'var(--text-primary)',
                   borderColor: highlighted ? '#22c55e' : '#3f3f46',
-                  background: node.isDirector
-                    ? '#141416'
-                    : '#141416',
-                  boxShadow: highlighted
-                    ? '3px 3px 0px 0px #22c55e'
-                    : '3px 3px 0px 0px #27272a',
+                  background: node.isDirector ? '#141416' : '#141416',
+                  boxShadow: highlighted ? '3px 3px 0px 0px #22c55e' : '3px 3px 0px 0px #27272a',
                 }}
                 title={`${node.label} · ${formatToken(node.status)}`}
                 aria-label={`${node.label} estado ${formatToken(node.status)}`}
@@ -273,7 +281,10 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
                 >
                   {node.label}
                 </p>
-                <div className="mt-1 inline-flex items-center gap-1 rounded-none border-2 px-2 py-0.5 text-[10px]" style={{ background: '#141416', color: theme.color, borderColor: theme.dot }}>
+                <div
+                  className="mt-1 inline-flex items-center gap-1 rounded-none border-2 px-2 py-0.5 text-[10px]"
+                  style={{ background: '#141416', color: theme.color, borderColor: theme.dot }}
+                >
                   <span className="h-1.5 w-1.5 rounded-none" style={{ background: theme.dot }} />
                   {formatToken(node.status)}
                 </div>
@@ -288,15 +299,24 @@ export default function AgentTopologyGraph({ roster = [], topology = null, onVie
         style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}
       >
         <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#4ade80' }} />
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: '#4ade80' }}
+          />
           vivo
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#64748b' }} />
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: '#64748b' }}
+          />
           vencido/fuera de línea
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#f87171' }} />
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: '#f87171' }}
+          />
           error
         </span>
         <span className="ml-auto">

@@ -37,7 +37,8 @@ const SPANISH = Object.freeze({
   tooLong: 'el script es demasiado largo (máximo 64 líneas × 256 caracteres).',
   multilineBlocked: 'el comando no se puede ejecutar: tiene {N} líneas, excede el máximo (64).',
   bothNameAndSession: 'no podés pasar name y session_id a la vez.',
-  command_blocked: 'ese comando está bloqueado por seguridad. Podés ejecutarlo manualmente en tu terminal.',
+  command_blocked:
+    'ese comando está bloqueado por seguridad. Podés ejecutarlo manualmente en tu terminal.',
   command_requires_approval: 'necesito tu confirmación para ejecutar: {command}',
   unknown: 'error desconocido',
 });

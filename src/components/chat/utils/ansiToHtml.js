@@ -10,6 +10,10 @@
  * @returns {string} HTML string with inline styles
  */
 
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+
 // ANSI color map — standard 8 colors + bright variants
 const FG_COLORS = {
   30: '#000000',
@@ -50,6 +54,7 @@ const BG_COLORS = {
 };
 
 // Match ANSI escape sequences: ESC[...m
+// eslint-disable-next-line no-control-regex
 const ANSI_REGEX = /\x1b\[([0-9;]*)m/g;
 
 /**

@@ -11,16 +11,17 @@
 
 'use client';
 
-import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react';
-import dynamic from 'next/dynamic';
 import PizarraToolPalette from './PizarraToolPalette';
 import PizarraLiveSurfaceLayer from './PizarraLiveSurfaceLayer';
 import PizarraContextMenu from './PizarraContextMenu';
 import PizarraMinimap from './PizarraMinimap';
 import PizarraEdgeSwipeZones from './PizarraEdgeSwipeZones';
 import PizarraZoomControls from './PizarraZoomControls';
-import usePizarraCanvasPan, { isEditableTarget } from './hooks/usePizarraCanvasPan';
 import CommandBar from '@/components/commandBar/CommandBar';
+import SceneryBackground from '@/components/scenery/SceneryBackground';
+import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react';
+import dynamic from 'next/dynamic';
+import usePizarraCanvasPan, { isEditableTarget } from './hooks/usePizarraCanvasPan';
 import { PIZARRA_ACTIONS, usePizarraState } from '@/lib/pizarra/pizarraReducer';
 import { CanvasViewportProvider, useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
@@ -52,7 +53,6 @@ import {
   computeAdaptiveRectLayout,
   computeAdaptiveViewLayout,
   computeAdaptiveVisibleLayout,
-  computeViewZones,
   getViewportAnchoredLayoutRegion,
   PIZARRA_AUTOFIT_CAMERA,
   PIZARRA_AUTOFIT_LAYOUT,
@@ -62,12 +62,9 @@ import {
   getViewWorldOrigin,
   surfaceBelongsToView,
   getSurfaceViewId,
-  VIEW_WORLD_WIDTH,
-  VIEW_WORLD_HEIGHT,
   isSwipeNavigationEnabled,
   shouldHorizontalWheelSwitchView,
   accumulateHorizontalWheelNav,
-  normalizeWheelDelta,
   HORIZONTAL_WHEEL_ACCUM_RESET_MS,
 } from '@/lib/pizarra/pizarraViewLayout';
 import {
@@ -87,9 +84,6 @@ import {
 import { computeQuantizedEdgePan, edgeDragToProgress } from '@/lib/pizarra/pizarraEdgeViewSwipe';
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
 import {
-  computeDevSplitSlots,
-  computeDevTrioSlots,
-  computeDualBrowserSlots,
   isSurfacePositioned,
   isLiveElementPositioned,
   resolveRegistrySurfacesBoundsByView,
@@ -98,7 +92,6 @@ import {
   readPizarraViewport,
   writePizarraViewport,
 } from '@/lib/pizarra/pizarraViewportPersistence';
-import SceneryBackground from '@/components/scenery/SceneryBackground';
 import { useSceneryPrefs } from '@/lib/sceneries/useSceneryPrefs';
 import { resolveSceneryStyle } from '@/lib/sceneries/sceneryPreferences';
 

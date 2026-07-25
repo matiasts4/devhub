@@ -1,6 +1,5 @@
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import SessionUsagePanel from '../SessionUsagePanel.jsx';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 describe('SessionUsagePanel', () => {
   test('renders the token usage widget in its own dedicated panel below the header', () => {

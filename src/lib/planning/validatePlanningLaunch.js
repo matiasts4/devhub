@@ -20,23 +20,17 @@
 const DEFAULT_TIMEOUT_MS = 4000;
 
 const SPANISH = Object.freeze({
-  opencodeDown:
-    'OpenCode no está corriendo. Inicialo desde Ajustes → Swarm antes de planificar.',
-  opencodeAtLimit:
-    'OpenCode está al límite de concurrencia — el agente entrará en cola.',
+  opencodeDown: 'OpenCode no está corriendo. Inicialo desde Ajustes → Swarm antes de planificar.',
+  opencodeAtLimit: 'OpenCode está al límite de concurrencia — el agente entrará en cola.',
   llmNotReady: (reason) =>
-    reason ||
-    'No hay proveedor LLM configurado. Andá a Ajustes → LLM y activá un proveedor.',
+    reason || 'No hay proveedor LLM configurado. Andá a Ajustes → LLM y activá un proveedor.',
   mcpMissingTool: (tool) =>
     `DevHub MCP no expone la herramienta "${tool}". Revisá Conexiones MCP y reiniciá el server.`,
-  mcpUnreachable:
-    'DevHub MCP no responde. Verificá que esté corriendo.',
-  docsMissing:
-    'Política documental no definida — el agente usará "personal" por defecto.',
+  mcpUnreachable: 'DevHub MCP no responde. Verificá que esté corriendo.',
+  docsMissing: 'Política documental no definida — el agente usará "personal" por defecto.',
   localPathMissing:
     'El proyecto no tiene local_path: el agente no podrá inspeccionar el repo local.',
-  noContext:
-    'Agregá contexto en el prompt o subí al menos un archivo antes de planificar.',
+  noContext: 'Agregá contexto en el prompt o subí al menos un archivo antes de planificar.',
   fetchFailed: (subsystem) =>
     `No se pudo contactar el subsistema ${subsystem}. Verificá que esté corriendo.`,
   fetchTimeout: (subsystem) =>

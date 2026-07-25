@@ -1,6 +1,4 @@
-import React from 'react';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
-
 export default function SwarmTypeCatalogPanel({
   catalog,
   selectedSwarmTypeId = null,

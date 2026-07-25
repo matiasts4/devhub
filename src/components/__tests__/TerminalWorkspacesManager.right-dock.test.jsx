@@ -52,7 +52,14 @@ jest.mock('react-resizable-panels', () => ({
     const React = require('react');
     return React.createElement('div', props, children);
   },
-  Panel: ({ children, defaultSize, minSize, maxSize, onResize, ...props }) => {
+  Panel: ({
+    children,
+    defaultSize,
+    minSize: _minSize,
+    maxSize: _maxSize,
+    onResize: _onResize,
+    ...props
+  }) => {
     const React = require('react');
     return React.createElement('div', { ...props, 'data-panel-size': defaultSize }, children);
   },
@@ -334,7 +341,9 @@ const TerminalWorkspacesManagerModule = require('../TerminalWorkspacesManager');
 const TerminalWorkspacesManager = TerminalWorkspacesManagerModule.default;
 const { resolveMeasuredRightDockBounds, resolveRightDockLayerStyle } =
   TerminalWorkspacesManagerModule;
-const { applyRightDockLayerBounds } = require('../terminal/rightDockLayerSync');
+const {
+  applyRightDockLayerBounds: _applyRightDockLayerBounds,
+} = require('../terminal/rightDockLayerSync');
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -543,7 +552,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       try {
         const flagMod = require('@/lib/pizarra/featureFlag');
         flagMod._resetFlagForTests?.();
-      } catch {}
+      } catch {
+        /* ignore flag reset errors */
+      }
       const view = await renderIntoDom(
         React.createElement(TerminalWorkspacesManager, {
           cwd: '/workspace/devhub',
@@ -588,7 +599,9 @@ describe('TerminalWorkspacesManager right dock', () => {
       try {
         const flagMod = require('@/lib/pizarra/featureFlag');
         flagMod._resetFlagForTests?.();
-      } catch {}
+      } catch {
+        /* ignore flag reset errors */
+      }
     }
   });
 
@@ -631,7 +644,7 @@ describe('TerminalWorkspacesManager right dock', () => {
       })
     );
 
-    global.fetch = jest.fn((url, options) => {
+    global.fetch = jest.fn((url, _options) => {
       if (url === '/api/swarm/runtime-diagnostics') {
         return Promise.resolve({ ok: true, json: async () => ({}) });
       }

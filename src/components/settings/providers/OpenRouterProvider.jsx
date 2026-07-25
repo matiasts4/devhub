@@ -1,8 +1,8 @@
 'use client';
 
-import { Globe } from 'lucide-react';
 import { ProviderCardShell } from '@/components/settings/shared/ProviderCardShell';
 import { ModelPicker } from '@/components/settings/shared/ModelPicker';
+import { Globe } from 'lucide-react';
 
 const DEFAULT_MODELS = [
   'qwen/qwen-2.5-72b-instruct',

@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Gauge, Star } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { PROVIDERS, PROVIDER_LABELS } from '../../lib/quota/types.js';
 import {
@@ -87,7 +87,11 @@ export function QuotaProviderSettings() {
               role="radio"
               aria-checked={isDefault}
               aria-label={`Fijar ${PROVIDER_LABELS[id]} como cuota por defecto`}
-              title={isDefault ? 'Cuota por defecto (clic para usar detección automática)' : 'Fijar como cuota por defecto'}
+              title={
+                isDefault
+                  ? 'Cuota por defecto (clic para usar detección automática)'
+                  : 'Fijar como cuota por defecto'
+              }
               disabled={!enabled}
               onClick={() => handleSetDefault(id)}
               data-testid={`workspace-quota-provider-default-${id}`}
@@ -123,7 +127,9 @@ export function QuotaProviderSettings() {
                 type="button"
                 aria-label={`Bajar ${PROVIDER_LABELS[id]}`}
                 title="Bajar en el orden"
-                disabled={!enabled || orderIndex === -1 || orderIndex >= prefs.providerOrder.length - 1}
+                disabled={
+                  !enabled || orderIndex === -1 || orderIndex >= prefs.providerOrder.length - 1
+                }
                 onClick={() => handleMove(id, 1)}
                 data-testid={`workspace-quota-provider-down-${id}`}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-25"

@@ -36,7 +36,8 @@ export default function SwarmReactivateButton({
         recipient: agentId, // who to send to
         session_id: sessionId,
         action: 'reactivate',
-        continuation_prompt: continuationPrompt || 'Resume from last checkpoint. Continue with the current task.',
+        continuation_prompt:
+          continuationPrompt || 'Resume from last checkpoint. Continue with the current task.',
       };
 
       const res = await fetch(`/api/agenthub/swarm/${missionId}/message`, {
@@ -72,20 +73,16 @@ export default function SwarmReactivateButton({
       className={`
         inline-flex items-center gap-1.5 px-2.5 py-1
         text-[11px] font-medium rounded-md border transition-colors
-        ${canReactivate
-          ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/20 cursor-pointer'
-          : 'bg-[var(--chrome-control-fill)] border-[var(--chrome-border-color)] text-[var(--text-muted)] opacity-50 cursor-not-allowed'
+        ${
+          canReactivate
+            ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/20 cursor-pointer'
+            : 'bg-[var(--chrome-control-fill)] border-[var(--chrome-border-color)] text-[var(--text-muted)] opacity-50 cursor-not-allowed'
         }
         ${className}
       `}
     >
       {/* Play icon */}
-      <svg
-        className="w-3 h-3"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-      >
+      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M8 5v14l11-7z" />
       </svg>
       <span>Reactivate</span>

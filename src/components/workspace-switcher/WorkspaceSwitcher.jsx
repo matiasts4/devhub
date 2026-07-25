@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 'use client';
 
 import { useAuth } from '@/lib/auth/AuthContext';

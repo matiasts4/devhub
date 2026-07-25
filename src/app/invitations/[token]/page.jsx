@@ -1,11 +1,11 @@
 'use client';
 
+import { Loader2 } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/db/localClient';
 import { panelStyle, inputStyle, btnPrimaryStyle } from '@/chrome/morphology';
-import { Loader2 } from 'lucide-react';
-import Link from 'next/link';
 
 export default function InvitationPage() {
   const params = useParams();
@@ -89,8 +89,22 @@ export default function InvitationPage() {
         padding: '2rem',
       }}
     >
-      <div style={{ width: '100%', maxWidth: '420px', padding: '2.5rem', ...panelStyle({ emphasized: true }) }}>
-        <h1 style={{ fontSize: '22px', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--accent-primary)' }}>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '420px',
+          padding: '2.5rem',
+          ...panelStyle({ emphasized: true }),
+        }}
+      >
+        <h1
+          style={{
+            fontSize: '22px',
+            fontWeight: 700,
+            margin: '0 0 0.5rem 0',
+            color: 'var(--accent-primary)',
+          }}
+        >
           Invitación a DevHub
         </h1>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 1.5rem 0' }}>
@@ -98,7 +112,9 @@ export default function InvitationPage() {
         </p>
 
         {status === 'accepted' && (
-          <div style={{ color: '#10b981', fontSize: '13px' }}>Invitación aceptada. Redirigiendo...</div>
+          <div style={{ color: '#10b981', fontSize: '13px' }}>
+            Invitación aceptada. Redirigiendo...
+          </div>
         )}
 
         {status === 'sent' && (
@@ -124,7 +140,10 @@ export default function InvitationPage() {
         )}
 
         {status !== 'accepted' && status !== 'sent' && (
-          <form onSubmit={handleMagicLink} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form
+            onSubmit={handleMagicLink}
+            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+          >
             <input
               type="email"
               placeholder="tu@email.com"
@@ -137,7 +156,11 @@ export default function InvitationPage() {
             <button
               type="submit"
               disabled={loading || !email}
-              style={{ width: '100%', opacity: loading ? 0.7 : 1, ...btnPrimaryStyle({ size: 'md' }) }}
+              style={{
+                width: '100%',
+                opacity: loading ? 0.7 : 1,
+                ...btnPrimaryStyle({ size: 'md' }),
+              }}
             >
               {loading ? (
                 <>
@@ -150,7 +173,14 @@ export default function InvitationPage() {
           </form>
         )}
 
-        <div style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '12px', color: 'var(--text-muted)' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            marginTop: '1.25rem',
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+          }}
+        >
           <Link href="/login" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
             Ya tengo cuenta
           </Link>

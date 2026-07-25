@@ -1,6 +1,4 @@
-const {
-  buildRuntimeDiagnosticsHealthSource,
-} = require('../health');
+const { buildRuntimeDiagnosticsHealthSource } = require('../health');
 
 describe('buildRuntimeDiagnosticsHealthSource', () => {
   test('returns degraded when quota-blocked anomaly is present', () => {
@@ -23,9 +21,7 @@ describe('buildRuntimeDiagnosticsHealthSource', () => {
     expect(source.key).toBe('runtime-diagnostics');
     expect(source.status).toBe('degraded');
     expect(source.metrics.quota_blocked).toBe(true);
-    expect(source.evidence_refs).toEqual([
-      'log://terminal-debug.log:data/logs/terminal-debug.log',
-    ]);
+    expect(source.evidence_refs).toEqual(['log://terminal-debug.log:data/logs/terminal-debug.log']);
   });
 
   test('returns degraded when only reattachable terminals are present', () => {

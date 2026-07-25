@@ -1,4 +1,4 @@
-import { createSession, getOrInitSessions, broadcastSessionPayload } from '../ttyServer.js';
+import { createSession, getOrInitSessions } from '../ttyServer.js';
 import { handleHookReport } from '../agentHooks/handleHookReport.js';
 import { buildSidecarSpawnConfig } from '../../../../sidecar-backend/sessionSpawn.js';
 import {
@@ -80,7 +80,9 @@ describe('Agent Hooks End-To-End Happy Path (Both Transports)', () => {
     // Cleanup
     try {
       session.pty?.kill();
-    } catch {}
+    } catch {
+      /* pty already dead */
+    }
     sessions.delete(session.id);
   });
 

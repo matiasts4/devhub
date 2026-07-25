@@ -13,7 +13,10 @@ function send(level, message, details, source) {
     const body = { level, message, ts: Date.now() };
     if (details !== undefined) body.details = details;
     if (source) body.source = source;
-    navigator.sendBeacon?.(ENDPOINT, new Blob([JSON.stringify(body)], { type: 'application/json' })) ||
+    navigator.sendBeacon?.(
+      ENDPOINT,
+      new Blob([JSON.stringify(body)], { type: 'application/json' })
+    ) ||
       fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -94,14 +97,20 @@ export function useClientErrorLogger() {
     // ── window.onerror ─────────────────────────────────────────────────────
     const prevOnError = window.onerror;
     window.onerror = function (message, source, lineno, colno, error) {
-      send('error', String(message), { source, lineno, colno, stack: error?.stack }, 'window.onerror');
+      send(
+        'error',
+        String(message),
+        { source, lineno, colno, stack: error?.stack },
+        'window.onerror'
+      );
       return prevOnError?.apply(this, arguments) ?? false;
     };
 
     // ── unhandledrejection ─────────────────────────────────────────────────
     function handleRejection(event) {
       const reason = event.reason;
-      const message = reason instanceof Error ? reason.message : String(reason ?? 'unhandled promise rejection');
+      const message =
+        reason instanceof Error ? reason.message : String(reason ?? 'unhandled promise rejection');
       send('error', message, { stack: reason?.stack }, 'unhandledrejection');
     }
     window.addEventListener('unhandledrejection', handleRejection);

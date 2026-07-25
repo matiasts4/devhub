@@ -1,4 +1,4 @@
-import React from 'react';
+import DGApprovalGate from './DGApprovalGate';
 import {
   CountBadge,
   StatusPill,
@@ -11,7 +11,6 @@ import {
   renderEmptyCopy,
   truncateId,
 } from './utils';
-import DGApprovalGate from './DGApprovalGate';
 
 export default function ApprovalsErrorsPanel({
   approvals = [],
@@ -26,11 +25,7 @@ export default function ApprovalsErrorsPanel({
   dgError = null,
 }) {
   return (
-    <section
-      className="border p-4"
-      style={panelShellStyle()}
-      aria-label="Aprobaciones y errores"
-    >
+    <section className="border p-4" style={panelShellStyle()} aria-label="Aprobaciones y errores">
       <header className="mb-4">
         <h2 className="text-lg font-semibold">Aprobaciones y errores</h2>
         <p className="text-sm" style={metaTextStyle()}>

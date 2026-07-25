@@ -9,10 +9,7 @@ export async function GET(request) {
     const basePath = searchParams.get('base') || process.cwd();
 
     if (!filePathParam) {
-      return NextResponse.json(
-        { error: 'Ruta de archivo no proporcionada.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Ruta de archivo no proporcionada.' }, { status: 400 });
     }
 
     const absolutePath = path.resolve(/*turbopackIgnore: true*/ basePath, filePathParam);

@@ -1,6 +1,16 @@
 'use client';
 export default function MetricCard({
-  id, title, value, subtitle, icon, accentColor, accentVar, progressValue, badge, trend, index,
+  id,
+  title,
+  value,
+  subtitle,
+  icon,
+  accentColor,
+  accentVar,
+  progressValue,
+  badge,
+  trend,
+  index,
 }) {
   // Support both legacy accentColor (hex) and new accentVar (CSS variable name)
   const accent = accentVar ? `var(${accentVar})` : accentColor;
@@ -19,7 +29,9 @@ export default function MetricCard({
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex items-start justify-between mb-3">
-        <p className="text-sm font-semibold" style={{ color: accent }}>{title}</p>
+        <p className="text-sm font-semibold" style={{ color: accent }}>
+          {title}
+        </p>
         <span
           className="text-[11px] font-medium px-1.5 py-0.5 rounded-full"
           style={{ color: accent, background: accentAlpha, border: `1px solid ${accentBorder}` }}

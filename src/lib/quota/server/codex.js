@@ -76,7 +76,8 @@ async function fetchCodexUsage(creds) {
     try {
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
       if (response.status === 404) continue; // try the alternate path
-      if (!response.ok) return { error: `Codex usage endpoint HTTP ${response.status}`, status: response.status };
+      if (!response.ok)
+        return { error: `Codex usage endpoint HTTP ${response.status}`, status: response.status };
       return await response.json();
     } catch (err) {
       return { error: err.message || 'Codex usage request failed' };
@@ -174,7 +175,10 @@ function parseCreditsBalance(raw) {
 
 function loadCodexCredentials() {
   if (process.env.CODEX_TOKEN) {
-    return { accessToken: process.env.CODEX_TOKEN, accountId: process.env.CODEX_ACCOUNT_ID || null };
+    return {
+      accessToken: process.env.CODEX_TOKEN,
+      accountId: process.env.CODEX_ACCOUNT_ID || null,
+    };
   }
 
   const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');

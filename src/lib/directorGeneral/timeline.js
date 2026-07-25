@@ -9,14 +9,25 @@
 // Inlined authority map — avoids importing swarmMissions.js (server-only, has fs require)
 // DG MUST NOT rules: authority must match initiator
 const VALID_AUTHORITY_FOR_INITIATOR = Object.freeze({
-  'operator':          new Set(['operator', 'operator-initiated']),
+  operator: new Set(['operator', 'operator-initiated']),
   'director-general': new Set(['operator', 'operator-initiated']),
-  'swarm-director':   new Set(['director', 'director-escalated', 'operator']),
+  'swarm-director': new Set(['director', 'director-escalated', 'operator']),
 });
 
-const VALID_ACTIONS = new Set(['mission-request', 'status-poll', 'approval-required', 'mission-result']);
+const VALID_ACTIONS = new Set([
+  'mission-request',
+  'status-poll',
+  'approval-required',
+  'mission-result',
+]);
 const VALID_STATUSES = new Set([
-  'pending', 'waiting', 'in-progress', 'awaiting-approval', 'completed', 'rejected', 'failed',
+  'pending',
+  'waiting',
+  'in-progress',
+  'awaiting-approval',
+  'completed',
+  'rejected',
+  'failed',
 ]);
 const VALID_FRESHNESS = new Set(['just_now', 'stale', 'unknown']);
 
@@ -40,7 +51,7 @@ function validateAuthority(initiator, authority) {
     const allowed = validSet ? [...validSet].join(', ') : 'none';
     throw new Error(
       `DG MUST NOT: authority "${authority}" no es válido para initiator "${initiator}". ` +
-      `Permitidos: ${allowed}.`
+        `Permitidos: ${allowed}.`
     );
   }
 }
@@ -60,10 +71,14 @@ function validateAuthority(initiator, authority) {
  */
 function buildTimelineRow(action, status, opts = {}) {
   if (!VALID_ACTIONS.has(action)) {
-    throw new Error(`action inválido: ${action}. Valores válidos: ${[...VALID_ACTIONS].join(', ')}`);
+    throw new Error(
+      `action inválido: ${action}. Valores válidos: ${[...VALID_ACTIONS].join(', ')}`
+    );
   }
   if (!VALID_STATUSES.has(status)) {
-    throw new Error(`status inválido: ${status}. Valores válidos: ${[...VALID_STATUSES].join(', ')}`);
+    throw new Error(
+      `status inválido: ${status}. Valores válidos: ${[...VALID_STATUSES].join(', ')}`
+    );
   }
 
   const missionId = opts.missionId;
@@ -78,7 +93,9 @@ function buildTimelineRow(action, status, opts = {}) {
   validateAuthority(initiator, authority);
 
   if (!VALID_FRESHNESS.has(freshness)) {
-    throw new Error(`freshness inválido: ${freshness}. Valores válidos: ${[...VALID_FRESHNESS].join(', ')}`);
+    throw new Error(
+      `freshness inválido: ${freshness}. Valores válidos: ${[...VALID_FRESHNESS].join(', ')}`
+    );
   }
 
   const id = crypto.randomUUID();

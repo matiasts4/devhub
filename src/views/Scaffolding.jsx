@@ -1,4 +1,5 @@
 'use client';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -13,22 +14,12 @@ import {
   Hash,
 } from 'lucide-react';
 import { sileo } from 'sileo';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   getWorkspaceBreadcrumbStyle,
   getWorkspacePageContentStyle,
   getWorkspacePageHeaderStyle,
-  getWorkspaceSectionSurfaceStyle,
-  getWorkspaceSectionHeaderStripStyle,
-  getWorkspaceDataTileStyle,
 } from './workspacePageChrome';
-import {
-  panelStyle,
-  pillStyle,
-  btnPrimaryStyle,
-  btnSecondaryStyle,
-  inputStyle,
-} from '@/chrome/morphology';
+import { panelStyle, btnSecondaryStyle } from '@/chrome/morphology';
 
 const START_MARKER = '__DEVHUB_SCAFFOLD_START__';
 const END_MARKER = '__DEVHUB_SCAFFOLD_DONE__';

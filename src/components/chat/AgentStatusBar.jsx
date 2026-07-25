@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
 import { Cpu, Loader2 } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
 
 /**
  * AgentStatusBar — Barra de estado fija al fondo, estilo OpenCode.
@@ -44,7 +44,8 @@ export default function AgentStatusBar({
     return `${m}m ${r}s`;
   };
 
-  const tokenPercent = tokenLimit > 0 ? Math.min(100, Math.round((tokenCount / tokenLimit) * 100)) : 0;
+  const tokenPercent =
+    tokenLimit > 0 ? Math.min(100, Math.round((tokenCount / tokenLimit) * 100)) : 0;
   const tokenK = tokenCount > 1000 ? `${(tokenCount / 1000).toFixed(1)}K` : tokenCount;
 
   // Clean model string — strip provider prefixes
@@ -118,7 +119,9 @@ export default function AgentStatusBar({
         >
           <span>{tokenK}</span>
           {tokenLimit > 0 && (
-            <span style={{ color: tokenPercent > 80 ? 'var(--warning, #f59e0b)' : 'var(--text-muted)' }}>
+            <span
+              style={{ color: tokenPercent > 80 ? 'var(--warning, #f59e0b)' : 'var(--text-muted)' }}
+            >
               ({tokenPercent}%)
             </span>
           )}

@@ -15,10 +15,7 @@ export function isWorkspaceTerminalPanelLimitReached(
   return count >= max;
 }
 
-export function buildTerminalPanelLimitError(
-  panelCount,
-  limit = MAX_ZED_TERMINAL_PANELS
-) {
+export function buildTerminalPanelLimitError(panelCount, limit = MAX_ZED_TERMINAL_PANELS) {
   const count = Number(panelCount) || 0;
   const max = Number(limit) || MAX_ZED_TERMINAL_PANELS;
   return {
@@ -35,6 +32,7 @@ export function resolveEffectiveTerminalPanelCount(context = {}) {
   const base = Number(context.terminal_panel_count);
   const openedThisRequest = Number(context._terminal_opens_this_request);
   const safeBase = Number.isFinite(base) && base >= 0 ? base : 0;
-  const safeOpened = Number.isFinite(openedThisRequest) && openedThisRequest >= 0 ? openedThisRequest : 0;
+  const safeOpened =
+    Number.isFinite(openedThisRequest) && openedThisRequest >= 0 ? openedThisRequest : 0;
   return safeBase + safeOpened;
 }

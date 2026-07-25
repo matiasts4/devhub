@@ -1,6 +1,15 @@
 'use client';
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu';
+import {
   Send,
   Loader2,
   Slash,
@@ -28,15 +37,6 @@ import {
   Command,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from '@/components/ui/dropdown-menu';
 import { filterSlashCommands, groupByCategory } from '@/lib/slashSkills';
 
 // Map icon names to lucide-react components

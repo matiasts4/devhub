@@ -45,7 +45,14 @@ function checkNavigation(actionDef, params) {
  * @returns {{ status, actionDef?, params?, error_detail? }}
  */
 function routeDispatch(dispatch) {
-  const { action_id, params, target, actor_role, actor_session_id, confirmation } = dispatch;
+  const {
+    action_id,
+    params,
+    target: _target,
+    actor_role,
+    actor_session_id: _actor_session_id,
+    confirmation,
+  } = dispatch;
 
   const actionDef = getAction(action_id);
 

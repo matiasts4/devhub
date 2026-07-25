@@ -15,10 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const {
-  WAPPER_BASH_CACHE_VERSION,
-  getCachedWrappedBash,
-} = require('./agentLaunchWrapper');
+const { WAPPER_BASH_CACHE_VERSION, getCachedWrappedBash } = require('./agentLaunchWrapper');
 
 function makeTmpCacheDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-wrapper-cache-colocated-'));

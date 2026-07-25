@@ -1,6 +1,6 @@
 import { RefreshCw, TriangleAlert, X } from 'lucide-react';
-import { PROVIDER_LABELS } from '../../lib/quota/types.js';
 import { QuotaProgressRing } from './QuotaProgressRing.jsx';
+import { PROVIDER_LABELS } from '../../lib/quota/types.js';
 
 export function QuotaInspectorPopover({
   allQuotas = {},
@@ -105,7 +105,8 @@ export function QuotaInspectorPopover({
             </div>
 
             <div className="text-right">
-              {currentQuota.error && (!currentQuota.windows || currentQuota.windows.length === 0) ? (
+              {currentQuota.error &&
+              (!currentQuota.windows || currentQuota.windows.length === 0) ? (
                 <>
                   <span className="text-base font-bold text-zinc-500">--</span>
                   <div className="text-[9px] text-zinc-400">No data</div>

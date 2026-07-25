@@ -4,11 +4,31 @@ import { es } from 'date-fns/locale';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const eventTypeConfig = {
-  session_start: { icon: PlayCircle, color: 'text-[var(--accent-cyan)]', bg: 'bg-[var(--accent-cyan)]/10' },
-  tool_execute: { icon: Activity, color: 'text-[var(--accent-purple)]', bg: 'bg-[var(--accent-purple)]/10' },
-  tool_complete: { icon: CheckCircle, color: 'text-[var(--accent-green)]', bg: 'bg-[var(--accent-green)]/10' },
-  session_error: { icon: XCircle, color: 'text-[var(--accent-pink)]', bg: 'bg-[var(--accent-pink)]/10' },
-  session_done: { icon: CheckCircle, color: 'text-[var(--accent-green)]', bg: 'bg-[var(--accent-green)]/10' },
+  session_start: {
+    icon: PlayCircle,
+    color: 'text-[var(--accent-cyan)]',
+    bg: 'bg-[var(--accent-cyan)]/10',
+  },
+  tool_execute: {
+    icon: Activity,
+    color: 'text-[var(--accent-purple)]',
+    bg: 'bg-[var(--accent-purple)]/10',
+  },
+  tool_complete: {
+    icon: CheckCircle,
+    color: 'text-[var(--accent-green)]',
+    bg: 'bg-[var(--accent-green)]/10',
+  },
+  session_error: {
+    icon: XCircle,
+    color: 'text-[var(--accent-pink)]',
+    bg: 'bg-[var(--accent-pink)]/10',
+  },
+  session_done: {
+    icon: CheckCircle,
+    color: 'text-[var(--accent-green)]',
+    bg: 'bg-[var(--accent-green)]/10',
+  },
 };
 
 export default function AgentActivityFeed({

@@ -1,5 +1,7 @@
 'use client';
 
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import StatusSignal from '@/components/ui/StatusSignal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
@@ -20,8 +22,6 @@ import {
   normalizeTelegramActivityItem,
   shouldShowRealtimeBadge,
 } from './telegramMonitorRealtime';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
-import StatusSignal from '@/components/ui/StatusSignal';
 import {
   getWorkspaceDataTileStyle,
   getWorkspaceFilterBarStyle,
@@ -31,12 +31,7 @@ import {
   getWorkspaceSectionSurfaceStyle,
   getWorkspaceStatusPillStyle,
 } from './workspacePageChrome';
-import {
-  pillStyle,
-  btnSecondaryStyle,
-  inputStyle,
-  panelStyle,
-} from '@/chrome/morphology';
+import { pillStyle, btnSecondaryStyle, inputStyle } from '@/chrome/morphology';
 
 function safeFetch(url) {
   return fetch(url).then((res) => {
@@ -182,11 +177,7 @@ export default function TelegramMonitor() {
             projectName={project?.name || 'Proyecto'}
             badges={[
               showRealtimeBadge ? (
-                <StatusSignal
-                  label="EN VIVO"
-                  tone="danger"
-                  animation="blink"
-                />
+                <StatusSignal label="EN VIVO" tone="danger" animation="blink" />
               ) : null,
               showRealtimeBadge && currentToolDisplay ? (
                 <span
@@ -216,14 +207,20 @@ export default function TelegramMonitor() {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <div
             className="border bg-surface-card p-3 rounded-none"
-            style={getWorkspaceDataTileStyle(status?.bot_connected ? 'var(--success)' : 'var(--warning)')}
+            style={getWorkspaceDataTileStyle(
+              status?.bot_connected ? 'var(--success)' : 'var(--warning)'
+            )}
           >
             <p className="typography-label mb-1">Conectividad</p>
             <div className="flex items-center gap-2">
               {status?.bot_connected ? (
                 <Wifi className="w-4 h-4" strokeWidth={1.8} style={{ color: 'var(--success)' }} />
               ) : (
-                <WifiOff className="w-4 h-4" strokeWidth={1.8} style={{ color: 'var(--warning)' }} />
+                <WifiOff
+                  className="w-4 h-4"
+                  strokeWidth={1.8}
+                  style={{ color: 'var(--warning)' }}
+                />
               )}
               <p className="text-sm font-semibold text-text-primary">
                 {status?.bot_connected ? 'Conectado' : 'Sin actividad reciente'}
@@ -235,9 +232,7 @@ export default function TelegramMonitor() {
             className="rounded-none border bg-surface-card p-3"
             style={getWorkspaceDataTileStyle('var(--accent-primary)')}
           >
-            <p className="typography-label mb-1">
-              Chats activos
-            </p>
+            <p className="typography-label mb-1">Chats activos</p>
             <p className="typography-data text-2xl font-bold text-text-primary">
               {status?.active_chats ?? 0}
             </p>
@@ -247,9 +242,7 @@ export default function TelegramMonitor() {
             className="rounded-none border bg-surface-card p-3"
             style={getWorkspaceDataTileStyle('var(--accent-primary)')}
           >
-            <p className="typography-label mb-1">
-              Sesiones totales
-            </p>
+            <p className="typography-label mb-1">Sesiones totales</p>
             <p className="typography-data text-2xl font-bold text-text-primary">
               {status?.total_sessions ?? 0}
             </p>
@@ -259,9 +252,7 @@ export default function TelegramMonitor() {
             className="rounded-none border bg-surface-card p-3"
             style={getWorkspaceDataTileStyle('var(--danger)')}
           >
-            <p className="typography-label mb-1">
-              Errores recientes
-            </p>
+            <p className="typography-label mb-1">Errores recientes</p>
             <p className="typography-data text-2xl font-bold" style={{ color: 'var(--danger)' }}>
               {status?.recent_errors ?? 0}
             </p>
@@ -277,20 +268,18 @@ export default function TelegramMonitor() {
             style={getWorkspaceSectionHeaderStripStyle({ tone: 'accent' })}
           >
             <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-none flex items-center justify-center"
-              style={pillStyle({ tone: 'accent' })}
-            >
-              <Wrench
-                className="w-4 h-4"
-                style={{ color: 'var(--accent-primary)' }}
-                strokeWidth={1.6}
-              />
-            </div>
-            <div>
-              <h3 className="typography-card-title">
-                Actividad y Herramientas
-              </h3>
+              <div
+                className="w-9 h-9 rounded-none flex items-center justify-center"
+                style={pillStyle({ tone: 'accent' })}
+              >
+                <Wrench
+                  className="w-4 h-4"
+                  style={{ color: 'var(--accent-primary)' }}
+                  strokeWidth={1.6}
+                />
+              </div>
+              <div>
+                <h3 className="typography-card-title">Actividad y Herramientas</h3>
                 <p className="text-[11px] text-text-muted">
                   Última actividad:{' '}
                   {status?.last_activity ? timeAgo(status.last_activity) : 'Nunca'}
@@ -299,11 +288,7 @@ export default function TelegramMonitor() {
             </div>
             <div className="grid grid-cols-5 gap-1.5">
               {['intent', 'subscription'].map((evt) => (
-                <div
-                  key={evt}
-                  className="px-2 py-1 text-center"
-                  style={pillStyle()}
-                >
+                <div key={evt} className="px-2 py-1 text-center" style={pillStyle()}>
                   <p className="text-[11px] text-text-muted">{evt}</p>
                   <p className="text-xs font-semibold text-text-primary">
                     {eventCounters[evt] || 0}
@@ -313,7 +298,13 @@ export default function TelegramMonitor() {
             </div>
           </div>
 
-          <div className="px-6 py-4" style={{ ...getWorkspaceFilterBarStyle(), borderWidth: '0 0 var(--chrome-border-width) 0' }}>
+          <div
+            className="px-6 py-4"
+            style={{
+              ...getWorkspaceFilterBarStyle(),
+              borderWidth: '0 0 var(--chrome-border-width) 0',
+            }}
+          >
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="typography-label">Filtros</span>
 
@@ -382,8 +373,10 @@ export default function TelegramMonitor() {
                 <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
                   {filteredActivity.map((item) => {
                     const Icon = EVENT_ICONS[item.entryType] || Terminal;
-                    const isErrorTone = item.primaryStatus === 'failed' || item.primaryStatus === 'rejected';
-                    const isSuccessTone = item.primaryStatus === 'accepted' || item.primaryStatus === 'approved';
+                    const isErrorTone =
+                      item.primaryStatus === 'failed' || item.primaryStatus === 'rejected';
+                    const isSuccessTone =
+                      item.primaryStatus === 'accepted' || item.primaryStatus === 'approved';
                     const itemTone = isErrorTone ? 'danger' : isSuccessTone ? 'success' : 'neutral';
 
                     return (
@@ -391,7 +384,9 @@ export default function TelegramMonitor() {
                         key={item.id}
                         className="border px-3 py-2.5 flex items-start justify-between gap-3"
                         style={{
-                          ...getWorkspaceSectionSurfaceStyle({ emphasized: itemTone !== 'neutral' }),
+                          ...getWorkspaceSectionSurfaceStyle({
+                            emphasized: itemTone !== 'neutral',
+                          }),
                           background:
                             itemTone === 'neutral'
                               ? 'color-mix(in srgb, var(--chrome-panel-fill-emphasis) 72%, var(--chrome-panel-fill) 28%)'

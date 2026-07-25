@@ -1,3 +1,10 @@
+import DGObserverSidebar from '@/components/control-room/DGObserverSidebar';
+import { ChromeSurface } from '@/components/ui/chrome-surface';
+import { Button } from '@/components/ui/button';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import SwarmDelegationPanel from '@/components/control-room/SwarmDelegationPanel';
+import StatusSignal from '@/components/ui/StatusSignal';
+import OperatorTimelineFeed from '@/components/OperatorTimeline/OperatorTimelineFeed.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Bot, Loader2 } from 'lucide-react';
@@ -30,19 +37,12 @@ import ApprovalsErrorsPanel from '@/components/control-room/ApprovalsErrorsPanel
 import DiagnosticOverlay from '@/components/control-room/DiagnosticOverlay';
 import MissionKernelPanel from '@/components/control-room/MissionKernelPanel';
 import EvidenceTimelinePanel from '@/components/control-room/EvidenceTimelinePanel';
-import DGObserverSidebar from '@/components/control-room/DGObserverSidebar';
 import { useDirectorGeneralBridge } from '@/lib/directorGeneral';
 import SwarmPrimarySurface from '@/components/control-room/SwarmPrimarySurface';
 import LaunchpadTemplatesPanel from '@/components/control-room/LaunchpadTemplatesPanel';
 import SwarmTypeCatalogPanel from '@/components/control-room/SwarmTypeCatalogPanel';
 import SwarmLaunchWizardModal from '@/components/control-room/SwarmLaunchWizardModal';
-import { ChromeSurface } from '@/components/ui/chrome-surface';
-import { Button } from '@/components/ui/button';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import ActiveProcessesPanel from '@/components/control-room/ActiveProcessesPanel';
-import SwarmDelegationPanel from '@/components/control-room/SwarmDelegationPanel';
-import StatusSignal from '@/components/ui/StatusSignal';
-import OperatorTimelineFeed from '@/components/OperatorTimeline/OperatorTimelineFeed.jsx';
 import {
   dataTileStyle,
   filterBarStyle,

@@ -1,20 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
   Bell,
   CheckCheck,
   CheckCircle2,
-  Clock3,
   Info,
   RefreshCw,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
-import { createClient } from '@/lib/db/localClient';
 import HealthCenter from '@/components/HealthCenter';
+import { Button } from '@/components/ui/button';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createClient } from '@/lib/db/localClient';
 import {
   clearOperationalEvents,
   EVENT_NAME,
@@ -23,7 +23,6 @@ import {
   readOperationalEvents,
 } from '@/lib/operations/events';
 import { dispatchOperationalNotification } from '@/lib/operations/notify';
-import { Button } from '@/components/ui/button';
 
 const DEADLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
 

@@ -10,12 +10,7 @@
  * is replaced with '[REDACTED]' before audit emission.
  */
 
-const SECRET_PATTERNS = [
-  /password/i,
-  /token/i,
-  /secret/i,
-  /key/i,
-];
+const SECRET_PATTERNS = [/password/i, /token/i, /secret/i, /key/i];
 
 const RING_SIZE = 64;
 
@@ -23,7 +18,7 @@ const buffer = new Array(RING_SIZE);
 let head = 0;
 
 // Flush state — only one flush runs at a time
-let flushTimer = null;
+const flushTimer = null;
 let flushPromise = null;
 
 function redactSecrets(obj) {
@@ -62,7 +57,7 @@ function bufferedCount() {
 function snapshot() {
   const count = bufferedCount();
   if (count === 0) return [];
-  const start = head >= RING_SIZE ? (head % RING_SIZE) : 0;
+  const start = head >= RING_SIZE ? head % RING_SIZE : 0;
   const result = [];
   for (let i = 0; i < count; i++) {
     const idx = (start + i) % RING_SIZE;

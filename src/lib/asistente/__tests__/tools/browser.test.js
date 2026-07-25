@@ -2,10 +2,7 @@ const { browserTool } = require('../../tools/browser');
 
 describe('open_url (browserTool)', () => {
   test('returns in-app workspace payload without xdg-open', async () => {
-    const result = await browserTool.execute(
-      { url: 'https://github.com/foo', label: 'repo' },
-      {}
-    );
+    const result = await browserTool.execute({ url: 'https://github.com/foo', label: 'repo' }, {});
     expect(result).toEqual({
       opened: true,
       workspace: true,
@@ -44,10 +41,7 @@ describe('open_url (browserTool)', () => {
   });
 
   test('coerces string focus=false', async () => {
-    const result = await browserTool.execute(
-      { url: 'https://example.com', focus: 'false' },
-      {}
-    );
+    const result = await browserTool.execute({ url: 'https://example.com', focus: 'false' }, {});
     expect(result.focus).toBe(false);
   });
 });

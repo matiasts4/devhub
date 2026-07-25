@@ -9,7 +9,13 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
-const { generateAgentSecret, hashToken, signRequest, verifySignature, isTokenExpired } = require('../auth');
+const {
+  generateAgentSecret,
+  hashToken,
+  signRequest,
+  verifySignature,
+  isTokenExpired,
+} = require('../auth');
 const {
   ensureRuntimeSchema,
   provisionAuthToken,

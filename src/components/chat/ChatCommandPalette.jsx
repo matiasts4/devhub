@@ -1,5 +1,3 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   CommandDialog,
   CommandInput,
@@ -9,6 +7,8 @@ import {
   CommandItem,
   CommandSeparator,
 } from '@/components/ui/command';
+import { useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   MessageSquarePlus,
   Clock,

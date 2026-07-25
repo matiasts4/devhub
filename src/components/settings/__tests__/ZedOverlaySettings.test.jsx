@@ -2,9 +2,8 @@
  * @jest-environment jsdom
  */
 
-import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
 import ZedOverlaySettings from '../ZedOverlaySettings';
+import { render, screen, fireEvent } from '@testing-library/react';
 import {
   ZED_OVERLAY_SETTINGS_KEY,
   ZED_OVERLAY_SETTINGS_EVENT,

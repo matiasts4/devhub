@@ -1,17 +1,20 @@
-import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CheckCircle2, XCircle, ChevronRight, FileDiff } from 'lucide-react';
-
-export default function DiffViewer({ diffText, onApprove, onReject, title = "Revisión de Cambios (Diff)" }) {
+export default function DiffViewer({
+  diffText,
+  onApprove,
+  onReject,
+  title = 'Revisión de Cambios (Diff)',
+}) {
   // Simple diff parser to style added/removed lines
   const parseDiff = (text) => {
     if (!text) return [];
     return text.split('\n').map((line, idx) => {
       let type = 'normal';
       let className = 'text-gray-300';
-      
+
       if (line.startsWith('+') && !line.startsWith('+++')) {
         type = 'added';
         className = 'bg-green-950/30 text-green-400';
@@ -40,7 +43,7 @@ export default function DiffViewer({ diffText, onApprove, onReject, title = "Rev
           <CardTitle className="text-lg font-medium text-slate-100">{title}</CardTitle>
         </div>
       </CardHeader>
-      
+
       <CardContent className="p-0 flex-1 min-h-[300px] max-h-[500px]">
         <ScrollArea className="h-full w-full bg-[#1e1e1e]">
           <div className="p-4 font-mono text-sm leading-relaxed whitespace-pre font-medium">
@@ -58,23 +61,19 @@ export default function DiffViewer({ diffText, onApprove, onReject, title = "Rev
           </div>
         </ScrollArea>
       </CardContent>
-      
+
       <CardFooter className="flex justify-between items-center border-t border-slate-800 pt-4 bg-slate-800/50">
         <div className="text-xs text-slate-400 flex items-center">
           <ChevronRight className="w-3 h-3 mr-1" />
           Revisa el delta antes de fusionar al núcleo principal.
         </div>
         <div className="flex space-x-3 gap-2">
-          <Button 
-            variant="destructive" 
-            onClick={onReject}
-            className="flex items-center shadow-lg"
-          >
+          <Button variant="destructive" onClick={onReject} className="flex items-center shadow-lg">
             <XCircle className="w-4 h-4 mr-2" />
             Rechazar al Worker
           </Button>
-          <Button 
-            variant="default" 
+          <Button
+            variant="default"
             onClick={onApprove}
             className="flex items-center bg-green-600 hover:bg-green-700 text-white shadow-lg"
           >

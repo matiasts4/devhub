@@ -1,13 +1,17 @@
 'use client';
+import { ShieldCheck, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { ShieldCheck, ShieldAlert, Wrench, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { sileo } from 'sileo';
 import { panelStyle, btnPrimaryStyle, btnSecondaryStyle } from '@/chrome/morphology';
 
 const AGENTS_LIST = [
   { id: 'kimi', name: 'Kimi Code', desc: 'Detección por hooks TOML (~/.kimi-code/config.toml)' },
   { id: 'claude', name: 'Claude Code', desc: 'Detección por hooks JSON (~/.claude/settings.json)' },
-  { id: 'opencode', name: 'OpenCode CLI', desc: 'Detección por plugin JS (opencode/plugins/devhub-agent-state.js)' },
+  {
+    id: 'opencode',
+    name: 'OpenCode CLI',
+    desc: 'Detección por plugin JS (opencode/plugins/devhub-agent-state.js)',
+  },
 ];
 
 export default function AgentHooksSettingsSection() {
@@ -84,14 +88,18 @@ export default function AgentHooksSettingsSection() {
             Detección precisa de agentes (Hooks de Lifecycle)
           </h3>
           <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            Permite que el agente reporte directamente su estado (running/blocked/idle) a DevHub eliminando el parpadeo en streaming largo.
+            Permite que el agente reporte directamente su estado (running/blocked/idle) a DevHub
+            eliminando el parpadeo en streaming largo.
           </p>
         </div>
       </div>
 
       <div className="p-6 space-y-4">
         {loading ? (
-          <div className="flex items-center gap-2 text-xs py-4" style={{ color: 'var(--text-muted)' }}>
+          <div
+            className="flex items-center gap-2 text-xs py-4"
+            style={{ color: 'var(--text-muted)' }}
+          >
             <Loader2 className="w-4 h-4 animate-spin" /> Cargando estado de hooks...
           </div>
         ) : (
@@ -117,7 +125,10 @@ export default function AgentHooksSettingsSection() {
                   )}
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                      <span
+                        className="font-semibold text-sm"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
                         {item.name}
                       </span>
                       <span
@@ -127,7 +138,9 @@ export default function AgentHooksSettingsSection() {
                             : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30'
                         }`}
                       >
-                        {isInstalled ? 'Instalado (Autoridad activada)' : 'No instalado (Fallback a pantalla)'}
+                        {isInstalled
+                          ? 'Instalado (Autoridad activada)'
+                          : 'No instalado (Fallback a pantalla)'}
                       </span>
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>

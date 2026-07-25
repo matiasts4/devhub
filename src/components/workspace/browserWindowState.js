@@ -46,7 +46,10 @@ function readBrowserWindowStates(storage, projectId) {
     if (!parsed || typeof parsed !== 'object') return {};
 
     return Object.fromEntries(
-      Object.entries(parsed).map(([workspaceId, state]) => [workspaceId, sanitizeBrowserWindowState(state)])
+      Object.entries(parsed).map(([workspaceId, state]) => [
+        workspaceId,
+        sanitizeBrowserWindowState(state),
+      ])
     );
   } catch {
     return {};
@@ -58,7 +61,10 @@ function writeBrowserWindowStates(storage, projectId, states) {
 
   try {
     const normalized = Object.fromEntries(
-      Object.entries(states || {}).map(([workspaceId, state]) => [workspaceId, sanitizeBrowserWindowState(state)])
+      Object.entries(states || {}).map(([workspaceId, state]) => [
+        workspaceId,
+        sanitizeBrowserWindowState(state),
+      ])
     );
 
     storage.setItem(buildBrowserWindowStorageKey(projectId), JSON.stringify(normalized));

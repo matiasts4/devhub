@@ -12,7 +12,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
- 
 const {
   shouldBlockOnPreflight,
   firstPreflightError,
@@ -62,7 +61,10 @@ test('firstPreflightError: returns null when preflight is null/undefined', () =>
 });
 
 test('firstPreflightError: returns null when preflight is ok', () => {
-  assert.equal(firstPreflightError(okResult([{ id: 'x', ok: true, level: 'pass', message: 'X' }])), null);
+  assert.equal(
+    firstPreflightError(okResult([{ id: 'x', ok: true, level: 'pass', message: 'X' }])),
+    null
+  );
 });
 
 test('firstPreflightError: returns the first error-level entry', () => {
@@ -89,9 +91,7 @@ test('firstPreflightError: returns null when ok=false but no error-level entry e
   // Defensive: an ok=false result with only warn entries is a malformed
   // preflight (the function only sets ok=false on real errors). The UI
   // should NOT render a banner in that case — return null.
-  const checks = [
-    { id: 'documentation', ok: true, level: 'warn', message: 'warn' },
-  ];
+  const checks = [{ id: 'documentation', ok: true, level: 'warn', message: 'warn' }];
   assert.equal(firstPreflightError({ ok: false, checks }), null);
 });
 
@@ -138,10 +138,7 @@ test('collectMcpToolNames: also collects names from servers[].tools (legacy view
 test('collectMcpToolNames: union of list_tools + servers (deduplicated)', () => {
   const snapshot = {
     list_tools: {
-      tools: [
-        { name: 'get_project_context' },
-        { name: 'update_project' },
-      ],
+      tools: [{ name: 'get_project_context' }, { name: 'update_project' }],
     },
     servers: [
       {

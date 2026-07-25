@@ -10,9 +10,14 @@ import { Check, X, RotateCcw, Clock } from 'lucide-react';
  */
 
 const TERMINAL_COLORS = {
-  completed:  { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Completed',  Icon: Check },
-  failed:     { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Failed',    Icon: X },
-  rolled_back: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Rolled Back', Icon: RotateCcw },
+  completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Completed', Icon: Check },
+  failed: { bg: 'bg-red-100', text: 'text-red-700', label: 'Failed', Icon: X },
+  rolled_back: {
+    bg: 'bg-orange-100',
+    text: 'text-orange-700',
+    label: 'Rolled Back',
+    Icon: RotateCcw,
+  },
 };
 
 function formatRelativeTime(isoString) {
@@ -79,9 +84,7 @@ export default function ExecutionRollupCard({ summary }) {
       {summary.pending_confirmation && (
         <div className="mt-3 p-2 rounded bg-amber-50 border border-amber-200 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-          <span className="text-xs font-semibold text-amber-700">
-            Awaiting confirmation
-          </span>
+          <span className="text-xs font-semibold text-amber-700">Awaiting confirmation</span>
         </div>
       )}
     </div>

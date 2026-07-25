@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import { Bot, Shield, ShieldOff, Zap } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import { pillStyle } from '@/chrome/morphology';
 import {

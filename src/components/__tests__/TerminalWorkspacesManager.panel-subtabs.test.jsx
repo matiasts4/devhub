@@ -49,7 +49,14 @@ jest.mock('react-resizable-panels', () => ({
     const React = require('react');
     return React.createElement('div', props, children);
   },
-  Panel: ({ children, defaultSize, minSize, maxSize, onResize, ...props }) => {
+  Panel: ({
+    children,
+    defaultSize,
+    minSize: _minSize,
+    maxSize: _maxSize,
+    onResize: _onResize,
+    ...props
+  }) => {
     const React = require('react');
     return React.createElement('div', { ...props, 'data-panel-size': defaultSize }, children);
   },
@@ -166,7 +173,7 @@ jest.mock(
   '../workspace/FileExplorerEditorPane',
   () => ({
     __esModule: true,
-    default: ({ embedded }) => {
+    default: ({ embedded: _embedded }) => {
       const React = require('react');
       return React.createElement('div', { 'data-testid': 'shared-editor-pane' });
     },
@@ -178,7 +185,7 @@ jest.mock(
   '../workspace/WorkspaceBridgePane',
   () => ({
     __esModule: true,
-    default: ({ dockState }) => {
+    default: ({ dockState: _dockState }) => {
       const React = require('react');
       return React.createElement('div', { 'data-testid': 'shared-bridge-pane' });
     },
@@ -288,7 +295,7 @@ function getLatestTerminalTTYProps(id) {
   return [...mockTerminalTTYProps].reverse().find((entry) => entry.id === id) || null;
 }
 
-async function changeSelect(element, value) {
+async function _changeSelect(element, value) {
   flushSync(() => {
     element.value = value;
     element.dispatchEvent(new window.Event('change', { bubbles: true }));

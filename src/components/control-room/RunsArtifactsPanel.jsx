@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   CountBadge,
   StatusPill,
@@ -14,11 +13,7 @@ import {
 
 export default function RunsArtifactsPanel({ runs = [], selectedRunId, onSelectRun }) {
   return (
-    <section
-      className="border p-4"
-      style={panelShellStyle()}
-      aria-label="Ejecuciones y artefactos"
-    >
+    <section className="border p-4" style={panelShellStyle()} aria-label="Ejecuciones y artefactos">
       <header className="mb-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Ejecuciones y artefactos</h2>

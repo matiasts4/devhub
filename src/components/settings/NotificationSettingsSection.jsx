@@ -437,7 +437,7 @@ export default function NotificationSettingsSection() {
                 key={item.id}
                 type="button"
                 onClick={() => handleSeverityChange(item.id)}
-                className="py-2 px-3 text-xs font-medium transition-all"
+                className="py-2 px-3 text-xs font-medium transition-colors duration-100"
                 style={{
                   ...panelStyle({ emphasized: isActive, tone: isActive ? 'accent' : 'neutral' }),
                   color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
@@ -482,7 +482,7 @@ export default function NotificationSettingsSection() {
                 key={type}
                 type="button"
                 onClick={() => triggerTestNotification(type)}
-                className="transition-all"
+                className="transition-colors duration-100"
                 style={{
                   ...btnSecondaryStyle({ size: 'sm' }),
                   borderColor: `color-mix(in srgb, ${
@@ -515,7 +515,7 @@ export default function NotificationSettingsSection() {
             <button
               type="button"
               onClick={handleClearHistory}
-              className="mt-3 transition-all"
+              className="mt-3 transition-colors duration-100"
               style={btnDangerStyle({ size: 'sm' })}
             >
               <Trash2 className="w-3.5 h-3.5" />

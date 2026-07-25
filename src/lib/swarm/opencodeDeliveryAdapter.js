@@ -1,4 +1,3 @@
-/* global require, module */
 const { sendMessage } = require('../../../telegram-bot/services/opencode');
 
 const DURABLE_STATUSES = new Set(['sent', 'failed', 'retry_pending']);

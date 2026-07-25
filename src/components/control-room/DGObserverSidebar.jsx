@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import DGChainRow from './DGChainRow';
+import DGApprovalGate from './DGApprovalGate';
+import { useState } from 'react';
 import {
   CountBadge,
   StatusPill,
@@ -8,8 +10,6 @@ import {
   renderEmptyCopy,
   truncateId,
 } from './utils';
-import DGChainRow from './DGChainRow';
-import DGApprovalGate from './DGApprovalGate';
 
 export default function DGObserverSidebar({
   activeMissionId,

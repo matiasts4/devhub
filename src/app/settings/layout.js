@@ -1,8 +1,8 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import { UiShell } from '@/components/ui/system/ui-shell';
 import { UiHeader } from '@/components/ui/system/ui-header';
+import { usePathname } from 'next/navigation';
 
 function titleFromPathname(pathname) {
   const segment = pathname?.split('/').filter(Boolean).pop() || 'settings';

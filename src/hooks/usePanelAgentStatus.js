@@ -236,7 +236,6 @@ export default function usePanelAgentStatus(
         const data = await res.json();
         if (cancelled || requestId !== tickRequestIdRef.current) return;
 
-
         const lastActivityAt = data?.lastActivityAt || null;
         const lastOutputAt = data?.lastOutputAt || null;
         const activeTimestamp = lastOutputAt || lastActivityAt;

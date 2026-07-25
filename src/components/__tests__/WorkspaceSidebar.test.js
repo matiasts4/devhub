@@ -151,6 +151,8 @@ describe('planning affordances', () => {
     expect(toggleStyle.background).toContain('var(--chrome-control-fill-hover)');
     expect(toggleStyle.borderColor).toContain('var(--chrome-border-color)');
     expect(toggleStyle.boxShadow).toBe('var(--chrome-shadow-control)');
-    expect(JSON.stringify({ identityStyle, statCardStyle, toggleStyle })).not.toContain('255,255,255');
+    expect(JSON.stringify({ identityStyle, statCardStyle, toggleStyle })).not.toContain(
+      '255,255,255'
+    );
   });
 });

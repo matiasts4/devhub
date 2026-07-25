@@ -26,7 +26,8 @@ describe('buildZedHistory (T-033)', () => {
       { role: 'assistant', content: 'ok, opening' },
       {
         role: 'user',
-        content: 'Previous tool results from assistant turn:\n[tool:open_terminal] {"session_id":"s1"}',
+        content:
+          'Previous tool results from assistant turn:\n[tool:open_terminal] {"session_id":"s1"}',
       },
       { role: 'user', content: 'try again' },
     ]);

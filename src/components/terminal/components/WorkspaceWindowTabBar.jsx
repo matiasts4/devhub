@@ -7,7 +7,6 @@
 // (workspaceColors.js) shown as a dot; the active workspace additionally
 // gets a colored underline + tinted background.
 
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Plus, X, Grip, Pencil } from 'lucide-react';
 import { getWorkspaceColor } from '../workspaceColors';

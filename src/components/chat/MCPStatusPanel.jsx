@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Server,
   ChevronDown,
@@ -140,7 +140,11 @@ function EvidenceList({ evidence = [] }) {
   return (
     <div className="mt-1.5 space-y-1">
       {evidence.map((item, index) => (
-        <p key={`${item.kind || 'evidence'}-${item.ref || index}`} className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <p
+          key={`${item.kind || 'evidence'}-${item.ref || index}`}
+          className="text-[10px]"
+          style={{ color: 'var(--text-muted)' }}
+        >
           {item.kind}
           {item.ref ? ` · ${item.ref}` : ''}
           {item.authority ? ` · ${getAuthorityLabel(item.authority)}` : ''}
@@ -165,7 +169,10 @@ function ProbeCard({ probe }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-mono font-medium" style={{ color: 'var(--text-secondary)' }}>
+            <span
+              className="text-xs font-mono font-medium"
+              style={{ color: 'var(--text-secondary)' }}
+            >
               {probe.key}
             </span>
             <span className={`text-[10px] ${cfg.color} font-medium`}>
@@ -200,7 +207,10 @@ function ToolCard({ tool }) {
         <Wrench className="w-3.5 h-3.5 mt-0.5" style={{ color: 'var(--text-muted)' }} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-mono font-medium" style={{ color: 'var(--text-secondary)' }}>
+            <span
+              className="text-xs font-mono font-medium"
+              style={{ color: 'var(--text-secondary)' }}
+            >
               {tool.name}
             </span>
             <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>
@@ -245,7 +255,9 @@ function SmokeSummary({ smoke }) {
           smoke
         </span>
         <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>
-          {getHealthStatusLabel(smoke.status === 'pass' ? 'healthy' : smoke.status === 'fail' ? 'offline' : 'degraded')}
+          {getHealthStatusLabel(
+            smoke.status === 'pass' ? 'healthy' : smoke.status === 'fail' ? 'offline' : 'degraded'
+          )}
         </span>
       </div>
       <div className="mt-2 space-y-2">
@@ -257,7 +269,12 @@ function SmokeSummary({ smoke }) {
   );
 }
 
-export default function MCPStatusPanel({ servers = [], snapshot: snapshotProp = null, collapsed = false, onRefresh }) {
+export default function MCPStatusPanel({
+  servers = [],
+  snapshot: snapshotProp = null,
+  collapsed = false,
+  onRefresh,
+}) {
   const [isCollapsed, setIsCollapsed] = useState(collapsed);
 
   const handleRefresh = useCallback(() => {

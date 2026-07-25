@@ -18,7 +18,10 @@ function getVisualEditOverlaySource() {
     return cachedOverlaySource;
   }
 
-  const overlayPath = path.join(process.cwd(), 'node_modules/@emergentbase/visual-edits/dist/visual-edit-overlay.js');
+  const overlayPath = path.join(
+    process.cwd(),
+    'node_modules/@emergentbase/visual-edits/dist/visual-edit-overlay.js'
+  );
   cachedOverlaySource = fs.readFileSync(overlayPath, 'utf8');
   // Inject a debug log at the very beginning of the script
   cachedOverlaySource = `console.log('[devhub][overlay] script executing');` + cachedOverlaySource;

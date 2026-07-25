@@ -12,7 +12,10 @@
  * stop the event so xterm cannot swallow it. Never rely on native passthrough.
  */
 
-import { isGrokLaunchCommand, detectGrokReadyFromTerminalBuffer } from '@/lib/terminal/grokReadyMarker';
+import {
+  isGrokLaunchCommand,
+  detectGrokReadyFromTerminalBuffer,
+} from '@/lib/terminal/grokReadyMarker';
 import {
   isGrokTuiInitialCommand,
   buildGrokWheelScrollPayload,
@@ -38,8 +41,7 @@ export function isGrokWheelSession({ term, getInitialCommand, getLifecycle } = {
   const lifecycle = typeof getLifecycle === 'function' ? getLifecycle() : {};
   if (lifecycle?.isGrokSessionRef?.current) return true;
   if (lifecycle?.grokTuiReadyRef?.current) return true;
-  const cmd =
-    (typeof getInitialCommand === 'function' ? getInitialCommand() : '') || '';
+  const cmd = (typeof getInitialCommand === 'function' ? getInitialCommand() : '') || '';
   if (isGrokLaunchCommand(cmd) || isGrokTuiInitialCommand(cmd)) return true;
   if (term && detectGrokReadyFromTerminalBuffer(term)) return true;
   return false;
@@ -80,29 +82,12 @@ export function createGrokWheelInjectHandler({
 
     const viewport = getViewport() || {};
     const shell = viewport.viewportShellRef?.current || term.element;
-    const pointerEl = resolveTerminalPointerElement(
-      term,
-      viewport.containerRef?.current,
-      shell
-    );
-    const cell = resolveTerminalCellFromPointer(
-      term,
-      pointerEl,
-      event.clientX,
-      event.clientY
-    );
+    const pointerEl = resolveTerminalPointerElement(term, viewport.containerRef?.current, shell);
+    const cell = resolveTerminalCellFromPointer(term, pointerEl, event.clientX, event.clientY);
     const inputZoneRows = resolveTerminalWheelInputZoneRows({ isGrokSession: true });
     const coords = resolveGrokWheelSgrCoords(cell, term, inputZoneRows);
-    const steps = Math.max(
-      1,
-      Math.min(4, resolveTerminalWheelPageSteps(event.deltaY) || 1)
-    );
-    const payload = buildGrokWheelScrollPayload(
-      direction,
-      coords.col,
-      coords.row,
-      steps
-    );
+    const steps = Math.max(1, Math.min(4, resolveTerminalWheelPageSteps(event.deltaY) || 1));
+    const payload = buildGrokWheelScrollPayload(direction, coords.col, coords.row, steps);
 
     const session = getSession() || {};
     const socket = session.wsRef?.current;
@@ -157,7 +142,13 @@ export function attachGrokTuiWheelInject(term, options = {}) {
   let customAttached = false;
   if (typeof term.attachCustomWheelEventHandler === 'function') {
     term.attachCustomWheelEventHandler((ev) => {
-      if (!isGrokWheelSession({ term, getInitialCommand: options.getInitialCommand, getLifecycle: options.getLifecycle })) {
+      if (
+        !isGrokWheelSession({
+          term,
+          getInitialCommand: options.getInitialCommand,
+          getLifecycle: options.getLifecycle,
+        })
+      ) {
         return true; // let xterm handle OpenCode/shell
       }
       if (ev.shiftKey) return true;

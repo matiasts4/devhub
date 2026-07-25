@@ -442,7 +442,7 @@ export default function UserProfile({ align = 'right', direction = 'down', compa
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
             style={{ WebkitAppRegion: 'no-drag' }}
           >
             <div className="w-full max-w-sm border border-borders-subtle bg-surface-card p-6 shadow-2xl rounded-lg relative animate-in fade-in zoom-in duration-200">

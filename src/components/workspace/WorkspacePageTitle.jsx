@@ -1,5 +1,4 @@
 import { Fragment } from 'react';
-
 export function getWorkspacePageTitleProjectBadgeProps() {
   return {
     className:
@@ -25,7 +24,11 @@ export default function WorkspacePageTitle({
   return (
     <div className="flex items-center gap-3 flex-wrap min-w-0">
       {Icon ? (
-        <Icon className={iconClassName} strokeWidth={1.5} style={{ color: 'var(--accent-primary)' }} />
+        <Icon
+          className={iconClassName}
+          strokeWidth={1.5}
+          style={{ color: 'var(--accent-primary)' }}
+        />
       ) : null}
 
       <h1 className="font-mono text-base font-bold" style={{ color: 'var(--text-primary)' }}>

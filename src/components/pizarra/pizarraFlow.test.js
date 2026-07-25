@@ -8,7 +8,7 @@
  * 4. Property change → element updated in state
  */
 
-import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
+import { createShape } from '@/lib/pizarra/shapeModel';
 import { PIZARRA_ACTIONS } from '@/lib/pizarra/pizarraReducer';
 
 // ─── Pure reducer tests (no React needed) ─────────────────────────────────
@@ -30,9 +30,7 @@ function simulateReducer(state, action) {
       const { id, changes } = action.payload;
       return {
         ...state,
-        elements: state.elements.map((el) =>
-          el.id === id ? { ...el, ...changes } : el
-        ),
+        elements: state.elements.map((el) => (el.id === id ? { ...el, ...changes } : el)),
       };
     }
 

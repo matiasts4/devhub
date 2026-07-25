@@ -41,7 +41,7 @@ describe('App.js — Ajustes route (settings/* removed)', () => {
 
   test('mounts Ajustes directly at /project/:projectId/ajustes', () => {
     // Ajustes must be mounted at the canonical path with no redirect.
-    expect(app).toMatch(/<Route\s+path=["']ajustes["']\s+element=\{<Ajustes\s*\/\>\}\s*\/>/);
+    expect(app).toMatch(/<Route\s+path=["']ajustes["']\s+element=\{<Ajustes\s*\/>}\s*\/>/);
     // The legacy redirect to ../settings/appearance MUST be gone.
     expect(app).not.toMatch(
       /<Route\s+path=["']ajustes["']\s+element=\{\u003cNavigate\s+to=["']\.\.\/settings\/appearance["']/

@@ -1,18 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Bot, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
+import SwarmTopologyGraph from '../control-room/SwarmTopologyGraph';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   composeControlRoomSnapshot,
   selectSwarmControlPrimarySurface,
 } from '@/lib/operations/swarmControl';
-import SwarmTopologyGraph from '../control-room/SwarmTopologyGraph';
 
-export default function WorkspaceSwarmPane({
-  project,
-  dockState = {},
-  onDockStateChange = null,
-}) {
+export default function WorkspaceSwarmPane({ project, dockState = {}, onDockStateChange = null }) {
   const [fetchedInput, setFetchedInput] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -96,14 +92,10 @@ export default function WorkspaceSwarmPane({
       <div className="flex h-11 items-center justify-between border-b border-[var(--border-subtle)] bg-[#07111c] px-3">
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-[var(--accent-primary)]" />
-          <span className="text-sm font-semibold tracking-wide">
-            Swarm de Agentes
-          </span>
+          <span className="text-sm font-semibold tracking-wide">Swarm de Agentes</span>
           <span
             className={`inline-flex h-2 w-2 rounded-full ${
-              isActive
-                ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.65)]'
-                : 'bg-slate-500'
+              isActive ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.65)]' : 'bg-slate-500'
             }`}
             title={isActive ? 'Swarm activo' : 'Swarm inactivo'}
           />
@@ -111,10 +103,7 @@ export default function WorkspaceSwarmPane({
 
         <div className="flex items-center gap-2">
           {error && (
-            <span
-              className="flex items-center gap-1 text-[10px] text-rose-400"
-              title={error}
-            >
+            <span className="flex items-center gap-1 text-[10px] text-rose-400" title={error}>
               <AlertTriangle className="h-3 w-3" />
               Error de conexión
             </span>
@@ -182,15 +171,14 @@ export default function WorkspaceSwarmPane({
               className="rounded-xl border p-3"
               style={{
                 borderColor: 'var(--border-subtle)',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+                background:
+                  'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
               }}
             >
               <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
                 Foco del Swarm
               </h4>
-              <p className="mt-1.5 text-sm font-semibold">
-                {primarySurface?.hero?.title}
-              </p>
+              <p className="mt-1.5 text-sm font-semibold">{primarySurface?.hero?.title}</p>
               {primarySurface?.hero?.highlights?.[0] && (
                 <p className="mt-1 text-xs text-[var(--text-secondary)]">
                   {primarySurface.hero.highlights[0]}

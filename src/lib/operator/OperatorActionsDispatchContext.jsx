@@ -14,7 +14,7 @@
  * Provider is mounted in App.js around <TerminalWorkspacesManager>.
  */
 
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
 import useOperatorActions from '@/components/workspace/hooks/useOperatorActions';
 
 const OperatorActionsDispatchContext = createContext(null);
@@ -27,8 +27,9 @@ const OperatorActionsDispatchContext = createContext(null);
  */
 export function OperatorActionsDispatchProvider({ children, onDockStateChange }) {
   // Single shared instance — cards, confirmCard, cancelCard all live here
-  const { cards, dispatchAction, confirmCard, cancelCard } =
-    useOperatorActions({ onDockStateChange });
+  const { cards, dispatchAction, confirmCard, cancelCard } = useOperatorActions({
+    onDockStateChange,
+  });
 
   const value = { dispatchAction, cards, confirmCard, cancelCard };
 

@@ -16,9 +16,9 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Command } from 'cmdk';
+import { useState, useCallback, useEffect } from 'react';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition, TRANSITION } from '@/components/ui/system/motion-tokens';
 import { useCommandBar } from '@/lib/commandBar/useCommandBar';
@@ -115,7 +115,7 @@ export default function CommandBar({ surfaceController }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={isReduced ? TRANSITION.reduced : TRANSITION.base}
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/40"
             onClick={close}
           />
 

@@ -1,8 +1,8 @@
 'use client';
 
-import { memo } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { InlineInput } from './InlineInput';
+import { memo } from 'react';
 import { explorerGitColor, explorerGitMarker } from './gitStatusColor';
 import { fileIconUrl, folderIconUrl } from './iconResolver';
 

@@ -423,6 +423,7 @@ export default function useTerminalWheelRouter({
   panelId,
 }) {
   const monitorRef = useRef(null);
+  const handlerCacheRef = useRef({ handler: null, shell: undefined, command: undefined });
 
   useEffect(() => {
     if (shouldUseNativeRenderer) return undefined;
@@ -456,7 +457,14 @@ export default function useTerminalWheelRouter({
 
   const getHandler = useCallback(() => {
     const shell = viewportRefs?.current?.viewportShellRef?.current;
-    return createTerminalWheelHandler({
+    // perf: reuse the cached handler while shell + command are stable.
+    // Previously a fresh closure was allocated on EVERY wheel event
+    // (100+/sec on trackpads), adding GC pressure during fast scroll.
+    const cache = handlerCacheRef.current;
+    if (cache.handler && cache.shell === shell && cache.command === initialCommand) {
+      return cache.handler;
+    }
+    const handler = createTerminalWheelHandler({
       shell,
       initialCommand,
       lifecycleRefs,
@@ -466,6 +474,10 @@ export default function useTerminalWheelRouter({
       onWheelHandlerProcessed: (info) => monitorRef.current?.onWheelHandlerProcessed(info),
       onPtyWheelWrite: (info) => monitorRef.current?.onPtyWheelWrite(info),
     });
+    cache.handler = handler;
+    cache.shell = shell;
+    cache.command = initialCommand;
+    return handler;
   }, [initialCommand, lifecycleRefs, rendererRefs, sessionRefs, viewportRefs]);
 
   // Bind/re-bind shell whenever it appears (poll briefly after mount + on dep change).
@@ -515,19 +527,21 @@ export default function useTerminalWheelRouter({
       const el = term?.element;
       if (el) {
         monitorRef.current?.attach(el);
-        disposeListener = attachTerminalWheelListener(el, () =>
-          createTerminalWheelHandler({
-            term,
-            shell: el,
-            initialCommand,
-            lifecycleRefs,
-            rendererRefs,
-            sessionRefs,
-            viewportRefs,
-            onWheelHandlerProcessed: (info) => monitorRef.current?.onWheelHandlerProcessed(info),
-            onPtyWheelWrite: (info) => monitorRef.current?.onPtyWheelWrite(info),
-          })
-        );
+        // perf: create the handler ONCE at bind time (term/el are stable for
+        // this xterm instance) instead of allocating a fresh closure on every
+        // wheel event.
+        const boundHandler = createTerminalWheelHandler({
+          term,
+          shell: el,
+          initialCommand,
+          lifecycleRefs,
+          rendererRefs,
+          sessionRefs,
+          viewportRefs,
+          onWheelHandlerProcessed: (info) => monitorRef.current?.onWheelHandlerProcessed(info),
+          onPtyWheelWrite: (info) => monitorRef.current?.onPtyWheelWrite(info),
+        });
+        disposeListener = attachTerminalWheelListener(el, () => boundHandler);
         return;
       }
       tries += 1;

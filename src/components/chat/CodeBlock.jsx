@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { Check, Copy, WrapText, ListOrdered } from 'lucide-react';
+import { useState } from 'react';
 
 /**
  * Inline code component — used for `<code>` elements inside paragraphs.

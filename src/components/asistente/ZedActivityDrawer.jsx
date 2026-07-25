@@ -1,12 +1,12 @@
 'use client';
 
-import { memo, useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Volume2, VolumeX, X } from 'lucide-react';
-import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
-import { getTransition } from '@/components/ui/system/motion-tokens';
 import ZedActionCard from './ZedActionCard';
 import ZedAuditTrace from './ZedAuditTrace';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import { dispatchZedOpenUrl } from '@/components/zedOpenUrlEvent';
 
 const MAX_VISIBLE_ACTIVITY_MESSAGES = 50;

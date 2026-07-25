@@ -95,7 +95,11 @@ describe('pizarra toggle lifecycle (A1.8)', () => {
     const { root } = makeRoot();
     renderInto(
       root,
-      React.createElement(SharedSurfacesProvider, { onSurfaceDestroy: onDestroy }, React.createElement(App))
+      React.createElement(
+        SharedSurfacesProvider,
+        { onSurfaceDestroy: onDestroy },
+        React.createElement(App)
+      )
     );
 
     const originalRelease = registry.releaseSurface.bind(registry);
@@ -109,13 +113,7 @@ describe('pizarra toggle lifecycle (A1.8)', () => {
     expect(registry.getRefCount(SURFACE_ID)).toBe(1);
     expect(registry.get(SURFACE_ID).id).toBe(SURFACE_ID);
 
-    const hostCycle = [
-      PIZARRA_HOST,
-      WORKSPACE_HOST,
-      PIZARRA_HOST,
-      WORKSPACE_HOST,
-      PIZARRA_HOST,
-    ];
+    const hostCycle = [PIZARRA_HOST, WORKSPACE_HOST, PIZARRA_HOST, WORKSPACE_HOST, PIZARRA_HOST];
 
     for (const hostId of hostCycle) {
       act(() => {

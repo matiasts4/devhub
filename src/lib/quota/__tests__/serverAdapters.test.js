@@ -93,8 +93,16 @@ describe('Codex wham/usage payload parsing', () => {
     const result = applyCodexUsagePayload(baseResult(), {
       plan_type: 'plus',
       rate_limit: {
-        primary_window: { used_percent: 42.4, reset_at: nowSec + 3600, limit_window_seconds: 18000 },
-        secondary_window: { used_percent: 10.2, reset_at: nowSec + 86400, limit_window_seconds: 604800 },
+        primary_window: {
+          used_percent: 42.4,
+          reset_at: nowSec + 3600,
+          limit_window_seconds: 18000,
+        },
+        secondary_window: {
+          used_percent: 10.2,
+          reset_at: nowSec + 86400,
+          limit_window_seconds: 604800,
+        },
       },
     });
 
@@ -111,7 +119,11 @@ describe('Codex wham/usage payload parsing', () => {
     const result = applyCodexUsagePayload(baseResult(), {
       plan_type: 'free',
       rate_limit: {
-        primary_window: { used_percent: 5, reset_at: Math.floor(Date.now() / 1000) + 1000, limit_window_seconds: 604800 },
+        primary_window: {
+          used_percent: 5,
+          reset_at: Math.floor(Date.now() / 1000) + 1000,
+          limit_window_seconds: 604800,
+        },
       },
     });
     expect(result.windows[0].name).toBe('Weekly All-Model');
@@ -138,7 +150,12 @@ describe('Z.ai quota payload parsing', () => {
     const result = applyZaiQuotaPayload(baseResult(), {
       limits: [
         { type: 'TIME_LIMIT', currentValue: 16, remaining: 84 },
-        { type: 'TOKENS_LIMIT', currentValue: 300, remaining: 700, nextResetTime: Date.now() + 7200000 },
+        {
+          type: 'TOKENS_LIMIT',
+          currentValue: 300,
+          remaining: 700,
+          nextResetTime: Date.now() + 7200000,
+        },
       ],
     });
 
@@ -177,7 +194,10 @@ describe('Antigravity GetUserStatus payload parsing', () => {
           {
             label: 'Claude Sonnet 4.5 (Thinking)',
             modelOrAlias: { model: 'claude-4-5-sonnet' },
-            quotaInfo: { remainingFraction: 0.62, resetTime: new Date(Date.now() + 3600000).toISOString() },
+            quotaInfo: {
+              remainingFraction: 0.62,
+              resetTime: new Date(Date.now() + 3600000).toISOString(),
+            },
           },
           {
             label: 'Gemini 3 Pro',

@@ -72,9 +72,10 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
   /** Bumps when the pool recreates the guest so event listeners re-bind. */
   const [guestGeneration, setGuestGeneration] = useState(0);
 
-  const getWv = useCallback(() => entryRef.current?.el || getElectronWebviewEntry(key)?.el || null, [
-    key,
-  ]);
+  const getWv = useCallback(
+    () => entryRef.current?.el || getElectronWebviewEntry(key)?.el || null,
+    [key]
+  );
 
   const noteEntry = useCallback((entry) => {
     entryRef.current = entry;
@@ -246,9 +247,7 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
       let liveUrl = '';
       try {
         liveUrl =
-          entry?.el && typeof entry.el.getURL === 'function'
-            ? String(entry.el.getURL() || '')
-            : '';
+          entry?.el && typeof entry.el.getURL === 'function' ? String(entry.el.getURL() || '') : '';
       } catch {
         liveUrl = '';
       }
@@ -284,8 +283,7 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
     const emitNav = () => {
       try {
         const current = getElectronWebviewEntry(key);
-        const url =
-          (typeof wv.getURL === 'function' ? wv.getURL() : '') || current?.lastUrl || '';
+        const url = (typeof wv.getURL === 'function' ? wv.getURL() : '') || current?.lastUrl || '';
         if (url && url !== 'about:blank') {
           if (current) current.lastUrl = url;
           lastIntentSrcRef.current = url;
@@ -359,7 +357,8 @@ const ElectronWebviewBrowser = forwardRef(function ElectronWebviewBrowser(
     const entry = getElectronWebviewEntry(key);
     let live = '';
     try {
-      live = entry?.el && typeof entry.el.getURL === 'function' ? String(entry.el.getURL() || '') : '';
+      live =
+        entry?.el && typeof entry.el.getURL === 'function' ? String(entry.el.getURL() || '') : '';
     } catch {
       live = '';
     }

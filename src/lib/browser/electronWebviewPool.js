@@ -290,7 +290,12 @@ export function syncWebviewPixelSize(entry, hostEl) {
     const wasZero = entry.lastPixelSize && (entry.lastPixelSize.w < 2 || entry.lastPixelSize.h < 2);
     entry.lastPixelSize = { w: width, h: height };
     // Guest first painted while 0×0 — force a soft reload once size is real.
-    if (wasZero && entry.hasLoadedOnce === false && entry.lastUrl && !isPlaceholderWebviewUrl(entry.lastUrl)) {
+    if (
+      wasZero &&
+      entry.hasLoadedOnce === false &&
+      entry.lastUrl &&
+      !isPlaceholderWebviewUrl(entry.lastUrl)
+    ) {
       entry.pendingUrl = entry.lastUrl;
     }
   } else {
@@ -743,7 +748,12 @@ export function attachElectronWebview(cacheKey, hostEl, opts = {}) {
  * @param {string} [partition]
  * @returns {PoolEntry|null}
  */
-export function claimElectronWebview(cacheKey, hostEl, ownerId, partition = 'persist:devhub-browser-dock') {
+export function claimElectronWebview(
+  cacheKey,
+  hostEl,
+  ownerId,
+  partition = 'persist:devhub-browser-dock'
+) {
   const key = String(cacheKey || '');
   if (!key || !ownerId) return null;
   let entry = acquireElectronWebview(key, partition);
@@ -856,7 +866,12 @@ async function performGuestNavigation(entry, target, opts = {}) {
     if (isSuperseded()) return { ok: true, aborted: true, reason: 'superseded' };
     entry.loadFailed = false;
     entry.lastUrl = target;
-    if (reason === 'reload' || reason === 'loadURL' || reason === 'already-live' || reason === 'src') {
+    if (
+      reason === 'reload' ||
+      reason === 'loadURL' ||
+      reason === 'already-live' ||
+      reason === 'src'
+    ) {
       // src marks intent; hasLoadedOnce also set on did-stop-loading
       if (reason !== 'src') entry.hasLoadedOnce = true;
     }
@@ -916,11 +931,7 @@ async function performGuestNavigation(entry, target, opts = {}) {
       if (isSuperseded()) return { ok: true, aborted: true, reason: 'superseded' };
       const msg = String(err?.message || err || '');
       const code = err?.code || err?.errno;
-      if (
-        code === 'ERR_ABORTED' ||
-        code === -3 ||
-        /ERR_ABORTED|abort|\(-3\)/i.test(msg)
-      ) {
+      if (code === 'ERR_ABORTED' || code === -3 || /ERR_ABORTED|abort|\(-3\)/i.test(msg)) {
         entry.loadFailed = false;
         entry.lastUrl = target;
         return { ok: true, aborted: true, reason: 'aborted' };

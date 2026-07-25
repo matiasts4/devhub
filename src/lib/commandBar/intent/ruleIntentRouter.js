@@ -1,15 +1,15 @@
 /**
  * Rule-based intent router implementation.
- * 
+ *
  * Uses ordered first-match-wins regex patterns to classify user input
  * into action types. Deterministic and unit-testable.
- * 
+ *
  * @module commandBar/intent/ruleIntentRouter
  */
 
 /**
  * Create a rule-based intent router.
- * 
+ *
  * @returns {import('./IntentRouter').IntentRouter} Intent router instance
  */
 export function createRuleIntentRouter() {
@@ -80,7 +80,7 @@ export function createRuleIntentRouter() {
       // "open github.com"
       // "go to localhost:3000"
       // "navigate to https://example.com"
-      // 
+      //
       // URL-likeness gate: must contain a dot/TLD or a scheme to prevent
       // "open terminal" from routing to browser
       const browserNavigatePattern = /^(open|go\s+to|navigate\s+to|visit|browse)\s+(?<url>\S+)/i;
@@ -89,7 +89,7 @@ export function createRuleIntentRouter() {
         const url = navMatch.groups.url;
         // URL-likeness test: has dot (domain.com) or scheme (http://)
         const isUrlLike = url.includes('.') || url.includes('://') || url.includes('localhost');
-        
+
         // Explicit rejection: if "terminal" keyword is present, don't route to browser
         if (lower.includes('terminal')) {
           // Fall through to terminal-run or unknown
@@ -108,8 +108,9 @@ export function createRuleIntentRouter() {
       // "$ pnpm dev"
       // "run npm build in build-output"
       // "run git log in terminal git-workspace"
-      
-      const terminalRunPattern = /^(run|exec|execute|\$)\s+(?<command>.+?)(\s+in\s+(terminal\s+)?(?<terminalName>\S+))?$/i;
+
+      const terminalRunPattern =
+        /^(run|exec|execute|\$)\s+(?<command>.+?)(\s+in\s+(terminal\s+)?(?<terminalName>\S+))?$/i;
       const runMatch = trimmed.match(terminalRunPattern);
       if (runMatch?.groups?.command) {
         const slots = { command: runMatch.groups.command.trim() };

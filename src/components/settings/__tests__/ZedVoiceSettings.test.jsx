@@ -2,9 +2,8 @@
  * @jest-environment jsdom
  */
 
-import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ZedVoiceSettings from '../ZedVoiceSettings';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { VOICE_SETTINGS_KEY } from '@/lib/voice/voiceFeatureFlag';
 
 jest.mock('lucide-react', () => {

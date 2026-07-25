@@ -10,12 +10,7 @@
  * @param {boolean} [props.showStatus=true] - Whether to show status dot
  * @param {string} [props.className] - Additional CSS classes
  */
-export default function SwarmPhaseBadge({
-  phase,
-  status,
-  showStatus = true,
-  className = '',
-}) {
+export default function SwarmPhaseBadge({ phase, status, showStatus = true, className = '' }) {
   if (!phase) return null;
 
   // Parse phase — handle "sdd-" prefix
@@ -52,10 +47,7 @@ export default function SwarmPhaseBadge({
       <span className="uppercase tracking-wider text-[9px] opacity-75">SDD</span>
       <span>{phaseLabel}</span>
       {showStatus && status && (
-        <span
-          className={`w-1.5 h-1.5 rounded-full ${statusColor} ml-0.5`}
-          title={status}
-        />
+        <span className={`w-1.5 h-1.5 rounded-full ${statusColor} ml-0.5`} title={status} />
       )}
     </div>
   );

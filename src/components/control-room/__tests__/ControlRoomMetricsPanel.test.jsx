@@ -1,6 +1,5 @@
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import ControlRoomMetricsPanel from '../ControlRoomMetricsPanel.jsx';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 function renderPanel(props = {}) {
   return renderToStaticMarkup(

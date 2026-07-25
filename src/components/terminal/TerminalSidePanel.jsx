@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Search, Terminal, X } from 'lucide-react';
 import TerminalTTY from '@/components/TerminalTTY';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 320;

@@ -3,12 +3,12 @@
 import React from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Terminal, Globe, FileCode2 } from 'lucide-react';
+import SceneryBackground from '@/components/scenery/SceneryBackground';
 import {
   resolveWorkspaceShellVisibilityStyle,
   resolveWorkspaceWindowVisibilityStyle,
 } from '../workspaceAnimProps';
 import { getTerminalGridShellStyle } from '../terminalChromeStyles';
-import SceneryBackground from '@/components/scenery/SceneryBackground';
 import { useSceneryPrefs } from '@/lib/sceneries/useSceneryPrefs';
 import { resolveSceneryStyle } from '@/lib/sceneries/sceneryPreferences';
 import {

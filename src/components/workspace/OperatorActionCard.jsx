@@ -1,4 +1,5 @@
 'use client';
+import { CheckCircle2, XCircle, Loader2, Ban } from 'lucide-react';
 
 /**
  * OperatorActionCard.jsx — Execution card UI for operator actions.
@@ -11,7 +12,6 @@
  * card's 'requested' state.
  */
 
-import { CheckCircle2, XCircle, Loader2, Ban } from 'lucide-react';
 // Note: all four icons are used in STATUS_ICONS below
 
 /** @type {Record<string, React.ReactNode>} */

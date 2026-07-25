@@ -45,10 +45,7 @@ export default function ZedActionCard({ entry, onFocusTerminal, onOpenUrl, onRet
     if (entry.tool === 'open_url' && onOpenUrl) onOpenUrl(parsed);
   };
 
-  const clickable =
-    isError ||
-    entry.tool === 'open_terminal' ||
-    entry.tool === 'open_url';
+  const clickable = isError || entry.tool === 'open_terminal' || entry.tool === 'open_url';
 
   return (
     <button
@@ -59,7 +56,9 @@ export default function ZedActionCard({ entry, onFocusTerminal, onOpenUrl, onRet
         isError
           ? 'border-[color-mix(in_srgb,var(--danger,#ef4444)_35%,transparent)] bg-[color-mix(in_srgb,var(--danger,#ef4444)_8%,transparent)]'
           : 'border-[color-mix(in_srgb,var(--accent-primary)_18%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--accent-primary)_6%,transparent)]',
-        clickable ? 'cursor-pointer hover:border-[color-mix(in_srgb,var(--accent-primary)_40%,transparent)]' : 'cursor-default',
+        clickable
+          ? 'cursor-pointer hover:border-[color-mix(in_srgb,var(--accent-primary)_40%,transparent)]'
+          : 'cursor-default',
       ].join(' ')}
       aria-label={statusLine || entry.tool}
     >
@@ -74,7 +73,10 @@ export default function ZedActionCard({ entry, onFocusTerminal, onOpenUrl, onRet
         ) : null}
       </span>
       {!isError ? (
-        <CheckCircle2 className="h-3 w-3 shrink-0 text-[var(--accent-primary)] opacity-70" aria-hidden />
+        <CheckCircle2
+          className="h-3 w-3 shrink-0 text-[var(--accent-primary)] opacity-70"
+          aria-hidden
+        />
       ) : null}
     </button>
   );

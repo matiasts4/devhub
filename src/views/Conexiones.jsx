@@ -1,12 +1,9 @@
 'use client';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plug2,
   Plus,
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
   Loader2,
   X,
   Wifi,
@@ -24,22 +21,14 @@ import {
 import { createClient } from '@/lib/db/localClient';
 import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   getWorkspacePageContentStyle,
   getWorkspacePageHeaderStyle,
   getWorkspaceSectionSurfaceStyle,
   getWorkspaceSectionHeaderStripStyle,
-  getWorkspaceStatusPillStyle,
   getWorkspaceDataTileStyle,
 } from './workspacePageChrome';
-import {
-  panelStyle,
-  pillStyle,
-  btnPrimaryStyle,
-  btnSecondaryStyle,
-  inputStyle,
-} from '@/chrome/morphology';
+import { panelStyle, pillStyle, btnPrimaryStyle } from '@/chrome/morphology';
 
 const TYPE_CONFIG = {
   github: { label: 'GitHub', color: '#F0F6FC', Icon: Code2, desc: 'Repositorios y PRs' },

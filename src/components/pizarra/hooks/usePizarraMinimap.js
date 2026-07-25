@@ -88,9 +88,12 @@ function elementBbox(element) {
       return {
         x,
         y,
-        width: typeof element.width === 'number' && element.width > 0 ? element.width : defaults.width,
+        width:
+          typeof element.width === 'number' && element.width > 0 ? element.width : defaults.width,
         height:
-          typeof element.height === 'number' && element.height > 0 ? element.height : defaults.height,
+          typeof element.height === 'number' && element.height > 0
+            ? element.height
+            : defaults.height,
       };
     }
     default:
@@ -246,10 +249,7 @@ export default function usePizarraMinimap({
   }, []);
 
   // ── worldBounds ─────────────────────────────────────────────────────────
-  const worldBounds = useMemo(
-    () => computeWorldBounds(elements, padding),
-    [elements, padding]
-  );
+  const worldBounds = useMemo(() => computeWorldBounds(elements, padding), [elements, padding]);
 
   // ── visibleWorldRect ────────────────────────────────────────────────────
   // What part of the world is currently visible on screen.

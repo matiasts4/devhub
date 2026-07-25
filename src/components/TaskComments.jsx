@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { Bot, Loader2, Send } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/db/localClient';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { Bot, User as UserIcon, Loader2, Send } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 
 export default function TaskComments({ taskId }) {
   const [comments, setComments] = useState([]);

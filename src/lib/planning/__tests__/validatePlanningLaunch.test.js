@@ -134,7 +134,6 @@ const BASE_INPUT = {
 
 // --- Module under test (late import so we can require per test if needed) ---
 function loadModule() {
-   
   return require('../validatePlanningLaunch.js');
 }
 
@@ -281,10 +280,7 @@ test('validatePlanningLaunch: scenario G — fetch never resolves → AbortContr
 
   // The whole preflight should have completed in < 1500ms (3 timeouts of
   // 50ms each, fired in parallel; allow generous slack for the test runner).
-  assert.ok(
-    elapsed < 1500,
-    `expected preflight to time out fast; took ${elapsed}ms`
-  );
+  assert.ok(elapsed < 1500, `expected preflight to time out fast; took ${elapsed}ms`);
 
   assert.equal(result.ok, false);
   const failing = result.checks.filter((c) => c.ok === false && c.level === 'error');

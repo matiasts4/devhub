@@ -12,7 +12,9 @@ async function flushEffects() {
 }
 
 function installDom() {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://devhub.test' });
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://devhub.test',
+  });
   global.window = dom.window;
   global.document = dom.window.document;
   global.navigator = dom.window.navigator;

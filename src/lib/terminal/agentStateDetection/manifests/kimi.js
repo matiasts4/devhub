@@ -110,10 +110,7 @@ export default {
       priority: 200,
       region: 'bottom_lines(3)',
       visibleIdle: true,
-      any: [
-        { contains: ['ctrl+p commands'] },
-        { lineRegex: ['(?i)^\\s*kimi>'] },
-      ],
+      any: [{ contains: ['ctrl+p commands'] }, { lineRegex: ['(?i)^\\s*kimi>'] }],
     },
     {
       id: 'background_agent_status_working',
@@ -153,7 +150,9 @@ export default {
       priority: 90,
       region: 'bottom_lines(8)',
       visibleWorking: true,
-      lineRegex: ['(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|working|using|analyzing|executing|reading|writing|searching)'],
+      lineRegex: [
+        '(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|working|using|analyzing|executing|reading|writing|searching)',
+      ],
     },
   ],
 };

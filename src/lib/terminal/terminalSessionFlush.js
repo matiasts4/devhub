@@ -8,7 +8,9 @@ import { readTerminalRestorePreferences } from './restorePreferences';
 export function resolveTerminalStorageKeys(projectId = null) {
   return {
     terminalStateKey: projectId ? `devhub_terminal_state:${projectId}` : 'devhub_terminal_state',
-    restoreManifestKey: projectId ? `devhub_restore_manifest:${projectId}` : 'devhub_restore_manifest',
+    restoreManifestKey: projectId
+      ? `devhub_restore_manifest:${projectId}`
+      : 'devhub_restore_manifest',
     legacyTerminalStateKey: 'devhub_terminal_state',
   };
 }
@@ -74,7 +76,11 @@ function indexAgentRunsByPanel(runs = {}) {
  * Copies OpenCode session ids from panels into devhub_agent_runs so reboot restore
  * does not depend on a pending React state flush.
  */
-export function syncAgentRunsFromWorkspacePanels(storage, workspaces = [], { agentRuns = null } = {}) {
+export function syncAgentRunsFromWorkspacePanels(
+  storage,
+  workspaces = [],
+  { agentRuns = null } = {}
+) {
   if (!storage || typeof storage.setItem !== 'function') return false;
 
   const runs = agentRuns || readAgentRunsRecord(storage);

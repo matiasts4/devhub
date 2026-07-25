@@ -39,8 +39,8 @@
 // for any future caller that wants to render the same option list
 // elsewhere (e.g. a settings modal).
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'; // eslint-disable-line no-unused-vars
-import { Monitor, ChevronDown } from 'lucide-react'; // eslint-disable-line no-unused-vars
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Monitor, ChevronDown } from 'lucide-react';
 
 export const RENDERER_SELECT_OPTIONS = Object.freeze([
   { value: 'inherit', label: 'Inherit (use workspace default)', selectable: true },

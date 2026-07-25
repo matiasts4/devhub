@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 export function CopilotAuthPanel({ isAuthenticated = false, onAuthChange }) {
   const [error, setError] = useState('');
@@ -21,11 +21,7 @@ export function CopilotAuthPanel({ isAuthenticated = false, onAuthChange }) {
     return (
       <div>
         <p>Autenticado</p>
-        <button
-          type="button"
-          data-testid="copilot-logout"
-          onClick={() => onAuthChange?.(false)}
-        >
+        <button type="button" data-testid="copilot-logout" onClick={() => onAuthChange?.(false)}>
           Cerrar sesion
         </button>
       </div>

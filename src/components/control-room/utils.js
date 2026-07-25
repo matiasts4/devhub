@@ -1,5 +1,4 @@
 import { Fragment } from 'react';
-
 const TOKEN_LABELS = Object.freeze({
   unknown: 'desconocido',
   0: 'desconocido',

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
 import { ShieldCheck, Check, X, Clock, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
 
 export default function PermissionModal({ isOpen, onClose, onApprove, onReject, permission }) {
   const [timeLeft, setTimeLeft] = useState(permission?.timeout || 60);

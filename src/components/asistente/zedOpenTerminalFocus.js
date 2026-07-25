@@ -27,7 +27,12 @@ export function applyZedOpenTerminalFocus(
   targetWsId,
   newPanelId,
   detail,
-  { activateWorkspacePanel, setFocusedPanelByWorkspace, updateRightDockState, maximizedView }
+  {
+    activateWorkspacePanel,
+    setFocusedPanelByWorkspace,
+    updateRightDockState: _updateRightDockState,
+    maximizedView: _maximizedView,
+  }
 ) {
   if (!targetWsId || !newPanelId) {
     return { activated: false, focused: false, demaximized: false };
@@ -40,7 +45,7 @@ export function applyZedOpenTerminalFocus(
 
   const wantFocus = detail && detail.focus === true;
   let focused = false;
-  let demaximized = false;
+  const demaximized = false;
 
   if (wantFocus) {
     // Clear or update the focused-panel so the new panel is the only one

@@ -117,9 +117,12 @@ body {
     font-size: 14px;
   }
 
-  /* ─── Smooth scroll behavior ─── */
+  /* ─── Scroll behavior ───
+     Deliberately `auto`: `smooth` adds a perceptible animation delay to every
+     wheel tick on document-level scrolling (feels like input latency). Code
+     that wants animated scrolling passes { behavior: 'smooth' } explicitly. */
   html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
 }
 
@@ -205,7 +208,7 @@ body {
 }
 
 .core-sticky-header {
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(4px);
   background: color-mix(in srgb, var(--surface-app) 92%, transparent);
   border-bottom: 1px solid var(--border-subtle);
 }

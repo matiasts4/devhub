@@ -1,55 +1,42 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import {
-  Send,
-  Plus,
   Loader2,
   Slash,
-  MessageSquarePlus,
-  History,
-  Trash2,
   Cpu,
-  FileText,
-  Sparkles,
   ChevronDown,
-  Search,
-  ListChecks,
-  PenTool,
   CheckSquare,
-  Code,
-  ShieldCheck,
-  Archive,
-  GitPullRequest,
-  Bug,
-  Scale,
-  TestTube,
-  Wrench,
-  Palette,
-  Zap,
   Monitor,
-  Database,
   Server,
-  Command,
-  Terminal,
   Activity,
   LayoutPanelLeft,
   ExternalLink,
 } from 'lucide-react';
-import { sileo } from 'sileo';
 import ReactMarkdown from 'react-markdown';
+import ChatInput from '@/components/chat/ChatInput';
+import AgentHubHeader from '@/components/chat/AgentHubHeader';
+import ChatMessageList from '@/components/chat/ChatMessageList';
+import OutputViewerModal from '@/components/chat/OutputViewerModal';
+import PermissionModal from '@/components/chat/PermissionModal';
+import TokenUsageBadge from '@/components/chat/TokenUsageBadge';
+import MCPStatusPanel from '@/components/chat/MCPStatusPanel';
+import SessionListModal from '@/components/chat/SessionListModal';
+import ChatCommandPalette from '@/components/chat/ChatCommandPalette';
+import { Skeleton, SkeletonCard, SkeletonAvatar } from '@/components/chat/Skeleton';
+import KeyboardShortcutsHelp from '@/components/chat/KeyboardShortcutsHelp';
+import OnboardingTour from '@/components/chat/OnboardingTour';
+import AgentStatusBar from '@/components/chat/AgentStatusBar';
+import SubagentBreadcrumbs from '@/components/chat/SubagentBreadcrumbs';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
+import { sileo } from 'sileo';
 import remarkGfm from 'remark-gfm';
 import { createClient } from '@/lib/db/localClient';
 
 const db = createClient();
-import ChatInput from '@/components/chat/ChatInput';
-import AgentHubHeader from '@/components/chat/AgentHubHeader';
-import ChatMessageList from '@/components/chat/ChatMessageList';
-import { enforceDocOpsGateOnLaunchCommand, shellQuotePrompt } from '@/lib/docopsPrompts';
 import { detectMcpOutput } from '@/components/chat/utils/detectMcpOutput';
 import { dispatchOperationalNotification } from '@/lib/operations/notify';
-import { slashCommands, filterSlashCommands, groupByCategory } from '@/lib/slashSkills';
+import { filterSlashCommands } from '@/lib/slashSkills';
 import { createAgentHubStreamParser } from '@/lib/agenthubStream';
 import {
   DEFAULT_COMPRESSION_KEEP_LAST_N,
@@ -58,12 +45,6 @@ import {
 } from '@/lib/agenthubCompression';
 
 // Phase 4: Trace Enhancement components
-import OutputViewerModal from '@/components/chat/OutputViewerModal';
-import PermissionModal from '@/components/chat/PermissionModal';
-import TokenUsageBadge from '@/components/chat/TokenUsageBadge';
-import MCPStatusPanel from '@/components/chat/MCPStatusPanel';
-import SessionListModal from '@/components/chat/SessionListModal';
-import ChatCommandPalette from '@/components/chat/ChatCommandPalette';
 import { useSessionUsage } from '@/hooks/useSessionUsage';
 import { mergeSessionUsage } from '@/lib/agenthub/contextUsage';
 import {
@@ -73,18 +54,6 @@ import {
   normalizeSubagentName,
 } from '@/lib/agenthubSubagentState';
 import { emitSubagentOperationalFeedback } from '@/lib/operations/agenthubFeedback';
-// Phase 5: UX Polish components
-import { Skeleton, SkeletonText, SkeletonCard, SkeletonAvatar } from '@/components/chat/Skeleton';
-import KeyboardShortcutsHelp from '@/components/chat/KeyboardShortcutsHelp';
-import OnboardingTour from '@/components/chat/OnboardingTour';
-// Batch D: Terminal Side Panel
-// Subagent navigation components
-import AgentStatusBar from '@/components/chat/AgentStatusBar';
-import SubagentBreadcrumbs from '@/components/chat/SubagentBreadcrumbs';
-import TerminalTTY from '@/components/TerminalTTY';
-
-// UI Components
-import { Button } from '@/components/ui/button';
 
 const formatMessage = (content) => {
   // 1. Tags Completos
@@ -903,7 +872,9 @@ Dale, empezá leyendo el contexto del proyecto.`;
         source: 'agenthub',
         entity_id: sessionId,
         dedupe_key: `agenthub:turn:${assistantMessageId}`,
-        actions: [{ label: 'Ver Chat', action_type: 'navigate', target: `/agenthub?session=${sessionId}` }],
+        actions: [
+          { label: 'Ver Chat', action_type: 'navigate', target: `/agenthub?session=${sessionId}` },
+        ],
       });
 
       if (!skipParse) await parseAndExecuteCommands(activeMessage);
@@ -1762,7 +1733,9 @@ Dale, empezá leyendo el contexto del proyecto.`;
                   return;
                 }
                 navigate(`/project/${project.id}/swarm`);
-                sileo.info({ title: `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control` });
+                sileo.info({
+                  title: `Abriendo ${subagentMsg.meta ? JSON.parse(subagentMsg.meta).agentProfile : 'subagente'} en Swarm Control`,
+                });
               }}
             />
 

@@ -1,6 +1,5 @@
 import React from 'react';
 import { ChevronRight, Brain, TerminalSquare } from 'lucide-react';
-
 /**
  * SubagentBreadcrumbs — Breadcrumbs de navegación jerárquica que muestra
  * la cadena de sesiones padre → hijo. Estilo: "Orquestador → SDD-Explore → Módulo 3"

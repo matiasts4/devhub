@@ -1,4 +1,3 @@
-/* global require, module */
 const { createMissionMessage, upsertMessageDelivery } = require('../db/localDb');
 
 const DURABLE_DELIVERY_STATES = new Set(['pending', 'sent', 'failed', 'retry_pending', 'expired']);

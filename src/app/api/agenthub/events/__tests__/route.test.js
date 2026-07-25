@@ -10,7 +10,10 @@ const Database = require('better-sqlite3');
 
 const { ensureAllSchema } = require('@/lib/db/localDb');
 const { createAuthMiddleware } = require('@/lib/swarm/authMiddleware');
-const { generateAgentSecret, hashToken } = require('@/lib/swarm/auth');
+const {
+  generateAgentSecret: _generateAgentSecret,
+  hashToken: _hashToken,
+} = require('@/lib/swarm/auth');
 
 jest.mock('next/server', () => ({
   NextResponse: {

@@ -53,9 +53,10 @@ export function resolveZedOpenTerminalPanelId(detail, fallback) {
         ? detail.terminalId
         : null;
     if (terminalId) return terminalId;
-    const sid = typeof detail.session_id === 'string' && detail.session_id.length > 0
-      ? detail.session_id
-      : null;
+    const sid =
+      typeof detail.session_id === 'string' && detail.session_id.length > 0
+        ? detail.session_id
+        : null;
     if (sid) return sid;
   }
   return fallback;

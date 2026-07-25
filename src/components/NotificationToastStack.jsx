@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { EVENT_NAME } from '@/lib/operations/events';
 import { playNotificationSound } from '@/lib/notifications/soundEffects';
 import { getNotificationPreferences } from '@/lib/notifications/notificationPreferences';

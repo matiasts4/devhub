@@ -21,7 +21,9 @@ export function buildSessionHookEnv({ session, hookUrl } = {}) {
 
   const url = hookUrl || process.env.DEVHUB_HOOK_URL;
   if (!url) {
-    throw new Error('hookUrl is required in buildSessionHookEnv (pass hookUrl or set DEVHUB_HOOK_URL)');
+    throw new Error(
+      'hookUrl is required in buildSessionHookEnv (pass hookUrl or set DEVHUB_HOOK_URL)'
+    );
   }
 
   if (!session.hookToken) {

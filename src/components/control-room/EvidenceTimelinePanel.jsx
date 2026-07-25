@@ -1,4 +1,4 @@
-import React from 'react';
+import DGChainRow from './DGChainRow';
 import {
   CountBadge,
   StatusPill,
@@ -10,7 +10,6 @@ import {
   panelShellStyle,
   renderEmptyCopy,
 } from './utils';
-import DGChainRow from './DGChainRow';
 
 const MAX_SECONDARY = 3;
 
@@ -41,75 +40,75 @@ export default function EvidenceTimelinePanel({ items = [], dgTimelineRows = [] 
       </header>
 
       <div className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-0.5" style={panelListStyle()}>
-        {items.length === 0 && dgTimelineRows.length === 0
-          ? renderEmptyCopy('Sin eventos durables en este snapshot.')
-          : (
-            <>
-              {/* DG timeline rows — prepended with authority badge */}
-              {dgTimelineRows.map((row, index) => (
-                <div key={`dg-${row.id || row.timestamp || index}`}>
-                  <DGChainRow row={row} />
+        {items.length === 0 && dgTimelineRows.length === 0 ? (
+          renderEmptyCopy('Sin eventos durables en este snapshot.')
+        ) : (
+          <>
+            {/* DG timeline rows — prepended with authority badge */}
+            {dgTimelineRows.map((row, index) => (
+              <div key={`dg-${row.id || row.timestamp || index}`}>
+                <DGChainRow row={row} />
+              </div>
+            ))}
+            {/* Standard evidence items */}
+            {items.map((item) => (
+              <article
+                key={`${item.kind || 'timeline'}-${item.item_id || item.occurred_at || 'unknown'}`}
+                className="rounded-xl border p-3 overflow-hidden"
+                style={panelShellStyle()}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-medium text-sm leading-snug break-words">
+                    {item.summary || 'Evento durable sin resumen'}
+                  </h3>
+                  <StatusPill status={item.kind} />
                 </div>
-              ))}
-              {/* Standard evidence items */}
-              {items.map((item) => (
-                <article
-                  key={`${item.kind || 'timeline'}-${item.item_id || item.occurred_at || 'unknown'}`}
-                  className="rounded-xl border p-3 overflow-hidden"
-                  style={panelShellStyle()}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-medium text-sm leading-snug break-words">
-                      {item.summary || 'Evento durable sin resumen'}
-                    </h3>
-                    <StatusPill status={item.kind} />
-                  </div>
 
-                  <p className="mt-2 text-xs" style={metaTextStyle()}>
-                    {formatOccurredAt(item.occurred_at)}
+                <p className="mt-2 text-xs" style={metaTextStyle()}>
+                  {formatOccurredAt(item.occurred_at)}
+                </p>
+
+                <p className="mt-2 text-xs break-words" style={metaTextStyle()}>
+                  {formatToken(item.authority)} · {formatToken(item.freshness)} ·{' '}
+                  {formatEvidence(item.evidence_refs)}
+                </p>
+
+                {item.missing_source ? (
+                  <p className="mt-1 text-xs" style={metaTextStyle()}>
+                    {formatMissingSource(item.missing_source)}
                   </p>
+                ) : null}
 
-                  <p className="mt-2 text-xs break-words" style={metaTextStyle()}>
-                    {formatToken(item.authority)} · {formatToken(item.freshness)} ·{' '}
-                    {formatEvidence(item.evidence_refs)}
-                  </p>
-
-                  {item.missing_source ? (
-                    <p className="mt-1 text-xs" style={metaTextStyle()}>
-                      {formatMissingSource(item.missing_source)}
-                    </p>
-                  ) : null}
-
-                  {item.secondary_session_evidence?.length ? (
-                    <div
-                      className="mt-3 space-y-2 rounded-lg border px-3 py-2 max-h-44 overflow-y-auto"
-                      style={panelShellStyle()}
-                    >
-                      {item.secondary_session_evidence
-                        .slice(0, MAX_SECONDARY)
-                        .map((secondary, index) => (
-                          <div key={`${item.item_id || 'timeline'}-secondary-${index}`}>
-                            <div className="text-xs font-medium">{secondary.label}</div>
-                            <div className="text-sm">
-                              {secondary.summary || 'Sin resumen secundario'}
-                            </div>
-                            <div className="text-xs" style={metaTextStyle()}>
-                              {formatToken(secondary.authority)} · {secondary.source || 'unknown'} ·{' '}
-                              {formatOccurredAt(secondary.observed_at)}
-                            </div>
+                {item.secondary_session_evidence?.length ? (
+                  <div
+                    className="mt-3 space-y-2 rounded-lg border px-3 py-2 max-h-44 overflow-y-auto"
+                    style={panelShellStyle()}
+                  >
+                    {item.secondary_session_evidence
+                      .slice(0, MAX_SECONDARY)
+                      .map((secondary, index) => (
+                        <div key={`${item.item_id || 'timeline'}-secondary-${index}`}>
+                          <div className="text-xs font-medium">{secondary.label}</div>
+                          <div className="text-sm">
+                            {secondary.summary || 'Sin resumen secundario'}
                           </div>
-                        ))}
-                      {item.secondary_session_evidence.length > MAX_SECONDARY ? (
-                        <p className="text-xs" style={metaTextStyle()}>
-                          +{item.secondary_session_evidence.length - MAX_SECONDARY} más…
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </>
-          )}
+                          <div className="text-xs" style={metaTextStyle()}>
+                            {formatToken(secondary.authority)} · {secondary.source || 'unknown'} ·{' '}
+                            {formatOccurredAt(secondary.observed_at)}
+                          </div>
+                        </div>
+                      ))}
+                    {item.secondary_session_evidence.length > MAX_SECONDARY ? (
+                      <p className="text-xs" style={metaTextStyle()}>
+                        +{item.secondary_session_evidence.length - MAX_SECONDARY} más…
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </>
+        )}
       </div>
     </section>
   );

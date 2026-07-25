@@ -73,7 +73,8 @@ function buildTelegramTargetSummary(item) {
 function normalizeTelegramActivityItem(item) {
   const entryType = item?.entry_type || 'activity';
   const targetSummary = buildTelegramTargetSummary(item);
-  const primaryStatus = item?.delivery_status || item?.approval_status || item?.intent_status || null;
+  const primaryStatus =
+    item?.delivery_status || item?.approval_status || item?.intent_status || null;
   const detailParts = [];
 
   if (item?.audit_status) detailParts.push(`audit:${item.audit_status}`);
@@ -102,7 +103,12 @@ function getTelegramSnapshotBadges(status) {
     badges.push({
       key: 'approval',
       label: `approval: ${approvalStatus}`,
-      tone: approvalStatus === 'approved' ? 'success' : approvalStatus === 'rejected' ? 'danger' : 'warn',
+      tone:
+        approvalStatus === 'approved'
+          ? 'success'
+          : approvalStatus === 'rejected'
+            ? 'danger'
+            : 'warn',
     });
   }
 

@@ -16,7 +16,6 @@
  */
 
 import { getDb } from '@/lib/db/localDb.js';
-import { getLastDurableSequence } from '@/lib/operators/timelineStore.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,9 +67,7 @@ function buildTimelineSnapshot(scope, sinceSequence = 0) {
 
   const where = `WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(
-      `SELECT * FROM operator_timeline ${where} ORDER BY occurred_at ASC, sequence ASC`
-    )
+    .prepare(`SELECT * FROM operator_timeline ${where} ORDER BY occurred_at ASC, sequence ASC`)
     .all(...args);
 
   const items = rows.map((row) => {
@@ -123,10 +120,16 @@ export async function GET(request) {
     execution_id: searchParams.get('execution_id') || undefined,
     actor_id: searchParams.get('actor_id') || undefined,
     stage: searchParams.get('stage')
-      ? searchParams.get('stage').split(',').map((s) => s.trim())
+      ? searchParams
+          .get('stage')
+          .split(',')
+          .map((s) => s.trim())
       : undefined,
     status: searchParams.get('status')
-      ? searchParams.get('status').split(',').map((s) => s.trim())
+      ? searchParams
+          .get('status')
+          .split(',')
+          .map((s) => s.trim())
       : undefined,
   };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { canvasToViewport, viewportToCanvas } from '@/lib/pizarra/canvasViewport';
 
 const CanvasViewportContext = createContext(null);
@@ -15,7 +15,11 @@ export { DEFAULT_PAN, DEFAULT_ZOOM };
  * Uses a ResizeObserver on the canvas container to keep canvasRect in sync.
  * Exports: zoom, setZoom, pan, setPan, canvasRect, canvasToViewport, viewportToCanvas
  */
-export function CanvasViewportProvider({ children, canvasContainerRef, initialZoom = DEFAULT_ZOOM }) {
+export function CanvasViewportProvider({
+  children,
+  canvasContainerRef,
+  initialZoom = DEFAULT_ZOOM,
+}) {
   const [zoom, setZoom] = useState(initialZoom);
   const [pan, setPan] = useState(DEFAULT_PAN);
   const [canvasRect, setCanvasRect] = useState(null);
@@ -35,10 +39,7 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
     return () => observer.disconnect();
   }, [canvasContainerRef]);
 
-  const opts = useCallback(
-    () => ({ zoom, pan, canvasRect }),
-    [zoom, pan, canvasRect]
-  );
+  const opts = useCallback(() => ({ zoom, pan, canvasRect }), [zoom, pan, canvasRect]);
 
   const value = {
     zoom,
@@ -50,11 +51,7 @@ export function CanvasViewportProvider({ children, canvasContainerRef, initialZo
     viewportToCanvas: (vx, vy) => viewportToCanvas(vx, vy, opts()),
   };
 
-  return (
-    <CanvasViewportContext.Provider value={value}>
-      {children}
-    </CanvasViewportContext.Provider>
-  );
+  return <CanvasViewportContext.Provider value={value}>{children}</CanvasViewportContext.Provider>;
 }
 
 /**

@@ -2,7 +2,6 @@
 // Extracted from TerminalWorkspacesManager.jsx — no React dependencies.
 
 import {
-  SWARM_ROLE_META,
   inferSwarmRoleKey,
   buildSwarmRoleMetadata,
   normalizeRoleKey,

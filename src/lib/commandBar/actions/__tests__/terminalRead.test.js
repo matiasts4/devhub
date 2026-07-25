@@ -144,7 +144,9 @@ describe('terminalRead', () => {
       id: 'term-error',
       label: 'error',
     });
-    mockController.captureTerminal.mockRejectedValue(new Error('Failed to read terminal output: Not Found'));
+    mockController.captureTerminal.mockRejectedValue(
+      new Error('Failed to read terminal output: Not Found')
+    );
 
     const result = await terminalRead(intent, mockController);
 

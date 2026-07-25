@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Loader2,
   Activity,
@@ -10,8 +10,6 @@ import {
   Pencil,
   Eye,
   EyeOff,
-  Check,
-  X,
 } from 'lucide-react';
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────

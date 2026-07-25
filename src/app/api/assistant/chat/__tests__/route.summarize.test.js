@@ -59,7 +59,9 @@ describe('chat route — summarizeTerminal registration (T-105 / ZTT-005)', () =
   });
 
   test('summarize_terminal tool module is loadable and has oneOf-like schema', () => {
-    const { summarizeTerminalTool } = require('../../../../../lib/asistente/tools/summarizeTerminal');
+    const {
+      summarizeTerminalTool,
+    } = require('../../../../../lib/asistente/tools/summarizeTerminal');
     expect(summarizeTerminalTool).toBeDefined();
     expect(summarizeTerminalTool.name).toBe('summarize_terminal');
     // Input schema must accept `name` AND `terminalId` (oneOf-style).

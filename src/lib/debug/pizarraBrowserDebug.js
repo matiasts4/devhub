@@ -60,9 +60,7 @@ export function logPizarraBrowser(step, data = {}) {
   }
 
   try {
-    window.dispatchEvent(
-      new CustomEvent('devhub:pizarra-browser-debug', { detail: entry })
-    );
+    window.dispatchEvent(new CustomEvent('devhub:pizarra-browser-debug', { detail: entry }));
   } catch {
     // ignore
   }

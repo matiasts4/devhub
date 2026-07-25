@@ -86,8 +86,8 @@ describe('scheduleGrokWheelBootstrap', () => {
 
   test('exports multi-second delay schedule covering cold start', () => {
     expect(GROK_WHEEL_BOOTSTRAP_DELAYS_MS.length).toBeGreaterThanOrEqual(5);
-    expect(GROK_WHEEL_BOOTSTRAP_DELAYS_MS[GROK_WHEEL_BOOTSTRAP_DELAYS_MS.length - 1]).toBeGreaterThanOrEqual(
-      10000
-    );
+    expect(
+      GROK_WHEEL_BOOTSTRAP_DELAYS_MS[GROK_WHEEL_BOOTSTRAP_DELAYS_MS.length - 1]
+    ).toBeGreaterThanOrEqual(10000);
   });
 });

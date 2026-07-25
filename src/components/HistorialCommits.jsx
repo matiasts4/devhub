@@ -1,28 +1,68 @@
 'use client';
-import { GitCommit, GitBranch, CheckCircle2, Clock } from "lucide-react";
+import { GitCommit, GitBranch, CheckCircle2, Clock } from 'lucide-react';
 
 const commits = [
-  { hash: "a3f7b2c", message: "feat: implementar autenticación JWT con refresh tokens", author: "NEXUS-7", time: "12 min", status: "success", branch: "main" },
-  { hash: "9e1d4f8", message: "fix: corregir validación de formularios en checkout", author: "Dev Admin", time: "45 min", status: "success", branch: "fix/checkout" },
-  { hash: "c8a2e91", message: "refactor: optimizar queries de MongoDB", author: "NEXUS-3", time: "2h", status: "success", branch: "feature/db" },
-  { hash: "f5b3d7a", message: "chore: actualizar dependencias de seguridad", author: "Dev Admin", time: "3h", status: "pending", branch: "main" },
-  { hash: "2d9c6e4", message: "feat: agregar componente ProductCard con skeleton", author: "NEXUS-7", time: "5h", status: "success", branch: "feature/ui" },
+  {
+    hash: 'a3f7b2c',
+    message: 'feat: implementar autenticación JWT con refresh tokens',
+    author: 'NEXUS-7',
+    time: '12 min',
+    status: 'success',
+    branch: 'main',
+  },
+  {
+    hash: '9e1d4f8',
+    message: 'fix: corregir validación de formularios en checkout',
+    author: 'Dev Admin',
+    time: '45 min',
+    status: 'success',
+    branch: 'fix/checkout',
+  },
+  {
+    hash: 'c8a2e91',
+    message: 'refactor: optimizar queries de MongoDB',
+    author: 'NEXUS-3',
+    time: '2h',
+    status: 'success',
+    branch: 'feature/db',
+  },
+  {
+    hash: 'f5b3d7a',
+    message: 'chore: actualizar dependencias de seguridad',
+    author: 'Dev Admin',
+    time: '3h',
+    status: 'pending',
+    branch: 'main',
+  },
+  {
+    hash: '2d9c6e4',
+    message: 'feat: agregar componente ProductCard con skeleton',
+    author: 'NEXUS-7',
+    time: '5h',
+    status: 'success',
+    branch: 'feature/ui',
+  },
 ];
 
 const branchColors = {
-  main: "var(--success)",
-  "fix/checkout": "var(--accent-pink)",
-  "feature/db": "var(--accent-primary)",
-  "feature/ui": "var(--accent-purple)",
+  main: 'var(--success)',
+  'fix/checkout': 'var(--accent-pink)',
+  'feature/db': 'var(--accent-primary)',
+  'feature/ui': 'var(--accent-purple)',
 };
 
 export default function HistorialCommits() {
   return (
-    <div data-testid="historial-commits" className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden">
+    <div
+      data-testid="historial-commits"
+      className="bg-surface-card border border-borders-subtle rounded-xl overflow-hidden"
+    >
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-borders-subtle">
         <div className="flex items-center gap-2.5">
           <GitCommit className="w-3.5 h-3.5 text-danger" strokeWidth={1.5} />
-          <h3 className="font-mono text-sm font-semibold text-text-primary">Historial de Commits</h3>
+          <h3 className="font-mono text-sm font-semibold text-text-primary">
+            Historial de Commits
+          </h3>
         </div>
         <span className="text-xs text-text-muted">{commits.length} recientes</span>
       </div>
@@ -36,10 +76,15 @@ export default function HistorialCommits() {
             style={{ animationDelay: `${i * 40}ms` }}
           >
             <div className="flex-shrink-0 mt-0.5">
-              {commit.status === "success"
-                ? <CheckCircle2 className="w-3.5 h-3.5 text-success" strokeWidth={1.5} />
-                : <Clock className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} strokeWidth={1.5} />
-              }
+              {commit.status === 'success' ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-success" strokeWidth={1.5} />
+              ) : (
+                <Clock
+                  className="w-3.5 h-3.5"
+                  style={{ color: 'var(--accent-primary)' }}
+                  strokeWidth={1.5}
+                />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-text-primary truncate leading-snug">{commit.message}</p>
@@ -47,7 +92,10 @@ export default function HistorialCommits() {
                 <code className="text-[11px] font-mono text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-borders-strong">
                   {commit.hash}
                 </code>
-                <span className="flex items-center gap-1 text-[11px]" style={{ color: branchColors[commit.branch] || "var(--text-muted)" }}>
+                <span
+                  className="flex items-center gap-1 text-[11px]"
+                  style={{ color: branchColors[commit.branch] || 'var(--text-muted)' }}
+                >
                   <GitBranch className="w-2.5 h-2.5" strokeWidth={1.5} />
                   {commit.branch}
                 </span>

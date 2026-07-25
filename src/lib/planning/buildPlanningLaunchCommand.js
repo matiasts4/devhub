@@ -32,9 +32,7 @@ export function buildPlanningLaunchCommand(opts = {}) {
   const { projectId, agent = 'sdd-orchestrator' } = opts || {};
 
   if (typeof projectId !== 'string' || !UUID_V4_REGEX.test(projectId)) {
-    throw new TypeError(
-      `buildPlanningLaunchCommand: projectId is not a valid UUID: ${projectId}`
-    );
+    throw new TypeError(`buildPlanningLaunchCommand: projectId is not a valid UUID: ${projectId}`);
   }
 
   const prompt = buildPlanningLaunchPrompt(opts);

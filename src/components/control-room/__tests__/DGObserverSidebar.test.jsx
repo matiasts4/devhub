@@ -41,7 +41,10 @@ describe('DGObserverSidebar', () => {
 
   test('mounts with no active mission → empty state message', async () => {
     const dg = makeDGState();
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).toMatch(/Sin misión activa/i);
   });
@@ -50,12 +53,37 @@ describe('DGObserverSidebar', () => {
     const dg = makeDGState({
       activeMissionId: 'mission-123',
       timelineRows: [
-        { id: 'row-1', missionId: 'mission-123', timestamp: Date.now(), initiator: 'operator', target: 'swarm-director', action: 'mission-request', status: 'pending', authority: 'operator-initiated', freshness: 'just_now', fallback: '' },
-        { id: 'row-2', missionId: 'mission-123', timestamp: Date.now() + 1000, initiator: 'director-general', target: 'swarm-director', action: 'status-poll', status: 'in-progress', authority: 'operator-initiated', freshness: 'just_now', fallback: '' },
+        {
+          id: 'row-1',
+          missionId: 'mission-123',
+          timestamp: Date.now(),
+          initiator: 'operator',
+          target: 'swarm-director',
+          action: 'mission-request',
+          status: 'pending',
+          authority: 'operator-initiated',
+          freshness: 'just_now',
+          fallback: '',
+        },
+        {
+          id: 'row-2',
+          missionId: 'mission-123',
+          timestamp: Date.now() + 1000,
+          initiator: 'director-general',
+          target: 'swarm-director',
+          action: 'status-poll',
+          status: 'in-progress',
+          authority: 'operator-initiated',
+          freshness: 'just_now',
+          fallback: '',
+        },
       ],
       pollingState: 'polling',
     });
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).toMatch(/Director General/i);
     expect(html).toMatch(/Mission requested/i);
@@ -64,7 +92,10 @@ describe('DGObserverSidebar', () => {
 
   test('shows polling badge when pollingState=polling', async () => {
     const dg = makeDGState({ activeMissionId: 'm-1', pollingState: 'polling', timelineRows: [] });
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).toMatch(/in progress/i);
   });
@@ -75,7 +106,10 @@ describe('DGObserverSidebar', () => {
       error: 'El Director no está disponible.',
       timelineRows: [],
     });
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).toMatch(/El Director no está disponible/);
   });
@@ -84,12 +118,26 @@ describe('DGObserverSidebar', () => {
     const dg = makeDGState({
       activeMissionId: 'm-1',
       timelineRows: [
-        { id: 'row-1', missionId: 'm-1', timestamp: Date.now(), initiator: 'swarm-director', target: 'operator', action: 'approval-required', status: 'awaiting-approval', authority: 'operator', freshness: 'just_now', fallback: '' },
+        {
+          id: 'row-1',
+          missionId: 'm-1',
+          timestamp: Date.now(),
+          initiator: 'swarm-director',
+          target: 'operator',
+          action: 'approval-required',
+          status: 'awaiting-approval',
+          authority: 'operator',
+          freshness: 'just_now',
+          fallback: '',
+        },
       ],
       pollingState: 'polling',
       pendingApproval: { approvalItemId: 'appr-1', reason_class: 'approval_required' },
     });
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).toMatch(/El Director requiere aprobación/i);
     expect(html).toMatch(/Aprobar/i);
@@ -100,10 +148,24 @@ describe('DGObserverSidebar', () => {
     const dg = makeDGState({
       activeMissionId: 'm-1',
       timelineRows: [
-        { id: 'row-1', missionId: 'm-1', timestamp: Date.now(), initiator: 'director-general', target: 'swarm-director', action: 'mission-result', status: 'failed', authority: 'operator-initiated', freshness: 'just_now', fallback: 'Contactá al supervisor directo.' },
+        {
+          id: 'row-1',
+          missionId: 'm-1',
+          timestamp: Date.now(),
+          initiator: 'director-general',
+          target: 'swarm-director',
+          action: 'mission-result',
+          status: 'failed',
+          authority: 'operator-initiated',
+          freshness: 'just_now',
+          fallback: 'Contactá al supervisor directo.',
+        },
       ],
     });
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).toMatch(/Contactá al supervisor directo/);
   });
@@ -112,10 +174,24 @@ describe('DGObserverSidebar', () => {
     const dg = makeDGState({
       activeMissionId: 'm-1',
       timelineRows: [
-        { id: 'row-1', missionId: 'm-1', timestamp: Date.now(), initiator: 'swarm-director', target: 'operator', action: 'mission-result', status: 'completed', authority: 'director', freshness: 'just_now', fallback: '' },
+        {
+          id: 'row-1',
+          missionId: 'm-1',
+          timestamp: Date.now(),
+          initiator: 'swarm-director',
+          target: 'operator',
+          action: 'mission-result',
+          status: 'completed',
+          authority: 'director',
+          freshness: 'just_now',
+          fallback: '',
+        },
       ],
     });
-    const { container } = await renderIntoDom(React.createElement(DGObserverSidebar, dg), mountedRoots);
+    const { container } = await renderIntoDom(
+      React.createElement(DGObserverSidebar, dg),
+      mountedRoots
+    );
     const html = container.innerHTML;
     expect(html).not.toMatch(/Contactá al supervisor directo/);
   });

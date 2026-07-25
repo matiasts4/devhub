@@ -1,7 +1,7 @@
 'use client';
 
-import { Plug } from 'lucide-react';
 import { ProviderCardShell } from '@/components/settings/shared/ProviderCardShell';
+import { Plug } from 'lucide-react';
 
 export function DirectProvider({ providerData, onToggle, onUpdate }) {
   const isEnabled = providerData?.enabled ?? true;

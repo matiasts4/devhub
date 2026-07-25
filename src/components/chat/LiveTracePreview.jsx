@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Terminal, Loader2, CheckCircle2, XCircle, Eye } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 // ─── Tool Icon Helper ─────────────────────────────────────────────────────────
 

@@ -1,4 +1,3 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Loader2,
   XCircle,
@@ -17,6 +16,7 @@ import OutputViewerModal from './OutputViewerModal';
 import ContextToolGroup from './ContextToolGroup';
 import BashToolCard from './BashToolCard';
 import ToolErrorCard from './ToolErrorCard';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 
 // ─── Error Boundary ───────────────────────────────────────────────────────────
 class TraceErrorBoundary extends React.Component {

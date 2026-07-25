@@ -38,7 +38,9 @@ export class PresenceNotifier {
 
     const prev = this.agentRegistry.get(agentId);
     const prevState = prev ? prev.state : PRESENCE_STATES.OFFLINE;
-    const lastSeenAt = options.lastSeenAt || (options.preserveLastSeen && prev?.lastSeenAt ? prev.lastSeenAt : Date.now());
+    const lastSeenAt =
+      options.lastSeenAt ||
+      (options.preserveLastSeen && prev?.lastSeenAt ? prev.lastSeenAt : Date.now());
 
     const currentRecord = {
       agentId,
@@ -77,9 +79,21 @@ export class PresenceNotifier {
         const elapsed = now - record.lastSeenAt;
 
         if (elapsed >= this.failedTimeoutMs && record.state !== PRESENCE_STATES.FAILED) {
-          this.updatePresence(agentId, PRESENCE_STATES.FAILED, 'Timeout de latido excedido (>60s)', {}, { preserveLastSeen: true });
+          this.updatePresence(
+            agentId,
+            PRESENCE_STATES.FAILED,
+            'Timeout de latido excedido (>60s)',
+            {},
+            { preserveLastSeen: true }
+          );
         } else if (elapsed >= this.stalledTimeoutMs && record.state === PRESENCE_STATES.RUNNING) {
-          this.updatePresence(agentId, PRESENCE_STATES.BLOCKED, 'Sin latido reciente (>30s)', {}, { preserveLastSeen: true });
+          this.updatePresence(
+            agentId,
+            PRESENCE_STATES.BLOCKED,
+            'Sin latido reciente (>30s)',
+            {},
+            { preserveLastSeen: true }
+          );
         }
       }
     }

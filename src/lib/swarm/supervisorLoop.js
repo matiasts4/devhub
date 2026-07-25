@@ -1,5 +1,3 @@
-/* global module */
-
 const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'aborted', 'superseded']);
 const ACTIVE_WORKSPACE_STATUSES = new Set(['ready', 'active', 'paused']);
 const RECOVERABLE_FAILURE_REASON = 'recoverable_failure';

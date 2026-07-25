@@ -128,10 +128,7 @@ test('buildExitTrapCommand emits a shell trap that calls devhub-bus event-write'
   // bash guard: only emit when the mission/agent identity is set
   assert.ok(cmd.includes('DEVHUB_MISSION_ID'), 'must reference DEVHUB_MISSION_ID');
   assert.ok(cmd.includes('DEVHUB_AGENT_ID'), 'must reference DEVHUB_AGENT_ID');
-  assert.ok(
-    cmd.includes('2>/dev/null || true'),
-    'must not block process exit on bus failure'
-  );
+  assert.ok(cmd.includes('2>/dev/null || true'), 'must not block process exit on bus failure');
 });
 
 test('buildExitTrapCommand does NOT use curl / openssl / hmac (retired path)', () => {
@@ -165,10 +162,7 @@ test('buildExitTrapCommand payload includes role and ISO timestamp', () => {
   // Role is sourced from the wrapper-exported DEVHUB_ROLE env var.
   assert.ok(cmd.includes('DEVHUB_ROLE'), 'payload must include the agent role');
   // ISO 8601 UTC timestamp via `date -u +%Y-%m-%dT%H:%M:%SZ`
-  assert.ok(
-    cmd.includes('date -u +%Y-%m-%dT%H:%M:%SZ'),
-    'payload timestamp must be ISO 8601 UTC'
-  );
+  assert.ok(cmd.includes('date -u +%Y-%m-%dT%H:%M:%SZ'), 'payload timestamp must be ISO 8601 UTC');
 });
 
 test('buildExitTrapCommand works even when supervisorUrl is null (no longer required)', () => {

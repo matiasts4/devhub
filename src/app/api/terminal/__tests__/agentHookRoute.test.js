@@ -1,5 +1,8 @@
 import { POST as handleHookPost } from '../agent-hook/route.js';
-import { GET as handleInstallerGet, POST as handleInstallerPost } from '../agent-hooks/installer/route.js';
+import {
+  GET as handleInstallerGet,
+  POST as handleInstallerPost,
+} from '../agent-hooks/installer/route.js';
 import { getOrInitSessions } from '@/lib/terminal/ttyServer';
 import { AgentStateMachine } from '@/lib/terminal/agentTuiMetadata.shared';
 
@@ -88,11 +91,14 @@ describe('Next.js Terminal API Routes — Agent Hooks & Installer', () => {
       const getRes = await handleInstallerGet(request);
       expect(getRes.status).toBe(403);
 
-      const postRequest = new Request('http://external-host.com/api/terminal/agent-hooks/installer', {
-        method: 'POST',
-        headers: { host: 'external-host.com' },
-        body: JSON.stringify({ agent: 'kimi', action: 'install' }),
-      });
+      const postRequest = new Request(
+        'http://external-host.com/api/terminal/agent-hooks/installer',
+        {
+          method: 'POST',
+          headers: { host: 'external-host.com' },
+          body: JSON.stringify({ agent: 'kimi', action: 'install' }),
+        }
+      );
 
       const postRes = await handleInstallerPost(postRequest);
       expect(postRes.status).toBe(403);

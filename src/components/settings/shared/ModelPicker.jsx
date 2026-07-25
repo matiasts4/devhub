@@ -1,12 +1,4 @@
-import React from 'react';
-
-export function ModelPicker({
-  value = '',
-  options = [],
-  loading = false,
-  onRefresh,
-  onChange,
-}) {
+export function ModelPicker({ value = '', options = [], loading = false, onRefresh, onChange }) {
   const safeOptions = Array.isArray(options) ? options : [];
 
   return (

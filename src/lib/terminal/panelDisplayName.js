@@ -64,10 +64,7 @@ function loadFromStorage(workspaceId) {
 function writeToStorage(workspaceId, map) {
   if (!hasLocalStorage()) return;
   try {
-    writeLocalStorage(
-      panelDisplayNameStorageKey(workspaceId),
-      JSON.stringify(map)
-    );
+    writeLocalStorage(panelDisplayNameStorageKey(workspaceId), JSON.stringify(map));
   } catch {
     // Best-effort — quota / private-mode failures are swallowed.
   }
@@ -166,8 +163,7 @@ function nextDisplayNameForPanel(workspaceId, extraUsed = []) {
  * @returns {string}
  */
 function resolvePanelSurfaceLabel(panel, workspaceId) {
-  const fromStore =
-    typeof panel?.id === 'string' ? getDisplayName(panel.id, workspaceId) : null;
+  const fromStore = typeof panel?.id === 'string' ? getDisplayName(panel.id, workspaceId) : null;
   const displayName = panel?.displayName || fromStore;
   if (typeof displayName === 'string' && displayName.length > 0) return displayName;
   if (typeof panel?.id === 'string' && panel.id.length > 0) return `Terminal ${panel.id}`;

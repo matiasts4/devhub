@@ -68,7 +68,10 @@ export function resolveWorkspaceSetupSection(element, root) {
   return null;
 }
 
-export function shouldAdjustTerminalCountFromKeyboard(event, { activeSection, activeElement, modalRoot }) {
+export function shouldAdjustTerminalCountFromKeyboard(
+  event,
+  { activeSection, activeElement, modalRoot }
+) {
   if (!modalRoot || !activeElement) return false;
   if (!modalRoot.contains(activeElement)) return false;
   if (activeSection !== 'terminals') return false;
@@ -94,7 +97,10 @@ export function resolveCommandPresetArrowDelta(event) {
   return 0;
 }
 
-export function shouldNavigateCommandPresetsFromKeyboard(event, { activeSection, activeElement, modalRoot }) {
+export function shouldNavigateCommandPresetsFromKeyboard(
+  event,
+  { activeSection, activeElement, modalRoot }
+) {
   if (!modalRoot || !activeElement) return false;
   if (!modalRoot.contains(activeElement)) return false;
   if (activeSection !== 'commandPresets') return false;

@@ -5,7 +5,6 @@
  * Renders a textarea that becomes editable on click/double-click.
  * Uses contentEditable-style logic via textarea state.
  */
-import { useState, useRef, useCallback } from 'react';
 
 const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_COLOR = '#ffffff';

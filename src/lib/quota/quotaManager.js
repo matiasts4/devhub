@@ -1,7 +1,4 @@
-import {
-  QUOTA_PREFERENCES_EVENT,
-  readQuotaPreferences,
-} from './quotaPreferences.js';
+import { QUOTA_PREFERENCES_EVENT, readQuotaPreferences } from './quotaPreferences.js';
 
 class QuotaManager {
   constructor() {

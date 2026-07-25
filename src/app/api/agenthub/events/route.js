@@ -66,7 +66,6 @@ export const POST = withAuth(async function POST() {
 // Keep the original POST body below for reference; it is now unreachable.
 // The original handler from before T-007 is preserved as legacy code for
 // the internal supervisor adapter (which calls emitAgentEvent directly, not via HTTP).
-// eslint-disable-next-line no-unused-vars
 async function _legacyPOST_REMOVED(request) {
   try {
     const body = await request.json();

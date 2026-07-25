@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Clock, Info } from 'lucide-react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 
 // ─── Agent Type Colors ────────────────────────────────────────────────────────
 
@@ -195,7 +195,11 @@ function TimeAxis({ timeRange, totalWidth }) {
 
 // ─── SwarmTimeline ────────────────────────────────────────────────────────────
 
-export default function SwarmTimeline({ sessions = [], tracesBySession = {}, onSessionClick }) {
+export default function SwarmTimeline({
+  sessions = [],
+  _tracesBySession = {},
+  onSessionClick: _onSessionClick,
+}) {
   const [tooltip, setTooltip] = useState({ visible: false, session: null, x: 0, y: 0 });
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(800);

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   readZedOverlaySettings,

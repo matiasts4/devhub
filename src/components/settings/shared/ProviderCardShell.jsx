@@ -1,5 +1,3 @@
-import React from 'react';
-
 export function ProviderCardShell({
   name,
   description,
@@ -10,10 +8,7 @@ export function ProviderCardShell({
   children = null,
 }) {
   return (
-    <section
-      data-testid="provider-card"
-      style={{ opacity: isEnabled ? '1' : '0.6' }}
-    >
+    <section data-testid="provider-card" style={{ opacity: isEnabled ? '1' : '0.6' }}>
       <div>
         <h3>{name}</h3>
         <p>{description}</p>

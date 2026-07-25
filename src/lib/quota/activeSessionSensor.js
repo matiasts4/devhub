@@ -17,7 +17,12 @@ export function detectProviderFromSession(commandOrTitle) {
   if (lower.includes('kimi') || lower.includes('moonshot')) return PROVIDERS.KIMI;
   if (lower.includes('opencode')) return PROVIDERS.OPENCODE;
   if (lower.includes('codex') || lower.includes('openai')) return PROVIDERS.CODEX;
-  if (lower.includes('z.ai') || lower.includes('zai') || lower.includes('glm') || lower.includes('zhipu'))
+  if (
+    lower.includes('z.ai') ||
+    lower.includes('zai') ||
+    lower.includes('glm') ||
+    lower.includes('zhipu')
+  )
     return PROVIDERS.ZAI;
 
   return null; // unknown session — let the caller decide (user order wins)

@@ -21,7 +21,7 @@ const ACTION_TOOL_MAP = {
   obs_session_list: 'devhub_list_sessions',
   obs_agent_state: 'devhub_get_agent_state',
   obs_swarm_status: 'devhub_get_swarm_status',
-  nav_terminal: null,        // UI-only — handled by React/Tauri
+  nav_terminal: null, // UI-only — handled by React/Tauri
   nav_editor: null,
   nav_dock: null,
   nav_browser: null,
@@ -160,7 +160,14 @@ async function dispatchFromAdapter(opts) {
   }
 
   // Use adapter-boundary executeAction for the MCP tool call
-  return executeAction({ action_id, params, target: null, actor_role, actor_session_id: 'adapter', confirmation: null });
+  return executeAction({
+    action_id,
+    params,
+    target: null,
+    actor_role,
+    actor_session_id: 'adapter',
+    confirmation: null,
+  });
 }
 
 module.exports = {

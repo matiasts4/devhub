@@ -102,7 +102,9 @@ describe('terminalSessionFlush', () => {
           columns: [
             {
               id: 'c1',
-              panels: [{ id: 'p1', cwd: '/x', initialCommand: 'opencode --session a', swarmRole: 'x' }],
+              panels: [
+                { id: 'p1', cwd: '/x', initialCommand: 'opencode --session a', swarmRole: 'x' },
+              ],
             },
           ],
         },

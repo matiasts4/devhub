@@ -1,9 +1,6 @@
 'use client';
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -13,13 +10,16 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
-import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
-import { InlineCode, BlockCode } from '@/components/chat/CodeBlock';
 import LatexDocumentPreview from './LatexDocumentPreview';
 import { FileExplorer } from './explorer/FileExplorer';
 import { SourceControlPanel } from './explorer/SourceControlPanel';
 import { CodeFileView } from './explorer/CodeFileView';
 import { GitDiffView } from './explorer/GitDiffView';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
+import { InlineCode, BlockCode } from '@/components/chat/CodeBlock';
 import { isCodeDiffablePath } from './explorer/codeLanguages';
 import {
   DEFAULT_EDITOR_PANE_CONTENT,

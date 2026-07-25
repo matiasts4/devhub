@@ -33,8 +33,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 120));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 120));
       stop();
 
       expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
@@ -47,8 +51,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 120));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 120));
       stop();
 
       expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
@@ -61,8 +69,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 120));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 120));
       stop();
 
       expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'rejected' }));
@@ -86,8 +98,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 30, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 600));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 30, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 600));
       stop();
 
       // Should have initial poll + 3 retries = 4 total calls
@@ -106,8 +122,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 20, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 400));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 20, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 400));
       stop();
 
       expect(onFailure).toHaveBeenCalled();
@@ -127,8 +147,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 200));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 200));
       stop();
 
       expect(mockFetch.mock.calls.length).toBeLessThanOrEqual(2);
@@ -146,8 +170,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 200));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 200));
       stop();
 
       expect(mockFetch.mock.calls.length).toBeLessThanOrEqual(2);
@@ -162,12 +190,18 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 150));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 150));
       stop();
 
       // Should call onFailure immediately, no subsequent polls
-      expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ status: 'director-offline' }));
+      expect(onFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'director-offline' })
+      );
       expect(mockFetch.mock.calls.length).toBeLessThanOrEqual(2);
     });
   });
@@ -181,7 +215,11 @@ describe('DG polling loop', () => {
         if (callCount === 1) {
           return Promise.resolve({
             ok: true,
-            json: async () => okResponse({ status: 'approval-required', approvalCheckpoint: { reason_class: 'approval_required' } }),
+            json: async () =>
+              okResponse({
+                status: 'approval-required',
+                approvalCheckpoint: { reason_class: 'approval_required' },
+              }),
           });
         }
         return Promise.resolve({
@@ -193,12 +231,18 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 200));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 200));
       stop();
 
       // First call: approval-required (not terminal), second call: completed (terminal)
-      expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'approval-required' }));
+      expect(onStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'approval-required' })
+      );
       expect(onStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
       expect(onFailure).not.toHaveBeenCalled();
     });
@@ -219,13 +263,17 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 80));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 80));
       stop();
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
 
       const callsAfterStop = callCount;
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 200));
 
       // No new calls after stop
       expect(callCount).toBe(callsAfterStop);
@@ -249,8 +297,12 @@ describe('DG polling loop', () => {
       const onStatus = jest.fn();
       const onFailure = jest.fn();
 
-      const { stop } = startPolling('mission-1', { pollIntervalMs: 50, fetchImpl: mockFetch }, { onStatus, onFailure });
-      await new Promise(r => setTimeout(r, 250));
+      const { stop } = startPolling(
+        'mission-1',
+        { pollIntervalMs: 50, fetchImpl: mockFetch },
+        { onStatus, onFailure }
+      );
+      await new Promise((r) => setTimeout(r, 250));
       stop();
 
       // Check intervals between calls are ~50ms (not doubling)

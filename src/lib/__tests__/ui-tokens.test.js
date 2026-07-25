@@ -3,7 +3,15 @@ const { TYPOGRAPHY_SCALE, typographyClass } = require('../ui-tokens');
 describe('ui-tokens — typography scale', () => {
   test('TYPOGRAPHY_SCALE has 7 entries', () => {
     expect(Object.keys(TYPOGRAPHY_SCALE)).toEqual(
-      expect.arrayContaining(['caption-xs', 'caption-sm', 'caption-md', 'label', 'body', 'title', 'display'])
+      expect.arrayContaining([
+        'caption-xs',
+        'caption-sm',
+        'caption-md',
+        'label',
+        'body',
+        'title',
+        'display',
+      ])
     );
     expect(Object.keys(TYPOGRAPHY_SCALE)).toHaveLength(7);
   });

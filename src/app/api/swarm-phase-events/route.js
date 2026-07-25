@@ -12,11 +12,7 @@ import { withAuth } from '@/lib/swarm/withAuth.js';
 // SSE event types for phase tracking
 // ---------------------------------------------------------------------------
 
-const PHASE_EVENT_TYPES = [
-  'phase_transition',
-  'agent_status',
-  'artifact_saved',
-];
+const PHASE_EVENT_TYPES = ['phase_transition', 'agent_status', 'artifact_saved'];
 
 // ---------------------------------------------------------------------------
 // SSE clients registry (in-memory)

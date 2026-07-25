@@ -176,9 +176,7 @@ describe('ContextManager', () => {
     });
 
     test('truncates long artifact content', () => {
-      const longArtifacts = [
-        { kind: 'proposal', title: 'Long', content: 'x'.repeat(1000) },
-      ];
+      const longArtifacts = [{ kind: 'proposal', title: 'Long', content: 'x'.repeat(1000) }];
       const result = produceSummaryHandoff(longArtifacts);
       expect(result.tokens).toBeLessThan(400);
     });

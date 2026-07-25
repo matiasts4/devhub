@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
 import { X, Trash2, Cpu, HardDrive, Activity } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';

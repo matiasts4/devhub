@@ -1,5 +1,3 @@
-/* global window, document */
-
 const React = require('react');
 const useAgentRegistryPolling = require('./useAgentRegistryPolling').default;
 const {
@@ -326,7 +324,7 @@ describe('useAgentRegistryPolling', () => {
   });
 
   test('does not auto-demote stale heartbeat agents when live terminal evidence exists', async () => {
-    const staleHeartbeat = new Date(Date.now() - (95 * 1000)).toISOString();
+    const staleHeartbeat = new Date(Date.now() - 95 * 1000).toISOString();
 
     mockDbChain.order.mockImplementation(() =>
       Promise.resolve({

@@ -1,9 +1,9 @@
 /**
  * useCommandBar hook — keyboard shortcut and state management for CommandBar.
- * 
+ *
  * Registers Cmd+Shift+K (or Ctrl+Shift+K) global shortcut to toggle CommandBar.
  * Respects feature flag — returns disabled state if flag is off.
- * 
+ *
  * @module commandBar/useCommandBar
  */
 
@@ -14,7 +14,7 @@ import { isCommandBarEnabled } from './featureFlag';
 
 /**
  * Hook to manage CommandBar open/close state and keyboard shortcut.
- * 
+ *
  * @returns {{isOpen: boolean, open: () => void, close: () => void, toggle: () => void}}
  */
 export function useCommandBar() {

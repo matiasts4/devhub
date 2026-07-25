@@ -153,8 +153,7 @@ export function shouldHandleTerminalNavigationShortcut(
   if (shouldBlockShortcutForEditableFocus(activeElement)) return false;
 
   const focusInRoot = isContainedByRoot(rootElement, activeElement);
-  const eventTarget =
-    event?.target && typeof event.target === 'object' ? event.target : null;
+  const eventTarget = event?.target && typeof event.target === 'object' ? event.target : null;
   const targetInRoot = isContainedByRoot(rootElement, eventTarget);
   const ambientTerminalFocus = isTerminalPageAmbientFocus(activeElement);
 
@@ -171,8 +170,7 @@ export function shouldHandleTerminalWorkspaceShortcut(
   if (shouldBlockShortcutForEditableFocus(activeElement)) return false;
 
   const focusInRoot = isContainedByRoot(rootElement, activeElement);
-  const eventTarget =
-    event?.target && typeof event.target === 'object' ? event.target : null;
+  const eventTarget = event?.target && typeof event.target === 'object' ? event.target : null;
   const targetInRoot = isContainedByRoot(rootElement, eventTarget);
   const ambientTerminalFocus = isTerminalPageAmbientFocus(activeElement);
 
@@ -189,8 +187,7 @@ export function shouldHandleTerminalFocusShortcut(
   if (shouldBlockShortcutForEditableFocus(activeElement)) return false;
 
   const focusInRoot = isContainedByRoot(rootElement, activeElement);
-  const eventTarget =
-    event?.target && typeof event.target === 'object' ? event.target : null;
+  const eventTarget = event?.target && typeof event.target === 'object' ? event.target : null;
   const targetInRoot = isContainedByRoot(rootElement, eventTarget);
   const ambientTerminalFocus = isTerminalPageAmbientFocus(activeElement);
 

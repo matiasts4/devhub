@@ -12,7 +12,10 @@ function resolveRootPath(inputPath) {
     return projectRootAbs;
   }
 
-  const resolved = path.resolve(/*turbopackIgnore: true*/ projectRoot, /*turbopackIgnore: true*/ inputPath);
+  const resolved = path.resolve(
+    /*turbopackIgnore: true*/ projectRoot,
+    /*turbopackIgnore: true*/ inputPath
+  );
   if (!resolved.startsWith(projectRootAbs)) {
     throw new Error('Invalid root path outside project directory');
   }
@@ -27,7 +30,7 @@ export async function GET(request) {
         ok: false,
         error: 'API route not available in static export build.',
       },
-      { status: 501 },
+      { status: 501 }
     );
   }
 
@@ -47,7 +50,7 @@ export async function GET(request) {
         ok: false,
         error: error.message || 'Failed to initialize realtime server',
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

@@ -39,6 +39,9 @@ export const POST = withAuth(async function POST(request, context) {
     return NextResponse.json({ row }, { status: 201 });
   } catch (error) {
     const status = error.message.includes('no es válido') ? 400 : 500;
-    return NextResponse.json({ error: error.message || 'Error al escribir timeline row.' }, { status });
+    return NextResponse.json(
+      { error: error.message || 'Error al escribir timeline row.' },
+      { status }
+    );
   }
 });

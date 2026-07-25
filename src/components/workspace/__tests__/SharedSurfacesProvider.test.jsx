@@ -49,7 +49,10 @@
  */
 
 const React = require('react');
-const { installDom, cleanupMountedRoots } = require('@/test-support/domHarness');
+const {
+  installDom,
+  cleanupMountedRoots: _cleanupMountedRoots,
+} = require('@/test-support/domHarness');
 const { fireEvent, act } = require('@testing-library/react');
 
 const {
@@ -70,7 +73,7 @@ afterEach(() => {
   if (dom && dom.window && dom.window.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }
@@ -106,7 +109,7 @@ function HiddenSurfaceMount({ surfaceId, content }) {
 
 describe('SharedSurfacesProvider — surface registry contract', () => {
   test('registerSurface increments the refcount; release decrements without disposing on keepAlive', () => {
-    const { container, root } = makeRoot();
+    const { container: _container, root } = makeRoot();
 
     let registry;
     function Setup() {
@@ -154,7 +157,7 @@ describe('SharedSurfacesProvider — surface registry contract', () => {
   });
 
   test('releaseSurface(id, { keepAlive: false }) hard-destroys the surface even if refcount > 0', () => {
-    const { container, root } = makeRoot();
+    const { container: _container, root } = makeRoot();
 
     let registry;
     let onDestroy = jest.fn();
@@ -189,7 +192,7 @@ describe('SharedSurfacesProvider — surface registry contract', () => {
   });
 
   test('setActiveSurfaceId updates the shared active pointer; consumers observe it', () => {
-    const { container, root } = makeRoot();
+    const { container: _container, root } = makeRoot();
 
     function ActiveConsumer() {
       const active = useActiveSurfaceId();
@@ -228,7 +231,7 @@ describe('SharedSurfacesProvider — surface registry contract', () => {
 
 describe('SurfacePortal — portal host targeting', () => {
   test('a single host pointing at a registered surface projects the hidden content into the host', () => {
-    const { container, root } = makeRoot();
+    const { container: _container, root } = makeRoot();
 
     function App() {
       return React.createElement(
@@ -270,7 +273,7 @@ describe('SurfacePortal — portal host targeting', () => {
   });
 
   test('two hosts pointing at the same surfaceId render the same content in exactly one host', () => {
-    const { container, root } = makeRoot();
+    const { container: _container, root } = makeRoot();
 
     function App() {
       return React.createElement(
@@ -315,7 +318,7 @@ describe('SurfacePortal — portal host targeting', () => {
   });
 
   test('portal with no registered surface content renders nothing in any host', () => {
-    const { container, root } = makeRoot();
+    const { container: _container, root } = makeRoot();
 
     function App() {
       return React.createElement(
@@ -369,10 +372,7 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
       );
     }
 
-    renderInto(
-      root,
-      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
-    );
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
 
     const hostWorkspace = document.querySelector(
       '[data-testid="surface-portal-host-workspace-dock-term-1"]'
@@ -393,9 +393,9 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
     });
 
     expect(registry.getPreferredHostForSurface('term-1')).toBe('workspace-dock');
-    expect(
-      hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))
-    ).toBe(true);
+    expect(hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      true
+    );
     expect(hostPizarra.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
       false
     );
@@ -428,10 +428,7 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
       );
     }
 
-    renderInto(
-      root,
-      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
-    );
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
 
     const hostPizarra = document.querySelector(
       '[data-testid="surface-portal-host-pizarra-canvas-term-1"]'
@@ -471,10 +468,7 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
       );
     }
 
-    renderInto(
-      root,
-      React.createElement(SharedSurfacesProvider, null, React.createElement(Setup))
-    );
+    renderInto(root, React.createElement(SharedSurfacesProvider, null, React.createElement(Setup)));
 
     const hostWorkspace = document.querySelector(
       '[data-testid="surface-portal-host-workspace-dock-term-1"]'
@@ -485,9 +479,9 @@ describe('SharedSurfacesProvider — preferred host arbitration', () => {
     });
 
     expect(registry.getPreferredHostForSurface('term-1')).toBe('pizarra-canvas');
-    expect(
-      hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))
-    ).toBe(false);
+    expect(hostWorkspace.contains(document.querySelector('[data-testid="surface-content"]'))).toBe(
+      false
+    );
     expect(document.querySelector('[data-testid="surface-hidden-mount-term-1"]')).not.toBeNull();
   });
 });

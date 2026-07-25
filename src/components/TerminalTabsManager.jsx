@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, ChevronDown, TerminalSquare } from 'lucide-react';
+import TerminalTTY from './TerminalTTY';
+import { useState, useRef, useEffect } from 'react';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition } from '@/components/ui/system/motion-tokens';
-import TerminalTTY from './TerminalTTY';
 
 /**
  * Pure function: returns display label for a tab.

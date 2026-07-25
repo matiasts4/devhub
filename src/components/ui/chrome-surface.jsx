@@ -2,13 +2,15 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-export function chromeSurfaceStyle({ surface = 'panel', emphasized = false, tone = 'neutral' } = {}) {
+export function chromeSurfaceStyle({
+  surface = 'panel',
+  emphasized = false,
+  tone = 'neutral',
+} = {}) {
   if (surface === 'pill') {
     return {
       background:
-        tone === 'accent'
-          ? 'var(--chrome-panel-fill-emphasis)'
-          : 'var(--chrome-control-fill)',
+        tone === 'accent' ? 'var(--chrome-panel-fill-emphasis)' : 'var(--chrome-control-fill)',
       borderColor:
         tone === 'accent'
           ? 'color-mix(in srgb, var(--accent-primary) 24%, var(--chrome-border-color))'
@@ -30,7 +32,20 @@ export function chromeSurfaceStyle({ surface = 'panel', emphasized = false, tone
 }
 
 export const ChromeSurface = React.forwardRef(
-  ({ asChild = false, as: Comp = 'div', className, surface = 'panel', emphasized = false, tone = 'neutral', children, style, ...props }, ref) => {
+  (
+    {
+      asChild = false,
+      as: Comp = 'div',
+      className,
+      surface = 'panel',
+      emphasized = false,
+      tone = 'neutral',
+      children,
+      style,
+      ...props
+    },
+    ref
+  ) => {
     const Element = asChild ? React.Fragment : Comp;
 
     if (asChild) {

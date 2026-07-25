@@ -6,18 +6,11 @@
  * Blocks interaction while the exit animation plays.
  */
 
-import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
 import { TRANSITION, VARIANTS_FADE } from '../system/motion-tokens';
 
-export function PresenceGate({
-  open,
-  children,
-  className,
-  style,
-  transition,
-  onExitComplete,
-}) {
+export function PresenceGate({ open, children, className, style, transition, onExitComplete }) {
   const [isAnimating, setIsAnimating] = useState(false);
   const resolvedTransition = transition ?? TRANSITION.base;
 

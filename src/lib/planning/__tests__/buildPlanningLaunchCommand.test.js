@@ -77,10 +77,7 @@ test('buildPlanningLaunchCommand: throws on empty projectId', () => {
 });
 
 test('buildPlanningLaunchCommand: throws on undefined projectId', () => {
-  assert.throws(
-    () => buildPlanningLaunchCommand({ ...baseOpts, projectId: undefined }),
-    TypeError
-  );
+  assert.throws(() => buildPlanningLaunchCommand({ ...baseOpts, projectId: undefined }), TypeError);
 });
 
 test('buildPlanningLaunchCommand: throws on non-UUID v4 (UUID v1 shape)', () => {

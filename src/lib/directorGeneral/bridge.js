@@ -126,7 +126,9 @@ async function postApprovalReply(missionId, approvalItemId, decision, config = {
 
   if (response.status === 409) {
     const body = await response.json().catch(() => ({}));
-    const error = new Error(body.error || 'La aprobación expiró. Volvé a intentar desde el Director.');
+    const error = new Error(
+      body.error || 'La aprobación expiró. Volvé a intentar desde el Director.'
+    );
     error.code = 'APPROVAL_EXPIRED';
     error.status = 409;
     throw error;

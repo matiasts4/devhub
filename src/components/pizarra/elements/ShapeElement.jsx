@@ -57,16 +57,17 @@ export default function ShapeElement({ element, width, height }) {
     const h2 = Math.max(h, 1);
 
     // SVG arrow pointing right-down
-    const arrowHead = type === ELEMENT_TYPES.ARROW ? (
-      <polyline
-        points={`${w2},${h2} ${w2 - 8},${h2} ${w2},${h2 - 8}`}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ) : null;
+    const arrowHead =
+      type === ELEMENT_TYPES.ARROW ? (
+        <polyline
+          points={`${w2},${h2} ${w2 - 8},${h2} ${w2},${h2 - 8}`}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : null;
 
     return (
       <svg

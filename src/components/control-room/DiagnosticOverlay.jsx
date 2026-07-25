@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   StatusPill,
   formatEvidence,
@@ -72,7 +71,9 @@ function buildRuntimeSummaryLines(record = {}) {
 }
 
 function formatRuntimeMetricLabel(label = '') {
-  const normalized = String(label || '').trim().toLowerCase();
+  const normalized = String(label || '')
+    .trim()
+    .toLowerCase();
   if (normalized === 'blocked') return 'bloqueada';
   if (normalized === 'ok') return 'ok';
   return label;
@@ -157,11 +158,7 @@ function RuntimeEvidenceActions({ refs = [] }) {
 
 export default function DiagnosticOverlay({ diagnostics = {}, expanded = true, onToggle }) {
   return (
-    <section
-      className="border p-4"
-      style={panelShellStyle()}
-      aria-label="Overlay diagnóstico"
-    >
+    <section className="border p-4" style={panelShellStyle()} aria-label="Overlay diagnóstico">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Overlay diagnóstico</h2>

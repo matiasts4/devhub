@@ -1,14 +1,5 @@
 import { useState } from 'react';
-import {
-  ChevronDown,
-  Terminal,
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  Copy,
-  Check,
-  Database,
-} from 'lucide-react';
+import { ChevronDown, AlertTriangle, Info, Copy, Check, Database } from 'lucide-react';
 import { detectMcpOutput } from './utils/detectMcpOutput';
 
 // Configuración por tipo
@@ -64,7 +55,11 @@ function TerminalContent({ content }) {
         }}
         title="Copiar"
       >
-        {copied ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+        {copied ? (
+          <Check className="w-2.5 h-2.5 text-emerald-400" />
+        ) : (
+          <Copy className="w-2.5 h-2.5" />
+        )}
         {copied ? 'Copiado' : 'Copiar'}
       </button>
 
@@ -78,7 +73,9 @@ function TerminalContent({ content }) {
               <span className="text-emerald-400 font-semibold">{line.slice(2, -2)}</span>
             ) : line.startsWith('- ') ? (
               <>
-                <span style={{ color: 'var(--accent-primary)' }} className="mr-1">→</span>
+                <span style={{ color: 'var(--accent-primary)' }} className="mr-1">
+                  →
+                </span>
                 <span>{line.slice(2)}</span>
               </>
             ) : line.match(/^\d+\./) ? (
@@ -135,10 +132,7 @@ export default function MCPAccordion({ content, defaultOpen, className = '' }) {
         />
 
         {/* Icon */}
-        <Icon
-          className="w-3 h-3 flex-shrink-0"
-          style={{ color: config.labelColor }}
-        />
+        <Icon className="w-3 h-3 flex-shrink-0" style={{ color: config.labelColor }} />
 
         {/* Label */}
         <span
@@ -149,7 +143,9 @@ export default function MCPAccordion({ content, defaultOpen, className = '' }) {
         </span>
 
         {/* Separator */}
-        <span className="text-[11px]" style={{ color: 'var(--border-strong)' }}>→</span>
+        <span className="text-[11px]" style={{ color: 'var(--border-strong)' }}>
+          →
+        </span>
 
         {/* Preview text */}
         <span

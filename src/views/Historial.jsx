@@ -1,13 +1,13 @@
 'use client';
 
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import StatusSignal from '@/components/ui/StatusSignal';
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import { History, Loader2, Calendar, ChevronDown, Download, BarChart3, Flag } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
-import StatusSignal from '@/components/ui/StatusSignal';
 import {
   getWorkspaceDataTileStyle,
   getWorkspacePageContentStyle,
@@ -16,13 +16,7 @@ import {
   getWorkspaceSectionSurfaceStyle,
   getWorkspaceStatusPillStyle,
 } from './workspacePageChrome';
-import {
-  pillStyle,
-  panelStyle,
-  btnSecondaryStyle,
-  btnPrimaryStyle,
-  inputStyle,
-} from '@/chrome/morphology';
+import { pillStyle, panelStyle, btnSecondaryStyle } from '@/chrome/morphology';
 
 const STATUS_COLORS = {
   completed: {

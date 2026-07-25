@@ -1,14 +1,13 @@
-import React from 'react';
-import { btnPrimaryStyle, dataTileStyle } from '../../chrome/morphology';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
 import SwarmTopologyGraph from './SwarmTopologyGraph';
+import { btnPrimaryStyle, dataTileStyle } from '../../chrome/morphology';
 import { formatToken } from './utils';
 
 function statLabel(value, singular, plural) {
   return `${value} ${Number(value) === 1 ? singular : plural}`;
 }
 
-export default function ActiveSwarmTowerPanel({ hero }) {
+export default function ActiveSwarmTowerPanel({ hero, onPrimaryAction }) {
   const roster = Array.isArray(hero?.roster) ? hero.roster : [];
   const director = roster.find((member) => member.isDirector) || roster[0] || null;
   const workers = roster.filter((member) => member.id !== director?.id);
@@ -44,19 +43,11 @@ export default function ActiveSwarmTowerPanel({ hero }) {
             />
             <MetricStat
               label="Aprobaciones"
-              value={statLabel(
-                hero?.stats?.pendingApprovals || 0,
-                'pendiente',
-                'pendientes'
-              )}
+              value={statLabel(hero?.stats?.pendingApprovals || 0, 'pendiente', 'pendientes')}
             />
             <MetricStat
               label="Entregas"
-              value={statLabel(
-                hero?.stats?.pendingDeliveries || 0,
-                'pendiente',
-                'pendientes'
-              )}
+              value={statLabel(hero?.stats?.pendingDeliveries || 0, 'pendiente', 'pendientes')}
             />
           </div>
 
@@ -132,11 +123,7 @@ export default function ActiveSwarmTowerPanel({ hero }) {
         </div>
 
         <div aria-label="Topología visual del swarm activo">
-          <SwarmTopologyGraph
-            roster={roster}
-            topology={hero?.topology || null}
-            variant="full"
-          />
+          <SwarmTopologyGraph roster={roster} topology={hero?.topology || null} variant="full" />
         </div>
       </div>
     </SurfaceCard>

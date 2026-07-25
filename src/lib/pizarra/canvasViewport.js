@@ -151,6 +151,14 @@ export function CanvasViewportProvider({
   const [canvasRect, setCanvasRect] = useState(null);
   const wheelViewNavigateRef = useRef(null);
 
+  // perf: keep refs in sync with state so the wheel listener never needs
+  // re-attachment (previously zoom/pan in the effect deps caused listener
+  // churn on every wheel frame — a major scroll/pan latency source).
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
+
   // pizarra-motion: coalesce canvasRect updates. Previously every scroll
   // pixel / ResizeObserver tick called setCanvasRect, which re-projected
   // EVERY surface and made unrelated cards visibly jump/desync. We now:
@@ -268,8 +276,8 @@ export function CanvasViewportProvider({
             ? container.getBoundingClientRect()
             : { left: 0, top: 0 };
           const next = zoomAtPoint({
-            currentZoom: zoom,
-            currentPan: pan,
+            currentZoom: zoomRef.current,
+            currentPan: panRef.current,
             deltaY: event.deltaY,
             focalX: event.clientX - rect.left,
             focalY: event.clientY - rect.top,
@@ -292,7 +300,7 @@ export function CanvasViewportProvider({
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [canvasContainerRef, setZoom, setPan, zoom, pan]);
+  }, [canvasContainerRef, setZoom, setPan]);
 
   const value = {
     zoom,

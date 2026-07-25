@@ -12,14 +12,13 @@
  *  - "Ninguno" (none) option to disable
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ImageIcon, Check, Layers, Monitor, PenTool, Link2, X, Upload } from 'lucide-react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import { panelStyle, pillStyle, inputStyle } from '@/chrome/morphology';
 import {
   SCENERY_CATALOG,
   SCENERY_CATEGORY_META,
-  SCENERY_CATEGORIES,
   getSceneryById,
   isImageScenery,
 } from '@/lib/sceneries/sceneryCatalog';

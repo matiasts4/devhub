@@ -35,9 +35,9 @@ describe('workspaceShortcuts navigation', () => {
     expect(
       resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'ArrowRight' })
     ).toBe('panelRight');
-    expect(
-      resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'ArrowUp' })
-    ).toBe('panelUp');
+    expect(resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'ArrowUp' })).toBe(
+      'panelUp'
+    );
     expect(
       resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'ArrowDown' })
     ).toBe('panelDown');
@@ -54,30 +54,30 @@ describe('workspaceShortcuts navigation', () => {
     expect(
       resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'PageDown' })
     ).toBe('nextWorkspace');
-    expect(
-      resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'PageUp' })
-    ).toBe('previousWorkspace');
+    expect(resolveTerminalNavigationAction({ ctrlKey: true, shiftKey: true, key: 'PageUp' })).toBe(
+      'previousWorkspace'
+    );
   });
 
   test('resolveTerminalShortcutAction maps ctrl+shift+f to focus toggle', () => {
-    expect(
-      resolveTerminalShortcutAction({ ctrlKey: true, shiftKey: true, key: 'f' })
-    ).toBe('togglePanelFocus');
+    expect(resolveTerminalShortcutAction({ ctrlKey: true, shiftKey: true, key: 'f' })).toBe(
+      'togglePanelFocus'
+    );
   });
 
   test('resolveTerminalWorkspaceAction maps dock and workspace shortcuts', () => {
-    expect(
-      resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'B' })
-    ).toBe('openBrowserDock');
-    expect(
-      resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'e' })
-    ).toBe('openEditorDock');
-    expect(
-      resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'N' })
-    ).toBe('newWorkspace');
-    expect(
-      resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'W' })
-    ).toBe('closePanel');
+    expect(resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'B' })).toBe(
+      'openBrowserDock'
+    );
+    expect(resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'e' })).toBe(
+      'openEditorDock'
+    );
+    expect(resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'N' })).toBe(
+      'newWorkspace'
+    );
+    expect(resolveTerminalWorkspaceAction({ ctrlKey: true, shiftKey: true, key: 'W' })).toBe(
+      'closePanel'
+    );
     expect(
       resolveTerminalWorkspaceAction({
         ctrlKey: true,
@@ -191,5 +191,4 @@ describe('workspaceShortcuts navigation', () => {
       )
     ).toBe(false);
   });
-
 });

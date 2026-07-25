@@ -139,8 +139,10 @@ function hasProjectsInDb(dbPath) {
     const tempDb = new Database(dbPath, { readonly: true, fileMustExist: true });
     let count = 0;
     try {
-      count = tempDb.prepare("SELECT count(*) as c FROM projects").get().c;
-    } catch {}
+      count = tempDb.prepare('SELECT count(*) as c FROM projects').get().c;
+    } catch {
+      /* table may not exist */
+    }
     tempDb.close();
     return count > 0;
   } catch {
@@ -161,11 +163,13 @@ function getLegacyDbScore(dbPath) {
 
     const Database = require('better-sqlite3');
     const tempDb = new Database(dbPath, { readonly: true, fileMustExist: true });
-    const pCount = tempDb.prepare("SELECT count(*) as c FROM projects").get().c;
+    const pCount = tempDb.prepare('SELECT count(*) as c FROM projects').get().c;
     let tCount = 0;
     try {
-      tCount = tempDb.prepare("SELECT count(*) as c FROM tasks").get().c;
-    } catch {}
+      tCount = tempDb.prepare('SELECT count(*) as c FROM tasks').get().c;
+    } catch {
+      /* table may not exist */
+    }
     tempDb.close();
     return pCount * 1000 + tCount;
   } catch {
@@ -227,7 +231,9 @@ function maybeMigrateLegacyDb(canonicalDbPath, options = {}) {
     return getNewestMtimeMs(right) - getNewestMtimeMs(left);
   })[0];
 
-  console.log(`[pathResolver] Restoring populated DB from ${newestLegacyDbPath} to ${canonicalDbPath}`);
+  console.log(
+    `[pathResolver] Restoring populated DB from ${newestLegacyDbPath} to ${canonicalDbPath}`
+  );
   copySqliteFamily(newestLegacyDbPath, canonicalDbPath);
   return canonicalDbPath;
 }

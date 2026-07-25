@@ -10,43 +10,59 @@ describe('action-registry', () => {
 
     it('contains only known action ids', () => {
       const known = [
-        'obs_log_tail', 'obs_log_search', 'obs_session_list', 'obs_agent_state', 'obs_swarm_status',
-        'nav_terminal', 'nav_editor', 'nav_dock', 'nav_browser', 'nav_layout',
-        'mut_env_write', 'mut_config_patch', 'mut_session_name', 'mut_layout_save', 'mut_kill_agent',
-        'orch_spawn_agent', 'orch_delegate_task', 'orch_submit_mission', 'orch_exec_tool',
-        'orch_credential_use', 'orch_credential_export',
+        'obs_log_tail',
+        'obs_log_search',
+        'obs_session_list',
+        'obs_agent_state',
+        'obs_swarm_status',
+        'nav_terminal',
+        'nav_editor',
+        'nav_dock',
+        'nav_browser',
+        'nav_layout',
+        'mut_env_write',
+        'mut_config_patch',
+        'mut_session_name',
+        'mut_layout_save',
+        'mut_kill_agent',
+        'orch_spawn_agent',
+        'orch_delegate_task',
+        'orch_submit_mission',
+        'orch_exec_tool',
+        'orch_credential_use',
+        'orch_credential_export',
       ];
       const ids = Object.keys(ACTION_REGISTRY).sort();
       expect(ids).toEqual(known.sort());
     });
 
     it('all obs_* are Tier 0', () => {
-      const obs = Object.keys(ACTION_REGISTRY).filter(id => id.startsWith('obs_'));
-      obs.forEach(id => {
+      const obs = Object.keys(ACTION_REGISTRY).filter((id) => id.startsWith('obs_'));
+      obs.forEach((id) => {
         expect(ACTION_REGISTRY[id].tier).toBe(0);
         expect(ACTION_REGISTRY[id].class).toBe('observe');
       });
     });
 
     it('all nav_* are Tier 1', () => {
-      const nav = Object.keys(ACTION_REGISTRY).filter(id => id.startsWith('nav_'));
-      nav.forEach(id => {
+      const nav = Object.keys(ACTION_REGISTRY).filter((id) => id.startsWith('nav_'));
+      nav.forEach((id) => {
         expect(ACTION_REGISTRY[id].tier).toBe(1);
         expect(ACTION_REGISTRY[id].class).toBe('nav');
       });
     });
 
     it('all mut_* are Tier 2', () => {
-      const mut = Object.keys(ACTION_REGISTRY).filter(id => id.startsWith('mut_'));
-      mut.forEach(id => {
+      const mut = Object.keys(ACTION_REGISTRY).filter((id) => id.startsWith('mut_'));
+      mut.forEach((id) => {
         expect(ACTION_REGISTRY[id].tier).toBe(2);
         expect(ACTION_REGISTRY[id].class).toBe('mutate');
       });
     });
 
     it('all orch_* are Tier 3 or Tier 4', () => {
-      const orch = Object.keys(ACTION_REGISTRY).filter(id => id.startsWith('orch_'));
-      orch.forEach(id => {
+      const orch = Object.keys(ACTION_REGISTRY).filter((id) => id.startsWith('orch_'));
+      orch.forEach((id) => {
         expect([3, 4]).toContain(ACTION_REGISTRY[id].tier);
         expect(ACTION_REGISTRY[id].class).toBe('orchestrate');
       });

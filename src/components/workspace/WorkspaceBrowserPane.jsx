@@ -1,14 +1,11 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ExternalLink,
   Globe,
-  Maximize2,
-  Minimize2,
   MonitorUp,
   MousePointer2,
   Pencil,
@@ -19,11 +16,11 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
+import BrowserTabStrip from './BrowserTabStrip';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { commitBrowserNavigation, moveBrowserHistory } from './browserHistory';
 import {
   captureNativeBrowser,
-  closeNativeBrowser,
-  focusNativeBrowser,
   goBackNativeBrowser,
   goForwardNativeBrowser,
   loadNativeBrowserUrl,
@@ -42,7 +39,6 @@ import {
   getBrowserRuntimeLabel,
   getHostnameLabel,
   hasNativeSelectorInspectCapability,
-  parseUrlMeta,
   resolveBrowserRuntimeSelection,
   shouldWarnAboutFraming,
 } from './browserPreviewSupport';
@@ -56,7 +52,6 @@ import ElectronWebviewBrowser, { shouldUseElectronWebview } from './ElectronWebv
 // useSharedDockState). The right dock renders the strip above its
 // toolbar; pizarra folds it into the compact toolbar row.
 import { useBrowserTabs } from './hooks/useBrowserTabs';
-import BrowserTabStrip from './BrowserTabStrip';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 
 export { PREVIEW_SUPPORT_MODE, SUPPORT_REASON, SELECTOR_STATE };
@@ -117,14 +112,8 @@ function WorkspaceBrowserPane({
     }
     const rect = el.getBoundingClientRect?.();
     // Prefer layout box; fall back to client size if rect is mid-transition.
-    const width = Math.max(
-      0,
-      Math.round(rect?.width || el.clientWidth || 0)
-    );
-    const height = Math.max(
-      0,
-      Math.round(rect?.height || el.clientHeight || 0)
-    );
+    const width = Math.max(0, Math.round(rect?.width || el.clientWidth || 0));
+    const height = Math.max(0, Math.round(rect?.height || el.clientHeight || 0));
     if (width < 2 || height < 2) {
       return { x: 0, y: 0, width: 0, height: 0 };
     }
@@ -173,13 +162,15 @@ function WorkspaceBrowserPane({
     if (!nativeRuntimeActive || !nativePanelId) return;
 
     if (shouldHideNative) {
-      void captureNativeBrowser({ panelId: nativePanelId }).then((res) => {
-        if (res?.ok && res.dataUrl) {
-          setFrozenImage(res.dataUrl);
-        }
-      }).catch((err) => {
-        console.error('[WorkspaceBrowserPane] Capture failed:', err);
-      });
+      void captureNativeBrowser({ panelId: nativePanelId })
+        .then((res) => {
+          if (res?.ok && res.dataUrl) {
+            setFrozenImage(res.dataUrl);
+          }
+        })
+        .catch((err) => {
+          console.error('[WorkspaceBrowserPane] Capture failed:', err);
+        });
     } else {
       setFrozenImage(null);
     }
@@ -574,7 +565,11 @@ function WorkspaceBrowserPane({
   const tabStripApi = useBrowserTabs({ projectId, workspaceId });
   const showTabStrip = tabsMode === 'multi';
   const showToolbarTabStrip = isPizarraContext && showTabStrip;
-  const { nativeRuntimeReady, nativeError, retryNative } = useNativeBrowserSurface({
+  const {
+    nativeRuntimeReady: _nativeRuntimeReady,
+    nativeError,
+    retryNative,
+  } = useNativeBrowserSurface({
     panelId: nativePanelId,
     url: dockState.browserUrl,
     active: nativeRuntimeActive && !browserError,
@@ -600,7 +595,7 @@ function WorkspaceBrowserPane({
   // `devhub:zed-open-url` is handled in TerminalWorkspacesManager so the dock
   // opens even when only Zed is visible (WorkspaceBrowserPane is unmounted).
 
-  const handleRuntimeReload = () => {
+  const _handleRuntimeReload = () => {
     void reloadBrowserRuntime({
       nativeRuntimeActive,
       nativePanelId,
@@ -731,7 +726,7 @@ function WorkspaceBrowserPane({
     })();
   };
 
-  const handleWorkspaceMaximizeToggle = () => {
+  const _handleWorkspaceMaximizeToggle = () => {
     onDockStateChange((currentState) => ({
       ...currentState,
       visible: true,

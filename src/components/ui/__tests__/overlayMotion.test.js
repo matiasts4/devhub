@@ -23,8 +23,10 @@ function readUi(name) {
 describe('overlayMotion contracts', () => {
   test('scrim/modal/menus are 100ms; sheets are 200ms; no diagonal modal slides', () => {
     expect(OVERLAY_SCRIM_MOTION).toMatch(/duration-100/);
-    expect(OVERLAY_SCRIM_MOTION).toMatch(/bg-black\/30/);
-    expect(OVERLAY_SCRIM_MOTION).toMatch(/backdrop-blur/);
+    expect(OVERLAY_SCRIM_MOTION).toMatch(/bg-black\/40/);
+    // perf invariant: no backdrop-filter on the scrim — it forces per-frame
+    // GPU recomposition over live WebGL terminal canvases.
+    expect(OVERLAY_SCRIM_MOTION).not.toMatch(/backdrop-blur/);
     expect(OVERLAY_MODAL_MOTION).toMatch(/duration-100/);
     expect(OVERLAY_MODAL_MOTION).toMatch(/zoom-in-95/);
     expect(OVERLAY_MODAL_MOTION).not.toMatch(/slide-in-from-(left|top)/);

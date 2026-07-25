@@ -211,9 +211,7 @@ describe('theme morphology helpers', () => {
 
   test('normalizeMorphology accepts opencode-desktop and rejects unknown values', () => {
     expect(normalizeMorphology('opencode-desktop')).toBe('opencode-desktop');
-    expect(normalizeMorphology(MORPHOLOGIES.OPENCODE_DESKTOP)).toBe(
-      MORPHOLOGIES.OPENCODE_DESKTOP
-    );
+    expect(normalizeMorphology(MORPHOLOGIES.OPENCODE_DESKTOP)).toBe(MORPHOLOGIES.OPENCODE_DESKTOP);
     expect(normalizeMorphology('garbage-morph')).toBe(MORPHOLOGIES.DEFAULT);
   });
 
@@ -227,9 +225,7 @@ describe('theme morphology helpers', () => {
     );
     expect(document.documentElement.getAttribute('data-theme')).toBe(THEMES.OPENCODE);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(THEMES.OPENCODE);
-    expect(window.localStorage.getItem(MORPHOLOGY_STORAGE_KEY)).toBe(
-      MORPHOLOGIES.OPENCODE_DESKTOP
-    );
+    expect(window.localStorage.getItem(MORPHOLOGY_STORAGE_KEY)).toBe(MORPHOLOGIES.OPENCODE_DESKTOP);
   });
 });
 
@@ -293,9 +289,7 @@ describe('OpenCode Desktop preset + density helpers', () => {
       MORPHOLOGIES.OPENCODE_DESKTOP
     );
     expect(document.documentElement.getAttribute('data-density')).toBe('compact');
-    expect(JSON.parse(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).density).toBe(
-      'compact'
-    );
+    expect(JSON.parse(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).density).toBe('compact');
   });
 
   test('restoreAppearanceSnapshot restores theme, morphology, and appearance', () => {

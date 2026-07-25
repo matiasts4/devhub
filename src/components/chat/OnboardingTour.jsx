@@ -9,7 +9,6 @@ import {
   Command,
   History,
   Cpu,
-  Zap,
 } from 'lucide-react';
 
 const STORAGE_KEY = 'devhub-onboarding-completed';

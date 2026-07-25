@@ -52,9 +52,7 @@ function getLatestDurableTelegramEvent(db) {
     return null;
   }
 
-  return db
-    .prepare(`${statements.join(' UNION ALL ')} ORDER BY created_at DESC LIMIT 1`)
-    .get();
+  return db.prepare(`${statements.join(' UNION ALL ')} ORDER BY created_at DESC LIMIT 1`).get();
 }
 
 function getDurableChatTotals(db) {

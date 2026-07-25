@@ -1,6 +1,22 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
+import PizarraSettings from '@/components/settings/PizarraSettings';
+import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
+import ZedOverlaySettings from '@/components/settings/ZedOverlaySettings';
+import ZedModelSettings from '@/components/settings/ZedModelSettings';
+import TerminalShortcutsSettings from '@/components/settings/TerminalShortcutsSettings';
+import TerminalAgentsSettings from '@/components/settings/TerminalAgentsSettings';
+import { QuotaProviderSettings } from '@/components/quota/QuotaProviderSettings';
+import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
+import { memo, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   RotateCcw,
@@ -28,22 +44,6 @@ import {
   readTerminalRestorePreferences,
   writeTerminalRestorePreferences,
 } from '@/lib/terminal/restorePreferences';
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
-import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
-import PizarraSettings from '@/components/settings/PizarraSettings';
-import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
-import ZedOverlaySettings from '@/components/settings/ZedOverlaySettings';
-import ZedModelSettings from '@/components/settings/ZedModelSettings';
-import TerminalShortcutsSettings from '@/components/settings/TerminalShortcutsSettings';
-import TerminalAgentsSettings from '@/components/settings/TerminalAgentsSettings';
-import { QuotaProviderSettings } from '@/components/quota/QuotaProviderSettings';
-import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
 
 const SECTIONS = [
   { key: 'restore', label: 'Restauración', icon: RotateCcw },
@@ -266,11 +266,15 @@ function SectionContent({ section, onNavigateToZed }) {
  * voice, shortcuts, and agents.
  * Uses z-[10000] and createPortal to appear above native terminal surfaces.
  *
+ * PERF: exported via React.memo — the parent (WorkspaceRenderAssembly) reconciles
+ * on every workspace state change; without memo the whole settings subtree would
+ * re-render and block the main thread while the user scrolls inside the modal.
+ *
  * @param {boolean} open - controls modal visibility
  * @param {function} onClose - called when the user dismisses the modal
  * @param {string} [initialSection] - section key to show when the modal opens (defaults to 'restore')
  */
-export default function TerminalRestoreSettingsModal({ open, onClose, initialSection }) {
+function TerminalRestoreSettingsModal({ open, onClose, initialSection }) {
   const [activeSection, setActiveSection] = useState('restore');
   // Sections that were visited during this open stay mounted (hidden) so
   // switching back is instant and async data is not refetched.
@@ -320,20 +324,25 @@ export default function TerminalRestoreSettingsModal({ open, onClose, initialSec
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-6"
       role="dialog"
       aria-modal="true"
       data-devhub-modal="true"
       data-state="open"
       aria-label="Configuración del workspace de terminales"
-      style={{ background: 'var(--chrome-overlay, rgba(0,0,0,0.6))' }}
+      style={{
+        background: 'var(--chrome-overlay, rgba(0,0,0,0.6))',
+        // Own compositor layer: scrolling inside the modal never repaints the
+        // page behind it (live WebGL terminal canvases), and vice versa.
+        willChange: 'transform',
+      }}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
     >
       <div
         className="flex h-[640px] w-full max-w-4xl overflow-hidden"
-        style={panelStyle({ emphasized: true })}
+        style={{ ...panelStyle({ emphasized: true }), contain: 'layout paint' }}
       >
         {/* Sidebar */}
         <div
@@ -363,7 +372,7 @@ export default function TerminalRestoreSettingsModal({ open, onClose, initialSec
                   onClick={() => selectSection(key)}
                   onMouseEnter={() => prefetchSection(key)}
                   data-testid={`terminal-settings-section-${key}`}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-all"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-colors duration-100"
                   style={
                     isActive
                       ? {
@@ -424,7 +433,11 @@ export default function TerminalRestoreSettingsModal({ open, onClose, initialSec
           </div>
 
           {/* Body — visited sections stay mounted (hidden) for instant switching */}
-          <div ref={bodyRef} className="flex-1 overflow-y-auto px-6 py-5">
+          <div
+            ref={bodyRef}
+            className="flex-1 overflow-y-auto px-6 py-5"
+            style={{ overscrollBehavior: 'contain' }}
+          >
             {SECTIONS.filter(({ key }) => visitedSections.has(key)).map(({ key }) => (
               <div key={key} className={activeSection === key ? undefined : 'hidden'}>
                 <SectionContent section={key} onNavigateToZed={() => selectSection('zed')} />
@@ -438,3 +451,5 @@ export default function TerminalRestoreSettingsModal({ open, onClose, initialSec
 
   return createPortal(modalContent, document.body);
 }
+
+export default memo(TerminalRestoreSettingsModal);

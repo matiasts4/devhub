@@ -1,10 +1,10 @@
 'use client';
 
-import PropTypes from 'prop-types';
 import OperatorActionCard from '@/components/workspace/OperatorActionCard';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import PizarraPane from '@/components/pizarra/PizarraPane';
 import { ModeTransitionShell } from '@/lib/pizarra/ModeTransitionShell';
+import PropTypes from 'prop-types';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 
 // Browser/files are space components (panel.kind) — not right-dock tabs.

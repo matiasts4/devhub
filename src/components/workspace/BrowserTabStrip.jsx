@@ -20,8 +20,8 @@
 
 'use client';
 
-import { memo } from 'react';
 import { Plus, X } from 'lucide-react';
+import { memo } from 'react';
 
 function BrowserTabItemImpl({ tab, isActive, onSelect, onClose, compact = false }) {
   const handleClose = (event) => {

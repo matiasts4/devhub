@@ -9,7 +9,10 @@
 const React = require('react');
 const { installDom, renderIntoDom, cleanupMountedRoots } = require('@/test-support/domHarness');
 
-const { SharedSurfacesProvider, useSurfaceRegistry } = require('@/components/workspace/SharedSurfacesProvider');
+const {
+  SharedSurfacesProvider,
+  useSurfaceRegistry,
+} = require('@/components/workspace/SharedSurfacesProvider');
 const {
   SharedTerminalSurfaceRegistrar,
   SharedTerminalSurfacePortal,
@@ -101,7 +104,9 @@ describe('SharedTerminalSurface — flag OFF (B.1 kill switch)', () => {
     expect(registryRef).not.toBeNull();
     expect(registryRef.getActiveTarget('p1')).toBeUndefined();
     expect(registryRef.getPreferredHostForSurface('p1')).toBeUndefined();
-    expect(view.container.querySelector('[data-testid="surface-portal-host-workspace-dock-p1"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="surface-portal-host-workspace-dock-p1"]')
+    ).toBeNull();
     expect(view.container.textContent).toBe('');
   });
 
@@ -129,7 +134,9 @@ describe('SharedTerminalSurface — flag OFF (B.1 kill switch)', () => {
     expect(registryRef).not.toBeNull();
     expect(registryRef.getActiveTarget('p1')).toBeUndefined();
     expect(registryRef.getPreferredHostForSurface('p1')).toBeUndefined();
-    expect(view.container.querySelector('[data-testid="surface-portal-host-workspace-dock-p1"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="surface-portal-host-workspace-dock-p1"]')
+    ).toBeNull();
     expect(view.container.textContent).toBe('');
   });
 });

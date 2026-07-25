@@ -8,11 +8,11 @@
  * so every motion consumer inherits consistent timing.
  */
 
-import { useEffect, useState } from 'react';
 import { MotionConfig } from 'framer-motion';
+import { MotionModeProvider } from './MotionModeContext';
+import { useEffect, useState } from 'react';
 import { getStoredMotionMode } from '@/lib/theme/themes';
 import { TRANSITION } from '../system/motion-tokens';
-import { MotionModeProvider } from './MotionModeContext';
 
 function toReducedMotion(mode) {
   return mode === 'reduced' ? 'always' : 'user';

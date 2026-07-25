@@ -1,4 +1,11 @@
 'use client';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
 
 /**
  * PizarraContextMenu — right-click menu for the pizarra canvas.
@@ -13,14 +20,6 @@
  * Phase 3 covers shapes + empty canvas. Composite (terminal/browser)
  * context items arrive in Phase 4.
  */
-
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-} from '@/components/ui/context-menu';
 
 /**
  * @param {object} props

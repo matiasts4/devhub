@@ -1,11 +1,19 @@
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
+import { BarChart3 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { BarChart3 } from 'lucide-react';
 
 export default function UsageChart({ data = [] }) {
   // Rellenar días vacíos para asegurar continuidad (opcional, dependiente del dataset)
-  
+
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
@@ -15,7 +23,9 @@ export default function UsageChart({ data = [] }) {
           </p>
           {payload.map((entry, index) => (
             <div key={index} className="flex flex-col gap-1">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider">{entry.name}</span>
+              <span className="text-[10px] text-text-muted uppercase tracking-wider">
+                {entry.name}
+              </span>
               <span className="text-sm font-bold" style={{ color: entry.color }}>
                 {entry.value}
               </span>
@@ -33,7 +43,7 @@ export default function UsageChart({ data = [] }) {
         <BarChart3 className="w-4 h-4" style={{ color: 'var(--accent-pink)' }} />
         <h3 className="font-semibold text-sm">Ejecuciones de Herramientas IA (30d)</h3>
       </div>
-      
+
       <div className="flex-1 w-full min-h-[250px]">
         {data.length === 0 ? (
           <div className="flex items-center justify-center h-full text-text-muted text-xs">
@@ -41,39 +51,36 @@ export default function UsageChart({ data = [] }) {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={data}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-            >
+            <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorTools" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--accent-cyan)" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="var(--accent-cyan)" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="var(--accent-cyan)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="var(--accent-cyan)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
-              <XAxis 
-                dataKey="date" 
-                tickFormatter={(tick) => format(parseISO(tick), "d MMM", { locale: es })}
+              <XAxis
+                dataKey="date"
+                tickFormatter={(tick) => format(parseISO(tick), 'd MMM', { locale: es })}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                 dy={10}
               />
-              <YAxis 
+              <YAxis
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Area 
-                type="monotone" 
-                dataKey="tools" 
+              <Area
+                type="monotone"
+                dataKey="tools"
                 name="Herramientas"
-                stroke="var(--accent-cyan)" 
+                stroke="var(--accent-cyan)"
                 strokeWidth={2}
-                fillOpacity={1} 
-                fill="url(#colorTools)" 
+                fillOpacity={1}
+                fill="url(#colorTools)"
               />
             </AreaChart>
           </ResponsiveContainer>

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { User, Save, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
 

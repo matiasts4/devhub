@@ -1,5 +1,6 @@
 'use client';
 
+import ProviderCard from './ProviderCard';
 import { useState, useEffect, useRef } from 'react';
 import {
   Zap,
@@ -15,7 +16,6 @@ import {
 } from 'lucide-react';
 import { sileo } from 'sileo';
 import { panelStyle, pillStyle, btnPrimaryStyle } from '@/chrome/morphology';
-import ProviderCard from './ProviderCard';
 
 // Reconcile a persisted priorityOrder against the current provider registry.
 // Drops any name no longer present in `availableKeys` and backfills any key

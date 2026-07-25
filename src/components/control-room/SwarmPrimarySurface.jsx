@@ -1,7 +1,6 @@
-import React from 'react';
-import { btnPrimaryStyle, pillStyle, sectionSurfaceStyle } from '../../chrome/morphology';
 import ActiveSwarmTowerPanel from './ActiveSwarmTowerPanel';
 import { SurfaceCard, SurfacePill } from './SwarmSurfaceCard';
+import { btnPrimaryStyle, pillStyle, sectionSurfaceStyle } from '../../chrome/morphology';
 
 export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
   if (surface?.mode === 'active') {
@@ -47,11 +46,7 @@ export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
                 ['2', 'Configurar misión', 'Path, provider y roles'],
                 ['3', 'Abrir terminales', 'Workspace + runtime requests'],
               ].map(([step, title, summary]) => (
-                <div
-                  key={step}
-                  className="p-3"
-                  style={sectionSurfaceStyle()}
-                >
+                <div key={step} className="p-3" style={sectionSurfaceStyle()}>
                   <div className="flex items-center gap-2">
                     <span
                       className="flex h-6 w-6 items-center justify-center text-xs font-bold"
@@ -77,10 +72,7 @@ export default function SwarmPrimarySurface({ surface, onPrimaryAction }) {
             </div>
           </div>
 
-          <div
-            className="space-y-4 p-4"
-            style={sectionSurfaceStyle({ emphasized: true })}
-          >
+          <div className="space-y-4 p-4" style={sectionSurfaceStyle({ emphasized: true })}>
             <div>
               <p
                 className="text-xs font-semibold uppercase tracking-[0.18em]"

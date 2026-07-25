@@ -379,9 +379,9 @@ export const POST = withAuth(async function POST(req) {
     const rawModel = modelHint || process.env.OPENCODE_HEADLESS_MODEL || null;
     const slashIdx = rawModel ? rawModel.indexOf('/') : -1;
     const resolvedModel = rawModel
-      ? (slashIdx !== -1
+      ? slashIdx !== -1
         ? { providerID: rawModel.slice(0, slashIdx), modelID: rawModel.slice(slashIdx + 1) }
-        : null) // model without provider prefix is ambiguous — skip override
+        : null // model without provider prefix is ambiguous — skip override
       : null;
 
     if (!prompt) {
@@ -523,7 +523,10 @@ export const POST = withAuth(async function POST(req) {
       id: messageID,
     };
 
-    auditTrail.record('model_resolved', { raw: rawModel || 'agent-default', ...(resolvedModel || {}) });
+    auditTrail.record('model_resolved', {
+      raw: rawModel || 'agent-default',
+      ...(resolvedModel || {}),
+    });
 
     auditTrail.record('prompt_sent', { length: prompt.length, agent: agent || 'default' });
 

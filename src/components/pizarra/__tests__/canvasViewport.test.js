@@ -21,7 +21,10 @@ function makeOpts({ zoom = 1, pan = { x: 0, y: 0 }, canvasRect = DEFAULT_CANVAS_
 
 describe('canvasViewport — canvasToViewport (canvasRect API)', () => {
   test('identity at origin: canvas (0,0) -> viewport (0,0)', () => {
-    expect(canvasToViewport(0, 0, makeOpts({ zoom: 1, pan: { x: 0, y: 0 } }))).toEqual({ x: 0, y: 0 });
+    expect(canvasToViewport(0, 0, makeOpts({ zoom: 1, pan: { x: 0, y: 0 } }))).toEqual({
+      x: 0,
+      y: 0,
+    });
   });
 
   test('canvas (100,200) maps to viewport (100,200) with zoom=1 and no pan', () => {

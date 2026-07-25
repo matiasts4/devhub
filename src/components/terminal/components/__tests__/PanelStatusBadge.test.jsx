@@ -1,5 +1,3 @@
-/* global window, document */
-
 const React = require('react');
 const PanelStatusBadge = require('../PanelStatusBadge').default;
 const { PANEL_STATUS } = require('@/components/terminal/utils/panelStatusHelpers');

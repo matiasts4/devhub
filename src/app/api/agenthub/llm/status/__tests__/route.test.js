@@ -45,7 +45,7 @@ function configureScenarios({ keys = [], names = {}, providers = {} } = {}) {
 }
 
 // --- Module under test (late import so mocks apply) ---
- 
+
 const { GET } = require('../route.js');
 
 function invokeRoute() {

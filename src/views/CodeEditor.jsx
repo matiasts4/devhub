@@ -1,10 +1,10 @@
 'use client';
 
+import FileExplorerEditorPane from '@/components/workspace/FileExplorerEditorPane';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { useState } from 'react';
 import { FileCode2 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
-import FileExplorerEditorPane from '@/components/workspace/FileExplorerEditorPane';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { getWorkspacePageHeaderStyle } from './workspacePageChrome';
 
 export default function CodeEditor() {

@@ -28,7 +28,11 @@ function kimiCodeBaseUrl() {
 }
 
 function oauthHost() {
-  return (process.env.KIMI_CODE_OAUTH_HOST || process.env.KIMI_OAUTH_HOST || 'https://auth.kimi.com').replace(/\/+$/, '');
+  return (
+    process.env.KIMI_CODE_OAUTH_HOST ||
+    process.env.KIMI_OAUTH_HOST ||
+    'https://auth.kimi.com'
+  ).replace(/\/+$/, '');
 }
 
 export async function fetchKimiQuota() {
@@ -166,7 +170,9 @@ export function applyKimiUsagePayload(result, payload) {
 
 /** LEVEL_INTERMEDIATE → "Intermediate" (Kimi Code plan tier from the API). */
 function formatKimiLevel(level) {
-  const clean = String(level).replace(/^LEVEL_/, '').toLowerCase();
+  const clean = String(level)
+    .replace(/^LEVEL_/, '')
+    .toLowerCase();
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
@@ -277,7 +283,8 @@ async function ensureFreshToken(cred) {
   const updated = {
     ...data,
     access_token: tokens.access_token,
-    refresh_token: typeof tokens.refresh_token === 'string' ? tokens.refresh_token : data.refresh_token,
+    refresh_token:
+      typeof tokens.refresh_token === 'string' ? tokens.refresh_token : data.refresh_token,
     expires_at: Math.floor(Date.now() / 1000) + (Number(tokens.expires_in) || 3600),
     expires_in: Number(tokens.expires_in) || data.expires_in,
     scope: tokens.scope ?? data.scope,

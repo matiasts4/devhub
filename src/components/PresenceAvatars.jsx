@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/db/localClient';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { LOCAL_USER_ID } from '@/lib/constants/local';

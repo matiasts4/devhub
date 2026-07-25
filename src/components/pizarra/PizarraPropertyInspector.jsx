@@ -5,9 +5,9 @@
  * cornerRadius (rect), text/fontSize (textbox) in real time.
  */
 
-import React, { useEffect, useRef } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Slider from '@radix-ui/react-slider';
+import React, { useEffect } from 'react';
 import { panelStyle, btnSecondaryStyle } from '@/chrome/morphology';
 
 function ColorField({ label, value, onChange }) {
@@ -195,11 +195,27 @@ export default function PizarraPropertyInspector({ selectedElement, onUpdate }) 
               padding: '0 0.75rem',
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
               Properties
             </span>
           </button>
@@ -218,7 +234,15 @@ export default function PizarraPropertyInspector({ selectedElement, onUpdate }) 
               animation: 'fadeInUp 0.2s ease-out',
             }}
           >
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: 'var(--text-muted)',
+              }}
+            >
               {type} properties
             </div>
 

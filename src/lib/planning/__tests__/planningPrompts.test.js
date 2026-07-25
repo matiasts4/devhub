@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildPlanningKickoffPrompt,
-  resolveDefaultPlanningMode,
-} from '../planningPrompts.js';
+import { buildPlanningKickoffPrompt, resolveDefaultPlanningMode } from '../planningPrompts.js';
 
 test('buildPlanningKickoffPrompt includes project id for initial mode', () => {
   const prompt = buildPlanningKickoffPrompt('initial', {

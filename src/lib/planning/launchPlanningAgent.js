@@ -26,13 +26,7 @@ import { dispatchPlanningAgentRun } from './dispatchPlanningAgentRun.js';
  */
 export function launchPlanningAgent(
   navigate,
-  {
-    projectId,
-    projectName = '',
-    mode = 'initial',
-    documentationPolicy,
-    hasExistingWork = false,
-  }
+  { projectId, projectName = '', mode = 'initial', documentationPolicy, hasExistingWork = false }
 ) {
   if (!projectId) return undefined;
 
@@ -71,4 +65,3 @@ export function launchPlanningAgent(
   // the same value — by design, not by coincidence).
   return { ...detail, projectId };
 }
-

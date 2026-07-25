@@ -1,5 +1,3 @@
-import React from 'react';
-
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 
 export function surfaceCardStyle({ emphasized = false } = {}) {

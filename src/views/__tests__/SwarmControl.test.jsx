@@ -28,7 +28,9 @@ jest.mock('@/components/control-room/ActiveProcessesPanel', () => {
 });
 
 const SwarmControl = require('../SwarmControl').default;
-const { composeControlRoomSnapshot } = require('@/lib/operations/swarmControl');
+const {
+  composeControlRoomSnapshot: _composeControlRoomSnapshot,
+} = require('@/lib/operations/swarmControl');
 const {
   buildControlRoomInput,
 } = require('@/lib/operations/__tests__/fixtures/controlRoomSnapshot');

@@ -1,8 +1,8 @@
 'use client';
 
-import { Zap } from 'lucide-react';
 import { ProviderCardShell } from '@/components/settings/shared/ProviderCardShell';
 import { ModelPicker } from '@/components/settings/shared/ModelPicker';
+import { Zap } from 'lucide-react';
 
 const ZEN_MODELS = ['zen-default', 'zen-large', 'zen-turbo', 'zen-coder'];
 

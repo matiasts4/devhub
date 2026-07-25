@@ -588,15 +588,21 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Block the browser's native ctrl/⌘ + wheel (and trackpad pinch, which the
-  // engine reports as a wheel event with ctrlKey set) page zoom. Without this,
-  // pinching/ctrl-scrolling inside the app — e.g. while zooming the pizarra
-  // canvas — zooms the ENTIRE webview (top workspace tabs, HUD, bottom bars all
-  // scale/disappear) instead of only the intended target. The app exposes its
-  // own document zoom via the keyboard handler above; the pizarra canvas does
-  // its own focal zoom in JS. We only need to stop the engine's default zoom.
-  // Capture phase + { passive: false } so preventDefault is honored even when an
-  // inner handler stops propagation.
+  // Block the browser's native ctrl/⌘ + wheel page zoom. Without this,
+  // ctrl-scrolling inside the app zooms the ENTIRE webview (top workspace tabs,
+  // HUD, bottom bars all scale/disappear). The app exposes its own document zoom
+  // via the keyboard handler above; the pizarra canvas does its own focal zoom
+  // in JS (its own non-passive listener covers trackpad pinch over the canvas).
+  //
+  // PERF: the non-passive listener is only installed while a modifier key is
+  // physically held. A permanent non-passive wheel listener on window forces
+  // EVERY wheel event through the main thread — when the main thread is busy
+  // (xterm output parsing, React reconciliation) scrolling feels 250 ms+ of
+  // input latency. With the dynamic approach, normal scrolling stays fully
+  // compositor-driven (zero main-thread dependency). Trade-off: trackpad pinch
+  // on plain UI areas (synthetic ctrl+wheel without keydown on Windows) is not
+  // blocked — recoverable with ctrl+0; the pizarra/terminal surfaces keep their
+  // own always-on non-passive listeners and remain protected.
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const preventBrowserZoom = (e) => {
@@ -604,8 +610,38 @@ function App() {
         e.preventDefault();
       }
     };
-    window.addEventListener('wheel', preventBrowserZoom, { passive: false, capture: true });
-    return () => window.removeEventListener('wheel', preventBrowserZoom, { capture: true });
+
+    let installed = false;
+    const install = () => {
+      if (installed) return;
+      document.addEventListener('wheel', preventBrowserZoom, { passive: false, capture: true });
+      installed = true;
+    };
+    const uninstall = () => {
+      if (!installed) return;
+      document.removeEventListener('wheel', preventBrowserZoom, { capture: true });
+      installed = false;
+    };
+
+    // keydown/keyup track physical modifier state; mousedown covers the case
+    // where the modifier was already held before the window gained focus.
+    const syncFromEvent = (e) => {
+      if (e.ctrlKey || e.metaKey) install();
+      else uninstall();
+    };
+
+    window.addEventListener('keydown', syncFromEvent, true);
+    window.addEventListener('keyup', syncFromEvent, true);
+    window.addEventListener('mousedown', syncFromEvent, true);
+    window.addEventListener('blur', uninstall);
+
+    return () => {
+      uninstall();
+      window.removeEventListener('keydown', syncFromEvent, true);
+      window.removeEventListener('keyup', syncFromEvent, true);
+      window.removeEventListener('mousedown', syncFromEvent, true);
+      window.removeEventListener('blur', uninstall);
+    };
   }, []);
 
   useEffect(() => {

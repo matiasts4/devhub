@@ -29,39 +29,29 @@ jest.mock(
   { virtual: true }
 );
 
-jest.mock(
-  '../../../../components/ui/date-picker',
-  () => {
-    const React = require('react');
-    return {
-      DatePicker: (props) =>
-        React.createElement('input', { 'data-testid': 'date-picker', ...props }),
-    };
-  }
-);
+jest.mock('../../../../components/ui/date-picker', () => {
+  const React = require('react');
+  return {
+    DatePicker: (props) => React.createElement('input', { 'data-testid': 'date-picker', ...props }),
+  };
+});
 
-jest.mock(
-  '../../../../components/workspace/WorkspacePageTitle',
-  () => {
-    const React = require('react');
-    return {
-      __esModule: true,
-      default: ({ title }) =>
-        React.createElement('h1', { 'data-testid': 'workspace-page-title' }, title),
-    };
-  }
-);
+jest.mock('../../../../components/workspace/WorkspacePageTitle', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    default: ({ title }) =>
+      React.createElement('h1', { 'data-testid': 'workspace-page-title' }, title),
+  };
+});
 
-jest.mock(
-  '../../../../components/ui/StatusSignal',
-  () => {
-    const React = require('react');
-    return {
-      __esModule: true,
-      default: () => React.createElement('span', { 'data-testid': 'status-signal' }),
-    };
-  }
-);
+jest.mock('../../../../components/ui/StatusSignal', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    default: () => React.createElement('span', { 'data-testid': 'status-signal' }),
+  };
+});
 
 jest.mock(
   'sileo',

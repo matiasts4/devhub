@@ -21,7 +21,7 @@
  *  - withOverlay: render the dim/blur readability overlay (default: true)
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   readSceneryPrefs,
   resolveSceneryStyle,

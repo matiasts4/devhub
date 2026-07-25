@@ -1,5 +1,4 @@
 'use client';
-
 import StageTag from './StageTag.jsx';
 import { StatusIcon } from './StatusIcon.jsx';
 import AuthorityBadge from './AuthorityBadge.jsx';
@@ -49,15 +48,11 @@ export default function OperatorTimelineItem({ item }) {
 
         {/* next_step_hint */}
         {item.next_step_hint && (
-          <p className="text-xs text-text-muted italic mb-1 truncate">
-            → {item.next_step_hint}
-          </p>
+          <p className="text-xs text-text-muted italic mb-1 truncate">→ {item.next_step_hint}</p>
         )}
 
         {/* Redaction indicator */}
-        {isRedacted && (
-          <p className="text-[10px] text-text-muted italic">params hidden</p>
-        )}
+        {isRedacted && <p className="text-[10px] text-text-muted italic">params hidden</p>}
 
         {/* Error callout */}
         {hasError && (

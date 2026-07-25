@@ -53,27 +53,30 @@ describe('POST /api/agents/launch legacy quota removal', () => {
   test.each([
     ['missing profileName', { task: 'Say hello' }],
     ['auto profileName', { task: 'Say hello', profileName: 'auto' }],
-  ])('falls back to default profile for %s without hitting legacy quotas', async (_label, payload) => {
-    const response = await POST({
-      url: 'http://localhost:3100/api/agents/launch',
-      json: async () => payload,
-    });
+  ])(
+    'falls back to default profile for %s without hitting legacy quotas',
+    async (_label, payload) => {
+      const response = await POST({
+        url: 'http://localhost:3100/api/agents/launch',
+        json: async () => payload,
+      });
 
-    expect(global.fetch).not.toHaveBeenCalled();
-    expect(mockGetProfileHome).toHaveBeenCalledWith('default');
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'opencode',
-      ['--task', 'Say hello'],
-      expect.objectContaining({
-        detached: true,
-        stdio: 'ignore',
-        env: expect.objectContaining({
-          GEMINI_CLI_HOME: '/tmp/default',
-        }),
-      })
-    );
-    expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.message).toContain('profile default');
-  });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockGetProfileHome).toHaveBeenCalledWith('default');
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'opencode',
+        ['--task', 'Say hello'],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+          env: expect.objectContaining({
+            GEMINI_CLI_HOME: '/tmp/default',
+          }),
+        })
+      );
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toContain('profile default');
+    }
+  );
 });

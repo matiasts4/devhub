@@ -1,33 +1,36 @@
-import React from 'react';
 import { StatusPill, metaTextStyle, panelShellStyle } from './utils';
 
 const STATUS_VISUAL = Object.freeze({
-  pending:          { border: '#f59e0b', label: 'Esperando al Director',       icon: '◌' },
-  waiting:          { border: '#9ca3af', label: 'En espera',                    icon: '⏱' },
-  'in-progress':    { border: '#3b82f6', label: 'Ejecutando',                   icon: '●' },
-  'awaiting-approval': { border: '#f97316', label: 'Aprobación requerida',      icon: '⚠' },
-  completed:       { border: '#22c55e', label: 'Completado',                   icon: '✓' },
-  rejected:        { border: '#ef4444', label: 'Rechazado por el Operator',     icon: '✗' },
-  failed:          { border: '#ef4444', label: 'Fallido',                      icon: '⚠' },
+  pending: { border: '#f59e0b', label: 'Esperando al Director', icon: '◌' },
+  waiting: { border: '#9ca3af', label: 'En espera', icon: '⏱' },
+  'in-progress': { border: '#3b82f6', label: 'Ejecutando', icon: '●' },
+  'awaiting-approval': { border: '#f97316', label: 'Aprobación requerida', icon: '⚠' },
+  completed: { border: '#22c55e', label: 'Completado', icon: '✓' },
+  rejected: { border: '#ef4444', label: 'Rechazado por el Operator', icon: '✗' },
+  failed: { border: '#ef4444', label: 'Fallido', icon: '⚠' },
 });
 
 const INITIATOR_LABELS = Object.freeze({
-  operator:           'Operator',
+  operator: 'Operator',
   'director-general': 'DG',
-  'swarm-director':   'Director',
+  'swarm-director': 'Director',
 });
 
 const ACTION_LABELS = Object.freeze({
-  'mission-request':  'Mission requested',
-  'status-poll':      'Polling...',
+  'mission-request': 'Mission requested',
+  'status-poll': 'Polling...',
   'approval-required': 'Approval required',
-  'mission-result':   'Result',
+  'mission-result': 'Result',
 });
 
 function formatTimestamp(ts) {
   if (!ts) return 'Sin timestamp';
   const date = new Date(ts);
-  return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return date.toLocaleTimeString('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 function truncateId(id = '') {
@@ -49,7 +52,7 @@ export default function DGChainRow({ row, onApprovalAction }) {
         borderLeftColor: visual.border,
       }}
     >
-     <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         {/* Initiator badge */}
         <span
           className="text-xs font-mono px-1.5 py-0.5 rounded"
@@ -73,7 +76,7 @@ export default function DGChainRow({ row, onApprovalAction }) {
       {/* Authority + freshness metadata */}
       <p className="mt-1.5 text-xs" style={metaTextStyle()}>
         authority: {row.authority} · freshness: {row.freshness}
-</p>
+      </p>
 
       {/* Fallback text — only when failed */}
       {row.status === 'failed' && row.fallback ? (

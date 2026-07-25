@@ -124,9 +124,7 @@ describe('GET /api/swarm/runtime-diagnostics', () => {
     mockAgentRegistrySelect.mockReturnValue([]);
     mockAgentRunsSelect.mockReturnValue([]);
     mockSwarmMissionsSelect.mockReturnValue([]);
-    mockAgentWorkspacesSelect.mockReturnValue([
-      { id: 'ws-1', agent_id: 'w1', status: 'active' },
-    ]);
+    mockAgentWorkspacesSelect.mockReturnValue([{ id: 'ws-1', agent_id: 'w1', status: 'active' }]);
     mockSupervisorSnapshotsSelect.mockReturnValue([
       { task_id: 't-1', supervisor_state: 'lease_active' },
     ]);

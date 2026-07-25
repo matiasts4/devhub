@@ -16,9 +16,7 @@ import { recordChatRoundTrip, getMetricsSummary } from './zedMetrics';
 import { useZedPlanRunner, PLAN_STATES as PLAN_EXECUTOR_STATES } from './useZedPlanRunner';
 import { detectMaliciousPrompt } from './zedSecurityPolicy';
 import {
-  getZedMemory,
   setZedPreference,
-  getZedPreference,
   recordZedMemoryAction,
   setZedAgentStatus,
   getZedAgentStatus,

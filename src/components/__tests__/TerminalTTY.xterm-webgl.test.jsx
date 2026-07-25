@@ -71,7 +71,6 @@ jest.mock(
           if (!isWebglAddonInstance) {
             return;
           }
-          // eslint-disable-next-line global-require
           const mockAddon = require('@xterm/addon-webgl').WebglAddon;
           if (mockAddon && mockAddon.shouldThrow) {
             throw new Error('webgl-context-creation-failed');

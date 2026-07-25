@@ -5,7 +5,6 @@
  * They receive a `shape` object and render the appropriate Konva node.
  */
 
-import React from 'react';
 import { SHAPE_TYPES } from './shapeModel';
 
 function getKonvaPrimitive(konva, key) {
@@ -167,7 +166,13 @@ export function TextboxRenderer({ shape, konva, onSelect, onTransformEnd }) {
 
 // ─── Renderer Map ─────────────────────────────────────────────────────────
 
-export function TerminalRenderer({ shape, konva, isSelected, onSelect, onTransformEnd }) {
+export function TerminalRenderer({
+  shape,
+  konva,
+  isSelected: _isSelected,
+  onSelect,
+  onTransformEnd,
+}) {
   const Rect = getKonvaPrimitive(konva, 'Rect');
   if (!Rect) return null;
 
@@ -196,7 +201,13 @@ export function TerminalRenderer({ shape, konva, isSelected, onSelect, onTransfo
   );
 }
 
-export function BrowserRenderer({ shape, konva, isSelected, onSelect, onTransformEnd }) {
+export function BrowserRenderer({
+  shape,
+  konva,
+  isSelected: _isSelected,
+  onSelect,
+  onTransformEnd,
+}) {
   const Rect = getKonvaPrimitive(konva, 'Rect');
   if (!Rect) return null;
 

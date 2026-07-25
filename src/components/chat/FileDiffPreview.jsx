@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
 import { Copy, Columns, AlignLeft, Check, FileCode } from 'lucide-react';
-import { createTwoFilesPatch, parsePatch } from 'diff';
+import { useState, useMemo } from 'react';
+import { createTwoFilesPatch } from 'diff';
 
 // Map common extensions to language names
 const LANG_MAP = {

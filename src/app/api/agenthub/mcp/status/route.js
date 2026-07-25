@@ -1,5 +1,3 @@
-/* global process */
-
 import { NextResponse } from 'next/server';
 import { assembleMcpControlCenterSnapshot } from '@/lib/mcp/control-center';
 

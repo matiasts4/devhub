@@ -19,7 +19,6 @@ export function getSupabaseAdmin() {
 
 export function isCloudAuthEnabled() {
   return (
-    process.env.DEVHUB_AUTH_PROVIDER === 'supabase' ||
-    process.env.DEVHUB_OPERATION_MODE === 'cloud'
+    process.env.DEVHUB_AUTH_PROVIDER === 'supabase' || process.env.DEVHUB_OPERATION_MODE === 'cloud'
   );
 }

@@ -1,4 +1,6 @@
 'use client';
+import { ChromeSurface } from '@/components/ui/chrome-surface';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
@@ -8,22 +10,17 @@ import {
   Clock,
   Loader2,
   AlertTriangle,
-  CalendarClock,
   LayoutDashboard,
   Trophy,
   Sparkles,
 } from 'lucide-react';
 import { getProjectPlanningPath } from '@/lib/workspaceRouting';
 import { createClient } from '@/lib/db/localClient';
-import { Button } from '@/components/ui/button';
-import { ChromeSurface } from '@/components/ui/chrome-surface';
 import { panelStyle, btnPrimaryStyle, progressTrackStyle } from '@/chrome/morphology';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import {
   getWorkspacePageContentStyle,
   getWorkspacePageHeaderStyle,
   getWorkspacePageShellStyle,
-  getWorkspaceStatusPillStyle,
 } from './workspacePageChrome';
 
 function DashboardPill({ children, className = '', tone = 'neutral', style = undefined }) {
@@ -214,8 +211,8 @@ export default function ProjectDashboard() {
                     Sin roadmap todavía
                   </p>
                   <p className="mt-1 text-[11px] text-text-muted max-w-md">
-                    Investigá el alcance y generá hitos y tareas desde Planificación antes de usar el
-                    kanban.
+                    Investigá el alcance y generá hitos y tareas desde Planificación antes de usar
+                    el kanban.
                   </p>
                 </div>
               </div>

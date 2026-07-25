@@ -2,10 +2,8 @@
  * useTerminalRendererState — renderer capability / WebGL fallback state.
  * Extracted from TerminalTTY.jsx (terminal-decompose Slice 1).
  */
-/* eslint-disable react-hooks/exhaustive-deps -- derived state intentionally mirrors props */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  getTerminalRuntimePlatform,
   getTerminalRendererRuntimeCapabilities,
   resolveOperationalRendererMode,
   probeWebglSupport,
@@ -28,8 +26,7 @@ export default function useTerminalRendererState({
 
   // Master switch for the legacy native VTE (GTK) backend. Mirrors the constant
   // in TerminalTTY.jsx so vte-experimental requests stay test-routable.
-  const ENABLE_NATIVE_VTE =
-    typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+  const ENABLE_NATIVE_VTE = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
 
   const effectiveRequestedMode =
     !ENABLE_NATIVE_VTE && requestedRendererMode === 'vte-experimental'

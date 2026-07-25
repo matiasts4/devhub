@@ -1,5 +1,7 @@
 'use client';
 
+import { FilePlus, FolderPlus, RefreshCw, Search, Trash2, Pencil } from 'lucide-react';
+import { EntryRow, PendingRow, StatusRow } from './TreeRow';
 import {
   forwardRef,
   memo,
@@ -11,9 +13,7 @@ import {
   useState,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { FilePlus, FolderPlus, RefreshCw, Search, Trash2, Pencil } from 'lucide-react';
 import { buildRows } from './buildRows';
-import { EntryRow, PendingRow, StatusRow } from './TreeRow';
 import { fileIconUrl, folderIconUrl } from './iconResolver';
 import { useExplorerDnd } from './useExplorerDnd';
 import { useFileTree } from './useFileTree';

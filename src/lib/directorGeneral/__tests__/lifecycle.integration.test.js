@@ -62,7 +62,11 @@ describe('DG mission lifecycle — state transition contract', () => {
   test('getMissionStatus parses freshness=stale when updatedAt > 5s old', async () => {
     const { getMissionStatus } = require('../bridge');
     const staleTime = Date.now() - 10_000;
-    const mockFetch = makeMockFetch({ missionId: 's-1', status: 'in-progress', updatedAt: staleTime });
+    const mockFetch = makeMockFetch({
+      missionId: 's-1',
+      status: 'in-progress',
+      updatedAt: staleTime,
+    });
 
     const result = await getMissionStatus('s-1', { fetchImpl: mockFetch });
 
@@ -73,7 +77,11 @@ describe('DG mission lifecycle — state transition contract', () => {
   test('getMissionStatus parses freshness=just_now when updatedAt is recent', async () => {
     const { getMissionStatus } = require('../bridge');
     const recentTime = Date.now() - 1_000;
-    const mockFetch = makeMockFetch({ missionId: 's-2', status: 'in-progress', updatedAt: recentTime });
+    const mockFetch = makeMockFetch({
+      missionId: 's-2',
+      status: 'in-progress',
+      updatedAt: recentTime,
+    });
 
     const result = await getMissionStatus('s-2', { fetchImpl: mockFetch });
 

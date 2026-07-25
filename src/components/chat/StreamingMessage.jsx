@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
 import ChatMarkdown from '@/components/chat/ChatMarkdown';
+import { useState, useEffect, useRef } from 'react';
 import { createTagParser } from './utils/tagStateMachine';
 
 /**

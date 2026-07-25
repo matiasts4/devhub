@@ -56,7 +56,10 @@ describe('quotaPreferences', () => {
   });
 
   test('moveProvider swaps positions and clamps at edges', () => {
-    let prefs = writeQuotaPreferences({ providerOrder: ['kimi', 'grok', 'codex'], defaultProvider: null });
+    let prefs = writeQuotaPreferences({
+      providerOrder: ['kimi', 'grok', 'codex'],
+      defaultProvider: null,
+    });
     prefs = moveProvider(prefs, 'grok', -1);
     expect(prefs.providerOrder).toEqual(['grok', 'kimi', 'codex']);
     prefs = moveProvider(prefs, 'grok', -1); // already first

@@ -38,16 +38,19 @@ let _dailyIntervalId = null;
 function schedulePurge() {
   if (_dailyIntervalId !== null) return; // already scheduled
 
-  _dailyIntervalId = setInterval(() => {
-    try {
-      const deleted = purgeOldEntries();
-      if (deleted > 0) {
-        console.info(`[timelineRetention] Purged ${deleted} stale timeline entries.`);
+  _dailyIntervalId = setInterval(
+    () => {
+      try {
+        const deleted = purgeOldEntries();
+        if (deleted > 0) {
+          console.info(`[timelineRetention] Purged ${deleted} stale timeline entries.`);
+        }
+      } catch (err) {
+        console.error('[timelineRetention] Purge failed:', err.message);
       }
-    } catch (err) {
-      console.error('[timelineRetention] Purge failed:', err.message);
-    }
-  }, 24 * 60 * 60 * 1000); // 24 hours in ms
+    },
+    24 * 60 * 60 * 1000
+  ); // 24 hours in ms
 }
 
 module.exports = {

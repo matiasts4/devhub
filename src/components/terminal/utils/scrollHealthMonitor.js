@@ -98,6 +98,13 @@ export function createScrollHealthMonitor(
   const pendingTimers = new Set();
   let disposed = false;
 
+  // perf: elementFromPoint forces hit-testing on every call. During fast
+  // scrolling this added measurable main-thread cost per wheel event.
+  // Cache the result briefly — overlay appearance rarely changes mid-scroll.
+  let lastHitTestTime = 0;
+  let lastHitTestResult = null;
+  const HIT_TEST_CACHE_MS = 400;
+
   function clearPendingTimers() {
     for (const timerId of pendingTimers) {
       ct(timerId);
@@ -135,7 +142,10 @@ export function createScrollHealthMonitor(
     const clientX = event.clientX;
     const clientY = event.clientY;
     let topEl = null;
-    if (
+    const hitTestNow = now();
+    if (hitTestNow - lastHitTestTime < HIT_TEST_CACHE_MS && lastHitTestResult !== undefined) {
+      topEl = lastHitTestResult;
+    } else if (
       doc &&
       typeof doc.elementFromPoint === 'function' &&
       typeof clientX === 'number' &&
@@ -146,6 +156,8 @@ export function createScrollHealthMonitor(
       } catch {
         topEl = null;
       }
+      lastHitTestTime = hitTestNow;
+      lastHitTestResult = topEl;
     }
 
     if (
@@ -203,8 +215,7 @@ export function createScrollHealthMonitor(
       wsReadyState,
       bufferType,
       lastHandlerPath,
-      kimiReadyNotified:
-        typeof getKimiReadyNotified === 'function' ? getKimiReadyNotified() : null,
+      kimiReadyNotified: typeof getKimiReadyNotified === 'function' ? getKimiReadyNotified() : null,
       grokTuiReady: typeof getGrokTuiReady === 'function' ? getGrokTuiReady() : null,
       opencodeFooterConfirmed:
         typeof getOpencodeFooterConfirmed === 'function' ? getOpencodeFooterConfirmed() : null,
@@ -217,9 +228,7 @@ export function createScrollHealthMonitor(
 
       const viewportYAfter = getTerminalViewportScrollOffset(term);
       const viewportMoved =
-        viewportYAfter !== null &&
-        viewportYBefore !== null &&
-        viewportYAfter !== viewportYBefore;
+        viewportYAfter !== null && viewportYBefore !== null && viewportYAfter !== viewportYBefore;
       const ptyWrote = ptyWheelWriteCount > ptyCountBefore;
       const handlerProcessed = handlerProcessedCount > handlerCountBefore;
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import { readVoiceSettings, writeVoiceSettings, STT_BACKENDS } from '@/lib/voice/voiceFeatureFlag';
 import { TTS_VOICE_OPTIONS, TTS_RATE_OPTIONS } from '@/lib/voice/ttsVoiceCatalog';

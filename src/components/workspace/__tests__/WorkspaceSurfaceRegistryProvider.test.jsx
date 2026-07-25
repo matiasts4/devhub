@@ -100,8 +100,12 @@ describe('WorkspaceSurfaceRegistryProvider', () => {
   });
 
   test('flag ON — mounts SharedSurfaceRegistryProvider with external registryInstance', () => {
-    const { Provider, LiveSurfaceRegistryContext, useSharedSurfaceRegistry, restore } =
-      loadModules('1');
+    const {
+      Provider,
+      LiveSurfaceRegistryContext: _LiveSurfaceRegistryContext,
+      useSharedSurfaceRegistry,
+      restore,
+    } = loadModules('1');
     const { createSharedSurfaceRegistry } = require('@/lib/pizarra/useSharedSurfaceRegistry');
     const externalRegistry = createSharedSurfaceRegistry({ projectId: 'p', workspaceId: 'w' });
 

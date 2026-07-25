@@ -17,9 +17,9 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Command } from 'cmdk';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Search,
   Terminal,
@@ -125,7 +125,7 @@ export default function QuickActionsPalette({ cwd = null }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={isReduced ? TRANSITION.reduced : TRANSITION.base}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/40"
             onClick={close}
           />
 

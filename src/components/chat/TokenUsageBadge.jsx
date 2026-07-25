@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
 import { Database, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { useMemo } from 'react';
 import { getContextUsageTone, resolveContextUsage } from '@/lib/agenthub/contextUsage';
 
 function formatTokens(n) {

@@ -1,6 +1,6 @@
-import './globals.css';
 import { Providers } from './providers';
 import { ClientErrorLogger } from '@/components/ClientErrorLogger';
+import './globals.css';
 
 export const metadata = {
   title: 'DevHub – Gestión Personal',

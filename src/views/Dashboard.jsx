@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { Plus } from 'lucide-react';
-import { sileo } from 'sileo';
-import { createClient } from '@/lib/db/localClient';
 import { UiHeader } from '@/components/ui/system';
 import MetricCard from '../components/MetricCard';
 import HistorialCommits from '../components/HistorialCommits';
 import UltimasInteracciones from '../components/UltimasInteracciones';
 import AgentActivityFeed from '../components/AgentActivityFeed';
 import UsageChart from '../components/UsageChart';
+import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { sileo } from 'sileo';
+import { createClient } from '@/lib/db/localClient';
 
 export default function Dashboard() {
   const { project } = useOutletContext() || {};

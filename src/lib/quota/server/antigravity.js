@@ -180,13 +180,13 @@ function detectAntigravityProcess() {
     try {
       const psCmd =
         'Get-CimInstance Win32_Process | Where-Object {' +
-        ' $_.CommandLine -and ($_.CommandLine -like \'*antigravity*\' -or $_.Name -like \'*language_server*\')' +
+        " $_.CommandLine -and ($_.CommandLine -like '*antigravity*' -or $_.Name -like '*language_server*')" +
         ' } | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress';
-      const out = execFileSync(
-        'powershell',
-        ['-NoProfile', '-Command', psCmd],
-        { encoding: 'utf8', timeout: 15000, windowsHide: true }
-      ).trim();
+      const out = execFileSync('powershell', ['-NoProfile', '-Command', psCmd], {
+        encoding: 'utf8',
+        timeout: 15000,
+        windowsHide: true,
+      }).trim();
       if (!out) return null;
 
       let procs = JSON.parse(out);
@@ -200,7 +200,8 @@ function detectAntigravityProcess() {
         if (!cmdLine.toLowerCase().includes('antigravity')) continue;
         // Shells/dev tools can mention antigravity in their arguments (or host
         // this very probe) — they are never the language server binary.
-        if (/^(bash|sh|zsh|powershell|pwsh|cmd|node|python|code)(64)?\.(exe|bat)$/i.test(name)) continue;
+        if (/^(bash|sh|zsh|powershell|pwsh|cmd|node|python|code)(64)?\.(exe|bat)$/i.test(name))
+          continue;
         const isServer =
           /language[_-]server/i.test(name) ||
           /language[_-]server/i.test(cmdLine) ||

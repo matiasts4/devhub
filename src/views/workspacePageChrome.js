@@ -180,12 +180,30 @@ export function getArtifactListStyle() {
 
 export function getArtifactItemStyle({ artifactType } = {}) {
   const typeColors = {
-    proposal: { color: 'var(--accent-cyan)', bg: 'color-mix(in srgb, var(--accent-cyan) 8%, var(--chrome-panel-fill))' },
-    spec: { color: 'var(--accent-cyan)', bg: 'color-mix(in srgb, var(--accent-cyan) 8%, var(--chrome-panel-fill))' },
-    design: { color: 'var(--accent-indigo)', bg: 'color-mix(in srgb, var(--accent-indigo) 8%, var(--chrome-panel-fill))' },
-    tasks: { color: 'var(--accent-purple)', bg: 'color-mix(in srgb, var(--accent-purple) 8%, var(--chrome-panel-fill))' },
-    apply: { color: 'var(--accent-emerald)', bg: 'color-mix(in srgb, var(--accent-emerald) 8%, var(--chrome-panel-fill))' },
-    verify: { color: 'var(--accent-amber)', bg: 'color-mix(in srgb, var(--accent-amber) 8%, var(--chrome-panel-fill))' },
+    proposal: {
+      color: 'var(--accent-cyan)',
+      bg: 'color-mix(in srgb, var(--accent-cyan) 8%, var(--chrome-panel-fill))',
+    },
+    spec: {
+      color: 'var(--accent-cyan)',
+      bg: 'color-mix(in srgb, var(--accent-cyan) 8%, var(--chrome-panel-fill))',
+    },
+    design: {
+      color: 'var(--accent-indigo)',
+      bg: 'color-mix(in srgb, var(--accent-indigo) 8%, var(--chrome-panel-fill))',
+    },
+    tasks: {
+      color: 'var(--accent-purple)',
+      bg: 'color-mix(in srgb, var(--accent-purple) 8%, var(--chrome-panel-fill))',
+    },
+    apply: {
+      color: 'var(--accent-emerald)',
+      bg: 'color-mix(in srgb, var(--accent-emerald) 8%, var(--chrome-panel-fill))',
+    },
+    verify: {
+      color: 'var(--accent-amber)',
+      bg: 'color-mix(in srgb, var(--accent-amber) 8%, var(--chrome-panel-fill))',
+    },
     archive: { color: 'var(--text-muted)', bg: 'var(--chrome-panel-fill)' },
   };
 

@@ -1,5 +1,7 @@
 'use client';
 
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
+import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
@@ -21,8 +23,6 @@ import { createClient } from '@/lib/db/localClient';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { LOCAL_USER_ID } from '@/lib/constants/local';
 import { sileo } from 'sileo';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
-import { Button } from '@/components/ui/button';
 import {
   DOCUMENTATION_POLICY_OPTIONS,
   DEFAULT_DOCUMENTATION_POLICY,

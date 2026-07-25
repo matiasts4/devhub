@@ -1,6 +1,5 @@
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import AgentHubHeader from '../AgentHubHeader.jsx';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 jest.mock('@/components/ui/dropdown-menu', () => {
   const React = require('react');

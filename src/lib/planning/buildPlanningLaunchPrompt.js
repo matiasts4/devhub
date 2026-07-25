@@ -34,9 +34,7 @@ export function buildPlanningLaunchPrompt({
     throw new TypeError('buildPlanningLaunchPrompt: projectId is required');
   }
 
-  const policyLine = documentationPolicy
-    ? `documentation_policy: '${documentationPolicy}'`
-    : null;
+  const policyLine = documentationPolicy ? `documentation_policy: '${documentationPolicy}'` : null;
 
   // Guard text intentionally avoids the literal forbidden tokens (validate_topic_key,
   // build_context_pack, /sdd-new) so the command string can never contain them, even

@@ -55,7 +55,7 @@ async function exchangeToken(oauthToken) {
     const msg = body?.message || `HTTP ${res.status}`;
     if (res.status === 401 || res.status === 403) {
       throw new Error(
-        `Token OAuth inválido o sin acceso a Copilot. ¿Tenés una suscripción activa? (${msg})`,
+        `Token OAuth inválido o sin acceso a Copilot. ¿Tenés una suscripción activa? (${msg})`
       );
     }
     throw new Error(`Error obteniendo copilot_token: ${msg}`);

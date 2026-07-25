@@ -1,6 +1,4 @@
 'use client';
-
-import React from 'react';
 import {
   Dialog,
   DialogPortal,
@@ -11,7 +9,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
 
 /**
  * TerminalSettingsModal — opened when the gear icon on a suspended terminal panel is clicked.

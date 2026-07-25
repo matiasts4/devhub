@@ -9,13 +9,13 @@
  */
 
 const STAGE_COLORS = {
-  action_request:    { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Action Request' },
-  policy_evaluation: { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Policy Evaluation' },
-  tool_invocation:   { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Tool Invocation' },
-  execution_progress: { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Execution Progress' },
-  rollback:          { bg: 'bg-orange-100',  text: 'text-orange-700', label: 'Rollback' },
-  deferred:          { bg: 'bg-yellow-100',  text: 'text-yellow-700',  label: 'Deferred' },
-  audit_recorded:    { bg: 'bg-gray-100',    text: 'text-gray-500',    label: 'Audit Recorded' },
+  action_request: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Action Request' },
+  policy_evaluation: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Policy Evaluation' },
+  tool_invocation: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Tool Invocation' },
+  execution_progress: { bg: 'bg-green-100', text: 'text-green-700', label: 'Execution Progress' },
+  rollback: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Rollback' },
+  deferred: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Deferred' },
+  audit_recorded: { bg: 'bg-gray-100', text: 'text-gray-500', label: 'Audit Recorded' },
 };
 
 export default function StageTag({ stage, status }) {

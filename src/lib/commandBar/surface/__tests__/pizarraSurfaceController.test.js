@@ -114,9 +114,7 @@ describe('PizarraSurfaceController', () => {
   });
 
   test('findTerminalByLabel returns null when not found', () => {
-    mockShapes = [
-      { id: 'term-1', type: 'terminal', label: 'existing' },
-    ];
+    mockShapes = [{ id: 'term-1', type: 'terminal', label: 'existing' }];
 
     const controller = createPizarraSurfaceController({
       addElement: mockAddElement,
@@ -287,9 +285,7 @@ describe('PizarraSurfaceController', () => {
     });
 
     test('findBrowser returns null when no browsers exist', () => {
-      mockShapes = [
-        { id: 'term-1', type: 'terminal', label: 'Terminal' },
-      ];
+      mockShapes = [{ id: 'term-1', type: 'terminal', label: 'Terminal' }];
 
       const controller = createPizarraSurfaceController({
         addElement: mockAddElement,

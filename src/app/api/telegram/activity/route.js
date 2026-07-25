@@ -100,7 +100,10 @@ export async function GET(request) {
 
     if (tableExists(db, 'telegram_intent_envelopes')) {
       queries.push(
-        buildIntentActivityQuery({ includeChatFilter: Boolean(chatId), includeEventFilter: Boolean(eventType) })
+        buildIntentActivityQuery({
+          includeChatFilter: Boolean(chatId),
+          includeEventFilter: Boolean(eventType),
+        })
       );
       if (chatId) {
         itemParams.push(chatId);
@@ -114,7 +117,10 @@ export async function GET(request) {
 
     if (tableExists(db, 'telegram_subscriptions')) {
       queries.push(
-        buildSubscriptionActivityQuery({ includeChatFilter: Boolean(chatId), includeEventFilter: Boolean(eventType) })
+        buildSubscriptionActivityQuery({
+          includeChatFilter: Boolean(chatId),
+          includeEventFilter: Boolean(eventType),
+        })
       );
       if (chatId) {
         itemParams.push(chatId);
@@ -151,7 +157,8 @@ export async function GET(request) {
         )
         .all(...params, limit, offset);
       const total = Number(
-        db.prepare(`SELECT count(*) as cnt FROM telegram_activity ${whereClause}`).get(...params)?.cnt ?? 0
+        db.prepare(`SELECT count(*) as cnt FROM telegram_activity ${whereClause}`).get(...params)
+          ?.cnt ?? 0
       );
       return NextResponse.json({ items, has_more: offset + limit < total, total });
     }

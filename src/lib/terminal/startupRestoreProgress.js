@@ -35,8 +35,7 @@ export function summarizeStartupRestorePlan(actions = []) {
   );
   const manualActions = safeActions.filter(
     (action) =>
-      action?.action === RESTORE_ACTION.TERMINATED &&
-      action?.reason === 'restore-policy-manual'
+      action?.action === RESTORE_ACTION.TERMINATED && action?.reason === 'restore-policy-manual'
   );
 
   const workloadTotal = relaunchActions.length + reattachActions.length;
@@ -53,14 +52,7 @@ export function summarizeStartupRestorePlan(actions = []) {
 export function buildStartupRestoreBannerMessage(progress = null) {
   if (!progress || typeof progress !== 'object') return null;
 
-  const {
-    status,
-    phase,
-    completed = 0,
-    total = 0,
-    panelCount = 0,
-    manualCount = 0,
-  } = progress;
+  const { status, phase, completed = 0, total = 0, panelCount = 0, manualCount = 0 } = progress;
 
   if (status === 'done') {
     if (total > 0) {

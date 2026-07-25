@@ -173,7 +173,9 @@ describe('dispatchAction', () => {
       id: 'term-error',
       label: 'error-terminal',
     });
-    fakeSurfaceController.captureTerminal.mockRejectedValue(new Error('Failed to read terminal output: Not Found'));
+    fakeSurfaceController.captureTerminal.mockRejectedValue(
+      new Error('Failed to read terminal output: Not Found')
+    );
 
     const intent = {
       intent: 'terminal-read',

@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { LiveSurfaceRegistryContext } from '@/lib/pizarra/useLiveSurfaceRegistry';
 import { SharedSurfaceRegistryProvider } from '@/lib/pizarra/useSharedSurfaceRegistry';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';

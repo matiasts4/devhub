@@ -1,32 +1,19 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
-import {
-  MapPin,
-  Plus,
-  CheckCircle2,
-  Circle,
-  Clock,
-  Loader2,
-  X,
-  AlertTriangle,
-  Zap,
-  Trash2,
-  Flag,
-} from 'lucide-react';
-import { createClient } from '@/lib/db/localClient';
-import { useAuth } from '@/lib/auth/AuthContext';
-import { LOCAL_USER_ID } from '@/lib/constants/local';
-import { sileo } from 'sileo';
 import { DatePicker } from '@/components/ui/date-picker';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import StatusSignal from '@/components/ui/StatusSignal';
 import { UiHeader } from '@/components/ui/system/ui-header';
+import { useState, useEffect, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
+import { MapPin, Plus, CheckCircle2, Clock, Loader2, X, Trash2, Flag } from 'lucide-react';
+import { createClient } from '@/lib/db/localClient';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { LOCAL_USER_ID } from '@/lib/constants/local';
+import { sileo } from 'sileo';
 import {
   getWorkspaceDataTileStyle,
   getWorkspacePageContentStyle,
-  getWorkspacePageHeaderStyle,
   getWorkspaceSectionHeaderStripStyle,
   getWorkspaceSectionSurfaceStyle,
   getWorkspaceStatusPillStyle,

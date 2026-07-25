@@ -1,4 +1,12 @@
 'use strict';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog.jsx';
+import { Button } from '@/components/ui/button.jsx';
 
 /**
  * ConfirmDialog — Tier 2 one-step confirmation.
@@ -8,10 +16,6 @@
  * Closes on backdrop click or Escape key.
  */
 
-import React from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog.jsx';
-import { Button } from '@/components/ui/button.jsx';
-
 /**
  * @param {{ pending: object, onConfirm: function, onCancel: function }} props
  */
@@ -19,11 +23,13 @@ export default function ConfirmDialog({ pending, onConfirm, onCancel }) {
   const { actionDef, params, target } = pending;
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
-      <DialogContent
-        className="max-w-md"
-        onPointerDownOutside={(e) => e.preventDefault()}
-      >
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onCancel();
+      }}
+    >
+      <DialogContent className="max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{actionDef.label}</DialogTitle>
         </DialogHeader>
@@ -47,9 +53,7 @@ export default function ConfirmDialog({ pending, onConfirm, onCancel }) {
           <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button onClick={onConfirm}>
-            Confirm
-          </Button>
+          <Button onClick={onConfirm}>Confirm</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

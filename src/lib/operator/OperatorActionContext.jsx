@@ -13,7 +13,7 @@
  * Throws PolicyDeniedError / PolicyDeferredError for UI to catch and toast.
  */
 
-import React, { createContext, useContext, useReducer, useCallback, useRef } from 'react';
+import { createContext, useContext, useReducer, useCallback, useRef } from 'react';
 
 // ── Custom error types ─────────────────────────────────────────────
 export class PolicyDeniedError extends Error {
@@ -34,7 +34,7 @@ export class PolicyDeferredError extends Error {
 
 // ── Initial state ──────────────────────────────────────────────────
 const initialState = {
-  pendingAction: null,   // { actionId, actionDef, params, target, actorRole, actorSessionId }
+  pendingAction: null, // { actionId, actionDef, params, target, actorRole, actorSessionId }
 };
 
 // ── Reducer actions ────────────────────────────────────────────────
@@ -183,7 +183,8 @@ export function OperatorActionProvider({ actorRole, actorSessionId, children }) 
         throw new PolicyDeferredError(result.error_detail);
 
       default:
-        if (pending._reject) pending._reject(new PolicyDeferredError(result.error_detail || 'Unexpected result'));
+        if (pending._reject)
+          pending._reject(new PolicyDeferredError(result.error_detail || 'Unexpected result'));
         throw new PolicyDeferredError(result.error_detail || 'Unexpected re-dispatch result');
     }
   }, []);
@@ -227,11 +228,7 @@ export function OperatorActionProvider({ actorRole, actorSessionId, children }) 
     cancelAction,
   };
 
-  return (
-    <OperatorActionContext.Provider value={value}>
-      {children}
-    </OperatorActionContext.Provider>
-  );
+  return <OperatorActionContext.Provider value={value}>{children}</OperatorActionContext.Provider>;
 }
 
 // ── Hook ────────────────────────────────────────────────────────────
@@ -242,11 +239,3 @@ export function useOperatorAction() {
   }
   return ctx;
 }
-
-module.exports = {
-  OperatorActionContext,
-  OperatorActionProvider,
-  useOperatorAction,
-  PolicyDeniedError,
-  PolicyDeferredError,
-};

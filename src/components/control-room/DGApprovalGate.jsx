@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { panelShellStyle, metaTextStyle } from './utils';
 
 export default function DGApprovalGate({
@@ -38,9 +38,7 @@ export default function DGApprovalGate({
     >
       <div className="flex items-center gap-2 mb-3">
         <span className="text-base">⚠</span>
-        <p className="font-semibold text-sm">
-          El Director requiere aprobación del Operator
-        </p>
+        <p className="font-semibold text-sm">El Director requiere aprobación del Operator</p>
       </div>
 
       {approvalItem?.reason_class ? (

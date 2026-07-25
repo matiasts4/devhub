@@ -30,7 +30,7 @@ export async function POST() {
       const text = await res.text();
       return NextResponse.json(
         { error: `GitHub respondió ${res.status}: ${text}` },
-        { status: 502 },
+        { status: 502 }
       );
     }
 
@@ -40,7 +40,7 @@ export async function POST() {
     if (!data.device_code || !data.user_code || !data.verification_uri) {
       return NextResponse.json(
         { error: 'Respuesta inesperada de GitHub Device Flow' },
-        { status: 502 },
+        { status: 502 }
       );
     }
 

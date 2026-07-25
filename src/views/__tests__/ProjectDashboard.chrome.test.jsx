@@ -130,9 +130,9 @@ describe('ProjectDashboard morphology chrome', () => {
     expectHeadingInsideChromePanel(view.container, 'Fecha Estimada de Entrega');
     expectHeadingInsideChromePanel(view.container, 'Próximas Tareas');
 
-    expect(view.container.querySelectorAll('[data-chrome-surface="panel"]').length).toBeGreaterThanOrEqual(
-      7
-    );
+    expect(
+      view.container.querySelectorAll('[data-chrome-surface="panel"]').length
+    ).toBeGreaterThanOrEqual(7);
 
     const aiPill = Array.from(view.container.querySelectorAll('[data-chrome-surface="pill"]')).find(
       (element) => element.textContent.includes('IA')

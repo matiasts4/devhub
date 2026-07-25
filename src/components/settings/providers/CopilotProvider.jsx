@@ -1,8 +1,8 @@
 'use client';
 
-import { Shield } from 'lucide-react';
 import { ProviderCardShell } from '@/components/settings/shared/ProviderCardShell';
 import { CopilotAuthPanel } from '@/components/settings/providers/CopilotAuthPanel';
+import { Shield } from 'lucide-react';
 
 export function CopilotProvider({ providerData, onToggle, onUpdate }) {
   const isEnabled = providerData?.enabled ?? true;

@@ -9,7 +9,6 @@ import {
   createShape,
   serializeShape,
   deserializeShape,
-  generateId,
   SHAPE_TYPES,
 } from '@/lib/pizarra/shapeModel';
 import { SHAPE_DEFAULTS } from '@/lib/pizarra/theme';

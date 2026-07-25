@@ -8,7 +8,10 @@ let cachedOverlaySource = null;
 function getOverlaySource() {
   if (cachedOverlaySource) return cachedOverlaySource;
   try {
-    const overlayPath = path.join(process.cwd(), 'node_modules/@emergentbase/visual-edits/dist/visual-edit-overlay.js');
+    const overlayPath = path.join(
+      process.cwd(),
+      'node_modules/@emergentbase/visual-edits/dist/visual-edit-overlay.js'
+    );
     cachedOverlaySource = fs.readFileSync(overlayPath, 'utf8');
     return cachedOverlaySource;
   } catch (e) {
@@ -78,9 +81,10 @@ function firstHeaderValue(value) {
 
 function resolveAppOrigin(request) {
   const requestUrl = request?.nextUrl ? new URL(request.nextUrl.toString()) : new URL(request.url);
-  const getHeader = typeof request?.headers?.get === 'function'
-    ? (name) => firstHeaderValue(request.headers.get(name))
-    : () => null;
+  const getHeader =
+    typeof request?.headers?.get === 'function'
+      ? (name) => firstHeaderValue(request.headers.get(name))
+      : () => null;
 
   const explicitOrigin = getHeader('origin');
   if (explicitOrigin) {
@@ -148,40 +152,42 @@ function buildNavInterceptor(appOrigin, targetOrigin) {
   const safeProxyBase = JSON.stringify(proxyBase);
   const safeTargetOrigin = JSON.stringify(targetOrigin);
 
-  return `<script data-devhub-nav-interceptor>(function(H){` +
+  return (
+    `<script data-devhub-nav-interceptor>(function(H){` +
     `var P=${safeProxyBase},T=${safeTargetOrigin};` +
     `console.log('[devhub][nav-interceptor] initialized', {proxyBase:P,targetOrigin:T});` +
     `function rLoc(u){` +
-      `if(!u || typeof u !== 'string' || u.startsWith(P) || u.startsWith('data:') || u.startsWith('blob:')) return u;` +
-      `try {` +
-        `var x = new URL(u, window.location.href);` +
-        `if (x.origin === T || x.origin === window.location.origin) {` +
-          `var r = P + encodeURIComponent(x.pathname + x.search + x.hash);` +
-          `console.log('[devhub][nav-interceptor] rewriting', {from:u,to:r});` +
-          `return r;` +
-        `}` +
-      `} catch(e) {}` +
-      `return u;` +
+    `if(!u || typeof u !== 'string' || u.startsWith(P) || u.startsWith('data:') || u.startsWith('blob:')) return u;` +
+    `try {` +
+    `var x = new URL(u, window.location.href);` +
+    `if (x.origin === T || x.origin === window.location.origin) {` +
+    `var r = P + encodeURIComponent(x.pathname + x.search + x.hash);` +
+    `console.log('[devhub][nav-interceptor] rewriting', {from:u,to:r});` +
+    `return r;` +
+    `}` +
+    `} catch(e) {}` +
+    `return u;` +
     `}` +
     `if(H){var hp=H.prototype,ops=hp.pushState,ors=hp.replaceState;` +
     `hp.pushState=function(s,t,u){` +
-      `var nu = u ? rLoc(u) : u;` +
-      `console.log('[devhub][nav-interceptor] pushState', {original:u,rewritten:nu});` +
-      `return ops.call(this,s,t,nu);` +
+    `var nu = u ? rLoc(u) : u;` +
+    `console.log('[devhub][nav-interceptor] pushState', {original:u,rewritten:nu});` +
+    `return ops.call(this,s,t,nu);` +
     `};` +
     `hp.replaceState=function(s,t,u){` +
-      `var nu = u ? rLoc(u) : u;` +
-      `console.log('[devhub][nav-interceptor] replaceState', {original:u,rewritten:nu});` +
-      `return ors.call(this,s,t,nu);` +
+    `var nu = u ? rLoc(u) : u;` +
+    `console.log('[devhub][nav-interceptor] replaceState', {original:u,rewritten:nu});` +
+    `return ors.call(this,s,t,nu);` +
     `};}` +
     `window.addEventListener('click', function(e){` +
-      `var a = e.target.closest('a');` +
-      `if(a && a.href && !a.target && (a.origin === window.location.origin || a.origin === T)) {` +
-        `var nu = rLoc(a.href);` +
-        `if(nu !== a.href) { e.preventDefault(); e.stopPropagation(); window.location.href = nu; }` +
-      `}` +
+    `var a = e.target.closest('a');` +
+    `if(a && a.href && !a.target && (a.origin === window.location.origin || a.origin === T)) {` +
+    `var nu = rLoc(a.href);` +
+    `if(nu !== a.href) { e.preventDefault(); e.stopPropagation(); window.location.href = nu; }` +
+    `}` +
     `}, true);` +
-    `})(window.History);</script>`;
+    `})(window.History);</script>`
+  );
 }
 
 function collectEscapeTargets(html, targetUrl) {
@@ -191,7 +197,12 @@ function collectEscapeTargets(html, targetUrl) {
 
   for (const match of matches) {
     const candidate = String(match[2] || '').trim();
-    if (!candidate || candidate.startsWith('#') || candidate.startsWith('data:') || candidate.startsWith('blob:')) {
+    if (
+      !candidate ||
+      candidate.startsWith('#') ||
+      candidate.startsWith('data:') ||
+      candidate.startsWith('blob:')
+    ) {
       continue;
     }
 
@@ -225,7 +236,7 @@ function injectPreviewBase(html, targetUrl, appOrigin) {
   // Remove meta-refresh tags: they cause declarative cross-origin redirects that bypass JS interception.
   const withoutMetaRefresh = html.replace(
     /<meta[^>]+http-equiv=['"]?refresh['"]?[^>]*\/?>/gi,
-    '<!-- meta-refresh-removed-by-devhub -->',
+    '<!-- meta-refresh-removed-by-devhub -->'
   );
 
   const withRewrites = rewriteRootRelativeUrls(withoutMetaRefresh, origin);
@@ -319,7 +330,10 @@ export async function GET(request) {
         error: extractFetchErrorDetails(error),
       });
       return NextResponse.json(
-        { error: 'Failed to rewrite preview HTML', detail: error?.message || 'unknown rewrite error' },
+        {
+          error: 'Failed to rewrite preview HTML',
+          detail: error?.message || 'unknown rewrite error',
+        },
         { status: 502 }
       );
     }

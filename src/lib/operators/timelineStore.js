@@ -19,7 +19,9 @@ const { applyRedactionLevel } = require('./timelineRedaction.js');
 /** Return the next sequence number for an execution_id (D-2: server-assigned). */
 function _nextSequence(db, executionId) {
   const row = db
-    .prepare('SELECT COALESCE(MAX(sequence), 0) + 1 AS seq FROM operator_timeline WHERE execution_id = ?')
+    .prepare(
+      'SELECT COALESCE(MAX(sequence), 0) + 1 AS seq FROM operator_timeline WHERE execution_id = ?'
+    )
     .get(executionId);
   return row.seq;
 }
@@ -99,22 +101,20 @@ function insertTimelineItem(item) {
   }
 
   // 2. Server-assign sequence (D-2)
-  const sequence =
-    item.sequence != null ? item.sequence : _nextSequence(db, item.execution_id);
+  const sequence = item.sequence != null ? item.sequence : _nextSequence(db, item.execution_id);
 
   // 3. Process params through redaction layer (D-2, OET-5)
   const storedParams = applyRedactionLevel(item.params, item.redaction_level || 'none');
-  const storedNextStepHint =
-    item.redaction_level === 'full' ? null : (item.next_step_hint || null);
+  const storedNextStepHint = item.redaction_level === 'full' ? null : item.next_step_hint || null;
 
   // 4. Clear next_step_hint when redaction_level === 'full' (D-2)
-  const nextStepHint =
-    item.redaction_level === 'full' ? null : (item.next_step_hint || null);
+  const nextStepHint = item.redaction_level === 'full' ? null : item.next_step_hint || null;
 
   // 5. Build error fields
   const errorCode = item.error?.code || null;
   const errorMessage = item.error?.message || null;
-  const errorRecoverable = item.error?.recoverable != null ? (item.error.recoverable ? 1 : 0) : null;
+  const errorRecoverable =
+    item.error?.recoverable != null ? (item.error.recoverable ? 1 : 0) : null;
 
   // 6. Insert
   db.prepare(

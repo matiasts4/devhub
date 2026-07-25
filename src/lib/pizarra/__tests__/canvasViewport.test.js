@@ -1,8 +1,4 @@
-import {
-  canvasToViewport,
-  viewportToCanvas,
-  zoomAtPoint,
-} from '../canvasViewport';
+import { canvasToViewport, viewportToCanvas, zoomAtPoint } from '../canvasViewport';
 
 // Minimal DOMRect-like object for test factories
 function makeRect({ left = 0, top = 0, width = 800, height = 600 } = {}) {
@@ -59,7 +55,11 @@ describe('canvasToViewport', () => {
   });
 
   it('handles undefined individual pan axes', () => {
-    const result = canvasToViewport(5, 10, { zoom: 1, pan: { x: 0 }, canvasRect: makeRect({ left: 0, top: 0 }) });
+    const result = canvasToViewport(5, 10, {
+      zoom: 1,
+      pan: { x: 0 },
+      canvasRect: makeRect({ left: 0, top: 0 }),
+    });
     expect(result.x).toBe(5);
     expect(result.y).toBe(10);
   });
@@ -118,7 +118,11 @@ describe('viewportToCanvas', () => {
   });
 
   it('inverts canvasToViewport at zoom=0.5', () => {
-    const opts = { zoom: 0.5, pan: { x: 50, y: 30 }, canvasRect: makeRect({ left: 200, top: 100 }) };
+    const opts = {
+      zoom: 0.5,
+      pan: { x: 50, y: 30 },
+      canvasRect: makeRect({ left: 200, top: 100 }),
+    };
     const original = canvasToViewport(100, 200, opts);
     const roundTrip = viewportToCanvas(original.x, original.y, opts);
     expect(roundTrip.x).toBe(100);
@@ -126,7 +130,11 @@ describe('viewportToCanvas', () => {
   });
 
   it('handles undefined individual pan axes', () => {
-    const result = viewportToCanvas(5, 10, { zoom: 1, pan: { y: 0 }, canvasRect: makeRect({ left: 0, top: 0 }) });
+    const result = viewportToCanvas(5, 10, {
+      zoom: 1,
+      pan: { y: 0 },
+      canvasRect: makeRect({ left: 0, top: 0 }),
+    });
     expect(result.x).toBe(5);
     expect(result.y).toBe(10);
   });

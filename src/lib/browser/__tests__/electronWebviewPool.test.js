@@ -9,10 +9,7 @@ describe('electronWebviewPool', () => {
   });
 
   function attachReady(key, partition = 'persist:test') {
-    const {
-      acquireElectronWebview,
-      attachElectronWebview,
-    } = require('../electronWebviewPool');
+    const { acquireElectronWebview, attachElectronWebview } = require('../electronWebviewPool');
     const host = document.createElement('div');
     document.body.appendChild(host);
     const entry = acquireElectronWebview(key, partition);

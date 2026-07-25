@@ -116,7 +116,12 @@ export function applyZaiQuotaPayload(result, data) {
     if (usagePct > maxUsage) maxUsage = usagePct;
 
     windows.push({
-      name: limit.type === 'TIME_LIMIT' ? 'Z.ai Time Limit' : limit.type === 'TOKENS_LIMIT' ? 'Z.ai Token Limit' : `Z.ai ${limit.type || 'Limit'}`,
+      name:
+        limit.type === 'TIME_LIMIT'
+          ? 'Z.ai Time Limit'
+          : limit.type === 'TOKENS_LIMIT'
+            ? 'Z.ai Token Limit'
+            : `Z.ai ${limit.type || 'Limit'}`,
       usagePercent: Math.round(usagePct * 10) / 10,
       remainingFraction: Math.round((100 - usagePct) * 10) / 1000,
       resetsAt: resetAt,

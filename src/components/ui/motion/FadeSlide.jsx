@@ -9,7 +9,12 @@
  */
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { VARIANTS_FADE_UP, VARIANTS_FADE, VARIANTS_SLIDE_RIGHT, TRANSITION } from '../system/motion-tokens';
+import {
+  VARIANTS_FADE_UP,
+  VARIANTS_FADE,
+  VARIANTS_SLIDE_RIGHT,
+  TRANSITION,
+} from '../system/motion-tokens';
 
 const VARIANT_MAP = {
   up: VARIANTS_FADE_UP,

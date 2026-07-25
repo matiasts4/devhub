@@ -1,4 +1,13 @@
 'use client';
+import { MotionModeToggle } from '@/components/motion-lab/MotionModeToggle';
+import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
+import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
+import AgentHooksSettingsSection from '@/components/settings/AgentHooksSettingsSection';
+import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
+import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
+import ScenerySettingsSection from '@/components/settings/ScenerySettingsSection';
+import EquipoSettings from '@/components/EquipoSettings';
+import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { openDialog } from '@/lib/desktop/dialogs';
@@ -22,7 +31,6 @@ import {
   Zap,
   Moon,
   Sun,
-  Hash,
   Cpu,
   Server,
   SlidersHorizontal,
@@ -41,7 +49,6 @@ import {
   getStoredMorphology,
   getStoredMotionMode,
   getStoredTheme,
-  getStoredZoom,
   MORPHOLOGY_OPTIONS,
   MOTION_MODES,
   restoreAppearanceSnapshot,
@@ -50,19 +57,9 @@ import {
   setMotionMode,
   setMorphology,
   setTheme,
-  setZoom,
   THEMES,
   THEME_OPTIONS,
 } from '@/lib/theme/themes';
-import { MotionModeToggle } from '@/components/motion-lab/MotionModeToggle';
-import LLMProviderSettings from '@/components/settings/LLMProviderSettings';
-import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection';
-import AgentHooksSettingsSection from '@/components/settings/AgentHooksSettingsSection';
-import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
-import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
-import ScenerySettingsSection from '@/components/settings/ScenerySettingsSection';
-import EquipoSettings from '@/components/EquipoSettings';
-import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   DOCUMENTATION_POLICY_OPTIONS,
@@ -78,7 +75,7 @@ import {
   BarChart3,
   Palette as ProjectPalette,
 } from 'lucide-react';
-import { getWorkspaceBreadcrumbStyle, getWorkspacePageContentStyle } from './workspacePageChrome';
+import { getWorkspacePageContentStyle } from './workspacePageChrome';
 import {
   panelStyle,
   pillStyle,

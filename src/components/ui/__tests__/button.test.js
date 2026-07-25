@@ -14,8 +14,12 @@ describe('devhub button morphology chrome', () => {
     expect(getDevhubButtonChromeClasses('primary')).toContain('overflow-hidden');
     expect(getDevhubButtonChromeClasses('primary')).toContain('hover:-translate-x-px');
     expect(getDevhubButtonChromeClasses('primary')).not.toContain('rounded-full');
-    expect(getDevhubButtonChromeClasses('glass')).toContain('hover:bg-[var(--chrome-control-fill-hover)]');
-    expect(getDevhubButtonChromeClasses('ghost')).toContain('active:translate-y-[var(--chrome-press-offset)]');
+    expect(getDevhubButtonChromeClasses('glass')).toContain(
+      'hover:bg-[var(--chrome-control-fill-hover)]'
+    );
+    expect(getDevhubButtonChromeClasses('ghost')).toContain(
+      'active:translate-y-[var(--chrome-press-offset)]'
+    );
   });
 
   test('devhub primary variant style comes from morphology factory instead of hardcoded colors', () => {

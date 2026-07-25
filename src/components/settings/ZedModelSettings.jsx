@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import {
   Cpu,
   Eye,
@@ -14,6 +13,7 @@ import {
   LogOut,
   RefreshCw,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 
 const GROK_MODELS = [

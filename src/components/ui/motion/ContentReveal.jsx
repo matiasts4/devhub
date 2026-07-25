@@ -7,14 +7,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { TRANSITION, VARIANTS_FADE } from '../system/motion-tokens';
 
-export function ContentReveal({
-  ready,
-  placeholder,
-  children,
-  className,
-  style,
-  transition,
-}) {
+export function ContentReveal({ ready, placeholder, children, className, style, transition }) {
   const resolvedTransition = transition ?? TRANSITION.base;
 
   return (

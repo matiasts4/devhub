@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
 import { TerminalSquare, ChevronRight, Loader2, Check, XCircle } from 'lucide-react';
+import React, { useMemo } from 'react';
 
 /**
  * SubagentBadge — Mini-badge que aparece debajo del mensaje del orquestador

@@ -30,7 +30,9 @@ describe('Sidebar nav item classes', () => {
       const cls = getNavItemClasses(false, true);
       expect(cls).toContain('gap-3');
       expect(cls).toContain('var(--accent-primary)');
-      expect(cls).toContain('bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent-primary)_16%,transparent),rgba(255,255,255,0.05))]');
+      expect(cls).toContain(
+        'bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent-primary)_16%,transparent),rgba(255,255,255,0.05))]'
+      );
     });
 
     test('expanded + inactive: contains gap-3, no accent-token active style', () => {

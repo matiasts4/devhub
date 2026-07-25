@@ -90,6 +90,7 @@ export default [
 
       // React rules
       'react/no-unknown-property': 'error',
+      'react/jsx-uses-vars': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
 
@@ -112,6 +113,9 @@ export default [
         ...globals.node,
         ...globals.es2020,
       },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 
@@ -168,7 +172,11 @@ export default [
 
   // Lib and App __tests__ and selected unit tests use ESM imports under Jest/Babel
   {
-    files: ['src/lib/**/__tests__/**/*.js', 'src/app/**/__tests__/**/*.js', 'tests/unit/panel-helpers.test.js'],
+    files: [
+      'src/lib/**/__tests__/**/*.js',
+      'src/app/**/__tests__/**/*.js',
+      'tests/unit/panel-helpers.test.js',
+    ],
     languageOptions: {
       sourceType: 'module',
       globals: {
@@ -178,7 +186,6 @@ export default [
       },
     },
   },
-
 
   // Override for localClient.js and its test to support ESM
   {
@@ -204,6 +211,97 @@ export default [
         ...globals.node,
         ...globals.es2020,
       },
+    },
+  },
+
+  // Additional CommonJS sources under src/ (module.exports / require based)
+  {
+    files: [
+      'src/lib/auth/errors.js',
+      'src/lib/auth/provider.js',
+      'src/lib/bus/shim/tct.js',
+      'src/lib/directorGeneral/bridge.js',
+      'src/lib/directorGeneral/index.js',
+      'src/lib/directorGeneral/timeline.js',
+      'src/lib/operations/action-registry.js',
+      'src/lib/operations/adapter-boundary.js',
+      'src/lib/operations/audit-emitter.js',
+      'src/lib/operations/intent-router.js',
+      'src/lib/operations/policy-layer.js',
+      'src/lib/operators/timelineRedaction.js',
+      'src/lib/operators/timelineRetention.js',
+      'src/lib/operators/timelineStore.js',
+      'src/lib/operators/timelineTypes.js',
+      'src/lib/pizarra/stateHelpers.js',
+      'src/lib/runtime/isDevelopmentRuntime.js',
+      'src/lib/sdd/ContextManager.js',
+      'src/lib/sdd/ModelConsolidator.js',
+      'src/lib/sdd/SessionPersistence.js',
+      'src/lib/sdd/WorktreeSyncer.js',
+      'src/lib/sdd/engramSync.js',
+      'src/lib/sdd/sessionIdUtils.js',
+      'src/lib/suggestions/cache.js',
+      'src/lib/suggestions/rules.js',
+      'src/lib/tenancy/policy.js',
+      'src/lib/tenancy/with-workspace-context.js',
+      'src/lib/ui-tokens.js',
+      'src/components/workspace/browserHistory.js',
+    ],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+        ...globals.es2020,
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
+
+  // Jest tests (ESM under Jest/Babel; JSX allowed)
+  {
+    files: ['src/**/*.test.{js,jsx,ts,tsx}', 'src/**/__tests__/**/*.{js,jsx,ts,tsx}'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.jest,
+        ...globals.es2020,
+        React: 'readonly',
+        process: 'readonly',
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'react/jsx-uses-vars': 'error',
+    },
+    plugins: {
+      react: pluginReact,
+    },
+  },
+
+  // Jest manual mocks (CommonJS or ESM, JSX allowed)
+  {
+    files: ['src/**/__mocks__/**'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+        ...globals.browser,
+        ...globals.es2020,
+        React: 'readonly',
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 

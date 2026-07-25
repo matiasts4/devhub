@@ -1,5 +1,3 @@
-import React from 'react';
-
 export function ProviderActions({
   onTest,
   onSave,
@@ -29,9 +27,7 @@ export function ProviderActions({
       </div>
 
       {testResult ? (
-        <div>
-          {testResult.valid ? `OK - Autenticado` : `ERR - ${testResult.error || 'Error'}`}
-        </div>
+        <div>{testResult.valid ? `OK - Autenticado` : `ERR - ${testResult.error || 'Error'}`}</div>
       ) : null}
     </div>
   );

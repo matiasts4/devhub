@@ -38,7 +38,9 @@ describe('ModelConsolidator', () => {
       expect(resolveModelAlias('minimax-3')).toBe('minimax-coding-plan/MiniMax-M3');
       expect(resolveModelAlias('minimax-m3')).toBe('minimax-coding-plan/MiniMax-M3');
       expect(resolveModelAlias('mm3')).toBe('minimax-coding-plan/MiniMax-M3');
-      expect(resolveModelAlias('minimax-coding-plan/minimax-m3')).toBe('minimax-coding-plan/MiniMax-M3');
+      expect(resolveModelAlias('minimax-coding-plan/minimax-m3')).toBe(
+        'minimax-coding-plan/MiniMax-M3'
+      );
     });
 
     test('resolves legacy Claude aliases to unified model', () => {

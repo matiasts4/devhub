@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, GitBranch, Loader2, RefreshCw, Undo2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { explorerGitColor } from './gitStatusColor';
 import { fileIconUrl } from './iconResolver';
 import { invalidateGitStatus } from './useGitStatus';

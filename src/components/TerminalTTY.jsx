@@ -1,16 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardPaste, Copy, Loader2, RotateCcw, Wifi, WifiOff, X } from 'lucide-react';
-import { getTerminalTheme } from '@/components/terminal/TerminalThemeSync';
+import WebglErrorSection from './terminal/components/WebglErrorSection';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   getTerminalAppShellStyle,
   getTerminalFloatingControlStyle,
   getTerminalTitleBarStyle,
   getTerminalViewportFrameStyle,
 } from '@/components/terminal/terminalChromeStyles';
-import WebglErrorSection from './terminal/components/WebglErrorSection';
 import useTerminalOutputQueue from './terminal/hooks/useTerminalOutputQueue';
 import useTerminalClipboard from './terminal/hooks/useTerminalClipboard';
 import useTerminalWheelRouter from './terminal/hooks/useTerminalWheelRouter';
@@ -36,47 +35,12 @@ import useTerminalSessionExit from './terminal/hooks/useTerminalSessionExit';
 import useTerminalInitialCommandLifecycle from './terminal/hooks/useTerminalInitialCommandLifecycle';
 import useTerminalNativeVteLifecycle from './terminal/hooks/useTerminalNativeVteLifecycle';
 import useTerminalRendererMigration from './terminal/hooks/useTerminalRendererMigration';
-import {
-  readClipboardImage,
-  readClipboardText,
-  saveClipboardImageToTempFile,
-  terminalClipboardEventBelongsToPanel,
-} from '@/lib/terminal/terminalClipboard';
-import {
-  getTerminalRendererFallbackCopy,
-  getTerminalRendererOptionLabel,
-  getTerminalRendererWebglFallbackCopy,
-  resolveRendererSelection,
-  TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
-} from '@/components/terminal/terminalRendererCapabilities';
-import { getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
 import { extractOpenCodeSessionId } from '@/lib/terminal/restorePolicyResolver';
-import {
-  containsTerminalResponseNoise,
-  filterTerminalInputForSession,
-  filterTerminalOutputForSession,
-} from '@/lib/terminal/terminalNoiseFilter';
-import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
-import {
-  detectOpenCodeTuiReady,
-  isOpenCodeLaunchCommand,
-  shouldDiscardOpenCodeCatchupReplay,
-} from '@/lib/terminal/opencodeReadyMarker';
-import {
-  detectKimiReadyFromTerminalBuffer,
-  detectKimiTuiReady,
-  isKimiLaunchCommand,
-  isKimiTuiLive,
-  shouldFreezeKimiTuiViewportOnWorkspaceShow,
-  shouldSkipKimiTuiPtyResize,
-} from '@/lib/terminal/kimiReadyMarker';
+import { isOpenCodeLaunchCommand } from '@/lib/terminal/opencodeReadyMarker';
+import { isKimiTuiLive } from '@/lib/terminal/kimiReadyMarker';
 import { detectAgentTypeFromCommand } from '@/lib/terminal/agentTuiMetadata';
-import { createPanelActivityTracker } from '@/components/terminal/utils/panelActivityTracker';
-import { clearPanelActivity } from '@/components/terminal/utils/panelActivityStore';
 import { clearPanelInitialCommandLifecycle } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
-import { getTerminalLayoutSettledGeneration } from '@/components/terminal/nativeLayoutSync';
-import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import {
   cancelNativeVteLayoutHide,
   clearNativeVteLease,
@@ -86,136 +50,41 @@ import {
   takeTerminalPanelBridge,
   stashTerminalPanelBridge,
 } from '@/lib/terminal/terminalPanelBridge';
-import {
-  hasSurface as graveyardHasSurface,
-  restoreSurface as graveyardRestoreSurface,
-  stashSurface as graveyardStashSurface,
-} from '@/lib/terminal/v2Graveyard';
-import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
-import { clearPanelSessionExit, readPanelSessionExit } from '@/lib/terminal/agentSessionExit';
+import { clearPanelSessionExit } from '@/lib/terminal/agentSessionExit';
 import { hasTerminalConnectedOnce } from '@/lib/terminal/terminalConnectedOnceRegistry';
 import { isTuiPointerDebugEnabled, logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
 
 import {
   cliLog,
-  attachTerminalRendererAddons,
   neutralizeWebglAddonForDisposal,
   getXtermContainerAnimProps,
-  resolveColdMountStaggerMs,
   disableTerminalFocusReporting,
   prepareActiveTuiTerminalFocus,
   prepareActiveTuiTerminalFocusRespectingSelection,
-  resetTerminalModesForReattach,
   normalizeTuiInitialCommand,
   isLikelyTuiInitialCommand,
   isGrokTuiInitialCommand,
-  detectGrokTuiReady,
-  detectGrokSessionFromOutput,
-  shouldPassthroughNativeTuiWheel,
-  resolveTerminalWheelScrollPrefer,
-  shouldInjectGrokWheelSgr,
-  shouldScrollKimiWheelLocally,
   shouldScrollAgentWheelLocally,
-  resolveGrokWheelSgrCoords,
-  buildGrokWheelScrollPayload,
-  buildTerminalWheelArrowSequence,
-  buildTerminalWheelScrollPayload,
-  buildTerminalWheelSgrSequence,
-  resolveTerminalPointerElement,
-  isForwardedTerminalWheelEvent,
-  forwardTerminalWheelToXterm,
   refreshTerminalViewport,
   forceTerminalViewportRepaint,
   nudgeTerminalViewportRepaint,
   stabilizeTerminalRenderer,
   isTerminalRendererReady,
-  isWebglAddonContextLost,
   fitTerminalViewport,
   buildTerminalViewportDiagnosticPayload,
-  shouldLogTerminalViewportDiagnostic,
   createTerminalViewportDiagnosticLogger,
-  resolveTerminalConnectionCloseState,
-  resolveTerminalClipboardShortcut,
-  getClipboardApi,
-  sendTerminalPasteInput,
   getTerminalRuntimePlatform,
   isTerminalViewportNearBottom,
-  shouldUseTerminalScrollbackWheel,
-  shouldInjectTerminalWheelIntoPty,
-  scrollTerminalViewport,
-  resolveTerminalWheelScrollDirection,
-  resolveTerminalWheelPageSteps,
-  buildTerminalWheelPageSequence,
-  resolveTerminalScreenElement,
-  shouldRouteWheelToTranscript,
-  shouldRunPanelClickViewportRecovery,
-  shouldClearWebglAtlasOnPanelActivation,
-  shouldSkipReactivateViewportOnPanelActivation,
-  shouldAttachWebglRenderer,
-  shouldBlockV2WebglRecovery,
-  shouldUseLegacySurvivorRecovery,
-  shouldFreezeSingleWebglViewportOnWorkspaceShow,
-  shouldAttachCanvasRenderer,
-  shouldMountCanvasAddon,
-  shouldUseGpuTerminalRenderer,
-  needsGpuRendererReattach,
-  shouldSkipGpuVisibilityReveal,
-  shouldSoftGpuWorkspaceReveal,
-  resolveWorkspaceLayoutShowRevealMode,
-  performSoftGpuVisibilityReveal,
   flushHiddenTerminalCatchupToTerm,
-  shouldRefitVisibleInactiveSplitPanel,
   shouldSyncTerminalViewportOnLayoutShow,
-  resolveConnectInitialCommandState,
-  isWorkspaceLayoutSwitchReason,
-  isWorkspaceSurvivorRecoverLayoutReason,
-  shouldFreezeDomViewportOnAppResume,
-  shouldFreezeDomViewportOnWorkspaceShow,
-  shouldSkipRedundantLayoutSettleViewportSync,
-  shouldSkipTerminalOutputWhileLayoutHidden,
-  appendHiddenTerminalOutputBuffer,
-  takeHiddenTerminalOutputBuffer,
   shouldDiscardHiddenOutputCatchup,
-  terminalBufferHasRenderableContent,
-  chunkTerminalOutputForCatchup,
   nudgeTerminalPtyResize,
-  shouldClearAtlasForSplitCanvas,
-  shouldClearGpuAtlasOnWorkspaceShow,
-  shouldReleaseWebglRendererOnLayoutHide,
-  shouldReleaseCanvasRendererOnLayoutHide,
   resolveTerminalRuntimePhase,
   shouldBootXtermRuntime,
-  getTerminalRendererStatusCopy,
-  getTerminalRendererRecoveryActionLabel,
-  shouldReinitializeTerminalForRenderer,
   shouldBlockTerminalViewportForWebglFallback,
   TERMINAL_VIEWPORT_SHELL_STYLE,
   TERMINAL_NATIVE_CONTENT_BODY_STYLE,
-  resolveTerminalFontFamily,
   TERMINAL_CONNECT_DEFER_MAX_MS,
-  TERMINAL_PROJECTION_READY_TIMEOUT_MS,
-  TERMINAL_COLD_MOUNT_STAGGER_MS,
-  TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
-  TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
-  TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,
-  TERMINAL_DISABLE_FOCUS_AND_MOUSE_REPORTING_SEQ,
-  TERMINAL_SYNC_OUTPUT_START_SEQ,
-  TERMINAL_SYNC_OUTPUT_END_SEQ,
-  TERMINAL_SYNC_OUTPUT_MAX_HOLD_MS,
-  TERMINAL_OUTPUT_MAX_BYTES_PER_FRAME,
-  TERMINAL_OUTPUT_BACKLOG_THRESHOLD,
-  TERMINAL_SNAPSHOT_THRESHOLD_BYTES,
-  TERMINAL_SNAPSHOT_MAX_INTERVAL_MS,
-  TERMINAL_GROK_INPUT_ZONE_ROWS,
-  TERMINAL_WHEEL_FORWARD_FLAG,
-  TERMINAL_PAGE_UP_SEQ,
-  TERMINAL_PAGE_DOWN_SEQ,
-  TERMINAL_DEFAULT_INPUT_ZONE_ROWS,
-  HIDDEN_TERMINAL_OUTPUT_BUFFER_MAX,
-  HIDDEN_OUTPUT_CATCHUP_DISCARD_BYTES,
-  HIDDEN_OUTPUT_CATCHUP_CHUNK_BYTES,
-  isTerminalViewportUndersized,
-  shouldDeferTerminalConnectUntilViewportFitted,
 } from './terminal/TerminalTTY.helpers';
 
 export * from './terminal/TerminalTTY.helpers';

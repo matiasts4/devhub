@@ -1,8 +1,6 @@
+import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
 // SwarmLaunchEntryPoint — renders the SwarmLaunchWizardModal when open.
 // Extracted from TerminalWorkspacesManager.jsx.
-
-import React from 'react';
-import SwarmLaunchWizardModal from '../../control-room/SwarmLaunchWizardModal';
 
 function SwarmLaunchEntryPoint({
   open,

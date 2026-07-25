@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback } from 'react';
 import { Home, Minus, Plus, ScanSearch } from 'lucide-react';
+import { useCallback } from 'react';
 import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 
 const BTN = {

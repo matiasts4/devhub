@@ -9,16 +9,15 @@ import {
   Sparkles,
   Square,
   Check,
-  ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import ChatMarkdown from '@/components/chat/ChatMarkdown';
 import StreamingMessage from '@/components/chat/StreamingMessage';
 import AgentTracePanel from '@/components/chat/AgentTracePanel';
 import MCPAccordion from '@/components/chat/MCPAccordion';
 import SubagentBadge from '@/components/chat/SubagentBadge';
 import { Button } from '@/components/ui/button';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { normalizeSubagentStatus } from '@/lib/agenthubSubagentState';
 
 // ─── User Turn ────────────────────────────────────────────────────────────────
@@ -42,7 +41,9 @@ function UserTurn({
       await navigator.clipboard.writeText(message.content || '');
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     onCopyMessage?.(message);
   };
 
@@ -131,7 +132,10 @@ function UserTurn({
                 type="button"
                 size="sm"
                 onClick={() => onSaveEdit?.(message.id)}
-                style={{ background: 'var(--accent-primary)', color: 'var(--primary-foreground, #000)' }}
+                style={{
+                  background: 'var(--accent-primary)',
+                  color: 'var(--primary-foreground, #000)',
+                }}
               >
                 Guardar y regenerar
               </Button>
@@ -182,7 +186,9 @@ function AssistantTurn({
       await navigator.clipboard.writeText(message.content || '');
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     onCopyMessage?.(message);
   };
 
@@ -267,7 +273,9 @@ function SubagentTurn({ message, trace, onCancel, onViewInContext, compact = fal
   let meta = {};
   try {
     meta = message.meta ? JSON.parse(message.meta) : {};
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   const status = normalizeSubagentStatus(meta.status || 'success');
   const isRunning = status === 'running';
@@ -687,7 +695,9 @@ export default function ChatMessageList({
         let meta = {};
         try {
           meta = JSON.parse(m.meta || '{}');
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         map[lastAssistantId].push({
           id: m.id,
           agentProfile: meta.agentProfile || 'Sub-Agent',

@@ -16,7 +16,8 @@
  *   integration tests can observe the bg and the (optional) texture.
  */
 
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import ShapePreviewOverlay from './ShapePreviewOverlay';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { SHAPE_RENDERERS } from '@/lib/pizarra/shapeRenderers';
 import { useCanvasViewport, zoomAtPoint } from '@/lib/pizarra/canvasViewport';
 import { createShape, SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
@@ -31,7 +32,6 @@ import {
   resolveSceneryStyle as resolveSceneryBgStyle,
   SCENERY_CHANGED_EVENT,
 } from '@/lib/sceneries/sceneryPreferences';
-import ShapePreviewOverlay from './ShapePreviewOverlay';
 
 // pizarra-multi-select: AABB overlap test used by the marquee to decide
 // which shapes fall inside the selection rectangle.
@@ -85,6 +85,14 @@ export default function PizarraCanvas({
   const [pizarraBackground, setPizarraBackground] = useState(() => readPizarraBackground());
   const [sceneryPrefs, setSceneryPrefs] = useState(() => readSceneryPrefs());
   const { zoom, setZoom, pan, setPan } = useCanvasViewport();
+
+  // perf: refs mirror context state so the non-passive wheel listener is
+  // attached once and never churns on zoom/pan changes (previously the
+  // effect re-ran on every wheel frame, adding measurable scroll latency).
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
 
   // Sync pizarra background preferences and listen for live changes.
   useEffect(() => {
@@ -224,8 +232,8 @@ export default function PizarraCanvas({
       if (event.ctrlKey || event.metaKey) {
         const rect = wrapper.getBoundingClientRect();
         const next = zoomAtPoint({
-          currentZoom: zoom,
-          currentPan: pan,
+          currentZoom: zoomRef.current,
+          currentPan: panRef.current,
           deltaY: dy,
           focalX: event.clientX - rect.left,
           focalY: event.clientY - rect.top,
@@ -242,7 +250,7 @@ export default function PizarraCanvas({
     return () => {
       wrapper.removeEventListener('wheel', handleWheel);
     };
-  }, [setZoom, setPan, zoom, pan, konva, onWheelViewNavigate]);
+  }, [setZoom, setPan, konva, onWheelViewNavigate]);
 
   // ── Handlers (useCallback — declared before early return) ───────────────
 
@@ -643,7 +651,7 @@ export default function PizarraCanvas({
     );
   }
 
-  const { Stage, Layer, Rect, Line, Transformer } = konva;
+  const { Stage, Layer, Rect, Transformer } = konva;
 
   // pizarra-editing-ux: resolve a right-click on the Stage into a context
   // target — the shape id under the pointer (or null for empty canvas) +

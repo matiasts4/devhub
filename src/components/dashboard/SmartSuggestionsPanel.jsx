@@ -1,8 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
-import { getTransition } from '@/components/ui/system/motion-tokens';
 import {
   RefreshCw,
   AlertTriangle,
@@ -11,8 +8,10 @@ import {
   Lightbulb,
   Loader2,
   Send,
-  Settings,
 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
+import { getTransition } from '@/components/ui/system/motion-tokens';
 import { buildLocalSuggestions } from '@/lib/suggestions/rules';
 import suggestionsCache from '@/lib/suggestions/cache';
 

@@ -1,7 +1,15 @@
 // renderWorkspacePanel — standalone JSX function for rendering a single space panel.
 // Extracted from TerminalWorkspacesManager.jsx.
 
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import TerminalTTY from '../../TerminalTTY';
+import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
+import PanelRendererSelect from './PanelRendererSelect';
+import PanelStatusBadge from './PanelStatusBadge';
+import {
+  SharedTerminalSurfacePortal,
+  SharedTerminalSurfaceRegistrar,
+} from '../SharedTerminalSurface';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   SplitSquareVertical,
   SplitSquareHorizontal,
@@ -14,18 +22,10 @@ import {
   FileCode2,
   Pencil,
 } from 'lucide-react';
-import TerminalTTY from '../../TerminalTTY';
-import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
 import { normalizePanelKind } from '../models/workspaceStateModel';
 import { derivePanelCommandMetadata } from '../utils/semanticMetadata';
 import { buildPanelHeaderDisplay } from '../utils/panelHeaderDisplay';
-import PanelRendererSelect from './PanelRendererSelect';
 import { SHOW_RENDERER_SWITCH } from '../terminalRendererPreferences';
-import PanelStatusBadge from './PanelStatusBadge';
-import {
-  SharedTerminalSurfacePortal,
-  SharedTerminalSurfaceRegistrar,
-} from '../SharedTerminalSurface';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
 import {
   isTerminalKeepaliveEnabled,
@@ -115,7 +115,7 @@ function PanelAddSpaceMenu({ panelId, panelKind, onAddSpaceKind, onSetPanelKind 
           <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
             Añadir
           </div>
-          {SPACE_KIND_OPTIONS.map(({ kind, label, Icon }) => (
+          {SPACE_KIND_OPTIONS.map(({ kind, label, Icon: _Icon }) => (
             <button
               key={`add-${kind}`}
               type="button"
@@ -142,7 +142,7 @@ function PanelAddSpaceMenu({ panelId, panelKind, onAddSpaceKind, onSetPanelKind 
               <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Convertir
               </div>
-              {SPACE_KIND_OPTIONS.map(({ kind, label, Icon }) => (
+              {SPACE_KIND_OPTIONS.map(({ kind, label, Icon: _Icon }) => (
                 <button
                   key={`convert-${kind}`}
                   type="button"

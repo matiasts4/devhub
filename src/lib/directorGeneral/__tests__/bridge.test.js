@@ -69,9 +69,9 @@ describe('DG bridge client', () => {
       await submitMissionRequest(intent, { fetchImpl: mockFetch });
 
       // Second call should throw duplicate error (active mission still in flight)
-      await expect(
-        submitMissionRequest(intent, { fetchImpl: mockFetch })
-      ).rejects.toThrow(/Hay una misión activa/);
+      await expect(submitMissionRequest(intent, { fetchImpl: mockFetch })).rejects.toThrow(
+        /Hay una misión activa/
+      );
     });
   });
 
@@ -95,7 +95,10 @@ describe('DG bridge client', () => {
       const mockFetch = makeMockFetch({ success: true });
       const now = Date.now();
 
-      await postApprovalReply('mission-1', 'checkpoint-1', 'approved', { fetchImpl: mockFetch, _now: now });
+      await postApprovalReply('mission-1', 'checkpoint-1', 'approved', {
+        fetchImpl: mockFetch,
+        _now: now,
+      });
 
       const [url, options] = mockFetch.mock.calls[0];
       expect(url).toContain('/api/agenthub/missions/mission-1/reply');
@@ -124,7 +127,11 @@ describe('DG bridge client', () => {
   describe('getMissionStatus', () => {
     test('fetches current mission status', async () => {
       const { getMissionStatus } = require('../bridge');
-      const mockFetch = makeMockFetch({ missionId: 'mission-1', status: 'in-progress', updatedAt: Date.now() });
+      const mockFetch = makeMockFetch({
+        missionId: 'mission-1',
+        status: 'in-progress',
+        updatedAt: Date.now(),
+      });
 
       const result = await getMissionStatus('mission-1', { fetchImpl: mockFetch });
 
@@ -138,7 +145,11 @@ describe('DG bridge client', () => {
     test('parses freshness from updatedAt', async () => {
       const { getMissionStatus } = require('../bridge');
       const staleTime = Date.now() - 10_000; // 10 seconds ago = stale (>5s)
-      const mockFetch = makeMockFetch({ missionId: 'mission-1', status: 'in-progress', updatedAt: staleTime });
+      const mockFetch = makeMockFetch({
+        missionId: 'mission-1',
+        status: 'in-progress',
+        updatedAt: staleTime,
+      });
 
       const result = await getMissionStatus('mission-1', { fetchImpl: mockFetch });
 
@@ -148,7 +159,11 @@ describe('DG bridge client', () => {
     test('parses freshness as just_now when updatedAt is recent', async () => {
       const { getMissionStatus } = require('../bridge');
       const recentTime = Date.now() - 1_000; // 1 second ago = just_now
-      const mockFetch = makeMockFetch({ missionId: 'mission-1', status: 'in-progress', updatedAt: recentTime });
+      const mockFetch = makeMockFetch({
+        missionId: 'mission-1',
+        status: 'in-progress',
+        updatedAt: recentTime,
+      });
 
       const result = await getMissionStatus('mission-1', { fetchImpl: mockFetch });
 

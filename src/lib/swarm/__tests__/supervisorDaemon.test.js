@@ -84,18 +84,40 @@ function seedWorkspace(db, overrides = {}) {
   const observedHead = overrides.observed_head || (needsBranchInfo ? 'abc123' : null);
 
   const cols = [
-    'id', 'project_id', 'agent_id', 'repo_root',
-    'workspace_path', 'base_branch', 'status',
+    'id',
+    'project_id',
+    'agent_id',
+    'repo_root',
+    'workspace_path',
+    'base_branch',
+    'status',
   ];
   const vals = [
-    `'${id}'`, `'${projectId}'`, `'${agentId}'`,
-    `'/repo'`, `'/ws'`, `'main'`, `'${status}'`,
+    `'${id}'`,
+    `'${projectId}'`,
+    `'${agentId}'`,
+    `'/repo'`,
+    `'/ws'`,
+    `'main'`,
+    `'${status}'`,
   ];
 
-  if (branchName !== null) { cols.push('branch_name'); vals.push(`'${branchName}'`); }
-  if (worktreePath !== null) { cols.push('worktree_path'); vals.push(`'${worktreePath}'`); }
-  if (observedBranch !== null) { cols.push('observed_branch'); vals.push(`'${observedBranch}'`); }
-  if (observedHead !== null) { cols.push('observed_head'); vals.push(`'${observedHead}'`); }
+  if (branchName !== null) {
+    cols.push('branch_name');
+    vals.push(`'${branchName}'`);
+  }
+  if (worktreePath !== null) {
+    cols.push('worktree_path');
+    vals.push(`'${worktreePath}'`);
+  }
+  if (observedBranch !== null) {
+    cols.push('observed_branch');
+    vals.push(`'${observedBranch}'`);
+  }
+  if (observedHead !== null) {
+    cols.push('observed_head');
+    vals.push(`'${observedHead}'`);
+  }
 
   // Handle optional last_heartbeat column
   if (overrides.last_heartbeat !== undefined) {
@@ -114,7 +136,9 @@ function seedWorkspace(db, overrides = {}) {
     vals.push(`'branch-${id}'`);
   }
 
-  db.exec(`INSERT OR IGNORE INTO agent_workspaces (${cols.join(', ')}) VALUES (${vals.join(', ')})`);
+  db.exec(
+    `INSERT OR IGNORE INTO agent_workspaces (${cols.join(', ')}) VALUES (${vals.join(', ')})`
+  );
   return id;
 }
 
@@ -126,7 +150,8 @@ function seedTask(db, overrides = {}) {
   const claimToken = overrides.claim_token !== undefined ? overrides.claim_token : null;
   const assignedTo = overrides.assigned_to !== undefined ? overrides.assigned_to : null;
   const startedAt = overrides.started_at !== undefined ? overrides.started_at : null;
-  const leaseExpiresAt = overrides.lease_expires_at !== undefined ? overrides.lease_expires_at : null;
+  const leaseExpiresAt =
+    overrides.lease_expires_at !== undefined ? overrides.lease_expires_at : null;
 
   db.exec(
     `INSERT INTO tasks (id, project_id, title, status, claim_token, assigned_to, started_at, lease_expires_at)
@@ -157,7 +182,11 @@ test('startSupervisorDaemon creates a repeating interval', () => {
   const pm = require('../processManager');
 
   // Should have startSupervisorDaemon method
-  assert.equal(typeof pm.startSupervisorDaemon, 'function', 'processManager must have startSupervisorDaemon method');
+  assert.equal(
+    typeof pm.startSupervisorDaemon,
+    'function',
+    'processManager must have startSupervisorDaemon method'
+  );
 
   // Start daemon — should return a timer ref
   const timer = pm.startSupervisorDaemon(10000);
@@ -270,9 +299,9 @@ test('evaluateSupervisorTick marks workspace as orphaned when heartbeat > 90s st
   assert.ok(result.orphaned.length > 0, 'should return list of orphaned workspaces');
 
   // Verify event was emitted
-  const events = db.prepare(
-    "SELECT * FROM agent_events WHERE event_type = 'workspace_orphaned'"
-  ).all();
+  const events = db
+    .prepare("SELECT * FROM agent_events WHERE event_type = 'workspace_orphaned'")
+    .all();
   assert.ok(events.length >= 1, 'a workspace_orphaned event should be emitted');
 
   const event = events[0];
@@ -338,9 +367,9 @@ test('evaluateSupervisorTick expires stale lease (task in_progress > 5 min)', ()
   // Event should be emitted
   assert.ok(result.expiredLeases.length > 0, 'should return list of expired leases');
 
-  const events = db.prepare(
-    "SELECT * FROM agent_events WHERE event_type = 'supervisor_action'"
-  ).all();
+  const events = db
+    .prepare("SELECT * FROM agent_events WHERE event_type = 'supervisor_action'")
+    .all();
   assert.ok(events.length >= 1, 'a supervisor_action event should be emitted');
 
   const event = events[0];
@@ -418,9 +447,21 @@ test('evaluateSupervisorTick does NOT expire a task when lease_expires_at is sti
   const result = evaluateSupervisorTick(db);
 
   const task = db.prepare("SELECT * FROM tasks WHERE id = 'task-lease-future-1'").get();
-  assert.equal(task.status, 'in_progress', 'task should remain claimed while lease_expires_at is in the future');
-  assert.equal(task.claim_token, 'tok-lease-future-1', 'claim token should be preserved while lease is still active');
-  assert.equal(result.expiredLeases.length, 0, 'no lease should expire while lease_expires_at is in the future');
+  assert.equal(
+    task.status,
+    'in_progress',
+    'task should remain claimed while lease_expires_at is in the future'
+  );
+  assert.equal(
+    task.claim_token,
+    'tok-lease-future-1',
+    'claim token should be preserved while lease is still active'
+  );
+  assert.equal(
+    result.expiredLeases.length,
+    0,
+    'no lease should expire while lease_expires_at is in the future'
+  );
 
   db.close();
 });
@@ -442,8 +483,9 @@ test('CAS: if API sets status=completed before daemon tries WHERE status=in_prog
   });
 
   // Simulate API completing the task BEFORE the daemon tick runs
-  db.prepare("UPDATE tasks SET status = 'completed', claim_token = NULL, assigned_to = NULL WHERE id = ?")
-    .run('task-cas-1');
+  db.prepare(
+    "UPDATE tasks SET status = 'completed', claim_token = NULL, assigned_to = NULL WHERE id = ?"
+  ).run('task-cas-1');
 
   // Now run the daemon tick — the CAS UPDATE should match 0 rows
   const result = evaluateSupervisorTick(db);
@@ -472,8 +514,7 @@ test('CAS: if API sets workspace status=completed before daemon tries WHERE stat
   // terminal_immutable trigger blocks updates to completed/failed.
   // The CAS pattern only matches WHERE status='active', so updating to 'paused'
   // before the tick means the daemon's UPDATE ... WHERE status='active' matches 0 rows.
-  db.prepare("UPDATE agent_workspaces SET status = 'paused' WHERE id = 'ws-cas-1'")
-    .run();
+  db.prepare("UPDATE agent_workspaces SET status = 'paused' WHERE id = 'ws-cas-1'").run();
 
   // Now run daemon tick — CAS UPDATE should match 0 rows
   const result = evaluateSupervisorTick(db);
@@ -512,9 +553,11 @@ test('All enforcement events contain action, target_id, and previous_status in p
   evaluateSupervisorTick(db);
 
   // Check all enforcement events have proper payload structure
-  const events = db.prepare(
-    "SELECT * FROM agent_events WHERE event_type IN ('workspace_orphaned', 'supervisor_action')"
-  ).all();
+  const events = db
+    .prepare(
+      "SELECT * FROM agent_events WHERE event_type IN ('workspace_orphaned', 'supervisor_action')"
+    )
+    .all();
 
   assert.ok(events.length >= 2, 'should have at least 2 enforcement events');
 
@@ -523,7 +566,10 @@ test('All enforcement events contain action, target_id, and previous_status in p
 
     // Every enforcement payload must have these fields
     assert.ok(payload.action, `event ${event.id} payload must have action`);
-    assert.ok(payload.target_id || event.workspace_id, `event ${event.id} payload must have target_id or workspace_id`);
+    assert.ok(
+      payload.target_id || event.workspace_id,
+      `event ${event.id} payload must have target_id or workspace_id`
+    );
     assert.ok(payload.previous_status, `event ${event.id} payload must have previous_status`);
   }
 
@@ -542,9 +588,9 @@ test('workspace_orphaned event includes workspace_id and agent_id', () => {
 
   evaluateSupervisorTick(db);
 
-  const events = db.prepare(
-    "SELECT * FROM agent_events WHERE event_type = 'workspace_orphaned'"
-  ).all();
+  const events = db
+    .prepare("SELECT * FROM agent_events WHERE event_type = 'workspace_orphaned'")
+    .all();
 
   assert.ok(events.length >= 1, 'should have workspace_orphaned event');
   const event = events[0];
@@ -567,14 +613,24 @@ test('orphan enforcement also emits a supervisor_action event with orphan_marked
   evaluateSupervisorTick(db);
 
   const actionEvent = db
-    .prepare("SELECT * FROM agent_events WHERE event_type = 'supervisor_action' AND workspace_id = ?")
+    .prepare(
+      "SELECT * FROM agent_events WHERE event_type = 'supervisor_action' AND workspace_id = ?"
+    )
     .get('ws-supervisor-action-1');
 
   assert.ok(actionEvent, 'orphan enforcement should emit a supervisor_action event');
   const payload = JSON.parse(actionEvent.payload_json);
   assert.equal(payload.action, 'orphan_marked', 'supervisor action should describe orphan marking');
-  assert.equal(payload.target_id, 'ws-supervisor-action-1', 'supervisor action should target the orphaned workspace');
-  assert.equal(payload.previous_status, 'active', 'supervisor action should record the previous status');
+  assert.equal(
+    payload.target_id,
+    'ws-supervisor-action-1',
+    'supervisor action should target the orphaned workspace'
+  );
+  assert.equal(
+    payload.previous_status,
+    'active',
+    'supervisor action should record the previous status'
+  );
 
   db.close();
 });
@@ -595,7 +651,11 @@ test('ensure starts the supervisor daemon when process manager is already ready'
 
   try {
     const result = await pm.ensure();
-    assert.equal(called, 1, 'ensure should start the supervisor daemon for an already-ready server');
+    assert.equal(
+      called,
+      1,
+      'ensure should start the supervisor daemon for an already-ready server'
+    );
     assert.equal(result.pid, 1234, 'ensure should return the existing server pid');
   } finally {
     pm.startSupervisorDaemon = originalStart;
@@ -619,7 +679,11 @@ test('shutdown always stops the supervisor daemon before returning', async () =>
 
   try {
     await pm.shutdown();
-    assert.equal(called, 1, 'shutdown should stop the supervisor daemon even if no server process is running');
+    assert.equal(
+      called,
+      1,
+      'shutdown should stop the supervisor daemon even if no server process is running'
+    );
   } finally {
     pm.stopSupervisorDaemon = originalStop;
     pm.serverProcess = originalServerProcess;
@@ -640,9 +704,9 @@ test('supervisor_action event for lease expiry includes agent_id', () => {
 
   evaluateSupervisorTick(db);
 
-  const events = db.prepare(
-    "SELECT * FROM agent_events WHERE event_type = 'supervisor_action'"
-  ).all();
+  const events = db
+    .prepare("SELECT * FROM agent_events WHERE event_type = 'supervisor_action'")
+    .all();
 
   assert.ok(events.length >= 1, 'should have supervisor_action event');
   const event = events[0];

@@ -87,7 +87,11 @@ describe('scenario-role-orch-denied', () => {
       target: null,
       actor_role: 'dir',
       actor_session_id: 'dir-001',
-      confirmation: { confirmed: true, confirmed_at: new Date().toISOString(), rationale: 'testing' },
+      confirmation: {
+        confirmed: true,
+        confirmed_at: new Date().toISOString(),
+        rationale: 'testing',
+      },
     });
 
     expect(result.status).toBe('PROCEED');

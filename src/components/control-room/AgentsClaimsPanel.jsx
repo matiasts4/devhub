@@ -1,4 +1,5 @@
-import React from 'react';
+import SwarmPhaseBadge from '@/components/SwarmPhaseBadge';
+import SwarmReactivateButton from '@/components/SwarmReactivateButton';
 import {
   CompactPanelShell,
   CompactRow,
@@ -6,18 +7,14 @@ import {
   formatLiveHint,
   formatMissingSource,
   formatRelativeTime,
-  formatToken,
   metaTextStyle,
   StatusPill,
   truncateId,
 } from './utils';
-import SwarmPhaseBadge from '@/components/SwarmPhaseBadge';
-import SwarmReactivateButton from '@/components/SwarmReactivateButton';
 
 export default function AgentsClaimsPanel({ agents = [], missionId = null, onReactivate = null }) {
   // Wrap renderAgent in a closure so it has access to missionId and onReactivate
-  const renderAgentWithContext = (agent) =>
-    renderAgent(agent, { missionId, onReactivate });
+  const renderAgentWithContext = (agent) => renderAgent(agent, { missionId, onReactivate });
 
   return (
     <CompactPanelShell

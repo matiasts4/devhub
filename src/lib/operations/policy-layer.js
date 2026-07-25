@@ -46,7 +46,10 @@ const DEFAULT_RESTRICTED_PANES = new Set(['credential-panel', 'secret-overlay'])
 function parseRestrictedPanes(envValue) {
   if (!envValue) return DEFAULT_RESTRICTED_PANES;
   try {
-    const panes = envValue.split(',').map((p) => p.trim()).filter(Boolean);
+    const panes = envValue
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
     if (panes.length === 0) {
       console.warn('[policy-layer] DH_RESTRICTED_PANES is empty, using defaults');
       return DEFAULT_RESTRICTED_PANES;

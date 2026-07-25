@@ -41,7 +41,10 @@ test('buildPlanningLaunchPrompt: omits documentation_policy line when not provid
 test('buildPlanningLaunchPrompt: contains the mandatory get_project_context call with the project id', () => {
   const prompt = buildPlanningLaunchPrompt({ ...baseOpts, mode: 'initial' });
   assert.match(prompt, /get_project_context/);
-  assert.match(prompt, new RegExp(`get_project_context[^{]*\\{[^}]*project_id[^}]*["']${UUID}["']`));
+  assert.match(
+    prompt,
+    new RegExp(`get_project_context[^{]*\\{[^}]*project_id[^}]*["']${UUID}["']`)
+  );
 });
 
 test('buildPlanningLaunchPrompt: contains the bulk_create step (milestones + tasks)', () => {

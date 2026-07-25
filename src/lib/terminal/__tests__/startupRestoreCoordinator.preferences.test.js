@@ -1,5 +1,8 @@
-const { buildRestoreManifestFromWorkspaceState, buildStartupRestorePlan, RESTORE_ACTION } =
-  require('../startupRestoreCoordinator');
+const {
+  buildRestoreManifestFromWorkspaceState,
+  buildStartupRestorePlan,
+  RESTORE_ACTION,
+} = require('../startupRestoreCoordinator');
 
 describe('startupRestoreCoordinator — workspace restore preferences', () => {
   test('applies global manual preference when per-session policy is absent', () => {

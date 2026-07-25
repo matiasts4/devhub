@@ -34,14 +34,18 @@
  */
 
 const React = require('react');
-const { installDom, renderIntoDom, cleanupMountedRoots } = require('@/test-support/domHarness');
+const {
+  installDom,
+  renderIntoDom: _renderIntoDom,
+  cleanupMountedRoots,
+} = require('@/test-support/domHarness');
 const { act } = require('@testing-library/react');
 
 const {
   useSharedSurfaceRegistry,
   SharedSurfaceRegistryProvider,
   createSharedSurfaceRegistry,
-  surfaceWriteRejected,
+  surfaceWriteRejected: _surfaceWriteRejected,
 } = require('../useSharedSurfaceRegistry');
 
 const mountedRoots = [];
@@ -56,7 +60,7 @@ afterEach(() => {
   if (dom && dom.window && dom.window.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }

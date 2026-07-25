@@ -27,11 +27,7 @@ describe('writeQueue — enqueueMany FIFO contract (T1.1)', () => {
 
   test('returns Promise.all semantics (input-order outcomes)', async () => {
     const localQueue = new DbWriteQueue({ timeout: 5_000 });
-    const jobs = [
-      async () => 'a',
-      async () => 'b',
-      async () => 'c',
-    ];
+    const jobs = [async () => 'a', async () => 'b', async () => 'c'];
 
     const results = await localQueue.enqueueMany(jobs);
     expect(results).toEqual(['a', 'b', 'c']);
@@ -45,9 +41,9 @@ describe('writeQueue — enqueueMany FIFO contract (T1.1)', () => {
 
   test('validates that each entry is a function', async () => {
     const localQueue = new DbWriteQueue({ timeout: 5_000 });
-    await expect(
-      localQueue.enqueueMany([() => 'ok', 'not-a-fn', () => 'ok'])
-    ).rejects.toThrow(TypeError);
+    await expect(localQueue.enqueueMany([() => 'ok', 'not-a-fn', () => 'ok'])).rejects.toThrow(
+      TypeError
+    );
   });
 
   test('returns outcomes in input order even when jobs are slow', async () => {

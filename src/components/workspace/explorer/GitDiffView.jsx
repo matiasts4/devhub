@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { detectCodeLanguage, MONACO_DIFF_OPTIONS } from './codeLanguages';
 
 function MonacoLoading() {

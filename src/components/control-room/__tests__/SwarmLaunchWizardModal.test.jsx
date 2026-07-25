@@ -112,9 +112,7 @@ describe('SwarmLaunchWizardModal morphology chrome', () => {
 //   (b) The field is passed through onDraftChange to the launch request
 // =========================================================================
 describe('T-018 hook: SwarmLaunchWizardModal spawnStrategy field', () => {
-  // eslint-disable-next-line global-require
   const fs = require('fs');
-  // eslint-disable-next-line global-require
   const path = require('path');
 
   function readModalSource() {

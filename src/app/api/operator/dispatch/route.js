@@ -102,28 +102,43 @@ export async function POST(request) {
 
     case 'CONFIRM_REQUIRED':
       // Return to UI — dialog should open
-      return NextResponse.json({
-        status: 'CONFIRM_REQUIRED',
-        action_id,
-        tier: result.actionDef?.tier ?? 2,
-      }, { status: 200 });
+      return NextResponse.json(
+        {
+          status: 'CONFIRM_REQUIRED',
+          action_id,
+          tier: result.actionDef?.tier ?? 2,
+        },
+        { status: 200 }
+      );
 
     case 'DENIED': {
       emitAudit(auditContext('denied'));
-      return NextResponse.json({ status: 'DENIED', error_detail: result.error_detail }, { status: 200 });
+      return NextResponse.json(
+        { status: 'DENIED', error_detail: result.error_detail },
+        { status: 200 }
+      );
     }
 
     case 'DEFERRED': {
       emitAudit(auditContext('deferred'));
-      return NextResponse.json({ status: 'DEFERRED', error_detail: result.error_detail }, { status: 200 });
+      return NextResponse.json(
+        { status: 'DEFERRED', error_detail: result.error_detail },
+        { status: 200 }
+      );
     }
 
     case 'NAVIGATE_RESTRICTED': {
       emitAudit({ ...auditContext('denied'), error_detail: 'restricted pane' });
-      return NextResponse.json({ status: 'DENIED', error_detail: 'restricted pane' }, { status: 200 });
+      return NextResponse.json(
+        { status: 'DENIED', error_detail: 'restricted pane' },
+        { status: 200 }
+      );
     }
 
     default:
-      return NextResponse.json({ status: 'DEFERRED', error_detail: 'Unexpected router result' }, { status: 200 });
+      return NextResponse.json(
+        { status: 'DEFERRED', error_detail: 'Unexpected router result' },
+        { status: 200 }
+      );
   }
 }

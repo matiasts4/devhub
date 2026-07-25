@@ -1,5 +1,5 @@
-import { useEffect, useCallback, useState } from 'react';
 import { X, Minus, Plus, Sparkles } from 'lucide-react';
+import { useEffect, useCallback, useState } from 'react';
 import { isElectronDesktop } from '@/lib/desktop/desktopBridge';
 import * as windowControls from '@/lib/desktop/windowControls';
 

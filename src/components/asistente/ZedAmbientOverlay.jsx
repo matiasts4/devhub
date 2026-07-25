@@ -1,8 +1,10 @@
 'use client';
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Send, Square, Volume2, VolumeX } from 'lucide-react';
+import ZedActivityDrawer from './ZedActivityDrawer';
+import ZedVoiceButton from './ZedVoiceButton';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMotionMode } from '@/components/ui/motion/MotionModeContext';
 import { getTransition } from '@/components/ui/system/motion-tokens';
 import { useZedChat } from '@/lib/asistente/useZedChat';
@@ -22,8 +24,6 @@ import {
   ZED_AURA_SPEED_SCALE,
   ZED_DRAWER_WIDTH_PX,
 } from '@/lib/asistente/zedOverlaySettings';
-import ZedActivityDrawer from './ZedActivityDrawer';
-import ZedVoiceButton from './ZedVoiceButton';
 import { useVoiceCapture } from '@/lib/voice/useVoiceCapture';
 import { useVoiceTts } from '@/lib/voice/useVoiceTts';
 import { isVoiceFeatureEnabled } from '@/lib/voice/voiceFeatureFlag';
@@ -752,7 +752,12 @@ export default function ZedAmbientOverlay({
     [isLoading, isOpen, statusLine]
   );
 
-  const { showAura, showPill, collapsed, pillState } = useMemo(() => {
+  const {
+    showAura: _showAura,
+    showPill,
+    collapsed,
+    pillState,
+  } = useMemo(() => {
     const _showAura = managerVisible && (shouldShowZedAura(phase) || speaking || recording);
     // Do not resurface the pill on Ctrl+R or app start —
     // only show for an explicit open or active execution/status while Terminales is visible.

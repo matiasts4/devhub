@@ -73,12 +73,20 @@ describe('ttyServer PTY identity integration', () => {
   test('Phase 5.2: session activation populates PTY identity and session termination clears it', async () => {
     const { createSession, closeSession } = await import('./ttyServer.js');
 
-    const before = mockDb.prepare("SELECT pane_id, terminal_id, opencode_pid FROM agent_workspaces WHERE id = 'ws-pty-phase5'").get();
+    const before = mockDb
+      .prepare(
+        "SELECT pane_id, terminal_id, opencode_pid FROM agent_workspaces WHERE id = 'ws-pty-phase5'"
+      )
+      .get();
     expect(before).toEqual({ pane_id: null, terminal_id: null, opencode_pid: null });
 
     createSession({ id: 'term-phase5-pty', cwd: process.cwd(), shell: '/bin/zsh' });
 
-    const active = mockDb.prepare("SELECT pane_id, terminal_id, opencode_pid FROM agent_workspaces WHERE id = 'ws-pty-phase5'").get();
+    const active = mockDb
+      .prepare(
+        "SELECT pane_id, terminal_id, opencode_pid FROM agent_workspaces WHERE id = 'ws-pty-phase5'"
+      )
+      .get();
     expect(active).toEqual({
       pane_id: 'term-phase5-pty',
       terminal_id: 'term-phase5-pty',
@@ -87,7 +95,11 @@ describe('ttyServer PTY identity integration', () => {
 
     closeSession('term-phase5-pty');
 
-    const cleared = mockDb.prepare("SELECT pane_id, terminal_id, opencode_pid FROM agent_workspaces WHERE id = 'ws-pty-phase5'").get();
+    const cleared = mockDb
+      .prepare(
+        "SELECT pane_id, terminal_id, opencode_pid FROM agent_workspaces WHERE id = 'ws-pty-phase5'"
+      )
+      .get();
     expect(cleared).toEqual({ pane_id: null, terminal_id: null, opencode_pid: null });
   });
 });

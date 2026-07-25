@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/db/localClient';
 
-function createJsonErrorResponse(payload, { status = 500, statusText = 'Internal Server Error' } = {}) {
+function createJsonErrorResponse(
+  payload,
+  { status = 500, statusText = 'Internal Server Error' } = {}
+) {
   return {
     ok: false,
     status,

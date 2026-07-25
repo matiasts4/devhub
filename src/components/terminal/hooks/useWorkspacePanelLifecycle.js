@@ -39,7 +39,6 @@ import {
   resolveVerticalNavigation,
   CLOSE_PANEL_SHORTCUT_ARM_MS,
 } from '@/components/terminal/workspaceShortcuts';
-import { shouldDeferRightDockSizePersist } from '@/components/terminal/rightDockLayerSync';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
 import { markWorkspaceSwitchEnd, markWorkspaceSwitchStart } from '@/lib/terminal/startupPerfMarks';
 import { clearTerminalConnectedOnce } from '@/lib/terminal/terminalConnectedOnceRegistry';

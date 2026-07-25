@@ -14,7 +14,6 @@
  * `PizarraCanvas.livePreview.test.jsx` check that the
  * `PizarraCanvas.jsx` render path mentions this component name.
  */
-import React from 'react';
 
 const PREVIEW_STROKE = '#3b82f6';
 const PREVIEW_STROKE_WIDTH = 1;

@@ -68,15 +68,19 @@ describe('browserPreviewSupport', () => {
       sameOrigin: true,
     });
 
-    expect(classifyPreviewSupport({
-      browserUrl: 'https://devhub.test/preview',
-      iframe,
-      iframeSrc: 'https://devhub.test/preview',
-    })).toEqual(expect.objectContaining({
-      mode: PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
-      reason: SUPPORT_REASON.SAME_ORIGIN_ACCESS,
-      viaProxy: false,
-    }));
+    expect(
+      classifyPreviewSupport({
+        browserUrl: 'https://devhub.test/preview',
+        iframe,
+        iframeSrc: 'https://devhub.test/preview',
+      })
+    ).toEqual(
+      expect.objectContaining({
+        mode: PREVIEW_SUPPORT_MODE.SAME_ORIGIN_DOM,
+        reason: SUPPORT_REASON.SAME_ORIGIN_ACCESS,
+        viaProxy: false,
+      })
+    );
   });
 
   test('classifies proxied localhost previews and marks proxy escapes immediately', () => {
@@ -85,25 +89,33 @@ describe('browserPreviewSupport', () => {
       sameOrigin: false,
     });
 
-    expect(classifyPreviewSupport({
-      browserUrl: 'http://localhost:3200/app',
-      iframe,
-      iframeSrc: '/api/preview-proxy/?url=http%3A%2F%2Flocalhost%3A3200%2Fapp',
-    })).toEqual(expect.objectContaining({
-      mode: PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
-      reason: SUPPORT_REASON.PROXY_ACTIVE,
-      viaProxy: true,
-    }));
+    expect(
+      classifyPreviewSupport({
+        browserUrl: 'http://localhost:3200/app',
+        iframe,
+        iframeSrc: '/api/preview-proxy/?url=http%3A%2F%2Flocalhost%3A3200%2Fapp',
+      })
+    ).toEqual(
+      expect.objectContaining({
+        mode: PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
+        reason: SUPPORT_REASON.PROXY_ACTIVE,
+        viaProxy: true,
+      })
+    );
 
-    expect(classifyPreviewSupport({
-      browserUrl: 'http://localhost:3200/app',
-      iframe,
-      iframeSrc: 'https://example.com/escaped',
-    })).toEqual(expect.objectContaining({
-      mode: PREVIEW_SUPPORT_MODE.UNSUPPORTED,
-      reason: SUPPORT_REASON.PROXY_ESCAPED,
-      viaProxy: false,
-    }));
+    expect(
+      classifyPreviewSupport({
+        browserUrl: 'http://localhost:3200/app',
+        iframe,
+        iframeSrc: 'https://example.com/escaped',
+      })
+    ).toEqual(
+      expect.objectContaining({
+        mode: PREVIEW_SUPPORT_MODE.UNSUPPORTED,
+        reason: SUPPORT_REASON.PROXY_ESCAPED,
+        viaProxy: false,
+      })
+    );
   });
 
   test('reclassifies localhost previews as supported when navigation returns to the proxy path', () => {
@@ -123,15 +135,19 @@ describe('browserPreviewSupport', () => {
       iframeSrc: '/api/preview-proxy/?url=http%3A%2F%2Flocalhost%3A3200%2Fapp',
     });
 
-    expect(escaped).toEqual(expect.objectContaining({
-      mode: PREVIEW_SUPPORT_MODE.UNSUPPORTED,
-      reason: SUPPORT_REASON.PROXY_ESCAPED,
-    }));
-    expect(returned).toEqual(expect.objectContaining({
-      mode: PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
-      reason: SUPPORT_REASON.PROXY_ACTIVE,
-      viaProxy: true,
-    }));
+    expect(escaped).toEqual(
+      expect.objectContaining({
+        mode: PREVIEW_SUPPORT_MODE.UNSUPPORTED,
+        reason: SUPPORT_REASON.PROXY_ESCAPED,
+      })
+    );
+    expect(returned).toEqual(
+      expect.objectContaining({
+        mode: PREVIEW_SUPPORT_MODE.LOCALHOST_PROXY,
+        reason: SUPPORT_REASON.PROXY_ACTIVE,
+        viaProxy: true,
+      })
+    );
   });
 
   test('wraps localhost previews with the proxy only when requested', () => {
@@ -145,26 +161,35 @@ describe('browserPreviewSupport', () => {
     expect(getUnsupportedCopy(SUPPORT_REASON.CROSS_ORIGIN_NO_INSTRUMENTATION)).toContain(
       'localhost previews through the DevHub proxy'
     );
-    expect(getUnsupportedCopy(SUPPORT_REASON.PROXY_ESCAPED)).toContain('left the proxied localhost preview path');
+    expect(getUnsupportedCopy(SUPPORT_REASON.PROXY_ESCAPED)).toContain(
+      'left the proxied localhost preview path'
+    );
   });
 
   test('preserves explicit support states when created directly', () => {
-    const state = createSupportState(PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL, SUPPORT_REASON.PROTOCOL_ACTIVE);
+    const state = createSupportState(
+      PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+      SUPPORT_REASON.PROTOCOL_ACTIVE
+    );
 
-    expect(state).toEqual(expect.objectContaining({
-      mode: PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
-      reason: SUPPORT_REASON.PROTOCOL_ACTIVE,
-      viaProxy: false,
-    }));
+    expect(state).toEqual(
+      expect.objectContaining({
+        mode: PREVIEW_SUPPORT_MODE.REMOTE_PROTOCOL,
+        reason: SUPPORT_REASON.PROTOCOL_ACTIVE,
+        viaProxy: false,
+      })
+    );
     expect(typeof state.checkedAt).toBe('number');
   });
 
   test('keeps native-gtk runtime when capability probe reports ready and edit mode is off', () => {
-    expect(resolveBrowserRuntimeSelection({
-      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
-      editMode: false,
-      nativeCapability: { ready: true, reason: null },
-    })).toEqual({
+    expect(
+      resolveBrowserRuntimeSelection({
+        requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+        editMode: false,
+        nativeCapability: { ready: true, reason: null },
+      })
+    ).toEqual({
       requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       effectiveRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       fallbackReason: null,
@@ -172,15 +197,17 @@ describe('browserPreviewSupport', () => {
   });
 
   test('falls back to iframe when native-gtk is requested but edit mode needs the iframe bridge', () => {
-    expect(resolveBrowserRuntimeSelection({
-      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
-      editMode: true,
-      nativeCapability: {
-        ready: true,
-        reason: null,
-        capabilities: { selector: { inspect: false } },
-      },
-    })).toEqual({
+    expect(
+      resolveBrowserRuntimeSelection({
+        requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+        editMode: true,
+        nativeCapability: {
+          ready: true,
+          reason: null,
+          capabilities: { selector: { inspect: false } },
+        },
+      })
+    ).toEqual({
       requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
       fallbackReason: BROWSER_RUNTIME_FALLBACK_REASON.EDIT_MODE_REQUIRES_IFRAME,
@@ -188,15 +215,17 @@ describe('browserPreviewSupport', () => {
   });
 
   test('keeps native-gtk active in edit mode when selector inspect capability is ready', () => {
-    expect(resolveBrowserRuntimeSelection({
-      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
-      editMode: true,
-      nativeCapability: {
-        ready: true,
-        reason: null,
-        capabilities: { selector: { inspect: true } },
-      },
-    })).toEqual({
+    expect(
+      resolveBrowserRuntimeSelection({
+        requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+        editMode: true,
+        nativeCapability: {
+          ready: true,
+          reason: null,
+          capabilities: { selector: { inspect: true } },
+        },
+      })
+    ).toEqual({
       requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       effectiveRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       fallbackReason: null,
@@ -204,15 +233,17 @@ describe('browserPreviewSupport', () => {
   });
 
   test('falls back to iframe in edit mode when native selector capability is unavailable', () => {
-    expect(resolveBrowserRuntimeSelection({
-      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
-      editMode: true,
-      nativeCapability: {
-        ready: false,
-        reason: 'selector-unavailable',
-        capabilities: { selector: { inspect: false } },
-      },
-    })).toEqual({
+    expect(
+      resolveBrowserRuntimeSelection({
+        requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+        editMode: true,
+        nativeCapability: {
+          ready: false,
+          reason: 'selector-unavailable',
+          capabilities: { selector: { inspect: false } },
+        },
+      })
+    ).toEqual({
       requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
       fallbackReason: 'selector-unavailable',
@@ -220,11 +251,13 @@ describe('browserPreviewSupport', () => {
   });
 
   test('falls back to iframe when native-gtk probe reports an unavailable runtime', () => {
-    expect(resolveBrowserRuntimeSelection({
-      requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
-      editMode: false,
-      nativeCapability: { ready: false, reason: 'unsupported-platform' },
-    })).toEqual({
+    expect(
+      resolveBrowserRuntimeSelection({
+        requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
+        editMode: false,
+        nativeCapability: { ready: false, reason: 'unsupported-platform' },
+      })
+    ).toEqual({
       requestedRuntime: BROWSER_RUNTIME.NATIVE_GTK,
       effectiveRuntime: BROWSER_RUNTIME.IFRAME,
       fallbackReason: 'unsupported-platform',

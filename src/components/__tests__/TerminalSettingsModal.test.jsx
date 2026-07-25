@@ -12,7 +12,7 @@ const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const {
   cleanupMountedRoots,
-  flushEffects,
+  flushEffects: _flushEffects,
   installDom,
 } = require('@/test-support/domHarness');
 
@@ -36,13 +36,19 @@ jest.mock('lucide-react', () => {
 jest.mock('../ui/dialog', () => {
   const React = require('react');
   const DialogRoot = ({ children, open, onOpenChange }) =>
-    React.createElement('div', { 'data-dialog-open': open, 'data-dialog-on-open-change': Boolean(onOpenChange) }, children);
+    React.createElement(
+      'div',
+      { 'data-dialog-open': open, 'data-dialog-on-open-change': Boolean(onOpenChange) },
+      children
+    );
   const DialogTrigger = ({ children, asChild }) =>
     asChild ? children : React.createElement('button', { 'data-dialog-trigger': true }, children);
   // No-op portal: render inline instead of teleporting to body (jsdom body is separate from test container in domHarness)
   const DialogPortal = ({ children }) => React.createElement(React.Fragment, null, children);
-  const DialogOverlay = (props) => React.createElement('div', { ...props, 'data-dialog-overlay': true });
-  const DialogClose = (props) => React.createElement('button', { ...props, 'data-dialog-close': true });
+  const DialogOverlay = (props) =>
+    React.createElement('div', { ...props, 'data-dialog-overlay': true });
+  const DialogClose = (props) =>
+    React.createElement('button', { ...props, 'data-dialog-close': true });
   const DialogContentWrapper = ({ children, ...props }) =>
     React.createElement('div', { ...props, 'data-dialog-content': true }, children);
   const DialogHeaderWrapper = ({ children, ...props }) =>

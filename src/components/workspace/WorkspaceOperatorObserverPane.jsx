@@ -1,10 +1,10 @@
 'use client';
 
+import OperatorFeedItem from './OperatorFeedItem';
+import OperatorComposer from './OperatorComposer';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getOperatorSidebarModel } from '@/lib/operations/swarmControl';
 import { persistMissionControlComposerMessage } from '@/lib/operations/swarmControl';
-import OperatorFeedItem from './OperatorFeedItem';
-import OperatorComposer from './OperatorComposer';
 
 const POLL_INTERVAL_MS = 2000;
 const SSE_RECONNECT_DELAY_MS = 2000;

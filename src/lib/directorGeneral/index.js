@@ -14,7 +14,6 @@ const timeline = require('./timeline');
 let _useDirectorGeneralBridge = null;
 function getHook() {
   if (!_useDirectorGeneralBridge) {
-    // eslint-disable-next-line global-require
     _useDirectorGeneralBridge = require('./useDirectorGeneralBridge').default;
   }
   return _useDirectorGeneralBridge;

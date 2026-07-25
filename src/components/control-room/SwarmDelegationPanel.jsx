@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { useMemo } from 'react';
 import { CompactPanelShell, formatRelativeTime, metaTextStyle, truncateId } from './utils';
 import { useSwarmBusSnapshot } from '@/lib/hooks/useSwarmBusSnapshot';
 

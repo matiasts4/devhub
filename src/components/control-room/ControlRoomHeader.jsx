@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   dataTileStyle,
   filterBarStyle,
@@ -6,12 +5,7 @@ import {
   pillStyle,
   sectionSurfaceStyle,
 } from '../../chrome/morphology';
-import {
-  formatEvidence,
-  formatMissingSource,
-  formatToken,
-  metaTextStyle,
-} from './utils';
+import { formatEvidence, formatMissingSource, formatToken, metaTextStyle } from './utils';
 
 export default function ControlRoomHeader({ header, loading, projectName, missionSummary = null }) {
   return (
@@ -22,7 +16,10 @@ export default function ControlRoomHeader({ header, loading, projectName, missio
     >
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2 min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={metaTextStyle()}>
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.18em]"
+            style={metaTextStyle()}
+          >
             Swarm / Control Room
           </p>
           <h1 className="text-xl md:text-2xl font-semibold truncate">

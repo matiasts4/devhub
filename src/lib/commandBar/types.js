@@ -1,15 +1,15 @@
 /**
  * Shared type definitions for CommandBar.
- * 
+ *
  * These types are expressed as JSDoc @typedef declarations to match
  * the codebase's JavaScript-with-JSDoc convention.
- * 
+ *
  * @module commandBar/types
  */
 
 /**
  * A resolved intent from the intent router.
- * 
+ *
  * @typedef {Object} ResolvedIntent
  * @property {'terminal-run'|'browser-navigate'|'browser-search'|'terminal-read'|'unknown'} intent - The classified intent type
  * @property {Record<string, string>} slots - Extracted slot values (e.g., { command: "npm test", terminalName: "build" })
@@ -18,7 +18,7 @@
 
 /**
  * Action execution status emitted during the action lifecycle.
- * 
+ *
  * @typedef {Object} ActionStatus
  * @property {'queued'|'running'|'done'|'failed'} phase - Current execution phase
  * @property {string} [surfaceId] - ID of the spawned/focused surface (terminal or browser)
@@ -29,7 +29,7 @@
 /**
  * Result of reading a terminal buffer.
  * Designed to be TTS-ready (structured, typed, with metadata).
- * 
+ *
  * @typedef {Object} TerminalReadResult
  * @property {string} text - ANSI-stripped plain text content
  * @property {string} terminalName - Resolved terminal name/label
@@ -41,7 +41,7 @@
 /**
  * Surface controller port for dependency inversion.
  * Actions never import Pizarra or fetch directly; they receive a SurfaceController.
- * 
+ *
  * @typedef {Object} SurfaceController
  * @property {function({ label?: string, initialCommand?: string }): Promise<{id: string, label: string}>} spawnTerminal - Spawn a new terminal surface
  * @property {function(string): void} focusTerminal - Focus an existing terminal by id

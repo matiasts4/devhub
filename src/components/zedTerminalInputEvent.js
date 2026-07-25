@@ -53,8 +53,7 @@ export function dispatchZedTerminalInputFromToolResults(toolResults) {
   for (const entry of toolResults) {
     if (!entry || entry.tool !== 'execute_in_terminal') continue;
     if (!shouldDispatchZedTerminalInput(entry.result)) continue;
-    const input =
-      entry.input && typeof entry.input.input === 'string' ? entry.input.input : null;
+    const input = entry.input && typeof entry.input.input === 'string' ? entry.input.input : null;
     const terminalId =
       (entry.input && typeof entry.input.session_id === 'string' && entry.input.session_id) ||
       (entry.input && typeof entry.input.name === 'string' && entry.input.name) ||

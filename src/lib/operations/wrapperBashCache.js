@@ -21,6 +21,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+/* global __dirname -- provided by the CJS/bundler runtime (jest, Next, webpack) */
+
 const CACHE_DIR_NAME = '.cache';
 const CACHE_FILE_PREFIX = 'wrapper-bash-v1';
 const CACHE_FILE_SUFFIX = '.bash';
@@ -32,7 +34,10 @@ const CACHE_VERSION = 'v1';
  * @returns {string} 40-character hex SHA1
  */
 export function computeWrapperCacheKey(staticTemplate) {
-  return crypto.createHash('sha1').update(String(staticTemplate || ''), 'utf8').digest('hex');
+  return crypto
+    .createHash('sha1')
+    .update(String(staticTemplate || ''), 'utf8')
+    .digest('hex');
 }
 
 /**

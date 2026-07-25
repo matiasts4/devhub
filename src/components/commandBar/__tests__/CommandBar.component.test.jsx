@@ -12,10 +12,9 @@
 
 /* eslint-env jest */
 
-import React from 'react';
+import CommandBar from '../CommandBar';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import CommandBar from '../CommandBar';
 
 // Create mocks
 const mockClose = jest.fn();

@@ -7,7 +7,6 @@
 
 import { useReducer, useCallback } from 'react';
 import { TOOL_SETTINGS } from './theme';
-import { SHAPE_TYPES } from './shapeModel';
 
 // ─── Action Types ────────────────────────────────────────────────────────────
 

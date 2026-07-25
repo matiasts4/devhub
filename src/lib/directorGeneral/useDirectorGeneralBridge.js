@@ -9,7 +9,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   submitMissionRequest,
   postApprovalReply,
-  getMissionStatus,
   getMissionTimeline,
   clearActiveMission,
   setActiveMission,

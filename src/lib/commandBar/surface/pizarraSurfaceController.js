@@ -1,15 +1,15 @@
 /**
  * Pizarra surface controller implementation.
- * 
+ *
  * Adapter that bridges CommandBar actions to Pizarra canvas operations.
  * Implements the SurfaceController port for dependency inversion.
- * 
+ *
  * @module commandBar/surface/pizarraSurfaceController
  */
 
 /**
  * Create a Pizarra surface controller.
- * 
+ *
  * @param {Object} deps - Dependencies
  * @param {Function} deps.addElement - Function to add elements to canvas (type, extraProps)
  * @param {Function} deps.updateElement - Function to update elements (id, changes)
@@ -59,9 +59,7 @@ export function createPizarraSurfaceController({
      * Find a terminal by its label.
      */
     findTerminalByLabel(label) {
-      const terminal = shapes.find(
-        (shape) => shape.type === 'terminal' && shape.label === label
-      );
+      const terminal = shapes.find((shape) => shape.type === 'terminal' && shape.label === label);
 
       if (!terminal) {
         return null;
@@ -113,7 +111,7 @@ export function createPizarraSurfaceController({
      */
     async captureTerminal(id) {
       const response = await fetch(`/api/terminal/session/${id}/capture`);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to capture terminal output: ${response.statusText}`);
       }
@@ -127,7 +125,7 @@ export function createPizarraSurfaceController({
      */
     async spawnBrowser(opts = {}) {
       const { url } = opts;
-      
+
       // Delegate to Pizarra's addElement with extra props
       const shape = addElement('browser', {
         url,
@@ -161,7 +159,7 @@ export function createPizarraSurfaceController({
 
       // Return the last browser (most recently added)
       const lastBrowser = browsers[browsers.length - 1];
-      
+
       return {
         id: lastBrowser.id,
         url: lastBrowser.url,

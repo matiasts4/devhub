@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -12,7 +13,6 @@ import {
   Terminal,
 } from 'lucide-react';
 import { getNavItemClasses, getCollapsedWidth } from './sidebarUtils';
-import { Button } from '@/components/ui/button';
 
 const navMain = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -104,10 +104,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             aria-label={collapsed ? label : undefined}
             className={({ isActive }) => getNavItemClasses(collapsed, isActive)}
           >
-            <Icon
-              className="flex-shrink-0 w-4 h-4"
-              strokeWidth={1.75}
-            />
+            <Icon className="flex-shrink-0 w-4 h-4" strokeWidth={1.75} />
             <AnimatePresence initial={false}>
               {!collapsed && (
                 <motion.span
@@ -151,10 +148,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             aria-label={collapsed ? label : undefined}
             className={({ isActive }) => getNavItemClasses(collapsed, isActive)}
           >
-            <Icon
-              className="flex-shrink-0 w-4 h-4"
-              strokeWidth={1.75}
-            />
+            <Icon className="flex-shrink-0 w-4 h-4" strokeWidth={1.75} />
             <AnimatePresence initial={false}>
               {!collapsed && (
                 <motion.span

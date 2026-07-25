@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import TerminalTTY from '@/components/TerminalTTY';
 import SurfacePortal from '@/components/workspace/SurfacePortal';
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import {
   useSurfaceContent,
   useSurfaceRegistry,

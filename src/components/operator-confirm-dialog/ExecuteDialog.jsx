@@ -8,9 +8,15 @@
  * 60-second countdown; auto-closes and calls onCancel() at 0.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog.jsx';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { useState, useEffect } from 'react';
 
 const TIMER_SECONDS = 60;
 const MIN_RATIONALE = 10;
@@ -43,11 +49,13 @@ export default function ExecuteDialog({ pending, onConfirm, onCancel }) {
   const charCount = rationale.length;
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
-      <DialogContent
-        className="max-w-md"
-        onPointerDownOutside={(e) => e.preventDefault()}
-      >
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onCancel();
+      }}
+    >
+      <DialogContent className="max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{actionDef.label} (requires confirmation)</DialogTitle>
         </DialogHeader>
@@ -90,7 +98,12 @@ export default function ExecuteDialog({ pending, onConfirm, onCancel }) {
           <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button disabled={!canExecute} onClick={() => onConfirm({ confirmed: true, confirmed_at: new Date().toISOString(), rationale })}>
+          <Button
+            disabled={!canExecute}
+            onClick={() =>
+              onConfirm({ confirmed: true, confirmed_at: new Date().toISOString(), rationale })
+            }
+          >
             Execute
           </Button>
         </DialogFooter>

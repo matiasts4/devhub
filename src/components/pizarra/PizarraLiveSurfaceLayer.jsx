@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import CanvasTerminal from './CanvasTerminal';
 import PizarraBrowserSurface from './PizarraBrowserSurface';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useCanvasViewport } from '@/lib/pizarra/canvasViewport';
 import { SHAPE_TYPES } from '@/lib/pizarra/shapeModel';
 import { getSurfaceViewId } from '@/lib/pizarra/pizarraViewLayout';
@@ -454,8 +454,7 @@ function LiveSurfaceItem({
       // surfaces, and reduces chances of the content getting into a bad state
       // that requires new workspace to recover.
       // Tauri GTK overlay only — Electron uses in-DOM <webview>, no IPC bounds thrash.
-      const isElectron =
-        typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true;
+      const isElectron = typeof window !== 'undefined' && window.devhubDesktop?.isElectron === true;
       if (isElectron) return;
 
       for (const { sid, shape: movedShape, entry } of moved) {

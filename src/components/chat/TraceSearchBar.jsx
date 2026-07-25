@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
 import { Search, Filter, X } from 'lucide-react';
+import { useState, useCallback } from 'react';
 
 /**
  * TraceSearchBar — Search and filter bar for agent traces.

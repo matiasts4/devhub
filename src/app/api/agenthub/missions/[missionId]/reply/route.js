@@ -19,7 +19,13 @@ export const POST = withAuth(async function POST(request, context) {
     }
 
     if (body.type === 'director-general-approval-reply') {
-      const { approvalItemId, decision, decidedBy, decidedAt, authority } = body;
+      const {
+        approvalItemId,
+        decision,
+        decidedBy: _decidedBy,
+        decidedAt: _decidedAt,
+        authority: _authority,
+      } = body;
 
       if (!approvalItemId) {
         return NextResponse.json({ error: 'approvalItemId es requerido.' }, { status: 400 });

@@ -10,7 +10,10 @@ function siteOrigin(req) {
 
 export async function POST(req, { params }) {
   if (!isCloudAuthEnabled()) {
-    return NextResponse.json({ error: 'Invitaciones solo disponibles en modo cloud' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Invitaciones solo disponibles en modo cloud' },
+      { status: 400 }
+    );
   }
 
   try {

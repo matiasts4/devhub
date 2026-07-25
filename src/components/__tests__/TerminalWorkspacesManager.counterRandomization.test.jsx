@@ -308,10 +308,14 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
       if (Array.isArray(testMountedRoots) && testMountedRoots.length > 0) {
         cleanupMountedRoots(testMountedRoots);
       }
-    } catch (_) {}
+    } catch {
+      /* ignore cleanup errors */
+    }
     try {
       if (dom && dom.window) dom.window.close();
-    } catch (_) {}
+    } catch {
+      /* ignore cleanup errors */
+    }
     delete global.localStorage;
     delete global.fetch;
     jest.clearAllMocks();

@@ -1,9 +1,9 @@
 /**
  * Action dispatcher with async generator lifecycle.
- * 
+ *
  * Validates intent slots, calls the appropriate action function,
  * and yields status updates (queued → running → done/failed).
- * 
+ *
  * @module commandBar/actions/dispatchAction
  */
 
@@ -14,7 +14,7 @@ import { terminalRead } from './terminalRead.js';
 
 /**
  * Dispatch an action and yield status updates.
- * 
+ *
  * @param {import('../types').ResolvedIntent} intent - Resolved intent
  * @param {import('../types').SurfaceController} controller - Surface controller
  * @yields {import('../types').ActionStatus} Status updates during execution
@@ -25,9 +25,10 @@ export async function* dispatchAction(intent, controller) {
   if (intent.intent === 'unknown') {
     yield {
       phase: 'failed',
-      error: intent.slots.reason === 'multi-step'
-        ? 'CommandBar executes one action at a time. Try one command.'
-        : "I don't understand that command. Try: 'run [command]', 'open [url]', or 'read terminal [name]'.",
+      error:
+        intent.slots.reason === 'multi-step'
+          ? 'CommandBar executes one action at a time. Try one command.'
+          : "I don't understand that command. Try: 'run [command]', 'open [url]', or 'read terminal [name]'.",
     };
     return;
   }
@@ -78,13 +79,13 @@ export async function* dispatchAction(intent, controller) {
     } else if (intent.intent === 'terminal-read') {
       yield { phase: 'running' };
       result = await terminalRead(intent, controller);
-      
+
       // Check for errors in the read result
       if (result.error) {
         yield { phase: 'failed', error: result.error };
         return;
       }
-      
+
       // Yield done with the read result
       yield { phase: 'done', result };
       return;

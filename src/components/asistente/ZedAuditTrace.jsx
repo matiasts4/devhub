@@ -38,7 +38,10 @@ export default function ZedAuditTrace({ entries = [] }) {
       </p>
       <ul className="space-y-2">
         {recent.map((entry, idx) => (
-          <li key={entry.ts || idx} className="text-[10px] leading-snug text-[var(--text-secondary)]">
+          <li
+            key={entry.ts || idx}
+            className="text-[10px] leading-snug text-[var(--text-secondary)]"
+          >
             <span className="text-[var(--text-primary)]">Vos:</span>{' '}
             {entry.userMessage || '(sin mensaje)'}
             {Array.isArray(entry.tools) && entry.tools.length > 0 ? (

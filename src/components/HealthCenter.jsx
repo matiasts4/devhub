@@ -1,4 +1,3 @@
-import React from 'react';
 import { AlertTriangle, CheckCircle2, HelpCircle, WifiOff } from 'lucide-react';
 import {
   formatFreshnessLabel,

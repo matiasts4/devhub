@@ -22,7 +22,6 @@ import assert from 'node:assert/strict';
 
 // Late import so each test can install its own globalThis.window stub.
 function loadModule() {
-   
   return require('../dispatchPlanningAgentRun.js');
 }
 
@@ -207,9 +206,7 @@ test('dispatchPlanningAgentRun: returns accepted=false after MAX_ATTEMPTS with n
 
   let result;
   try {
-    result = await withWindow(win.stub, () =>
-      loadModule().dispatchPlanningAgentRun(SAMPLE_DETAIL)
-    );
+    result = await withWindow(win.stub, () => loadModule().dispatchPlanningAgentRun(SAMPLE_DETAIL));
   } finally {
     console.warn = origWarn;
   }
@@ -274,11 +271,7 @@ test('dispatchPlanningAgentRun: removes the devhub:run-agent-accepted listener w
 
   // The dispatcher should have added and then removed its own ack listener.
   const after = win.listeners.get('devhub:run-agent-accepted') || [];
-  assert.equal(
-    after.length,
-    0,
-    'ack listener must be removed after a successful ack (no leak)'
-  );
+  assert.equal(after.length, 0, 'ack listener must be removed after a successful ack (no leak)');
 });
 
 // -----------------------------------------------------------------------------
