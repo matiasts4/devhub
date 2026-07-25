@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
   Power,
   Users,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { createClient } from '@/lib/db/localClient';
 import { LOCAL_USER_ID } from '@/lib/constants/local';
@@ -59,6 +60,7 @@ import TerminalSettingsSection from '@/components/settings/TerminalSettingsSecti
 import AgentHooksSettingsSection from '@/components/settings/AgentHooksSettingsSection';
 import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
 import ZedVoiceSettings from '@/components/settings/ZedVoiceSettings';
+import ScenerySettingsSection from '@/components/settings/ScenerySettingsSection';
 import EquipoSettings from '@/components/EquipoSettings';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { ChromeSurface, chromeSurfaceStyle } from '@/components/ui/chrome-surface';
@@ -426,6 +428,7 @@ const TABS = [
   { key: 'project', label: 'Proyecto', icon: LayoutGrid },
   { key: 'team', label: 'Equipo', icon: Users },
   { key: 'theme', label: 'Apariencia', icon: Palette },
+  { key: 'scenery', label: 'Fondos', icon: ImageIcon },
   { key: 'notifications', label: 'Notificaciones', icon: Bell },
   { key: 'llm', label: 'LLM', icon: Cpu },
   { key: 'swarm', label: 'Swarm', icon: Server },
@@ -1923,6 +1926,7 @@ export default function Ajustes() {
     project: renderProjectTab,
     team: renderTeamTab,
     theme: renderThemeTab,
+    scenery: () => <ScenerySettingsSection />,
     notifications: () => <NotificationSettingsSection />,
     llm: renderLlmTab,
     swarm: renderSwarmTab,

@@ -3,6 +3,10 @@ module.exports = {
   testEnvironment: 'node',
   setupFiles: ['<rootDir>/tests/jest.runtime-compat.js'],
   moduleNameMapper: {
+    // Static asset imports (Next.js bundles these into /_next/static/media).
+    // Must precede the `@/` alias so `@/assets/*.jpg` resolves to the stub
+    // instead of the real binary, which Jest cannot parse.
+    '\\.(jpg|jpeg|png|gif|webp|avif|svg|ico|bmp)$': '<rootDir>/tests/jest.mocks/file-mock.js',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^node:test$': '<rootDir>/tests/shims/node-test.js',
     '\\.module\\.css$': '<rootDir>/tests/jest.mocks/css-module.js',
