@@ -15,8 +15,7 @@ const { app, ipcMain, Menu } = require('electron');
 try {
   app.setName('DevHub');
   if (!app.isPackaged) {
-    const devhubHome =
-      process.env.DEVHUB_HOME || path.join(os.homedir(), '.devhub-dev');
+    const devhubHome = process.env.DEVHUB_HOME || path.join(os.homedir(), '.devhub-dev');
     app.setPath('userData', path.join(devhubHome, 'electron-user-data'));
   }
 } catch {
@@ -163,25 +162,37 @@ async function boot() {
   }
   registerIpc();
 
-  // Runtime locate/extract (dev returns mode:'dev' without requiring standalone).
-  try {
-    const runtime = await ensureRuntime();
-    console.log('[DevHub Electron] Runtime:', {
-      mode: runtime.mode,
-      uiUrl: runtime.uiUrl,
-      standaloneReady: runtime.standalone?.ready,
-      sidecarEntry: runtime.sidecar?.entry,
-    });
-  } catch (err) {
-    console.warn('[DevHub Electron] runtime ensure failed:', err?.message || err);
-    console.log('[DevHub Electron] Runtime status:', runtimeStatus());
-  }
-
-  const sidecar = await ensureSidecar({ repoRoot });
-  console.log('[DevHub Electron] Sidecar:', sidecar);
+  // Create the window FIRST — it paints the local splash immediately while the
+  // runtime and sidecar boot in the background (the SPA loads with retry and
+  // swaps in whenever the UI server is ready).
   console.log('[DevHub Electron] UI URL:', resolveUiUrl());
-
   attachMainWindow(createMainWindow());
+
+  // Runtime locate/extract → sidecar, chained: on packaged first-launch the
+  // sidecar entry can live inside the extracted standalone, so the sidecar
+  // must not race ahead of extraction. Everything runs in the background.
+  ensureRuntime()
+    .then((runtime) => {
+      console.log('[DevHub Electron] Runtime:', {
+        mode: runtime.mode,
+        uiUrl: runtime.uiUrl,
+        standaloneReady: runtime.standalone?.ready,
+        sidecarEntry: runtime.sidecar?.entry,
+      });
+    })
+    .catch((err) => {
+      console.warn('[DevHub Electron] runtime ensure failed:', err?.message || err);
+      console.log('[DevHub Electron] Runtime status:', runtimeStatus());
+    })
+    .finally(() => {
+      ensureSidecar({ repoRoot })
+        .then((sidecar) => {
+          console.log('[DevHub Electron] Sidecar:', sidecar);
+        })
+        .catch((err) => {
+          console.warn('[DevHub Electron] ensureSidecar background error:', err?.message || err);
+        });
+    });
 
   createTray({
     getMainWindow,

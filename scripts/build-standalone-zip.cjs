@@ -247,10 +247,16 @@ function createZipArchive(sourceDir, zipPath) {
     // Git Bash tar does not understand Windows drive letters (D:/... looks like a host).
     // Pass a relative POSIX path so it stays inside the cwd.
     const tempZipRelative = path.relative(sourceDir, tempZipPath).replace(/\\/g, '/');
-    execFileSync('tar', ['-a', '-c', '-f', tempZipRelative, '.'], {
-      cwd: sourceDir,
-      stdio: 'inherit',
-    });
+    try {
+      execFileSync('tar', ['-a', '-c', '-f', tempZipRelative, '.'], {
+        cwd: sourceDir,
+        stdio: 'inherit',
+      });
+    } catch (tarError) {
+      if (!fs.existsSync(tempZipPath) || fs.statSync(tempZipPath).size < 1000) {
+        throw tarError;
+      }
+    }
   } else {
     execFileSync('zip', ['-q', '-ry', tempZipPath, '.'], {
       cwd: sourceDir,

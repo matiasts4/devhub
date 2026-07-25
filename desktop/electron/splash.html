@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!--
+  DevHub splash — shown instantly at window creation while the SPA server
+  (Next dev :3100 / standalone :3400) is still booting. Local file, zero
+  network dependencies. Background matches the app (#0b0f14) so the swap to
+  the real SPA is seamless.
+-->
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:" />
+    <title>DevHub</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0f14;
+        overflow: hidden;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family:
+          'Segoe UI',
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .splash {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        animation: fade-in 240ms ease-out;
+      }
+      .mark {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        /* Tiny pre-resized derivative of the official logo (7 KB, local
+           file:// relative path — zero network dependency). */
+        box-shadow: 0 0 32px rgba(184, 0, 150, 0.25);
+      }
+      .name {
+        color: #e6edf3;
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+      }
+      .spinner {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 2px solid rgba(230, 237, 243, 0.15);
+        border-top-color: #58a6ff;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="splash">
+      <img class="mark" src="../../public/icons/logo-64.png" alt="DevHub" />
+      <div class="name">DevHub</div>
+      <div class="spinner"></div>
+    </div>
+  </body>
+</html>

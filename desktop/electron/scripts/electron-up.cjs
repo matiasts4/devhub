@@ -252,6 +252,28 @@ function checkUrl(url, timeoutMs = 1200) {
   });
 }
 
+function fireAndForgetDevServerWarm(baseUrl) {
+  // NOTE: the SPA uses hash routing (`/#/project/.../terminales`) — there is no
+  // server-side `/terminales` route. Warming `/` compiles the app-shell page
+  // chunk; warming `/api/terminal/session` compiles the session API route and
+  // boots the TTY sidecar path. The dynamic `@xterm/*` client chunk is compiled
+  // when the browser prefetches it at App mount (src/App.js), overlapping the
+  // project fetch — server-side HTTP cannot trigger that compile.
+  const routes = ['/api/terminal/session', '/'];
+  const base = baseUrl.replace(/\/$/, '');
+  for (const r of routes) {
+    try {
+      const req = http.get(`${base}${r}`, { timeout: 3000 }, (res) => {
+        res.resume();
+      });
+      req.on('error', () => {});
+      req.on('timeout', () => req.destroy());
+    } catch {
+      // fire-and-forget
+    }
+  }
+}
+
 async function waitFor(label, url, maxMs) {
   const start = Date.now();
   let n = 0;
@@ -386,24 +408,35 @@ async function main() {
     spawnChild('sidecar', process.execPath, [sidecarEntry], env);
   }
 
-  // 3) Wait
-  const uiOk = await waitFor('Next UI', uiUrl.replace(/\/$/, '') + '/', timeoutMs);
-  if (!uiOk) {
-    console.error(`[error] Next did not become ready at ${uiUrl} within ${timeoutMs}ms`);
-    exitCode = 1;
-    shutdown('ui timeout');
-    return;
-  }
+  // 3) Next readiness + compile warm run in the BACKGROUND: the Electron
+  // window (spawned below) shows its splash immediately and loads the SPA
+  // with retry as soon as the server responds — the window no longer waits
+  // for the dev server to finish booting/compiling.
+  void waitFor('Next UI', uiUrl.replace(/\/$/, '') + '/', timeoutMs).then((uiOk) => {
+    if (!uiOk) {
+      console.error(`[error] Next did not become ready at ${uiUrl} within ${timeoutMs}ms`);
+      exitCode = 1;
+      shutdown('ui timeout');
+      return;
+    }
+    console.log('[warm] Triggering dev-server Turbopack compile warm for terminal routes…');
+    fireAndForgetDevServerWarm(uiUrl);
+  });
 
+  // Sidecar health wait runs in PARALLEL with the Electron spawn below: the
+  // window (and its module-compile/prefetch work via the App-mount warm) must
+  // not block behind this poll — on cold-cache boots every second of compile
+  // head start shaves time off the "Iniciando terminales" phase.
   if (!skipSidecar) {
-    const sideOk = await waitFor(
+    void waitFor(
       'Sidecar',
       `http://127.0.0.1:${sidecarPort}/health`,
       Math.min(timeoutMs, 60_000)
-    );
-    if (!sideOk) {
-      console.warn('[warn] Sidecar not healthy — continuing; terminals may fail.');
-    }
+    ).then((sideOk) => {
+      if (!sideOk) {
+        console.warn('[warn] Sidecar not healthy — continuing; terminals may fail.');
+      }
+    });
   }
 
   // 4) Electron

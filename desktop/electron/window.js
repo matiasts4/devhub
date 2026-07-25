@@ -17,6 +17,16 @@ function resolvePreloadPath() {
   return path.join(__dirname, 'preload.js');
 }
 
+function resolveSplashPath() {
+  return path.join(__dirname, 'splash.html');
+}
+
+// SPA load retry policy: the UI server (Next dev :3100 / standalone :3400)
+// may still be booting when the window is created — retry connection failures
+// instead of dying on an error page. Budget covers cold dev compiles.
+const SPA_LOAD_RETRY_DELAY_MS = 400;
+const SPA_LOAD_RETRY_BUDGET_MS = 120000;
+
 function resolveUiUrl() {
   if (process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL) {
     return process.env.DEVHUB_ELECTRON_URL || process.env.DEVHUB_UI_URL;
@@ -192,12 +202,156 @@ function createMainWindow() {
     }
   });
 
-  spaView.webContents.loadURL(url).catch((err) => {
-    console.error('[DevHub Electron] Failed to load UI URL:', url, err?.message || err);
+  function pingUiServer(uiUrl, timeoutMs = 500) {
+    return new Promise((resolve) => {
+      try {
+        const http = require('http');
+        const u = new URL(uiUrl);
+        const req = http.get(
+          {
+            hostname: u.hostname,
+            port: u.port || (u.protocol === 'https:' ? 443 : 80),
+            path: '/',
+            timeout: timeoutMs,
+          },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode >= 200 && res.statusCode < 500);
+          }
+        );
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => {
+          req.destroy();
+          resolve(false);
+        });
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  // 1) Instant splash (local file, zero server dependency) so the window
+  // paints immediately even while the UI server is still booting.
+  spaView.webContents.loadFile(resolveSplashPath()).catch(() => {});
+
+  // 2) SPA load with retry & hung-load watchdog: keep splash.html rendered until
+  // the UI server (Next dev :3100 / standalone :3400) is ready to accept connections.
+  const spaLoadStartedAt = Date.now();
+  let spaLoaded = false;
+  let watchdogTimer = null;
+  let pollTimer = null;
+  let loadAttempt = 0;
+
+  const checkSpaMounted = async () => {
+    if (win.isDestroyed() || spaView.webContents.isDestroyed()) return false;
+    try {
+      const current = spaView.webContents.getURL();
+      if (!current || !current.startsWith(url)) return false;
+      const isMounted = await spaView.webContents.executeJavaScript(
+        `Boolean((document.querySelector('#root') || document.querySelector('#__next') || document.body)?.children?.length > 0)`
+      );
+      return Boolean(isMounted);
+    } catch {
+      return false;
+    }
+  };
+
+  const loadSpa = () => {
+    if (spaLoaded || win.isDestroyed() || spaView.webContents.isDestroyed()) return;
+    loadAttempt++;
+    console.log(`[DevHub Electron] loadSpa attempt #${loadAttempt} -> ${url}`);
+    spaView.webContents.loadURL(url).catch(() => {
+      /* failure handled by did-fail-load or watchdog */
+    });
+  };
+
+  const scheduleWatchdog = (delayMs = 8000) => {
+    if (watchdogTimer) clearTimeout(watchdogTimer);
+    watchdogTimer = setTimeout(async () => {
+      if (spaLoaded || win.isDestroyed() || spaView.webContents.isDestroyed()) return;
+
+      const mounted = await checkSpaMounted();
+      if (mounted) {
+        console.log('[DevHub Electron] Watchdog: SPA verified mounted and active.');
+        spaLoaded = true;
+        return;
+      }
+
+      if (Date.now() - spaLoadStartedAt < SPA_LOAD_RETRY_BUDGET_MS) {
+        console.warn(
+          `[DevHub Electron] Watchdog: SPA load unhydrated/hung after attempt #${loadAttempt}. Retrying loadURL...`
+        );
+        loadSpa();
+        scheduleWatchdog(8000);
+      }
+    }, delayMs);
+  };
+
+  const loadSpaWhenReady = async () => {
+    if (spaLoaded || win.isDestroyed() || spaView.webContents.isDestroyed()) return;
+
+    const ready = await pingUiServer(url, 400);
+    if (ready) {
+      loadSpa();
+      scheduleWatchdog(8000);
+      return;
+    }
+
+    const startPoll = Date.now();
+    pollTimer = setInterval(async () => {
+      if (spaLoaded || win.isDestroyed() || spaView.webContents.isDestroyed()) {
+        clearInterval(pollTimer);
+        return;
+      }
+      const isReady = await pingUiServer(url, 400);
+      if (isReady) {
+        clearInterval(pollTimer);
+        loadSpa();
+        scheduleWatchdog(8000);
+      } else if (Date.now() - startPoll > 15000) {
+        clearInterval(pollTimer);
+        loadSpa();
+        scheduleWatchdog(8000);
+      }
+    }, 300);
+  };
+
+  spaView.webContents.on('did-fail-load', (_e, code, desc, validatedURL, isMainFrame) => {
+    console.error('[DevHub Electron] UI did-fail-load', { code, desc, validatedURL });
+    if (!isMainFrame || spaLoaded) return;
+    if (win.isDestroyed() || spaView.webContents.isDestroyed()) return;
+    if (Date.now() - spaLoadStartedAt > SPA_LOAD_RETRY_BUDGET_MS) return;
+    setTimeout(() => {
+      loadSpa();
+      scheduleWatchdog(6000);
+    }, SPA_LOAD_RETRY_DELAY_MS);
   });
 
-  spaView.webContents.on('did-fail-load', (_e, code, desc, validatedURL) => {
-    console.error('[DevHub Electron] UI did-fail-load', { code, desc, validatedURL });
+  spaView.webContents.on('did-finish-load', () => {
+    const current = spaView.webContents.getURL();
+    if (current && current.startsWith(url)) {
+      setTimeout(async () => {
+        const mounted = await checkSpaMounted();
+        if (mounted) {
+          console.log('[DevHub Electron] SPA did-finish-load & DOM verified mounted.');
+          spaLoaded = true;
+          if (watchdogTimer) clearTimeout(watchdogTimer);
+          if (pollTimer) clearInterval(pollTimer);
+        } else {
+          console.warn(
+            '[DevHub Electron] did-finish-load fired but DOM unhydrated. Watchdog queued.'
+          );
+          scheduleWatchdog(5000);
+        }
+      }, 300);
+    }
+  });
+
+  loadSpaWhenReady();
+
+  win.on('closed', () => {
+    if (watchdogTimer) clearTimeout(watchdogTimer);
+    if (pollTimer) clearInterval(pollTimer);
   });
 
   spaView.webContents.on('did-finish-load', () => {
@@ -269,7 +423,11 @@ function createMainWindow() {
       if (typeof win.moveTop === 'function') win.moveTop();
       win.focus();
       const b = win.getBounds?.() || {};
-      console.log('[DevHub Electron] window shown', { reason, bounds: b, maximized: win.isMaximized?.() });
+      console.log('[DevHub Electron] window shown', {
+        reason,
+        bounds: b,
+        maximized: win.isMaximized?.(),
+      });
     } catch (err) {
       console.error('[DevHub Electron] showOnce failed', err?.message || err);
     }

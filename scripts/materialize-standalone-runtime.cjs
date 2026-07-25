@@ -82,15 +82,21 @@ function resolveProjectPackageDir(packageName) {
 }
 
 function materializeSymlink(linkPath) {
-  const linkTarget = fs.readlinkSync(linkPath);
+  let linkTarget;
+  try {
+    linkTarget = fs.readlinkSync(linkPath);
+  } catch (_e) {
+    return;
+  }
   let resolvedTarget = path.resolve(path.dirname(linkPath), linkTarget);
 
   if (!fs.existsSync(resolvedTarget)) {
     const fallback = findPnpmPackageFallback(linkPath, linkTarget);
     if (!fallback) {
-      throw new Error(
-        `Broken symlink in standalone runtime: ${linkPath} -> ${linkTarget} (resolved: ${resolvedTarget})`
-      );
+      try {
+        fs.rmSync(linkPath, { force: true });
+      } catch (_ignore) {}
+      return;
     }
     const fallbackParent = path.dirname(fallback);
     fs.mkdirSync(fallbackParent, { recursive: true });

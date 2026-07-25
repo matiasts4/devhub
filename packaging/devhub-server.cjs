@@ -418,6 +418,28 @@ function killListenersOnPort(port, { devLayout = false } = {}) {
   }
 }
 
+/**
+ * Block until no process listens on `port` (or timeout). taskkill /F returns
+ * before the OS releases the socket, so after a pre-kill the port can still be
+ * bound for a few hundred ms — spawning then crashes the child with EADDRINUSE.
+ */
+function waitForPortFree(port, { timeoutMs = 8000, pollMs = 150 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (collectListenerPids(port).length === 0) return true;
+    try {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollMs);
+    } catch (_error) {
+      // Atomics.wait unavailable (worker?) — busy fallback is fine at this scale.
+    }
+  }
+  const free = collectListenerPids(port).length === 0;
+  if (!free) {
+    logStep(`waitForPortFree(:${port}) timed out after ${timeoutMs}ms — spawning anyway`);
+  }
+  return free;
+}
+
 function resolveDevCoexistenceLayout(scriptDir, devhubDirFromEnv) {
   const root = findProjectRoot(scriptDir) || findProjectRoot(process.cwd()) || process.cwd();
   // Never let a polluted shell pin dev layout onto production ~/.devhub.
@@ -577,18 +599,58 @@ function main() {
     killListenersOnPort(Number(sidecarPort), { devLayout });
   }
 
+  // taskkill /F returns before the OS releases the port. Spawning immediately
+  // after a pre-kill raced the old listener and crashed the new child with
+  // EADDRINUSE (exit 1) — and the old exit handler then killed BOTH children,
+  // leaving the Electron window black forever. Wait until the port is really
+  // free before spawning.
+  waitForPortFree(Number(sidecarPort));
+  if (layout.nextPath && pathExists(layout.nextPath)) {
+    waitForPortFree(Number(nextPort));
+  }
+
+  let shuttingDown = false;
   const children = [];
-  const spawnChild = (label, scriptPath, env) => {
-    logStep(`Launching ${label}...`);
-    const child = spawn(nodeBin, [scriptPath], {
-      cwd: path.dirname(scriptPath),
-      env: { ...process.env, ...env },
-      stdio: 'ignore',
-      shell: false,
-      windowsHide: true,
-    });
-    children.push(child);
-    return child;
+  const spawnChild = (label, scriptPath, env, { maxRestarts = 3, restartDelayMs = 2000 } = {}) => {
+    const entry = { label, scriptPath, env, restarts: 0, child: null };
+    const launch = () => {
+      logStep(`Launching ${label}...`);
+      const child = spawn(nodeBin, [scriptPath], {
+        cwd: path.dirname(scriptPath),
+        env: { ...process.env, ...env },
+        // stderr → wrapper.log (crash stacks like EADDRINUSE were invisible
+        // with stdio:'ignore'); stdout stays ignored to keep the log small.
+        stdio: ['ignore', 'ignore', 'pipe'],
+        shell: false,
+        windowsHide: true,
+      });
+      entry.child = child;
+      child.stderr.on('data', (chunk) => {
+        for (const line of String(chunk).split(/\r?\n/)) {
+          if (line.trim()) logStep(`[${label}] ${line.slice(0, 500)}`);
+        }
+      });
+      child.on('exit', (code) => {
+        logStep(`${label} PID ${child.pid} exited with code ${code ?? 'null'}`);
+        if (shuttingDown) return;
+        // A single crashed child must not take the backend down: respawn with
+        // a small budget (EADDRINUSE from a dying old listener clears in ~1-2s).
+        if (entry.restarts < maxRestarts) {
+          entry.restarts += 1;
+          logStep(`Restarting ${label} (${entry.restarts}/${maxRestarts}) in ${restartDelayMs}ms…`);
+          setTimeout(() => {
+            if (!shuttingDown) launch();
+          }, restartDelayMs);
+        } else {
+          logStep(
+            `${label} agotó reintentos — el sibling sigue vivo; el backend puede recuperarse en el próximo arranque.`
+          );
+        }
+      });
+    };
+    launch();
+    children.push(entry);
+    return entry;
   };
 
   if (layout.ptyPath && pathExists(layout.ptyPath)) {
@@ -617,8 +679,11 @@ function main() {
   }
 
   const shutdown = () => {
+    shuttingDown = true;
     logStep('Shutting down child processes...');
-    for (const child of children) {
+    for (const entry of children) {
+      const child = entry.child;
+      if (!child) continue;
       try {
         if (process.platform === 'win32') {
           execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' });
@@ -638,13 +703,6 @@ function main() {
     setTimeout(() => process.exit(1), 5000);
     return;
   }
-
-  for (const child of children) {
-    child.on('exit', (code) => {
-      logStep(`Child PID ${child.pid} exited with code ${code ?? 'null'}`);
-      shutdown();
-    });
-  }
 }
 
 if (require.main === module) {
@@ -662,5 +720,6 @@ module.exports = {
   isPackagedDevelopmentRuntime,
   isRunningFromTauriDevTree,
   killListenersOnPort,
+  waitForPortFree,
   main,
 };
