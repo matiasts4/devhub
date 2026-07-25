@@ -85,7 +85,7 @@ function seedMission(db, missionId) {
 
 describe('T-009 — getMissionBusSnapshot', () => {
   test('returns 4 arrays, one per table, with seeded data', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       seedMission(db, 'missionA');
       const snap = swarmMissions.getMissionBusSnapshot(db, 'missionA');
@@ -101,7 +101,7 @@ describe('T-009 — getMissionBusSnapshot', () => {
   });
 
   test('empty mission returns [] for all 4 arrays (not null)', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       const snap = swarmMissions.getMissionBusSnapshot(db, 'missionEmpty');
       expect(snap.chat_recent).toEqual([]);
@@ -115,7 +115,7 @@ describe('T-009 — getMissionBusSnapshot', () => {
   });
 
   test('mission isolation: chat in missionA is not in missionB snapshot', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       seedMission(db, 'missionA');
       seedMission(db, 'missionB');
@@ -155,7 +155,7 @@ describe('T-009 — getMissionBusSnapshot', () => {
   });
 
   test('inbox_pending only shows unconsumed rows', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       // Seed: 1 consumed, 1 pending
       db.prepare(
@@ -174,7 +174,7 @@ describe('T-009 — getMissionBusSnapshot', () => {
   });
 
   test('presence_active only shows rows whose expires_at > now', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       // 1 active (future expiry), 1 expired
       const now = new Date().toISOString();
@@ -200,7 +200,7 @@ describe('T-009 — getMissionBusSnapshot', () => {
   });
 
   test('mission_id=../etc throws TypeError (path traversal protection)', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       expect(() => swarmMissions.getMissionBusSnapshot(db, '../etc')).toThrow(TypeError);
       expect(() => swarmMissions.getMissionBusSnapshot(db, '')).toThrow(TypeError);
@@ -211,7 +211,7 @@ describe('T-009 — getMissionBusSnapshot', () => {
   });
 
   test('snapshot_at is a valid ISO 8601 timestamp', () => {
-    const { dir, db, dbPath } = makeTempDb();
+    const { dir, db } = makeTempDb();
     try {
       const snap = swarmMissions.getMissionBusSnapshot(db, 'missionE');
       expect(snap.snapshot_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
