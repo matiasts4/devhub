@@ -26,6 +26,8 @@ import {
   shouldSyncTerminalViewportOnLayoutShow,
   shouldSoftGpuWorkspaceReveal,
   resolveWorkspaceLayoutShowRevealMode,
+  isTerminalViewportNearBottom,
+  restoreTerminalViewportAfterReveal,
   TERMINAL_SPLIT_WEBGL_PANEL_LIMIT,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
 } from '@/components/terminal/TerminalTTY.helpers';
@@ -822,6 +824,7 @@ export default function useTerminalWorkspaceShowRecovery({
   useLayoutEffect(() => {
     const c = ctxRef.current;
     const {
+      id,
       termRef,
       containerRef,
       fitRef,
@@ -884,6 +887,10 @@ export default function useTerminalWorkspaceShowRecovery({
     // unmount via disposeXtermRuntime().
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)) {
+      // PR6 scroll integrity: capture the scroll position before the reveal
+      // fit/repaint so a user reading scrollback lands back where they were.
+      const viewportYBefore = termRef.current?.buffer?.active?.viewportY ?? null;
+      const wasNearBottom = isTerminalViewportNearBottom(termRef.current);
       restoreInitialCommandDispatchGuard();
       // Phase 6 terminal-engine-v2: skip legacy GPU survivor recovery on show.
       if (!usesLegacyTerminalSurvivorRecovery(isEngineV2Ref.current)) {
@@ -1049,6 +1056,18 @@ export default function useTerminalWorkspaceShowRecovery({
           })();
         }
       }
+
+      // PR6 scroll integrity: once the reveal fit/repaint settled, restore the
+      // captured scroll position. No-op when the user was at the bottom or the
+      // viewport never moved.
+      requestAnimationFrame(() => {
+        restoreTerminalViewportAfterReveal({
+          term: termRef.current,
+          viewportYBefore,
+          wasNearBottom,
+          panelId: id,
+        });
+      });
     } else if (!isVisibleInLayout) {
       needsViewportSyncOnShowRef.current = true;
     } else if (isVisibleInLayout && needsViewportSyncOnShowRef.current) {

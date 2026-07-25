@@ -12,6 +12,7 @@ import {
   reconcileOpenCodeTuiWheelReadiness,
   detectGrokSessionFromOutput,
   isGrokTuiInitialCommand,
+  shouldScrollAgentWheelLocally,
   terminalHasActiveMouseReporting,
   resolveConnectInitialCommandState,
   resolveTerminalConnectionCloseState,
@@ -40,6 +41,7 @@ import {
   markWsConnected,
 } from '@/lib/terminal/startupPerfMarks';
 import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
+import { markTerminalConnectedOnce } from '@/lib/terminal/terminalConnectedOnceRegistry';
 
 export default function useTerminalV2Session({ ctxRef }) {
   const stopV2Session = useCallback(() => {
@@ -107,8 +109,10 @@ export default function useTerminalV2Session({ ctxRef }) {
       isGrokSessionRef,
       grokTuiReadyRef,
       tuiSessionFooterConfirmedRef,
+      agentTypeRef,
       initialCommandConnectSnapshotRef,
       isActivePanelRef,
+      lastPtySizeRef,
       setConnectionState,
       setHasConnectedOnce,
       setRestoredToast,
@@ -299,6 +303,13 @@ export default function useTerminalV2Session({ ctxRef }) {
         cliLog(`CLIENT:${id}`, 'WS onopen — connected');
         markWsConnected();
         hasConnectedOnceRef.current = true;
+        markTerminalConnectedOnce(id);
+        // The PTY host re-created its side of the session on (re)connect — force
+        // the first post-connect resize through the zero-delta guard so the
+        // server re-syncs dimensions (terminal-load-performance PR6).
+        if (lastPtySizeRef?.current) {
+          lastPtySizeRef.current = { cols: 0, rows: 0 };
+        }
         panelActivityTrackerRef.current?.onOpen();
         if (initialCommandConnectSnapshotRef.current === null) {
           initialCommandConnectSnapshotRef.current = initialCommand;
@@ -525,8 +536,11 @@ export default function useTerminalV2Session({ ctxRef }) {
 
               // xterm.js is fresh after reconnect; prod the TUI/shell into
               // re-emitting its private modes and redraw the screen.
+              // Inline-scroll agents never use host mouse — skip the mouse burst.
               resetTerminalModesForReattach(termRef.current, {
-                tuiSessionActive: tuiSessionActiveRef.current,
+                tuiSessionActive:
+                  tuiSessionActiveRef.current &&
+                  !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef?.current),
               });
             } else {
               // Fresh session: the tmux pane is empty, so it is safe to launch the
@@ -562,6 +576,11 @@ export default function useTerminalV2Session({ ctxRef }) {
                   terminalHasActiveMouseReporting,
                 });
               } else if (isOpenCodeLaunchCommand(initialCommand)) {
+                tuiSessionActiveRef.current = true;
+              } else if (payload.mode === 'tui') {
+                // Generic server signal: session was pre-detected as an agent
+                // TUI (qodercli, claude, codex, hermes, agy, …). Honor it so
+                // wheel inject works without per-agent client code.
                 tuiSessionActiveRef.current = true;
               }
               sendInitialCommandIfReady();
@@ -668,6 +687,21 @@ export default function useTerminalV2Session({ ctxRef }) {
           }
 
           if (payload.type === 'agent-state' && payload.agentTuiState) {
+            // Generic TUI promotion: the server detected a known agent TUI
+            // (any type — qodercli, claude, codex, hermes, agy, etc.). Flip
+            // the session flag so the wheel router injects SGR into the PTY
+            // instead of dead local-viewport scroll on the alt buffer.
+            if (payload.reason === 'agent-exit' || payload.reason === 'exit') {
+              tuiSessionActiveRef.current = false;
+              if (agentTypeRef) agentTypeRef.current = null;
+            } else if (payload.agentType && !tuiSessionActiveRef.current) {
+              tuiSessionActiveRef.current = true;
+            }
+            // Track the detected type so the wheel router can pick the right
+            // scroll strategy (inline-scroll agents vs SGR-inject TUIs).
+            if (payload.agentType && agentTypeRef && agentTypeRef.current !== payload.agentType) {
+              agentTypeRef.current = payload.agentType;
+            }
             setPanelSemanticState(
               id,
               {

@@ -25,12 +25,15 @@ describe('sidecar cwd safeguard', () => {
     }).not.toThrow();
   });
 
-  test('falls back to process cwd when requested cwd is missing', () => {
+  test('falls back to home dir (not process cwd) when requested cwd is missing', () => {
+    // Packaged installs run the sidecar from inside the app install dir
+    // (C:\Program Files\DevHub\resources\...\sidecar-backend). An invalid
+    // requested cwd must never land the user's shell there — home wins.
     const missing = path.join(os.tmpdir(), 'definitely-missing-devhub-cwd-guard');
     const result = resolveSidecarSessionCwd(missing);
 
     expect(result.requestedCwd).toBe(path.resolve(missing));
-    expect(result.effectiveCwd).toBe(process.cwd());
+    expect(result.effectiveCwd).toBe(path.resolve(os.homedir()));
     expect(result.usedFallback).toBe(true);
   });
 

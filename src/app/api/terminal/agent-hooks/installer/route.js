@@ -27,6 +27,7 @@ export async function GET(request) {
       claude: getAgentHookStatus('claude'),
       opencode: getAgentHookStatus('opencode'),
       agy: getAgentHookStatus('agy'),
+      qodercli: getAgentHookStatus('qodercli'),
     };
     return NextResponse.json({ ok: true, statuses });
   } catch (error) {
@@ -46,9 +47,12 @@ export async function POST(request) {
     const body = await request.json();
     const { agent, action } = body || {};
 
-    if (!['kimi', 'claude', 'opencode', 'agy', 'antigravity'].includes(agent)) {
+    if (!['kimi', 'claude', 'opencode', 'agy', 'antigravity', 'qodercli'].includes(agent)) {
       return NextResponse.json(
-        { ok: false, error: "Invalid agent. Allowed: 'kimi', 'claude', 'opencode', 'agy'" },
+        {
+          ok: false,
+          error: "Invalid agent. Allowed: 'kimi', 'claude', 'opencode', 'agy', 'qodercli'",
+        },
         { status: 400 }
       );
     }

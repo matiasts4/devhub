@@ -9,6 +9,7 @@ const {
   terminalCanNativeWheelPassthrough,
   forwardTerminalWheelToXterm,
   reconcileOpenCodeTuiWheelReadiness,
+  shouldBlockInlineAgentMouseModes,
   TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ,
   TERMINAL_DISABLE_FOCUS_REPORTING_SEQ,
 } = require('../TerminalTTY.helpers');
@@ -128,5 +129,40 @@ describe('reconcileOpenCodeTuiWheelReadiness on panel reactivate', () => {
     expect(setNative).toHaveBeenCalledWith(true);
     expect(writes.join('')).toContain(TERMINAL_DISABLE_FOCUS_REPORTING_SEQ);
     expect(writes.join('')).toContain(TERMINAL_ENABLE_TUI_MOUSE_REPORTING_SEQ);
+  });
+});
+
+describe('shouldBlockInlineAgentMouseModes', () => {
+  test('blocks for every inline-scroll agent type via launch command', () => {
+    for (const cmd of ['kimi', 'qodercli', 'claude', 'codex']) {
+      expect(shouldBlockInlineAgentMouseModes({ initialCommand: cmd })).toBe(true);
+    }
+  });
+
+  test('blocks via server-detected agentType even without launch command', () => {
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: '', agentType: 'qodercli' })).toBe(
+      true
+    );
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: '', agentType: 'claude' })).toBe(
+      true
+    );
+  });
+
+  test('blocks for kimi via ready flag (mid-session detection)', () => {
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: '', kimiReady: true })).toBe(true);
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: '', isKimiLaunch: true })).toBe(true);
+  });
+
+  test('does not block for alt-screen mouse TUIs or plain shells', () => {
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: 'grok' })).toBe(false);
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: 'opencode' })).toBe(false);
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: 'bash' })).toBe(false);
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: '' })).toBe(false);
+  });
+
+  test('does not false-positive on qoder config paths', () => {
+    expect(shouldBlockInlineAgentMouseModes({ initialCommand: 'vim .qoder/AGENTS.md' })).toBe(
+      false
+    );
   });
 });

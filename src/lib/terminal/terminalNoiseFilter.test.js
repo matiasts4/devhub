@@ -185,11 +185,14 @@ describe('filterTerminalInputForSession', () => {
   });
 
   it('forwards SGR mouse wheel reports only for live, visible TUIs', () => {
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, '\u001b[<65;12;4m')).toBe(
+      '\u001b[<65;12;4m'
+    );
     expect(
-      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, '\u001b[<65;12;4m')
-    ).toBe('\u001b[<65;12;4m');
-    expect(
-      filterTerminalInputForSession({ mode: 'tui', tuiReady: true, panelHidden: true }, '\u001b[<64;8;3M')
+      filterTerminalInputForSession(
+        { mode: 'tui', tuiReady: true, panelHidden: true },
+        '\u001b[<64;8;3M'
+      )
     ).toBeNull();
   });
 
@@ -205,9 +208,9 @@ const SGR_WHEEL_DOWN = '\u001b[<65;12;4m';
 
 describe('filterTerminalInputForSession — sessionContext gate', () => {
   test('forwards SGR press when ctx.mode=tui and ctx.tuiReady=true', () => {
-    expect(
-      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_CLICK)
-    ).toBe(SGR_CLICK);
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_CLICK)).toBe(
+      SGR_CLICK
+    );
   });
 
   test('strips SGR press when ctx.mode=tui and ctx.tuiReady=false', () => {
@@ -253,6 +256,44 @@ describe('filterTerminalInputForSession — sessionContext gate', () => {
   });
 });
 
+describe('filterTerminalInputForSession — generic mouseTracking gate', () => {
+  test('forwards SGR wheel when the app enabled mouse tracking, even in shell mode', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'shell', mouseTracking: true }, SGR_WHEEL_UP)
+    ).toBe(SGR_WHEEL_UP);
+    expect(
+      filterTerminalInputForSession({ mode: 'shell', mouseTracking: true }, SGR_WHEEL_DOWN)
+    ).toBe(SGR_WHEEL_DOWN);
+  });
+
+  test('forwards SGR click when the app enabled mouse tracking without agentType', () => {
+    expect(filterTerminalInputForSession({ mode: 'shell', mouseTracking: true }, SGR_CLICK)).toBe(
+      SGR_CLICK
+    );
+  });
+
+  test('mouseTracking still respects panelHidden/panelInactive gates', () => {
+    expect(
+      filterTerminalInputForSession(
+        { mode: 'shell', mouseTracking: true, panelHidden: true },
+        SGR_WHEEL_UP
+      )
+    ).toBeNull();
+    expect(
+      filterTerminalInputForSession(
+        { mode: 'shell', mouseTracking: true, panelInactive: true },
+        SGR_WHEEL_UP
+      )
+    ).toBeNull();
+  });
+
+  test('mouseTracking=false keeps legacy shell stripping', () => {
+    expect(
+      filterTerminalInputForSession({ mode: 'shell', mouseTracking: false }, SGR_WHEEL_UP)
+    ).toBeNull();
+  });
+});
+
 describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
   test('strips wheel 64 when ctx is null', () => {
     expect(filterTerminalInputForSession(null, SGR_WHEEL_UP)).toBeNull();
@@ -273,9 +314,9 @@ describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
   });
 
   test('forwards wheel 64 when ctx.mode=tui and tuiReady=true', () => {
-    expect(
-      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_WHEEL_UP)
-    ).toBe(SGR_WHEEL_UP);
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, SGR_WHEEL_UP)).toBe(
+      SGR_WHEEL_UP
+    );
   });
 
   test('forwards wheel 64 when mode=tui and agentType set even without tuiReady (server session)', () => {
@@ -287,10 +328,7 @@ describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
       )
     ).toBe(SGR_WHEEL_UP);
     expect(
-      filterTerminalInputForSession(
-        { mode: 'tui', agentType: 'opencode' },
-        SGR_WHEEL_DOWN
-      )
+      filterTerminalInputForSession({ mode: 'tui', agentType: 'opencode' }, SGR_WHEEL_DOWN)
     ).toBe(SGR_WHEEL_DOWN);
   });
 
@@ -307,10 +345,7 @@ describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
   test('strips SGR motion on inactive visible panels (pizarra hover)', () => {
     const motion = '\u001b[<35;10;20M';
     expect(
-      filterTerminalInputForSession(
-        { mode: 'tui', tuiReady: true, panelInactive: true },
-        motion
-      )
+      filterTerminalInputForSession({ mode: 'tui', tuiReady: true, panelInactive: true }, motion)
     ).toBeNull();
     expect(
       filterTerminalInputForSession(
@@ -322,9 +357,7 @@ describe('filterTerminalInputForSession — wheel regression (NFR-T03)', () => {
 
   test('click-then-scroll combined sequence preserved in tui-ready mode', () => {
     const combined = `${SGR_CLICK}${SGR_WHEEL_DOWN}`;
-    expect(
-      filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, combined)
-    ).toBe(combined);
+    expect(filterTerminalInputForSession({ mode: 'tui', tuiReady: true }, combined)).toBe(combined);
   });
 });
 

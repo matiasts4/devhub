@@ -143,12 +143,29 @@ function enrichPersistedSession(session) {
   };
 }
 
+let pendingSaveTimer = null;
+let pendingSaveMap = null;
+
 /**
- * saveSessions — atomically write sessions Map to disk.
- *
- * @param {Map<string, object>} sessionsMap - Map of terminalId → session data
+ * Immediately flushes any pending debounced session store write to disk.
  */
-export function saveSessions(sessionsMap) {
+export function flushSaveSessions() {
+  if (pendingSaveTimer) {
+    clearTimeout(pendingSaveTimer);
+    pendingSaveTimer = null;
+  }
+  if (pendingSaveMap) {
+    const map = pendingSaveMap;
+    pendingSaveMap = null;
+    saveSessionsSync(map);
+  }
+}
+
+/**
+ * Synchronous atomic write of sessions Map to disk (tmp + rename).
+ * @param {Map<string, object>} sessionsMap
+ */
+export function saveSessionsSync(sessionsMap) {
   const filePath = getSessionFilePath();
   const dir = path.dirname(filePath);
 
@@ -187,6 +204,46 @@ export function saveSessions(sessionsMap) {
 
   fs.writeFileSync(tmpPath, json, 'utf8');
   fs.renameSync(tmpPath, filePath);
+}
+
+/**
+ * saveSessions — write sessions Map to disk.
+ *
+ * Default is SYNCHRONOUS and atomic (tmp + rename): callers rely on durability
+ * the moment this returns (restore, spawn, kill paths, tests seeding the store).
+ * Pass `{ debounce: true }` to coalesce bursts (~250 ms) on hot paths; a pending
+ * debounced write is always flushed before a later sync write so newer state
+ * can never be overwritten by an older queued write.
+ *
+ * @param {Map<string, object>} sessionsMap - Map of terminalId → session data
+ * @param {{ debounce?: boolean, delayMs?: number }} [opts]
+ */
+export function saveSessions(sessionsMap, { debounce = false, delayMs = 250 } = {}) {
+  if (!debounce) {
+    flushSaveSessions();
+    saveSessionsSync(sessionsMap);
+    return;
+  }
+  pendingSaveMap = sessionsMap;
+  if (!pendingSaveTimer) {
+    pendingSaveTimer = setTimeout(() => {
+      flushSaveSessions();
+    }, delayMs);
+    if (pendingSaveTimer.unref) pendingSaveTimer.unref();
+  }
+}
+
+// Flush-on-exit hooks. Guarded against duplicate registration: Next.js dev HMR
+// re-imports this module and would otherwise stack process listeners.
+const FLUSH_HOOKS_KEY = '__devhubSessionStoreFlushHooks__';
+if (typeof process !== 'undefined' && process.on && !globalThis[FLUSH_HOOKS_KEY]) {
+  try {
+    globalThis[FLUSH_HOOKS_KEY] = true;
+    process.on('beforeExit', () => flushSaveSessions());
+    process.on('exit', () => flushSaveSessions());
+  } catch {
+    // ignore
+  }
 }
 
 /**

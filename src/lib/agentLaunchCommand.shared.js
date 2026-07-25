@@ -50,6 +50,8 @@ export const AGENT_PROGRAM_EXECUTABLES = Object.freeze({
   grok: 'grok',
   agy: 'agy',
   antigravity: 'agy',
+  qodercli: 'qodercli',
+  qoder: 'qodercli',
 });
 
 /** Skill folder names under ~/.kimi-code/skills (or peers). */
@@ -193,6 +195,17 @@ function candidateBins(programId, home) {
         'agy.exe',
         'agy',
         'antigravity',
+      ].filter(Boolean);
+    case 'qodercli':
+    case 'qoder':
+      return [
+        process.env.DEVHUB_AGENT_QODERCLI_BIN,
+        process.env.DEVHUB_AGENT_QODER_BIN,
+        home && join(home, '.qoder', 'bin', 'qodercli.exe'),
+        home && join(home, '.qoder', 'bin', 'qodercli'),
+        home && join(home, '.local', 'bin', 'qodercli'),
+        'qodercli.exe',
+        'qodercli',
       ].filter(Boolean);
     default:
       return [programId, 'hermes'];
@@ -431,6 +444,17 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       // bootstrap prompt is injected post-launch via tmux send-keys by the
       // wrapper. No non-interactive prompt flag is assumed for agy.
       innerCommand = executable;
+      break;
+    case 'qodercli':
+    case 'qoder':
+      // Qoder CLI (qodercli): interactive TUI when bare; documented print mode
+      // `-p <prompt>` for non-interactive one-shots (docs.qoder.com/en/cli).
+      // Swarm launches use the interactive TUI + send-keys bootstrap.
+      if (interactiveBootstrapPrompt) {
+        innerCommand = executable;
+      } else {
+        innerCommand = `${executable} -p ${quotedPrompt}`;
+      }
       break;
     case 'hermes':
     default:

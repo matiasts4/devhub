@@ -22,6 +22,11 @@ const MARKS = Object.freeze({
   SIDECAR_WARM_READY: `${PREFIX}sidecar-warm-ready`,
   WARM_TIER_START: `${PREFIX}warm-tier-start`,
   WARM_TIER_DONE: `${PREFIX}warm-tier-done`,
+  // Repeatable transition marks (NOT once-gated — measure() pairs the most recent).
+  WORKSPACE_SWITCH_START: `${PREFIX}workspace-switch-start`,
+  WORKSPACE_SWITCH_END: `${PREFIX}workspace-switch-end`,
+  PIZARRA_EXIT_START: `${PREFIX}pizarra-exit-start`,
+  PIZARRA_EXIT_END: `${PREFIX}pizarra-exit-end`,
 });
 
 const MEASURES = Object.freeze({
@@ -39,7 +44,20 @@ const MEASURES = Object.freeze({
   INTERACTIVE_TO_FIRST_BYTE: `${PREFIX}interactive→first-pty-byte`,
   CONNECT_TOTAL: `${PREFIX}connect-start→ws-connected`,
   WARM_DURATION: `${PREFIX}warm-duration`,
+  WORKSPACE_SWITCH: `${PREFIX}workspace-switch`,
+  PIZARRA_EXIT: `${PREFIX}pizarra-exit`,
 });
+
+/** Known perf counter names (generic registry below accepts any name). */
+const COUNTERS = Object.freeze({
+  TERMINAL_REMOUNT: 'terminal-remount',
+  TERMINAL_RESIZE_SENT: 'terminal-resize-sent',
+  TERMINAL_RESIZE_SENT_REDUNDANT: 'terminal-resize-sent-redundant',
+  TERMINAL_SCROLL_JUMP: 'terminal-scroll-jump',
+});
+
+/** Cap of detail samples kept per counter (FIFO). */
+const PERF_COUNTER_SAMPLE_CAP = 10;
 
 let firstPanelInteractiveRecorded = false;
 let wsConnectedRecorded = false;
@@ -61,6 +79,47 @@ const onceMarks = {
 const localMarks = [];
 /** @type {{ name: string, duration: number, startTime: number }[]} */
 const localMeasures = [];
+/** @type {Map<string, { count: number, samples: any[] }>} */
+const perfCounters = new Map();
+
+function bumpPerfCounter(name, detail) {
+  let entry = perfCounters.get(name);
+  if (!entry) {
+    entry = { count: 0, samples: [] };
+    perfCounters.set(name, entry);
+  }
+  entry.count += 1;
+  if (detail !== undefined) {
+    entry.samples.push(detail);
+    if (entry.samples.length > PERF_COUNTER_SAMPLE_CAP) {
+      entry.samples.shift();
+    }
+  }
+}
+
+/**
+ * Generic perf counter — accumulates `{ count }` per name and keeps a FIFO
+ * sample of the last N=10 `detail` payloads. No-op when perf is disabled.
+ */
+export function incrementPerfCounter(name, detail) {
+  if (!isStartupPerfEnabled()) return;
+  if (!name) return;
+  bumpPerfCounter(name, detail);
+  // Redundant resizes (same cols/rows as last sent) get their own counter so
+  // the summary can track the "no cols/rows delta" SLO without sampling loss.
+  if (name === COUNTERS.TERMINAL_RESIZE_SENT && detail?.redundant === true) {
+    bumpPerfCounter(COUNTERS.TERMINAL_RESIZE_SENT_REDUNDANT, detail);
+  }
+}
+
+/** Copy of the counter registry as a plain object: `{ [name]: { count, samples } }`. */
+export function getPerfCounters() {
+  const out = {};
+  for (const [name, entry] of perfCounters) {
+    out[name] = { count: entry.count, samples: entry.samples.slice() };
+  }
+  return out;
+}
 
 function nowMs() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -181,6 +240,9 @@ export function markXtermCoreImportDone() {
 
 export function buildStartupPerfReport(reason) {
   const { measures, marks } = getPerfSnapshot();
+  const counters = getPerfCounters();
+  // Object.fromEntries keeps the LAST occurrence per measure name, so repeated
+  // transition measures surface their most recent duration here.
   const byName = Object.fromEntries(measures.map((m) => [m.name, Math.round(m.duration)]));
   const summary = {
     projectToTerminalesMs: byName[MEASURES.PROJECT_TO_TERMINAL_ROUTE] ?? null,
@@ -198,10 +260,18 @@ export function buildStartupPerfReport(reason) {
     terminalesToFirstByteMs: byName[MEASURES.TERMINAL_ROUTE_TO_FIRST_BYTE] ?? null,
     wsToFirstByteMs: byName[MEASURES.WS_TO_FIRST_BYTE] ?? null,
     interactiveToFirstByteMs: byName[MEASURES.INTERACTIVE_TO_FIRST_BYTE] ?? null,
+    // Transition metrics (latest measure) + counter totals
+    workspaceSwitchMs: byName[MEASURES.WORKSPACE_SWITCH] ?? null,
+    pizarraExitMs: byName[MEASURES.PIZARRA_EXIT] ?? null,
+    terminalRemounts: counters[COUNTERS.TERMINAL_REMOUNT]?.count ?? 0,
+    terminalResizeSent: counters[COUNTERS.TERMINAL_RESIZE_SENT]?.count ?? 0,
+    terminalResizeSentRedundant: counters[COUNTERS.TERMINAL_RESIZE_SENT_REDUNDANT]?.count ?? 0,
+    terminalScrollJumps: counters[COUNTERS.TERMINAL_SCROLL_JUMP]?.count ?? 0,
   };
   return {
     reason: reason || 'snapshot',
     summary,
+    counters,
     marks: marks.map((m) => ({ name: m.name, startTime: Math.round(m.startTime) })),
     measures: measures.map((m) => ({
       name: m.name,
@@ -332,6 +402,28 @@ export function markWarmTierDone() {
   logStartupPerfSummary('warm-done');
 }
 
+/** Workspace tab switch start — repeatable; each switch re-arms the pair. */
+export function markWorkspaceSwitchStart() {
+  mark(MARKS.WORKSPACE_SWITCH_START);
+}
+
+/** Workspace tab switch settled — pairs with the most recent start mark. */
+export function markWorkspaceSwitchEnd() {
+  mark(MARKS.WORKSPACE_SWITCH_END);
+  measure(MEASURES.WORKSPACE_SWITCH, MARKS.WORKSPACE_SWITCH_START, MARKS.WORKSPACE_SWITCH_END);
+}
+
+/** Pizarra exit start (portal re-target towards `workspace-dock`). */
+export function markPizarraExitStart() {
+  mark(MARKS.PIZARRA_EXIT_START);
+}
+
+/** Pizarra exit settled — pairs with the most recent start mark. */
+export function markPizarraExitEnd() {
+  mark(MARKS.PIZARRA_EXIT_END);
+  measure(MEASURES.PIZARRA_EXIT, MARKS.PIZARRA_EXIT_START, MARKS.PIZARRA_EXIT_END);
+}
+
 /** Sidecar/session endpoint cached and ready for WS connect (prod hot path). */
 export function markSidecarWarmReady() {
   if (sidecarWarmReadyRecorded) return;
@@ -391,6 +483,7 @@ export function resetStartupPerfForTests() {
   onceMarks.sessionApiOk = false;
   localMarks.length = 0;
   localMeasures.length = 0;
+  perfCounters.clear();
   if (!hasPerformanceApi()) return;
   try {
     performance.clearMarks?.();
@@ -404,6 +497,7 @@ export function exposePerfSnapshotOnWindow() {
   if (typeof globalThis === 'undefined' || !globalThis.window || !isStartupPerfEnabled()) return;
   globalThis.window.__DEVHUB_PERF__ = {
     getSnapshot: getPerfSnapshot,
+    getCounters: getPerfCounters,
     buildReport: buildStartupPerfReport,
     flush: (reason = 'manual-flush') => persistStartupPerfSnapshot(reason),
     marks: MARKS,
@@ -412,4 +506,8 @@ export function exposePerfSnapshotOnWindow() {
   };
 }
 
-export { MARKS as STARTUP_PERF_MARKS, MEASURES as STARTUP_PERF_MEASURES };
+export {
+  MARKS as STARTUP_PERF_MARKS,
+  MEASURES as STARTUP_PERF_MEASURES,
+  COUNTERS as PERF_COUNTERS,
+};

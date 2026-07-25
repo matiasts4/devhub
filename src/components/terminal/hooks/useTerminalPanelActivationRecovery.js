@@ -11,6 +11,7 @@ import {
   shouldRecoverPanelOnActivation,
   shouldSkipReactivateViewportOnPanelActivation,
   prepareActiveTuiTerminalFocus,
+  shouldScrollAgentWheelLocally,
   reconcileOpenCodeTuiWheelReadiness,
   reconcileGrokTuiWheelReadiness,
 } from '@/components/terminal/TerminalTTY.helpers';
@@ -23,6 +24,7 @@ function reconcileTuiWheelOnPanelActivate(c, term) {
     setNativeWheelPassthrough,
     isGrokSessionRef,
     grokTuiReadyRef,
+    agentTypeRef,
   } = c;
   // Only force-ready when we already confirmed chrome before this hide.
   // Cold first activate must still scan the buffer (do not mark footer early).
@@ -52,9 +54,12 @@ function reconcileTuiWheelOnPanelActivate(c, term) {
   });
   // Always rebind mouse after deactivate cleared DECSET — even if footer
   // reconcile no-ops (already confirmed / buffer scan miss).
+  // Inline-scroll agents (kimi, qodercli, claude, codex) never use host mouse:
+  // enabling DECSET here kills text selection, so keep it off for them.
   prepareActiveTuiTerminalFocus(term, {
     tuiSessionActive: Boolean(
-      tuiSessionActiveRef?.current || assumeOpenCode || assumeGrok || isGrokLaunch
+      !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef?.current) &&
+      (tuiSessionActiveRef?.current || assumeOpenCode || assumeGrok || isGrokLaunch)
     ),
   });
 }

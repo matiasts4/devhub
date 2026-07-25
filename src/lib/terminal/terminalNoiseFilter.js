@@ -86,7 +86,7 @@ export function stripShellTerminalResponseNoise(chunk) {
 
 /**
  * @param {string} chunk
- * @param {{ mode?: 'tui' | 'shell'; tuiReady?: boolean; panelHidden?: boolean; panelInactive?: boolean } | null | undefined} [ctx]
+ * @param {{ mode?: 'tui' | 'shell'; tuiReady?: boolean; mouseTracking?: boolean; panelHidden?: boolean; panelInactive?: boolean } | null | undefined} [ctx]
  */
 /**
  * Live agent TUI input context: allow SGR wheel/click through to the PTY.
@@ -95,10 +95,18 @@ export function stripShellTerminalResponseNoise(chunk) {
  * but never set `tuiReady` — historically that stripped *all* mouse reports
  * (including wheel 64/65), so Grok/OpenCode scroll inject never reached the PTY
  * until a full client remount happened to look "fixed".
+ *
+ * Generic native signal: `mouseTracking` means the application itself enabled
+ * mouse tracking (DECSET 1000/1002/1003 — observed from PTY output on the
+ * server, or from xterm's parsed private modes on the client). Such TUIs
+ * consume SGR wheel/click regardless of agent identity or session mode, so
+ * reports pass through without any per-agent configuration.
  */
 export function isLiveTuiInputContext(ctx) {
-  if (!ctx || ctx.mode !== 'tui') return false;
+  if (!ctx) return false;
   if (ctx.panelHidden === true || ctx.panelInactive === true) return false;
+  if (ctx.mouseTracking === true) return true;
+  if (ctx.mode !== 'tui') return false;
   if (ctx.tuiReady === true) return true;
   // Agent sessions marked at launch / detection — treat as live for input mouse.
   if (typeof ctx.agentType === 'string' && ctx.agentType.trim()) return true;

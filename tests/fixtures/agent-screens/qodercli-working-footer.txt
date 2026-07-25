@@ -1,0 +1,8 @@
+# Qoder CLI - working footer screen fixture
+# Source: claude-code-like working chrome (braille spinner + esc-to-interrupt footer)
+# Version: qodercli 1.x
+
+Reading AGENTS.md…
+⠋ Thinking about the architecture
+esc to interrupt
+model: auto · d:\devhub

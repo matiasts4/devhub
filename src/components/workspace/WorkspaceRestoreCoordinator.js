@@ -154,6 +154,7 @@ export function createWorkspaceRestoreCoordinator({
 
         const queueResult = await dispatchStartupRestoreQueue({
           actions: plan.actions,
+          activeWorkspaceId: activeWsIdRef.current || activeWsId,
           getPanel: (panelId) => panelMap.get(panelId),
           getRuntimeTerminal: (panelId) => runtimeTerminalById.get(panelId) || null,
           getRestorePolicy: (panelId) => restorePolicyByPanelId.get(panelId) || 'auto',

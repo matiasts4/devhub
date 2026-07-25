@@ -41,6 +41,7 @@ const {
   buildServerMessage,
   detectAntigravityTuiReady,
   detectKimiTuiReady,
+  detectQodercliTuiReady,
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
   filterTerminalInputForSession,
@@ -53,6 +54,7 @@ const {
 } = require('./sessionTransport');
 const { writeOpencodeReadyMarker } = require('./opencodeReadyMarker');
 const { writeAntigravityReadyMarker } = require('./antigravityReadyMarker');
+const { writeQodercliReadyMarker } = require('./qodercliReadyMarker');
 const {
   shouldRespawnShellAfterPtyExit,
   shouldRelaunchAgentAfterCtrlCRespawn,
@@ -430,6 +432,18 @@ function attachSidecarPtyHandlers(session) {
             reason: 'sidecar-tui-footer',
           });
           session._antigravityReadyMarkerWritten = true;
+        }
+      } else if (detectQodercliTuiReady(filteredData)) {
+        if (!session.agentType) {
+          applyAgentTuiDetection(session, 'qodercli');
+          session.agentLaunchOrigin = 'output';
+        }
+        if (session.tmuxSession && !session._qodercliReadyMarkerWritten) {
+          writeQodercliReadyMarker(session.tmuxSession, {
+            sessionId,
+            reason: 'sidecar-tui-footer',
+          });
+          session._qodercliReadyMarkerWritten = true;
         }
       }
 
@@ -851,11 +865,15 @@ wss.on('connection', (ws, req) => {
     const filteredInput = filterTerminalInputForSession(session, payload.data);
     if (filteredInput === null) return;
 
+    // Capture whether the agent was already known BEFORE detection runs.
+    // The Enter that launches the agent is not a prompt submission.
+    const hadAgentTypeBeforeInput = Boolean(session.agentType);
+
     updateSessionModeFromInput(session, filteredInput);
 
     if (typeof filteredInput === 'string' && filteredInput.length > 0) {
       const isEnter = filteredInput.includes('\r') || filteredInput.includes('\n');
-      if (isEnter && session.agentType) {
+      if (isEnter && session.agentType && hadAgentTypeBeforeInput) {
         const published = notifyUserInput(session);
         if (published && session.agentTuiState) {
           broadcastSessionPayload(session, buildAgentStateFrame(session, session.agentTuiState));

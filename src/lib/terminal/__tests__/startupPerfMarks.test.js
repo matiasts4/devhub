@@ -141,4 +141,46 @@ describe('startupPerfMarks', () => {
     );
     info.mockRestore();
   });
+
+  test('repeatable transition marks store latest measure and update summary', () => {
+    const {
+      markWorkspaceSwitchStart,
+      markWorkspaceSwitchEnd,
+      markPizarraExitStart,
+      markPizarraExitEnd,
+    } = require('../startupPerfMarks');
+
+    markWorkspaceSwitchStart();
+    markWorkspaceSwitchEnd();
+
+    markPizarraExitStart();
+    markPizarraExitEnd();
+
+    const report = buildStartupPerfReport('transition-test');
+    expect(report.summary.workspaceSwitchMs).toEqual(expect.any(Number));
+    expect(report.summary.pizarraExitMs).toEqual(expect.any(Number));
+  });
+
+  test('incrementPerfCounter tracks counts, FIFO samples, and redundant resizes', () => {
+    const { incrementPerfCounter, getPerfCounters, PERF_COUNTERS } = require('../startupPerfMarks');
+
+    incrementPerfCounter(PERF_COUNTERS.TERMINAL_REMOUNT, { panelId: 'p1' });
+    incrementPerfCounter(PERF_COUNTERS.TERMINAL_RESIZE_SENT, {
+      cols: 120,
+      rows: 30,
+      prevCols: 120,
+      prevRows: 30,
+      redundant: true,
+    });
+
+    const counters = getPerfCounters();
+    expect(counters[PERF_COUNTERS.TERMINAL_REMOUNT].count).toBe(1);
+    expect(counters[PERF_COUNTERS.TERMINAL_RESIZE_SENT].count).toBe(1);
+    expect(counters[PERF_COUNTERS.TERMINAL_RESIZE_SENT_REDUNDANT].count).toBe(1);
+
+    const report = buildStartupPerfReport('counters-test');
+    expect(report.summary.terminalRemounts).toBe(1);
+    expect(report.summary.terminalResizeSent).toBe(1);
+    expect(report.summary.terminalResizeSentRedundant).toBe(1);
+  });
 });

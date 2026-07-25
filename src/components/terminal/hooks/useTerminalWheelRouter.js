@@ -34,6 +34,7 @@ import {
   shouldInjectTerminalWheelIntoPty,
   shouldPassthroughNativeTuiWheel,
   shouldRouteWheelToTranscript,
+  shouldScrollAgentWheelLocally,
   shouldScrollKimiWheelLocally,
   shouldUseTerminalScrollbackWheel,
   terminalHasActiveMouseReporting,
@@ -110,10 +111,17 @@ export function createTerminalWheelHandler({
     const isOpenCodeSession = isOpenCodeLaunchCommand(initialCommand);
     const isKimiSession =
       lifecycle.kimiReadyNotifiedRef?.current || isKimiLaunchCommand(initialCommand);
+    // Generic native fallback: the application itself enabled mouse tracking
+    // (DECSET 1000/1002/1003 parsed by xterm). ANY TUI — known or unknown — can
+    // then consume SGR wheel, so treat the session as TUI without per-agent config.
+    const appMouseTracking = terminalHasActiveMouseReporting(activeTerm);
     // Treat launch-command Grok/OpenCode as TUI even before footer/chrome refs flip —
     // otherwise wheel falls into local scrollback and does nothing on the alt buffer.
     const isTuiSession =
-      lifecycle.tuiSessionActiveRef?.current || isGrokSession || isOpenCodeSession;
+      lifecycle.tuiSessionActiveRef?.current ||
+      isGrokSession ||
+      isOpenCodeSession ||
+      appMouseTracking;
 
     if (shouldScrollKimiWheelLocally(isKimiSession)) {
       const direction = resolveTerminalWheelScrollDirection(event.deltaY);
@@ -128,6 +136,27 @@ export function createTerminalWheelHandler({
         event.preventDefault();
         event.stopPropagation();
         onWheelHandlerProcessed?.({ path: 'kimi-scroll-local' });
+      }
+      return;
+    }
+
+    // Inline-rendering agents (qodercli, claude, codex — claude-code convention):
+    // no alt screen, no mouse tracking. SGR inject is dead for them; scroll the
+    // xterm viewport locally like a normal terminal.
+    const serverAgentType = lifecycle.agentTypeRef?.current || null;
+    if (shouldScrollAgentWheelLocally(initialCommand, serverAgentType)) {
+      const direction = resolveTerminalWheelScrollDirection(event.deltaY);
+      if (!direction) return;
+      if (
+        scrollTerminalViewport(activeTerm, direction, event.deltaY, {
+          linesPerStep: 3,
+          lineHeight: 30,
+          maxSteps: 6,
+        })
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        onWheelHandlerProcessed?.({ path: 'inline-agent-scroll-local' });
       }
       return;
     }
@@ -224,7 +253,7 @@ export function createTerminalWheelHandler({
     const scrollPrefer = resolveTerminalWheelScrollPrefer(initialCommand, {
       isGrokSession,
       isKimiSession,
-      tuiActive: lifecycle.tuiSessionActiveRef?.current,
+      tuiActive: lifecycle.tuiSessionActiveRef?.current || appMouseTracking,
     });
     const payload = isGrokSession
       ? buildGrokWheelScrollPayload(direction, wheelCol, wheelRow, steps)

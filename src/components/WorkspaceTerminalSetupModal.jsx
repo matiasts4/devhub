@@ -24,6 +24,7 @@ import {
   shouldNavigateCommandPresetsFromKeyboard,
   shouldNavigateWorkspaceSetupSections,
 } from '@/components/terminal/workspaceTerminalSetupModalKeyboard';
+import { applyAgentYoloToCommand } from '@/lib/terminal/agentLaunchPreferences';
 
 const MIN_TERMINALS = 0;
 const MAX_TERMINALS = 6;
@@ -185,9 +186,12 @@ export default function WorkspaceTerminalSetupModal({
 
   const handleConfirm = useCallback(() => {
     const trimmedCommand = normalizeInitialCommand(initialCommand);
+    // Apply yolo/elevated-permissions flag if the user has configured it for this agent.
+    const resolvedCommand =
+      commandApplies && trimmedCommand ? applyAgentYoloToCommand(trimmedCommand) : null;
     onConfirm?.({
       terminalCount,
-      initialCommand: commandApplies && trimmedCommand ? trimmedCommand : null,
+      initialCommand: resolvedCommand,
     });
     onClose?.();
   }, [commandApplies, initialCommand, onClose, onConfirm, terminalCount]);

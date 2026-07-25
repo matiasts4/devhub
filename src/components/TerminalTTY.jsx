@@ -93,6 +93,8 @@ import {
 } from '@/lib/terminal/v2Graveyard';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 import { clearPanelSessionExit, readPanelSessionExit } from '@/lib/terminal/agentSessionExit';
+import { hasTerminalConnectedOnce } from '@/lib/terminal/terminalConnectedOnceRegistry';
+import { isTuiPointerDebugEnabled, logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
 
 import {
   cliLog,
@@ -113,6 +115,7 @@ import {
   resolveTerminalWheelScrollPrefer,
   shouldInjectGrokWheelSgr,
   shouldScrollKimiWheelLocally,
+  shouldScrollAgentWheelLocally,
   resolveGrokWheelSgrCoords,
   buildGrokWheelScrollPayload,
   buildTerminalWheelArrowSequence,
@@ -310,6 +313,11 @@ export default function TerminalTTY({
   // Ready flips true after chrome detection or reconcileGrokTuiWheelReadiness.
   const grokTuiReadyRef = useRef(false);
   const isGrokSessionRef = useRef(isGrokTuiInitialCommand(initialCommand));
+  // Server-detected agent type (from agent-state frames) — lets the wheel router
+  // pick the right scroll strategy for typed launches (e.g. `qodercli` in a shell).
+  const agentTypeRef = useRef(
+    detectAgentTypeFromCommand(normalizeTuiInitialCommand(initialCommand))
+  );
   const [nativeWheelPassthrough, setNativeWheelPassthrough] = useState(false);
 
   const FONT_SIZE_KEY = 'devhub:terminalFontSize';
@@ -401,8 +409,11 @@ export default function TerminalTTY({
   const initialCommandProjectionRetryTimerRef = useRef(null);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
   const serverTermsizeRef = useRef({ cols: 0, rows: 0 });
-  const hasConnectedOnceRef = useRef(false);
-  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+  // Seed from the module-level registry: remounts of an already-booted panel
+  // (tab switch, pizarra enter/exit, graveyard restore) skip the full-screen
+  // "Conectando…" overlay and reconnect without first-boot deferral.
+  const hasConnectedOnceRef = useRef(hasTerminalConnectedOnce(id));
+  const [hasConnectedOnce, setHasConnectedOnce] = useState(hasConnectedOnceRef.current);
   /** OS resume transport recovery (visibility/focus/pageshow) — coalesce + cooldown. */
   const osResumeReconnectTimerRef = useRef(null);
   const lastOsResumeReconnectAtRef = useRef(0);
@@ -490,6 +501,7 @@ export default function TerminalTTY({
     grokTuiReadyRef,
     tuiSessionFooterConfirmedRef,
     lastPointerZoneRef,
+    agentTypeRef,
   });
   const rendererRefsBag = useRef({
     termRef,
@@ -910,19 +922,42 @@ export default function TerminalTTY({
     shouldUseNativeRenderer,
   });
 
-  const scrollTerminalToBottom = useCallback((force = false) => {
-    if (!termRef.current) return;
-    if (!force && !isTerminalViewportNearBottom(termRef.current)) return;
+  const scrollTerminalToBottom = useCallback(
+    (force = false) => {
+      if (!termRef.current) return;
+      if (!force && !isTerminalViewportNearBottom(termRef.current)) return;
 
-    if (autoScrollRafRef.current) {
-      cancelAnimationFrame(autoScrollRafRef.current);
-    }
+      // Opt-in diagnostic (devhubTuiPointerDebug=1): capture the caller stack at
+      // call time — the RAF callback below would lose it. Used to find what
+      // yanks the viewport to the bottom while the user is selecting text.
+      const debugStack = isTuiPointerDebugEnabled() ? new Error('scroll-trace').stack : null;
 
-    autoScrollRafRef.current = requestAnimationFrame(() => {
-      autoScrollRafRef.current = null;
-      termRef.current?.scrollToBottom?.();
-    });
-  }, []);
+      if (autoScrollRafRef.current) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+      }
+
+      autoScrollRafRef.current = requestAnimationFrame(() => {
+        autoScrollRafRef.current = null;
+        if (debugStack) {
+          const buf = termRef.current?.buffer?.active;
+          logTuiPointerDebug('tui-scroll', {
+            path: 'scroll-to-bottom',
+            panelId: id,
+            extra: {
+              force,
+              hadSelection: termRef.current?.hasSelection?.() ?? null,
+              viewportY: buf?.viewportY ?? null,
+              baseY: buf?.baseY ?? null,
+              bufferType: buf?.type ?? null,
+              stack: String(debugStack).split('\n').slice(1, 7).join(' | '),
+            },
+          });
+        }
+        termRef.current?.scrollToBottom?.();
+      });
+    },
+    [id]
+  );
 
   useTerminalScrollPreserve({
     ctxRef: slice1CtxRef,
@@ -1327,6 +1362,7 @@ export default function TerminalTTY({
     isGrokSessionRef,
     grokTuiReadyRef,
     tuiSessionFooterConfirmedRef,
+    agentTypeRef,
     initialCommandConnectSnapshotRef,
     isActivePanelRef,
     setConnectionState,
@@ -1380,11 +1416,13 @@ export default function TerminalTTY({
       clearTimers();
       // Agent TUIs: do NOT clear mouse modes on deactivate — re-enabling them only after
       // chrome re-detect (or Ctrl+R) left Grok scroll dead on the next activate/new panel.
+      // Inline-scroll agents (qodercli/claude/codex) never use host mouse — allow clear.
       const keepAgentMouse =
-        isGrokSessionRef.current ||
-        isGrokTuiInitialCommand(initialCommand) ||
-        isOpenCodeLaunchCommand(initialCommand) ||
-        isLikelyTuiInitialCommand(initialCommand);
+        !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef.current) &&
+        (isGrokSessionRef.current ||
+          isGrokTuiInitialCommand(initialCommand) ||
+          isOpenCodeLaunchCommand(initialCommand) ||
+          isLikelyTuiInitialCommand(initialCommand));
       disableTerminalFocusReporting(term, { disableMouse: !keepAgentMouse });
       try {
         if (term.element?.contains(document.activeElement)) {
@@ -1398,12 +1436,16 @@ export default function TerminalTTY({
 
     // Cold-start Grok/OpenCode: tuiSessionActiveRef lags until chrome is scanned.
     // Treat launch command as TUI so we re-enable mouse modes instead of clearing them.
-    const tuiActive = Boolean(
-      tuiSessionActiveRef.current ||
+    // Inline-scroll agents (qodercli/claude/codex) never use host mouse — skip.
+    const inlineScrollAgent = shouldScrollAgentWheelLocally(initialCommand, agentTypeRef.current);
+    const tuiActive =
+      !inlineScrollAgent &&
+      Boolean(
+        tuiSessionActiveRef.current ||
         isGrokSessionRef.current ||
         isGrokTuiInitialCommand(initialCommand) ||
         isOpenCodeLaunchCommand(initialCommand)
-    );
+      );
     // Re-enable mouse immediately on tab/Zed reactivation. Defer only when a
     // text selection is already active (handled inside the helper) — not on
     // every activate, or wheel stays dead until mouseup / 10s safety timer.
@@ -1426,6 +1468,7 @@ export default function TerminalTTY({
     isGrokSessionRef.current = false;
     grokTuiReadyRef.current = false;
     tuiSessionFooterConfirmedRef.current = false;
+    agentTypeRef.current = null;
     setNativeWheelPassthrough(false);
     disableTerminalFocusReporting(termRef.current, { disableMouse: true });
   }, [connectionState]);
@@ -1580,6 +1623,7 @@ export default function TerminalTTY({
     isGrokSessionRef,
     grokTuiReadyRef,
     tuiSessionFooterConfirmedRef,
+    agentTypeRef,
     isInitializingRef,
     handleWebglContextLossRef,
     pendingWebglRecoveryRef,
@@ -1758,6 +1802,7 @@ export default function TerminalTTY({
       ref={terminalRootRef}
       className="flex flex-col h-full w-full overflow-hidden bg-[var(--surface-app)] relative"
       style={getTerminalAppShellStyle()}
+      data-testid="terminal-app-shell"
     >
       {!hideTitleBar && (
         <div

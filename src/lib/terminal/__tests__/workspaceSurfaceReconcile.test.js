@@ -91,4 +91,23 @@ describe('workspaceSurfaceReconcile', () => {
     expect(terminals.map((terminal) => terminal.panelId).sort()).toEqual(['p1', 'p2', 'p9']);
     expect(terminals.find((terminal) => terminal.panelId === 'p1')?.pizarra.viewId).toBe('v1');
   });
+
+  test('buildTerminalSurfacesFromWindows tracks colIndex for browserPanels and terminals', () => {
+    const liveColumns = [
+      { panels: [{ id: 'p1', kind: 'terminal' }] },
+      { panels: [{ id: 'b1', kind: 'browser' }] },
+    ];
+    const windows = [{ id: 'v1', columns: liveColumns }];
+
+    const { terminals, browserPanels } = buildTerminalSurfacesFromWindows({
+      workspaceId: 'ws1',
+      windows,
+      activeWindowId: 'v1',
+      liveColumns,
+      resolveRequestedRenderer: () => 'xterm-webgl',
+    });
+
+    expect(terminals[0].colIndex).toBe(0);
+    expect(browserPanels[0].colIndex).toBe(1);
+  });
 });

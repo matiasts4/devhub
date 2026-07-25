@@ -289,3 +289,81 @@ describe('ttyServer — subscribe with fromOffset', () => {
     });
   });
 });
+
+describe('ttyServer — TUI reattach redraw without snapshot', () => {
+  const waitForRedrawTimer = () => new Promise((resolve) => setTimeout(resolve, 120));
+
+  async function connectSecondSocket(url) {
+    // Second connection to the same session id = reattach (session already in
+    // the map). replaceSessionSockets evicts the first socket — that is fine,
+    // the redraw arm must not depend on socket count.
+    const connectionHandler = mockWssOn.mock.calls.find(
+      ([eventName]) => eventName === 'connection'
+    )?.[1];
+    const socket = createMockSocket();
+    connectionHandler(socket, { url });
+    return socket;
+  }
+
+  it('fires one-shot Ctrl+L after subscribe on TUI reattach without snapshot', async () => {
+    const url = '/terminal?id=v2-tui-redraw&cwd=%2Fhome%2Fuser';
+    const { session } = await startServerAndConnect(url);
+    session.mode = 'tui';
+
+    const socket2 = await connectSecondSocket(url);
+    socket2.__message(JSON.stringify({ type: 'subscribe', v2: true }));
+    await waitForRedrawTimer();
+
+    expect(mockPtyProcess.write).toHaveBeenCalledWith('\x0c');
+  });
+
+  it('does not redraw when a snapshot exists (client restores serialized screen)', async () => {
+    const url = '/terminal?id=v2-tui-no-redraw-snapshot&cwd=%2Fhome%2Fuser';
+    const { socket, session } = await startServerAndConnect(url);
+    session.mode = 'tui';
+
+    socket.__message(
+      JSON.stringify({
+        type: 'save-snapshot',
+        serialized: '<snapshot>full frame</snapshot>',
+        ptyOffset: 0,
+        termsize: { cols: 80, rows: 24 },
+      })
+    );
+
+    const socket2 = await connectSecondSocket(url);
+    socket2.__message(JSON.stringify({ type: 'subscribe', v2: true }));
+    await waitForRedrawTimer();
+
+    expect(mockPtyProcess.write).not.toHaveBeenCalledWith('\x0c');
+  });
+
+  it('does not redraw on shell reattach (Ctrl+L duplicates the prompt)', async () => {
+    const url = '/terminal?id=v2-shell-no-redraw&cwd=%2Fhome%2Fuser';
+    const { session } = await startServerAndConnect(url);
+    session.mode = 'shell';
+
+    const socket2 = await connectSecondSocket(url);
+    socket2.__message(JSON.stringify({ type: 'subscribe', v2: true }));
+    await waitForRedrawTimer();
+
+    expect(mockPtyProcess.write).not.toHaveBeenCalledWith('\x0c');
+  });
+
+  it('adds a resize wobble on kimi reattach (Ctrl+L alone only repaints the status bar)', async () => {
+    const url = '/terminal?id=v2-kimi-wobble&cwd=%2Fhome%2Fuser';
+    const { session } = await startServerAndConnect(url);
+    session.mode = 'tui';
+    session.agentType = 'kimi';
+    session.termsize = { cols: 100, rows: 40 };
+
+    const socket2 = await connectSecondSocket(url);
+    socket2.__message(JSON.stringify({ type: 'subscribe', v2: true }));
+    // The wobble's second step lands at +200ms (50 + 150).
+    await new Promise((resolve) => setTimeout(resolve, 320));
+
+    expect(mockPtyProcess.write).toHaveBeenCalledWith('\x0c');
+    expect(mockPtyProcess.resize).toHaveBeenNthCalledWith(1, 100, 39);
+    expect(mockPtyProcess.resize).toHaveBeenNthCalledWith(2, 100, 40);
+  });
+});

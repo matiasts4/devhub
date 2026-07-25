@@ -18,6 +18,8 @@ import {
   Globe,
   Wand2,
   Terminal,
+  SquareTerminal,
+  Presentation,
   Settings,
   PanelLeft,
 } from 'lucide-react';
@@ -66,6 +68,8 @@ import { DEFAULT_RIGHT_DOCK_STATE } from '../../workspace/rightDockState';
 import { applyWorkspaceWindowSelectDockState } from '../../workspace/rightDockLayout';
 import { resolveWorkspaceAllWindowsPanelCount } from '../models/workspaceStateModel';
 import { QuotaHeaderBadge } from '../../quota/QuotaHeaderBadge';
+import useActivatedWorkspaceIds from '../hooks/useActivatedWorkspaceIds';
+import useWorkspaceAgentActivity from '../hooks/useWorkspaceAgentActivity';
 
 export default function WorkspaceRenderAssembly(props) {
   const {
@@ -79,13 +83,18 @@ export default function WorkspaceRenderAssembly(props) {
     browserWindowStates,
     switchWorkspace,
     handleWorkspaceTabPointerDown,
-    handleWorkspaceTabPointerMove,
-    endWorkspaceTabDrag,
     addWorkspace,
     removeWorkspace,
     closeWorkspaceBrowserWindow,
     getWorkspaceDisplayLabel,
     getAllPanelIds,
+    editingWsId,
+    editingWsValue,
+    wsRenameError,
+    startWorkspaceRename,
+    updateWsRenameValue,
+    commitWorkspaceRename,
+    cancelWorkspaceRename,
     workspaceWindows,
     activeWindowIds,
     pizarraPendingViewId,
@@ -201,6 +210,15 @@ export default function WorkspaceRenderAssembly(props) {
   }, []);
 
   const [isWinMaximized, setIsWinMaximized] = useState(false);
+
+  // PR4 (terminal-load-performance): activate-then-keep-alive. Only the active
+  // workspace shell mounts on first paint; others mount on first activation and
+  // stay mounted afterwards (hidden via opacity, never unmounted by switches).
+  const renderWorkspaceIds = useActivatedWorkspaceIds(activeWsId);
+
+  // Per-workspace agent activity for the top tab strip indicator (a workspace
+  // shows as "running"/"blocked" when any of its panels has an agent working).
+  const activityByWorkspace = useWorkspaceAgentActivity(workspaces, workspaceWindows);
 
   useEffect(() => {
     let unlisten;
@@ -467,6 +485,8 @@ export default function WorkspaceRenderAssembly(props) {
     ]
   );
 
+  const isPizarraActive = rightDockState.maximized && rightDockState.maximizedView === 'pizarra';
+
   return (
     <motion.div
       ref={managerRootRef}
@@ -495,7 +515,17 @@ export default function WorkspaceRenderAssembly(props) {
           // Frameless Electron/Tauri: drag the chrome strip to move the window.
           WebkitAppRegion: 'drag',
         }}
-        onDoubleClick={handleWinToggleMaximize}
+        onDoubleClick={(e) => {
+          // Only toggle maximize when the double-click lands on the bar's empty
+          // surface — not on buttons or interactive controls inside it.
+          if (
+            e.target.closest(
+              'button, input, label, select, textarea, a, [role="button"], [role="switch"], [role="tab"], [data-workspace-id]'
+            )
+          )
+            return;
+          handleWinToggleMaximize();
+        }}
       >
         {typeof onToggleNavSidebar === 'function' ? (
           <button
@@ -523,16 +553,44 @@ export default function WorkspaceRenderAssembly(props) {
           draggedWsId={draggedWsId}
           dragOverWsId={dragOverWsId}
           browserWindowStates={browserWindowStates}
+          activityByWorkspace={activityByWorkspace}
           switchWorkspace={switchWorkspace}
           handleWorkspaceTabPointerDown={handleWorkspaceTabPointerDown}
-          handleWorkspaceTabPointerMove={handleWorkspaceTabPointerMove}
-          endWorkspaceTabDrag={endWorkspaceTabDrag}
           addWorkspace={addWorkspace}
           removeWorkspace={removeWorkspace}
           closeWorkspaceBrowserWindow={closeWorkspaceBrowserWindow}
           getWorkspaceDisplayLabel={getWorkspaceDisplayLabel}
           getAllPanelIds={getAllPanelIds}
+          editingWsId={editingWsId}
+          editingWsValue={editingWsValue}
+          wsRenameError={wsRenameError}
+          onStartWorkspaceRename={startWorkspaceRename}
+          onWorkspaceRenameChange={updateWsRenameValue}
+          onCommitWorkspaceRename={commitWorkspaceRename}
+          onCancelWorkspaceRename={cancelWorkspaceRename}
         />
+
+        {/* Subscription Quota Header Badge */}
+        <div className="mx-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
+          <QuotaHeaderBadge activeSessionTitle={activeWorkspace?.title || activeWorkspace?.label} />
+        </div>
+
+        {countPanelsInColumns(activeWorkspace?.columns || []) === 0 ? (
+          <button
+            type="button"
+            data-testid="header-add-terminal"
+            onClick={() => handleSplit('horizontal')}
+            style={{ WebkitAppRegion: 'no-drag' }}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-2.5 text-[11px] font-mono font-semibold text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
+            title="Nueva terminal"
+            aria-label="Nueva terminal"
+          >
+            <Terminal className="h-3.5 w-3.5" />
+            Terminal
+          </button>
+        ) : null}
+
+        <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
 
         <div style={{ WebkitAppRegion: 'no-drag' }} className="shrink-0">
           <WorkspaceWindowSwitcher
@@ -564,27 +622,53 @@ export default function WorkspaceRenderAssembly(props) {
           />
         </div>
 
-        {countPanelsInColumns(activeWorkspace?.columns || []) === 0 ? (
+        {/* Selector de modo: Terminal | Pizarra */}
+        <div
+          className="flex items-center rounded-lg border border-white/10 bg-white/[0.04] p-0.5 shrink-0"
+          style={{ WebkitAppRegion: 'no-drag' }}
+          role="radiogroup"
+          aria-label="Modo de vista"
+          data-testid="workspace-mode-switcher"
+        >
           <button
             type="button"
-            data-testid="header-add-terminal"
-            onClick={() => handleSplit('horizontal')}
-            style={{ WebkitAppRegion: 'no-drag' }}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.35)] bg-[rgba(var(--accent-rgb,88,166,255),0.12)] px-2.5 text-[11px] font-mono font-semibold text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-rgb,88,166,255),0.18)]"
-            title="Nueva terminal"
-            aria-label="Nueva terminal"
+            role="radio"
+            aria-checked={!isPizarraActive}
+            aria-label="Modo terminal"
+            data-testid="terminal-mode-switch"
+            onClick={() => {
+              if (isPizarraActive) handleRightDockTabSelect('pizarra');
+            }}
+            title="Modo terminal"
+            className={`inline-flex items-center justify-center w-7 h-6 rounded-md transition-all cursor-pointer select-none ${
+              !isPizarraActive
+                ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.16)] text-[var(--accent-primary)] shadow-sm'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.05]'
+            }`}
           >
-            <Terminal className="h-3.5 w-3.5" />
-            Terminal
+            <SquareTerminal className="w-4 h-4" />
           </button>
-        ) : null}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={isPizarraActive}
+            aria-label="Modo pizarra"
+            data-testid="pizarra-mode-switch"
+            onClick={() => {
+              if (!isPizarraActive) handleRightDockTabSelect('pizarra');
+            }}
+            title="Modo pizarra (canvas)"
+            className={`inline-flex items-center justify-center w-7 h-6 rounded-md transition-all cursor-pointer select-none ${
+              isPizarraActive
+                ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.16)] text-[var(--accent-primary)] shadow-sm'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.05]'
+            }`}
+          >
+            <Presentation className="w-4 h-4" />
+          </button>
+        </div>
 
         <div className="w-px h-5 bg-white/10 shrink-0" aria-hidden />
-
-        {/* Subscription Quota Header Badge */}
-        <div className="mx-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
-          <QuotaHeaderBadge activeSessionTitle={activeWorkspace?.title || activeWorkspace?.label} />
-        </div>
 
         {/* Action Buttons: Grid, Browser, Editor, Swarm, Notifications, Dock Toggle */}
         <div className="flex items-center gap-0.5 shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
@@ -649,41 +733,6 @@ export default function WorkspaceRenderAssembly(props) {
               Z
             </span>
           </button>
-          <label
-            className="relative inline-flex items-center cursor-pointer select-none"
-            title="Pizarra canvas"
-          >
-            <input
-              type="checkbox"
-              data-testid="pizarra-mode-switch"
-              checked={rightDockState.maximized && rightDockState.maximizedView === 'pizarra'}
-              onChange={() => handleRightDockTabSelect('pizarra')}
-              className="sr-only"
-            />
-            <div
-              className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
-                rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                  ? 'bg-[rgba(var(--accent-rgb,88,166,255),0.5)]'
-                  : 'bg-[rgba(255,255,255,0.15)]'
-              }`}
-            >
-              <div
-                className={`absolute top-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
-                  rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                    ? 'translate-x-4 bg-[var(--accent-primary)]'
-                    : 'translate-x-0.5 bg-gray-400'
-                }`}
-                style={{ transition: 'transform 200ms ease' }}
-              />
-            </div>
-            <LayoutGrid
-              className={`ml-2 w-4 h-4 ${
-                rightDockState.maximized && rightDockState.maximizedView === 'pizarra'
-                  ? 'text-[var(--accent-primary)]'
-                  : 'text-gray-500'
-              }`}
-            />
-          </label>
           <button
             type="button"
             data-testid="right-dock-tab-swarm"
@@ -729,7 +778,11 @@ export default function WorkspaceRenderAssembly(props) {
 
           <div className="w-px h-5 bg-white/10 mx-1" />
 
-          <NotificationCenter projectId={projectId} variant="topbar" />
+          <NotificationCenter
+            projectId={projectId}
+            variant="topbar"
+            onOpenSettings={() => setRestoreSettingsModal({ open: true, section: 'notifications' })}
+          />
 
           <button
             type="button"
@@ -898,146 +951,155 @@ export default function WorkspaceRenderAssembly(props) {
             </div>
           ) : null}
           {heavySurfacesReady
-            ? workspaces.map((ws, wsIndex) => {
-                const workspaceGridKey = buildStableWorkspaceShellKey('workspace-grid', ws.id);
-                const wsDockState =
-                  activeWsId === ws.id ? effectiveRightDockState : { ...DEFAULT_RIGHT_DOCK_STATE };
-                const updateWsDockState = updateRightDockState;
-                const focusedPanelId = focusedPanelByWorkspace[ws.id];
-                const isWorkspaceVisibleInLayout =
-                  !isFullscreenBrowser && activeWsId === ws.id && isVisible;
-                const shouldSuspendWorkspaceNativeSurfaces =
-                  isWorkspaceVisibleInLayout &&
-                  (shouldSuspendNativeSurfaces || isDraggingDock || isDraggingInternalSplit);
-                const totalPanelCount = resolveWorkspaceAllWindowsPanelCount(ws, workspaceWindows);
-                const totalTerminalPanelCount = resolveWorkspaceAllWindowsTerminalPanelCount(
-                  ws,
-                  workspaceWindows
-                );
-                const visibleTerminalPanelCount = resolveVisibleTerminalPanelCountForRenderer({
-                  focusedPanelId,
-                  totalTerminalPanelCount,
-                  totalPanelCount,
-                });
-                const activeWindowIdForLayout = resolveActiveWorkspaceWindowId(
-                  ws.id,
-                  workspaceWindows,
-                  activeWindowIds
-                );
-                const activeWindowForLayout =
-                  workspaceWindows?.[ws.id]?.find((w) => w.id === activeWindowIdForLayout) || null;
-                const activeWindowPanelIds = getPanelIdsFromColumns(
-                  activeWindowForLayout?.columns || ws.columns || []
-                );
-                const renderWorkspacePanelSlot = (panel, panelRenderOptions = {}) =>
-                  renderWorkspacePanel(panel, {
-                    activePanelId,
-                    activeWsId,
-                    isActivePanel: activePanelId === panel.id && activeWsId === ws.id,
-                    isVisibleInLayout:
-                      panelRenderOptions.isVisibleInLayout ??
-                      resolvePanelVisibleInLayout({
-                        isWorkspaceVisibleInLayout,
-                        focusedPanelId,
-                        panelId: panel.id,
-                        activeWindowPanelIds,
-                      }),
-                    isWorkspaceShellVisible:
-                      panelRenderOptions.isWorkspaceShellVisible ?? isWorkspaceVisibleInLayout,
-                    visibleTerminalPanelCount:
-                      panelRenderOptions.visibleTerminalPanelCount ?? visibleTerminalPanelCount,
-                    panelLabel: getPanelDisplayLabel(ws, panel.id),
-                    renameEditing: editingPanelId === panel.id,
-                    renameValue: editingPanelId === panel.id ? editingValue : '',
-                    renameError: editingPanelId === panel.id ? renameError : null,
-                    onStartRename: (pnl, label) => startPanelRename(pnl, label),
-                    onRenameValueChange: (val) => updateEditingValue(val),
-                    onCommitRename: (pnl, overrideValue) =>
-                      commitPanelRename(pnl, ws.id, overrideValue),
-                    onCancelRename: () => cancelPanelRename(),
-                    cwd,
-                    wsId: ws.id,
-                    setActivePanelIds,
-                    onClosePanel: () => handleClosePanel(panel.id),
-                    onSplitRight: () => handleSplit('horizontal', panel.id),
-                    onSplitDown: () => handleSplit('vertical', panel.id),
-                    onAddSpaceKind: (kind) => splitWithKind?.(kind, panel.id, 'horizontal'),
-                    onSetPanelKind: (kind) => setPanelKind?.(panel.id, kind),
-                    onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
-                    isFocusedPanel: focusedPanelId === panel.id,
-                    navigationPulseActive: panelNavPulseId === panel.id,
-                    onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
-                    panelSemanticMetadata: derivePanelSemanticMetadata(
-                      panel,
-                      agentRunsByPanel[panel.id]
-                    ),
-                    agentRun: agentRunsByPanel[panel.id] || null,
-                    inboxPendingCount:
-                      swarmInboxPendingByRole?.[
-                        panel?.swarmRole?.roleKey ||
-                          inferSwarmRoleKey({
-                            ...(agentRunsByPanel[panel.id] || {}),
-                            ...(panel?.swarmContext || {}),
-                            roleKey: panel?.swarmRole?.roleKey,
-                          })
-                      ] || 0,
-                    suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
-                    nativeSurfacePolicy,
-                    requestedRendererMode: resolveRequestedRenderer({
-                      workspaceId: ws.id,
-                      panelId: panel.id,
-                      prefs: terminalRendererPreferences,
-                    }),
-                    onResetRendererToXterm: () => handleResetPanelRendererToXterm(ws.id, panel.id),
-                    onSetPanelRenderer: (mode) => handleSetPanelRenderer(ws.id, panel.id, mode),
-                    connectionState: getPanelConnectionState(panel),
-                    coldMountOrdinal: coldMountOrdinalByPanelId[panel.id] ?? 0,
-                    deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
-                    pizarraOwnsLiveSurfaces,
-                    swarmDelegatedRoleKeys,
-                    onConnectionStateChange: handleTerminalConnectionStateChange,
-                    projectId,
-                    project: { id: projectId, local_path: cwd },
-                    dockState: effectiveRightDockState,
-                    onDockStateChange: updateRightDockState,
-                    browserWindowState: browserWindowStates?.[ws.id] || null,
-                    onBrowserWindowStateChange: updateBrowserWindowState,
-                    workspaceWindows: workspaceWindows?.[ws.id] || [],
-                    activeWorkspaceWindowId: activeWindowIds?.[ws.id] || null,
-                    layoutSyncKey: `${panel.id}:${effectiveRightDockState?.browserLayoutEpoch || 0}`,
+            ? workspaces
+                .filter((ws) => renderWorkspaceIds.has(ws.id))
+                .map((ws, wsIndex) => {
+                  const workspaceGridKey = buildStableWorkspaceShellKey('workspace-grid', ws.id);
+                  const wsDockState =
+                    activeWsId === ws.id
+                      ? effectiveRightDockState
+                      : { ...DEFAULT_RIGHT_DOCK_STATE };
+                  const updateWsDockState = updateRightDockState;
+                  const focusedPanelId = focusedPanelByWorkspace[ws.id];
+                  const isWorkspaceVisibleInLayout =
+                    !isFullscreenBrowser && activeWsId === ws.id && isVisible;
+                  const shouldSuspendWorkspaceNativeSurfaces =
+                    isWorkspaceVisibleInLayout &&
+                    (shouldSuspendNativeSurfaces || isDraggingDock || isDraggingInternalSplit);
+                  const totalPanelCount = resolveWorkspaceAllWindowsPanelCount(
+                    ws,
+                    workspaceWindows
+                  );
+                  const totalTerminalPanelCount = resolveWorkspaceAllWindowsTerminalPanelCount(
+                    ws,
+                    workspaceWindows
+                  );
+                  const visibleTerminalPanelCount = resolveVisibleTerminalPanelCountForRenderer({
+                    focusedPanelId,
+                    totalTerminalPanelCount,
+                    totalPanelCount,
                   });
-                return (
-                  <WorkspaceTerminalSurface
-                    key={workspaceGridKey}
-                    ws={ws}
-                    workspaceGridKey={workspaceGridKey}
-                    activeWsId={activeWsId}
-                    isVisible={isVisible}
-                    isFullscreenBrowser={isFullscreenBrowser}
-                    hideRightDockPanel={hideRightDockPanel}
-                    wsDockState={wsDockState}
-                    workspaceWindows={workspaceWindows}
-                    activeWindowIds={activeWindowIds}
-                    focusedPanelId={focusedPanelId}
-                    totalPanelCount={totalPanelCount}
-                    totalTerminalPanelCount={totalTerminalPanelCount}
-                    isWorkspaceVisibleInLayout={isWorkspaceVisibleInLayout}
-                    panelSubtabsBarRef={panelSubtabsBarRef}
-                    rightDockPlaceholderRef={rightDockPlaceholderRef}
-                    renderWorkspaceWindowBar={(workspace, dockState) =>
-                      renderWorkspaceWindowBar(workspace, dockState, updateWsDockState)
-                    }
-                    renderWorkspacePanelSlot={renderWorkspacePanelSlot}
-                    resolvePanelVisibleInLayout={resolvePanelVisibleInLayout}
-                    handleSplit={handleSplit}
-                    splitWithKind={splitWithKind}
-                    handlePanelGroupLayout={handlePanelGroupLayout}
-                    handleInternalSplitDragging={handleInternalSplitDragging}
-                    handleDockDragging={handleDockDragging}
-                    handleRightDockPanelResize={handleRightDockPanelResize}
-                  />
-                );
-              })
+                  const activeWindowIdForLayout = resolveActiveWorkspaceWindowId(
+                    ws.id,
+                    workspaceWindows,
+                    activeWindowIds
+                  );
+                  const activeWindowForLayout =
+                    workspaceWindows?.[ws.id]?.find((w) => w.id === activeWindowIdForLayout) ||
+                    null;
+                  const activeWindowPanelIds = getPanelIdsFromColumns(
+                    activeWindowForLayout?.columns || ws.columns || []
+                  );
+                  const renderWorkspacePanelSlot = (panel, panelRenderOptions = {}) =>
+                    renderWorkspacePanel(panel, {
+                      activePanelId,
+                      activeWsId,
+                      isActivePanel: activePanelId === panel.id && activeWsId === ws.id,
+                      isVisibleInLayout:
+                        panelRenderOptions.isVisibleInLayout ??
+                        resolvePanelVisibleInLayout({
+                          isWorkspaceVisibleInLayout,
+                          focusedPanelId,
+                          panelId: panel.id,
+                          activeWindowPanelIds,
+                        }),
+                      isWorkspaceShellVisible:
+                        panelRenderOptions.isWorkspaceShellVisible ?? isWorkspaceVisibleInLayout,
+                      visibleTerminalPanelCount:
+                        panelRenderOptions.visibleTerminalPanelCount ?? visibleTerminalPanelCount,
+                      panelLabel: getPanelDisplayLabel(ws, panel.id),
+                      renameEditing: editingPanelId === panel.id,
+                      renameValue: editingPanelId === panel.id ? editingValue : '',
+                      renameError: editingPanelId === panel.id ? renameError : null,
+                      onStartRename: (pnl, label) => startPanelRename(pnl, label),
+                      onRenameValueChange: (val) => updateEditingValue(val),
+                      onCommitRename: (pnl, overrideValue) =>
+                        commitPanelRename(pnl, ws.id, overrideValue),
+                      onCancelRename: () => cancelPanelRename(),
+                      cwd,
+                      wsId: ws.id,
+                      setActivePanelIds,
+                      onClosePanel: () => handleClosePanel(panel.id),
+                      onSplitRight: () => handleSplit('horizontal', panel.id),
+                      onSplitDown: () => handleSplit('vertical', panel.id),
+                      onAddSpaceKind: (kind) => splitWithKind?.(kind, panel.id, 'horizontal'),
+                      onSetPanelKind: (kind) => setPanelKind?.(panel.id, kind),
+                      onToggleFocus: () => togglePanelFocus(ws.id, panel.id),
+                      isFocusedPanel: focusedPanelId === panel.id,
+                      navigationPulseActive: panelNavPulseId === panel.id,
+                      onActivatePanel: (panelId) => activateWorkspacePanel(ws.id, panelId),
+                      panelSemanticMetadata: derivePanelSemanticMetadata(
+                        panel,
+                        agentRunsByPanel[panel.id]
+                      ),
+                      agentRun: agentRunsByPanel[panel.id] || null,
+                      inboxPendingCount:
+                        swarmInboxPendingByRole?.[
+                          panel?.swarmRole?.roleKey ||
+                            inferSwarmRoleKey({
+                              ...(agentRunsByPanel[panel.id] || {}),
+                              ...(panel?.swarmContext || {}),
+                              roleKey: panel?.swarmRole?.roleKey,
+                            })
+                        ] || 0,
+                      suspendNativeSurface: shouldSuspendWorkspaceNativeSurfaces,
+                      nativeSurfacePolicy,
+                      requestedRendererMode: resolveRequestedRenderer({
+                        workspaceId: ws.id,
+                        panelId: panel.id,
+                        prefs: terminalRendererPreferences,
+                      }),
+                      onResetRendererToXterm: () =>
+                        handleResetPanelRendererToXterm(ws.id, panel.id),
+                      onSetPanelRenderer: (mode) => handleSetPanelRenderer(ws.id, panel.id, mode),
+                      connectionState: getPanelConnectionState(panel),
+                      coldMountOrdinal: coldMountOrdinalByPanelId[panel.id] ?? 0,
+                      deferLiveSurfaceToPizarra: pizarraOwnsLiveSurfaces,
+                      pizarraOwnsLiveSurfaces,
+                      swarmDelegatedRoleKeys,
+                      onConnectionStateChange: handleTerminalConnectionStateChange,
+                      projectId,
+                      project: { id: projectId, local_path: cwd },
+                      dockState: effectiveRightDockState,
+                      onDockStateChange: updateRightDockState,
+                      browserWindowState: browserWindowStates?.[ws.id] || null,
+                      onBrowserWindowStateChange: updateBrowserWindowState,
+                      workspaceWindows: workspaceWindows?.[ws.id] || [],
+                      activeWorkspaceWindowId: activeWindowIds?.[ws.id] || null,
+                      layoutSyncKey: `${panel.id}:${effectiveRightDockState?.browserLayoutEpoch || 0}`,
+                    });
+                  return (
+                    <WorkspaceTerminalSurface
+                      key={workspaceGridKey}
+                      ws={ws}
+                      workspaceGridKey={workspaceGridKey}
+                      activeWsId={activeWsId}
+                      isVisible={isVisible}
+                      isFullscreenBrowser={isFullscreenBrowser}
+                      hideRightDockPanel={hideRightDockPanel}
+                      wsDockState={wsDockState}
+                      workspaceWindows={workspaceWindows}
+                      activeWindowIds={activeWindowIds}
+                      focusedPanelId={focusedPanelId}
+                      totalPanelCount={totalPanelCount}
+                      totalTerminalPanelCount={totalTerminalPanelCount}
+                      isWorkspaceVisibleInLayout={isWorkspaceVisibleInLayout}
+                      panelSubtabsBarRef={panelSubtabsBarRef}
+                      rightDockPlaceholderRef={rightDockPlaceholderRef}
+                      renderWorkspaceWindowBar={(workspace, dockState) =>
+                        renderWorkspaceWindowBar(workspace, dockState, updateWsDockState)
+                      }
+                      renderWorkspacePanelSlot={renderWorkspacePanelSlot}
+                      resolvePanelVisibleInLayout={resolvePanelVisibleInLayout}
+                      handleSplit={handleSplit}
+                      splitWithKind={splitWithKind}
+                      handlePanelGroupLayout={handlePanelGroupLayout}
+                      handleInternalSplitDragging={handleInternalSplitDragging}
+                      handleDockDragging={handleDockDragging}
+                      handleRightDockPanelResize={handleRightDockPanelResize}
+                    />
+                  );
+                })
             : null}
           {(effectiveRightDockState.visible || hasMountedRightDock) && activeWorkspace ? (
             <motion.div
@@ -1129,6 +1191,7 @@ export default function WorkspaceRenderAssembly(props) {
 
       <TerminalRestoreSettingsModal
         open={restoreSettingsModal.open}
+        initialSection={restoreSettingsModal.section}
         onClose={() => setRestoreSettingsModal({ open: false })}
       />
 

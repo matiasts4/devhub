@@ -56,11 +56,24 @@ async function fetchSidecarHealth(port, { fetchImpl = fetch, timeoutMs = 2500 } 
 
 async function probeSidecarPorts(
   ports = DEFAULT_SIDECAR_PORTS,
-  { fetchImpl = fetch, timeoutMs = 2500 } = {}
+  { fetchImpl = fetch, timeoutMs = 800 } = {}
 ) {
-  for (const port of ports) {
-    if (await fetchSidecarHealth(port, { fetchImpl, timeoutMs })) {
-      return port;
+  const uniquePorts = Array.from(new Set(ports));
+  // Launch all probes in parallel, then await them in preference order: the first
+  // healthy probe whose higher-preference probes already resolved unhealthy wins.
+  // Unlike Promise.all, this short-circuits — a hung lower-preference port does
+  // not delay a healthy higher-preference answer. The rejection handler keeps a
+  // settled-later probe from surfacing as an unhandled rejection.
+  const probePromises = uniquePorts.map((port) =>
+    fetchSidecarHealth(port, { fetchImpl, timeoutMs }).then(
+      (ok) => ok,
+      () => false
+    )
+  );
+
+  for (let i = 0; i < uniquePorts.length; i += 1) {
+    if (await probePromises[i]) {
+      return uniquePorts[i];
     }
   }
 
@@ -69,19 +82,16 @@ async function probeSidecarPorts(
 
 async function readProductionSidecarPort({
   fetchImpl = fetch,
-  timeoutMs = 2500,
+  timeoutMs = 800,
   env = process.env,
   homeDir,
 } = {}) {
   const home = getCanonicalDevhubDir({ env, homeDir });
   const probeOrder = resolveSidecarProbeOrder(home);
   const trustedPort = resolveTrustedSidecarPortFromFile(home);
+  const candidatePorts = Array.from(new Set([trustedPort, ...probeOrder].filter(Boolean)));
 
-  if (trustedPort && (await fetchSidecarHealth(trustedPort, { fetchImpl, timeoutMs }))) {
-    return trustedPort;
-  }
-
-  return probeSidecarPorts(probeOrder, { fetchImpl, timeoutMs });
+  return probeSidecarPorts(candidatePorts, { fetchImpl, timeoutMs });
 }
 
 module.exports = {

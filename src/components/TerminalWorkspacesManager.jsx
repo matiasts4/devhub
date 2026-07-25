@@ -322,6 +322,13 @@ export default function TerminalWorkspacesManager({
   const [draggedWsId, setDraggedWsId] = useState(null);
   const [dragOverWsId, setDragOverWsId] = useState(null);
   const pendingDragRef = useRef(null);
+  // Stable cold-mount ordinals: once a panel is assigned an ordinal it must
+  // never change. Reordering workspaces reshuffles the `workspaces` array, and
+  // if the ordinal were derived from array order it would change for every
+  // panel after the moved workspace — and `coldMountOrdinal` is a dependency
+  // of the xterm boot effect, so a change disposes + reboots the terminal
+  // (the "error cargando terminal" flash). Persist assignments in a ref.
+  const coldMountOrdinalsRef = useRef({});
   const [gridCommand, setGridCommand] = useState('opencode');
   const [isGridLauncherOpen, setIsGridLauncherOpen] = useState(false);
   const [workspaceTerminalSetupOpen, setWorkspaceTerminalSetupOpen] = useState(false);
@@ -347,6 +354,9 @@ export default function TerminalWorkspacesManager({
   });
 
   const [panelRestoreModes, setPanelRestoreModes] = useState({});
+  // State-backed (not a ref): render consumers (badges, overlays) must re-render
+  // when a panel's connection state changes. The equality guard below already
+  // prevents no-op re-renders, so this costs nothing when nothing changed.
   const [panelConnectionStateById, setPanelConnectionStateById] = useState({});
   const getPanelConnectionState = useCallback(
     (panel) =>
@@ -420,6 +430,50 @@ export default function TerminalWorkspacesManager({
     editingValueRef.current = '';
     setRenameError(null);
   }, []);
+
+  // --- Workspace rename state ---
+  const [editingWsId, setEditingWsId] = useState(null);
+  const [editingWsValue, setEditingWsValue] = useState('');
+  const editingWsValueRef = useRef('');
+  const [wsRenameError, setWsRenameError] = useState(null);
+
+  const startWorkspaceRename = useCallback((wsId, currentLabel) => {
+    setEditingWsId(wsId);
+    setEditingWsValue(currentLabel);
+    editingWsValueRef.current = currentLabel;
+    setWsRenameError(null);
+  }, []);
+
+  const updateWsRenameValue = useCallback((val) => {
+    setEditingWsValue(val);
+    editingWsValueRef.current = val;
+  }, []);
+
+  const commitWorkspaceRename = useCallback((wsId, overrideValue) => {
+    const value = typeof overrideValue === 'string' ? overrideValue : editingWsValueRef.current;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length === 0) {
+      setWsRenameError('empty-name');
+      return;
+    }
+    if (trimmed.length > 40) {
+      setWsRenameError('invalid-name');
+      return;
+    }
+    setWorkspaces((prev) => prev.map((ws) => (ws.id === wsId ? { ...ws, name: trimmed } : ws)));
+    setEditingWsId(null);
+    setEditingWsValue('');
+    editingWsValueRef.current = '';
+    setWsRenameError(null);
+  }, []);
+
+  const cancelWorkspaceRename = useCallback(() => {
+    setEditingWsId(null);
+    setEditingWsValue('');
+    editingWsValueRef.current = '';
+    setWsRenameError(null);
+  }, []);
+
   const [terminalRendererPreferences, setTerminalRendererPreferences] = useState(() =>
     createDefaultTerminalRendererPreferences()
   );
@@ -813,8 +867,31 @@ export default function TerminalWorkspacesManager({
 
   const activePanelId = activePanelIds[activeWsId] || activeWorkspace?.columns[0]?.panels[0]?.id;
   const coldMountOrdinalByPanelId = useMemo(() => {
+    // Reuse previously assigned ordinals so a panel's ordinal is stable for
+    // its whole lifetime regardless of workspace order. Only brand-new panels
+    // receive a fresh ordinal (continuing from the highest seen so far).
+    const previous = coldMountOrdinalsRef.current;
     const ordinals = {};
-    let ordinal = 0;
+
+    // Collect every current panel id, preserving prior assignments.
+    let maxAssigned = -1;
+    for (const workspace of workspaces) {
+      const windows = workspaceWindows?.[workspace.id] || [];
+      const columnSources =
+        windows.length > 0 ? windows.flatMap((win) => win.columns || []) : workspace.columns || [];
+      for (const column of columnSources) {
+        for (const panel of column.panels || []) {
+          if (!panel?.id) continue;
+          if (previous[panel.id] !== undefined) {
+            ordinals[panel.id] = previous[panel.id];
+            if (previous[panel.id] > maxAssigned) maxAssigned = previous[panel.id];
+          }
+        }
+      }
+    }
+
+    // Assign fresh ordinals to panels we have not seen before.
+    let nextOrdinal = maxAssigned + 1;
     for (const workspace of workspaces) {
       const windows = workspaceWindows?.[workspace.id] || [];
       const columnSources =
@@ -822,12 +899,14 @@ export default function TerminalWorkspacesManager({
       for (const column of columnSources) {
         for (const panel of column.panels || []) {
           if (panel?.id && ordinals[panel.id] === undefined) {
-            ordinals[panel.id] = ordinal;
-            ordinal += 1;
+            ordinals[panel.id] = nextOrdinal;
+            nextOrdinal += 1;
           }
         }
       }
     }
+
+    coldMountOrdinalsRef.current = ordinals;
     return ordinals;
   }, [workspaces, workspaceWindows]);
   const requestedRendererMode = resolveRequestedRenderer({
@@ -1315,12 +1394,16 @@ export default function TerminalWorkspacesManager({
   const handleWorkspaceTabPointerDown = useCallback(
     (wsId) => (e) => {
       if (e.button !== 0) return;
-      // Ignore drags that start on interactive children (close buttons, browser close).
-      if (e.target.closest('button')) return;
-      if (typeof e.currentTarget.setPointerCapture === 'function') {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }
+      // Ignore drags that start on interactive children (close buttons, inputs).
+      if (e.target.closest('button, input')) return;
       pendingDragRef.current = { wsId, startX: e.clientX, startY: e.clientY };
+      // Register window-level listeners so drag survives DOM reorders.
+      const onMove = (ev) => wsTabMoveRef.current(ev);
+      const onUp = () => wsTabEndRef.current();
+      pendingDragRef.current._onMove = onMove;
+      pendingDragRef.current._onUp = onUp;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
     },
     []
   );
@@ -1341,20 +1424,33 @@ export default function TerminalWorkspacesManager({
       const target = document.elementFromPoint(e.clientX, e.clientY);
       const tab = target?.closest('[data-testid="workspace-top-tab-bar"] [data-workspace-id]');
       const targetWsId = tab?.dataset.workspaceId || null;
-      setDragOverWsId(targetWsId && targetWsId !== pending.wsId ? targetWsId : null);
+      const validTarget = targetWsId && targetWsId !== pending.wsId ? targetWsId : null;
+      setDragOverWsId(validTarget);
+
+      // Live reorder: shift tabs in real-time so the user sees a preview of the final order.
+      if (validTarget) {
+        reorderWorkspaceTabs(pending.wsId, validTarget);
+      }
     },
-    [draggedWsId]
+    [draggedWsId, reorderWorkspaceTabs]
   );
 
   const endWorkspaceTabDrag = useCallback(() => {
     const pending = pendingDragRef.current;
-    pendingDragRef.current = null;
-    if (draggedWsId && dragOverWsId) {
-      reorderWorkspaceTabs(draggedWsId, dragOverWsId);
+    if (pending) {
+      window.removeEventListener('pointermove', pending._onMove);
+      window.removeEventListener('pointerup', pending._onUp);
     }
+    pendingDragRef.current = null;
     setDraggedWsId(null);
     setDragOverWsId(null);
-  }, [draggedWsId, dragOverWsId, reorderWorkspaceTabs]);
+  }, []);
+
+  // Stable refs so window listeners always call the latest handler.
+  const wsTabMoveRef = useRef(handleWorkspaceTabPointerMove);
+  wsTabMoveRef.current = handleWorkspaceTabPointerMove;
+  const wsTabEndRef = useRef(endWorkspaceTabDrag);
+  wsTabEndRef.current = endWorkspaceTabDrag;
 
   const launchPanelWithCommand = useCallback(
     (command, panelCwd = null) => {
@@ -1719,6 +1815,13 @@ export default function TerminalWorkspacesManager({
     closeWorkspaceBrowserWindow,
     getWorkspaceDisplayLabel,
     getAllPanelIds,
+    editingWsId,
+    editingWsValue,
+    wsRenameError,
+    startWorkspaceRename,
+    updateWsRenameValue,
+    commitWorkspaceRename,
+    cancelWorkspaceRename,
     workspaceWindows,
     activeWindowIds,
     pizarraPendingViewId,

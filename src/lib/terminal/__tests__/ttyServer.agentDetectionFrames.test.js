@@ -151,7 +151,13 @@ describe('ttyServer — agent-state frame schema (N4/N5)', () => {
     expect(session.agentType).toBe('agy');
     expect(session.agentLaunchOrigin).toBe('typed');
 
-    // Enter on an agent session publishes an instant `running` frame.
+    // The launch command itself must NOT publish a running frame — the Enter
+    // that starts the agent is not a prompt submission to the agent.
+    const launchFrames = getMessagesOfType(socket, 'agent-state');
+    expect(launchFrames.length).toBe(0);
+
+    // A subsequent Enter (real prompt submission) publishes an instant running frame.
+    socket.__message(JSON.stringify({ type: 'input', data: 'do something\r' }));
     const frames = getMessagesOfType(socket, 'agent-state');
     expect(frames.length).toBeGreaterThanOrEqual(1);
     const runningFrame = frames.find((f) => f.agentTuiState === 'running');
@@ -164,7 +170,10 @@ describe('ttyServer — agent-state frame schema (N4/N5)', () => {
     const { socket } = await startServerAndConnect(
       '/terminal?id=agy-frame-clean&cwd=%2Fhome%2Fuser'
     );
+    // Launch the agent first (no frame expected)
     socket.__message(JSON.stringify({ type: 'input', data: 'agy\r' }));
+    // Then submit a prompt to trigger a running frame
+    socket.__message(JSON.stringify({ type: 'input', data: 'hello\r' }));
     const frames = getMessagesOfType(socket, 'agent-state');
     expect(frames.length).toBeGreaterThanOrEqual(1);
     for (const frame of frames) {

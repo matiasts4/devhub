@@ -27,6 +27,7 @@ const {
 } = require('./agentTuiMetadata');
 const { detectKimiTuiReady } = require('./kimiReadyMarker');
 const { detectAntigravityTuiReady } = require('./antigravityReadyMarker');
+const { detectQodercliTuiReady } = require('./qodercliReadyMarker');
 
 const SHELL_TERMINAL_RESPONSE_RE =
   /(?:\x1b\[\?(?:\d+;)*\d+[cnRM]|\x1b\[>(?:\d+;)*\d+c|\x1b\[\$(?:\d+;)*\d+p|\x1b\[(?:\d+;)*\d+n|\x1b\[(?:\d+;)*\d+R)/g;
@@ -189,6 +190,7 @@ function applyAgentTuiDetection(session, command) {
   session.history = [];
   if (!session.agentType) {
     session.agentType = type;
+    session.agentDetectedAt = Date.now();
   }
   if (!session.agentSessionId) {
     const explicit = extractAgentSessionId(type, command);
@@ -302,6 +304,9 @@ function typedAgentChromePresent(agentType, text) {
       return detectKimiTuiReady(text);
     case 'opencode':
       return detectOpenCodeTuiReady(text);
+    case 'qodercli':
+    case 'qoder':
+      return detectQodercliTuiReady(text);
     default:
       // Unknown agent (grok/claude/codex/hermes have no footer detector here):
       // rely solely on the lastWorkingAt quiet window.
@@ -372,6 +377,7 @@ module.exports = {
   detectAgentStateFromOutput,
   detectAntigravityTuiReady,
   detectKimiTuiReady,
+  detectQodercliTuiReady,
   filterTerminalInputForSession,
   filterTerminalOutputForSession,
   detectOpenCodeSessionId,

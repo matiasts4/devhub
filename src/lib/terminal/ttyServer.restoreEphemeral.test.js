@@ -382,3 +382,54 @@ describe('restoreSessions console output', () => {
     consoleSpy.mockRestore();
   });
 });
+
+describe('restoreSessions disk writes', () => {
+  it('persists once for the whole restore instead of once per session', async () => {
+    const { saveSessions } = await import('./sessionStore.js');
+
+    const sessionsMap = new Map([
+      [
+        'shell-eph-batch-1',
+        {
+          id: 'shell-eph-batch-1',
+          cwd: '/home/user/one',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          restored: false,
+        },
+      ],
+      [
+        'shell-eph-batch-2',
+        {
+          id: 'shell-eph-batch-2',
+          cwd: '/home/user/two',
+          shell: '/bin/zsh',
+          title: null,
+          createdAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          restored: false,
+        },
+      ],
+    ]);
+    saveSessions(sessionsMap);
+
+    const sessions = getOrInitSessions();
+    sessions.clear();
+
+    // Ignore the seeding write above; count only writes triggered by restore.
+    mockFs.writeFileSync.mockClear();
+
+    restoreSessions();
+
+    expect([...sessions.keys()]).toEqual(
+      expect.arrayContaining(['shell-eph-batch-1', 'shell-eph-batch-2'])
+    );
+    // saveSessions writes atomically via a '<file>.tmp' writeFileSync + rename.
+    const sessionFileWrites = mockFs.writeFileSync.mock.calls.filter(([p]) =>
+      String(p).endsWith('.tmp')
+    );
+    expect(sessionFileWrites).toHaveLength(1);
+  });
+});

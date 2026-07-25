@@ -138,7 +138,12 @@ function resolveTerminalSpawnCwd(
     };
   }
 
-  const fallbackCandidates = [processCwd, homeDir, path.parse(processCwd || homeDir || '/').root]
+  // Prefer the user's home over the server process cwd: in packaged installs the
+  // sidecar/tty process runs from inside the app install dir (e.g.
+  // C:\Program Files\DevHub\resources\...\sidecar-backend), and landing the user's
+  // shell there is never the right answer. processCwd stays as a last-resort
+  // candidate before the filesystem root.
+  const fallbackCandidates = [homeDir, processCwd, path.parse(processCwd || homeDir || '/').root]
     .map((candidate) => normalizeCwd(candidate))
     .filter((candidate, index, values) => candidate && values.indexOf(candidate) === index);
 

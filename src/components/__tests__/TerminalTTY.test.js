@@ -400,6 +400,13 @@ describe('shouldShowTerminalLoadingOverlay()', () => {
     expect(shouldShowTerminalLoadingOverlay(false, 'connecting', true)).toBe(false);
     expect(shouldShowTerminalLoadingOverlay(false, 'connected', true)).toBe(false);
   });
+
+  test('stays hidden on remount of an already-connected panel, even while initializing', () => {
+    // Remounts (tab switch, pizarra enter/exit, graveyard restore) seed
+    // hasConnectedOnce from terminalConnectedOnceRegistry — no overlay flash.
+    expect(shouldShowTerminalLoadingOverlay(true, 'connecting', true)).toBe(false);
+    expect(shouldShowTerminalLoadingOverlay(true, 'idle', true)).toBe(false);
+  });
 });
 
 describe('shouldShowTerminalViewport()', () => {
@@ -1175,6 +1182,34 @@ describe('terminal viewport undersize detection', () => {
         term,
       })
     ).toBe(false);
+  });
+
+  test('visible panels connect with non-degenerate dimensions despite low fill ratio', () => {
+    const term = {
+      rows: 12,
+      _core: { _renderService: { dimensions: { css: { cell: { height: 20, width: 10 } } } } },
+    };
+    // Same undersized grid as above, but the panel is visible with a real
+    // container: connect now, fine fit arrives via resize.
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { width: 800, height: 900 },
+        term,
+        isVisibleInLayout: true,
+      })
+    ).toBe(false);
+    // Degenerate container keeps the defer even for visible panels.
+    expect(
+      shouldDeferTerminalConnectUntilViewportFitted({
+        ready: true,
+        fitWorked: true,
+        containerRect: { width: 0, height: 900 },
+        term,
+        isVisibleInLayout: true,
+      })
+    ).toBe(true);
   });
 });
 

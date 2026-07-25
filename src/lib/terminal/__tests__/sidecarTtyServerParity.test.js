@@ -65,6 +65,14 @@ const VECTORS = [
   ['kimi working footer', 'kimi', readFixture('kimi-working-footer.txt'), 'running'],
   ['grok idle footer', 'grok', readFixture('grok-idle-footer.txt'), 'idle'],
   ['grok spinner stop (subagent wait)', 'grok', readFixture('grok-spinner-stop.txt'), 'running'],
+  ['qodercli idle prompt', 'qodercli', readFixture('qodercli-idle-prompt.txt'), 'idle'],
+  ['qodercli working footer', 'qodercli', readFixture('qodercli-working-footer.txt'), 'running'],
+  [
+    'qodercli blocked permission',
+    'qodercli',
+    readFixture('qodercli-blocked-permission.txt'),
+    'blocked',
+  ],
   // W6 — CR-overwritten spinner + footer (raw \r bytes).
   [
     'agy CR-overwritten braille spinner (raw \\r)',

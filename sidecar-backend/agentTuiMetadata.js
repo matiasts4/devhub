@@ -1,11 +1,20 @@
 /**
  * agentTuiMetadata — single source of truth for agent TUI detection (CJS sidecar mirror).
  *
- * Covers: opencode, kimi, claude, codex, grok/groc, hermes, agy (antigravity).
+ * Covers: opencode, kimi, claude, codex, grok/groc, hermes, agy (antigravity), qodercli.
  * Keep in sync with src/lib/terminal/agentTuiMetadata.js (ESM source of truth).
  */
 
-const AGENT_TUI_TYPES = ['opencode', 'kimi', 'claude', 'codex', 'grok', 'hermes', 'agy'];
+const AGENT_TUI_TYPES = [
+  'opencode',
+  'kimi',
+  'claude',
+  'codex',
+  'grok',
+  'hermes',
+  'agy',
+  'qodercli',
+];
 
 const AGENT_TYPE_PATTERNS = {
   opencode: /\bopencode\b/i,
@@ -15,6 +24,9 @@ const AGENT_TYPE_PATTERNS = {
   grok: /\b(?:grok|groc)\b/i,
   hermes: /\bhermes\b/i,
   agy: /\b(?:agy|antigravity)\b/i,
+  // Exact binary name only — `qoder` alone would false-positive on `.qoder/`
+  // config paths (e.g. `vim .qoder/AGENTS.md`).
+  qodercli: /\bqodercli\b/i,
 };
 
 const AGENT_SESSION_PATTERNS = {
@@ -25,6 +37,8 @@ const AGENT_SESSION_PATTERNS = {
   codex: /codex\s+(?:--session\s+|session\s+resume\s+|resume\s+)([\w-]+)/i,
   grok: null,
   agy: null,
+  // qodercli -r <id> | qodercli --resume <id> (docs.qoder.com/en/cli/using-cli)
+  qodercli: /qodercli\s+(?:--resume\s+|-r\s+|resume\s+)([\w-]+)/i,
 };
 
 const AGENT_TUI_PATTERN = new RegExp(
@@ -78,6 +92,8 @@ function resolveAgentTuiLabel(type) {
       return 'Hermes';
     case 'agy':
       return 'Antigravity';
+    case 'qodercli':
+      return 'Qoder';
     default:
       return 'Agente TUI';
   }

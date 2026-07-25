@@ -431,6 +431,76 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
                   <option value={typography.fontFamily}>Personalizada (actual)</option>
                 )}
               </select>
+
+              {/* Live font preview */}
+              <div
+                data-testid="terminal-font-preview"
+                className="mt-3 rounded-xl border overflow-hidden"
+                style={{
+                  borderColor: 'var(--border-subtle)',
+                  background: 'var(--surface-terminal, #1a1b26)',
+                }}
+              >
+                <div
+                  className="px-3 py-1.5 flex items-center gap-1.5 border-b"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#ff5f57' }} />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#febc2e' }} />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#28c840' }} />
+                  <span
+                    className="ml-2 text-[10px] opacity-60"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Vista previa
+                  </span>
+                </div>
+                <div
+                  className="px-4 py-3 select-none"
+                  style={{
+                    fontFamily: typography.fontFamily,
+                    fontSize: `${typography.fontSize}px`,
+                    fontWeight: typography.fontWeight,
+                    lineHeight: typography.lineHeight,
+                    letterSpacing: `${typography.letterSpacing}px`,
+                    color: '#a9b1d6',
+                  }}
+                >
+                  <div>
+                    <span style={{ color: '#7aa2f7' }}>┌──(</span>
+                    <span style={{ color: '#9ece6a' }}>user㉿kali</span>
+                    <span style={{ color: '#7aa2f7' }}>)-[</span>
+                    <span style={{ color: '#e0af68' }}>~/devhub</span>
+                    <span style={{ color: '#7aa2f7' }}>]</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#7aa2f7' }}>└─</span>
+                    <span style={{ color: '#bb9af7' }}>$ </span>
+                    <span style={{ color: '#c0caf5' }}>nmap -sV --script=vuln 192.168.1.0/24</span>
+                  </div>
+                  <div style={{ marginTop: '0.25em', color: '#565f89' }}>
+                    Starting Nmap 7.94 ( https://nmap.org )
+                  </div>
+                  <div>
+                    <span style={{ color: '#9ece6a' }}>✓</span>
+                    <span style={{ color: '#c0caf5' }}>
+                      {' '}
+                      The quick brown fox jumps over the lazy dog{' '}
+                    </span>
+                    <span style={{ color: '#565f89' }}>0123456789</span>
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: typography.fontWeightBold, color: '#f7768e' }}>
+                      bold
+                    </span>
+                    <span style={{ color: '#c0caf5' }}> </span>
+                    <span style={{ fontStyle: 'italic', color: '#e0af68' }}>italic</span>
+                    <span style={{ color: '#c0caf5' }}> </span>
+                    <span style={{ textDecoration: 'underline', color: '#7dcfff' }}>underline</span>
+                    <span style={{ color: '#c0caf5' }}> {'{}[]()<>=/\\|;:\'"`~!@#$%^&*+'}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">

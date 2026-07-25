@@ -361,6 +361,9 @@ export function resolveAgentConfigPath(agent) {
   if (agent === 'claude') {
     return path.join(home, '.claude', 'settings.json');
   }
+  if (agent === 'qodercli' || agent === 'qoder') {
+    return path.join(home, '.qoder', 'settings.json');
+  }
   if (agent === 'agy' || agent === 'antigravity') {
     // Global hooks recognized by all 3 Antigravity variants (terminal agent,
     // CLI, and IDE). Workspace-level .agents/hooks.json is NOT managed here.
@@ -404,6 +407,9 @@ export function getAgentHookStatus(agent) {
       return { installed: isKimiHooksInstalled(content), configPath, exists: true };
     }
     if (agent === 'claude') {
+      return { installed: isClaudeHooksInstalled(content), configPath, exists: true };
+    }
+    if (agent === 'qodercli' || agent === 'qoder') {
       return { installed: isClaudeHooksInstalled(content), configPath, exists: true };
     }
     if (agent === 'agy' || agent === 'antigravity') {
@@ -545,6 +551,8 @@ export function installAgentHook(agent, options = {}) {
     newContent = buildKimiConfigWithHooks(content, scriptPath, 'kimi');
   } else if (agent === 'claude') {
     newContent = buildClaudeSettingsWithHooks(content, scriptPath, 'claude');
+  } else if (agent === 'qodercli' || agent === 'qoder') {
+    newContent = buildClaudeSettingsWithHooks(content, scriptPath, 'qodercli');
   }
 
   fs.writeFileSync(configPath, newContent, 'utf8');
@@ -576,6 +584,8 @@ export function uninstallAgentHook(agent) {
   } else if (agent === 'kimi') {
     newContent = removeKimiManagedBlock(content);
   } else if (agent === 'claude') {
+    newContent = removeClaudeHooks(content);
+  } else if (agent === 'qodercli' || agent === 'qoder') {
     newContent = removeClaudeHooks(content);
   }
 

@@ -17,6 +17,7 @@ import {
   shouldMountCanvasAddon,
   shouldFreezeDomViewportOnAppResume,
   prepareActiveTuiTerminalFocus,
+  shouldScrollAgentWheelLocally,
   isGrokTuiInitialCommand,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { shouldSkipKimiTuiPtyResize } from '@/lib/terminal/kimiReadyMarker';
@@ -317,6 +318,7 @@ export default function useTerminalViewportSync({ ctxRef }) {
           containerRect: rect,
           term: termRef.current,
           hasConnectedOnce: hasConnectedOnceRef.current,
+          isVisibleInLayout: isVisibleInLayoutRef.current,
         })
       ) {
         if (!hasConnectedOnceRef.current) {
@@ -450,6 +452,11 @@ export default function useTerminalViewportSync({ ctxRef }) {
         socket: wsRef.current,
         clearAtlas,
         lastPtySizeRef: lastPtySizeRef.current,
+        source: options.source,
+        telemetryDetail: {
+          hidden: !isVisibleInLayoutRef.current,
+          tuiActive: tuiSessionActiveRef.current,
+        },
         skipPtyNotify:
           options.skipPtyNotify ??
           (hasConnectedOnceRef.current &&
@@ -586,11 +593,11 @@ export default function useTerminalViewportSync({ ctxRef }) {
       hasConnectedOnce: hasConnectedOnceRef.current,
       kimiReady: kimiReadyNotifiedRef.current,
     });
-    fitAndResize({ clearAtlas: true, forcePtyResize: true });
+    fitAndResize({ clearAtlas: true, forcePtyResize: true, source: 'send-resize' });
     if (!kimiConnected) scrollTerminalToBottom();
     clearTimers();
     rafRef.current = requestAnimationFrame(() => {
-      fitAndResize({ clearAtlas: false, forcePtyResize: true });
+      fitAndResize({ clearAtlas: false, forcePtyResize: true, source: 'send-resize' });
       if (!kimiConnected) scrollTerminalToBottom();
     });
   }, [ctxRef]);
@@ -675,14 +682,21 @@ export default function useTerminalViewportSync({ ctxRef }) {
         scheduleBoundedFitRepaint,
         scheduleBoundedForceRepaint,
         buildViewportSnapshot,
+        agentTypeRef,
       } = c;
       const rect = containerRef.current?.getBoundingClientRect();
       const zeroSized = !rect || rect.width <= 0 || rect.height <= 0;
+      // Inline-scroll agents (kimi, qodercli, claude, codex) never use host mouse —
+      // keep DECSET off so text selection keeps working.
+      const tuiMouseActive = Boolean(
+        tuiSessionActiveRef.current &&
+        !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef?.current)
+      );
       if (zeroSized) {
         logViewportDiagnostic('reactivate-skipped-zero-size');
         if (autoFocus && isActivePanelRef.current) {
           prepareActiveTuiTerminalFocus(termRef.current, {
-            tuiSessionActive: tuiSessionActiveRef.current,
+            tuiSessionActive: tuiMouseActive,
           });
           termRef.current?.focus?.();
         }
@@ -716,7 +730,7 @@ export default function useTerminalViewportSync({ ctxRef }) {
 
       logViewportDiagnostic('reactivate-start');
       prepareActiveTuiTerminalFocus(termRef.current, {
-        tuiSessionActive: tuiSessionActiveRef.current,
+        tuiSessionActive: tuiMouseActive,
       });
       if (skipDomFit) {
         logViewportDiagnostic('reactivate-frozen-dom-tui');

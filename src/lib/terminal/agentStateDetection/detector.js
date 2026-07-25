@@ -16,6 +16,7 @@ import codexManifest from './manifests/codex.js';
 import opencodeManifest from './manifests/opencode.js';
 import grokManifest from './manifests/grok.js';
 import antigravityManifest from './manifests/antigravity.js';
+import qodercliManifest from './manifests/qodercli.js';
 
 const MANIFESTS = new Map([
   ['kimi', kimiManifest],
@@ -24,6 +25,7 @@ const MANIFESTS = new Map([
   ['opencode', opencodeManifest],
   ['grok', grokManifest],
   ['agy', antigravityManifest],
+  ['qodercli', qodercliManifest],
 ]);
 
 const AGENT_TYPE_ALIASES = {
@@ -42,6 +44,9 @@ const AGENT_TYPE_ALIASES = {
   agy: 'agy',
   antigravity: 'agy',
   'antigravity-cli': 'agy',
+  qodercli: 'qodercli',
+  qoder: 'qodercli',
+  'qoder-cli': 'qodercli',
 };
 
 const manifestCache = new Map();

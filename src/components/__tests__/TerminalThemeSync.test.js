@@ -10,7 +10,31 @@
  * - No hard-coded blue hex in primary mappings
  */
 
-const { buildXtermTheme, getTerminalFontOptions, normalizeColorForXterm } = require('../terminal/TerminalThemeSync.js');
+const {
+  buildXtermTheme,
+  getTerminalTheme,
+  getTerminalFontOptions,
+  normalizeColorForXterm,
+  registerTerminalForSceneryThemeSync,
+  unregisterTerminalFromSceneryThemeSync,
+  SCENERY_TRANSPARENT_BACKGROUND,
+} = require('../terminal/TerminalThemeSync.js');
+const { SCENERY_CHANGED_EVENT } = require('@/lib/sceneries/sceneryPreferences');
+const domHarness = require('@/test-support/domHarness');
+
+// This suite runs under the `node` testEnvironment; getTerminalTheme() and the
+// scenery sync registry need a DOM (document.body attribute + window events).
+// Install ONE shared jsdom — the registry's change listener binds lazily to
+// whatever window is global at first registration, so the window must stay
+// stable across these tests.
+let sharedDom = null;
+function ensureDom() {
+  if (!sharedDom) sharedDom = domHarness.installDom();
+}
+function closeDom() {
+  if (sharedDom?.window?.close) sharedDom.window.close();
+  sharedDom = null;
+}
 
 describe('normalizeColorForXterm()', () => {
   test('passes through hex, rgb/rgba and named colors unchanged', () => {
@@ -161,5 +185,63 @@ describe('getTerminalFontOptions()', () => {
     expect(opts.lineHeight).toBe(1.5);
     expect(opts.letterSpacing).toBe(0);
     expect(opts.fontFamily).toContain('monospace');
+  });
+});
+
+describe('getTerminalTheme() — scenery wallpaper transparency', () => {
+  beforeAll(() => ensureDom());
+  afterAll(() => closeDom());
+
+  afterEach(() => {
+    document.body.removeAttribute('data-scenery-active');
+  });
+
+  test('returns a fully transparent background while a scenery is active', () => {
+    document.body.setAttribute('data-scenery-active', 'true');
+    const theme = getTerminalTheme();
+    expect(theme.background).toBe(SCENERY_TRANSPARENT_BACKGROUND);
+    // The rest of the palette is untouched.
+    expect(theme.foreground).toBeTruthy();
+    expect(theme.cursor).toBeTruthy();
+  });
+
+  test('keeps the CSS-var background when no scenery is active', () => {
+    document.body.setAttribute('data-scenery-active', 'false');
+    const theme = getTerminalTheme();
+    expect(theme.background).not.toBe(SCENERY_TRANSPARENT_BACKGROUND);
+  });
+});
+
+describe('scenery theme sync registry', () => {
+  beforeAll(() => ensureDom());
+  afterAll(() => closeDom());
+
+  afterEach(() => {
+    document.body.removeAttribute('data-scenery-active');
+  });
+
+  test('pushes the rebuilt theme to registered terminals on scenery change', () => {
+    const terminal = { options: {} };
+    registerTerminalForSceneryThemeSync(terminal);
+
+    document.body.setAttribute('data-scenery-active', 'true');
+    window.dispatchEvent(new Event(SCENERY_CHANGED_EVENT));
+    expect(terminal.options.theme.background).toBe(SCENERY_TRANSPARENT_BACKGROUND);
+
+    document.body.setAttribute('data-scenery-active', 'false');
+    window.dispatchEvent(new Event(SCENERY_CHANGED_EVENT));
+    expect(terminal.options.theme.background).not.toBe(SCENERY_TRANSPARENT_BACKGROUND);
+
+    unregisterTerminalFromSceneryThemeSync(terminal);
+  });
+
+  test('unregistered terminals stop receiving theme updates', () => {
+    const terminal = { options: {} };
+    registerTerminalForSceneryThemeSync(terminal);
+    unregisterTerminalFromSceneryThemeSync(terminal);
+
+    document.body.setAttribute('data-scenery-active', 'true');
+    window.dispatchEvent(new Event(SCENERY_CHANGED_EVENT));
+    expect(terminal.options.theme).toBeUndefined();
   });
 });

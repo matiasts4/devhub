@@ -16,6 +16,8 @@ import { claimSessionFlagOnce, detectOpenCodeTuiReady } from './opencodeReadyMar
 import { detectKimiTuiReady } from './kimiReadyMarker.js';
 import { detectGrokSessionFromOutput } from './grokReadyMarker.js';
 import { detectAntigravityTuiReady } from './antigravityReadyMarker.js';
+import { detectQodercliTuiReady } from './qodercliReadyMarker.js';
+import { detectMouseTrackingChange } from './mouseTrackingDetector.js';
 import { buildAgentStateFrame } from './agentStateFrame.js';
 import { writeAgentReadyMarker, writeOpencodeReadyMarker } from './opencodeReadyMarker.node.js';
 import { teardownPanelSessionProcesses } from './panelSessionTeardown.js';
@@ -602,6 +604,9 @@ function typedAgentChromePresent(agentType, text) {
       return detectOpenCodeTuiReady(text);
     case 'grok':
       return detectGrokSessionFromOutput(text);
+    case 'qodercli':
+    case 'qoder':
+      return detectQodercliTuiReady(text);
     default:
       // Unknown agent (claude/codex/hermes have no footer detector here):
       // rely solely on the lastWorkingAt quiet window.
@@ -742,6 +747,11 @@ function applyAgentTuiDetection(session, command) {
   session.historyEnabled = false;
   session.history = '';
   session.agentType = type;
+  // Record when the agent was first detected so the manifest detector can
+  // suppress false "running" hits from startup spinners/animations.
+  if (!session.agentDetectedAt) {
+    session.agentDetectedAt = Date.now();
+  }
 
   const explicitSessionId = extractAgentSessionId(type, command);
   session.agentSessionId = explicitSessionId || synthesizeAgentSessionId(type, session.id) || null;
@@ -1334,6 +1344,15 @@ function handleSessionOutput(sessions, session, chunk) {
   processOscTitle(session, chunk);
   processOscProgress(session, chunk);
 
+  // Generic mouse-tracking observation (DECSET/DECRST 1000/1002/1003): any TUI —
+  // known or unknown — that enables mouse tracking can consume SGR wheel/click.
+  // Track it so the input filter passes mouse reports through without needing
+  // agentType or mode='tui' (native per-capability support, zero per-agent config).
+  const mouseTrackingChange = detectMouseTrackingChange(chunk);
+  if (mouseTrackingChange !== null) {
+    session.mouseTrackingActive = mouseTrackingChange;
+  }
+
   let filtered = chunk;
   if (typeof filtered === 'string') {
     // Strip the title sequences before forwarding; xterm.js on the client still
@@ -1401,6 +1420,14 @@ function handleSessionOutput(sessions, session, chunk) {
       session.mode = 'tui';
       session.tuiReady = true;
       maybeWriteAgentReadyMarker(session, 'agy', { reason: 'tty-tui-footer' });
+    } else if (detectQodercliTuiReady(filtered)) {
+      if (!session.agentType) {
+        applyAgentTuiDetection(session, 'qodercli');
+        session.agentLaunchOrigin = 'output';
+      }
+      session.mode = 'tui';
+      session.tuiReady = true;
+      maybeWriteAgentReadyMarker(session, 'qodercli', { reason: 'tty-tui-footer' });
     }
 
     session._lastAgentStateEvent = ingestAgentDetectionFromFilteredOutput(
@@ -2401,22 +2428,30 @@ export async function ensureTTYServer() {
 
       if (message.type === 'input' && typeof message.data === 'string') {
         // Build an explicit filter ctx — never pass the raw session alone.
-        // session.tuiReady must be honored; agentType covers launch-detected TUIs.
+        // session.tuiReady must be honored; agentType covers launch-detected TUIs;
+        // mouseTracking covers ANY TUI that enabled DECSET 1000/1002/1003 (generic).
         const filteredInput = filterTerminalInputForSession(
           {
             mode: session.mode === 'tui' ? 'tui' : 'shell',
             tuiReady: session.tuiReady === true,
             agentType: session.agentType || null,
+            mouseTracking: session.mouseTrackingActive === true,
           },
           message.data
         );
         if (filteredInput === null) return;
 
+        // Capture whether the agent was already known BEFORE detection runs.
+        // If agentType is set BY this input (launch command), we must NOT fire
+        // notifyUserInput — the Enter that launches the agent is not a prompt
+        // submission to the agent.
+        const hadAgentTypeBeforeInput = Boolean(session.agentType);
+
         detectSessionModeFromInput(session, filteredInput);
 
         if (typeof filteredInput === 'string' && filteredInput.length > 0) {
           const isEnter = filteredInput.includes('\r') || filteredInput.includes('\n');
-          if (isEnter && session.agentType) {
+          if (isEnter && session.agentType && hadAgentTypeBeforeInput) {
             const published = notifyUserInput(session);
             if (published && session.agentTuiState && session.sockets) {
               const statePayload = JSON.stringify(

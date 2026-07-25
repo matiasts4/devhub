@@ -1,8 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RotateCcw, Terminal, Palette, Mic, Keyboard, Bot, Sparkles, X, Gauge, Settings } from 'lucide-react';
+import {
+  RotateCcw,
+  Terminal,
+  Palette,
+  Mic,
+  Keyboard,
+  Bot,
+  Sparkles,
+  X,
+  Gauge,
+  Settings,
+  Bell,
+} from 'lucide-react';
 
 import {
   panelStyle,
@@ -31,6 +43,7 @@ import ZedModelSettings from '@/components/settings/ZedModelSettings';
 import TerminalShortcutsSettings from '@/components/settings/TerminalShortcutsSettings';
 import TerminalAgentsSettings from '@/components/settings/TerminalAgentsSettings';
 import { QuotaProviderSettings } from '@/components/quota/QuotaProviderSettings';
+import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection';
 
 const SECTIONS = [
   { key: 'restore', label: 'Restauración', icon: RotateCcw },
@@ -40,6 +53,7 @@ const SECTIONS = [
   { key: 'voice', label: 'Voz', icon: Mic },
   { key: 'shortcuts', label: 'Atajos', icon: Keyboard },
   { key: 'agents', label: 'Agentes', icon: Bot },
+  { key: 'notifications', label: 'Notificaciones', icon: Bell },
   { key: 'cuotas', label: 'Cuotas', icon: Gauge },
 ];
 
@@ -220,17 +234,22 @@ function SectionContent({ section, onNavigateToZed }) {
       return <TerminalShortcutsSettings />;
     case 'agents':
       return <TerminalAgentsSettings />;
+    case 'notifications':
+      return <NotificationSettingsSection />;
     case 'cuotas':
       return (
         <div className="space-y-5">
           <div>
-            <h4 className="font-mono text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <h4
+              className="font-mono text-sm font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
               Cuotas de IA en el header
             </h4>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
               Elige qué proveedores sincroniza el badge de cuotas del workspace, en qué orden se
-              muestran y cuál queda fijado por defecto (★). Los desactivados no se consultan
-              nunca — ni en el header ni en segundo plano. Los cambios se guardan al instante.
+              muestran y cuál queda fijado por defecto (★). Los desactivados no se consultan nunca —
+              ni en el header ni en segundo plano. Los cambios se guardan al instante.
             </p>
           </div>
           <QuotaProviderSettings />
@@ -249,9 +268,15 @@ function SectionContent({ section, onNavigateToZed }) {
  *
  * @param {boolean} open - controls modal visibility
  * @param {function} onClose - called when the user dismisses the modal
+ * @param {string} [initialSection] - section key to show when the modal opens (defaults to 'restore')
  */
-export default function TerminalRestoreSettingsModal({ open, onClose }) {
+export default function TerminalRestoreSettingsModal({ open, onClose, initialSection }) {
   const [activeSection, setActiveSection] = useState('restore');
+  // Sections that were visited during this open stay mounted (hidden) so
+  // switching back is instant and async data is not refetched.
+  const [visitedSections, setVisitedSections] = useState(() => new Set(['restore']));
+  const bodyRef = useRef(null);
+  const prefetchedRef = useRef(new Set());
 
   useEffect(() => {
     if (!open) return undefined;
@@ -265,8 +290,29 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
   }, [open, onClose]);
 
   useEffect(() => {
-    if (open) setActiveSection('restore');
-  }, [open]);
+    if (open) {
+      const initial = initialSection || 'restore';
+      setActiveSection(initial);
+      setVisitedSections(new Set([initial]));
+    }
+  }, [open, initialSection]);
+
+  const selectSection = (key) => {
+    setActiveSection(key);
+    setVisitedSections((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  };
+
+  // Warm up async endpoints before the user commits to a section so the
+  // perceived load time on click is minimal (also pre-compiles dev routes).
+  const prefetchSection = (key) => {
+    if (prefetchedRef.current.has(key)) return;
+    prefetchedRef.current.add(key);
+    if (key === 'zed') {
+      fetch('/api/settings/llm-providers').catch(() => {});
+      fetch('/api/assistant/zed-provider-status').catch(() => {});
+    }
+  };
 
   if (!open) return null;
 
@@ -314,7 +360,8 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setActiveSection(key)}
+                  onClick={() => selectSection(key)}
+                  onMouseEnter={() => prefetchSection(key)}
                   data-testid={`terminal-settings-section-${key}`}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-all"
                   style={
@@ -363,20 +410,26 @@ export default function TerminalRestoreSettingsModal({ open, onClose }) {
             <button
               type="button"
               onClick={() => onClose?.()}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-              style={btnSecondaryStyle({ size: 'sm' })}
+              className="inline-flex items-center justify-center transition-colors hover:opacity-85"
+              style={{
+                ...btnSecondaryStyle({ size: 'sm' }),
+                width: '2.25rem',
+                height: '2.25rem',
+                padding: 0,
+              }}
               aria-label="Cerrar"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <SectionContent
-              section={activeSection}
-              onNavigateToZed={() => setActiveSection('zed')}
-            />
+          {/* Body — visited sections stay mounted (hidden) for instant switching */}
+          <div ref={bodyRef} className="flex-1 overflow-y-auto px-6 py-5">
+            {SECTIONS.filter(({ key }) => visitedSections.has(key)).map(({ key }) => (
+              <div key={key} className={activeSection === key ? undefined : 'hidden'}>
+                <SectionContent section={key} onNavigateToZed={() => selectSection('zed')} />
+              </div>
+            ))}
           </div>
         </div>
       </div>

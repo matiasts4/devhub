@@ -25,6 +25,31 @@ import {
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import { getPanelInitialCommandDispatch } from '@/lib/terminal/panelInitialCommandLifecycle';
 import { getTuiAdapter } from '@/lib/terminal/tuiAdapter';
+import { incrementPerfCounter, PERF_COUNTERS } from '@/lib/terminal/startupPerfMarks';
+import { isTuiPointerDebugEnabled, logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
+
+/**
+ * Resize telemetry — counts every resize sent to the PTY (and every zero-delta
+ * send suppressed by the dimension guard) with the previous sent dimensions,
+ * so redundant SIGWINCH storms are measurable. No-op unless
+ * localStorage.devhub_perf is on.
+ */
+function trackPtyResizeSent({ cols, rows, lastPtySizeRef, source, telemetryDetail }) {
+  const prevCols = lastPtySizeRef ? Number(lastPtySizeRef.cols ?? 0) : null;
+  const prevRows = lastPtySizeRef ? Number(lastPtySizeRef.rows ?? 0) : null;
+  incrementPerfCounter(PERF_COUNTERS.TERMINAL_RESIZE_SENT, {
+    cols,
+    rows,
+    prevCols,
+    prevRows,
+    hidden: telemetryDetail?.hidden ?? null,
+    // TODO(terminal-load-performance): tuiActive is not cleanly reachable from
+    // every send path yet — threaded through only where the caller knows it.
+    tuiActive: telemetryDetail?.tuiActive ?? null,
+    redundant: prevCols === cols && prevRows === rows,
+    source,
+  });
+}
 
 function cliLog(tag, msg, extra = {}) {
   try {
@@ -77,14 +102,20 @@ export function resolveColdMountStaggerMs({
   return Math.max(0, Number(coldMountOrdinal) || 0) * staggerMsPerPanel;
 }
 
-/** Full-screen blocking loader — only on first boot, never on panel-switch reconnects. */
+/**
+ * Full-screen blocking loader — only on the panel's first real boot, never on
+ * remounts (tab switch, pizarra enter/exit, graveyard restore). Remounts seed
+ * hasConnectedOnce from terminalConnectedOnceRegistry, so a reconnecting panel
+ * re-initializes xterm quietly instead of flashing "Conectando…".
+ */
 export function shouldShowTerminalLoadingOverlay(
   isInitializing,
   connectionState,
   hasConnectedOnce
 ) {
+  if (hasConnectedOnce) return false;
   if (isInitializing) return true;
-  return connectionState === 'connecting' && !hasConnectedOnce;
+  return connectionState === 'connecting';
 }
 
 export function shouldShowTerminalStatusOverlay(isInitializing, initError, connectionState) {
@@ -334,6 +365,50 @@ export function shouldInjectGrokWheelSgr(isGrokSession = false, initialCommand =
  */
 export function shouldScrollKimiWheelLocally(isKimiSession = false) {
   return Boolean(isKimiSession);
+}
+
+/**
+ * Agent TUIs that render INLINE (no alternate screen) and do NOT enable mouse
+ * tracking (no DECSET 1000/1006). They follow the claude-code convention:
+ * output flows into the normal screen buffer + scrollback, input is a bottom
+ * prompt. SGR wheel inject is dead for these (bytes ignored by the TUI) —
+ * wheel must scroll the xterm viewport locally instead.
+ *
+ * Alt-screen + mouse TUIs (grok, opencode, agy) stay on the SGR inject path.
+ */
+const INLINE_SCROLL_AGENT_TYPES = new Set(['kimi', 'qodercli', 'claude', 'codex']);
+
+export function isInlineScrollAgentType(agentType) {
+  return INLINE_SCROLL_AGENT_TYPES.has(String(agentType || '').toLowerCase());
+}
+
+/**
+ * Resolve whether wheel should scroll the xterm viewport locally for this agent.
+ * Checks the server-detected agentType (typed launches) and the launch command.
+ */
+export function shouldScrollAgentWheelLocally(initialCommand, agentType = null) {
+  if (isInlineScrollAgentType(agentType)) return true;
+  const detected = detectAgentTypeFromCommand(normalizeTuiInitialCommand(initialCommand));
+  return isInlineScrollAgentType(detected);
+}
+
+/**
+ * Inline-scroll agents (kimi, qodercli, claude, codex) must never enter xterm
+ * mouse tracking: their TUIs emit DECSET ?1000/?1002/?1003 themselves, and the
+ * moment xterm honors them, drags become SGR mouse reports (text selection
+ * dies) and the wheel router falls back to PTY inject instead of local
+ * viewport scroll. The engine blocks those DECSET set/clear at the parser
+ * level (registerCsiHandler '?h'/'?l') when this returns true.
+ */
+export function shouldBlockInlineAgentMouseModes({
+  isKimiLaunch = false,
+  kimiReady = false,
+  initialCommand = '',
+  agentType = null,
+} = {}) {
+  return Boolean(
+    isKimiLaunch || kimiReady || shouldScrollAgentWheelLocally(initialCommand, agentType)
+  );
 }
 
 /** Keep grok wheel coords inside the transcript pane (Ink chrome owns the bottom rows). */
@@ -842,9 +917,20 @@ export function shouldDeferTerminalConnectUntilViewportFitted({
   containerRect = null,
   term = null,
   hasConnectedOnce = false,
+  isVisibleInLayout = false,
 } = {}) {
   if (!ready || !fitWorked || !term) return true;
   if (hasConnectedOnce) return false;
+  // Visible panels: connect as soon as the container has non-degenerate
+  // dimensions — the fine fit arrives via resize. Hidden/degenerate panels
+  // keep deferring until the fitted grid fills the viewport (fill ratio).
+  if (
+    isVisibleInLayout &&
+    Number(containerRect?.width ?? 0) > 0 &&
+    Number(containerRect?.height ?? 0) > 0
+  ) {
+    return false;
+  }
   return isTerminalViewportUndersized({ containerRect, term });
 }
 
@@ -857,6 +943,8 @@ export function fitTerminalViewport({
   clearAtlas = true,
   lastPtySizeRef = null,
   skipPtyNotify = false,
+  source = 'fit-viewport',
+  telemetryDetail = null,
 }) {
   if (!container || !fitAddon || !term) return false;
   if (!isTerminalRendererReady(term)) return false;
@@ -891,13 +979,16 @@ export function fitTerminalViewport({
     cols > 0 &&
     rows > 0;
 
-  if (
-    !skipPtyNotify &&
-    !unchanged &&
-    socket?.readyState === websocketOpenState &&
-    cols > 0 &&
-    rows > 0
-  ) {
+  const ptyNotifiable =
+    !skipPtyNotify && socket?.readyState === websocketOpenState && cols > 0 && rows > 0;
+
+  if (ptyNotifiable) {
+    // Telemetry covers both real sends and zero-delta suppressions: the
+    // `redundant` detail flag splits them into the redundant counter.
+    trackPtyResizeSent({ cols, rows, lastPtySizeRef, source, telemetryDetail });
+  }
+
+  if (ptyNotifiable && !unchanged) {
     socket.send(
       JSON.stringify({
         type: 'resize',
@@ -1146,6 +1237,7 @@ export function sendTerminalPasteInput({
     socket.send(JSON.stringify({ type: 'input', data: text }));
   }
 
+  // eslint-disable-next-line no-control-regex
   if (/\x1b\[<(?:64|65)/.test(text)) {
     if (typeof onPtyWheelWrite === 'function') {
       onPtyWheelWrite({ type: 'sgr-paste', text });
@@ -1509,12 +1601,55 @@ export function restoreTerminalViewportScroll(term, targetViewportY) {
     clampedY = Math.max(0, Math.min(targetViewportY, maxY));
   }
 
+  // Opt-in diagnostic (devhubTuiPointerDebug=1): who scrolls the viewport while
+  // the user has an active selection (selection-killer investigation).
+  if (isTuiPointerDebugEnabled()) {
+    logTuiPointerDebug('tui-scroll', {
+      path: 'restore-viewport-scroll',
+      extra: {
+        targetViewportY: clampedY,
+        viewportY: buffer.viewportY ?? null,
+        baseY: buffer.baseY ?? null,
+        bufferType: buffer.type ?? null,
+        hadSelection: term?.hasSelection?.() ?? null,
+        stack: String(new Error('scroll-trace').stack).split('\n').slice(1, 7).join(' | '),
+      },
+    });
+  }
+
   try {
     term.scrollToLine(clampedY);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Reveal scroll integrity (terminal-load-performance PR6): after a workspace-show
+ * fit/repaint, a user reading scrollback must land back on the viewportY captured
+ * before the reveal. Users at the bottom stay at the bottom; unchanged viewports
+ * are left alone (no counter).
+ */
+export function restoreTerminalViewportAfterReveal({
+  term,
+  viewportYBefore,
+  wasNearBottom,
+  panelId,
+}) {
+  if (!term || !Number.isInteger(viewportYBefore) || wasNearBottom) return false;
+  const viewportYAfter = getTerminalViewportScrollOffset(term);
+  if (!Number.isInteger(viewportYAfter) || viewportYAfter === viewportYBefore) return false;
+  const restored = restoreTerminalViewportScroll(term, viewportYBefore);
+  if (restored) {
+    incrementPerfCounter(PERF_COUNTERS.TERMINAL_SCROLL_JUMP, {
+      panelId: panelId ?? null,
+      from: viewportYAfter,
+      to: viewportYBefore,
+      restored: true,
+    });
+  }
+  return restored;
 }
 
 export function getNativeTerminalBounds(element) {
@@ -1606,6 +1741,22 @@ export function shouldUseLegacySurvivorRecovery(isEngineV2) {
 }
 
 /**
+ * True when `reason` is an OS-resume focus/visibility event (Alt+Tab back to the
+ * app, window focus, pageshow). These fire as a storm (visibilitychange + focus +
+ * pageshow within ~50 ms) and — unlike workspace/window switches — do NOT hide the
+ * terminal in the layout, so the GPU bitmap is still valid and no disruptive
+ * fit/atlas-clear/resize-nudge is required.
+ */
+export function isOsResumeFocusReason(reason = '') {
+  const normalizedReason = String(reason);
+  return (
+    normalizedReason === 'visibility-visible' ||
+    normalizedReason === 'window-focus' ||
+    normalizedReason === 'pageshow'
+  );
+}
+
+/**
  * Single-panel WebGL workspaces should not refit/resize on tab switch when the
  * PTY grid is already correct — only reattach the GPU addon if it was released
  * while the shell was hidden.
@@ -1634,6 +1785,9 @@ export function shouldFreezeSingleWebglViewportOnWorkspaceShow({
   }
   if (normalizedReason.startsWith('layout-settled-workspace-switch-')) return true;
   if (normalizedReason.startsWith('layout-settled-workspace-window-')) return true;
+  // OS-resume focus/visibility with unchanged geometry: the WebGL bitmap is still
+  // valid, so take the light freeze path instead of the heavy fit+atlas-clear pass.
+  if (isOsResumeFocusReason(normalizedReason)) return true;
   return false;
 }
 
@@ -1999,6 +2153,8 @@ export function nudgeTerminalPtyResize({
   websocketOpenState = WebSocket.OPEN,
   skipPtyNotify = false,
   force = false,
+  source = 'pty-nudge',
+  telemetryDetail = null,
 } = {}) {
   if (skipPtyNotify) return false;
   if (!term || !socket || socket.readyState !== websocketOpenState) return false;
@@ -2014,6 +2170,7 @@ export function nudgeTerminalPtyResize({
     Number(lastPtySizeRef.cols) === cols &&
     Number(lastPtySizeRef.rows) === rows
   ) {
+    trackPtyResizeSent({ cols, rows, lastPtySizeRef, source, telemetryDetail });
     return false;
   }
 
@@ -2021,6 +2178,7 @@ export function nudgeTerminalPtyResize({
     term.resize(cols, rows - 1);
     term.resize(cols, rows);
   }
+  trackPtyResizeSent({ cols, rows, lastPtySizeRef, source, telemetryDetail });
   socket.send(JSON.stringify({ type: 'resize', cols, rows }));
   if (lastPtySizeRef) {
     lastPtySizeRef.cols = cols;

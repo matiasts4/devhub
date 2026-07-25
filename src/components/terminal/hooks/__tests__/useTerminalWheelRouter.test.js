@@ -429,4 +429,166 @@ describe('useTerminalWheelRouter', () => {
     overlayInput.remove();
     root.remove();
   });
+
+  it('scrolls locally for qodercli (inline agent) instead of dead SGR inject', () => {
+    const sendPaste = jest.fn(() => true);
+    const scrollLines = jest.fn();
+    const term = { cols: 80, rows: 24, scrollLines };
+    const handler = createTerminalWheelHandler({
+      term,
+      initialCommand: 'qodercli',
+      lifecycleRefs: {
+        current: {
+          tuiSessionActiveRef: { current: true },
+          isGrokSessionRef: { current: false },
+          kimiReadyNotifiedRef: { current: false },
+          grokTuiReadyRef: { current: false },
+          tuiSessionFooterConfirmedRef: { current: false },
+          isActivePanelRef: { current: true },
+          lastPointerZoneRef: { current: 'transcript' },
+          agentTypeRef: { current: 'qodercli' },
+        },
+      },
+      rendererRefs: { current: { termRef: { current: term } } },
+      sessionRefs: { current: { wsRef: { current: {} }, transportRef: { current: 'json' } } },
+      viewportRefs: {
+        current: {
+          containerRef: { current: null },
+          viewportShellRef: { current: document.createElement('div') },
+        },
+      },
+      sendTerminalPasteInput: sendPaste,
+    });
+
+    const event = createWheelEvent(120);
+    handler(event);
+
+    expect(scrollLines).toHaveBeenCalled();
+    expect(sendPaste).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
+
+  it('scrolls locally for typed qodercli detected via server agentTypeRef', () => {
+    const sendPaste = jest.fn(() => true);
+    const scrollLines = jest.fn();
+    const term = { cols: 80, rows: 24, scrollLines };
+    const handler = createTerminalWheelHandler({
+      term,
+      initialCommand: '',
+      lifecycleRefs: {
+        current: {
+          tuiSessionActiveRef: { current: true },
+          isGrokSessionRef: { current: false },
+          kimiReadyNotifiedRef: { current: false },
+          grokTuiReadyRef: { current: false },
+          tuiSessionFooterConfirmedRef: { current: false },
+          isActivePanelRef: { current: true },
+          lastPointerZoneRef: { current: 'transcript' },
+          agentTypeRef: { current: 'qodercli' },
+        },
+      },
+      rendererRefs: { current: { termRef: { current: term } } },
+      sessionRefs: { current: { wsRef: { current: {} }, transportRef: { current: 'json' } } },
+      viewportRefs: {
+        current: {
+          containerRef: { current: null },
+          viewportShellRef: { current: document.createElement('div') },
+        },
+      },
+      sendTerminalPasteInput: sendPaste,
+    });
+
+    const event = createWheelEvent(-120);
+    handler(event);
+
+    expect(scrollLines).toHaveBeenCalledWith(expect.any(Number));
+    expect(scrollLines.mock.calls[0][0]).toBeLessThan(0);
+    expect(sendPaste).not.toHaveBeenCalled();
+  });
+
+  it('injects SGR for an unknown TUI that enabled mouse tracking (generic native fallback)', () => {
+    const sendPaste = jest.fn(() => true);
+    const scrollLines = jest.fn();
+    // xterm parsed DECSET 1002/1006 from the TUI output → mouseTrackingMode > 0
+    const term = {
+      cols: 80,
+      rows: 24,
+      scrollLines,
+      _core: { coreService: { decPrivateModes: { mouseTrackingMode: 2 } } },
+    };
+    const handler = createTerminalWheelHandler({
+      term,
+      initialCommand: 'bash',
+      lifecycleRefs: {
+        current: {
+          tuiSessionActiveRef: { current: false },
+          isGrokSessionRef: { current: false },
+          kimiReadyNotifiedRef: { current: false },
+          grokTuiReadyRef: { current: false },
+          tuiSessionFooterConfirmedRef: { current: false },
+          isActivePanelRef: { current: true },
+          lastPointerZoneRef: { current: 'transcript' },
+          agentTypeRef: { current: null },
+        },
+      },
+      rendererRefs: { current: { termRef: { current: term } } },
+      sessionRefs: { current: { wsRef: { current: {} }, transportRef: { current: 'json' } } },
+      viewportRefs: {
+        current: {
+          containerRef: { current: null },
+          viewportShellRef: { current: document.createElement('div') },
+        },
+      },
+      sendTerminalPasteInput: sendPaste,
+      resolveTerminalCellFromPointer: () => ({ col: 10, row: 5 }),
+      shouldRouteWheelToTranscript: () => true,
+    });
+
+    const event = createWheelEvent(120);
+    handler(event);
+
+    expect(sendPaste).toHaveBeenCalled();
+    // eslint-disable-next-line no-control-regex -- ANSI escape sequences require control chars
+    expect(sendPaste.mock.calls[0][0].text).toMatch(/\x1b\[<6[45];/);
+    expect(scrollLines).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
+
+  it('keeps local viewport scroll for unknown sessions without mouse tracking', () => {
+    const sendPaste = jest.fn(() => true);
+    const scrollLines = jest.fn();
+    const term = { cols: 80, rows: 24, scrollLines };
+    const handler = createTerminalWheelHandler({
+      term,
+      initialCommand: 'bash',
+      lifecycleRefs: {
+        current: {
+          tuiSessionActiveRef: { current: false },
+          isGrokSessionRef: { current: false },
+          kimiReadyNotifiedRef: { current: false },
+          grokTuiReadyRef: { current: false },
+          tuiSessionFooterConfirmedRef: { current: false },
+          isActivePanelRef: { current: true },
+          lastPointerZoneRef: { current: 'transcript' },
+          agentTypeRef: { current: null },
+        },
+      },
+      rendererRefs: { current: { termRef: { current: term } } },
+      sessionRefs: { current: { wsRef: { current: {} }, transportRef: { current: 'json' } } },
+      viewportRefs: {
+        current: {
+          containerRef: { current: null },
+          viewportShellRef: { current: document.createElement('div') },
+        },
+      },
+      sendTerminalPasteInput: sendPaste,
+    });
+
+    const event = createWheelEvent(120);
+    handler(event);
+
+    expect(scrollLines).toHaveBeenCalled();
+    expect(sendPaste).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
 });

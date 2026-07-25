@@ -1148,6 +1148,111 @@ var antigravity_default = {
   ]
 };
 
+// src/lib/terminal/agentStateDetection/manifests/qodercli.js
+var qodercli_default = {
+  id: "qodercli",
+  version: "2026.07.24.1",
+  aliases: ["qodercli", "qoder", "qoder-cli"],
+  rules: [
+    {
+      id: "permission_prompt",
+      state: "blocked",
+      priority: 300,
+      region: "bottom_lines(8)",
+      visibleBlocker: true,
+      any: [
+        {
+          contains: ["do you want to proceed?"]
+        },
+        {
+          contains: ["waiting for permission"]
+        },
+        {
+          contains: ["permission requested"]
+        },
+        {
+          contains: ["allow once", "allow always"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*\u276F?\\s*1\\.\\s*yes\\b"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*\u276F?\\s*yes\\b"]
+        },
+        {
+          lineRegex: ["(?i)allow\\s*\\[y\\/n\\]"]
+        },
+        {
+          lineRegex: ["(?i)^\\s*\\[y\\/n\\]\\s*$"]
+        }
+      ]
+    },
+    {
+      // Explicit idle prompt in bottom 3 lines wins over scrollback. Qoder CLI
+      // shows the `>` dialog-mode indicator (docs: input modes table) plus a
+      // shortcuts hint, mirroring the claude-code idle chrome.
+      id: "idle_prompt_footer",
+      state: "idle",
+      priority: 200,
+      region: "bottom_lines(3)",
+      visibleIdle: true,
+      any: [
+        { contains: ["? for shortcuts"] },
+        { contains: ["press ? for shortcuts"] },
+        { lineRegex: ["(?i)^\\s*(qodercli|qoder)\\s*>"] }
+      ]
+    },
+    {
+      // claude-code-style footer shown while the agent is generating.
+      id: "working_footer_esc_cancel",
+      state: "running",
+      priority: 210,
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      any: [
+        { contains: ["esc to cancel"] },
+        { contains: ["esc to interrupt"] },
+        { contains: ["ctrl+c to cancel"] },
+        { contains: ["ctrl+c to interrupt"] },
+        { lineRegex: ["(?i)esc\\s+to\\s+(cancel|interrupt)"] }
+      ]
+    },
+    {
+      id: "spinner_working",
+      state: "running",
+      priority: 100,
+      region: "bottom_lines(8)",
+      visibleWorking: true,
+      any: [
+        {
+          // Locale-robust: braille spinner frame(s) + any Unicode word.
+          lineRegex: ["(?iu)^\\s*[\\u2800-\\u28FF]+\\s+\\p{L}[\\p{L}\\p{M}\\p{N}_]*"]
+        },
+        {
+          lineRegex: [
+            "(?i)^\\s*[\\u2800-\\u28FF]+\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"
+          ]
+        },
+        {
+          // claude-style thinking markers (✻ Thinking…, ⏺ Running…) and the
+          // plain middle-dot variant.
+          lineRegex: [
+            "(?i)^\\s*[\u273B\u2733\u273D\u23FA\xB7]\\s*(thinking|analyzing|executing|reading|writing|searching|working|processing|running|building|testing)"
+          ]
+        },
+        {
+          lineRegex: ["(?i)^\\s*tool\\s+call\\b"]
+        },
+        {
+          lineRegex: [
+            "(?i)\\b(thinking|analyzing|executing|reading|writing|searching|working|processing)..."
+          ]
+        }
+      ]
+    }
+  ]
+};
+
 // src/lib/terminal/agentStateDetection/detector.js
 var MANIFESTS = /* @__PURE__ */ new Map([
   ["kimi", kimi_default],
@@ -1155,7 +1260,8 @@ var MANIFESTS = /* @__PURE__ */ new Map([
   ["codex", codex_default],
   ["opencode", opencode_default],
   ["grok", grok_default],
-  ["agy", antigravity_default]
+  ["agy", antigravity_default],
+  ["qodercli", qodercli_default]
 ]);
 var AGENT_TYPE_ALIASES = {
   opencode: "opencode",
@@ -1172,7 +1278,10 @@ var AGENT_TYPE_ALIASES = {
   hermes: "hermes",
   agy: "agy",
   antigravity: "agy",
-  "antigravity-cli": "agy"
+  "antigravity-cli": "agy",
+  qodercli: "qodercli",
+  qoder: "qodercli",
+  "qoder-cli": "qodercli"
 };
 var manifestCache = /* @__PURE__ */ new Map();
 function normalizeAgentType(agentType) {
@@ -1333,7 +1442,16 @@ var AgentStateMachine = class {
 };
 
 // src/lib/terminal/agentTuiMetadata.shared.js
-var AGENT_TUI_TYPES = ["opencode", "kimi", "claude", "codex", "grok", "hermes", "agy"];
+var AGENT_TUI_TYPES = [
+  "opencode",
+  "kimi",
+  "claude",
+  "codex",
+  "grok",
+  "hermes",
+  "agy",
+  "qodercli"
+];
 var AGENT_TUI_PATTERN = new RegExp(
   `\\b(?:${AGENT_TUI_TYPES.map((t) => t === "grok" ? "grok|groc" : t).join("|")})\\b`,
   "i"
@@ -1382,7 +1500,8 @@ function resolveDetectionSizing(options = {}) {
 
 // src/lib/terminal/sessionAgentDetector.js
 var HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 12e4);
-var HOOK_AUTHORITY_AGENTS = ["kimi", "claude", "opencode", "agy", "antigravity"];
+var HOOK_AUTHORITY_AGENTS = ["kimi", "claude", "opencode", "agy", "antigravity", "qodercli"];
+var AGENT_STARTUP_GRACE_MS = Number(process.env.DEVHUB_AGENT_STARTUP_GRACE_MS || 3500);
 var DEFAULT_AGENT_QUIESCENCE_MS = Number(process.env.DEVHUB_AGENT_QUIESCENCE_MS || 4e3);
 function getQuiescenceMs(session) {
   const override = Number(session?.detectionQuiescenceMs);
@@ -1472,6 +1591,9 @@ function ingestAgentDetectionFromFilteredOutput(session, filtered, now = Date.no
   const lastActivityAt = getLastActivityAt(session);
   const isQuiescent = lastActivityAt && now - lastActivityAt > quiescenceMs;
   if (session.agentTuiState === "running" && detected.state === "idle" && !detected.visibleIdle && !isQuiescent) {
+    return result;
+  }
+  if (detected.state === "running" && session.agentDetectedAt && !session.lastUserInputAt && now - session.agentDetectedAt < AGENT_STARTUP_GRACE_MS) {
     return result;
   }
   session.lastDetection = detected;

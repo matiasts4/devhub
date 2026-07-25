@@ -11,7 +11,24 @@ import {
 import { stripAnsi } from './stripAnsi.js';
 
 export const HOOK_AUTHORITY_TTL_MS = Number(process.env.DEVHUB_HOOK_AUTHORITY_TTL_MS || 120000);
-export const HOOK_AUTHORITY_AGENTS = ['kimi', 'claude', 'opencode', 'agy', 'antigravity'];
+export const HOOK_AUTHORITY_AGENTS = [
+  'kimi',
+  'claude',
+  'opencode',
+  'agy',
+  'antigravity',
+  'qodercli',
+];
+
+/**
+ * Startup grace period — after an agent TUI is first detected, suppress
+ * manifest-based "running" detections for this window. Agents often show
+ * brief spinners/animations during initialization that would otherwise be
+ * misinterpreted as active work. Idle and blocked detections are still
+ * allowed (the agent may show its prompt immediately). Hook authority and
+ * user-input signals bypass this grace period entirely.
+ */
+export const AGENT_STARTUP_GRACE_MS = Number(process.env.DEVHUB_AGENT_STARTUP_GRACE_MS || 3500);
 
 /**
  * W4: quiescence window — how long a session must produce ZERO PTY output
@@ -162,6 +179,21 @@ export function ingestAgentDetectionFromFilteredOutput(session, filtered, now = 
     detected.state === 'idle' &&
     !detected.visibleIdle &&
     !isQuiescent
+  ) {
+    return result;
+  }
+
+  // Startup grace period: suppress manifest-based "running" detections during
+  // the first few seconds after agent detection. Agents show brief spinners or
+  // loading animations during initialization that would be false positives.
+  // Idle/blocked are still allowed so the prompt is detected immediately.
+  // User-input signals (notifyUserInput) bypass this entirely since they set
+  // lastUserInputAt which indicates a real prompt submission.
+  if (
+    detected.state === 'running' &&
+    session.agentDetectedAt &&
+    !session.lastUserInputAt &&
+    now - session.agentDetectedAt < AGENT_STARTUP_GRACE_MS
   ) {
     return result;
   }

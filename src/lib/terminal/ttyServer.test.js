@@ -214,12 +214,16 @@ describe('ttyServer — session create', () => {
       shell: '/bin/zsh',
     });
 
+    // Home dir wins over the server process cwd — in packaged installs the
+    // process cwd is inside the app install dir, which is never a sane shell cwd.
+    const expectedHome = path.resolve(process.env.HOME || process.cwd());
+
     const spawnCall = mockPtySpawn.mock.calls[0];
-    expect(spawnCall[2]?.cwd).toBe(process.cwd());
-    expect(spawnCall[2]?.env?.DEVHUB_PROJECT_DIR).toBe(process.cwd());
+    expect(spawnCall[2]?.cwd).toBe(expectedHome);
+    expect(spawnCall[2]?.env?.DEVHUB_PROJECT_DIR).toBe(expectedHome);
 
     const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
-    expect(sessions.get('term-safe-fallback')?.cwd).toBe(process.cwd());
+    expect(sessions.get('term-safe-fallback')?.cwd).toBe(expectedHome);
   });
 
   it('strips npm prefix env vars from spawned shell sessions to avoid nvm startup noise', async () => {
@@ -739,10 +743,14 @@ describe('ttyServer — shell history hygiene', () => {
       url: '/terminal?id=invalid-cwd&cwd=%2Fdefinitely%2Fmissing%2Fdevhub',
     });
 
+    // Invalid requested cwd must fall back to the user's home dir — never to the
+    // server process cwd, which in packaged installs is inside the app install dir.
+    const expectedHome = path.resolve(process.env.HOME || process.cwd());
+
     const spawnCall = mockPtySpawn.mock.calls[0];
-    expect(spawnCall[2]?.cwd).toBe(process.cwd());
+    expect(spawnCall[2]?.cwd).toBe(expectedHome);
 
     const sessions = globalThis.__DEVHUB_TTY_SESSIONS__;
-    expect(sessions.get('invalid-cwd')?.cwd).toBe(process.cwd());
+    expect(sessions.get('invalid-cwd')?.cwd).toBe(expectedHome);
   });
 });

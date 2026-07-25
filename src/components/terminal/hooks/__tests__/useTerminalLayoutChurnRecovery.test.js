@@ -101,6 +101,32 @@ describe('useTerminalLayoutChurnRecovery', () => {
     }).not.toThrow();
 
     expect(mockRefreshTerminalViewport).toHaveBeenCalledWith(ctx.termRef.current);
+    // The pizarra path now prefers the ctx's coalescedForceRepaint so the 1-cell
+    // nudge collapses with the sync pass's own repaint (no double resize flicker).
+    // The imported raw forceTerminalViewportRepaint is only a fallback when the
+    // ctx does not provide a coalesced variant.
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledWith(
+      ctx.termRef.current,
+      expect.objectContaining({ reason: expect.stringContaining('pizarra-mode-transition') })
+    );
+    expect(mockForceTerminalViewportRepaint).not.toHaveBeenCalled();
+  });
+
+  test('pizarra exit falls back to imported force repaint when ctx lacks coalescedForceRepaint', () => {
+    const ctx = createCtx({ coalescedForceRepaint: undefined });
+    const ctxRef = { current: ctx };
+
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-layout-settled', {
+          detail: { reason: 'pizarra-mode-exit', panelIds: ['p1'] },
+        })
+      );
+    });
+
+    expect(mockRefreshTerminalViewport).toHaveBeenCalledWith(ctx.termRef.current);
     expect(mockForceTerminalViewportRepaint).toHaveBeenCalledWith(ctx.termRef.current);
   });
 });

@@ -251,18 +251,41 @@ describe('workspace close keeps surviving terminal panels mounted', () => {
 
     await flushEffects();
 
-    const grokTerminalBefore = view.container.querySelector('[data-testid="terminal-p2"]');
-    expect(grokTerminalBefore).not.toBeNull();
-    expect(grokTerminalBefore.getAttribute('data-mount-generation')).toBe('1');
+    // PR4 (terminal-load-performance): workspace shells mount lazily on first
+    // activation — ws2/ws3 were never activated, so their terminals are not in
+    // the DOM yet. Only the active workspace (ws1) is mounted.
+    expect(view.container.querySelector('[data-testid="terminal-p1"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="terminal-p2"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="terminal-p3"]')).toBeNull();
 
     const closeWs1 = view.container.querySelector('[data-testid="workspace-close-ws1"]');
     expect(closeWs1).not.toBeNull();
     await click(closeWs1);
     await flushEffects();
 
+    // Closing the active workspace activates the last remaining tab (ws3):
+    // its panel mounts exactly once. ws2 stays unmounted until activated.
+    const p3AfterClose = view.container.querySelector('[data-testid="terminal-p3"]');
+    expect(p3AfterClose).not.toBeNull();
+    expect(p3AfterClose.getAttribute('data-mount-generation')).toBe('1');
+    expect(view.container.querySelector('[data-testid="terminal-p2"]')).toBeNull();
+
+    // First activation of ws2 mounts the grok panel exactly once — closing ws1
+    // must not remount it, and later switches keep it alive (no remount loop).
+    await click(view.container.querySelector('[data-testid="workspace-tab-ws2"]'));
+    await flushEffects();
+
     const grokTerminalAfter = view.container.querySelector('[data-testid="terminal-p2"]');
     expect(grokTerminalAfter).not.toBeNull();
     expect(grokTerminalAfter.getAttribute('data-mount-generation')).toBe('1');
     expect(panelMountGenerations.p2).toBe(1);
+
+    // Keep-alive: switching back to ws3 and again to ws2 must not remount p2.
+    await click(view.container.querySelector('[data-testid="workspace-tab-ws3"]'));
+    await flushEffects();
+    await click(view.container.querySelector('[data-testid="workspace-tab-ws2"]'));
+    await flushEffects();
+    expect(panelMountGenerations.p2).toBe(1);
+    expect(panelMountGenerations.p3).toBe(1);
   });
 });

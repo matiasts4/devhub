@@ -17,12 +17,19 @@ import {
   prepareActiveTuiTerminalFocusRespectingSelection,
   shouldAttachWebglRenderer,
   shouldAttachCanvasRenderer,
+  shouldBlockInlineAgentMouseModes,
   shouldMountCanvasAddon,
   shouldRefitVisibleInactiveSplitPanel,
+  shouldScrollAgentWheelLocally,
   needsGpuRendererReattach,
+  terminalHasActiveMouseReporting,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { buildTerminalLifecycleEvent } from '@/lib/terminal/terminalLifecycleEvent';
 import { getTerminalTheme, getTerminalFontOptions } from '@/components/terminal/TerminalThemeSync';
+import {
+  registerTerminalForSceneryThemeSync,
+  unregisterTerminalFromSceneryThemeSync,
+} from '@/components/terminal/TerminalThemeSync';
 import { resolveTerminalFontFamily } from '@/components/terminal/TerminalTTY.helpers';
 import { clearPanelActivity } from '@/components/terminal/utils/panelActivityStore';
 import { stashTerminalPanelBridge } from '@/lib/terminal/terminalPanelBridge';
@@ -36,9 +43,11 @@ import { clearPanelInitialCommandLifecycle } from '@/lib/terminal/panelInitialCo
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import { isKimiLaunchCommand } from '@/lib/terminal/kimiReadyMarker';
 import {
+  incrementPerfCounter,
   markFirstPanelInteractive,
   markXtermCoreImportDone,
   markXtermCoreImportStart,
+  PERF_COUNTERS,
 } from '@/lib/terminal/startupPerfMarks';
 import { attachAgentFilePathLinks } from '@/lib/terminal/agentFilePathLinkProvider';
 import { isGrokTuiInitialCommand } from '@/components/terminal/TerminalTTY.helpers';
@@ -357,6 +366,7 @@ export default function useTerminalEngine({
         //    registered addons (including WebglAddon) in a safe internal order
         //    and detach the resize listener before clearing the renderer slot.
         if (term) {
+          unregisterTerminalFromSceneryThemeSync(term);
           try {
             term.dispose();
           } catch (err) {
@@ -562,6 +572,7 @@ export default function useTerminalEngine({
       tuiResizeDebounceTimerRef,
       tuiSessionActiveRef,
       tuiSessionFooterConfirmedRef,
+      agentTypeRef,
       visibleTerminalPanelCountRef,
       waitForVisibleDimensions,
       webglAddonRef,
@@ -769,6 +780,17 @@ export default function useTerminalEngine({
             setIsInitializing(false);
             isInitializingRef.current = false;
 
+            // scenery-wallpapers: the restored instance still carries its
+            // construction-time theme; re-apply so a wallpaper toggled while
+            // the panel was stashed takes effect immediately, and re-register
+            // it for live scenery theme sync.
+            registerTerminalForSceneryThemeSync(stashed.termInstance);
+            try {
+              stashed.termInstance.options.theme = getTerminalTheme();
+            } catch {
+              // renderer not ready — the scenery sync listener retries on change
+            }
+
             // Reconnect to the sidecar and resume the subscription from the current offset.
             connectRef.current?.();
             return;
@@ -793,7 +815,15 @@ export default function useTerminalEngine({
           fontWeightBold: fontOpts.fontWeightBold,
           letterSpacing: fontOpts.letterSpacing,
           lineHeight: fontOpts.lineHeight,
-          allowTransparency: false,
+          // scenery-wallpapers: allowTransparency enables the alpha channel so
+          // the wallpaper can glow through the terminal when a scenery is
+          // active. NOTE: it does NOT stop the WebGL/Canvas renderers from
+          // filling default-bg cells with theme.background — that fill is what
+          // actually hides the wallpaper, so getTerminalTheme() returns a
+          // transparent background while [data-scenery-active='true'] is set
+          // and the CSS glass layers in globals.css own the backdrop (opaque
+          // var(--surface-app) by default, tint + wallpaper under scenery).
+          allowTransparency: true,
           // T2.3 — per-pane scrollback buffer (R-BUF-3). The default
           // xterm scrollback is 1000 lines, which is too shallow for
           // director + 4 workers during a swarm launch: the user loses
@@ -805,16 +835,37 @@ export default function useTerminalEngine({
           theme: theme,
         });
 
+        // Remount telemetry: a real `new Terminal` means the panel paid a full
+        // xterm remount. The graveyard-v2 restore path above returns earlier and
+        // is intentionally NOT counted — that distinction is the point of the
+        // metric (see openspec terminal-load-performance PR1).
+        incrementPerfCounter(PERF_COUNTERS.TERMINAL_REMOUNT, { panelId: id, reused: false });
+
+        // scenery-wallpapers: keep this terminal's theme in sync with the
+        // wallpaper state (transparent background while a scenery is active).
+        registerTerminalForSceneryThemeSync(terminal);
+
         const isKimiLaunch = isKimiLaunchCommand(initialCommand);
         const blockedModes = new Set([1000, 1001, 1002, 1003, 1005, 1006, 1015]);
         const blockHandler = (params) => {
-          const isKimiActive = isKimiLaunch || kimiReadyNotifiedRef?.current === true;
-          if (!isKimiActive) return false;
+          // Inline-scroll agents (kimi, qodercli, claude, codex) never use host
+          // mouse: their TUIs emit DECSET ?1000/?1002/?1003 themselves, and if
+          // xterm honors them, drags become SGR mouse reports (text selection
+          // dies) and the wheel router falls back to PTY inject instead of
+          // local viewport scroll. Block the mode set/clear at the parser so
+          // xterm never enters mouse tracking for these agents.
+          const isInlineScrollAgent = shouldBlockInlineAgentMouseModes({
+            isKimiLaunch,
+            kimiReady: kimiReadyNotifiedRef?.current === true,
+            initialCommand,
+            agentType: agentTypeRef?.current,
+          });
+          if (!isInlineScrollAgent) return false;
           const paramList = Array.isArray(params)
             ? params
             : params?.toArray
               ? params.toArray()
-              : (params && typeof params.length === 'number')
+              : params && typeof params.length === 'number'
                 ? Array.from(params)
                 : [];
           for (let i = 0; i < paramList.length; i++) {
@@ -852,7 +903,11 @@ export default function useTerminalEngine({
           markFirstPanelInteractive();
         }
         prepareActiveTuiTerminalFocus(terminal, {
-          tuiSessionActive: tuiSessionActiveRef.current,
+          // Inline-scroll agents (qodercli/claude/codex) never use host mouse —
+          // enabling it breaks text selection and native-captures wheel as dead SGR.
+          tuiSessionActive:
+            tuiSessionActiveRef.current &&
+            !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef?.current),
         });
         if (terminalBlurCleanupRef.current) {
           terminalBlurCleanupRef.current();
@@ -863,7 +918,9 @@ export default function useTerminalEngine({
         const handleTerminalBlur = () => {
           pendingBlurFocusCleanup?.();
           pendingBlurFocusCleanup = prepareActiveTuiTerminalFocusRespectingSelection(terminal, {
-            tuiSessionActive: tuiSessionActiveRef.current,
+            tuiSessionActive:
+              tuiSessionActiveRef.current &&
+              !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef?.current),
           });
         };
         blurTarget?.addEventListener('focusout', handleTerminalBlur);
@@ -916,6 +973,10 @@ export default function useTerminalEngine({
               grokTuiReadyRef.current === true ||
               tuiSessionFooterConfirmedRef.current === true,
             agentType,
+            // Generic native signal: the app itself enabled mouse tracking
+            // (DECSET 1000/1002/1003 parsed by xterm) — native SGR wheel/click
+            // reports must reach the PTY even without a known agent identity.
+            mouseTracking: terminalHasActiveMouseReporting(terminal),
             tuiAdapter: isGrokSessionRef.current
               ? 'grok'
               : tuiSessionActiveRef.current

@@ -19,6 +19,7 @@ import {
   isWorkspaceSurvivorRecoverLayoutReason,
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldFreezeDomViewportOnWorkspaceShow,
+  isOsResumeFocusReason,
   shouldSkipRedundantLayoutSettleViewportSync,
   shouldClearGpuAtlasOnWorkspaceShow,
   takeHiddenTerminalOutputBuffer,
@@ -425,7 +426,7 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
           refreshTerminalViewport(termRef.current);
           const skipForceRepaintOnReveal =
-            reason === 'workspace-show-visible' &&
+            (reason === 'workspace-show-visible' || isOsResumeFocusReason(reason)) &&
             !pendingWebglRecoveryRef.current &&
             !webglReleasedOnLayoutHideRef.current &&
             !canvasReleasedOnLayoutHideRef.current;
@@ -459,7 +460,17 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         stabilizeTerminalRenderer(termRef.current, { clearAtlas: false });
         refreshTerminalViewport(termRef.current);
         if (termRef.current && isTerminalRendererReady(termRef.current)) {
-          coalescedForceRepaint(termRef.current, { reason });
+          // OS-resume focus/visibility with unchanged geometry: the DOM bitmap is
+          // still valid, so skip the disruptive 1-cell resize nudge. A real GPU
+          // recovery still repaints below.
+          const skipForceRepaintOnResume =
+            isOsResumeFocusReason(reason) &&
+            !pendingWebglRecoveryRef.current &&
+            !webglReleasedOnLayoutHideRef.current &&
+            !canvasReleasedOnLayoutHideRef.current;
+          if (!skipForceRepaintOnResume) {
+            coalescedForceRepaint(termRef.current, { reason });
+          }
         }
         return;
       }

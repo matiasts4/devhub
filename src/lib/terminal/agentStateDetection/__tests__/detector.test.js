@@ -20,6 +20,9 @@ describe('agentStateDetection', () => {
       ['open-code', 'opencode'],
       ['grok', 'grok'],
       ['groc', 'grok'],
+      ['qodercli', 'qodercli'],
+      ['qoder', 'qodercli'],
+      ['qoder-cli', 'qodercli'],
       ['hermes', 'hermes'],
       ['unknown-agent', 'unknown-agent'],
       [null, null],
@@ -29,9 +32,12 @@ describe('agentStateDetection', () => {
   });
 
   describe('hasManifest', () => {
-    test.each(['kimi', 'claude', 'codex', 'opencode', 'grok'])('has manifest for %s', (type) => {
-      expect(hasManifest(type)).toBe(true);
-    });
+    test.each(['kimi', 'claude', 'codex', 'opencode', 'grok', 'qodercli'])(
+      'has manifest for %s',
+      (type) => {
+        expect(hasManifest(type)).toBe(true);
+      }
+    );
 
     test('returns false for unsupported agents', () => {
       expect(hasManifest('hermes')).toBe(false);
@@ -88,6 +94,45 @@ describe('agentStateDetection', () => {
       const result = detectAgentState('antigravity', '⠋ Working');
       expect(result.state).toBe('running');
       expect(result.visibleWorking).toBe(true);
+    });
+
+    test('qodercli detects permission prompt as blocked', () => {
+      const screen = [
+        'Qoder wants to execute:',
+        '  $ npm install',
+        'Do you want to proceed?',
+        '❯ 1. Yes',
+        '  2. No',
+        'esc to cancel',
+      ].join('\n');
+      const result = detectAgentState('qodercli', screen);
+      expect(result.state).toBe('blocked');
+      expect(result.visibleBlocker).toBe(true);
+    });
+
+    test('qodercli detects esc-to-interrupt footer as running', () => {
+      const result = detectAgentState('qodercli', '⠋ Thinking\nesc to interrupt');
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('qodercli detects dialog-mode idle prompt', () => {
+      const screen = ['? for shortcuts', '> '].join('\n');
+      const result = detectAgentState('qodercli', screen);
+      expect(result.state).toBe('idle');
+      expect(result.visibleIdle).toBe(true);
+    });
+
+    test('qodercli alias qoder resolves to the same manifest', () => {
+      const result = detectAgentState('qoder', 'esc to interrupt');
+      expect(result.state).toBe('running');
+      expect(result.visibleWorking).toBe(true);
+    });
+
+    test('qodercli returns unknown (not idle) with no rule match', () => {
+      const result = detectAgentState('qodercli', 'plain unrelated output');
+      expect(result.state).toBe('unknown');
+      expect(result.skipStateUpdate).toBe(true);
     });
 
     test('agy returns unknown (not idle) with no rule match', () => {

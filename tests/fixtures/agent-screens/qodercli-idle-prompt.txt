@@ -1,0 +1,8 @@
+# Qoder CLI - idle prompt screen fixture
+# Source: docs.qoder.com/en/cli/using-cli (dialog-mode `>` input prompt) + claude-code-like chrome
+# Version: qodercli 1.x
+
+Welcome to Qoder CLI v1.0.0
+model: auto · workspace: d:\devhub
+? for shortcuts
+> 

@@ -8,6 +8,9 @@ import {
   resolveWorkspaceWindowVisibilityStyle,
 } from '../workspaceAnimProps';
 import { getTerminalGridShellStyle } from '../terminalChromeStyles';
+import SceneryBackground from '@/components/scenery/SceneryBackground';
+import { useSceneryPrefs } from '@/lib/sceneries/useSceneryPrefs';
+import { resolveSceneryStyle } from '@/lib/sceneries/sceneryPreferences';
 import {
   resolveActiveWorkspaceWindowId,
   resolvePanelVisibleInLayout,
@@ -87,11 +90,18 @@ function WorkspaceTerminalSurface({
   handleDockDragging,
   handleRightDockPanelResize,
 }) {
+  // scenery-wallpapers: when a wallpaper is active for the terminal scope,
+  // render it as a fixed full-space layer and make the terminal grid shell
+  // translucent so the scenery glows through (glass effect).
+  const sceneryPrefs = useSceneryPrefs();
+  const sceneryTerminalActive = resolveSceneryStyle(sceneryPrefs, 'terminal') !== null;
+
   return (
     <div
       key={workspaceGridKey}
       data-testid={`workspace-shell-${ws.id}`}
       data-ws-active={!isFullscreenBrowser && activeWsId === ws.id && isVisible ? 'true' : 'false'}
+      data-scenery-active={sceneryTerminalActive ? 'true' : 'false'}
       aria-hidden={activeWsId !== ws.id || !isVisible}
       className="absolute inset-0 p-0"
       style={{
@@ -103,6 +113,9 @@ function WorkspaceTerminalSurface({
         }),
       }}
     >
+      {/* Scenery wallpaper — fixed full-space layer behind terminal panels */}
+      <SceneryBackground scope="terminal" zIndex={0} />
+
       <PanelGroup
         direction="horizontal"
         className={`w-full h-full ${isFullscreenBrowser ? 'hidden' : ''}`}
@@ -111,8 +124,15 @@ function WorkspaceTerminalSurface({
         <Panel
           key={`${ws.id}-terminal-grid`}
           minSize={18}
-          className="flex flex-col bg-[var(--surface-app)] rounded-none overflow-hidden"
-          style={getTerminalGridShellStyle()}
+          className="flex flex-col rounded-none overflow-hidden"
+          style={{
+            ...getTerminalGridShellStyle(),
+            background: sceneryTerminalActive
+              ? 'color-mix(in srgb, var(--surface-app) 20%, transparent)'
+              : 'var(--surface-app)',
+            position: 'relative',
+            zIndex: 1,
+          }}
         >
           {renderWorkspaceWindowBar(ws, wsDockState)}
 
@@ -241,6 +261,14 @@ function WorkspaceTerminalSurface({
                             <Panel
                               minSize={focusedPanelId ? 0 : 18}
                               className={`min-h-0 min-w-0 ${columnHiddenInFocus ? 'hidden' : ''}`}
+                              // `order` MUST track the visual index. react-resizable-panels keeps
+                              // its internal panel array in *registration* (mount) order unless an
+                              // explicit `order` is given. When a column is inserted mid-list via a
+                              // split, the new panel registers last while its DOM node sits mid-list,
+                              // so without `order` the resize handles map to the wrong panel pair and
+                              // the divider feels inverted. Pinning order=columnIndex keeps the
+                              // internal array sorted to match the DOM. See determinePivotIndices.
+                              order={columnIndex}
                             >
                               {column.panels.length > 1 ? (
                                 <PanelGroup
@@ -256,6 +284,10 @@ function WorkspaceTerminalSurface({
                                         minSize={focusedPanelId ? 0 : 20}
                                         className={`min-h-0 min-w-0 overflow-visible ${focusedPanelId && focusedPanelId !== panel.id ? 'hidden' : ''}`}
                                         data-testid={`workspace-column-${column.id}`}
+                                        // Same registration-order guard as the column Panel above:
+                                        // pin order=panelIndex so vertical row-split handles keep
+                                        // resizing the correct adjacent pair after dynamic inserts.
+                                        order={panelIndex}
                                       >
                                         <div
                                           className={resolveFocusPanelSlotClassName({

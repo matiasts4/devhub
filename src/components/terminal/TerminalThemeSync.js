@@ -1,4 +1,5 @@
 import { shouldAvoidWebglOnThisRuntime } from './terminalRendererPreferences';
+import { SCENERY_CHANGED_EVENT } from '@/lib/sceneries/sceneryPreferences';
 import {
   DEFAULT_TERMINAL_TYPOGRAPHY,
   getStoredTerminalTypography,
@@ -175,12 +176,70 @@ function makeDomCssVarResolver() {
 
 export function getTerminalTheme() {
   const theme = buildXtermTheme(makeDomCssVarResolver());
+  // scenery-wallpapers: the WebGL and Canvas renderers paint theme.background
+  // into the canvas for every default-bg cell (allowTransparency only enables
+  // the alpha channel; it does NOT skip that fill). While a scenery wallpaper
+  // is active the CSS glass layers in globals.css own the backdrop — including
+  // the adjustable --scenery-terminal-tint — so the xterm background must be
+  // fully transparent or the wallpaper never reaches the pixels.
+  if (isSceneryActiveOnBody()) {
+    theme.background = SCENERY_TRANSPARENT_BACKGROUND;
+  }
   cachedTheme = theme;
   return theme;
 }
 
 export function getCachedTheme() {
   return cachedTheme || getTerminalTheme();
+}
+
+/* ── scenery-wallpapers: live theme sync ─────────────────────────────── */
+
+/** Fully transparent background used while a scenery wallpaper is active. */
+export const SCENERY_TRANSPARENT_BACKGROUND = 'rgba(0, 0, 0, 0)';
+
+function isSceneryActiveOnBody() {
+  if (typeof document === 'undefined') return false;
+  return document.body?.getAttribute('data-scenery-active') === 'true';
+}
+
+const scenerySyncedTerminals = new Set();
+let sceneryThemeListenerInstalled = false;
+
+/** Rebuild the theme (scenery-aware) and push it to every live terminal. */
+function applySceneryThemeToLiveTerminals() {
+  cachedTheme = null;
+  const theme = getTerminalTheme();
+  scenerySyncedTerminals.forEach((terminal) => {
+    try {
+      // xterm propagates options.theme through IThemeService, so the WebGL /
+      // Canvas addons refresh their atlas + background fill without a remount.
+      terminal.options.theme = theme;
+    } catch {
+      // Terminal disposed mid-flight — drop it from the registry.
+      scenerySyncedTerminals.delete(terminal);
+    }
+  });
+}
+
+/**
+ * Keep a constructed terminal's theme in sync with the scenery wallpaper
+ * state. Registered once per Terminal instance; pair with
+ * unregisterTerminalFromSceneryThemeSync on dispose. The listener is global
+ * and installed lazily on the first registration.
+ */
+export function registerTerminalForSceneryThemeSync(terminal) {
+  if (!terminal) return;
+  scenerySyncedTerminals.add(terminal);
+  if (typeof window !== 'undefined' && !sceneryThemeListenerInstalled) {
+    sceneryThemeListenerInstalled = true;
+    window.addEventListener(SCENERY_CHANGED_EVENT, applySceneryThemeToLiveTerminals);
+  }
+}
+
+/** Stop syncing a terminal (on dispose/stash). Safe to call twice. */
+export function unregisterTerminalFromSceneryThemeSync(terminal) {
+  scenerySyncedTerminals.delete(terminal);
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   resolveTerminalWheelInputZoneRows,
   prepareActiveTuiTerminalFocusRespectingSelection,
   scheduleTuiTranscriptMouseInjection,
+  shouldScrollAgentWheelLocally,
   isGrokTuiInitialCommand,
 } from '@/components/terminal/TerminalTTY.helpers';
 
@@ -60,6 +61,7 @@ export default function useTerminalViewportPointer({ ctxRef }) {
         isActivePanelRef,
         focusNativeVtePanel,
         handleNativeLeaseCommandError,
+        agentTypeRef,
       } = c;
 
       if (shouldUseNativeRenderer) {
@@ -113,8 +115,16 @@ export default function useTerminalViewportPointer({ ctxRef }) {
 
       // Include launch-command TUI identity — tuiSessionActiveRef lags until footer/chrome.
       // Passing false here used to write mouse-off on every Grok/OpenCode mousedown.
+      // Inline-scroll agents (kimi, qodercli, claude, codex) never use host mouse:
+      // the server marks them mode=tui, but enabling DECSET here kills text
+      // selection and injects clicks the TUI ignores. Keep mouse off for them.
+      const inlineScrollAgent = shouldScrollAgentWheelLocally(
+        initialCommand,
+        agentTypeRef?.current
+      );
       const tuiActive = Boolean(
-        tuiSessionActiveRef.current || grokSession || opencodeSession || isKimiSession
+        !inlineScrollAgent &&
+        (tuiSessionActiveRef.current || grokSession || opencodeSession || isKimiSession)
       );
       pendingFocusCleanupRef.current?.();
       pendingFocusCleanupRef.current = prepareActiveTuiTerminalFocusRespectingSelection(term, {

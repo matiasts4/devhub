@@ -54,7 +54,8 @@ export function buildTerminalSurfacesFromWindows({
       isActiveWindow,
     });
 
-    for (const col of columns) {
+    for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+      const col = columns[colIdx];
       for (const p of col.panels || []) {
         if (!p?.id) continue;
         if (activePanelIds.has(p.id)) continue;
@@ -62,7 +63,7 @@ export function buildTerminalSurfacesFromWindows({
 
         const kind = String(p.kind || 'terminal');
         if (kind === 'browser') {
-          browserPanels.push({ viewId, panel: p });
+          browserPanels.push({ viewId, panel: p, colIndex: colIdx, totalColumns: columns.length });
           continue;
         }
         if (kind === 'files') {
@@ -74,6 +75,7 @@ export function buildTerminalSurfacesFromWindows({
           id: `shape-term-${p.id}`,
           type: 'terminal',
           panelId: p.id,
+          colIndex: colIdx,
           label:
             typeof resolveLabel === 'function'
               ? resolveLabel(p, { workspaceId, viewId, win })

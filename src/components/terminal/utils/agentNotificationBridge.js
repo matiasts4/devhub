@@ -35,7 +35,9 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
       ? 'Anti Gravity'
       : rawAgent === 'kimi'
         ? 'Kimiko D'
-        : rawAgent.charAt(0).toUpperCase() + rawAgent.slice(1);
+        : rawAgent === 'qodercli' || rawAgent === 'qoder'
+          ? 'Qoder'
+          : rawAgent.charAt(0).toUpperCase() + rawAgent.slice(1);
 
   const displayTitle = options.taskTitle ? `"${options.taskTitle}"` : `panel ${panelId}`;
 

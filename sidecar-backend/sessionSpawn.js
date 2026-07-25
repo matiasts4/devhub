@@ -3,20 +3,26 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 let tmuxAvailabilityCache = null;
+let windowsShellCache = null;
 
 function resolveWindowsShell() {
   if (os.platform() !== 'win32') return null;
+  if (windowsShellCache !== null) return windowsShellCache;
   try {
     const result = spawnSync(
       'pwsh.exe',
       ['-NoLogo', '-Command', '$PSVersionTable.PSVersion.ToString()'],
       { encoding: 'utf8', stdio: 'pipe', timeout: 3000 }
     );
-    if (result.status === 0 && result.stdout?.trim()) return 'pwsh.exe';
+    if (result.status === 0 && result.stdout?.trim()) {
+      windowsShellCache = 'pwsh.exe';
+      return windowsShellCache;
+    }
   } catch {
     // pwsh not available
   }
-  return 'powershell.exe';
+  windowsShellCache = 'powershell.exe';
+  return windowsShellCache;
 }
 
 function shellQuote(value = '') {

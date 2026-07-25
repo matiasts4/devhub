@@ -1,0 +1,10 @@
+# Qoder CLI - blocked permission screen fixture
+# Source: claude-code-like permission prompt (docs: --yolo skips these checks)
+# Version: qodercli 1.x
+
+Qoder wants to execute:
+  $ npm install
+Do you want to proceed?
+❯ 1. Yes
+  2. No
+esc to cancel

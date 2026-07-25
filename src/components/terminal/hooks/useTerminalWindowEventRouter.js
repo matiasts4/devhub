@@ -14,6 +14,7 @@ import {
   shouldRunTerminalViewportReactivation,
   prepareActiveTuiTerminalFocus,
   shouldReconnectTerminalOnOsResume,
+  shouldScrollAgentWheelLocally,
   cliLog,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
@@ -22,6 +23,13 @@ import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 const OS_RESUME_RECONNECT_COALESCE_MS = 150;
 /** Per-panel cooldown so resume + auto-reconnect do not stampede connect(). */
 const OS_RESUME_RECONNECT_COOLDOWN_MS = 2000;
+/**
+ * Alt+Tab back fires visibilitychange + focus (+ pageshow) within ~50 ms. Each one
+ * used to run a full viewport sync (fit + atlas clear + 1-cell resize nudge), so the
+ * terminal visibly re-rendered/resized on every app switch. Coalesce the whole storm
+ * into a single light sync. The delay is short enough to be imperceptible.
+ */
+const OS_RESUME_VIEWPORT_COALESCE_MS = 100;
 
 export default function useTerminalWindowEventRouter({
   ctxRef,
@@ -51,6 +59,8 @@ export default function useTerminalWindowEventRouter({
       fitAndResize,
       reactivateCoalesceTimerRef,
       logViewportDiagnostic,
+      initialCommand,
+      agentTypeRef,
     } = c;
 
     const restoreNativeSurfaceAfterAppResume = () => {
@@ -134,11 +144,50 @@ export default function useTerminalWindowEventRouter({
       schedule();
     };
 
-    const handleVisibility = () => {
-      if (document.visibilityState !== 'visible') return;
+    /**
+     * Run the disruptive viewport recovery as a single coalesced pass. The first
+     * resume event schedules it; any further visibility/focus/pageshow events inside
+     * the coalesce window just reset the timer, so the terminal re-renders at most
+     * once per app switch instead of once per event. Native-surface restore and
+     * transport reconnect are NOT coalesced here — they run immediately per event
+     * and have their own coalescing/cooldown.
+     */
+    const scheduleCoalescedViewportReactivate = (reason) => {
+      if (reactivateCoalesceTimerRef.current) {
+        clearTimeout(reactivateCoalesceTimerRef.current);
+      }
+      reactivateCoalesceTimerRef.current = window.setTimeout(() => {
+        reactivateCoalesceTimerRef.current = null;
+        if (isDisposingRef.current) return;
+        if (!isVisibleInLayoutRef.current) {
+          needsViewportSyncOnShowRef.current = true;
+          return;
+        }
+        logViewportDiagnostic(`${reason}-coalesced`);
+        // clearAtlas: false — a plain focus/visibility change does not invalidate the
+        // GPU bitmap. Real context loss is already handled by
+        // disposeWebglAddonForContextLoss before this runs, and the sync pass only
+        // clears the atlas when it actually reattaches a released GPU addon.
+        void syncTerminalViewportOnWorkspaceShowRef
+          .current?.(reason, { clearAtlas: false, forceScroll: false })
+          .then(() => {
+            if (isDisposingRef.current || !termRef.current) return;
+            prepareActiveTuiTerminalFocus(termRef.current, {
+              // Inline-scroll agents never use host mouse — keep DECSET off.
+              tuiSessionActive:
+                tuiSessionActiveRef.current &&
+                !shouldScrollAgentWheelLocally(initialCommand, agentTypeRef?.current),
+            });
+            if (autoFocus) {
+              termRef.current?.focus?.();
+            }
+          });
+      }, OS_RESUME_VIEWPORT_COALESCE_MS);
+    };
 
+    const runOsResumeViewportPass = (reason) => {
       restoreNativeSurfaceAfterAppResume();
-      maybeReconnectAfterOsResume('visibility-visible');
+      maybeReconnectAfterOsResume(reason);
 
       if (!isVisibleInLayout) {
         needsViewportSyncOnShowRef.current = true;
@@ -151,8 +200,8 @@ export default function useTerminalWindowEventRouter({
         }) &&
         isWebglAddonContextLost(webglAddonRef.current)
       ) {
-        logViewportDiagnostic('visibility-webgl-context-lost');
-        disposeWebglAddonForContextLoss('visibility-webgl-context-lost');
+        logViewportDiagnostic(`${reason}-webgl-context-lost`);
+        disposeWebglAddonForContextLoss(`${reason}-webgl-context-lost`);
       }
 
       if (
@@ -162,21 +211,15 @@ export default function useTerminalWindowEventRouter({
           documentVisibilityState: document.visibilityState,
         })
       ) {
-        logViewportDiagnostic('visibility-visible');
-        void syncTerminalViewportOnWorkspaceShowRef
-          .current?.('visibility-visible', { clearAtlas: true, forceScroll: false })
-          .then(() => {
-            if (isDisposingRef.current || !termRef.current) return;
-            prepareActiveTuiTerminalFocus(termRef.current, {
-              tuiSessionActive: tuiSessionActiveRef.current,
-            });
-            if (autoFocus) {
-              termRef.current?.focus?.();
-            }
-          });
+        scheduleCoalescedViewportReactivate(reason);
       } else {
         scheduleInactiveViewportRepaint();
       }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      runOsResumeViewportPass('visibility-visible');
     };
 
     const handleWindowResize = () => {
@@ -194,77 +237,11 @@ export default function useTerminalWindowEventRouter({
     };
 
     const handleWindowFocus = () => {
-      restoreNativeSurfaceAfterAppResume();
-      maybeReconnectAfterOsResume('window-focus');
-
-      if (!isVisibleInLayout) {
-        needsViewportSyncOnShowRef.current = true;
-        return;
-      }
-
-      if (
-        shouldAttachWebglRenderer({
-          operationalRendererMode: operationalRendererModeRef.current,
-        }) &&
-        isWebglAddonContextLost(webglAddonRef.current)
-      ) {
-        logViewportDiagnostic('window-focus-webgl-context-lost');
-        disposeWebglAddonForContextLoss('window-focus-webgl-context-lost');
-      }
-
-      if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
-        logViewportDiagnostic('window-focus');
-        void syncTerminalViewportOnWorkspaceShowRef
-          .current?.('window-focus', { clearAtlas: true, forceScroll: false })
-          .then(() => {
-            if (isDisposingRef.current || !termRef.current) return;
-            prepareActiveTuiTerminalFocus(termRef.current, {
-              tuiSessionActive: tuiSessionActiveRef.current,
-            });
-            if (autoFocus) {
-              termRef.current?.focus?.();
-            }
-          });
-      } else {
-        scheduleInactiveViewportRepaint();
-      }
+      runOsResumeViewportPass('window-focus');
     };
 
     const handlePageShow = () => {
-      restoreNativeSurfaceAfterAppResume();
-      maybeReconnectAfterOsResume('pageshow');
-
-      if (!isVisibleInLayout) {
-        needsViewportSyncOnShowRef.current = true;
-        return;
-      }
-
-      if (
-        shouldAttachWebglRenderer({
-          operationalRendererMode: operationalRendererModeRef.current,
-        }) &&
-        isWebglAddonContextLost(webglAddonRef.current)
-      ) {
-        logViewportDiagnostic('pageshow-webgl-context-lost');
-        disposeWebglAddonForContextLoss('pageshow-webgl-context-lost');
-      }
-
-      if (shouldRunTerminalViewportReactivation({ isActivePanel, isVisibleInLayout })) {
-        logViewportDiagnostic('pageshow');
-        void syncTerminalViewportOnWorkspaceShowRef
-          .current?.('pageshow', { clearAtlas: true, forceScroll: false })
-          .then(() => {
-            if (isDisposingRef.current || !termRef.current) return;
-            prepareActiveTuiTerminalFocus(termRef.current, {
-              tuiSessionActive: tuiSessionActiveRef.current,
-            });
-            if (autoFocus) {
-              termRef.current?.focus?.();
-            }
-          });
-      } else {
-        scheduleInactiveViewportRepaint();
-      }
+      runOsResumeViewportPass('pageshow');
     };
 
     window.addEventListener('resize', handleWindowResize);

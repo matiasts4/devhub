@@ -9,6 +9,7 @@ import {
 } from '@/components/workspace/SharedSurfacesProvider';
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
+import { markPizarraExitEnd, markPizarraExitStart } from '@/lib/terminal/startupPerfMarks';
 
 /** Host id that owns live projection when pizarra mode is active. */
 export const PIZARRA_SHARED_SURFACE_HOST = 'pizarra';
@@ -321,12 +322,21 @@ export function SharedTerminalSurfacePortal({
       });
     };
 
+    // Pizarra-exit telemetry: mark only a real re-target FROM the pizarra host
+    // back to the workspace dock (initial workspace-dock mounts are not exits).
+    // The end mark fires on the post-paint settled dispatch inside the rAF below.
+    const isPizarraExitRetarget =
+      hostId !== 'pizarra-canvas' &&
+      registry.getPreferredHostForSurface(surfaceId) === 'pizarra-canvas';
+    if (isPizarraExitRetarget) markPizarraExitStart();
+
     registry.setPreferredHostForSurface(surfaceId, hostId);
     dispatchIfLive(hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit');
 
     const raf = requestAnimationFrame(() => {
       if (!mounted) return;
       dispatchIfLive(hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit');
+      if (isPizarraExitRetarget) markPizarraExitEnd();
 
       const hostEl = registry.getActiveTarget(surfaceId);
       if (!hostEl || typeof ResizeObserver !== 'function') return;

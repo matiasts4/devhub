@@ -12,6 +12,7 @@ import {
   Terminal,
   Globe,
   FileCode2,
+  Pencil,
 } from 'lucide-react';
 import TerminalTTY from '../../TerminalTTY';
 import WorkspaceBrowserPane from '@/components/workspace/WorkspaceBrowserPane';
@@ -26,6 +27,10 @@ import {
   SharedTerminalSurfaceRegistrar,
 } from '../SharedTerminalSurface';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
+import {
+  isTerminalKeepaliveEnabled,
+  shouldMountWorkspaceTerminal,
+} from '@/lib/terminal/terminalKeepalivePolicy';
 import { shouldShowSwarmStandbyOverlay } from '@/lib/operations/swarmDelegatedRoles';
 import {
   getTerminalFloatingControlStyle,
@@ -370,6 +375,10 @@ export function renderWorkspacePanel(
   const isSpaceComponent = panelKind === 'browser' || panelKind === 'files';
   // Shared-surface singleton only when pizarra owns projection — workspace docks mount
   // TerminalTTY directly to avoid hidden→portal remount (double xterm / double echo).
+  // PR5: the direct↔singleton remount on pizarra enter/exit stays (making the singleton
+  // permanent was the rejected deep refactor), but it is symptom-free — the remount seeds
+  // hasConnectedOnce from terminalConnectedOnceRegistry, so no "Conectando…" overlay and
+  // no first-boot connect deferral; the server reattaches the live tmux session.
   const sharedViewEnabled = isPizarraSharedViewEnabled() && pizarraOwnsLiveSurfaces;
   const panelChromeSafeZoneMinTop =
     typeof document !== 'undefined' &&
@@ -419,10 +428,16 @@ export function renderWorkspacePanel(
 
   const panelIsEngineV2 = Boolean(panel?.terminalEngineV2);
   // Window/workspace parity: keep TTY mounted whenever the workspace shell is
-  // visible (parked V1/V2/V3 use isVisibleInLayout=false only). Unmount v2 only
-  // when the whole workspace tab is hidden (graveyard on workspace switch away).
-  const shouldMountTerminal =
-    !panelIsEngineV2 || Boolean(isWorkspaceShellVisible) || Boolean(isVisibleInLayout);
+  // visible (parked V1/V2/V3 use isVisibleInLayout=false only). With keep-alive
+  // ON (default) v2 panels also stay mounted when the workspace tab is hidden —
+  // v1 parity, no graveyard stash / WS reconnect on tab switch. With the
+  // kill-switch OFF, v2 unmounts on workspace switch away (graveyard path).
+  const shouldMountTerminal = shouldMountWorkspaceTerminal({
+    isEngineV2: panelIsEngineV2,
+    isWorkspaceShellVisible,
+    isVisibleInLayout,
+    keepaliveEnabled: panelIsEngineV2 && isTerminalKeepaliveEnabled(),
+  });
 
   const chromeActions = (
     <PanelChromeActions
@@ -511,12 +526,71 @@ export function renderWorkspacePanel(
                 initialCommand={panel.initialCommand}
                 connectionState={connectionState}
               />
-              <span
-                data-testid={`panel-semantic-primary-${panel.id}`}
-                className="truncate align-middle font-bold text-[rgba(241,245,249,0.95)]"
-              >
-                {semanticMetadata.primary}
-              </span>
+              {!isSpaceComponent && renameEditing ? (
+                <span className="pointer-events-auto relative inline-flex min-w-0 items-center">
+                  <input
+                    autoFocus
+                    type="text"
+                    data-testid={`panel-rename-input-${panel.id}`}
+                    value={renameValue}
+                    onChange={(e) => onRenameValueChange?.(e.target.value || '')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onRenameValueChange?.(e.currentTarget.value || '');
+                        onCommitRename?.(panel);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        onCancelRename?.();
+                      }
+                    }}
+                    onBlur={(e) => {
+                      onRenameValueChange?.(e.currentTarget.value || '');
+                      onCommitRename?.(panel);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    className="w-[120px] rounded border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-bold text-[var(--text-primary)] outline-none"
+                    aria-label={`Rename panel ${panel.id}`}
+                  />
+                  {renameError ? (
+                    <span
+                      data-testid={`panel-rename-error-${panel.id}`}
+                      className="absolute left-0 top-full mt-1 whitespace-nowrap rounded-md border border-[rgba(251,113,133,0.45)] bg-[rgba(251,113,133,0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(251,113,133)]"
+                    >
+                      {renameError === 'name-in-use'
+                        ? 'Name already in use in this workspace'
+                        : renameError === 'invalid-name' || renameError === 'empty-name'
+                          ? 'Invalid name'
+                          : renameError === 'collision'
+                            ? 'Name already in use in this workspace'
+                            : renameError}
+                    </span>
+                  ) : null}
+                </span>
+              ) : (
+                <span
+                  data-testid={`panel-semantic-primary-${panel.id}`}
+                  className="truncate align-middle font-bold text-[rgba(241,245,249,0.95)]"
+                >
+                  {semanticMetadata.primary}
+                </span>
+              )}
+              {!isSpaceComponent && !renameEditing && onStartRename ? (
+                <button
+                  type="button"
+                  data-testid={`panel-rename-trigger-${panel.id}`}
+                  className="pointer-events-auto inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-[rgba(148,163,184,0.6)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover:opacity-80"
+                  title="Renombrar terminal"
+                  aria-label={`Renombrar ${panelLabel || panel.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStartRename(panel, panelLabel);
+                  }}
+                >
+                  <Pencil className="h-2.5 w-2.5" />
+                </button>
+              ) : null}
               {semanticMetadata.secondary ? (
                 <>
                   <span
@@ -566,47 +640,6 @@ export function renderWorkspacePanel(
           onStartRename?.(panel, panelLabel);
         }}
       >
-        {!isSpaceComponent && renameEditing ? (
-          <span className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-[rgba(var(--accent-rgb,88,166,255),0.45)] bg-[var(--surface-card)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--text-primary)]">
-            <input
-              autoFocus
-              type="text"
-              data-testid={`panel-rename-input-${panel.id}`}
-              value={renameValue}
-              onChange={(e) => onRenameValueChange?.(e.target.value || '')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  onRenameValueChange?.(e.currentTarget.value || '');
-                  onCommitRename?.(panel);
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  onCancelRename?.();
-                }
-              }}
-              onBlur={(e) => {
-                onRenameValueChange?.(e.currentTarget.value || '');
-                onCommitRename?.(panel);
-              }}
-              className="w-[120px] bg-transparent outline-none"
-              aria-label={`Rename panel ${panel.id}`}
-            />
-          </span>
-        ) : null}
-        {!isSpaceComponent && renameError && renameEditing ? (
-          <span
-            data-testid={`panel-rename-error-${panel.id}`}
-            className="pointer-events-auto absolute right-0 top-full mt-1 inline-flex items-center rounded-md border border-[rgba(251,113,133,0.45)] bg-[rgba(251,113,133,0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(251,113,133)]"
-          >
-            {renameError === 'name-in-use'
-              ? 'Name already in use in this workspace'
-              : renameError === 'invalid-name' || renameError === 'empty-name'
-                ? 'Invalid name'
-                : renameError === 'collision'
-                  ? 'Name already in use in this workspace'
-                  : renameError}
-          </span>
-        ) : null}
         {chromeActions}
       </div>
 

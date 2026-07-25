@@ -41,6 +41,8 @@ import {
 } from '@/components/terminal/workspaceShortcuts';
 import { shouldDeferRightDockSizePersist } from '@/components/terminal/rightDockLayerSync';
 import { logPizarraBrowser } from '@/lib/debug/pizarraBrowserDebug';
+import { markWorkspaceSwitchEnd, markWorkspaceSwitchStart } from '@/lib/terminal/startupPerfMarks';
+import { clearTerminalConnectedOnce } from '@/lib/terminal/terminalConnectedOnceRegistry';
 
 export default function useWorkspacePanelLifecycle({
   workspacesRef,
@@ -171,6 +173,10 @@ export default function useWorkspacePanelLifecycle({
         : undefined;
 
     notifyNativeWorkspaceSurfaceSync('workspace-switch');
+    // Settled point for the workspace-switch perf measure. The start mark lives
+    // in switchWorkspace(); this post-commit activeWsId effect is where the new
+    // workspace became active and its layout sync was dispatched.
+    markWorkspaceSwitchEnd();
 
     return () => {
       cleanupSplitSync?.();
@@ -473,6 +479,11 @@ export default function useWorkspacePanelLifecycle({
   const switchWorkspace = useCallback(
     (nextWorkspaceId) => {
       if (!nextWorkspaceId || nextWorkspaceId === activeWsIdRef.current) return;
+
+      // Workspace-switch telemetry start. Tab clicks and keyboard navigation
+      // both funnel through switchWorkspace(); the end mark fires in the
+      // post-commit activeWsId effect above.
+      markWorkspaceSwitchStart();
 
       const nextWorkspace = workspacesRef.current.find(
         (workspace) => workspace.id === nextWorkspaceId
@@ -849,6 +860,9 @@ export default function useWorkspacePanelLifecycle({
       if (!targetId || !activeWorkspace) return;
 
       markPanelsClosing([targetId]);
+      // Real panel close: drop the connected-once record so a future panel that
+      // reuses this id boots with the first-boot overlay again.
+      clearTerminalConnectedOnce(targetId);
 
       // Fire terminal session cleanup in background asynchronously without blocking UI updates
       closeTerminalSessions([targetId]).catch((err) => {

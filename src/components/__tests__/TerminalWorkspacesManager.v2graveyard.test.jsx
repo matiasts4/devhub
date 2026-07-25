@@ -42,6 +42,21 @@ jest.mock('@/lib/pizarra/featureFlag', () => ({
   isPizarraSharedViewEnabled: () => false,
 }));
 
+// PR5 keep-alive: control the flag per test while keeping the real mount decision.
+jest.mock('@/lib/terminal/terminalKeepalivePolicy', () => {
+  const actual = jest.requireActual('@/lib/terminal/terminalKeepalivePolicy');
+  let enabled = false;
+  return {
+    ...actual,
+    isTerminalKeepaliveEnabled: () => enabled,
+    __setKeepaliveEnabledForTests: (value) => {
+      enabled = Boolean(value);
+    },
+  };
+});
+
+const keepalivePolicyMock = require('@/lib/terminal/terminalKeepalivePolicy');
+
 jest.mock('../terminal/components/PanelStatusBadge', () => {
   const React = require('react');
   return {
@@ -270,6 +285,7 @@ describe('renderWorkspacePanel — v2 graveyard flag and mount logic', () => {
 
   beforeEach(() => {
     dom = installDom();
+    keepalivePolicyMock.__setKeepaliveEnabledForTests(false);
     Object.keys(renderedTerminalProps).forEach((key) => delete renderedTerminalProps[key]);
   });
 
@@ -313,7 +329,7 @@ describe('renderWorkspacePanel — v2 graveyard flag and mount logic', () => {
     expect(view.container.querySelector('[data-testid="panel-body-v2-stash-p-test"]')).toBeNull();
   });
 
-  it('renders a stash placeholder when v2 is hidden and workspace shell is inactive', async () => {
+  it('renders a stash placeholder when v2 is hidden, shell is inactive and keep-alive is off', async () => {
     const element = renderWorkspacePanel(
       makePanel({ terminalEngineV2: true }),
       makeProps({ isVisibleInLayout: false, isWorkspaceShellVisible: false })
@@ -325,6 +341,19 @@ describe('renderWorkspacePanel — v2 graveyard flag and mount logic', () => {
     expect(
       view.container.querySelector('[data-testid="panel-body-v2-stash-p-test"]')
     ).not.toBeNull();
+  });
+
+  it('keeps a hidden v2 panel mounted when keep-alive is on (workspace tab switch)', async () => {
+    keepalivePolicyMock.__setKeepaliveEnabledForTests(true);
+    const element = renderWorkspacePanel(
+      makePanel({ terminalEngineV2: true }),
+      makeProps({ isVisibleInLayout: false, isWorkspaceShellVisible: false })
+    );
+    const view = await renderIntoDom(element, mountedRoots);
+    await flushEffects();
+
+    expect(view.container.querySelector('[data-testid="terminal-p-test"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="panel-body-v2-stash-p-test"]')).toBeNull();
   });
 
   it('keeps TerminalTTY mounted for a parked-window v2 panel when workspace shell is visible', async () => {

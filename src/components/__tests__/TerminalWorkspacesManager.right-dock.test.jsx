@@ -577,7 +577,7 @@ describe('TerminalWorkspacesManager right dock', () => {
         view.container.querySelector('[data-testid="terminal-native-policy-p1"]')?.textContent
       ).toBe('live');
 
-      await click(view.container.querySelector('[data-testid="pizarra-mode-switch"]'));
+      await click(view.container.querySelector('[data-testid="terminal-mode-switch"]'));
 
       expect(view.container.querySelector('[data-testid="terminal-visible-p1"]')?.textContent).toBe(
         'visible'

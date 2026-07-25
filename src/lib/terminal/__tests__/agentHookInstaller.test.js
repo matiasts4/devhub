@@ -15,12 +15,24 @@ import {
 describe('Agent Hook Installers — Golden File Tests & P1-P3 Fixes', () => {
   describe('P1-2 — Command Wrapper & Quoting', () => {
     test('formats POSIX bash wrapper with single-quote escaping for .sh scripts', () => {
-      const cmd = buildInstalledHookCommand('/home/user/path/devhub-agent-state.sh', 'working', 'UserPromptSubmit', 'kimi');
-      expect(cmd).toBe("bash '/home/user/path/devhub-agent-state.sh' working UserPromptSubmit kimi");
+      const cmd = buildInstalledHookCommand(
+        '/home/user/path/devhub-agent-state.sh',
+        'working',
+        'UserPromptSubmit',
+        'kimi'
+      );
+      expect(cmd).toBe(
+        "bash '/home/user/path/devhub-agent-state.sh' working UserPromptSubmit kimi"
+      );
     });
 
     test('formats PowerShell wrapper for .ps1 scripts', () => {
-      const cmd = buildInstalledHookCommand('C:\\Users\\PC\\.kimi-code\\hooks\\devhub-agent-state.ps1', 'working', 'UserPromptSubmit', 'kimi');
+      const cmd = buildInstalledHookCommand(
+        'C:\\Users\\PC\\.kimi-code\\hooks\\devhub-agent-state.ps1',
+        'working',
+        'UserPromptSubmit',
+        'kimi'
+      );
       expect(cmd).toBe(
         'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Users\\PC\\.kimi-code\\hooks\\devhub-agent-state.ps1" -State working -Event UserPromptSubmit -Agent kimi'
       );
@@ -57,7 +69,11 @@ describe('Agent Hook Installers — Golden File Tests & P1-P3 Fixes', () => {
         2
       );
 
-      const installed = buildClaudeSettingsWithHooks(existing, '/path/devhub-agent-state.sh', 'claude');
+      const installed = buildClaudeSettingsWithHooks(
+        existing,
+        '/path/devhub-agent-state.sh',
+        'claude'
+      );
       const uninstalled = removeClaudeHooks(installed);
       const parsed = JSON.parse(uninstalled);
 
@@ -87,9 +103,13 @@ describe('Agent Hook Installers — Golden File Tests & P1-P3 Fixes', () => {
       expect(result).toContain(KIMI_BLOCK_BEGIN);
       expect(result).toContain(KIMI_BLOCK_END);
       expect(result).toContain('event = "UserPromptSubmit"');
-      expect(result).toContain('bash \'/home/user/.kimi-code/hooks/devhub-agent-state.sh\' working UserPromptSubmit kimi');
+      expect(result).toContain(
+        "bash '/home/user/.kimi-code/hooks/devhub-agent-state.sh' working UserPromptSubmit kimi"
+      );
       expect(result).toContain('event = "PermissionRequest"');
-      expect(result).toContain('bash \'/home/user/.kimi-code/hooks/devhub-agent-state.sh\' blocked PermissionRequest kimi');
+      expect(result).toContain(
+        "bash '/home/user/.kimi-code/hooks/devhub-agent-state.sh' blocked PermissionRequest kimi"
+      );
     });
 
     test('preserves existing content before block', () => {
@@ -183,6 +203,51 @@ describe('Agent Hook Installers — Golden File Tests & P1-P3 Fixes', () => {
       expect(parsed.theme).toBe('dark');
       expect(parsed.hooks.PreToolUse.length).toBe(1);
       expect(parsed.hooks.PreToolUse[0].hooks[0].command).toBe('echo custom-hook');
+      expect(isClaudeHooksInstalled(uninstalled)).toBe(false);
+    });
+  });
+
+  describe('Qoder CLI JSON Merger (same format as Claude)', () => {
+    const scriptPath = '/home/user/.qoder/hooks/devhub-agent-state.sh';
+
+    test('installs hooks with agent name qodercli', () => {
+      const result = buildClaudeSettingsWithHooks('{}', scriptPath, 'qodercli');
+      const parsed = JSON.parse(result);
+
+      expect(isClaudeHooksInstalled(result)).toBe(true);
+      expect(parsed.hooks).toBeDefined();
+      expect(parsed.hooks.Stop).toBeDefined();
+      expect(parsed.hooks.Stop[0].hooks[0].command).toContain(
+        "bash '/home/user/.qoder/hooks/devhub-agent-state.sh' idle Stop qodercli"
+      );
+      expect(parsed.hooks.PermissionRequest[0].hooks[0].command).toContain(
+        "bash '/home/user/.qoder/hooks/devhub-agent-state.sh' blocked PermissionRequest qodercli"
+      );
+    });
+
+    test('reinstalling is idempotent', () => {
+      const first = buildClaudeSettingsWithHooks('{}', scriptPath, 'qodercli');
+      const second = buildClaudeSettingsWithHooks(first, scriptPath, 'qodercli');
+
+      const parsed = JSON.parse(second);
+      expect(parsed.hooks.UserPromptSubmit.length).toBe(1);
+    });
+
+    test('uninstall removes devhub hooks and preserves user settings', () => {
+      const customConfig = JSON.stringify({
+        theme: 'solarized',
+        hooks: {
+          PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo my-hook' }] }],
+        },
+      });
+
+      const installed = buildClaudeSettingsWithHooks(customConfig, scriptPath, 'qodercli');
+      const uninstalled = removeClaudeHooks(installed);
+      const parsed = JSON.parse(uninstalled);
+
+      expect(parsed.theme).toBe('solarized');
+      expect(parsed.hooks.PreToolUse.length).toBe(1);
+      expect(parsed.hooks.PreToolUse[0].hooks[0].command).toBe('echo my-hook');
       expect(isClaudeHooksInstalled(uninstalled)).toBe(false);
     });
   });

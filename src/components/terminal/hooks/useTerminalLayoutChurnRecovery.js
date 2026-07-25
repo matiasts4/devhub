@@ -366,6 +366,7 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         // use imported refreshTerminalViewport / forceTerminalViewportRepaint —
         // neither is on viewportCtxRef; destructuring would shadow with undefined
         nudgeTerminalPtyResize,
+        coalescedForceRepaint,
         scheduleWorkspaceShowRecovery,
         scheduleBoundedForceRepaint,
         scheduleBoundedFitRepaint,
@@ -702,7 +703,15 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
               scrollTerminalToBottom(true);
             }
             refreshTerminalViewport(termRef.current);
-            forceTerminalViewportRepaint(termRef.current);
+            // The sync pass above already ends with a coalesced force repaint. Using
+            // the coalesced variant here (instead of an unconditional force repaint)
+            // collapses the two into a single 1-cell nudge, removing the double
+            // resize flicker on workspace↔pizarra toggles.
+            if (typeof coalescedForceRepaint === 'function') {
+              coalescedForceRepaint(termRef.current, { reason: `pizarra-mode-transition` });
+            } else {
+              forceTerminalViewportRepaint(termRef.current);
+            }
           }
         } else {
           needsViewportSyncOnShowRef.current = true;

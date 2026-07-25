@@ -128,13 +128,25 @@ export async function dispatchStartupRestoreQueue({
   getPanel,
   onRelaunch,
   onPanelLive,
+  activeWorkspaceId = null,
   maxConcurrency = STARTUP_RESTORE_MAX_CONCURRENCY,
   delayMs = STARTUP_RESTORE_DELAY_MS,
   shouldSkipAction,
   getRuntimeTerminal = null,
   getRestorePolicy = null,
 } = {}) {
-  const relaunchActions = actions.filter((action) => RELAUNCH_RESTORE_ACTIONS.has(action.action));
+  const relaunchActions = actions
+    .filter((action) => RELAUNCH_RESTORE_ACTIONS.has(action.action))
+    .sort((a, b) => {
+      // Panels from the active workspace relaunch first so the visible workspace
+      // becomes interactive sooner. workspaceId comes from the restore action
+      // (buildStartupRestorePlan); fall back to the panel model when absent.
+      const wsA = a.workspaceId ?? getPanel?.(a.terminalId)?.workspaceId;
+      const wsB = b.workspaceId ?? getPanel?.(b.terminalId)?.workspaceId;
+      const isAActive = activeWorkspaceId && wsA === activeWorkspaceId ? 1 : 0;
+      const isBActive = activeWorkspaceId && wsB === activeWorkspaceId ? 1 : 0;
+      return isBActive - isAActive;
+    });
   const manualPanelIds = new Set(
     actions
       .filter(

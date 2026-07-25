@@ -216,8 +216,17 @@ export default function useWorkspaceSurfaceRegistry({
           DEFAULT_BROWSER_URL,
         DEFAULT_BROWSER_URL
       );
-      const viewIdForBrowser =
-        browserPanels[0]?.viewId || activeWindowId || windows[0]?.id || null;
+      const viewIdForBrowser = browserPanels[0]?.viewId || activeWindowId || windows[0]?.id || null;
+
+      let dockSide = 'right';
+      if (hasBrowserSpacePanel) {
+        const bCol = browserPanels[0]?.colIndex ?? 0;
+        const tCol = terminals[0]?.colIndex ?? 0;
+        dockSide = bCol < tCol ? 'left' : 'right';
+      } else if (browserState?.dockSide) {
+        dockSide = browserState.dockSide;
+      }
+
       browsers.push({
         id: `shape-browser-${activeWorkspace.id}`,
         type: 'browser',
@@ -234,6 +243,7 @@ export default function useWorkspaceSurfaceRegistry({
           // Always keep the workspace dock browser in pizarra adaptive layout
           // (otherwise 2+ terminals hide the carried browser → "gone" after toggles).
           layoutPriority: true,
+          dockSide,
           ...(viewIdForBrowser ? { viewId: viewIdForBrowser } : {}),
           ...(layoutPriority ? { layoutPriority: true } : {}),
         },
@@ -278,7 +288,8 @@ export default function useWorkspaceSurfaceRegistry({
           };
           const pizarraChanged =
             prevPizarra.visible !== nextPizarra.visible ||
-            prevPizarra.layoutPriority !== nextPizarra.layoutPriority;
+            prevPizarra.layoutPriority !== nextPizarra.layoutPriority ||
+            prevPizarra.dockSide !== nextPizarra.dockSide;
           if (pizarraChanged) {
             existing.pizarra = nextPizarra;
             itemChanged = true;
