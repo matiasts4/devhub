@@ -445,7 +445,7 @@ export function useZedChat({
       setCurrentStep(null);
       setAgentStatus('idle');
     }
-  }, [input, isLoading, sendToApi, setAgentStatus, dispatchZedAuraOutcome]);
+  }, [input, isLoading, sendToApi, setAgentStatus]);
 
   const handleApproveCommand = useCallback(async () => {
     if (!pendingApproval || isLoading) return;
@@ -683,7 +683,6 @@ export function useZedChat({
     messages,
     pendingApproval,
     planRunner,
-    PLAN_EXECUTOR_STATES,
     processToolResults,
     sendToApi,
   ]);

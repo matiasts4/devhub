@@ -16,7 +16,7 @@ export default function useSwarmLaunchController({
   projectId,
   swarmLaunchCatalog,
   swarmLaunchProject,
-  storage,
+  storage: _storage,
   cwd,
   wsCounterRef,
   colCounterRef,

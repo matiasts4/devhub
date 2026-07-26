@@ -25,7 +25,6 @@ const {
   renderIntoDom,
 } = require('@/test-support/domHarness');
 
-const mountedRoots = [];
 const originalMathRandom = Math.random;
 
 // Store module-level mountedRoots array
@@ -213,10 +212,6 @@ const TerminalWorkspacesManager = require('../TerminalWorkspacesManager').defaul
 
 function setAgentRuns(runs) {
   window.localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
-}
-
-function getAgentRuns() {
-  return JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
 }
 
 function renderManager(props = {}) {

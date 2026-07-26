@@ -95,7 +95,7 @@ function runBus(dbPath, sub, args, env) {
 describe('T-012 — TCT-DELTA shim', () => {
   describe('TCT-DELTA-S1: team_inbox is the primary inbox source', () => {
     test('returns team_inbox rows when present; inbox_source="team_inbox"; no shim_warning', () => {
-      const { dir, db, dbPath } = makeTempDb();
+      const { dir, db } = makeTempDb();
       try {
         db.prepare(
           `INSERT INTO team_inbox (mission_id, to_role, from_role, body, body_hash)
@@ -145,7 +145,7 @@ describe('T-012 — TCT-DELTA shim', () => {
 
   describe('TCT-DELTA-S2: shim falls back to pending_deliveries when team_inbox is empty', () => {
     test('returns legacy rows; inbox_source="pending_deliveries_legacy"; shim_warning set', () => {
-      const { dir, db, dbPath } = makeTempDb();
+      const { dir, db } = makeTempDb();
       try {
         // Seed legacy mission_messages + message_deliveries
         db.prepare(

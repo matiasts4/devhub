@@ -8,7 +8,6 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
-const crypto = require('crypto');
 
 // ---------------------------------------------------------------------------
 // Git helpers (using execSync for simplicity; can be async-ified)
@@ -127,7 +126,7 @@ function pruneWorktrees(repoRoot) {
  */
 async function syncPhaseBranch({ launchId, phase, worktreePath }) {
   // Dynamic import to avoid circular deps
-  const { upsertPhaseBranch, getPhaseBranch } = require('./SessionPersistence');
+  const { upsertPhaseBranch } = require('./SessionPersistence');
 
   if (!launchId) throw new Error('launchId is required');
   if (!phase) throw new Error('phase is required');

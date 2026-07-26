@@ -72,7 +72,6 @@ jest.mock('@/components/TerminalTTY', () => ({
 // (zoom=1, no pan, identity projectRect) so the live layer can
 // compute bounds = {x: shape.x, y: shape.y, ...}.
 jest.mock('@/lib/pizarra/canvasViewport', () => {
-  const ReactLocal = require('react');
   return {
     useCanvasViewport: () => ({
       zoom: 1,
@@ -138,7 +137,7 @@ describe('PizarraLiveSurfaceLayer — double-count on second mousemove (pizarra-
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

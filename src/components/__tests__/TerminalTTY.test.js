@@ -116,6 +116,7 @@ const {
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldSkipGpuVisibilityReveal,
   shouldSoftGpuWorkspaceReveal,
+  shouldNudgeAfterSoftRevealProbe,
   resolveWorkspaceLayoutShowRevealMode,
   flushHiddenTerminalCatchupToTerm,
   shouldFreezeDomViewportOnWorkspaceShow,
@@ -1377,6 +1378,45 @@ describe('resolveWorkspaceLayoutShowRevealMode()', () => {
         softGpuEligible: false,
       })
     ).toBe('full');
+  });
+});
+
+describe('shouldNudgeAfterSoftRevealProbe()', () => {
+  test('clean reveal (GPU attached, renderer ready) never nudges — the blink is skipped', () => {
+    expect(
+      shouldNudgeAfterSoftRevealProbe({
+        rendererReady: true,
+        reattachPending: false,
+        elapsedMs: 500,
+      })
+    ).toBe(false);
+  });
+
+  test('nudges only when the GPU addon was lost mid-reveal and the coalesce window passed', () => {
+    expect(
+      shouldNudgeAfterSoftRevealProbe({
+        rendererReady: true,
+        reattachPending: true,
+        elapsedMs: 250,
+      })
+    ).toBe(true);
+    expect(
+      shouldNudgeAfterSoftRevealProbe({
+        rendererReady: true,
+        reattachPending: true,
+        elapsedMs: 50,
+      })
+    ).toBe(false);
+  });
+
+  test('never nudges when the renderer is not ready (the nudge would no-op)', () => {
+    expect(
+      shouldNudgeAfterSoftRevealProbe({
+        rendererReady: false,
+        reattachPending: true,
+        elapsedMs: 500,
+      })
+    ).toBe(false);
   });
 });
 

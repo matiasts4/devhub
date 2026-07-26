@@ -90,7 +90,7 @@ export default function Planificacion() {
   // is rendered above the launch button. The full `checks` array is stashed
   // for a future modal surface (per design Decision 2) — not rendered here.
   const [preflightError, setPreflightError] = useState(null);
-  const [preflightChecks, setPreflightChecks] = useState([]);
+  const [_preflightChecks, setPreflightChecks] = useState([]);
 
   const fetchFiles = useCallback(async () => {
     if (!project?.id) return;

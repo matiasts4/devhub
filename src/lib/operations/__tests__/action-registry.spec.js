@@ -73,14 +73,14 @@ describe('action-registry', () => {
     });
 
     it('every action has a label', () => {
-      Object.entries(ACTION_REGISTRY).forEach(([id, def]) => {
+      Object.entries(ACTION_REGISTRY).forEach(([_id, def]) => {
         expect(typeof def.label).toBe('string');
         expect(def.label.length).toBeGreaterThan(0);
       });
     });
 
     it('every action has a targetTypes array', () => {
-      Object.entries(ACTION_REGISTRY).forEach(([id, def]) => {
+      Object.entries(ACTION_REGISTRY).forEach(([_id, def]) => {
         expect(Array.isArray(def.targetTypes)).toBe(true);
       });
     });

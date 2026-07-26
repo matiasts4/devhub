@@ -90,7 +90,7 @@ export default function usePizarraSurfaceDrag({
       lastSyncPayloadRef.current = nextPayload;
       onNativeSync?.({ startBounds, ...pendingMove });
     },
-    [moveMeta, onMove, onNativeSync, surfaceId]
+    [onNativeSync]
   );
 
   useEffect(() => {

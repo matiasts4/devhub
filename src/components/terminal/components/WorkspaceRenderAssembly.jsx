@@ -964,7 +964,7 @@ export default function WorkspaceRenderAssembly(props) {
           {heavySurfacesReady
             ? workspaces
                 .filter((ws) => renderWorkspaceIds.has(ws.id))
-                .map((ws, wsIndex) => {
+                .map((ws, _wsIndex) => {
                   const workspaceGridKey = buildStableWorkspaceShellKey('workspace-grid', ws.id);
                   const wsDockState =
                     activeWsId === ws.id

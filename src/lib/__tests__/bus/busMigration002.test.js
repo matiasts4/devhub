@@ -37,15 +37,6 @@ function countIndexesOn(db, tableName) {
     .get(tableName).n;
 }
 
-function indexNamesOn(db, tableName) {
-  return db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name = ? AND sql IS NOT NULL ORDER BY name"
-    )
-    .all(tableName)
-    .map((r) => r.name);
-}
-
 describe('T-001 — migration 002 (agent comms bus)', () => {
   test('BUS-S1: ensureAllSchema creates team_chat, team_events, team_inbox tables and adds presence_context to agent_presence', () => {
     const { db, dir } = makeTempDb();
@@ -76,7 +67,6 @@ describe('T-001 — migration 002 (agent comms bus)', () => {
       const teamEventsIdx = countIndexesOn(db, 'team_events');
       const teamInboxIdx = countIndexesOn(db, 'team_inbox');
       const presenceIdx = countIndexesOn(db, 'agent_presence');
-      const newIdx = teamChatIdx + teamEventsIdx + teamInboxIdx;
       // After migration, agent_presence has at least 3 (2 original + 1 new context index)
       // team_* tables: each has the 3 + 2 + 2 = 7 net-new indexes plus UNIQUE constraint
       // We assert NET-NEW (post-ensureAllSchema vs post-ensureRuntimeSchema baseline)
@@ -182,7 +172,6 @@ describe('T-001 — migration 002 (agent comms bus)', () => {
     const { db, dir } = makeTempDb();
     try {
       ensureAllSchema(db);
-      const indexes = indexNamesOn(db, 'team_events');
       // UNIQUE constraint creates a sqlite_autoindex or named index
       // We check at the SQL level that the table has a UNIQUE on (mission_id, dedupe_key)
       const sql = db

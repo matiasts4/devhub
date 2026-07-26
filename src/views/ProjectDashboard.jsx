@@ -108,7 +108,6 @@ export default function ProjectDashboard() {
   const qaReady = tasks.filter((t) => t.status === 'qa_ready').length;
   const blocked = tasks.filter((t) => t.status === 'blocked').length;
   const compPct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const accentColor = project?.color || '#58A6FF';
 
   const calculatePrediction = () => {
     if (total === 0 || completed === 0) return null;

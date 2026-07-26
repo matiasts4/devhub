@@ -374,10 +374,6 @@ function findRenameInput(doc, panelId) {
   return doc.querySelector(`[data-testid="panel-rename-input-${panelId}"]`);
 }
 
-function findRenameError(doc, panelId) {
-  return doc.querySelector(`[data-testid="panel-rename-error-${panelId}"]`);
-}
-
 const { flushSync } = require('react-dom');
 const { act } = require('react');
 
@@ -717,11 +713,9 @@ describe('TerminalWorkspacesManager — Fase 4 source snapshot (planning-launch 
     if (start === -1) return '';
     // Walk braces to find the matching close.
     let depth = 0;
-    let bodyStart = -1;
     for (let i = start; i < src.length; i += 1) {
       const c = src[i];
       if (c === '{') {
-        if (depth === 0) bodyStart = i;
         depth += 1;
       } else if (c === '}') {
         depth -= 1;

@@ -1,5 +1,4 @@
 'use client';
-/* global require */
 
 import { detectDesktopRuntime, isElectronDesktop } from '@/lib/desktop/desktopRuntime';
 import { invokeDesktop, subscribeDesktopEvent } from '@/lib/desktop/desktopBridge';
@@ -23,11 +22,6 @@ export function isNativeBrowserRuntimeAvailable() {
   if (!hasWindow()) return false;
   const runtime = detectDesktopRuntime();
   return runtime === 'electron' || runtime === 'tauri';
-}
-
-function normalizeNativeBrowserReason(reason, fallbackReason) {
-  if (!reason) return fallbackReason;
-  return String(reason);
 }
 
 export function isTransientNativeBrowserProbeFailure(reason) {

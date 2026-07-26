@@ -19,7 +19,6 @@
 const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { act } = require('react');
-const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
 // ── Mock viewport context ──────────────────────────────────────────────────
@@ -167,7 +166,7 @@ describe('usePizarraMinimap — pizarra-minimap hook contract', () => {
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

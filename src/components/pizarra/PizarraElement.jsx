@@ -12,7 +12,7 @@ import { useCanvasViewport } from './CanvasViewportContext';
  * Skips drag entirely when element.locked === true.
  */
 export default function PizarraElement({ element, onSelect, onPositionChange, children }) {
-  const { zoom, pan, canvasRect, canvasToViewport } = useCanvasViewport();
+  const { zoom, canvasToViewport } = useCanvasViewport();
 
   const { id, position, locked, selected } = element;
 

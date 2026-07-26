@@ -51,24 +51,16 @@ describe('execute-dialog.countdown', () => {
   it('onCancel fires before countdown reaches 0 (at 1)', () => {
     // The design fires onCancel at countdown = 1 and resets to 60.
     // So countdown goes 2 → 1 → onCancel → reset to 60
-    let called = false;
-    const result = tick(2, () => {
-      called = true;
-    });
+    const result = tick(2, () => {});
     expect(result.expired).toBe(false); // 2 > 1, no expiry yet
 
-    const result2 = tick(1, () => {
-      called = true;
-    });
+    const result2 = tick(1, () => {});
     expect(result2.expired).toBe(true);
     expect(result2.nextCountdown).toBe(TIMER_SECONDS); // Reset to 60
   });
 
   it('reset to 60 after expiry', () => {
-    let called = false;
-    const result = tick(1, () => {
-      called = true;
-    });
+    const result = tick(1, () => {});
     expect(result.nextCountdown).toBe(60);
     expect(result.expired).toBe(true);
   });

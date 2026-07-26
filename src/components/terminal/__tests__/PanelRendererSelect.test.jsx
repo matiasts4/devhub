@@ -80,7 +80,7 @@ describe('PanelRendererSelect — presentational contract', () => {
     mountedRoots.splice(0).forEach(({ root, container }) => {
       try {
         flushSync(() => root.unmount());
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
       container.remove();
@@ -88,7 +88,7 @@ describe('PanelRendererSelect — presentational contract', () => {
     if (dom && dom.window && dom.window.close) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

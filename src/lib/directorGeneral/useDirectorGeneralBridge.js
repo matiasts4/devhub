@@ -105,16 +105,8 @@ export default function useDirectorGeneralBridge({ projectId } = {}) {
     };
   }, []);
 
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      pollingRef.current.stop();
-      pollingRef.current = null;
-    }
-    setPollingState('idle');
-  }, []);
-
   const handleTerminalState = useCallback(
-    (missionId) => {
+    (_missionId) => {
       if (!mountedRef.current) return;
       setPollingState('idle');
       setActiveMissionIdState(null);

@@ -28,7 +28,7 @@ export default function OperatorTimelineFeed({
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [lastDurableSeq, setLastDurableSeq] = useState(0);
+  const [_lastDurableSeq, setLastDurableSeq] = useState(0);
 
   // SSE event source ref
   const esRef = useRef(null);

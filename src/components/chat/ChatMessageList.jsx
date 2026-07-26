@@ -280,7 +280,6 @@ function SubagentTurn({ message, trace, onCancel, onViewInContext, compact = fal
   const status = normalizeSubagentStatus(meta.status || 'success');
   const isRunning = status === 'running';
   const isSuccess = status === 'success';
-  const isError = status === 'error' || status === 'aborted';
 
   // Running: auto-expandido (salvo en modo compact donde el panel Live ya muestra el detalle)
   const [expanded, setExpanded] = useState(isRunning && !compact);
@@ -723,7 +722,7 @@ export default function ChatMessageList({
           <EmptyState onSetPrompt={onSetPrompt} />
         ) : (
           <>
-            {messages.map((m, idx) => {
+            {messages.map((m, _idx) => {
               // MCP responses (system messages hidden as tool calls)
               const isMcpResponse =
                 m.role === 'user' &&

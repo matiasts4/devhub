@@ -52,7 +52,6 @@ export function resolveSharedTerminalVisibility({
 
 const propsBySurfaceId = new Map();
 const propsListeners = new Set();
-let propsVersion = 0;
 
 /** Data fields that affect TerminalTTY render; callback refs are refreshed silently. */
 const TERMINAL_SURFACE_DATA_KEYS = [
@@ -103,7 +102,6 @@ export function hasSharedTerminalSurfaceProps(surfaceId) {
 }
 
 function notifyPropsChanged() {
-  propsVersion += 1;
   for (const listener of propsListeners) {
     listener();
   }
@@ -374,5 +372,4 @@ export function SharedTerminalSurfacePortal({
 /** Test-only */
 export function _resetSharedTerminalSurfacePropsForTests() {
   propsBySurfaceId.clear();
-  propsVersion = 0;
 }

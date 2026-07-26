@@ -58,7 +58,7 @@ export function migrateCircleShapes(payload, storage) {
   // — the migration still proceeds, and the user can investigate.
   try {
     storage.setItem(CIRCLE_MIGRATION_BAK, JSON.stringify(payload));
-  } catch (e) {
+  } catch (_e) {
     // ignore — non-fatal
   }
 
@@ -101,7 +101,7 @@ export function migrateCircleShapes(payload, storage) {
   // operation is idempotent.
   try {
     storage.setItem(CIRCLE_MIGRATION_FLAG, 'done');
-  } catch (e) {
+  } catch (_e) {
     // ignore — non-fatal
   }
   return next;

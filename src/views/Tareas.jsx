@@ -870,7 +870,7 @@ function AgentQueueView({ tasks, dependencies, milestones, project, navigate }) 
         </div>
       ) : (
         <div className="space-y-2.5 mt-2">
-          {queue.map((task, i) => (
+          {queue.map((task, _i) => (
             <div
               key={task.id}
               className="bg-surface-card border border-borders-subtle rounded-none p-4 flex items-center justify-between group hover:border-[var(--accent-primary)]/30 transition-all"

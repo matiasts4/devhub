@@ -7,7 +7,7 @@ export const swarmTool = {
   parallel: true,
   description: 'Get the current status of the swarm, including active missions and agents.',
   parameters: {},
-  async execute(params, context) {
+  async execute(_params, _context) {
     zedLog.info('TOOL', 'get_swarm_status', {});
 
     try {

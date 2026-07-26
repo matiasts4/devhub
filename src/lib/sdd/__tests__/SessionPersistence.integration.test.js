@@ -6,7 +6,6 @@
 
 'use strict';
 
-const path = require('path');
 const Database = require('better-sqlite3');
 
 // ---------------------------------------------------------------------------
@@ -57,32 +56,6 @@ function createTestDb() {
 // ---------------------------------------------------------------------------
 // Mock Engram sync (avoid real Engram calls)
 // ---------------------------------------------------------------------------
-
-let engramSyncCalled = [];
-let engramSyncShouldFail = false;
-
-function mockEngramSync() {
-  engramSyncCalled = [];
-  engramSyncShouldFail = false;
-  // Override require to return our mock
-  const Module = require('module');
-  const originalRequire = Module.prototype.require;
-  Module.prototype.require = function (id) {
-    if (id === './engramSync' || id.endsWith('/engramSync')) {
-      return {
-        engram_mem_save: async (opts) => {
-          if (engramSyncShouldFail) throw new Error('Engram unavailable');
-          engramSyncCalled.push(opts);
-          return { id: 'mock-save' };
-        },
-      };
-    }
-    return originalRequire.apply(this, arguments);
-  };
-  return () => {
-    Module.prototype.require = originalRequire;
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Tests

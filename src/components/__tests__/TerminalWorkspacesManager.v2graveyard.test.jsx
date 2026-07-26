@@ -4,7 +4,6 @@
  * live surface can be stashed in the graveyard.
  */
 
-const React = require('react');
 const {
   cleanupMountedRoots,
   flushEffects,
@@ -74,7 +73,6 @@ jest.mock('../terminal/components/PanelRendererSelect', () => {
 });
 
 jest.mock('../terminal/components/WorkspaceWindowSwitcher', () => {
-  const React = require('react');
   return {
     __esModule: true,
     default: () => null,

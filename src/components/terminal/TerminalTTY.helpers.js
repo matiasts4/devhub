@@ -1900,13 +1900,37 @@ export function resolveWorkspaceLayoutShowRevealMode({
   return 'soft';
 }
 
-/** Flush buffered PTY output and nudge the GPU bitmap — no renderService.clear(). */
+/** Flush buffered PTY output and nudge the GPU bitmap — no renderService.clear().
+ * NOTE: production soft reveals go through the probe-based path in TerminalTTY.jsx
+ * (`coalescedSoftGpuVisibilityReveal`), which defers the nudge behind a next-frame
+ * check (`shouldNudgeAfterSoftRevealProbe`). This helper keeps the eager nudge for
+ * callers that explicitly want it. */
 export function performSoftGpuVisibilityReveal(term, bufferRef, catchupPendingRef) {
   flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupPendingRef);
   if (term && isTerminalRendererReady(term)) {
     refreshTerminalViewport(term);
     nudgeTerminalViewportRepaint(term);
   }
+}
+
+/**
+ * Post-soft-reveal probe decision (sin-parpadeo, phase 1). On a clean soft reveal
+ * (GPU addon attached, no churn while hidden) `refresh()` alone repaints the live
+ * bitmap, so the 1-cell nudge — the single visible blink — is skipped. The probe
+ * runs one frame later and nudges only when the reveal actually went bad: the GPU
+ * addon was lost mid-reveal (`reattachPending`) while the renderer still answers.
+ * Never nudge when the renderer is not ready (the nudge would no-op) or inside the
+ * coalesce window. Layout-settled generation bumps are NOT a probe signal: they
+ * fire on every switch and are handled by the panel's own layout-settled listener.
+ */
+export function shouldNudgeAfterSoftRevealProbe({
+  rendererReady = false,
+  reattachPending = false,
+  elapsedMs = 0,
+  minMs = 200,
+} = {}) {
+  if (!rendererReady || !reattachPending) return false;
+  return elapsedMs >= minMs;
 }
 
 /** Flush PTY output buffered while layout-hidden — write only, no repaint nudge. */
@@ -2062,9 +2086,9 @@ export function shouldSkipRedundantLayoutSettleViewportSync({
 /** Buffer PTY output while layout-hidden. */
 export function shouldSkipTerminalOutputWhileLayoutHidden({
   isVisibleInLayout = true,
-  isActivePanel = true,
+  isActivePanel: _isActivePanel = true,
   operationalRendererMode,
-  canvasAttached = false,
+  canvasAttached: _canvasAttached = false,
 } = {}) {
   if (!isVisibleInLayout) {
     return shouldUseGpuTerminalRenderer({ operationalRendererMode });

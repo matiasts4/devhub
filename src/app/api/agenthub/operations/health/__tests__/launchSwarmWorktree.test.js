@@ -35,7 +35,7 @@ jest.mock('@/lib/db/localDb.js', () => {
     getSwarmMissionDirectorSnapshot: jest.fn(() => ({})),
     insertTrace: jest.fn(() => ({ changes: 1 })),
     listMissionParticipants: jest.fn(() => []),
-    prepareAgentWorkspaceLease: jest.fn((db, opts) => ({
+    prepareAgentWorkspaceLease: jest.fn((_db, _opts) => ({
       workspace: { id: 'ws-1', base_commit: 'abc123' },
     })),
     registerMissionParticipant: jest.fn(() => {}),

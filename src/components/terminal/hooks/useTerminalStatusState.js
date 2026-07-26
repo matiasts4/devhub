@@ -17,8 +17,8 @@ export default function useTerminalStatusState({
   hasConnectedOnce,
   sessionExitReason,
   initialCommand,
-  webglFallback,
-  requestedRendererMode,
+  webglFallback: _webglFallback,
+  requestedRendererMode: _requestedRendererMode,
   shouldUseNativeRenderer,
 }) {
   const isConnected = connectionState === 'connected';

@@ -147,7 +147,7 @@ export default function PizarraMinimap({ elements, onSelectElement, idleMs = 150
     // don't implement setPointerCapture, hence the try/catch.
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     dragRef.current = {
@@ -206,7 +206,7 @@ export default function PizarraMinimap({ elements, onSelectElement, idleMs = 150
 
       try {
         event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
 
