@@ -4,7 +4,8 @@
  *
  * pizarra-motion-polish (P-MP-6). The token is applied at mount; the
  * `data-surface-state="entering"` attribute is held for `DUR.enter` ms
- * (340ms) and then dropped so the chrome settles to "ready". The
+ * (180ms since pizarra-instant-enter A4) and then dropped so the chrome
+ * settles to "ready". The
  * opacity-only keyframes are already injected by
  * `ensureSurfaceMotionKeyframes()` at module scope; the
  * `prefers-reduced-motion` `@media` block inside the keyframe rules

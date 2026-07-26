@@ -22,7 +22,11 @@ export const EASE_SOFT = 'cubic-bezier(0.4, 0, 0.2, 1)';
 export const DUR = {
   fast: 140,
   base: 220,
-  enter: 340,
+  // pizarra-instant-enter A4: 340 → 180. The enter fade runs while the live
+  // surface is still reattaching (portal retarget + Konva mount), so a long
+  // fade read as "the canvas is empty/slow". 180ms keeps the polish without
+  // masking the load; the reduced-motion media query still collapses it.
+  enter: 180,
 };
 
 export const ACCENT = {

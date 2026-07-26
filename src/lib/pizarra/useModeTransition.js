@@ -6,8 +6,11 @@
  * Drives a debounced, interruptible phase machine on top of
  * framer-motion's `AnimatePresence`. The phase machine is:
  *
- *   idle ──(maximizedView changes)──[ debounce 200ms ]──> leaving
- *   leaving (110ms) ──> entering (220ms) ──> idle
+ *   idle ──(maximizedView changes)──[ debounce 0ms ]──> leaving
+ *   leaving (40ms) ──> entering (110ms) ──> idle
+ *   (pizarra-instant-enter A4: was 110/220 = 330ms; tightened to a
+ *   150ms shell-chrome budget so the transition no longer outlasts
+ *   the surface fade.)
  *
  * The hook is the only thing that reads `maximizedView` for
  * ANIMATION purposes. PizarraCanvas / WorkspaceRightDock consume
@@ -22,8 +25,9 @@
  * Reduced motion: when `prefers-reduced-motion: reduce` is
  * reported by the OS, the cross-fade collapses to <= 50 ms.
  *
- * All durations / easings are read from `surfaceMotion.js`
- * tokens. No timing values are hard-coded in the hook itself.
+ * Easings are read from `surfaceMotion.js` tokens; the default phase
+ * durations are explicit shell-chrome constants (pizarra-instant-enter
+ * A4), independent from the surface enter token (`DUR.enter`).
  *
  * Implementation notes:
  *   - The phase machine runs entirely on `setTimeout`. We do NOT
@@ -54,9 +58,14 @@ import { DUR, EASE_OUT } from './surfaceMotion';
 // debounce keeps the visible animation coherent.
 const REDUCED_MOTION_TOTAL_MS = 50;
 
-// Default durations match the spec: 110ms leaving + 220ms entering.
-const DEFAULT_LEAVE_MS = 110;
-const DEFAULT_ENTER_MS = DUR.base;
+// pizarra-instant-enter A4: shell phase budget tightened from
+// 110ms leaving + 220ms entering (330ms dead time before the canvas read as
+// settled) to 40 + 110 = 150ms. The old budget outlasted the actual surface
+// fade and made pizarra entry feel sluggish even when the terminals were
+// already mounted. Not token-derived on purpose: this is the shell chrome
+// budget, independent from the surface enter token (DUR.enter).
+const DEFAULT_LEAVE_MS = 40;
+const DEFAULT_ENTER_MS = 110;
 // Debounce intentionally set to 0: any non-zero value introduces
 // perceptible lag between the user's click and the start of the
 // animation. The phase machine (leaving → entering) already

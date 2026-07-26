@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import OperatorActionCard from '@/components/workspace/OperatorActionCard';
 import WorkspaceSwarmPane from './WorkspaceSwarmPane';
 import PizarraPane from '@/components/pizarra/PizarraPane';
@@ -31,6 +32,23 @@ export default function WorkspaceRightDock({
   };
   const isSwarmActive = dockState.activeTab === 'swarm';
   const isPizarraActive = dockState.activeTab === 'pizarra';
+
+  // pizarra-instant-enter A4: warm the PizarraCanvas chunk (react-konva,
+  // loaded via next/dynamic inside PizarraPane) while the dock is idle, so
+  // the FIRST pizarra entry does not pay the dynamic-import fetch on top of
+  // the Konva stage mount. A plain import() targets the same module and
+  // therefore fills the same bundler chunk cache that next/dynamic reads.
+  useEffect(() => {
+    const warm = () => {
+      void import('@/components/pizarra/PizarraCanvas').catch(() => {});
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(warm, { timeout: 3000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = setTimeout(warm, 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Pizarra transition owner: the shell must live at the dock host
   // because this component exists before/after the pizarra pane itself.

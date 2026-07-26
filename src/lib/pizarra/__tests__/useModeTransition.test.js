@@ -16,14 +16,14 @@
  *      a. After a `debounceMs` window (default 0 ms), the hook
  *         flips to `phase: 'leaving'`.
  *      b. `progress` animates from 0 to 1 over `leaveMs`
- *         (default 110 ms).
+ *         (default 40 ms since pizarra-instant-enter A4).
  *      c. On leaving completion, `phase` flips to 'entering'.
  *      d. `progress` animates from 0 to 1 over `enterMs`
- *         (default 220 ms).
+ *         (default 110 ms since pizarra-instant-enter A4).
  *      e. On entering completion, `phase` returns to 'idle' and
  *         `progress` returns to 0.
  *   4. Total transition time is debounce + leave + enter
- *      (0 + 110 + 220 = 330 ms by default).
+ *      (0 + 40 + 110 = 150 ms by default).
  *   5. Rapid toggles within the debounce window collapse to a
  *      single coherent transition (only the latest maximizedView
  *      value is applied). Toggles DURING leaving/entering cancel
@@ -31,9 +31,10 @@
  *   6. When `prefers-reduced-motion: reduce` is active, the
  *      transition collapses to a single cross-fade that completes
  *      in <= 50 ms total.
- *   7. The hook reads durations / easings from `surfaceMotion.js`
- *      tokens (`DUR`, `EASE_OUT`). No timing values are
- *      hard-coded in the hook itself.
+ *   7. The hook reads easings from `surfaceMotion.js` tokens
+ *      (`EASE_OUT`) and still exposes them via `motionTokens`;
+ *      the default phase durations are explicit shell-chrome
+ *      constants (pizarra-instant-enter A4), not token-derived.
  *   8. `MOTION_DRIVER` is exported from `surfaceMotion.js` and
  *      equals 'framer-motion'.
  */
@@ -176,12 +177,12 @@ describe('useModeTransition — debounce + phase machine', () => {
       advance(5); // past debounce=0
       expect(result.current.phase).toBe('leaving');
 
-      advance(55); // halfway through 110ms leaving
+      advance(20); // halfway through 40ms leaving
       expect(result.current.phase).toBe('leaving');
       expect(result.current.progress).toBeGreaterThan(0);
       expect(result.current.progress).toBeLessThanOrEqual(1);
 
-      advance(60); // past leaving (110ms total)
+      advance(25); // past leaving (40ms total)
       expect(result.current.phase).toBe('entering');
     } finally {
       jest.useRealTimers();
@@ -197,8 +198,8 @@ describe('useModeTransition — debounce + phase machine', () => {
         { initialProps: { view: 'workspace' } }
       );
       rerender({ view: 'pizarra' });
-      // 0 debounce + 110 leaving + 220 entering
-      advance(5 + 110 + 220 + 5);
+      // 0 debounce + 40 leaving + 110 entering
+      advance(5 + 40 + 110 + 5);
       expect(result.current.phase).toBe('idle');
       expect(result.current.progress).toBe(0);
       expect(result.current.isAnimating).toBe(false);
@@ -207,7 +208,7 @@ describe('useModeTransition — debounce + phase machine', () => {
     }
   });
 
-  test('default transition time is 110ms leaving + 220ms entering = 330ms active', () => {
+  test('default transition time is 40ms leaving + 110ms entering = 150ms active', () => {
     jest.useFakeTimers('modern');
     try {
       const { useModeTransition } = getHook();
@@ -218,9 +219,9 @@ describe('useModeTransition — debounce + phase machine', () => {
       rerender({ view: 'pizarra' });
       advance(5);
       expect(result.current.phase).toBe('leaving');
-      advance(110);
+      advance(40);
       expect(result.current.phase).toBe('entering');
-      advance(220);
+      advance(110);
       expect(result.current.phase).toBe('idle');
     } finally {
       jest.useRealTimers();
@@ -246,7 +247,7 @@ describe('useModeTransition — rapid toggle / cancellation', () => {
       advance(200);
       // The transition should start fresh toward pizarra.
       expect(result.current.phase).toBe('leaving');
-      advance(110);
+      advance(40);
       expect(result.current.phase).toBe('entering');
     } finally {
       jest.useRealTimers();
@@ -264,7 +265,7 @@ describe('useModeTransition — rapid toggle / cancellation', () => {
       rerender({ view: 'pizarra' });
       advance(200); // debounce → leaving
       expect(result.current.phase).toBe('leaving');
-      advance(50); // halfway through leaving
+      advance(20); // halfway through leaving (40ms budget)
       // Toggle back to workspace mid-leaving. The in-flight
       // leaving→entering timer must be cleared and a new
       // debounce must start.
@@ -274,7 +275,7 @@ describe('useModeTransition — rapid toggle / cancellation', () => {
       // After the new debounce, leaving restarts.
       advance(200);
       expect(result.current.phase).toBe('leaving');
-      advance(110);
+      advance(40);
       expect(result.current.phase).toBe('entering');
     } finally {
       jest.useRealTimers();
@@ -345,15 +346,18 @@ describe('useModeTransition — animProps shape', () => {
     }
   });
 
-  test('transition duration is a sane positive number (token-sourced)', () => {
+  test('transition duration is a sane positive number', () => {
     jest.useFakeTimers('modern');
     try {
       const { useModeTransition } = getHook();
       const { result } = renderHook(() => useModeTransition({ maximizedView: 'workspace' }));
       expect(result.current.animProps.transition.duration).toBeGreaterThan(0);
       expect(result.current.animProps.transition.duration).toBeLessThanOrEqual(1);
-      expect(result.current.animProps.transition.duration).toBe(surfaceMotion.DUR.base / 1000);
-      expect(result.current.durations.enterMs).toBe(surfaceMotion.DUR.base);
+      // pizarra-instant-enter A4: the shell phase budget is now explicit
+      // (40 leave + 110 enter), no longer DUR.base-derived.
+      expect(result.current.animProps.transition.duration).toBe(0.11);
+      expect(result.current.durations.enterMs).toBe(110);
+      expect(result.current.durations.leaveMs).toBe(40);
     } finally {
       jest.useRealTimers();
     }
