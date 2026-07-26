@@ -68,6 +68,8 @@ import {
   refreshTerminalViewport,
   forceTerminalViewportRepaint,
   nudgeTerminalViewportRepaint,
+  needsGpuRendererReattach,
+  shouldNudgeAfterSoftRevealProbe,
   stabilizeTerminalRenderer,
   isTerminalRendererReady,
   fitTerminalViewport,
@@ -337,6 +339,9 @@ export default function TerminalTTY({
   const rendererWasReadyAtLastRepaintRef = useRef(false);
   const windowSwitchTuiRecoverAtRef = useRef(0);
   const softRevealNudgeAtRef = useRef(0);
+  // Pending rAF id of the post-soft-reveal probe (sin-parpadeo phase 1). The probe
+  // replaces the eager 1-cell nudge on clean reveals; 0 = no probe scheduled.
+  const softRevealProbeFrameRef = useRef(0);
   const prevIsActivePanelRef = useRef(false);
   const reactivateTerminalViewportRef = useRef(null);
   const reactivateCoalesceTimerRef = useRef(null);
@@ -569,6 +574,11 @@ export default function TerminalTTY({
     if (inactiveRepaintRafRef.current) {
       cancelAnimationFrame(inactiveRepaintRafRef.current);
       inactiveRepaintRafRef.current = null;
+    }
+
+    if (softRevealProbeFrameRef.current) {
+      cancelAnimationFrame(softRevealProbeFrameRef.current);
+      softRevealProbeFrameRef.current = 0;
     }
 
     if (snapshotIntervalRef.current) {
@@ -932,27 +942,53 @@ export default function TerminalTTY({
   );
 
   /**
-   * Soft GPU reveal (flush catchup + refresh + 1-cell nudge) with nudge
-   * coalescing. The deferred rAF soft-reveal in the layout-show effect was
-   * queueing a second nudge a few frames after the first, creating an extra
-   * micro-flicker. We still flush output and refresh, but we skip the resize
-   * nudge if one already ran recently.
+   * Soft GPU reveal (flush catchup + refresh) with a post-paint probe instead of
+   * an eager 1-cell nudge (sin-parpadeo, phase 1). On a clean reveal the GPU addon
+   * stayed attached and the layout-show effect already gated churn, so refresh()
+   * alone repaints the live bitmap — the eager nudge was the single blink users
+   * saw on every workspace switch. One frame later the probe nudges ONLY if the
+   * reveal went bad (GPU addon lost mid-reveal). Layout-settled generation bumps
+   * are expected on every switch and handled by the layout-settled listener, so
+   * they are not a probe signal. The nudge keeps the 200 ms coalesce so immediate
+   * + deferred reveals cannot double-nudge.
    */
   const coalescedSoftGpuVisibilityReveal = useCallback(
     (term, bufferRef, catchupPendingRef, { reason = '', minMs = 200 } = {}) => {
       flushHiddenTerminalCatchupToTerm(term, bufferRef, catchupPendingRef);
       if (!term || !isTerminalRendererReady(term)) return;
       refreshTerminalViewport(term);
-      const now = performance.now();
-      const elapsed = now - softRevealNudgeAtRef.current;
-      if (elapsed < minMs) {
-        logViewportDiagnostic('soft-reveal-nudge-coalesced', { reason, elapsed });
-        return;
+      if (softRevealProbeFrameRef.current) {
+        cancelAnimationFrame(softRevealProbeFrameRef.current);
+        softRevealProbeFrameRef.current = 0;
       }
-      softRevealNudgeAtRef.current = now;
-      nudgeTerminalViewportRepaint(term);
+      softRevealProbeFrameRef.current = requestAnimationFrame(() => {
+        softRevealProbeFrameRef.current = 0;
+        if (isDisposingRef.current || !isVisibleInLayoutRef.current) return;
+        if (!term || !isTerminalRendererReady(term)) return;
+        const reattachPending = needsGpuRendererReattach({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+        });
+        const now = performance.now();
+        const elapsed = now - softRevealNudgeAtRef.current;
+        if (
+          !shouldNudgeAfterSoftRevealProbe({
+            rendererReady: true,
+            reattachPending,
+            elapsedMs: elapsed,
+            minMs,
+          })
+        ) {
+          logViewportDiagnostic('soft-reveal-probe-clean', { reason, reattachPending, elapsed });
+          return;
+        }
+        softRevealNudgeAtRef.current = now;
+        nudgeTerminalViewportRepaint(term);
+        logViewportDiagnostic('soft-reveal-probe-nudge', { reason, elapsed });
+      });
     },
-    [logViewportDiagnostic]
+    [logViewportDiagnostic, operationalRendererModeRef]
   );
 
   const {

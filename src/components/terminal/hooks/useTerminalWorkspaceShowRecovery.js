@@ -882,8 +882,9 @@ export default function useTerminalWorkspaceShowRecovery({
     }
 
     // NOTE: we intentionally do NOT release WebGL/Canvas when the panel becomes
-    // hidden. Workspaces are kept mounted with visibility:hidden, so the addon
-    // must stay attached for instant reactivation. Real GPU disposal happens on
+    // hidden. Workspaces are kept mounted with opacity:0 (+ contain:layout paint,
+    // never visibility:hidden — see workspaceAnimProps.js), so the addon must
+    // stay attached for instant reactivation. Real GPU disposal happens on
     // unmount via disposeXtermRuntime().
 
     if (shouldSyncTerminalViewportOnLayoutShow(prevVisible, nextVisible)) {
