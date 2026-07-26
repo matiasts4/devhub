@@ -20,7 +20,7 @@ const {
   getSidebarToggleStyle,
 } = require('../workspaceSidebarUtils.js');
 
-const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm', 'telegram'];
+const DEFAULT_NAV = ['dashboard', 'tareas', 'editor', 'roadmap', 'historial', 'swarm'];
 
 describe('getVisibleNavKeys()', () => {
   test('returns all default keys when features is empty', () => {

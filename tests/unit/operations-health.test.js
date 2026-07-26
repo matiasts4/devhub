@@ -3,7 +3,6 @@ const {
   buildMcpHealthSource,
   buildProcessHealthSource,
   buildSessionStreamHealthSource,
-  buildTelegramHealthSource,
 } = require('../../src/lib/operations/health');
 
 describe('operations health mappers', () => {
@@ -57,7 +56,12 @@ describe('operations health mappers', () => {
         list_tools: {
           tools: [
             { name: 'list_projects', authority: 'durable', control_plane: true, safe_action: true },
-            { name: 'read_file', authority: 'configured', control_plane: false, safe_action: false },
+            {
+              name: 'read_file',
+              authority: 'configured',
+              control_plane: false,
+              safe_action: false,
+            },
           ],
         },
         smoke: {
@@ -92,30 +96,38 @@ describe('operations health mappers', () => {
           doctor: {
             probes: [
               { key: 'database', status: 'healthy', authority: 'durable', freshness: 'current' },
-              { key: 'inventory', status: 'degraded', authority: 'configured', freshness: 'unknown' },
+              {
+                key: 'inventory',
+                status: 'degraded',
+                authority: 'configured',
+                freshness: 'unknown',
+              },
             ],
           },
           list_tools: {
             tools: [
-              { name: 'list_projects', authority: 'durable', control_plane: true, safe_action: true },
-              { name: 'read_file', authority: 'configured', control_plane: false, safe_action: false },
+              {
+                name: 'list_projects',
+                authority: 'durable',
+                control_plane: true,
+                safe_action: true,
+              },
+              {
+                name: 'read_file',
+                authority: 'configured',
+                control_plane: false,
+                safe_action: false,
+              },
             ],
           },
           smoke: { status: 'degraded' },
-        }),
-        buildTelegramHealthSource({
-          bot_connected: true,
-          active_chats: 2,
-          recent_errors: 0,
-          last_activity: '2026-04-10T17:19:30.000Z',
         }),
       ],
     });
 
     expect(snapshot.summary).toMatchObject({
-      total: 4,
-      healthy: 2,
-      degraded: 1,
+      total: 3,
+      healthy: 1,
       degraded: 2,
       stale: 0,
       worst_status: 'degraded',
@@ -124,7 +136,6 @@ describe('operations health mappers', () => {
       'opencode-process',
       'session-stream',
       'mcp',
-      'telegram',
     ]);
   });
 });

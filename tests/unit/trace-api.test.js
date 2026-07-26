@@ -26,7 +26,6 @@ function createTestDb() {
       project_id TEXT,
       title TEXT NOT NULL,
       agent_model TEXT,
-      telegram_chat_id TEXT,
       directory TEXT,
       status TEXT DEFAULT 'active',
       opencode_session_id TEXT,

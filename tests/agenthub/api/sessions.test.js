@@ -74,22 +74,6 @@ describe('GET /api/agenthub/sessions', () => {
     expect(body.length).toBe(0);
   });
 
-  test('filters by telegram_chat_id', async () => {
-    const reachable = await serverReachable();
-    if (!reachable) {
-      console.warn('SKIP: Next.js server not reachable at', BASE_URL);
-      return;
-    }
-
-    const { response, body } = await harness.requestJson(
-      'GET',
-      '/api/agenthub/sessions?telegram_chat_id=nonexistent-chat'
-    );
-
-    harness.assertStatus(response, 200);
-    expect(Array.isArray(body)).toBe(true);
-  });
-
   test('supports hierarchy=chain query', async () => {
     const reachable = await serverReachable();
     if (!reachable) {

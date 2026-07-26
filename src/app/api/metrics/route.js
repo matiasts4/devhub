@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const db = localDb.getDb();
 
-    // Use agent_traces (managed by localDb) instead of agent_logs (telegram-only)
+    // Use agent_traces (managed by localDb) instead of the legacy agent_logs table
     // agent_traces has: session_id, agent_name, trace_type, tool_name, tool_status,
     // duration_ms, content, created_at — equivalent data with proper schema management
 

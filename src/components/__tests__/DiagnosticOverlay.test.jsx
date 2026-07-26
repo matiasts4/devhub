@@ -38,12 +38,6 @@ describe('DiagnosticOverlay runtime evidence actions', () => {
   test('renders runtime evidence action buttons for log and crashdump refs', async () => {
     const view = await renderOverlay({
       diagnostics: {
-        telegram: {
-          status: 'healthy',
-          authority: 'authoritative',
-          freshness: 'current',
-          evidence_ref: 'evidence://telegram/status',
-        },
         runtime: {
           status: 'degraded',
           authority: 'authoritative',

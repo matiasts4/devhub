@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import {
   getRecentSessions,
   getSessionsByProject,
-  getSessionsByTelegramChat,
   getSessionChain,
   getChildSessions,
   getSiblingSessions,
@@ -15,7 +14,6 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
 
     const projectId = searchParams.get('project_id');
-    const telegramChatId = searchParams.get('telegram_chat_id');
     const parentId = searchParams.get('parent_id');
     const sessionId = searchParams.get('session_id');
     const hierarchy = searchParams.get('hierarchy');
@@ -40,8 +38,6 @@ export async function GET(req) {
 
     if (projectId) {
       sessions = getSessionsByProject(projectId, { includeHidden });
-    } else if (telegramChatId) {
-      sessions = getSessionsByTelegramChat(telegramChatId, limit);
     } else {
       sessions = getRecentSessions(limit, { includeHidden });
     }
@@ -56,15 +52,7 @@ export async function GET(req) {
 export const POST = withAuth(async function POST(req) {
   try {
     const body = await req.json();
-    const {
-      project_id,
-      title,
-      agent_model,
-      parent_id,
-      opencode_session_id,
-      telegram_chat_id,
-      directory,
-    } = body;
+    const { project_id, title, agent_model, parent_id, opencode_session_id, directory } = body;
 
     if (!project_id || !title) {
       return NextResponse.json({ error: 'project_id and title are required' }, { status: 400 });
@@ -87,7 +75,6 @@ export const POST = withAuth(async function POST(req) {
       agent_model: agent_model || null,
       parent_id: parent_id || null,
       opencode_session_id: opencode_session_id || null,
-      telegram_chat_id: telegram_chat_id || null,
       directory: directory || null,
       status: 'active',
     });

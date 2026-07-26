@@ -1467,7 +1467,6 @@ const AUTO_ID_TABLES = new Set([
   'milestones',
   'task_comments',
   'agent_memory',
-  'mcp_connections',
 ]);
 
 function nowIso() {

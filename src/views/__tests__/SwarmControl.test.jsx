@@ -373,7 +373,6 @@ function buildDegradedInput() {
         authority: 'authoritative',
         freshness: 'degraded',
       },
-      telegram: null,
       process: null,
       session_stream: null,
     },
@@ -628,8 +627,6 @@ describe('SwarmControl control room composition', () => {
     expect(text).toMatch(/falta evidencia de workspace|Workspace evidence gap/i);
 
     expect(text).toContain('Overlay diagnóstico');
-    expect(text).toContain('Telegram');
-    expect(text).toContain('ok');
     expect(text).toContain('MCP');
     expect(text).toContain('vencido');
     expect(text).not.toContain('Diagnostic overlay');
@@ -658,7 +655,6 @@ describe('SwarmControl control room composition', () => {
 
     expect(view.container.textContent).toContain('2/5 activos');
     expect(stackButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(view.container.textContent).not.toContain('Telegram no disponible');
     expect(
       view.container.querySelector('[aria-label="Agentes y asignaciones"]')?.textContent
     ).toContain('worker-1');
@@ -1671,7 +1667,6 @@ describe('SwarmControl control room composition', () => {
     expect(text).toContain('Fuente faltante: evidencia de aprobación');
     expect(text).toContain('Resultado riesgoso pendiente de aprobación');
     expect(text).toContain('Resultado no aplicado hasta que exista evidencia de aprobación');
-    expect(text).toContain('Fuente faltante: snapshot de Telegram');
     expect(text).toContain('MCP');
     expect(text).toContain('degradado');
     expect(text).toContain('Actividad en vivo: en ejecución');

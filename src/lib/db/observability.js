@@ -246,36 +246,6 @@ function getSessionUsage(dbOrSessionId, maybeSessionId) {
 }
 
 // ============================================================
-// Telegram Session Map ORM
-// ============================================================
-
-function getTelegramSession(dbOrChatId, maybeChatId) {
-  const { db, input } = resolveDbArgs(dbOrChatId, maybeChatId);
-  const chatId = typeof input === 'string' ? input : input?.chat_id;
-  return db
-    .prepare('SELECT * FROM telegram_session_map WHERE telegram_chat_id = ? AND active = 1')
-    .get(chatId);
-}
-
-function createTelegramSession(dbOrChatId, maybeChatId, maybeSessionId, maybeProjectId) {
-  const hasDb = dbOrChatId && typeof dbOrChatId.prepare === 'function';
-  const db = hasDb ? dbOrChatId : getDb();
-  const chatId = hasDb ? maybeChatId : dbOrChatId;
-  const sessionId = hasDb ? maybeSessionId : maybeChatId;
-  const projectId = hasDb ? maybeProjectId : maybeSessionId;
-  const stmt = db.prepare(`
-    INSERT INTO telegram_session_map (telegram_chat_id, session_id, project_id, active)
-    VALUES (?, ?, ?, 1)
-    ON CONFLICT(telegram_chat_id) DO UPDATE SET
-      session_id = excluded.session_id,
-      project_id = excluded.project_id,
-      active = 1,
-      updated_at = datetime('now')
-  `);
-  return stmt.run(chatId, sessionId, projectId || null);
-}
-
-// ============================================================
 // Agent Hub Messages ORM
 // ============================================================
 
@@ -383,9 +353,8 @@ function getSessionsByProject(dbOrProjectId, maybeProjectId, options = {}) {
   return db
     .prepare(
       `
-    SELECT s.*, tsm.telegram_chat_id 
+    SELECT s.*
     FROM agent_hub_sessions s
-    LEFT JOIN telegram_session_map tsm ON s.id = tsm.session_id
     ${whereClause}
     ORDER BY s.updated_at DESC
   `
@@ -415,32 +384,14 @@ function getRecentSessions(dbOrLimit, maybeLimit, options = {}) {
   return db
     .prepare(
       `
-    SELECT s.*, tsm.telegram_chat_id 
+    SELECT s.*
     FROM agent_hub_sessions s
-    LEFT JOIN telegram_session_map tsm ON s.id = tsm.session_id
     ${whereClause}
     ORDER BY s.updated_at DESC
     LIMIT ?
   `
     )
     .all(...params);
-}
-
-function getSessionsByTelegramChat(dbOrChatId, maybeChatId, maybeLimit = 20) {
-  const { db, input } = resolveDbArgs(dbOrChatId, maybeChatId);
-  const chatId = typeof input === 'string' ? input : input?.chat_id;
-  const limit = typeof maybeChatId === 'number' ? maybeChatId : maybeLimit;
-  return db
-    .prepare(
-      `
-    SELECT s.* FROM agent_hub_sessions s
-    JOIN telegram_session_map tsm ON s.id = tsm.session_id
-    WHERE tsm.telegram_chat_id = ?
-    ORDER BY s.updated_at DESC
-    LIMIT ?
-  `
-    )
-    .all(chatId, limit);
 }
 
 // ============================================================
@@ -712,9 +663,6 @@ module.exports = {
   // Session Usage
   upsertSessionUsage,
   getSessionUsage,
-  // Telegram Session
-  getTelegramSession,
-  createTelegramSession,
   // Messages
   insertMessage,
   getMessagesBySession,
@@ -722,7 +670,6 @@ module.exports = {
   // Session Queries
   getSessionsByProject,
   getRecentSessions,
-  getSessionsByTelegramChat,
   // Session Updates
   updateSessionStatus,
   updateSessionError,

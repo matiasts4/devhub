@@ -40,7 +40,6 @@ function deleteProjectCascadeUnsafe(dbOrProjectId, maybeProjectId) {
   deleteByProjectId(db, 'ai_interactions', projectId);
   deleteByProjectId(db, 'project_files', projectId);
   deleteByProjectId(db, 'agent_memory', projectId);
-  deleteByProjectId(db, 'telegram_session_map', projectId);
   deleteByProjectId(db, 'agent_hub_sessions', projectId);
 
   return db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);

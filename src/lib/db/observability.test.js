@@ -13,14 +13,11 @@ const {
   upsertTrace,
   upsertSessionUsage,
   getSessionUsage,
-  getTelegramSession,
-  createTelegramSession,
   insertMessage,
   getMessagesBySession,
   getToolTracesBySession,
   getSessionsByProject,
   getRecentSessions,
-  getSessionsByTelegramChat,
   updateSessionStatus,
   updateSessionError,
   updateSessionOpenCodeId,
@@ -180,23 +177,6 @@ describe('upsertSessionUsage / getSessionUsage', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Telegram Session
-// ---------------------------------------------------------------------------
-
-describe('createTelegramSession / getTelegramSession', () => {
-  it('creates and retrieves a session', () => {
-    createTelegramSession(db, 'chat-123', 'sess-1', 'proj-1');
-    const session = getTelegramSession(db, 'chat-123');
-    expect(session).not.toBeNull();
-    expect(session.session_id).toBe('sess-1');
-  });
-
-  it('returns undefined for unknown chat', () => {
-    expect(getTelegramSession(db, 'unknown')).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Agent Hub Messages
 // ---------------------------------------------------------------------------
 
@@ -252,12 +232,6 @@ describe('getSessionsByProject', () => {
 describe('getRecentSessions', () => {
   it('returns seeded session', () => {
     expect(getRecentSessions(db)).toHaveLength(1);
-  });
-});
-
-describe('getSessionsByTelegramChat', () => {
-  it('returns empty array for unknown chat', () => {
-    expect(getSessionsByTelegramChat(db, 'unknown')).toEqual([]);
   });
 });
 

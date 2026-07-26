@@ -241,7 +241,6 @@ function seedMilestone(db, projectId, options = {}) {
  * @param {string} [options.parentId] - Parent session ID
  * @param {string} [options.status] - Session status (default: 'active')
  * @param {string} [options.visibility] - Visibility (default: 'visible')
- * @param {string} [options.telegramChatId] - Telegram chat ID
  * @param {string} [options.directory] - Working directory
  * @param {string} [options.opencodeSessionId] - OpenCode session ID
  * @returns {object} The inserted session row
@@ -255,7 +254,6 @@ function seedSession(db, options = {}) {
     parentId = null,
     status = 'active',
     visibility = 'visible',
-    telegramChatId = null,
     directory = '/tmp/test-project',
     opencodeSessionId = null,
   } = options;
@@ -263,8 +261,8 @@ function seedSession(db, options = {}) {
   db.prepare(
     `INSERT OR IGNORE INTO agent_hub_sessions 
      (id, project_id, title, agent_model, parent_id, status, visibility, 
-      telegram_chat_id, directory, opencode_session_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+      directory, opencode_session_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
   ).run(
     id,
     projectId,
@@ -273,7 +271,6 @@ function seedSession(db, options = {}) {
     parentId,
     status,
     visibility,
-    telegramChatId,
     directory,
     opencodeSessionId
   );
@@ -349,7 +346,6 @@ function cleanupTestData(db) {
     'agent_traces',
     'agent_hub_messages',
     'agent_session_usage',
-    'telegram_session_map',
     'agent_hub_sessions',
     'tasks',
     'milestones',
@@ -357,8 +353,6 @@ function cleanupTestData(db) {
     'projects',
     'swarm_config',
     'swarm_processes',
-    'telegram_sessions',
-    'telegram_activity',
   ];
 
   const results = {};

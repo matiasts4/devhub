@@ -42,7 +42,6 @@ const TOKEN_LABELS = Object.freeze({
 
 const MISSING_SOURCE_LABELS = Object.freeze({
   'approval evidence': 'evidencia de aprobación',
-  'telegram snapshot': 'snapshot de Telegram',
   'process snapshot': 'snapshot de proceso',
   'session stream snapshot': 'snapshot de stream de sesión',
   'workspace evidence': 'evidencia de workspace',

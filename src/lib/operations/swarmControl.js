@@ -1288,7 +1288,6 @@ export async function performDirectorApprovalDecision({
 const HEALTH_TO_CONTROL_ROOM_DIAGNOSTIC_KEY = Object.freeze({
   'opencode-process': 'process',
   mcp: 'mcp',
-  telegram: 'telegram',
   'session-stream': 'session_stream',
   'runtime-diagnostics': 'runtime',
 });
@@ -1510,9 +1509,7 @@ function normalizeDiagnosticRecord(record = null, fallbackAuthority = 'unavailab
       freshness: 'unavailable',
       evidence_ref: null,
       evidence_refs: [],
-      missing_source: buildMissingSourceLabel(
-        fallbackAuthority === 'telegram' ? 'telegram' : fallbackAuthority
-      ),
+      missing_source: buildMissingSourceLabel(fallbackAuthority),
     };
   }
   const status = statusFromRecord(record, { authority: fallbackAuthority });
@@ -1626,7 +1623,6 @@ export function composeControlRoomSnapshot(input = {}) {
     agent_teams: agentTeams,
     team_members: teamMembers,
     diagnostics: {
-      telegram: normalizeDiagnosticRecord(input.diagnostics?.telegram, 'telegram'),
       mcp: normalizeDiagnosticRecord(input.diagnostics?.mcp, 'mcp'),
       process: normalizeDiagnosticRecord(input.diagnostics?.process, 'process'),
       session_stream: normalizeDiagnosticRecord(
@@ -1727,7 +1723,6 @@ export function selectControlRoomTeamMembers(snapshot = {}) {
 export function selectControlRoomDiagnostics(snapshot = {}) {
   return (
     snapshot.diagnostics || {
-      telegram: null,
       mcp: null,
       process: null,
       session_stream: null,

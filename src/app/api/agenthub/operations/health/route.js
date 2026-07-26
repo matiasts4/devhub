@@ -38,7 +38,6 @@ import {
   buildQueueHealthSource,
   buildRuntimeDiagnosticsHealthSource,
   buildSessionStreamHealthSource,
-  buildTelegramHealthSource,
 } from '@/lib/operations/health';
 import {
   buildControlRoomSnapshotInputFromHealth,
@@ -2244,12 +2243,6 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
       const route = await import('@/app/api/agenthub/sessions/health/route');
       return getRoutePayload(route.GET);
     });
-  const getTelegramStatus =
-    dependencies.getTelegramStatus ||
-    (async () => {
-      const route = await import('@/app/api/telegram/status/route');
-      return getRoutePayload(route.GET);
-    });
   const getMissionSnapshot = dependencies.getMissionSnapshot || null;
   const getRuntimeDiagnostics =
     dependencies.getRuntimeDiagnostics ||
@@ -2264,7 +2257,6 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
     activeAgentCount,
     mcpStatus,
     sessionsHealth,
-    telegramStatus,
     runtimeDiagnostics,
   ] = await Promise.all([
     getProcessStatus(),
@@ -2272,7 +2264,6 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
     getActiveAgentCount(),
     getMcpStatus(),
     getSessionsHealth(),
-    getTelegramStatus(),
     getRuntimeDiagnostics(),
   ]);
   const [missionSnapshot, directorQueue] = await Promise.all([
@@ -2293,7 +2284,6 @@ export async function gatherOperationalHealth(dependencies = {}, request = null)
       }),
       buildSessionStreamHealthSource(sessionsHealth, { now }),
       buildMcpHealthSource(mcpStatus, { now }),
-      buildTelegramHealthSource(telegramStatus, { now }),
       buildRuntimeDiagnosticsHealthSource(runtimeDiagnostics, { now }),
     ],
   });

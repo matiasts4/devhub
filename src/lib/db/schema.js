@@ -126,33 +126,6 @@ function ensureRuntimeSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
 
-    CREATE TABLE IF NOT EXISTS telegram_activity (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT,
-      event_type TEXT NOT NULL,
-      direction TEXT,
-      source TEXT DEFAULT 'telegram',
-      command TEXT,
-      content_preview TEXT,
-      status TEXT DEFAULT 'ok',
-      metadata TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_telegram_activity_created ON telegram_activity(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_telegram_activity_chat ON telegram_activity(chat_id);
-
-    CREATE TABLE IF NOT EXISTS telegram_sessions (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL UNIQUE,
-      user_name TEXT,
-      agent TEXT,
-      message_count INTEGER DEFAULT 0,
-      last_activity TEXT,
-      status TEXT DEFAULT 'active',
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_telegram_sessions_chat ON telegram_sessions(chat_id);
-
     CREATE TABLE IF NOT EXISTS agent_hub_sessions (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -232,97 +205,6 @@ function ensureRuntimeSchema(db) {
       FOREIGN KEY (session_id) REFERENCES agent_hub_sessions(id) ON DELETE CASCADE
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_session_unique ON agent_session_usage(session_id);
-
-    CREATE TABLE IF NOT EXISTS telegram_session_map (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      telegram_chat_id TEXT NOT NULL UNIQUE,
-      session_id TEXT NOT NULL,
-      project_id TEXT,
-      active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES agent_hub_sessions(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_tg_map_chat ON telegram_session_map(telegram_chat_id);
-    CREATE INDEX IF NOT EXISTS idx_tg_map_session ON telegram_session_map(session_id);
-
-    CREATE TABLE IF NOT EXISTS telegram_actor_mappings (
-      actor_id TEXT PRIMARY KEY,
-      telegram_user_id TEXT NOT NULL UNIQUE,
-      telegram_chat_id TEXT,
-      devhub_actor_id TEXT NOT NULL,
-      display_name TEXT,
-      allowlisted INTEGER NOT NULL DEFAULT 0,
-      metadata TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_tg_actor_chat ON telegram_actor_mappings(telegram_chat_id);
-    CREATE INDEX IF NOT EXISTS idx_tg_actor_devhub ON telegram_actor_mappings(devhub_actor_id);
-
-    CREATE TABLE IF NOT EXISTS telegram_intent_envelopes (
-      intent_id TEXT PRIMARY KEY,
-      idempotency_key TEXT NOT NULL UNIQUE,
-      actor_id TEXT NOT NULL,
-      telegram_chat_id TEXT NOT NULL,
-      message_id TEXT,
-      update_id TEXT,
-      action TEXT NOT NULL CHECK(action IN (
-        'status.query',
-        'task.detail',
-        'workspace.detail',
-        'approval.respond',
-        'notification.retry',
-        'subscription.set'
-      )),
-      task_id TEXT,
-      workspace_id TEXT,
-      run_id TEXT,
-      approval_id TEXT,
-      payload TEXT,
-      status TEXT NOT NULL DEFAULT 'accepted' CHECK(status IN ('accepted', 'pending_approval', 'denied', 'replayed')),
-      audit_status TEXT NOT NULL DEFAULT 'accepted',
-      result_ref TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (actor_id) REFERENCES telegram_actor_mappings(actor_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_tg_intent_actor ON telegram_intent_envelopes(actor_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_tg_intent_task ON telegram_intent_envelopes(task_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_tg_intent_workspace ON telegram_intent_envelopes(workspace_id, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS telegram_delivery_receipts (
-      delivery_key TEXT PRIMARY KEY,
-      task_id TEXT,
-      workspace_id TEXT,
-      run_id TEXT,
-      intent_id TEXT,
-      telegram_chat_id TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('sent', 'failed', 'retry_pending')),
-      attempts_count INTEGER NOT NULL DEFAULT 1,
-      last_error TEXT,
-      last_attempt_at TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (intent_id) REFERENCES telegram_intent_envelopes(intent_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_tg_delivery_task ON telegram_delivery_receipts(task_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_tg_delivery_workspace ON telegram_delivery_receipts(workspace_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_tg_delivery_run ON telegram_delivery_receipts(run_id, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS telegram_subscriptions (
-      subscription_key TEXT PRIMARY KEY,
-      actor_id TEXT,
-      telegram_chat_id TEXT NOT NULL,
-      task_id TEXT,
-      workspace_id TEXT,
-      run_id TEXT,
-      status TEXT NOT NULL CHECK(status IN ('mute', 'unmute')),
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (actor_id) REFERENCES telegram_actor_mappings(actor_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_tg_subscription_chat ON telegram_subscriptions(telegram_chat_id, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS agent_profiles (
       profile_key TEXT PRIMARY KEY,
@@ -1042,7 +924,6 @@ function ensureRuntimeSchema(db) {
     'ALTER TABLE tasks ADD COLUMN claimed_at TEXT',
     'ALTER TABLE tasks ADD COLUMN lease_expires_at TEXT',
     'ALTER TABLE tasks ADD COLUMN claim_token TEXT',
-    'ALTER TABLE agent_hub_sessions ADD COLUMN telegram_chat_id TEXT',
     'ALTER TABLE agent_hub_sessions ADD COLUMN directory TEXT',
     "ALTER TABLE agent_hub_sessions ADD COLUMN status TEXT DEFAULT 'active'",
     'ALTER TABLE agent_hub_sessions ADD COLUMN opencode_session_id TEXT',

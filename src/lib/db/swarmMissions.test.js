@@ -347,7 +347,7 @@ describe('upsertMessageDelivery', () => {
     const d = upsertMessageDelivery(db, {
       message_id: messageId,
       recipient_agent_id: 'agent-1',
-      channel: 'telegram',
+      channel: 'webchat',
       status: 'pending',
     });
     expect(d).not.toBeNull();
@@ -360,7 +360,7 @@ describe('upsertMessageDelivery', () => {
       upsertMessageDelivery(db, {
         message_id: messageId,
         recipient_agent_id: 'agent-1',
-        channel: 'telegram',
+        channel: 'webchat',
         status: 'invalid',
       })
     ).toThrow();
@@ -646,7 +646,7 @@ describe('markDeliveryConsumed', () => {
     const d = upsertMessageDelivery(db, {
       message_id: messageId,
       recipient_agent_id: 'agent-1',
-      channel: 'telegram',
+      channel: 'webchat',
       status: 'pending',
     });
     const result = markDeliveryConsumed(db, d.delivery_id);
@@ -660,7 +660,7 @@ describe('markDeliveryConsumed', () => {
     const d = upsertMessageDelivery(db, {
       message_id: messageId,
       recipient_agent_id: 'agent-1',
-      channel: 'telegram',
+      channel: 'webchat',
       status: 'pending',
     });
     markDeliveryConsumed(db, d.delivery_id);

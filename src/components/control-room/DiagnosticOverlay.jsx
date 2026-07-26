@@ -8,7 +8,6 @@ import {
 } from './utils';
 
 const DIAGNOSTIC_ORDER = [
-  ['telegram', 'Telegram'],
   ['mcp', 'MCP'],
   ['process', 'Proceso'],
   ['session_stream', 'Stream de sesión'],

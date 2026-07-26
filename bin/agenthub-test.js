@@ -14,7 +14,7 @@
  *   --all          Run all test files
  *   --parallel     Run tests in parallel (uses worker pool)
  *   --lock <id>    Use specific lock ID
- *   --suite <name> Run tests from specific suite (api, mcp, telegram, flows)
+ *   --suite <name> Run tests from specific suite (api, mcp, flows)
  *   --timeout <ms> Global timeout (default: 30000)
  *   --verbose      Show detailed output
  *   --json         Output results as JSON
@@ -56,7 +56,7 @@ function color(str, c) {
 function discoverTests(suite) {
   const tests = [];
 
-  const suites = suite ? [suite] : ['api', 'mcp', 'telegram', 'flows', 'unit'];
+  const suites = suite ? [suite] : ['api', 'mcp', 'flows', 'unit'];
 
   for (const s of suites) {
     const suiteDir = path.join(TEST_DIR, s);
@@ -488,7 +488,7 @@ ${color('COMMANDS:', 'cyan')}
 ${color('OPTIONS:', 'cyan')}
   --all            Run all test files
   --parallel       Run tests in parallel
-  --suite <name>   Run tests from specific suite (api, mcp, telegram, flows, unit)
+  --suite <name>   Run tests from specific suite (api, mcp, flows, unit)
   --timeout <ms>   Global timeout (default: 30000)
   --verbose        Show detailed output
   --json           Output results as JSON

@@ -13,7 +13,6 @@ export const DEFAULT_PREFERENCES = {
   enableToasts: true,
   enableNativeOS: true,
   enableSound: true,
-  enableTelegram: false,
   quietHours: false,
   minSeverity: 'info', // 'info' | 'warning' | 'critical'
   soundVolume: 0.5, // 0.0 a 1.0

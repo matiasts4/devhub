@@ -14,6 +14,5 @@ module.exports = {
   ...require('./artifacts'),
   ...require('./supervisor'),
   ...require('./swarmMissions'),
-  ...require('./telegram'),
   ...require('./observability'),
 };

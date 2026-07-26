@@ -37,12 +37,6 @@ describe('GET /api/agenthub/operations/health', () => {
         live_check_available: true,
         checked_at: '2026-04-10T17:24:00.000Z',
       }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 3,
-        recent_errors: 0,
-        last_activity: '2026-04-10T17:24:40.000Z',
-      }),
       getRuntimeDiagnostics: async () => ({
         generatedAt: '2026-04-10T17:25:00.000Z',
         summary: {
@@ -109,8 +103,8 @@ describe('GET /api/agenthub/operations/health', () => {
     });
 
     expect(snapshot.summary).toMatchObject({
-      total: 6,
-      healthy: 4,
+      total: 5,
+      healthy: 3,
       degraded: 1,
       stale: 1,
       worst_status: 'stale',
@@ -128,7 +122,6 @@ describe('GET /api/agenthub/operations/health', () => {
       diagnostics: {
         process: expect.objectContaining({ key: 'opencode-process', status: 'healthy' }),
         mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
-        telegram: expect.objectContaining({ key: 'telegram', status: 'healthy' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'degraded' }),
         runtime: expect.objectContaining({ key: 'runtime-diagnostics', status: 'healthy' }),
       },
@@ -183,12 +176,6 @@ describe('GET /api/agenthub/operations/health', () => {
         live_check_available: false,
         checked_at: '2026-04-10T17:10:00.000Z',
       }),
-      getTelegramStatus: async () => ({
-        bot_connected: false,
-        active_chats: 0,
-        recent_errors: 2,
-        last_activity: null,
-      }),
       getRuntimeDiagnostics: async () => null,
     });
 
@@ -202,7 +189,6 @@ describe('GET /api/agenthub/operations/health', () => {
       diagnostics: {
         process: expect.objectContaining({ key: 'opencode-process', status: 'offline' }),
         mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
-        telegram: expect.objectContaining({ key: 'telegram', status: 'degraded' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'stale' }),
         runtime: expect.objectContaining({ key: 'runtime-diagnostics', status: 'stale' }),
       },
@@ -262,12 +248,6 @@ describe('GET /api/agenthub/operations/health', () => {
           aborted_count: 0,
           live_check_available: true,
           checked_at: '2026-05-20T18:00:00.000Z',
-        }),
-        getTelegramStatus: async () => ({
-          bot_connected: true,
-          active_chats: 0,
-          recent_errors: 0,
-          last_activity: '2026-05-20T18:00:00.000Z',
         }),
         getExecutionQueue,
         getNextTask,
@@ -347,12 +327,6 @@ describe('GET /api/agenthub/operations/health', () => {
           live_check_available: true,
           checked_at: '2026-05-20T18:05:00.000Z',
         }),
-        getTelegramStatus: async () => ({
-          bot_connected: true,
-          active_chats: 0,
-          recent_errors: 0,
-          last_activity: '2026-05-20T18:05:00.000Z',
-        }),
         getExecutionQueue,
       }
     );
@@ -393,12 +367,6 @@ describe('GET /api/agenthub/operations/health', () => {
         aborted_count: 0,
         live_check_available: true,
         checked_at: '2026-05-21T10:00:00.000Z',
-      }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 0,
-        recent_errors: 0,
-        last_activity: '2026-05-21T10:00:00.000Z',
       }),
       getMissionSnapshot: async () => ({
         mission: {
@@ -468,12 +436,6 @@ describe('GET /api/agenthub/operations/health', () => {
         live_check_available: true,
         checked_at: '2026-05-21T10:05:00.000Z',
       }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 0,
-        recent_errors: 0,
-        last_activity: '2026-05-21T10:05:00.000Z',
-      }),
       getMissionSnapshot: async () => ({
         mission: {
           mission_id: 'mission-approval-1',
@@ -535,12 +497,6 @@ describe('GET /api/agenthub/operations/health', () => {
         aborted_count: 0,
         live_check_available: true,
         checked_at: '2026-05-21T10:10:00.000Z',
-      }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 0,
-        recent_errors: 0,
-        last_activity: '2026-05-21T10:10:00.000Z',
       }),
       getExecutionQueue: async () => ({
         total: 1,
@@ -604,12 +560,6 @@ describe('GET /api/agenthub/operations/health', () => {
         live_check_available: true,
         checked_at: '2026-05-21T10:12:00.000Z',
       }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 0,
-        recent_errors: 0,
-        last_activity: '2026-05-21T10:12:00.000Z',
-      }),
       getExecutionQueue: async () => ({
         total: 1,
         queue: [
@@ -666,12 +616,6 @@ describe('GET /api/agenthub/operations/health', () => {
           live_check_available: true,
           checked_at: '2026-05-20T18:10:00.000Z',
         }),
-        getTelegramStatus: async () => ({
-          bot_connected: true,
-          active_chats: 0,
-          recent_errors: 0,
-          last_activity: '2026-05-20T18:10:00.000Z',
-        }),
         getMissionSnapshot: async () => ({
           mission: {
             mission_id: 'mission-ops-1',
@@ -697,7 +641,7 @@ describe('GET /api/agenthub/operations/health', () => {
               delivery_id: 'delivery-ops-1',
               status: 'retry_pending',
               recipient_agent_id: 'agent-executor-1',
-              channel: 'telegram',
+              channel: 'webchat',
               last_attempt_at: '2026-05-20T18:09:40.000Z',
               evidence_ref: 'evidence://delivery/delivery-ops-1',
             },
@@ -864,7 +808,7 @@ describe('GET /api/agenthub/operations/health', () => {
         occurred_at: '2026-05-20T18:09:40.000Z',
         authority: 'authoritative',
         freshness: 'current',
-        summary: 'retry_pending · agent-executor-1 · telegram',
+        summary: 'retry_pending · agent-executor-1 · webchat',
         linked_ids: {
           mission_id: 'mission-ops-1',
           task_id: 'task-ops-1',
@@ -937,12 +881,6 @@ describe('GET /api/agenthub/operations/health', () => {
           live_check_available: true,
           checked_at: '2026-05-20T18:15:00.000Z',
         }),
-        getTelegramStatus: async () => ({
-          bot_connected: true,
-          active_chats: 0,
-          recent_errors: 0,
-          last_activity: '2026-05-20T18:15:00.000Z',
-        }),
         getMissionSnapshot: async () => ({
           mission: { mission_id: 'mission-readonly-1', status: 'active' },
           recent_messages: [
@@ -994,12 +932,6 @@ describe('GET /api/agenthub/operations/health', () => {
         aborted_count: 0,
         live_check_available: true,
         checked_at: '2026-05-21T11:00:00.000Z',
-      }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 0,
-        recent_errors: 0,
-        last_activity: '2026-05-21T11:00:00.000Z',
       }),
       getMissionSnapshot: async () => ({
         mission: {
@@ -1270,12 +1202,6 @@ describe('GET /api/agenthub/operations/health', () => {
         live_check_available: true,
         checked_at: '2026-05-19T12:01:00.000Z',
       }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        active_chats: 0,
-        recent_errors: 0,
-        last_activity: '2026-05-19T12:01:00.000Z',
-      }),
       getMissionSnapshot: async () =>
         actualLocalDb.getSwarmMissionDirectorSnapshot(db, mission.mission_id, {
           now: '2026-05-19T12:01:00.000Z',
@@ -1497,12 +1423,6 @@ describe('GET /api/agenthub/operations/health', () => {
           aborted_count: 0,
           live_check_available: true,
           checked_at: '2026-05-22T10:00:00.000Z',
-        }),
-        getTelegramStatus: async () => ({
-          bot_connected: true,
-          active_chats: 0,
-          recent_errors: 0,
-          last_activity: '2026-05-22T10:00:00.000Z',
         }),
         getRuntimeDiagnostics: async () => null,
         getExecutionQueue: async () => ({ total: 0, queue: [] }),

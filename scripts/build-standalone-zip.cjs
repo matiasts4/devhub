@@ -161,7 +161,6 @@ const JUNK_TOP_LEVEL_DIRS = [
   'research',
   'opencode',
   'sidecar-backend',
-  'telegram-bot',
   'sdd',
   'devhub-cli',
   'test_reports',

@@ -197,7 +197,7 @@ describe('composeControlRoomSnapshot', () => {
           expect.objectContaining({
             recipient_agent_id: 'agent-worker-1',
             status: 'retry_pending',
-            channel: 'telegram',
+            channel: 'webchat',
           }),
         ],
         snapshot_at: '2026-05-19T11:01:40.000Z',
@@ -215,11 +215,6 @@ describe('composeControlRoomSnapshot', () => {
     );
 
     expect(selectControlRoomDiagnostics(snapshot)).toMatchObject({
-      telegram: expect.objectContaining({
-        status: 'healthy',
-        authority: 'authoritative',
-        freshness: 'current',
-      }),
       mcp: expect.objectContaining({
         status: 'stale',
         authority: 'inferred',
@@ -313,12 +308,6 @@ describe('composeControlRoomSnapshot', () => {
     ]);
 
     expect(selectControlRoomDiagnostics(snapshot)).toMatchObject({
-      telegram: expect.objectContaining({
-        status: 'unavailable',
-        authority: 'unavailable',
-        freshness: 'unavailable',
-        missing_source: 'telegram snapshot',
-      }),
       mcp: expect.objectContaining({
         status: 'degraded',
         freshness: 'degraded',
@@ -473,10 +462,6 @@ describe('composeControlRoomSnapshot', () => {
     expect(selectControlRoomAgentTeams(snapshot)).toEqual([]);
     expect(selectControlRoomTeamMembers(snapshot)).toEqual([]);
     expect(selectControlRoomDiagnostics(snapshot)).toEqual({
-      telegram: expect.objectContaining({
-        status: 'unavailable',
-        missing_source: 'telegram snapshot',
-      }),
       mcp: expect.objectContaining({
         status: 'unavailable',
         missing_source: 'mcp snapshot',
@@ -1104,7 +1089,7 @@ describe('composeControlRoomSnapshot', () => {
         {
           delivery_id: 'delivery-1',
           recipient_agent_id: 'agent-worker-1',
-          channel: 'telegram',
+          channel: 'webchat',
           status: 'retry_pending',
         },
         {

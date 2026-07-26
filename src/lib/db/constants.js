@@ -45,17 +45,6 @@ const SUPERVISOR_REASON_CLASSES = [
   'completed',
 ];
 const SUPERVISOR_APPROVAL_STATUSES = ['pending', 'approved', 'rejected'];
-const TELEGRAM_INTENT_ACTIONS = [
-  'status.query',
-  'task.detail',
-  'workspace.detail',
-  'approval.respond',
-  'notification.retry',
-  'subscription.set',
-];
-const TELEGRAM_INTENT_STATUSES = ['accepted', 'pending_approval', 'denied', 'replayed'];
-const TELEGRAM_DELIVERY_STATUSES = ['sent', 'failed', 'retry_pending'];
-const TELEGRAM_SUBSCRIPTION_STATUSES = ['mute', 'unmute'];
 const SWARM_MISSION_STATUSES = ['planned', 'active', 'paused', 'completed', 'failed', 'aborted'];
 const SWARM_MISSION_KINDS = ['task_execution', 'sdd_phase', 'review', 'recovery', 'coordination'];
 const MISSION_PARTICIPANT_ROLES = ['director', 'executor', 'reviewer', 'observer'];
@@ -218,10 +207,6 @@ module.exports = {
   SUPERVISOR_OUTCOMES,
   SUPERVISOR_REASON_CLASSES,
   SUPERVISOR_APPROVAL_STATUSES,
-  TELEGRAM_INTENT_ACTIONS,
-  TELEGRAM_INTENT_STATUSES,
-  TELEGRAM_DELIVERY_STATUSES,
-  TELEGRAM_SUBSCRIPTION_STATUSES,
   SWARM_MISSION_STATUSES,
   SWARM_MISSION_KINDS,
   MISSION_PARTICIPANT_ROLES,

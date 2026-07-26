@@ -1,4 +1,4 @@
-import { X, Search, Plus, MessageSquare, Send, Calendar } from 'lucide-react';
+import { X, Search, Plus, MessageSquare, Calendar } from 'lucide-react';
 import React, { useState, useMemo, useCallback } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -210,11 +210,6 @@ export default function SessionListModal({
                           locale: es,
                         })}
                       </span>
-                      {session.telegram_chat_id && (
-                        <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-0.5">
-                          <Send className="w-2.5 h-2.5" /> Telegram
-                        </span>
-                      )}
                     </div>
                   </div>
                   <span

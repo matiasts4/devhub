@@ -78,7 +78,6 @@ const nextConfig = {
       './research/**/*',
       './opencode/**/*',
       './sidecar-backend/**/*',
-      './telegram-bot/**/*',
       './memories/**/*',
       './memory/**/*',
       './skills/**/*',

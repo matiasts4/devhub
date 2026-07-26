@@ -10,7 +10,7 @@ let configMtime = null;
  * Read the observability v2 configuration with file-mtime caching.
  * Returns a default empty config if the file is missing or unreadable.
  *
- * @returns {{ version: string, flags: Object, opencode: Object, telegram: Object }}
+ * @returns {{ version: string, flags: Object, opencode: Object }}
  */
 export function getConfig() {
   try {
@@ -21,14 +21,14 @@ export function getConfig() {
     }
     return configCache;
   } catch {
-    return { version: '2.0.0', flags: {}, opencode: {}, telegram: {} };
+    return { version: '2.0.0', flags: {}, opencode: {} };
   }
 }
 
 /**
  * Read a single feature flag value.
  *
- * @param {string} name - Flag key (e.g. 'telegram_use_opencode')
+ * @param {string} name - Flag key (e.g. 'swarm_use_opencode')
  * @param {boolean} [defaultValue=false] - Fallback when flag is absent
  * @returns {boolean|*}
  */

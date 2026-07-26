@@ -76,12 +76,6 @@ function buildControlRoomInput(overrides = {}) {
     agent_teams: [],
     team_members: [],
     diagnostics: {
-      telegram: {
-        status: 'healthy',
-        authority: 'authoritative',
-        freshness: 'current',
-        evidence_ref: 'evidence://telegram/status',
-      },
       mcp: {
         status: 'stale',
         authority: 'inferred',
@@ -133,7 +127,7 @@ function buildControlRoomInput(overrides = {}) {
         {
           delivery_id: 'delivery-1',
           recipient_agent_id: 'agent-worker-1',
-          channel: 'telegram',
+          channel: 'webchat',
           status: 'retry_pending',
           last_error: 'adapter timeout',
           last_attempt_at: '2026-05-19T11:01:30.000Z',
@@ -169,7 +163,7 @@ function buildControlRoomInput(overrides = {}) {
           {
             presence_id: 'presence-3',
             agent_id: 'agent-reviewer-1',
-            runtime_surface: 'telegram',
+            runtime_surface: 'webchat',
             presence_state: 'offline',
             effective_state: 'offline',
             last_seen_at: '2026-05-19T11:01:00.000Z',

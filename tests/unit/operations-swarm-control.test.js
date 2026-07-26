@@ -117,12 +117,6 @@ describe('operations swarm control model', () => {
           freshness_ms: 120000,
         },
         {
-          key: 'telegram',
-          status: 'degraded',
-          authority: 'authoritative',
-          freshness_ms: 45000,
-        },
-        {
           key: 'session-stream',
           status: 'healthy',
           authority: 'authoritative',
@@ -141,7 +135,6 @@ describe('operations swarm control model', () => {
       diagnostics: {
         process: expect.objectContaining({ key: 'opencode-process', status: 'healthy' }),
         mcp: expect.objectContaining({ key: 'mcp', status: 'stale' }),
-        telegram: expect.objectContaining({ key: 'telegram', status: 'degraded' }),
         session_stream: expect.objectContaining({ key: 'session-stream', status: 'healthy' }),
       },
     });

@@ -157,12 +157,6 @@ function buildControlRoomSnapshotInput(scenario: MatrixScenario) {
       errors: [],
     },
     diagnostics: {
-      telegram: {
-        status: 'healthy',
-        authority: 'authoritative',
-        freshness: 'current',
-        evidence_ref: 'evidence://telegram/status',
-      },
       mcp: {
         status: 'healthy',
         authority: 'authoritative',
@@ -218,7 +212,10 @@ test.describe('swarm runtime restore matrix harness', () => {
       const snapshot = buildControlRoomSnapshotInput(scenario);
 
       await page.addInitScript((payload) => {
-        window.localStorage.setItem('devhub_swarm_control_snapshot:project-1', JSON.stringify(payload));
+        window.localStorage.setItem(
+          'devhub_swarm_control_snapshot:project-1',
+          JSON.stringify(payload)
+        );
       }, snapshot);
 
       await page.goto('/swarm');

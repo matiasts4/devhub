@@ -49,7 +49,6 @@ function buildIdleControlRoomSnapshot() {
     runs: [],
     artifacts: [],
     diagnostics: {
-      telegram: null,
       mcp: null,
       process: null,
       session_stream: null,

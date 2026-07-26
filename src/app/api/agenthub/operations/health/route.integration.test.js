@@ -24,12 +24,6 @@ describe('gatherOperationalHealth runtime diagnostics integration', () => {
         stale_sessions: [],
         aborted_count: 0,
       }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        recent_errors: 0,
-        active_chats: 2,
-        last_activity: '2026-05-23T20:00:00.000Z',
-      }),
       getRuntimeDiagnostics: async () => ({
         generatedAt: '2026-05-23T20:00:00.000Z',
         summary: {
@@ -107,12 +101,6 @@ describe('gatherOperationalHealth runtime diagnostics integration', () => {
         active_sessions: [{ id: 's-1' }],
         stale_sessions: [],
         aborted_count: 0,
-      }),
-      getTelegramStatus: async () => ({
-        bot_connected: true,
-        recent_errors: 0,
-        active_chats: 1,
-        last_activity: '2026-05-26T21:00:00.000Z',
       }),
       getRuntimeDiagnostics: async () => ({
         generatedAt: '2026-05-26T21:00:00.000Z',

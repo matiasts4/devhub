@@ -1422,7 +1422,7 @@ test('updates delivery receipts and computes active versus stale presence in mis
   upsertMessageDelivery(db, {
     message_id: message.message_id,
     recipient_agent_id: 'agent-reviewer-1',
-    channel: 'telegram',
+    channel: 'webchat',
     status: 'retry_pending',
     last_error: 'adapter timeout',
     last_attempt_at: '2026-05-19T11:01:30.000Z',
@@ -1444,7 +1444,7 @@ test('updates delivery receipts and computes active versus stale presence in mis
   upsertAgentPresence(db, {
     mission_id: mission.mission_id,
     agent_id: 'agent-reviewer-1',
-    runtime_surface: 'telegram',
+    runtime_surface: 'webchat',
     presence_state: 'offline',
     last_seen_at: '2026-05-19T11:01:00.000Z',
   });

@@ -174,30 +174,6 @@ export function buildMcpHealthSource(payload = {}, options = {}) {
   });
 }
 
-export function buildTelegramHealthSource(payload = {}, options = {}) {
-  const observedAt = payload.last_activity || options.now || new Date().toISOString();
-  const recentErrors = payload.recent_errors || 0;
-  const status = payload.bot_connected ? (recentErrors > 0 ? 'degraded' : 'healthy') : 'degraded';
-
-  return createHealthSource({
-    key: 'telegram',
-    label: 'Telegram',
-    status,
-    authority: 'authoritative',
-    freshness_ms: resolveFreshnessMs(observedAt, options.now),
-    observed_at: observedAt,
-    status_reason: payload.bot_connected
-      ? recentErrors > 0
-        ? 'Telegram bot is connected but recent errors were detected.'
-        : 'Telegram bot is connected.'
-      : 'Telegram bot has no recent confirmed activity.',
-    metrics: {
-      active_chats: payload.active_chats || 0,
-      recent_errors: recentErrors,
-    },
-  });
-}
-
 export function buildRuntimeDiagnosticsHealthSource(payload = {}, options = {}) {
   const observedAt = payload?.generatedAt || options.now || new Date().toISOString();
   const evidenceRefs = Array.isArray(payload?.evidence_refs) ? payload.evidence_refs : [];

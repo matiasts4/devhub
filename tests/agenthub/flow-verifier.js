@@ -159,9 +159,6 @@ class FlowVerifier {
         case 'mcp':
           result = await Promise.race([this._executeMcpStep(step), timeoutPromise]);
           break;
-        case 'telegram':
-          result = await Promise.race([this._executeTelegramStep(step), timeoutPromise]);
-          break;
         case 'custom':
           result = await Promise.race([step.fn(this.harness, this._context), timeoutPromise]);
           break;
@@ -354,37 +351,6 @@ class FlowVerifier {
       return { success: result.success !== false, ...result };
     }
     return { success: false, error: 'MCP step requires a custom fn' };
-  }
-
-  /**
-   * Execute a Telegram command step.
-   */
-  async _executeTelegramStep(step) {
-    if (!this.harness.createMockCtx) {
-      return { success: false, error: 'Harness does not support Telegram commands' };
-    }
-
-    const ctx = this.harness.createMockCtx(step.ctx || {});
-    const commandName = this._interpolate(step.command);
-    const args = this._interpolate(step.args || '');
-
-    await this.harness.executeCommand(commandName, ctx, args);
-
-    const replies = this.harness.getReplies();
-
-    if (step.assert && step.assert.replyContains) {
-      const expected = this._interpolate(step.assert.replyContains);
-      const found = replies.some((r) => r.text.includes(expected));
-      if (!found) {
-        return {
-          success: false,
-          error: `No reply contains "${expected}"`,
-          replies: replies.map((r) => r.text.substring(0, 100)),
-        };
-      }
-    }
-
-    return { success: true, type: 'telegram', command: commandName, replyCount: replies.length };
   }
 
   /**
