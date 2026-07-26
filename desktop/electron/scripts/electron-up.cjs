@@ -15,6 +15,12 @@
  *   DEVHUB_UI_PORT          default 3100
  *   SIDECAR_PORT            default 4001
  *   DEVHUB_ELECTRON_URL     override full UI URL
+ *   DEVHUB_DB_PATH          pin an explicit SQLite DB. When unset and this runs
+ *                           from a terminal hosted by the installed app (which
+ *                           exports DEVHUB_HOME=~/.devhub + production runtime),
+ *                           the dev stack is isolated to ~/.devhub-dev so it
+ *                           never shares the live production DB ("database is
+ *                           locked" from two writers on one WAL).
  *   DEVHUB_ELECTRON_NO_SIDECAR=1  skip sidecar
  *   DEVHUB_ELECTRON_UP_TIMEOUT_MS  wait budget (default 120000)
  *   DEVHUB_ELECTRON_UP_MAX_RESTARTS  auto-restart budget for next/sidecar
