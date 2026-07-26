@@ -30,6 +30,24 @@ describe('agentTuiMetadata', () => {
     expect(extractAgentSessionId('grok', 'grok')).toBeNull();
   });
 
+  test('extractAgentSessionId pulls grok resume and pre-assigned ids', () => {
+    expect(extractAgentSessionId('grok', 'grok --resume gk-1')).toBe('gk-1');
+    expect(extractAgentSessionId('grok', 'grok -r gk-2')).toBe('gk-2');
+    expect(extractAgentSessionId('grok', 'grok --session-id gk-3')).toBe('gk-3');
+    expect(
+      extractAgentSessionId('grok', 'grok --session-id 123e4567-e89b-42d3-a456-426614174000')
+    ).toBe('123e4567-e89b-42d3-a456-426614174000');
+    expect(extractAgentSessionId('grok', 'grok')).toBeNull();
+  });
+
+  test('extractAgentSessionId pulls qodercli resume and pre-assigned ids', () => {
+    expect(extractAgentSessionId('qodercli', 'qodercli --resume qd-1')).toBe('qd-1');
+    expect(extractAgentSessionId('qodercli', 'qodercli -r qd-2')).toBe('qd-2');
+    expect(extractAgentSessionId('qodercli', 'qodercli resume qd-3')).toBe('qd-3');
+    expect(extractAgentSessionId('qodercli', 'qodercli --session-id qd-4')).toBe('qd-4');
+    expect(extractAgentSessionId('qodercli', 'qodercli')).toBeNull();
+  });
+
   test('isAgentTuiCommand matches commands anywhere in string', () => {
     expect(isAgentTuiCommand("bash -lc 'opencode --session ses_1'")).toBe(true);
     expect(isAgentTuiCommand('claude --session x')).toBe(true);

@@ -4,6 +4,104 @@ import {
   normalizeWorkspacesOpenCodeCommands,
 } from './restorePolicyResolver';
 import { readTerminalRestorePreferences } from './restorePreferences';
+import { detectAgentTypeFromCommand, extractAgentSessionId } from './agentTuiMetadata';
+
+/**
+ * Canonical resume command per provider for persisted panel state. opencode
+ * keeps its own flow (restorePolicyResolver); grok/qodercli launch commands
+ * carry pre-assigned ids (`--session-id`) that must be persisted in resume
+ * form because the pre-assign form fails for already-existing ids.
+ */
+const AGENT_RESUME_COMMAND_BUILDERS = {
+  kimi: (sessionId) => `kimi --session ${sessionId}`,
+  grok: (sessionId) => `grok --resume ${sessionId}`,
+  codex: (sessionId) => `codex resume ${sessionId}`,
+  qodercli: (sessionId) => `qodercli --resume ${sessionId}`,
+};
+
+/** Normalizes event-name aliases ('qoder') to metadata types ('qodercli'). */
+function normalizeProviderKey(value) {
+  const key = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (key === 'qoder') return 'qodercli';
+  return key;
+}
+
+/**
+ * Builds the provider resume command for a known session id, or null when the
+ * provider has no durable resume form.
+ */
+export function buildAgentProviderResumeCommand(agentType, sessionId) {
+  const key = normalizeProviderKey(agentType);
+  const id = String(sessionId || '').trim();
+  if (!key || !id) return null;
+  const build = AGENT_RESUME_COMMAND_BUILDERS[key];
+  return build ? build(id) : null;
+}
+
+function stripRecoveryTag(command) {
+  return String(command || '')
+    .replace(/\s*#recovery-\d+\s*$/i, '')
+    .trim();
+}
+
+/**
+ * Reads the bound agent session id for a panel's provider from its agent run.
+ * Returns null when the run carries no id or belongs to another provider.
+ */
+function resolveAgentRunSessionId(agentType, agentRun) {
+  if (!agentRun) return null;
+  const runType = normalizeProviderKey(agentRun.agentType || agentRun.selectedAgent);
+  if (runType !== agentType) return null;
+  const id = typeof agentRun.agentSessionId === 'string' ? agentRun.agentSessionId.trim() : '';
+  return id || null;
+}
+
+function normalizeAgentPanelCommand(panel, agentRun) {
+  const current = stripRecoveryTag(panel?.initialCommand);
+
+  // Provider comes from the launch command; an empty command may still belong
+  // to a bound run (typed launch inside a shell panel). A non-empty,
+  // non-agent command is never rewritten, even if a run claims the panel.
+  const detectedType = current ? detectAgentTypeFromCommand(current) : null;
+  const agentType = detectedType || (!current ? normalizeProviderKey(agentRun?.agentType) : null);
+  if (!agentType || agentType === 'opencode') return panel; // opencode keeps its own flow
+  if (!AGENT_RESUME_COMMAND_BUILDERS[agentType]) return panel;
+
+  const sessionId =
+    resolveAgentRunSessionId(agentType, agentRun) ||
+    (current ? extractAgentSessionId(agentType, current) : null);
+  if (!sessionId) return panel;
+
+  const expectedCommand = buildAgentProviderResumeCommand(agentType, sessionId);
+  if (!expectedCommand) return panel;
+  // Exact match only: a trailing #recovery tag must not survive into persisted
+  // state (same convention as the opencode/provider resolver normalization).
+  if (panel.initialCommand === expectedCommand) return panel;
+
+  return { ...panel, initialCommand: expectedCommand };
+}
+
+/**
+ * Generalizes the opencode-only flush normalization: any panel whose agent run
+ * carries a known session id (or whose command already embeds one) gets its
+ * initialCommand persisted in the provider's resume form. Idempotent — panels
+ * already in resume form are returned unchanged.
+ */
+export function normalizeWorkspacesAgentCommands(workspaces = [], agentRunsByPanel = {}) {
+  if (!Array.isArray(workspaces)) return [];
+
+  return workspaces.map((workspace) => ({
+    ...workspace,
+    columns: (workspace?.columns || []).map((column) => ({
+      ...column,
+      panels: (column?.panels || []).map((panel) =>
+        normalizeAgentPanelCommand(panel, agentRunsByPanel?.[panel?.id] || null)
+      ),
+    })),
+  }));
+}
 
 export function resolveTerminalStorageKeys(projectId = null) {
   return {
@@ -73,8 +171,10 @@ function indexAgentRunsByPanel(runs = {}) {
 }
 
 /**
- * Copies OpenCode session ids from panels into devhub_agent_runs so reboot restore
- * does not depend on a pending React state flush.
+ * Copies session ids from panels into devhub_agent_runs so reboot restore
+ * does not depend on a pending React state flush. opencode keeps its legacy
+ * `opencodeSessionId` field; other providers store `agentSessionId` +
+ * `agentType` alongside it.
  */
 export function syncAgentRunsFromWorkspacePanels(
   storage,
@@ -92,19 +192,39 @@ export function syncAgentRunsFromWorkspacePanels(
         const panelId = panel?.id;
         if (!panelId) return;
 
-        const sessionId =
-          extractOpenCodeSessionId(panel?.initialCommand) ||
-          indexAgentRunsByPanel(runs)[panelId]?.opencodeSessionId ||
-          null;
+        const indexedRun = indexAgentRunsByPanel(runs)[panelId] || null;
+        const command = stripRecoveryTag(panel?.initialCommand);
+        const agentType = detectAgentTypeFromCommand(command);
 
-        if (!sessionId) return;
+        const opencodeSessionId =
+          extractOpenCodeSessionId(panel?.initialCommand) || indexedRun?.opencodeSessionId || null;
+
+        const providerSessionId =
+          agentType && agentType !== 'opencode'
+            ? resolveAgentRunSessionId(agentType, indexedRun) ||
+              extractAgentSessionId(agentType, command)
+            : null;
+
+        if (!opencodeSessionId && !providerSessionId) return;
 
         Object.entries(runs).forEach(([taskId, run]) => {
           if (run?.panelId !== panelId) return;
-          if (run?.opencodeSessionId === sessionId) return;
 
-          runs[taskId] = { ...run, opencodeSessionId: sessionId };
-          changed = true;
+          let nextRun = run;
+          if (opencodeSessionId && run?.opencodeSessionId !== opencodeSessionId) {
+            nextRun = { ...nextRun, opencodeSessionId };
+          }
+          if (
+            providerSessionId &&
+            (run?.agentSessionId !== providerSessionId || run?.agentType !== agentType)
+          ) {
+            nextRun = { ...nextRun, agentSessionId: providerSessionId, agentType };
+          }
+
+          if (nextRun !== run) {
+            runs[taskId] = nextRun;
+            changed = true;
+          }
         });
       });
     });
@@ -145,13 +265,19 @@ export function flushTerminalSessionPersistence(
       ? agentRunsByPanel
       : indexAgentRunsByPanel(runsRecord);
 
-  const normalizedWorkspaces = normalizeWorkspacesOpenCodeCommands(workspaces, indexedRuns);
+  const normalizedWorkspaces = normalizeWorkspacesAgentCommands(
+    normalizeWorkspacesOpenCodeCommands(workspaces, indexedRuns),
+    indexedRuns
+  );
   syncAgentRunsFromWorkspacePanels(storage, normalizedWorkspaces, { agentRuns: runsRecord });
 
   const refreshedRuns = readAgentRunsRecord(storage);
   const refreshedIndex = indexAgentRunsByPanel(refreshedRuns);
   const payload = buildCleanTerminalStatePayload({
-    workspaces: normalizeWorkspacesOpenCodeCommands(normalizedWorkspaces, refreshedIndex),
+    workspaces: normalizeWorkspacesAgentCommands(
+      normalizeWorkspacesOpenCodeCommands(normalizedWorkspaces, refreshedIndex),
+      refreshedIndex
+    ),
     activeWsId,
     activePanelIds,
     workspaceWindows,

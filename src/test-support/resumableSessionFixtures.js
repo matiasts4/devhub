@@ -34,8 +34,33 @@ function createResumableCatalogError(overrides = {}) {
   };
 }
 
+const PROVIDER_RESUME_COMMANDS = {
+  opencode: (id) => `opencode --session ${id}`,
+  kimi: (id) => `kimi --session ${id}`,
+  grok: (id) => `grok --resume ${id}`,
+  codex: (id) => `codex resume ${id}`,
+  qoder: (id) => `qodercli --resume ${id}`,
+};
+
+function createProviderResumableSession(provider, overrides = {}) {
+  const sessionId = overrides.sessionId || `${provider}-1`;
+  return {
+    provider,
+    sessionId,
+    title: `Session ${sessionId}`,
+    cwd: '/workspace/devhub',
+    updatedAt: '2026-04-30T10:00:00.000Z',
+    isActive: false,
+    activePanelId: null,
+    resumeCommand: PROVIDER_RESUME_COMMANDS[provider](sessionId),
+    durable: true,
+    ...overrides,
+  };
+}
+
 module.exports = {
   createOpenCodeRouteSession,
+  createProviderResumableSession,
   createResumableCatalogError,
   createResumableSession,
 };

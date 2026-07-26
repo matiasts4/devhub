@@ -220,6 +220,15 @@ export default function WorkspaceRenderAssembly(props) {
     [setTerminalSettingsModal]
   );
 
+  // The settings modal state (set by useWorkspaceEventBridge) does not carry the
+  // panel launch command; resolve it here so the modal can label the provider.
+  const terminalSettingsInitialCommand = terminalSettingsModal?.panelId
+    ? (workspaces || [])
+        .flatMap((ws) => ws?.columns || [])
+        .flatMap((col) => col?.panels || [])
+        .find((panel) => panel.id === terminalSettingsModal.panelId)?.initialCommand || null
+    : null;
+
   const [isWinMaximized, setIsWinMaximized] = useState(false);
 
   // PR4 (terminal-load-performance): activate-then-keep-alive. Only the active
@@ -1198,6 +1207,7 @@ export default function WorkspaceRenderAssembly(props) {
         sessionType={terminalSettingsModal.sessionType}
         restorePolicy={terminalSettingsModal.restorePolicy}
         cwd={terminalSettingsModal.cwd}
+        initialCommand={terminalSettingsInitialCommand}
       />
 
       <TerminalRestoreSettingsModal

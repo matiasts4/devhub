@@ -21,9 +21,14 @@ import {
   patchTerminalStateWithDiscoveredCommands,
 } from '@/lib/terminal/opencodeSessionDiscovery';
 import {
-  isOpenCodePanel,
+  inferPanelSessionKind,
+  isAgentProviderKind,
   resolveEffectiveRestorePolicy,
 } from '@/lib/terminal/restorePolicyResolver';
+import {
+  isRebootRestoreEnabled,
+  readTerminalRestorePreferences,
+} from '@/lib/terminal/restorePreferences';
 
 /**
  * @param {object} params
@@ -52,6 +57,19 @@ export function createWorkspaceRestoreCoordinator({
 
   const runStartupRestore = async () => {
     try {
+      // Master switch: when restoreOnReboot is disabled, skip the automatic
+      // queue dispatch entirely. The manual revive path (useWorkspaceEventBridge)
+      // is intentionally NOT gated by this flag.
+      const rebootPrefs = readTerminalRestorePreferences(
+        typeof localStorage !== 'undefined' ? localStorage : storage
+      );
+      if (!isRebootRestoreEnabled(rebootPrefs)) {
+        logTerminalSession('startup-restore-skipped', {
+          reason: 'restore-on-reboot-disabled',
+        });
+        return;
+      }
+
       await runOpenCodeStartupRestoreMutex(storage, async () => {
         const runtimeResponse = await fetch('/api/swarm/runtime-diagnostics', {
           cache: 'no-store',
@@ -219,7 +237,7 @@ export function createWorkspaceRestoreCoordinator({
             next[panelId] = 'suspended';
           });
           manifest.terminalSessions.forEach((session) => {
-            if (session.restorePolicy === 'off' && session.sessionKind === 'opencode') {
+            if (session.restorePolicy === 'off' && isAgentProviderKind(session.sessionKind)) {
               next[session.terminalId] = 'suspended';
             }
           });
@@ -233,7 +251,7 @@ export function createWorkspaceRestoreCoordinator({
                 (session) =>
                   session.terminalId === panelId &&
                   session.restorePolicy === 'off' &&
-                  session.sessionKind === 'opencode'
+                  isAgentProviderKind(session.sessionKind)
               )
             ) {
               delete next[panelId];
@@ -254,14 +272,6 @@ export function createWorkspaceRestoreCoordinator({
   return { runStartupRestore, abortStartupRestore };
 }
 
-function isTuiPanelForGenericPolicy(panel, _agentRun) {
-  const cmd = String(panel?.initialCommand || '')
-    .replace(/\s*#recovery-\d+\s*$/i, '')
-    .trim();
-  if (/^(grok|groc|kimi)\b/i.test(cmd)) return true;
-  return false;
-}
-
 export function seedSuspendedPanelsByPolicy({
   snapshotWorkspaces,
   agentRunsByPanel,
@@ -274,16 +284,15 @@ export function seedSuspendedPanelsByPolicy({
     ws.columns?.forEach((col) => {
       col.panels?.forEach((panel) => {
         const agentRun = agentRunsByPanel[panel.id];
-        let sessionKind = 'generic';
-        if (isOpenCodePanel(panel, agentRun)) {
-          sessionKind = 'opencode';
-          hasGovernedPanels = true;
-        } else if (isTuiPanelForGenericPolicy(panel, agentRun)) {
-          sessionKind = 'generic';
-          hasGovernedPanels = true;
-        } else {
-          return;
-        }
+        const sessionKind = inferPanelSessionKind({
+          initialCommand: panel?.initialCommand,
+          agentRun,
+          panel,
+        });
+        // Only provider-backed TUI panels are governed by restore policies;
+        // generic shells and swarm (tmux) panels keep their previous behavior.
+        if (!isAgentProviderKind(sessionKind)) return;
+        hasGovernedPanels = true;
 
         const policy = resolveEffectiveRestorePolicy({
           sessionKind,

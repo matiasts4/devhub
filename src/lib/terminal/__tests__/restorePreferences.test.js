@@ -119,6 +119,117 @@ describe('restorePreferences', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Multiprovider kinds + master restoreOnReboot switch
+  // -------------------------------------------------------------------------
+  describe('multiprovider kinds and restoreOnReboot', () => {
+    it('exposes TERMINAL_RESTORE_KINDS with all verified providers', () => {
+      const { TERMINAL_RESTORE_KINDS } = restorePreferencesModule();
+      expect(TERMINAL_RESTORE_KINDS).toEqual([
+        'opencode',
+        'kimi',
+        'grok',
+        'codex',
+        'qoder',
+        'swarm',
+        'generic',
+      ]);
+    });
+
+    it('defaults every provider kind to auto and restoreOnReboot to true', () => {
+      const { readTerminalRestorePreferences } = restorePreferencesModule();
+      const prefs = readTerminalRestorePreferences(global.localStorage);
+      expect(prefs).toEqual({
+        opencode: 'auto',
+        kimi: 'auto',
+        grok: 'auto',
+        codex: 'auto',
+        qoder: 'auto',
+        swarm: 'auto',
+        generic: 'auto',
+        restoreOnReboot: true,
+      });
+    });
+
+    it('reads legacy 3-key JSON back-compatibly (missing kinds default, reboot switch on)', () => {
+      const { readTerminalRestorePreferences, RESTORE_PREFERENCES_STORAGE_KEY } =
+        restorePreferencesModule();
+      global.localStorage.setItem(
+        RESTORE_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({ opencode: 'manual', generic: 'off', swarm: 'auto' })
+      );
+
+      const prefs = readTerminalRestorePreferences(global.localStorage);
+      expect(prefs.opencode).toBe('manual');
+      expect(prefs.generic).toBe('off');
+      expect(prefs.swarm).toBe('auto');
+      expect(prefs.kimi).toBe('auto');
+      expect(prefs.grok).toBe('auto');
+      expect(prefs.codex).toBe('auto');
+      expect(prefs.qoder).toBe('auto');
+      expect(prefs.restoreOnReboot).toBe(true);
+    });
+
+    it('drops unknown keys while sanitizing', () => {
+      const { readTerminalRestorePreferences, RESTORE_PREFERENCES_STORAGE_KEY } =
+        restorePreferencesModule();
+      global.localStorage.setItem(
+        RESTORE_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({ kimi: 'manual', mystery: 'off', another: 1 })
+      );
+
+      const prefs = readTerminalRestorePreferences(global.localStorage);
+      expect(prefs.kimi).toBe('manual');
+      expect('mystery' in prefs).toBe(false);
+      expect('another' in prefs).toBe(false);
+    });
+
+    it('persists an explicit restoreOnReboot=false and normalizes invalid values', () => {
+      const { readTerminalRestorePreferences, RESTORE_PREFERENCES_STORAGE_KEY } =
+        restorePreferencesModule();
+      global.localStorage.setItem(
+        RESTORE_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({ restoreOnReboot: false, kimi: 'bogus-policy' })
+      );
+
+      const prefs = readTerminalRestorePreferences(global.localStorage);
+      expect(prefs.restoreOnReboot).toBe(false);
+      expect(prefs.kimi).toBe('auto');
+    });
+
+    it('writeTerminalRestorePreferences merges provider kinds and the master switch', () => {
+      const {
+        readTerminalRestorePreferences,
+        writeTerminalRestorePreferences,
+        RESTORE_PREFERENCES_STORAGE_KEY,
+      } = restorePreferencesModule();
+      global.localStorage.setItem(
+        RESTORE_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({ opencode: 'manual', generic: 'auto', swarm: 'auto' })
+      );
+
+      writeTerminalRestorePreferences(global.localStorage, { grok: 'off' });
+      let prefs = readTerminalRestorePreferences(global.localStorage);
+      expect(prefs.grok).toBe('off');
+      expect(prefs.opencode).toBe('manual');
+      expect(prefs.restoreOnReboot).toBe(true);
+
+      writeTerminalRestorePreferences(global.localStorage, { restoreOnReboot: false });
+      prefs = readTerminalRestorePreferences(global.localStorage);
+      expect(prefs.restoreOnReboot).toBe(false);
+      expect(prefs.grok).toBe('off');
+    });
+
+    it('isRebootRestoreEnabled is true unless explicitly disabled', () => {
+      const { isRebootRestoreEnabled } = restorePreferencesModule();
+      expect(isRebootRestoreEnabled({ restoreOnReboot: true })).toBe(true);
+      expect(isRebootRestoreEnabled({ restoreOnReboot: false })).toBe(false);
+      expect(isRebootRestoreEnabled({})).toBe(true);
+      expect(isRebootRestoreEnabled(null)).toBe(true);
+      expect(isRebootRestoreEnabled(undefined)).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Edge cases
   // -------------------------------------------------------------------------
   describe('edge cases', () => {

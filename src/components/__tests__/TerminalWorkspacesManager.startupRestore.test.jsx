@@ -851,6 +851,66 @@ describe('TerminalWorkspacesManager startup restore — in-app remount', () => {
   });
 });
 
+describe('TerminalWorkspacesManager startup restore — master restoreOnReboot switch', () => {
+  it('does not dispatch any relaunch when restoreOnReboot is false, even for auto panels', async () => {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [
+                  {
+                    id: 'p1',
+                    cwd: '/workspace/devhub',
+                    initialCommand: 'opencode --session oc-master-off',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: 'p1' },
+      })
+    );
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({
+        'oc-master-off': {
+          panelId: 'p1',
+          opencodeSessionId: 'oc-master-off',
+          restorePolicy: 'auto',
+          launchedAt: Date.now(),
+        },
+      })
+    );
+    window.localStorage.setItem(
+      'devhub_terminal_restore_prefs',
+      JSON.stringify({ restoreOnReboot: false, opencode: 'auto', generic: 'auto', swarm: 'auto' })
+    );
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ terminals: [], processes: [], anomalies: {} }),
+    });
+
+    const relaunchEvents = [];
+    window.addEventListener('devhub:relaunch-panel', (event) => {
+      relaunchEvents.push(event.detail);
+    });
+
+    await renderManager();
+    await flushStartupRestore();
+
+    expect(relaunchEvents).toHaveLength(0);
+  });
+});
+
 describe('TerminalWorkspacesManager startup restore — OpenCode catalog discovery', () => {
   it('discovers session id from opencode session list when panel only has plain opencode', async () => {
     window.localStorage.setItem(

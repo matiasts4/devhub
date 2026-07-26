@@ -1,11 +1,15 @@
 # Provider notes: Grok durable resume
 
-**Status:** Not verified — startup uses persisted `grok`/`groc` `initialCommand` (hydrate path) only.
+**Status:** ✅ Verified 2026-07-26 (see `openspec/changes/terminal-multiprovider-session-resume/`).
 
-**Phase B checklist:**
+**Verified CLI contract** (`grok --help`, installed at `~/.grok/bin/grok`):
 
-- Confirm whether Grok CLI exposes `session list` + resume-by-id (or equivalent).
-- If yes: add `GET /api/grok/sessions` (or shared TUI route), adapter with `supportsDurableResume() === true`, persist session id on TUI detection (mirror OpenCode).
-- If no: keep relaunch-only; document in gear copy.
+- `grok -r, --resume [<SESSION_ID>]` — resume by id, or the most recent when omitted.
+- `grok -c, --continue` — continue the most recent session for the cwd.
+- `grok -s, --session-id <uuid>` — pre-assign a UUID to a **new** session
+  (must not already exist) → DevHub launch presets carry the id from birth.
+- `grok sessions list|search` subcommand exists.
+- On-disk catalog: `~/.grok/sessions/<encodeURIComponent(cwd)>/<uuid>/summary.json`
+  with `{ info: { id, cwd }, session_summary, created_at, updated_at }`.
 
-**Risk:** Injecting resume into live Grok TUI — mitigated by `startupInjectOrchestrator` on branch `feature/terminal-decompose`.
+**Risk:** Injecting resume into live Grok TUI — mitigated by `startupInjectOrchestrator`.

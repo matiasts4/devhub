@@ -77,6 +77,7 @@ import {
   createTerminalViewportDiagnosticLogger,
   getTerminalRuntimePlatform,
   isTerminalViewportNearBottom,
+  getTerminalViewportScrollOffset,
   flushHiddenTerminalCatchupToTerm,
   shouldSyncTerminalViewportOnLayoutShow,
   shouldDiscardHiddenOutputCatchup,
@@ -99,7 +100,7 @@ export * from './terminal/TerminalTTY.helpers';
  *   2. In the running app's devtools console: window.__DEVHUB_BUILD_MARKERS__.terminalTTY
  * If the marker you see does NOT match the one below, the running window is on stale code.
  */
-const TERMINAL_TTY_BUILD_MARKER = '2026-07-04-window-switch-tui-safe-recover-v2';
+const TERMINAL_TTY_BUILD_MARKER = '2026-07-25-reconnect-viewport-restore';
 if (typeof window !== 'undefined') {
   window.__DEVHUB_BUILD_MARKERS__ = window.__DEVHUB_BUILD_MARKERS__ || {};
   if (window.__DEVHUB_BUILD_MARKERS__.terminalTTY !== TERMINAL_TTY_BUILD_MARKER) {
@@ -176,6 +177,11 @@ export default function TerminalTTY({
   const prevRequestedRendererModeRef = useRef(requestedRendererMode);
   const restoredHiddenLeaseThisMountRef = useRef(false);
   const lastViewportYRef = useRef(null);
+  // Viewport intent captured in reconnect() right before term.clear() wipes the
+  // buffer (which pins ydisp=0). Consumed by the v2 rehydration replay-complete
+  // path to re-anchor the viewport ('bottom' | saved offset). Without this the
+  // user lands at the top of the scrollback after any silent WS reconnect.
+  const preReconnectViewportRef = useRef(null);
   const lastPointerZoneRef = useRef('transcript');
   const tuiSessionActiveRef = useRef(isLikelyTuiInitialCommand(initialCommand));
   const tuiSessionFooterConfirmedRef = useRef(false);
@@ -1278,6 +1284,8 @@ export default function TerminalTTY({
     sendResize,
     writeTerminalOutput,
     scrollIfActivePanel,
+    scrollTerminalToBottom,
+    preReconnectViewportRef,
     sendInitialCommandIfReady,
     applyTerminalSessionExit,
     notifyAgentReady,
@@ -1437,6 +1445,14 @@ export default function TerminalTTY({
       connectionState: connectionStateRef.current,
       initialCommand,
     });
+    // Capture viewport intent BEFORE clear() wipes the buffer and pins ydisp=0;
+    // the v2 replay-complete path restores it once the snapshot is re-written.
+    const termBeforeClear = termRef.current;
+    if (termBeforeClear) {
+      preReconnectViewportRef.current = isTerminalViewportNearBottom(termBeforeClear, 1)
+        ? 'bottom'
+        : getTerminalViewportScrollOffset(termBeforeClear);
+    }
     termRef.current?.clear();
     connect();
   }, [autoFocus, connect, initialCommand, sendResize]);

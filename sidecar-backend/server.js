@@ -189,6 +189,90 @@ function broadcastSessionPayload(session, payload) {
   }
 }
 
+// ─── Agent session-id binding (kimi/codex fs correlation) ────────────────────
+// Mirrors src/lib/terminal/ttyServer.js. grok/qodercli ids are pre-assigned in
+// their launch commands (no binder needed); kimi/codex have no pre-assign flag,
+// so we correlate the on-disk session created right after the typed launch.
+// The binder implementation is ESM and lives in the Next.js tree, so it is
+// loaded lazily: in packaged desktop builds the path does not exist and
+// binding stays disabled (best-effort, never throws).
+const AGENT_SESSION_BINDABLE_TYPES = new Set(['kimi', 'codex']);
+const AGENT_SESSION_DETECTED_WS_TYPE = {
+  kimi: 'kimi-session-detected',
+  codex: 'codex-session-detected',
+  grok: 'grok-session-detected',
+  qodercli: 'qoder-session-detected',
+};
+
+let agentSessionBinderModulePromise = null;
+function loadAgentSessionBinder() {
+  if (!agentSessionBinderModulePromise) {
+    agentSessionBinderModulePromise = import('../src/lib/terminal/agentSessionBinder.js').catch(
+      () => null
+    );
+  }
+  return agentSessionBinderModulePromise;
+}
+
+function maybeStartAgentSessionBinding(session) {
+  try {
+    const agentType = session?.agentType;
+    const eventType = AGENT_SESSION_DETECTED_WS_TYPE[agentType];
+    if (!eventType) return;
+
+    const synthesized = synthesizeAgentSessionId(agentType, session.id);
+    const explicitId =
+      session.agentSessionId && session.agentSessionId !== synthesized
+        ? session.agentSessionId
+        : null;
+    if (explicitId) {
+      // Resume/pre-assigned form typed or injected by the client — surface it
+      // once so the frontend can persist it. No binder needed (grok/qodercli
+      // always carry their id in the launch command).
+      if (session._lastBroadcastAgentSessionId !== explicitId) {
+        session._lastBroadcastAgentSessionId = explicitId;
+        broadcastSessionPayload(session, {
+          type: eventType,
+          sessionId: explicitId,
+          agentType,
+        });
+      }
+      return;
+    }
+
+    if (!AGENT_SESSION_BINDABLE_TYPES.has(agentType)) return;
+    if (session._agentSessionBinderStarted) return;
+
+    session._agentSessionBinderStarted = true;
+    loadAgentSessionBinder()
+      .then((mod) => {
+        if (!mod || typeof mod.bindAgentSession !== 'function') return;
+        if (!sessions.has(session.id)) return; // session closed while importing
+        mod.bindAgentSession({
+          sessionId: session.id,
+          agentType,
+          cwd: session.cwd,
+          spawnedAt: Date.now(),
+          onBound: (agentSessionId) => {
+            try {
+              session.agentSessionId = agentSessionId;
+              broadcastSessionPayload(session, {
+                type: AGENT_SESSION_DETECTED_WS_TYPE[agentType],
+                sessionId: agentSessionId,
+                agentType,
+              });
+            } catch (_) {
+              // best-effort
+            }
+          },
+        });
+      })
+      .catch(() => {});
+  } catch (_) {
+    // best-effort — never break the sidecar on binding failures
+  }
+}
+
 function spawnSidecarPtyProcess(session) {
   const spawnConfig = buildSidecarSpawnConfig({
     sessionId: session.id,
@@ -403,6 +487,7 @@ function attachSidecarPtyHandlers(session) {
           applyAgentTuiDetection(session, 'kimi');
           session.agentLaunchOrigin = 'output';
         }
+        maybeStartAgentSessionBinding(session);
       } else if (detectOpenCodeTuiReady(filteredData)) {
         if (session.mode !== 'tui') {
           session.mode = 'tui';
@@ -633,6 +718,7 @@ app.put('/sessions/:id/input', (req, res) => {
   }
 
   updateSessionModeFromInput(session, filteredInput);
+  maybeStartAgentSessionBinding(session);
 
   const detectedSessionId = detectOpenCodeSessionId(filteredInput);
   if (detectedSessionId && session.opencodeSessionId !== detectedSessionId) {
@@ -870,6 +956,7 @@ wss.on('connection', (ws, req) => {
     const hadAgentTypeBeforeInput = Boolean(session.agentType);
 
     updateSessionModeFromInput(session, filteredInput);
+    maybeStartAgentSessionBinding(session);
 
     if (typeof filteredInput === 'string' && filteredInput.length > 0) {
       const isEnter = filteredInput.includes('\r') || filteredInput.includes('\n');

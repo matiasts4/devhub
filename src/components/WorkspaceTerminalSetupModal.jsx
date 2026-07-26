@@ -25,6 +25,7 @@ import {
   shouldNavigateWorkspaceSetupSections,
 } from '@/components/terminal/workspaceTerminalSetupModalKeyboard';
 import { applyAgentYoloToCommand } from '@/lib/terminal/agentLaunchPreferences';
+import { AGENT_SESSION_ID_PLACEHOLDER } from '@/components/terminal/utils/panelHelpers';
 
 const MIN_TERMINALS = 0;
 const MAX_TERMINALS = 6;
@@ -54,8 +55,10 @@ const COMMAND_PRESETS = [
   {
     id: 'grok',
     label: 'Grok',
-    command: 'grok',
-    description: 'Inicia Grok en cada terminal',
+    // Pre-assigns a fresh session id per panel (placeholder resolved at
+    // creation time) so post-reboot restore can resume the exact conversation.
+    command: `grok --session-id ${AGENT_SESSION_ID_PLACEHOLDER}`,
+    description: 'Inicia Grok en cada terminal (sesión resumible)',
     Icon: Sparkles,
   },
 ];

@@ -61,6 +61,8 @@ function normalizeTerminalSessionRecord(record = null) {
     restorePolicy: asString(record.restorePolicy),
     sessionKind: asString(record.sessionKind),
     roleKey: asString(record.roleKey),
+    agentType: asString(record.agentType),
+    agentSessionId: asString(record.agentSessionId),
   };
 }
 

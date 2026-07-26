@@ -119,6 +119,50 @@ describe('WorkspaceTerminalSetupModal keyboard flow', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  test('grok preset pre-assigns a per-panel session id placeholder', async () => {
+    const onConfirm = jest.fn();
+    const onClose = jest.fn();
+    await renderIntoDom(
+      React.createElement(WorkspaceTerminalSetupModal, {
+        open: true,
+        onClose,
+        onConfirm,
+      }),
+      mountedRoots
+    );
+    await flushEffects();
+
+    const grokPreset = document.querySelector(
+      '[data-testid="workspace-terminal-command-preset-grok"]'
+    );
+    flushSync(() => {
+      grokPreset.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    await flushEffects();
+
+    const customInput = document.querySelector(
+      '[data-testid="workspace-terminal-initial-command-input"]'
+    );
+    // Not a static uuid: the placeholder is resolved per panel at creation time.
+    expect(customInput.value).toBe('grok --session-id __DEVHUB_AGENT_SESSION_ID__');
+
+    const confirmButton = document.querySelector(
+      '[data-testid="workspace-terminal-setup-confirm"]'
+    );
+    flushSync(() => {
+      confirmButton.dispatchEvent(
+        new window.MouseEvent('click', { bubbles: true, cancelable: true })
+      );
+    });
+    await flushEffects();
+
+    expect(onConfirm).toHaveBeenCalledWith({
+      terminalCount: 1,
+      initialCommand: 'grok --session-id __DEVHUB_AGENT_SESSION_ID__',
+    });
+    expect(onClose).toHaveBeenCalled();
+  });
+
   test('Enter confirms from the custom command section without focusing the create button', async () => {
     const onConfirm = jest.fn();
     const onClose = jest.fn();

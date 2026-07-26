@@ -14,6 +14,8 @@ const {
   createDefaultWorkspaceState,
   normalizeWorkspaceState,
   buildWorkspaceColumnsForTerminalCount,
+  AGENT_SESSION_ID_PLACEHOLDER,
+  resolvePerPanelInitialCommand,
 } = require('../panelHelpers');
 
 describe('createPanel / normalizeWorkspaceState — displayName round-trip', () => {
@@ -84,6 +86,36 @@ describe('createPanel / normalizeWorkspaceState — displayName round-trip', () 
     expect(allPanels).toHaveLength(2);
     expect(allPanels[0].displayName).toBe('custom-p1');
     expect(allPanels[1].displayName).toBe('custom-p2');
+  });
+});
+
+describe('AGENT_SESSION_ID_PLACEHOLDER — per-panel pre-assigned ids', () => {
+  test('resolvePerPanelInitialCommand returns commands without placeholder unchanged', () => {
+    expect(resolvePerPanelInitialCommand('opencode')).toBe('opencode');
+    expect(resolvePerPanelInitialCommand(null)).toBeNull();
+    expect(resolvePerPanelInitialCommand(undefined)).toBeUndefined();
+  });
+
+  test('each panel gets a fresh uuid for the grok pre-assign preset command', () => {
+    let counter = 0;
+    const result = buildWorkspaceColumnsForTerminalCount({
+      terminalCount: 3,
+      createPanel,
+      allocateColumnId: () => `c${++counter}`,
+      allocatePanelId: () => `p${++counter}`,
+      initialCommand: `grok --session-id ${AGENT_SESSION_ID_PLACEHOLDER}`,
+    });
+
+    const commands = result.columns
+      .flatMap((col) => col.panels)
+      .map((panel) => panel.initialCommand);
+    expect(commands).toHaveLength(3);
+
+    const uuidRe =
+      /^grok --session-id [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    commands.forEach((command) => expect(command).toMatch(uuidRe));
+    // Panels must never share a pre-assigned grok session id.
+    expect(new Set(commands).size).toBe(3);
   });
 });
 

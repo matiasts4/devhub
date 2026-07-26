@@ -5,7 +5,14 @@ function sleep(ms) {
     setTimeout(resolve, ms);
   });
 }
-import { inferPanelSessionKind } from './restorePolicyResolver';
+import {
+  buildProviderResumeCommand,
+  extractProviderSessionIdFromCommand,
+  getProviderContinueCommand,
+  inferPanelSessionKind,
+  isAgentProviderKind,
+  normalizeProviderKind,
+} from './restorePolicyResolver';
 import { buildOpencodeResumeCommand } from './opencodeSessionRegistry.js';
 import { resolvePanelStartupInjectIntent } from './startupInjectOrchestrator.js';
 
@@ -20,6 +27,7 @@ const OPENCODE_MUTEX_KEYS = ['devhub_opencode_restore_in_progress'];
 
 export const RELAUNCH_RESTORE_ACTIONS = new Set([
   RESTORE_ACTION.RESUME_OPENCODE_SESSION,
+  RESTORE_ACTION.RESUME_AGENT_SESSION,
   RESTORE_ACTION.PROCESS_ORPHAN,
   RESTORE_ACTION.RESTORE_SHELL_EMERGENT,
 ]);
@@ -90,7 +98,49 @@ export async function waitForRestoreMutexClear(
 }
 
 export function buildStartupResumeCommand(panel, action) {
+  const provider = resolveActionProvider(panel, action);
+  if (provider && provider !== 'opencode') {
+    return buildAgentProviderResumeCommand(panel, action, provider);
+  }
   return buildOpenCodeResumeCommand(panel, action);
+}
+
+/**
+ * Provider for a relaunch action: explicit `action.provider`/`sessionKind`
+ * first, then inferred from the panel command for provider kinds.
+ */
+function resolveActionProvider(panel, action) {
+  const explicit =
+    normalizeProviderKind(action?.provider) || normalizeProviderKind(action?.sessionKind);
+  if (explicit) return explicit;
+  if (action?.action !== RESTORE_ACTION.RESUME_AGENT_SESSION) return null;
+  const inferred = inferPanelSessionKind({
+    initialCommand: panel?.initialCommand,
+    panel,
+  });
+  return isAgentProviderKind(inferred) ? normalizeProviderKind(inferred) : null;
+}
+
+/**
+ * Relaunch command for RESUME_AGENT_SESSION: the provider's resume form when a
+ * session id is known (action field or extractable from the panel command),
+ * otherwise the provider's verified continue command. Returns null when the
+ * provider has no continue form — the action is then skipped.
+ */
+export function buildAgentProviderResumeCommand(panel, action, provider = null) {
+  const kind = normalizeProviderKind(provider || action?.provider || action?.sessionKind);
+  if (!kind) return null;
+
+  const sessionId =
+    (typeof action?.agentSessionId === 'string' && action.agentSessionId.trim()) ||
+    extractProviderSessionIdFromCommand(kind, panel?.initialCommand) ||
+    null;
+
+  if (sessionId) {
+    return buildProviderResumeCommand(kind, sessionId);
+  }
+
+  return getProviderContinueCommand(kind);
 }
 
 export function buildOpenCodeResumeCommand(panel, action) {

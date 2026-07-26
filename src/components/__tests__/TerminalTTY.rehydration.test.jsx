@@ -46,7 +46,9 @@ jest.mock(
         open: jest.fn(),
         onData: jest.fn(),
         focus: jest.fn(),
-        write: jest.fn(),
+        write: jest.fn((data, cb) => {
+          if (typeof cb === 'function') cb();
+        }),
         writeln: jest.fn(),
         paste: jest.fn(),
         refresh: jest.fn(),
@@ -56,6 +58,9 @@ jest.mock(
         getSelection: jest.fn(() => ''),
         clear: jest.fn(),
         scrollToLine: jest.fn(),
+        scrollToBottom: jest.fn(),
+        parser: { registerCsiHandler: jest.fn() },
+        buffer: { active: { type: 'normal', viewportY: 0, baseY: 0, length: 24 } },
       };
       mockTerminalInstances.push(instance);
       return instance;
@@ -650,5 +655,119 @@ describe('TerminalTTY â€” v2 rehydration protocol', () => {
 
     // Unsubscribe still happens after the snapshot.
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'unsubscribe' }));
+  });
+
+  // Reconnect replay must re-anchor the viewport: reconnect() clear()s the buffer
+  // (ydisp=0) and the post-replay scroll rescues are non-forced, so without the
+  // restore the user lands at the TOP of the rebuilt scrollback.
+  async function driveReconnectReplay({ panelId, bufferAtReconnect, bufferAfterReplay }) {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: panelId,
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const term = getLastTerminal();
+    const socket1 = getLastSocket();
+
+    // Complete the first rehydration so the session is live.
+    socket1.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: 'SNAP1',
+        ptyOffset: 100,
+        termsize: { cols: 80, rows: 24 },
+      }),
+    });
+    await flushTerminalEffects();
+    socket1.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+
+    // Viewport state right before the socket drops.
+    term.buffer.active = bufferAtReconnect;
+
+    // Socket drops (CLOSED, like a real half-open drop after OS sleep) →
+    // connectionState flips → auto-reconnect fires after the first 300ms backoff.
+    socket1.readyState = 3;
+    socket1.onclose?.({ code: 1006, reason: 'dropped', wasClean: false });
+    await flushTerminalEffects();
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await flushTerminalEffects();
+
+    // reconnect() must have cleared the buffer and opened a fresh socket.
+    expect(term.clear).toHaveBeenCalled();
+    const deadline = Date.now() + 2000;
+    while (mockWebSocketInstances.length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await flushTerminalEffects();
+    const socket2 = getLastSocket();
+    expect(socket2).not.toBe(socket1);
+
+    // Post-replay xterm state: viewport stuck at the top while baseY grew.
+    term.buffer.active = bufferAfterReplay;
+    term.scrollToBottom.mockClear();
+    term.scrollToLine.mockClear();
+
+    socket2.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: 'SNAP2',
+        ptyOffset: 200,
+        termsize: { cols: 80, rows: 24 },
+      }),
+    });
+    await flushTerminalEffects();
+    socket2.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+
+    return { term };
+  }
+
+  it('re-anchors the viewport to the bottom after a reconnect replay (was at bottom)', async () => {
+    const { term } = await driveReconnectReplay({
+      panelId: 'panel-reconnect-bottom',
+      bufferAtReconnect: { type: 'normal', viewportY: 100, baseY: 100, length: 124 },
+      bufferAfterReplay: { type: 'normal', viewportY: 0, baseY: 100, length: 124 },
+    });
+
+    // Forced restore — the non-forced rescues are blocked (viewportY=0, baseY=100).
+    expect(term.scrollToBottom).toHaveBeenCalled();
+  });
+
+  it('restores the saved scrollback offset after a reconnect replay (was reading)', async () => {
+    const { term } = await driveReconnectReplay({
+      panelId: 'panel-reconnect-offset',
+      bufferAtReconnect: { type: 'normal', viewportY: 40, baseY: 100, length: 124 },
+      bufferAfterReplay: { type: 'normal', viewportY: 0, baseY: 100, length: 124 },
+    });
+
+    expect(term.scrollToLine).toHaveBeenCalledWith(40);
+    expect(term.scrollToBottom).not.toHaveBeenCalled();
   });
 });

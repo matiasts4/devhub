@@ -260,7 +260,7 @@ describe('TUI launch sessions are not treated as shell-ephemeral', () => {
 });
 
 describe('swarm restore never re-runs launch wrapper', () => {
-  it('emits REATTACH_LIVE_TERMINAL for swarm sessions instead of RESTORE_SHELL_EMERGENT', () => {
+  it('emits REATTACH_LIVE_TERMINAL for swarm sessions when the tmux session is alive', () => {
     const manifest = normalizeRestoreManifest({
       workspaces: [{ workspaceId: 'ws1', name: 'Swarm S1', tabs: [], layout: {} }],
       terminalSessions: [
@@ -282,7 +282,12 @@ describe('swarm restore never re-runs launch wrapper', () => {
 
     const plan = buildStartupRestorePlan({
       manifest,
-      runtimeSnapshot: { terminals: [], processes: [], anomalies: {} },
+      runtimeSnapshot: {
+        terminals: [],
+        processes: [],
+        anomalies: {},
+        tmuxSessions: ['devhub-swarm-launch-abc-coder'],
+      },
     });
 
     expect(plan.actions).toHaveLength(1);
@@ -290,6 +295,39 @@ describe('swarm restore never re-runs launch wrapper', () => {
     expect(plan.actions[0].reason).toBe('swarm-tmux-reattach');
     expect(
       plan.actions.some((action) => action.action === RESTORE_ACTION.RESTORE_SHELL_EMERGENT)
+    ).toBe(false);
+  });
+
+  it('emits TERMINATED with swarm-tmux-missing when the tmux session is gone (post-reboot)', () => {
+    const manifest = normalizeRestoreManifest({
+      workspaces: [{ workspaceId: 'ws1', name: 'Swarm S1', tabs: [], layout: {} }],
+      terminalSessions: [
+        {
+          terminalId: 'p1',
+          panelId: 'p1',
+          workspaceId: 'ws1',
+          cwd: '/home/user/.devhub/worktrees/launch-abc/coder',
+          sessionKind: 'swarm',
+          launchId: 'launch-abc',
+          roleKey: 'coder',
+          opencodeSessionId: null,
+          runId: 'run-1',
+          missionId: 'launch-abc',
+        },
+      ],
+      swarmRuns: [],
+    });
+
+    const plan = buildStartupRestorePlan({
+      manifest,
+      runtimeSnapshot: { terminals: [], processes: [], anomalies: {}, tmuxSessions: [] },
+    });
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0].action).toBe(RESTORE_ACTION.TERMINATED);
+    expect(plan.actions[0].reason).toBe('swarm-tmux-missing');
+    expect(
+      plan.actions.some((action) => action.action === RESTORE_ACTION.REATTACH_LIVE_TERMINAL)
     ).toBe(false);
   });
 });

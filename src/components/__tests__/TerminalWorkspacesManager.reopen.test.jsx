@@ -705,3 +705,162 @@ describe('TerminalWorkspacesManager reopen menu', () => {
     }
   });
 });
+
+describe('TerminalWorkspacesManager multiprovider session-detected events', () => {
+  let dom;
+
+  function seedSinglePanelWorkspace(initialCommand, panelId = 'p1') {
+    window.localStorage.setItem(
+      'devhub_terminal_state',
+      JSON.stringify({
+        workspaces: [
+          {
+            id: 'ws1',
+            name: 'Workspace 1',
+            columns: [
+              {
+                id: 'c1',
+                panels: [{ id: panelId, cwd: '/workspace/devhub', initialCommand }],
+              },
+            ],
+          },
+        ],
+        activeWsId: 'ws1',
+        activePanelIds: { ws1: panelId },
+      })
+    );
+    window.localStorage.setItem(
+      'devhub_agent_runs',
+      JSON.stringify({ task1: { panelId, launchedAt: 1 } })
+    );
+  }
+
+  function readPersistedPanelCommand(panelId = 'p1') {
+    const state = JSON.parse(
+      window.localStorage.getItem('devhub_terminal_state:project-1') || '{}'
+    );
+    return (
+      state?.workspaces?.[0]?.columns?.[0]?.panels?.find((p) => p.id === panelId)?.initialCommand ||
+      null
+    );
+  }
+
+  beforeEach(() => {
+    dom = installDom();
+    window.localStorage.clear();
+    global.fetch = jest.fn().mockRejectedValue(new Error('network-disabled-in-test'));
+    mockCatalogState.status = 'empty';
+    mockCatalogState.sessions = [];
+    mockCatalogState.error = null;
+    mockCatalogState.isLoading = false;
+    mockCatalogState.refresh = jest.fn();
+    mockCatalogState.retry = jest.fn();
+  });
+
+  afterEach(() => {
+    cleanupMountedRoots(mountedRoots);
+
+    dom.window.close();
+    delete global.localStorage;
+    delete global.fetch;
+    jest.clearAllMocks();
+  });
+
+  test('kimi-session-detected persists resume command and run metadata', async () => {
+    seedSinglePanelWorkspace('kimi');
+
+    await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:kimi-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'km-real-1', agentType: 'kimi' },
+      })
+    );
+    await flushEffects();
+
+    expect(readPersistedPanelCommand()).toBe('kimi --session km-real-1');
+
+    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    expect(runs.task1).toEqual(
+      expect.objectContaining({ agentSessionId: 'km-real-1', agentType: 'kimi' })
+    );
+  });
+
+  test('grok-session-detected rewrites pre-assigned command to resume form', async () => {
+    seedSinglePanelWorkspace('grok --session-id gk-pre-1');
+
+    await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:grok-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'gk-pre-1', agentType: 'grok' },
+      })
+    );
+    await flushEffects();
+
+    expect(readPersistedPanelCommand()).toBe('grok --resume gk-pre-1');
+
+    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    expect(runs.task1).toEqual(
+      expect.objectContaining({ agentSessionId: 'gk-pre-1', agentType: 'grok' })
+    );
+  });
+
+  test('codex-session-detected persists codex resume form', async () => {
+    seedSinglePanelWorkspace('codex');
+
+    await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:codex-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'cx-real-1', agentType: 'codex' },
+      })
+    );
+    await flushEffects();
+
+    expect(readPersistedPanelCommand()).toBe('codex resume cx-real-1');
+
+    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    expect(runs.task1).toEqual(
+      expect.objectContaining({ agentSessionId: 'cx-real-1', agentType: 'codex' })
+    );
+  });
+
+  test('qoder-session-detected persists qodercli resume form', async () => {
+    seedSinglePanelWorkspace('qodercli --session-id qd-pre-1');
+
+    await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:qoder-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'qd-pre-1', agentType: 'qodercli' },
+      })
+    );
+    await flushEffects();
+
+    expect(readPersistedPanelCommand()).toBe('qodercli --resume qd-pre-1');
+
+    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    expect(runs.task1).toEqual(
+      expect.objectContaining({ agentSessionId: 'qd-pre-1', agentType: 'qodercli' })
+    );
+  });
+
+  test('does not apply kimi session detect to unrelated grok panels', async () => {
+    seedSinglePanelWorkspace('grok --session-id gk-keep-1');
+
+    await renderManager();
+
+    window.dispatchEvent(
+      new window.CustomEvent('devhub:kimi-session-detected', {
+        detail: { panelId: 'p1', sessionId: 'km-stray-1', agentType: 'kimi' },
+      })
+    );
+    await flushEffects();
+
+    expect(readPersistedPanelCommand()).not.toContain('kimi');
+
+    const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
+    expect(runs.task1?.agentSessionId).not.toBe('km-stray-1');
+  });
+});

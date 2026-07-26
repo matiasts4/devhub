@@ -27,7 +27,17 @@ jest.mock('@/components/terminal/terminalTypographyPreferences', () => ({
 }));
 jest.mock('@/lib/terminal/restorePreferences', () => ({
   RESTORE_POLICY: { AUTO: 'auto', MANUAL: 'manual', OFF: 'off' },
-  readTerminalRestorePreferences: () => ({ opencode: 'auto', generic: 'auto', swarm: 'auto' }),
+  TERMINAL_RESTORE_KINDS: ['opencode', 'kimi', 'grok', 'codex', 'qoder', 'swarm', 'generic'],
+  readTerminalRestorePreferences: jest.fn(() => ({
+    opencode: 'auto',
+    kimi: 'auto',
+    grok: 'auto',
+    codex: 'auto',
+    qoder: 'auto',
+    swarm: 'auto',
+    generic: 'auto',
+    restoreOnReboot: true,
+  })),
   writeTerminalRestorePreferences: jest.fn(),
 }));
 jest.mock('@/lib/theme/themes', () => ({
@@ -54,6 +64,7 @@ describe('TerminalSettingsSection restore policies', () => {
     global.localStorage = dom.window.localStorage;
     container = document.getElementById('root');
     root = createRoot(container);
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -78,5 +89,101 @@ describe('TerminalSettingsSection restore policies', () => {
     expect(
       document.querySelector('[data-testid="settings-terminal-renderer-select"]')
     ).toBeTruthy();
+  });
+
+  test('renders all 7 provider kinds with labels', () => {
+    const TerminalSettingsSection = require('../TerminalSettingsSection').default;
+    flushSync(() => {
+      root.render(React.createElement(TerminalSettingsSection, { includeRestorePolicies: true }));
+    });
+    const expectedLabels = {
+      opencode: 'OpenCode',
+      kimi: 'Kimi Code',
+      grok: 'Grok',
+      codex: 'Codex',
+      qoder: 'Qoder',
+      swarm: 'Swarm',
+      generic: 'Shell genérico',
+    };
+    for (const [kind, label] of Object.entries(expectedLabels)) {
+      expect(document.querySelector(`[data-testid="restore-policy-${kind}"]`)).toBeTruthy();
+      expect(document.body.textContent).toContain(label);
+    }
+  });
+
+  test('master toggle renders checked by default and disables selects when switched off', () => {
+    const TerminalSettingsSection = require('../TerminalSettingsSection').default;
+    const { writeTerminalRestorePreferences } = require('@/lib/terminal/restorePreferences');
+    flushSync(() => {
+      root.render(React.createElement(TerminalSettingsSection, { includeRestorePolicies: true }));
+    });
+
+    const toggle = document.querySelector('[data-testid="restore-on-reboot-toggle-settings"]');
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('role')).toBe('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(
+      document.querySelector('[data-testid="restore-on-reboot-off-hint-settings"]')
+    ).toBeFalsy();
+
+    flushSync(() => {
+      toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(writeTerminalRestorePreferences).toHaveBeenCalledWith(expect.anything(), {
+      restoreOnReboot: false,
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(
+      document.querySelector('[data-testid="restore-on-reboot-off-hint-settings"]')
+    ).toBeTruthy();
+    const list = document.querySelector('[data-testid="restore-policy-list-settings"]');
+    expect(list.getAttribute('data-disabled')).toBe('true');
+    expect(document.querySelector('[data-testid="restore-policy-kimi"]').disabled).toBe(true);
+  });
+
+  test('changing a provider kind persists only that kind', () => {
+    const TerminalSettingsSection = require('../TerminalSettingsSection').default;
+    const { writeTerminalRestorePreferences } = require('@/lib/terminal/restorePreferences');
+    flushSync(() => {
+      root.render(React.createElement(TerminalSettingsSection, { includeRestorePolicies: true }));
+    });
+
+    const select = document.querySelector('[data-testid="restore-policy-kimi"]');
+    expect(select.value).toBe('auto');
+    flushSync(() => {
+      select.value = 'manual';
+      select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+
+    expect(writeTerminalRestorePreferences).toHaveBeenCalledWith(expect.anything(), {
+      kimi: 'manual',
+    });
+    expect(select.value).toBe('manual');
+  });
+
+  test('legacy 3-key prefs render all kinds with defaults and the master switch on', () => {
+    const { readTerminalRestorePreferences } = require('@/lib/terminal/restorePreferences');
+    readTerminalRestorePreferences.mockImplementationOnce(() => ({
+      opencode: 'manual',
+      generic: 'off',
+      swarm: 'auto',
+    }));
+
+    const TerminalSettingsSection = require('../TerminalSettingsSection').default;
+    flushSync(() => {
+      root.render(React.createElement(TerminalSettingsSection, { includeRestorePolicies: true }));
+    });
+
+    ['opencode', 'kimi', 'grok', 'codex', 'qoder', 'swarm', 'generic'].forEach((kind) => {
+      expect(document.querySelector(`[data-testid="restore-policy-${kind}"]`)).toBeTruthy();
+    });
+    expect(document.querySelector('[data-testid="restore-policy-opencode"]').value).toBe('manual');
+    expect(document.querySelector('[data-testid="restore-policy-kimi"]').value).toBe('auto');
+    expect(
+      document
+        .querySelector('[data-testid="restore-on-reboot-toggle-settings"]')
+        .getAttribute('aria-checked')
+    ).toBe('true');
   });
 });

@@ -264,4 +264,114 @@ describe('TerminalSettingsModal', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('provider label and resume command', () => {
+    test('shows the provider label detected from initialCommand', async () => {
+      const TerminalSettingsModal = require('../TerminalSettingsModal').default;
+      view = await renderModalIntoDom(
+        React.createElement(TerminalSettingsModal, {
+          open: true,
+          onClose: jest.fn(),
+          panelId: 'p-grok',
+          sessionId: 'p-grok',
+          sessionType: 'shell-ephemeral',
+          restorePolicy: 'manual',
+          cwd: '/workspace/devhub',
+          initialCommand: 'grok --resume grok-123',
+        })
+      );
+      await flushModalEffects();
+
+      const label = view.container.querySelector(
+        '[data-testid="terminal-settings-provider-label"]'
+      );
+      expect(label).not.toBeNull();
+      expect(label.textContent).toBe('Grok');
+    });
+
+    test('falls back to the opencode sessionType hint when no initialCommand is provided', async () => {
+      const TerminalSettingsModal = require('../TerminalSettingsModal').default;
+      view = await renderModalIntoDom(
+        React.createElement(TerminalSettingsModal, {
+          open: true,
+          onClose: jest.fn(),
+          panelId: 'p1',
+          sessionId: 'oc-123',
+          sessionType: 'opencode-durable',
+          restorePolicy: 'manual',
+          cwd: '/workspace/devhub',
+        })
+      );
+      await flushModalEffects();
+
+      const label = view.container.querySelector(
+        '[data-testid="terminal-settings-provider-label"]'
+      );
+      expect(label).not.toBeNull();
+      expect(label.textContent).toBe('OpenCode');
+    });
+
+    test('shows the provider resume command when a session id is known', async () => {
+      const TerminalSettingsModal = require('../TerminalSettingsModal').default;
+      view = await renderModalIntoDom(
+        React.createElement(TerminalSettingsModal, {
+          open: true,
+          onClose: jest.fn(),
+          panelId: 'p-grok',
+          sessionId: 'p-grok',
+          sessionType: 'shell-ephemeral',
+          restorePolicy: 'manual',
+          cwd: '/workspace/devhub',
+          initialCommand: 'grok --resume grok-123',
+        })
+      );
+      await flushModalEffects();
+
+      const resume = view.container.querySelector(
+        '[data-testid="terminal-settings-resume-command"]'
+      );
+      expect(resume).not.toBeNull();
+      expect(resume.textContent).toBe('grok --resume grok-123');
+    });
+
+    test('CTA dispatches the provider session id extracted from initialCommand', async () => {
+      const TerminalSettingsModal = require('../TerminalSettingsModal').default;
+      const relaunchEvents = [];
+
+      view = await renderModalIntoDom(
+        React.createElement(TerminalSettingsModal, {
+          open: true,
+          onClose: jest.fn(),
+          panelId: 'p-kimi',
+          sessionId: 'p-kimi',
+          sessionType: 'shell-ephemeral',
+          restorePolicy: 'manual',
+          cwd: '/workspace/devhub',
+          initialCommand: 'kimi --session kimi-42',
+        })
+      );
+      await flushModalEffects();
+
+      const handler = (event) => relaunchEvents.push(event.detail);
+      window.addEventListener('devhub:manual-revive-requested', handler);
+
+      const buttons = view.container.querySelectorAll('button');
+      const continuarBtn = Array.from(buttons).find(
+        (btn) => btn.textContent && btn.textContent.includes('Continuar sesión')
+      );
+      expect(continuarBtn).not.toBeNull();
+
+      flushSync(() => {
+        continuarBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      });
+
+      expect(relaunchEvents).toHaveLength(1);
+      expect(relaunchEvents[0]).toMatchObject({
+        panelId: 'p-kimi',
+        sessionId: 'kimi-42',
+      });
+
+      window.removeEventListener('devhub:manual-revive-requested', handler);
+    });
+  });
 });

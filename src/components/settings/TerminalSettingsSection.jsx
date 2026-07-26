@@ -20,6 +20,7 @@ import {
 } from '@/components/terminal/terminalTypographyPreferences';
 import {
   RESTORE_POLICY,
+  TERMINAL_RESTORE_KINDS,
   readTerminalRestorePreferences,
   writeTerminalRestorePreferences,
 } from '@/lib/terminal/restorePreferences';
@@ -32,6 +33,16 @@ import {
   setTerminalHeaderStyle,
   setZoom,
 } from '@/lib/theme/themes';
+
+const RESTORE_KIND_LABELS = {
+  opencode: 'OpenCode',
+  kimi: 'Kimi Code',
+  grok: 'Grok',
+  codex: 'Codex',
+  qoder: 'Qoder',
+  swarm: 'Swarm',
+  generic: 'Shell genérico',
+};
 
 export default function TerminalSettingsSection({ includeRestorePolicies = true }) {
   const [rendererMode, setRendererMode] = useState(() => {
@@ -46,16 +57,14 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
     getStoredTerminalAccentBarVisible()
   );
 
-  const [restorePrefs, setRestorePrefsState] = useState(() => {
-    if (typeof window === 'undefined') {
-      return {
-        opencode: RESTORE_POLICY.AUTO,
-        generic: RESTORE_POLICY.AUTO,
-        swarm: RESTORE_POLICY.AUTO,
-      };
-    }
-    return readTerminalRestorePreferences(window.localStorage);
-  });
+  const [restorePrefs, setRestorePrefsState] = useState(() =>
+    readTerminalRestorePreferences(typeof window === 'undefined' ? null : window.localStorage)
+  );
+
+  // Legacy prefs may lack the newer kinds or the master switch — fall back to
+  // the same defaults readTerminalRestorePreferences applies (auto / true).
+  const rebootRestoreEnabled = restorePrefs?.restoreOnReboot !== false;
+  const restorePolicyFor = (kind) => restorePrefs?.[kind] || RESTORE_POLICY.AUTO;
 
   const [zoom, setZoomState] = useState(() => getStoredZoom());
   const [autoCopy, setAutoCopyState] = useState(() => getStoredTerminalAutoCopy());
@@ -108,6 +117,14 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
       writeTerminalRestorePreferences(window.localStorage, { [sessionType]: next });
     }
     setRestorePrefsState((prev) => ({ ...prev, [sessionType]: next }));
+  };
+
+  const handleRebootRestoreToggle = () => {
+    const next = !rebootRestoreEnabled;
+    if (typeof window !== 'undefined') {
+      writeTerminalRestorePreferences(window.localStorage, { restoreOnReboot: next });
+    }
+    setRestorePrefsState((prev) => ({ ...prev, restoreOnReboot: next }));
   };
 
   const handleZoomChange = (newZoom) => {
@@ -296,20 +313,66 @@ export default function TerminalSettingsSection({ includeRestorePolicies = true 
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
                 Choose how terminals are restored at startup.
               </p>
-              <div className="space-y-3 mt-3">
-                {[
-                  { key: 'opencode', label: 'OpenCode' },
-                  { key: 'generic', label: 'Shell Genérico' },
-                  { key: 'swarm', label: 'Swarm' },
-                ].map(({ key, label }) => (
+
+              <div className="flex items-center justify-between max-w-sm mt-3">
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Restaurar sesiones al reiniciar el equipo
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Interruptor maestro de la restauración automática. La reanudación manual siempre
+                    está disponible.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={rebootRestoreEnabled}
+                  data-testid="restore-on-reboot-toggle-settings"
+                  onClick={handleRebootRestoreToggle}
+                  className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                  style={{
+                    background: rebootRestoreEnabled
+                      ? 'var(--accent-primary)'
+                      : 'var(--surface-muted)',
+                  }}
+                >
+                  <span
+                    className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                    style={{
+                      transform: rebootRestoreEnabled ? 'translateX(22px)' : 'translateX(2px)',
+                    }}
+                  />
+                </button>
+              </div>
+
+              {!rebootRestoreEnabled ? (
+                <p
+                  className="text-xs mt-2 max-w-sm"
+                  style={{ color: 'var(--text-muted)' }}
+                  data-testid="restore-on-reboot-off-hint-settings"
+                >
+                  La restauración automática está desactivada; las sesiones no se relanzan al
+                  iniciar.
+                </p>
+              ) : null}
+
+              <div
+                className="space-y-3 mt-3 transition-opacity"
+                style={{ opacity: rebootRestoreEnabled ? 1 : 0.5 }}
+                data-testid="restore-policy-list-settings"
+                data-disabled={rebootRestoreEnabled ? 'false' : 'true'}
+              >
+                {TERMINAL_RESTORE_KINDS.map((key) => (
                   <div key={key} className="flex items-center justify-between max-w-sm">
                     <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {label}
+                      {RESTORE_KIND_LABELS[key] || key}
                     </label>
                     <select
                       data-testid={`restore-policy-${key}`}
-                      value={restorePrefs[key]}
+                      value={restorePolicyFor(key)}
                       onChange={handleRestorePolicyChange(key)}
+                      disabled={!rebootRestoreEnabled}
                       className="h-11 rounded-xl border px-3 text-sm"
                       style={{
                         ...chromeSurfaceStyle({ surface: 'pill' }),

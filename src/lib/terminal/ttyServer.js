@@ -45,6 +45,7 @@ import {
   shouldSkipBackendRestore,
   unregisterOpencodeSession,
 } from './opencodeSessionRegistry.js';
+import { bindAgentSession } from './agentSessionBinder.js';
 
 const requireCjs = createRequire(
   typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'package.json')
@@ -654,6 +655,7 @@ export function reapTypedAgentSessionIfExited(session, chunk, now = Date.now()) 
 
   session.agentType = null;
   session.agentSessionId = null;
+  session.agentSessionIdExplicit = false;
   session.agentTuiState = null;
   session.agentTuiStateAt = null;
   session.hookState = null;
@@ -664,6 +666,7 @@ export function reapTypedAgentSessionIfExited(session, chunk, now = Date.now()) 
   session.historyEnabled = true;
   session.agentLaunchOrigin = null;
   session._typedAgentReaper = null;
+  cancelAgentSessionBinding(session);
 
   ttyLog('AGENT_REAPER', `typed agent child exited — reaped session agent state`, {
     id: session.id,
@@ -684,6 +687,90 @@ function broadcastOpenCodeSessionDetected(session, sessionId) {
       }
     }
   }
+}
+
+// WS event types emitted when a provider session id becomes known, mirroring
+// the opencode-session-detected envelope ({ type, sessionId, agentType }).
+// grok/qodercli carry pre-assigned ids in their launch commands; kimi/codex
+// are correlated on disk by agentSessionBinder after spawn.
+const AGENT_SESSION_DETECTED_WS_TYPE = {
+  kimi: 'kimi-session-detected',
+  codex: 'codex-session-detected',
+  grok: 'grok-session-detected',
+  qodercli: 'qoder-session-detected',
+};
+
+function broadcastAgentSessionDetected(session, agentType, sessionId) {
+  const type = AGENT_SESSION_DETECTED_WS_TYPE[agentType];
+  if (!type || !sessionId) return;
+  for (const s of session.sockets) {
+    if (s.readyState === s.OPEN) {
+      try {
+        s.send(JSON.stringify({ type, sessionId, agentType }));
+      } catch {
+        // Ignore send errors on stale sockets.
+      }
+    }
+  }
+}
+
+function cancelAgentSessionBinding(session) {
+  if (!session?._agentSessionBinderCancel) return;
+  try {
+    session._agentSessionBinderCancel();
+  } catch {
+    // best-effort
+  }
+  session._agentSessionBinderCancel = null;
+}
+
+/**
+ * Starts fs correlation (kimi/codex) between this PTY session and the provider
+ * session it just created. On a unique match the id is persisted on the
+ * session record (same saveSessions path as opencode ids) and broadcast as
+ * `<provider>-session-detected`. grok/qodercli never bind: their ids are
+ * pre-assigned in the launch command.
+ */
+function startAgentSessionBinding(session, agentType) {
+  if (!session || (agentType !== 'kimi' && agentType !== 'codex')) return;
+  if (session.agentSessionIdExplicit) return; // already have a real id
+  if (session._agentSessionBinderCancel) return; // correlation already in flight
+
+  const spawnedAt = Date.now();
+  const cancel = bindAgentSession({
+    sessionId: session.id,
+    agentType,
+    cwd: session.cwd,
+    spawnedAt,
+    onBound: (agentSessionId) => {
+      session._agentSessionBinderCancel = null;
+      try {
+        session.agentSessionId = agentSessionId;
+        session.agentSessionIdExplicit = true;
+        session._lastBroadcastAgentSessionId = agentSessionId;
+        saveSessions(getOrInitSessions());
+        broadcastAgentSessionDetected(session, agentType, agentSessionId);
+        ttyLog('AGENT_BINDER', `bound ${agentType} session id via fs correlation`, {
+          id: session.id,
+          agentType,
+          agentSessionId,
+        });
+      } catch {
+        // best-effort — never break the PTY server on bind failures
+      }
+    },
+  });
+
+  session._agentSessionBinderCancel = cancel;
+
+  // Self-clean the in-flight marker once the binder's own window has elapsed,
+  // so a later relaunch (after a timeout with no match) can correlate again.
+  const resetTimer = setTimeout(() => {
+    if (session._agentSessionBinderCancel === cancel) {
+      session._agentSessionBinderCancel = null;
+    }
+  }, 32000);
+  if (typeof resetTimer.unref === 'function') resetTimer.unref();
 }
 
 function markOpencodeDurableSession(
@@ -754,6 +841,9 @@ function applyAgentTuiDetection(session, command) {
   }
 
   const explicitSessionId = extractAgentSessionId(type, command);
+  if (explicitSessionId) {
+    session.agentSessionIdExplicit = true;
+  }
   session.agentSessionId = explicitSessionId || synthesizeAgentSessionId(type, session.id) || null;
 
   if (type === 'opencode') {
@@ -768,6 +858,25 @@ function applyAgentTuiDetection(session, command) {
     if (!session.hermesSessionId) {
       const hermesId = ensureHermesSessionId(session);
       broadcastHermesSessionDetected(session, hermesId);
+    }
+  } else if (type === 'kimi' || type === 'codex') {
+    // fs-correlation providers: no pre-assign flag. An explicit id in the
+    // command (resume form) is broadcast so the frontend can persist it;
+    // otherwise start the spawn-time binder and let it find the new session.
+    if (explicitSessionId) {
+      if (session._lastBroadcastAgentSessionId !== explicitSessionId) {
+        session._lastBroadcastAgentSessionId = explicitSessionId;
+        broadcastAgentSessionDetected(session, type, explicitSessionId);
+      }
+    } else {
+      startAgentSessionBinding(session, type);
+    }
+  } else if (type === 'grok' || type === 'qodercli') {
+    // Pre-assigned providers: the launch command already carries the id, so
+    // no binder is needed — just surface it once to the frontend.
+    if (explicitSessionId && session._lastBroadcastAgentSessionId !== explicitSessionId) {
+      session._lastBroadcastAgentSessionId = explicitSessionId;
+      broadcastAgentSessionDetected(session, type, explicitSessionId);
     }
   }
 
@@ -1271,6 +1380,8 @@ export function closeSession(id) {
   if (session) {
     // PTY-4: Clear workspace PTY identity on session termination
     tryClearPtyIdentity(session);
+
+    cancelAgentSessionBinding(session);
 
     teardownPanelSessionProcesses(session, { hasTmux });
 

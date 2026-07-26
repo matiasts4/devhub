@@ -6,17 +6,42 @@
  * - `manual`: user must manually resume (no automatic restore, UI handles this)
  * - `off`: restore disabled entirely
  *
- * LocalStorage format: `devhub_terminal_restore_prefs` → JSON `{ opencode: string, generic: string, swarm: string }`
+ * A master `restoreOnReboot` switch (default `true`) short-circuits the whole
+ * automatic startup restore pipeline when disabled; manual revive still works.
+ *
+ * LocalStorage format: `devhub_terminal_restore_prefs` → JSON
+ * `{ opencode, kimi, grok, codex, qoder, swarm, generic, restoreOnReboot }`
+ * Legacy 3-key payloads (`{ opencode, generic, swarm }`) are read back-compatibly:
+ * missing kinds default to `auto` and `restoreOnReboot` defaults to `true`.
  */
 
 export const RESTORE_POLICY = Object.freeze({ AUTO: 'auto', MANUAL: 'manual', OFF: 'off' });
 export const RESTORE_PREFERENCES_STORAGE_KEY = 'devhub_terminal_restore_prefs';
 
-/** @type {Record<string, string>} */
+/**
+ * Restore preference kinds. One key per verified TUI provider plus `swarm`
+ * (tmux-reattach panels) and `generic` (fallback for everything else).
+ */
+export const TERMINAL_RESTORE_KINDS = Object.freeze([
+  'opencode',
+  'kimi',
+  'grok',
+  'codex',
+  'qoder',
+  'swarm',
+  'generic',
+]);
+
+/** @type {Record<string, string|boolean>} */
 const DEFAULT_PREFERENCES = {
   opencode: RESTORE_POLICY.AUTO,
-  generic: RESTORE_POLICY.AUTO,
+  kimi: RESTORE_POLICY.AUTO,
+  grok: RESTORE_POLICY.AUTO,
+  codex: RESTORE_POLICY.AUTO,
+  qoder: RESTORE_POLICY.AUTO,
   swarm: RESTORE_POLICY.AUTO,
+  generic: RESTORE_POLICY.AUTO,
+  restoreOnReboot: true,
 };
 
 const VALID_POLICIES = new Set([RESTORE_POLICY.AUTO, RESTORE_POLICY.MANUAL, RESTORE_POLICY.OFF]);
@@ -27,11 +52,14 @@ function normalizePolicy(value) {
 
 function sanitizePreferences(raw) {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_PREFERENCES };
-  return {
-    opencode: normalizePolicy(raw.opencode),
-    generic: normalizePolicy(raw.generic),
-    swarm: normalizePolicy(raw.swarm),
-  };
+  const sanitized = {};
+  // Only known kind keys are kept — unknown keys are dropped as before.
+  TERMINAL_RESTORE_KINDS.forEach((kind) => {
+    sanitized[kind] = normalizePolicy(raw[kind]);
+  });
+  sanitized.restoreOnReboot =
+    raw.restoreOnReboot === undefined ? true : Boolean(raw.restoreOnReboot);
+  return sanitized;
 }
 
 /**
@@ -64,6 +92,17 @@ export function isRestoreAllowed(policy) {
 }
 
 /**
+ * Whether the master reboot-restore switch is enabled. Anything but an
+ * explicit `false` keeps the automatic startup restore pipeline active.
+ *
+ * @param {object|null|undefined} prefs - sanitized (or raw) preferences object
+ * @returns {boolean}
+ */
+export function isRebootRestoreEnabled(prefs) {
+  return prefs?.restoreOnReboot !== false;
+}
+
+/**
  * Returns a human-readable label for UI display.
  *
  * @param {string|null|undefined} policy - restore policy
@@ -86,7 +125,7 @@ export function getPolicyLabel(policy) {
  * Reads restore preferences from localStorage.
  *
  * @param {Storage|null} storage - localStorage instance
- * @returns {{ opencode: string, generic: string, swarm: string }} preferences object
+ * @returns {Record<string, string|boolean>} sanitized preferences object
  */
 export function readTerminalRestorePreferences(storage) {
   if (!storage || typeof storage.getItem !== 'function') {
@@ -105,17 +144,21 @@ export function readTerminalRestorePreferences(storage) {
  * Writes restore preferences to localStorage.
  *
  * @param {Storage|null} storage - localStorage instance
- * @param {{ opencode?: string, generic?: string, swarm?: string }} prefs - partial prefs object
+ * @param {Record<string, string|boolean>} prefs - partial prefs object
  */
 export function writeTerminalRestorePreferences(storage, prefs) {
   if (!storage || typeof storage.setItem !== 'function') return;
   try {
     const current = readTerminalRestorePreferences(storage);
-    const merged = {
-      opencode: prefs.opencode !== undefined ? normalizePolicy(prefs.opencode) : current.opencode,
-      generic: prefs.generic !== undefined ? normalizePolicy(prefs.generic) : current.generic,
-      swarm: prefs.swarm !== undefined ? normalizePolicy(prefs.swarm) : current.swarm,
-    };
+    const merged = { ...current };
+    TERMINAL_RESTORE_KINDS.forEach((kind) => {
+      if (prefs && prefs[kind] !== undefined) {
+        merged[kind] = normalizePolicy(prefs[kind]);
+      }
+    });
+    if (prefs && prefs.restoreOnReboot !== undefined) {
+      merged.restoreOnReboot = Boolean(prefs.restoreOnReboot);
+    }
     storage.setItem(RESTORE_PREFERENCES_STORAGE_KEY, JSON.stringify(merged));
   } catch {
     // storage write failed — non-fatal

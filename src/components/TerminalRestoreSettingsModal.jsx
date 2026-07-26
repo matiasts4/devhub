@@ -41,6 +41,7 @@ import {
 import { chromeSurfaceStyle } from '@/components/ui/chrome-surface';
 import {
   RESTORE_POLICY,
+  TERMINAL_RESTORE_KINDS,
   readTerminalRestorePreferences,
   writeTerminalRestorePreferences,
 } from '@/lib/terminal/restorePreferences';
@@ -57,42 +58,57 @@ const SECTIONS = [
   { key: 'cuotas', label: 'Cuotas', icon: Gauge },
 ];
 
+const RESTORE_KIND_LABELS = {
+  opencode: 'OpenCode',
+  kimi: 'Kimi Code',
+  grok: 'Grok',
+  codex: 'Codex',
+  qoder: 'Qoder',
+  swarm: 'Swarm',
+  generic: 'Shell genérico',
+};
+
 function RestoreSection() {
-  const [restorePrefs, setRestorePrefs] = useState(() => {
-    if (typeof window === 'undefined') {
-      return {
-        opencode: RESTORE_POLICY.AUTO,
-        generic: RESTORE_POLICY.AUTO,
-        swarm: RESTORE_POLICY.AUTO,
-      };
-    }
-    return readTerminalRestorePreferences(window.localStorage);
-  });
+  const [restorePrefs, setRestorePrefs] = useState(() =>
+    readTerminalRestorePreferences(typeof window === 'undefined' ? null : window.localStorage)
+  );
   const [saveHint, setSaveHint] = useState('Los cambios en cada selector se guardan al instante.');
 
-  const persistPreferences = (nextPrefs, { announce = true } = {}) => {
+  // Legacy prefs may lack the newer kinds or the master switch — fall back to
+  // the same defaults readTerminalRestorePreferences applies (auto / true).
+  const rebootRestoreEnabled = restorePrefs?.restoreOnReboot !== false;
+  const policyFor = (kind) => restorePrefs?.[kind] || RESTORE_POLICY.AUTO;
+
+  const persistPreferences = (partial, { announce } = {}) => {
     if (typeof window === 'undefined') return;
-    writeTerminalRestorePreferences(window.localStorage, nextPrefs);
+    writeTerminalRestorePreferences(window.localStorage, partial);
     if (announce) {
-      setSaveHint(
-        `Guardado: OpenCode ${nextPrefs.opencode}, Shell ${nextPrefs.generic}, Swarm ${nextPrefs.swarm}.`
-      );
+      setSaveHint(announce);
     }
   };
 
-  const handlePolicyChange = (sessionType) => (nextPolicy) => {
-    setRestorePrefs((prev) => {
-      const next = { ...prev, [sessionType]: nextPolicy };
-      persistPreferences({ [sessionType]: nextPolicy });
-      return next;
-    });
+  const handlePolicyChange = (kind) => (nextPolicy) => {
+    setRestorePrefs((prev) => ({ ...prev, [kind]: nextPolicy }));
+    const optionLabel =
+      POLICY_OPTIONS.find(({ value }) => value === nextPolicy)?.label || nextPolicy;
+    persistPreferences(
+      { [kind]: nextPolicy },
+      { announce: `Guardado: ${RESTORE_KIND_LABELS[kind] || kind} → ${optionLabel}.` }
+    );
   };
 
-  const SESSION_TYPES = [
-    { key: 'opencode', label: 'OpenCode', icon: '◆' },
-    { key: 'generic', label: 'Shell Genérico', icon: '$' },
-    { key: 'swarm', label: 'Swarm', icon: '◇' },
-  ];
+  const handleMasterToggle = () => {
+    const next = !rebootRestoreEnabled;
+    setRestorePrefs((prev) => ({ ...prev, restoreOnReboot: next }));
+    persistPreferences(
+      { restoreOnReboot: next },
+      {
+        announce: next
+          ? 'Guardado: restauración al reiniciar activada.'
+          : 'Guardado: restauración al reiniciar desactivada.',
+      }
+    );
+  };
 
   const POLICY_OPTIONS = [
     { value: RESTORE_POLICY.AUTO, label: 'Automático' },
@@ -113,6 +129,37 @@ function RestoreSection() {
         </p>
       </div>
 
+      <div
+        className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
+        style={panelStyle({ emphasized: false })}
+      >
+        <div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Restaurar sesiones al reiniciar el equipo
+          </p>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            Interruptor maestro de la restauración automática al iniciar DevHub. Al desactivarlo,
+            ninguna sesión se relanza sola; siempre podés reanudarlas a mano.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={rebootRestoreEnabled}
+          data-testid="restore-on-reboot-toggle"
+          onClick={handleMasterToggle}
+          className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+          style={{
+            background: rebootRestoreEnabled ? 'var(--accent-primary)' : 'var(--surface-muted)',
+          }}
+        >
+          <span
+            className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+            style={{ transform: rebootRestoreEnabled ? 'translateX(22px)' : 'translateX(2px)' }}
+          />
+        </button>
+      </div>
+
       {saveHint ? (
         <p
           className="rounded-lg border px-3 py-2 text-xs"
@@ -123,17 +170,37 @@ function RestoreSection() {
         </p>
       ) : null}
 
-      <div className="space-y-4">
-        {SESSION_TYPES.map(({ key, label }) => (
+      {!rebootRestoreEnabled ? (
+        <p
+          className="text-xs"
+          style={{ color: 'var(--text-muted)' }}
+          data-testid="restore-on-reboot-off-hint"
+        >
+          La restauración automática está desactivada. La reanudación manual sigue disponible desde
+          el panel suspendido.
+        </p>
+      ) : null}
+
+      <div
+        className="space-y-4 transition-opacity"
+        style={{ opacity: rebootRestoreEnabled ? 1 : 0.5 }}
+        data-testid="restore-policy-list"
+        data-disabled={rebootRestoreEnabled ? 'false' : 'true'}
+      >
+        {TERMINAL_RESTORE_KINDS.map((key) => (
           <div key={key} className="flex items-center justify-between gap-4">
             <label
               htmlFor={`restore-policy-${key}`}
               className="text-sm font-semibold"
               style={{ color: 'var(--text-primary)' }}
             >
-              {label}
+              {RESTORE_KIND_LABELS[key] || key}
             </label>
-            <Select value={restorePrefs[key]} onValueChange={handlePolicyChange(key)}>
+            <Select
+              value={policyFor(key)}
+              onValueChange={handlePolicyChange(key)}
+              disabled={!rebootRestoreEnabled}
+            >
               <SelectTrigger
                 id={`restore-policy-${key}`}
                 data-testid={`restore-policy-modal-${key}`}
@@ -176,7 +243,7 @@ function RestoreSection() {
         style={panelStyle({ emphasized: false })}
       >
         <p className="font-semibold" style={{ color: 'var(--text-secondary)' }}>
-          Políticas de restauración:
+          Qué hace cada política (por proveedor):
         </p>
         <div className="space-y-1.5" style={{ color: 'var(--text-muted)' }}>
           <div className="flex items-start gap-2">
@@ -186,7 +253,7 @@ function RestoreSection() {
             >
               Auto
             </span>
-            <span>Restaura la terminal automáticamente al iniciar.</span>
+            <span>Restaura la sesión de ese proveedor al reiniciar.</span>
           </div>
           <div className="flex items-start gap-2">
             <span
@@ -195,13 +262,13 @@ function RestoreSection() {
             >
               Manual
             </span>
-            <span>Panel suspendido hasta que hagas clic en continuar.</span>
+            <span>La sesión queda suspendida y la reanudás vos.</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="mt-0.5 inline-flex items-center" style={pillStyle({ tone: 'danger' })}>
               Off
             </span>
-            <span>Ignora esta terminal al inicio.</span>
+            <span>No se restaura la sesión de ese proveedor.</span>
           </div>
         </div>
       </div>

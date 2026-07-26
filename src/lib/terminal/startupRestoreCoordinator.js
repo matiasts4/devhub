@@ -1,14 +1,23 @@
 import { normalizeRestoreManifest } from './restoreManifest';
 import {
+  buildProviderResumeCommand,
+  buildSwarmTmuxSessionName,
   extractOpenCodeSessionId,
+  getProviderContinueCommand,
   inferPanelSessionKind,
+  isAgentProviderKind,
+  resolveAgentSessionIdForPanel,
   resolveEffectiveRestorePolicy,
+  resolveProviderKindForPanel,
 } from './restorePolicyResolver';
 import { buildOpencodeResumeCommand } from './opencodeSessionRegistry.js';
 
 export const RESTORE_ACTION = Object.freeze({
   RESTORE_READY: 'restore-ready',
   REATTACH_LIVE_TERMINAL: 'reattach-live-terminal',
+  RESUME_AGENT_SESSION: 'resume-agent-session',
+  // Legacy opencode-only resume action — kept for backwards compatibility;
+  // opencode panels keep emitting it while other providers use RESUME_AGENT_SESSION.
   RESUME_OPENCODE_SESSION: 'resume-opencode-session',
   RESTORE_SHELL_EMERGENT: 'restore-shell-emergent',
   PROCESS_ORPHAN: 'process-orphan',
@@ -27,6 +36,8 @@ function actionKey(entry = {}) {
     entry.terminalId || '',
     entry.panelId || '',
     entry.opencodeSessionId || '',
+    entry.provider || '',
+    entry.agentSessionId || '',
   ].join(':');
 }
 
@@ -36,6 +47,8 @@ function createAction({
   panelId = null,
   workspaceId = null,
   opencodeSessionId = null,
+  provider = null,
+  agentSessionId = null,
   sessionKind = null,
   reason = null,
 } = {}) {
@@ -45,6 +58,8 @@ function createAction({
     panelId,
     workspaceId,
     opencodeSessionId,
+    provider,
+    agentSessionId,
     sessionKind,
     reason,
   };
@@ -76,13 +91,13 @@ function isTuiLaunchCommand(initialCommand) {
   const command = String(initialCommand || '')
     .replace(/\s*#recovery-\d+\s*$/i, '')
     .trim();
-  return /^(opencode|hermes|grok|groc|kimi)\b/i.test(command);
+  return /^(opencode|hermes|grok|groc|kimi|codex|qodercli)\b/i.test(command);
 }
 
 /** Shell-ephemeral respawn only — never relaunch live TUI sessions (opencode/grok/hermes). */
 export function isShellEphemeralRestoreCandidate(session = {}) {
   const sessionKind = session.sessionKind || null;
-  if (sessionKind === 'opencode' || sessionKind === 'swarm') return false;
+  if (sessionKind === 'swarm' || isAgentProviderKind(sessionKind)) return false;
   if (session.opencodeSessionId) return false;
   if (isTuiLaunchCommand(session.initialCommand)) return false;
   return true;
@@ -110,10 +125,36 @@ export function buildRestoreManifestFromWorkspaceState({
       const roleKey =
         panel?.swarmContext?.roleKey || agentRun?.swarmRole || agentRun?.roleKey || null;
 
-      const durableInitialCommand =
-        opencodeSessionId && !extractOpenCodeSessionId(initialCommand)
-          ? buildOpencodeResumeCommand({ opencodeSessionId, initialCommand })
-          : initialCommand || null;
+      const agentType = isAgentProviderKind(sessionKind)
+        ? resolveProviderKindForPanel({ initialCommand, agentRun }) || sessionKind
+        : null;
+      const agentSessionId =
+        agentType === 'opencode'
+          ? opencodeSessionId
+          : agentType
+            ? resolveAgentSessionIdForPanel({ provider: agentType, initialCommand, agentRun })
+            : null;
+
+      // Fallback chain: a bound session id pins the provider resume form; otherwise
+      // keep the raw initialCommand so the runner can fall back to the provider's
+      // continue command (`kimi --continue`, `codex resume --last`, …).
+      let durableInitialCommand;
+      if (opencodeSessionId && !extractOpenCodeSessionId(initialCommand)) {
+        durableInitialCommand = buildOpencodeResumeCommand({ opencodeSessionId, initialCommand });
+      } else if (agentType && agentType !== 'opencode' && agentSessionId) {
+        // Bound id → pin the provider resume form. One-shot pre-assign forms
+        // (`grok --session-id`, `qodercli --session-id`) are upgraded here too.
+        const resumeCommand = buildProviderResumeCommand(agentType, agentSessionId);
+        const strippedCommand = String(initialCommand || '')
+          .replace(/\s*#recovery-\d+\s*$/i, '')
+          .trim();
+        durableInitialCommand =
+          resumeCommand && strippedCommand !== resumeCommand
+            ? resumeCommand
+            : initialCommand || null;
+      } else {
+        durableInitialCommand = initialCommand || null;
+      }
 
       return {
         terminalId: panel.id,
@@ -127,6 +168,8 @@ export function buildRestoreManifestFromWorkspaceState({
         durableRestore: Boolean(opencodeSessionId),
         roleKey,
         opencodeSessionId,
+        agentType,
+        agentSessionId,
         restorePolicy: resolveEffectiveRestorePolicy({
           sessionKind,
           perSessionPolicy: agentRun?.restorePolicy || null,
@@ -185,6 +228,9 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
   const terminals = asArray(runtimeSnapshot?.terminals);
   const processes = asArray(runtimeSnapshot?.processes);
   const anomalies = runtimeSnapshot?.anomalies || {};
+  const tmuxSessionNames = asArray(runtimeSnapshot?.tmuxSessions)
+    .map((name) => (typeof name === 'string' ? name.trim() : ''))
+    .filter(Boolean);
 
   const terminalById = indexByKey(terminals, 'terminalId');
   const processBySessionId = indexByKey(processes, 'sessionId');
@@ -237,18 +283,53 @@ export function buildStartupRestorePlan({ manifest = null, runtimeSnapshot = nul
         opencodeSessionId: session.opencodeSessionId,
         reason: 'session-resume-needed',
       });
-    } else if (session.sessionKind === 'swarm') {
-      // Swarm panels reattach to existing tmux on WebSocket connect (ttyServer).
-      // Never re-run the materialized launch wrapper on app/workspace restore.
+    } else if (
+      !runtimeTerminal &&
+      sessionKind !== 'opencode' &&
+      isAgentProviderKind(sessionKind) &&
+      (session.agentSessionId || getProviderContinueCommand(session.agentType || sessionKind))
+    ) {
+      // Provider TUI panels (kimi/grok/codex/qoder): resume by bound id when
+      // known, otherwise fall back to the provider's continue command.
       nextAction = createAction({
-        action: RESTORE_ACTION.REATTACH_LIVE_TERMINAL,
+        action: RESTORE_ACTION.RESUME_AGENT_SESSION,
         terminalId: session.terminalId,
         panelId: session.panelId,
         workspaceId: session.workspaceId,
-        opencodeSessionId: session.opencodeSessionId,
+        provider: session.agentType || sessionKind,
+        agentSessionId: session.agentSessionId || null,
         sessionKind,
-        reason: 'swarm-tmux-reattach',
+        reason: session.agentSessionId
+          ? 'agent-session-resume-needed'
+          : 'agent-session-continue-fallback',
       });
+    } else if (session.sessionKind === 'swarm') {
+      // Swarm panels reattach to an existing tmux session on WebSocket connect
+      // (ttyServer). After a full reboot the tmux session is gone — only emit
+      // the reattach when the runtime snapshot proves it is still alive;
+      // otherwise fall through to the normal terminated/policy-gated path.
+      const tmuxSessionName = buildSwarmTmuxSessionName(session.launchId, session.roleKey);
+      if (tmuxSessionName && tmuxSessionNames.includes(tmuxSessionName)) {
+        nextAction = createAction({
+          action: RESTORE_ACTION.REATTACH_LIVE_TERMINAL,
+          terminalId: session.terminalId,
+          panelId: session.panelId,
+          workspaceId: session.workspaceId,
+          opencodeSessionId: session.opencodeSessionId,
+          sessionKind,
+          reason: 'swarm-tmux-reattach',
+        });
+      } else {
+        nextAction = createAction({
+          action: RESTORE_ACTION.TERMINATED,
+          terminalId: session.terminalId,
+          panelId: session.panelId,
+          workspaceId: session.workspaceId,
+          opencodeSessionId: session.opencodeSessionId,
+          sessionKind,
+          reason: 'swarm-tmux-missing',
+        });
+      }
     } else if (!runtimeTerminal && session.cwd && isShellEphemeralRestoreCandidate(session)) {
       // shell-ephemeral: no ptyPid, no opencode session — needs respawn via cwd/shell
       nextAction = createAction({

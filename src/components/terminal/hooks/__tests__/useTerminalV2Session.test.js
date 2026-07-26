@@ -2,7 +2,6 @@
  * Guard tests for useTerminalV2Session — connect lifecycle and stopV2Session.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook, act } = require('@testing-library/react');
 

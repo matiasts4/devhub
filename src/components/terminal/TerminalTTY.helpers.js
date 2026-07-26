@@ -765,28 +765,35 @@ function attachTerminalRendererAddons({
 }) {
   if (wantsWebgl) {
     if (WebglAddonCtor) {
-      try {
-        const webglAddon = new WebglAddonCtor();
-        webglAddonRef.current = webglAddon;
+      // Font-atlas race guard: even on the init-attach path the atlas must be
+      // built after the web font lands. Async IIFE keeps the outer contract
+      // synchronous; staleness guards prevent races with disposal.
+      void (async () => {
+        await ensureTerminalFontReady(terminal.options?.fontSize ?? 14);
+        if (webglAddonRef.current || terminal._core?._isDisposed) return;
+        try {
+          const webglAddon = new WebglAddonCtor();
+          webglAddonRef.current = webglAddon;
 
-        if (typeof webglAddon.onContextLoss === 'function') {
-          webglAddon.onContextLoss(() => handleWebglContextLossRef.current?.());
+          if (typeof webglAddon.onContextLoss === 'function') {
+            webglAddon.onContextLoss(() => handleWebglContextLossRef.current?.());
+          }
+
+          terminal.loadAddon(webglAddon);
+          setWebglFallback(null);
+          pendingWebglRecoveryRef.current = false;
+          cliLog(`RENDER:${panelId}`, 'webgl-attached-on-init', { isActivePanel });
+        } catch (err) {
+          console.warn(
+            `[TTY:${panelId}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
+            err?.message || err
+          );
+          setWebglFallback({
+            active: true,
+            reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
+          });
         }
-
-        terminal.loadAddon(webglAddon);
-        setWebglFallback(null);
-        pendingWebglRecoveryRef.current = false;
-        cliLog(`RENDER:${panelId}`, 'webgl-attached-on-init', { isActivePanel });
-      } catch (err) {
-        console.warn(
-          `[TTY:${panelId}] xterm-webgl addon failed to register (WebGL context issue or WebKitGTK limitation)`,
-          err?.message || err
-        );
-        setWebglFallback({
-          active: true,
-          reason: TERMINAL_WEBGL_FALLBACK_REASONS.WEBGL_ADDON_REGISTER_FAILED,
-        });
-      }
+      })();
     } else {
       setWebglFallback({
         active: true,
@@ -794,17 +801,22 @@ function attachTerminalRendererAddons({
       });
     }
   } else if (mountCanvasOnInit && CanvasAddonCtor) {
-    try {
-      const canvasAddon = new CanvasAddonCtor();
-      canvasAddonRef.current = canvasAddon;
-      terminal.loadAddon(canvasAddon);
-      cliLog(`RENDER:${panelId}`, 'canvas-attached-on-init', {
-        isActivePanel,
-        visibleTerminalPanelCount,
-      });
-    } catch (err) {
-      console.warn(`[TTY:${panelId}] xterm-addon-canvas failed to register`, err?.message || err);
-    }
+    // Same font-atlas guard for the canvas init path.
+    void (async () => {
+      await ensureTerminalFontReady(terminal.options?.fontSize ?? 14);
+      if (canvasAddonRef.current || terminal._core?._isDisposed) return;
+      try {
+        const canvasAddon = new CanvasAddonCtor();
+        canvasAddonRef.current = canvasAddon;
+        terminal.loadAddon(canvasAddon);
+        cliLog(`RENDER:${panelId}`, 'canvas-attached-on-init', {
+          isActivePanel,
+          visibleTerminalPanelCount,
+        });
+      } catch (err) {
+        console.warn(`[TTY:${panelId}] xterm-addon-canvas failed to register`, err?.message || err);
+      }
+    })();
   } else if (wantsCanvas && !mountCanvasOnInit) {
     cliLog(`RENDER:${panelId}`, 'canvas-deferred-dom-on-init', {
       isActivePanel,
@@ -2372,6 +2384,94 @@ export function resolveTerminalFontFamily() {
     .trim();
 
   return cssMonoStack || DEFAULT_TERMINAL_FONT_FAMILY;
+}
+
+// ---------------------------------------------------------------------------
+// Font-atlas race guard
+// ---------------------------------------------------------------------------
+// The WebGL/Canvas addons build their character texture atlas on attach. If
+// the primary web font (JetBrains Mono via Google Fonts) hasn't finished
+// downloading, the atlas is measured against the fallback font and cells
+// render with visible grid seams ("cuadritos") until the next atlas rebuild
+// (~10 s later via xterm's font polling). Awaiting the font BEFORE attaching
+// the GPU addon eliminates the artifact on first paint.
+//
+// The promise is cached at module level: all panels share a single wait and
+// subsequent calls resolve instantly once the font (or timeout) landed.
+
+const GENERIC_FONT_FAMILIES = new Set([
+  'monospace',
+  'sans-serif',
+  'serif',
+  'cursive',
+  'fantasy',
+  'system-ui',
+  'ui-monospace',
+  'ui-sans-serif',
+  'ui-serif',
+  'ui-rounded',
+  'emoji',
+  'math',
+  'fangsong',
+]);
+
+const TERMINAL_FONT_LOAD_TIMEOUT_MS = 2500;
+
+let terminalFontReadyPromise = null;
+
+/**
+ * Extract the first non-generic family from a CSS font stack. Returns null
+ * when the stack only contains system/generic families (nothing to wait for).
+ */
+function extractFirstCustomFamily(fontStack) {
+  const families = fontStack.split(',');
+  for (const raw of families) {
+    const family = raw.trim().replace(/^['"]|['"]$/g, '');
+    if (family && !GENERIC_FONT_FAMILIES.has(family.toLowerCase())) {
+      return family;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolves once the terminal's primary web font is loaded and measurable, or
+ * after TERMINAL_FONT_LOAD_TIMEOUT_MS — whichever comes first. The timeout
+ * guarantees the GPU attach is never blocked indefinitely on offline or
+ * slow-network scenarios; worst case the atlas self-heals via xterm's font
+ * polling as before.
+ */
+export function ensureTerminalFontReady(fontSize = 14) {
+  if (typeof document === 'undefined' || typeof window === 'undefined' || !document.fonts?.load) {
+    return Promise.resolve();
+  }
+
+  if (!terminalFontReadyPromise) {
+    const fontFamily = resolveTerminalFontFamily();
+    const customFamily = extractFirstCustomFamily(fontFamily);
+
+    if (!customFamily) {
+      // System-font-only stack: metrics are available synchronously.
+      terminalFontReadyPromise = Promise.resolve();
+    } else {
+      const fontSpec = `${fontSize}px "${customFamily}"`;
+      const loadPromise = document.fonts
+        .load(fontSpec)
+        .catch(() => [])
+        .then(() => {});
+      const timeoutPromise = new Promise((resolve) =>
+        setTimeout(resolve, TERMINAL_FONT_LOAD_TIMEOUT_MS)
+      );
+      terminalFontReadyPromise = Promise.race([loadPromise, timeoutPromise]);
+    }
+  }
+
+  return terminalFontReadyPromise;
+}
+
+/** Test-only: reset the cached promise so each test re-evaluates font state. */
+export function __resetTerminalFontReadyCache() {
+  terminalFontReadyPromise = null;
 }
 
 export {

@@ -296,6 +296,39 @@ function resolveWorkspaceGridShape(terminalCount) {
   }
 }
 
+/**
+ * Placeholder emitted by launch presets (WorkspaceTerminalSetupModal grok
+ * preset) in place of a literal pre-assigned agent session id. Each created
+ * panel resolves it to a fresh uuid so panels never share a grok session.
+ */
+const AGENT_SESSION_ID_PLACEHOLDER = '__DEVHUB_AGENT_SESSION_ID__';
+
+function generateAgentSessionId() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // fall through to the Math.random fallback
+  }
+  return `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Replaces every AGENT_SESSION_ID_PLACEHOLDER occurrence with one fresh id per
+ * PANEL (called once per panel by buildWorkspaceColumnsForTerminalCount).
+ * Commands without the placeholder are returned unchanged.
+ */
+function resolvePerPanelInitialCommand(initialCommand) {
+  if (
+    typeof initialCommand !== 'string' ||
+    !initialCommand.includes(AGENT_SESSION_ID_PLACEHOLDER)
+  ) {
+    return initialCommand;
+  }
+  return initialCommand.split(AGENT_SESSION_ID_PLACEHOLDER).join(generateAgentSessionId());
+}
+
 function buildWorkspaceColumnsForTerminalCount({
   terminalCount,
   createPanel: createPanelFn,
@@ -313,7 +346,9 @@ function buildWorkspaceColumnsForTerminalCount({
   const nextPanel = () => {
     const panelId = allocatePanelId();
     if (!firstPanelId) firstPanelId = panelId;
-    return createPanelFn(panelId, initialCommand, panelCwd);
+    // Resolved per panel: pre-assigned agent session ids (grok) must be unique
+    // per panel, not shared across the whole grid.
+    return createPanelFn(panelId, resolvePerPanelInitialCommand(initialCommand), panelCwd);
   };
 
   const panelsByIndex = Array.from({ length: safeCount }, () => nextPanel());
@@ -423,4 +458,6 @@ export {
   buildWorkspaceColumnsForTerminalCount,
   resolveSplitCreatedPanelProps,
   spawnFirstTerminalPanelColumns,
+  AGENT_SESSION_ID_PLACEHOLDER,
+  resolvePerPanelInitialCommand,
 };

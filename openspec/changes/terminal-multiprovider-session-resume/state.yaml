@@ -1,0 +1,27 @@
+# SDD phase tracking — terminal-multiprovider-session-resume
+
+change: terminal-multiprovider-session-resume
+schema: spec-driven
+
+phases:
+  explore:
+    status: completed
+    note: graphify + code exploration 2026-07-26; CLI contracts verified on dev machine
+  propose:
+    status: completed
+    artifact: proposal.md
+  spec:
+    status: completed
+    note: deltas documented in proposal.md (agent-session-reopen, terminal-restore-gear, session-restore)
+  design:
+    status: completed
+    note: approach section in proposal.md
+  tasks:
+    status: completed
+    artifact: tasks.md
+  apply:
+    status: completed
+    note: Phases 1–4 applied 2026-07-26; consolidated Jest run matches pre-change baseline (19 pre-existing Windows/node-pty env failures)
+  verify:
+    status: partial
+    note: automated suites green; manual app-restart smoke (task 5.2) pending on the user

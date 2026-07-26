@@ -35,10 +35,12 @@ const AGENT_SESSION_PATTERNS = {
   kimi: /kimi\s+(?:--session\s+|session\s+resume\s+|resume\s+)([\w-]+)/i,
   claude: /claude\s+(?:--session\s+|session\s+resume\s+|resume\s+)([\w-]+)/i,
   codex: /codex\s+(?:--session\s+|session\s+resume\s+|resume\s+)([\w-]+)/i,
-  grok: null,
+  // grok --resume <id> | grok -r <id> | grok --session-id <id> (pre-assigned at launch)
+  grok: /grok\s+(?:--resume\s+|-r\s+|--session-id\s+)([\w-]+)/i,
   agy: null,
-  // qodercli -r <id> | qodercli --resume <id> (docs.qoder.com/en/cli/using-cli)
-  qodercli: /qodercli\s+(?:--resume\s+|-r\s+|resume\s+)([\w-]+)/i,
+  // qodercli -r <id> | qodercli --resume <id> | qodercli --session-id <id>
+  // (docs.qoder.com/en/cli/using-cli)
+  qodercli: /qodercli\s+(?:--resume\s+|-r\s+|resume\s+|--session-id\s+)([\w-]+)/i,
 };
 
 const AGENT_TUI_PATTERN = new RegExp(

@@ -5,13 +5,57 @@ const { JSDOM } = require('jsdom');
 
 jest.mock('@/lib/terminal/restorePreferences', () => ({
   RESTORE_POLICY: { AUTO: 'auto', MANUAL: 'manual', OFF: 'off' },
+  TERMINAL_RESTORE_KINDS: ['opencode', 'kimi', 'grok', 'codex', 'qoder', 'swarm', 'generic'],
   readTerminalRestorePreferences: jest.fn(() => ({
     opencode: 'auto',
-    generic: 'auto',
+    kimi: 'auto',
+    grok: 'auto',
+    codex: 'auto',
+    qoder: 'auto',
     swarm: 'auto',
+    generic: 'auto',
+    restoreOnReboot: true,
   })),
   writeTerminalRestorePreferences: jest.fn(),
 }));
+
+// Radix Select needs pointer-capture/floating-ui APIs that jsdom lacks; swap it
+// for plain buttons so the suite exercises RestoreSection state + persistence.
+jest.mock('@/components/ui/select', () => {
+  const React = require('react');
+  const SelectContext = React.createContext(null);
+  const Select = ({ value, onValueChange, disabled, children }) =>
+    React.createElement(
+      SelectContext.Provider,
+      { value: { value, onValueChange, disabled } },
+      children
+    );
+  const SelectTrigger = React.forwardRef(({ children, ...props }, ref) => {
+    const ctx = React.useContext(SelectContext);
+    return React.createElement(
+      'button',
+      { ...props, ref, type: 'button', disabled: Boolean(ctx?.disabled) },
+      children
+    );
+  });
+  const SelectValue = ({ placeholder }) => React.createElement('span', null, placeholder);
+  const SelectContent = ({ children }) => React.createElement(React.Fragment, null, children);
+  const SelectItem = ({ value, children }) => {
+    const ctx = React.useContext(SelectContext);
+    return React.createElement(
+      'button',
+      {
+        type: 'button',
+        role: 'option',
+        'data-value': value,
+        disabled: Boolean(ctx?.disabled),
+        onClick: () => ctx?.onValueChange?.(value),
+      },
+      children
+    );
+  };
+  return { Select, SelectTrigger, SelectValue, SelectContent, SelectItem };
+});
 
 jest.mock('@/components/settings/TerminalSettingsSection', () => () => {
   const React = require('react');
@@ -173,20 +217,113 @@ describe('TerminalRestoreSettingsModal', () => {
     expect(document.body.querySelector('[data-testid="zed-overlay-settings-mock"]')).toBeTruthy();
   });
 
-  test('restore section shows selectors and save hint', async () => {
+  test('restore section shows selectors for all 7 provider kinds and the save hint', async () => {
     const TerminalRestoreSettingsModal = require('../TerminalRestoreSettingsModal').default;
     rendered = await renderIntoDom(
       React.createElement(TerminalRestoreSettingsModal, { open: true, onClose: jest.fn() })
     );
 
     expect(document.body.querySelector('[data-testid="restore-prefs-save-hint"]')).toBeTruthy();
+
+    const expectedLabels = {
+      opencode: 'OpenCode',
+      kimi: 'Kimi Code',
+      grok: 'Grok',
+      codex: 'Codex',
+      qoder: 'Qoder',
+      swarm: 'Swarm',
+      generic: 'Shell genérico',
+    };
+    for (const [kind, label] of Object.entries(expectedLabels)) {
+      expect(
+        document.body.querySelector(`[data-testid="restore-policy-modal-${kind}"]`)
+      ).toBeTruthy();
+      expect(document.body.textContent).toContain(label);
+    }
+  });
+
+  test('master toggle renders checked by default and dims the selects when switched off', async () => {
+    const TerminalRestoreSettingsModal = require('../TerminalRestoreSettingsModal').default;
+    const { writeTerminalRestorePreferences } = require('@/lib/terminal/restorePreferences');
+    rendered = await renderIntoDom(
+      React.createElement(TerminalRestoreSettingsModal, { open: true, onClose: jest.fn() })
+    );
+
+    const toggle = document.body.querySelector('[data-testid="restore-on-reboot-toggle"]');
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('role')).toBe('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(document.body.querySelector('[data-testid="restore-on-reboot-off-hint"]')).toBeFalsy();
     expect(
-      document.body.querySelector('[data-testid="restore-policy-modal-opencode"]')
-    ).toBeTruthy();
+      document.body
+        .querySelector('[data-testid="restore-policy-list"]')
+        .getAttribute('data-disabled')
+    ).toBe('false');
+
+    flushSync(() => {
+      toggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(writeTerminalRestorePreferences).toHaveBeenCalledWith(expect.anything(), {
+      restoreOnReboot: false,
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(document.body.querySelector('[data-testid="restore-on-reboot-off-hint"]')).toBeTruthy();
+    const list = document.body.querySelector('[data-testid="restore-policy-list"]');
+    expect(list.getAttribute('data-disabled')).toBe('true');
+    expect(list.style.opacity).toBe('0.5');
+    expect(document.body.querySelector('[data-testid="restore-policy-modal-grok"]').disabled).toBe(
+      true
+    );
+  });
+
+  test('selecting a policy for a provider kind persists only that kind', async () => {
+    const TerminalRestoreSettingsModal = require('../TerminalRestoreSettingsModal').default;
+    const { writeTerminalRestorePreferences } = require('@/lib/terminal/restorePreferences');
+    rendered = await renderIntoDom(
+      React.createElement(TerminalRestoreSettingsModal, { open: true, onClose: jest.fn() })
+    );
+
+    const manualOption = Array.from(document.body.querySelectorAll('[role="option"]')).find(
+      (opt) => opt.textContent.trim() === 'Manual' && !opt.disabled
+    );
+    expect(manualOption).toBeTruthy();
+
+    flushSync(() => {
+      manualOption.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    });
+    await flushEffects();
+
+    expect(writeTerminalRestorePreferences).toHaveBeenCalledWith(expect.anything(), {
+      opencode: 'manual',
+    });
     expect(
-      document.body.querySelector('[data-testid="restore-policy-modal-generic"]')
-    ).toBeTruthy();
-    expect(document.body.querySelector('[data-testid="restore-policy-modal-swarm"]')).toBeTruthy();
+      document.body.querySelector('[data-testid="restore-prefs-save-hint"]').textContent
+    ).toContain('Guardado: OpenCode → Manual.');
+  });
+
+  test('legacy 3-key prefs still render all kinds with defaults and the master switch on', async () => {
+    const { readTerminalRestorePreferences } = require('@/lib/terminal/restorePreferences');
+    readTerminalRestorePreferences.mockImplementationOnce(() => ({
+      opencode: 'manual',
+      generic: 'off',
+      swarm: 'auto',
+    }));
+
+    const TerminalRestoreSettingsModal = require('../TerminalRestoreSettingsModal').default;
+    rendered = await renderIntoDom(
+      React.createElement(TerminalRestoreSettingsModal, { open: true, onClose: jest.fn() })
+    );
+
+    ['opencode', 'kimi', 'grok', 'codex', 'qoder', 'swarm', 'generic'].forEach((kind) => {
+      expect(
+        document.body.querySelector(`[data-testid="restore-policy-modal-${kind}"]`)
+      ).toBeTruthy();
+    });
+    const toggle = document.body.querySelector('[data-testid="restore-on-reboot-toggle"]');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(document.body.querySelector('[data-testid="restore-on-reboot-off-hint"]')).toBeFalsy();
   });
 
   test('switches to Terminal section when clicked', async () => {

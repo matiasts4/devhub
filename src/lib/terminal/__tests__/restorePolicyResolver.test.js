@@ -5,10 +5,17 @@ const {
   resolveEffectiveRestorePolicy,
   resolveOpenCodeSessionIdForPanel,
   normalizeOpenCodePanelCommand,
+  normalizeProviderPanelCommand,
   normalizeWorkspacesOpenCodeCommands,
   shouldPersistOpenCodeSessionForPanel,
   resolveTerminalInjectCommand,
   readAgentRunForPanel,
+  buildProviderResumeCommand,
+  getProviderContinueCommand,
+  extractProviderSessionIdFromCommand,
+  resolveAgentSessionIdForPanel,
+  mapAgentTypeToRestoreKind,
+  isAgentProviderKind,
 } = require('../restorePolicyResolver');
 const { RESTORE_POLICY } = require('../restorePreferences');
 
@@ -154,5 +161,162 @@ describe('restorePolicyResolver', () => {
         agentRun: { opencodeSessionId: 'from-run' },
       })
     ).toBe('from-run');
+  });
+});
+
+describe('restorePolicyResolver — multiprovider kinds', () => {
+  test('inferPanelSessionKind maps verified provider commands to their own kind', () => {
+    expect(inferPanelSessionKind({ initialCommand: 'kimi' })).toBe('kimi');
+    expect(inferPanelSessionKind({ initialCommand: 'kimi --session abc' })).toBe('kimi');
+    expect(inferPanelSessionKind({ initialCommand: 'grok' })).toBe('grok');
+    expect(inferPanelSessionKind({ initialCommand: 'grok --session-id u-1' })).toBe('grok');
+    expect(inferPanelSessionKind({ initialCommand: 'codex' })).toBe('codex');
+    expect(inferPanelSessionKind({ initialCommand: 'codex resume cx-1' })).toBe('codex');
+    expect(inferPanelSessionKind({ initialCommand: 'qodercli --resume q-1' })).toBe('qoder');
+    expect(inferPanelSessionKind({ initialCommand: 'qodercli --session-id q-2' })).toBe('qoder');
+  });
+
+  test('inferPanelSessionKind keeps generic for unknown or unmapped agent types', () => {
+    expect(inferPanelSessionKind({ initialCommand: 'bash' })).toBe('generic');
+    expect(inferPanelSessionKind({ initialCommand: 'claude' })).toBe('generic');
+    expect(inferPanelSessionKind({ initialCommand: 'hermes' })).toBe('generic');
+    expect(inferPanelSessionKind({ initialCommand: null })).toBe('generic');
+  });
+
+  test('inferPanelSessionKind checks swarm signals before provider commands', () => {
+    expect(
+      inferPanelSessionKind({
+        initialCommand: 'kimi --session abc',
+        panel: { swarmContext: { isSwarmRole: true, launchId: 'l-1', roleKey: 'coder' } },
+      })
+    ).toBe('swarm');
+    expect(
+      inferPanelSessionKind({
+        initialCommand: 'grok',
+        agentRun: { launchOrigin: 'swarm-control-launch' },
+      })
+    ).toBe('swarm');
+  });
+
+  test('mapAgentTypeToRestoreKind maps qodercli to qoder and ignores others', () => {
+    expect(mapAgentTypeToRestoreKind('qodercli')).toBe('qoder');
+    expect(mapAgentTypeToRestoreKind('kimi')).toBe('kimi');
+    expect(mapAgentTypeToRestoreKind('claude')).toBeNull();
+    expect(mapAgentTypeToRestoreKind(null)).toBeNull();
+    expect(isAgentProviderKind('qoder')).toBe(true);
+    expect(isAgentProviderKind('qodercli')).toBe(true);
+    expect(isAgentProviderKind('generic')).toBe(false);
+    expect(isAgentProviderKind('swarm')).toBe(false);
+  });
+
+  test('buildProviderResumeCommand emits the verified resume forms', () => {
+    expect(buildProviderResumeCommand('opencode', 'oc-1')).toBe('opencode --session oc-1');
+    expect(buildProviderResumeCommand('kimi', 'k-1')).toBe('kimi --session k-1');
+    expect(buildProviderResumeCommand('grok', 'g-1')).toBe('grok --resume g-1');
+    expect(buildProviderResumeCommand('codex', 'c-1')).toBe('codex resume c-1');
+    expect(buildProviderResumeCommand('qoder', 'q-1')).toBe('qodercli --resume q-1');
+    expect(buildProviderResumeCommand('qodercli', 'q-1')).toBe('qodercli --resume q-1');
+    expect(buildProviderResumeCommand('generic', 'x')).toBeNull();
+    expect(buildProviderResumeCommand('kimi', '')).toBeNull();
+  });
+
+  test('getProviderContinueCommand returns verified continue forms, null for opencode', () => {
+    expect(getProviderContinueCommand('kimi')).toBe('kimi --continue');
+    expect(getProviderContinueCommand('grok')).toBe('grok --continue');
+    expect(getProviderContinueCommand('codex')).toBe('codex resume --last');
+    expect(getProviderContinueCommand('qoder')).toBe('qodercli --continue');
+    expect(getProviderContinueCommand('opencode')).toBeNull();
+    expect(getProviderContinueCommand('generic')).toBeNull();
+  });
+
+  test('extractProviderSessionIdFromCommand parses resume and pre-assign forms', () => {
+    expect(extractProviderSessionIdFromCommand('kimi', 'kimi --session k-9')).toBe('k-9');
+    expect(extractProviderSessionIdFromCommand('codex', 'codex resume cx-9')).toBe('cx-9');
+    expect(extractProviderSessionIdFromCommand('qoder', 'qodercli --resume q-9')).toBe('q-9');
+    expect(extractProviderSessionIdFromCommand('grok', 'grok --resume g-9')).toBe('g-9');
+    expect(extractProviderSessionIdFromCommand('grok', 'grok --session-id g-pre')).toBe('g-pre');
+    expect(extractProviderSessionIdFromCommand('qoder', 'qodercli --session-id q-pre')).toBe(
+      'q-pre'
+    );
+    expect(extractProviderSessionIdFromCommand('kimi', 'kimi')).toBeNull();
+    expect(extractProviderSessionIdFromCommand(null, 'kimi --session k-9')).toBeNull();
+  });
+
+  test('resolveAgentSessionIdForPanel prefers bound agent run fields over the command', () => {
+    expect(
+      resolveAgentSessionIdForPanel({
+        provider: 'kimi',
+        initialCommand: 'kimi --session from-cmd',
+        agentRun: { kimiSessionId: 'from-run' },
+      })
+    ).toBe('from-run');
+    expect(
+      resolveAgentSessionIdForPanel({
+        provider: 'grok',
+        initialCommand: 'grok',
+        agentRun: { agentSessionId: 'g-bound' },
+      })
+    ).toBe('g-bound');
+    expect(
+      resolveAgentSessionIdForPanel({
+        provider: 'qoder',
+        agentRun: { qodercliSessionId: 'q-bound' },
+      })
+    ).toBe('q-bound');
+    expect(
+      resolveAgentSessionIdForPanel({ provider: 'grok', initialCommand: 'grok', agentRun: null })
+    ).toBeNull();
+  });
+
+  test('resolveTerminalInjectCommand emits provider resume forms when the id is known', () => {
+    expect(resolveTerminalInjectCommand('kimi', { kimiSessionId: 'k-1' })).toBe(
+      'kimi --session k-1'
+    );
+    expect(resolveTerminalInjectCommand('grok --session-id g-1', null)).toBe('grok --resume g-1');
+    expect(resolveTerminalInjectCommand('qodercli --session-id q-1', null)).toBe(
+      'qodercli --resume q-1'
+    );
+    expect(resolveTerminalInjectCommand('codex resume c-1', null)).toBe('codex resume c-1');
+  });
+
+  test('resolveTerminalInjectCommand keeps plain commands when no id is known', () => {
+    expect(resolveTerminalInjectCommand('kimi', null)).toBe('kimi');
+    expect(resolveTerminalInjectCommand('grok', null)).toBe('grok');
+  });
+
+  test('normalizeProviderPanelCommand upgrades provider launch commands to resume form', () => {
+    const kimiPanel = normalizeProviderPanelCommand(
+      { id: 'p1', initialCommand: 'kimi' },
+      { kimiSessionId: 'k-7' }
+    );
+    expect(kimiPanel.initialCommand).toBe('kimi --session k-7');
+
+    const grokPanel = normalizeProviderPanelCommand({
+      id: 'p2',
+      initialCommand: 'grok --session-id g-7',
+    });
+    expect(grokPanel.initialCommand).toBe('grok --resume g-7');
+
+    const codexPanel = normalizeProviderPanelCommand(
+      { id: 'p3', initialCommand: 'codex' },
+      {
+        agentSessionId: 'c-7',
+      }
+    );
+    expect(codexPanel.initialCommand).toBe('codex resume c-7');
+
+    const untouched = normalizeProviderPanelCommand({ id: 'p4', initialCommand: 'bash' }, null);
+    expect(untouched.initialCommand).toBe('bash');
+
+    const noId = normalizeProviderPanelCommand({ id: 'p5', initialCommand: 'kimi' }, null);
+    expect(noId.initialCommand).toBe('kimi');
+  });
+
+  test('normalizeOpenCodePanelCommand alias still upgrades opencode panels', () => {
+    const panel = normalizeOpenCodePanelCommand(
+      { id: 'p1', initialCommand: 'opencode' },
+      { opencodeSessionId: 'oc-alias' }
+    );
+    expect(panel.initialCommand).toBe('opencode --session oc-alias');
   });
 });

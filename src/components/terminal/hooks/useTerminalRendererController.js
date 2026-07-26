@@ -15,6 +15,7 @@ import {
   shouldAttachCanvasRenderer,
   shouldMountCanvasAddon,
   shouldBlockV2WebglRecovery,
+  ensureTerminalFontReady,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
 } from '@/components/terminal/TerminalTTY.helpers';
 import { shouldSkipKimiTuiPtyResize } from '@/lib/terminal/kimiReadyMarker';
@@ -174,6 +175,11 @@ export default function useTerminalRendererController({ ctxRef }) {
     if (term.element && !term.element.isConnected) return false;
     if (term._core?._isDisposed) return false;
 
+    // Font-atlas race guard (same as WebGL path): canvas addon also builds a
+    // glyph atlas measured against the live font.
+    await ensureTerminalFontReady(term.options?.fontSize ?? 14);
+    if (!termRef.current || canvasAddonRef.current) return false;
+
     try {
       const { CanvasAddon: CanvasAddonCtor } = await import('@xterm/addon-canvas');
       if (!termRef.current || canvasAddonRef.current) return false;
@@ -181,6 +187,19 @@ export default function useTerminalRendererController({ ctxRef }) {
       const canvasAddon = new CanvasAddonCtor();
       canvasAddonRef.current = canvasAddon;
       termRef.current.loadAddon(canvasAddon);
+
+      // Defensive late-font atlas rebuild (same rationale as WebGL path).
+      if (typeof document !== 'undefined' && document.fonts?.status !== 'loaded') {
+        document.fonts?.ready?.then(() => {
+          if (termRef.current && canvasAddonRef.current === canvasAddon) {
+            try {
+              termRef.current.clearTextureAtlas?.();
+            } catch {
+              // terminal disposed in between
+            }
+          }
+        });
+      }
 
       const fitWorked = fitTerminalViewport({
         container: containerRef.current,
@@ -274,6 +293,14 @@ export default function useTerminalRendererController({ ctxRef }) {
       }
       if (!isTerminalRendererReady(term)) return false;
 
+      // Font-atlas race guard: build the GPU texture atlas only after the
+      // primary web font is measurable. Without this, first-boot terminals
+      // show cell-grid seams ("cuadritos") until xterm's font polling
+      // rebuilds the atlas ~10 s later. Cached promise — subsequent calls
+      // (recovery paths, later panels) resolve instantly.
+      await ensureTerminalFontReady(term.options?.fontSize ?? 14);
+      if (!termRef.current || webglAddonRef.current) return false;
+
       try {
         const { WebglAddon: WebglAddonCtor } = await import('@xterm/addon-webgl');
         if (!termRef.current || webglAddonRef.current) return false;
@@ -289,6 +316,22 @@ export default function useTerminalRendererController({ ctxRef }) {
         setWebglFallback(null);
         pendingWebglRecoveryRef.current = false;
         webglReleasedOnLayoutHideRef.current = false;
+
+        // Defensive: if the font-load timeout won the race in
+        // ensureTerminalFontReady, the atlas was built with fallback metrics.
+        // Rebuild it the moment the real font lands instead of waiting for
+        // xterm's internal font polling (~10 s).
+        if (typeof document !== 'undefined' && document.fonts?.status !== 'loaded') {
+          document.fonts?.ready?.then(() => {
+            if (termRef.current && webglAddonRef.current === webglAddon) {
+              try {
+                termRef.current.clearTextureAtlas?.();
+              } catch {
+                // terminal disposed in between — nothing to rebuild
+              }
+            }
+          });
+        }
 
         const colsBefore = Number(termRef.current.cols ?? 0);
         const rowsBefore = Number(termRef.current.rows ?? 0);

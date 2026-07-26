@@ -67,6 +67,112 @@ describe('startupRestoreRunner', () => {
     ).toBeNull();
   });
 
+  test('RESUME_AGENT_SESSION relaunches with the provider resume form when id is known', async () => {
+    clearPanelInitialCommandLifecycle('p-kimi');
+    const relaunched = [];
+
+    await dispatchStartupRestoreQueue({
+      actions: [
+        {
+          action: RESTORE_ACTION.RESUME_AGENT_SESSION,
+          terminalId: 'p-kimi',
+          provider: 'kimi',
+          agentSessionId: 'k-1',
+          sessionKind: 'kimi',
+        },
+      ],
+      getPanel: () => ({ id: 'p-kimi', initialCommand: 'kimi --session k-1', cwd: '/tmp' }),
+      onRelaunch: async (action, panel, command) => {
+        relaunched.push(command);
+      },
+      delayMs: 0,
+    });
+
+    expect(relaunched).toEqual(['kimi --session k-1']);
+  });
+
+  test('RESUME_AGENT_SESSION normalizes grok pre-assign forms to the resume command', async () => {
+    clearPanelInitialCommandLifecycle('p-grok');
+    const relaunched = [];
+
+    await dispatchStartupRestoreQueue({
+      actions: [
+        {
+          action: RESTORE_ACTION.RESUME_AGENT_SESSION,
+          terminalId: 'p-grok',
+          provider: 'grok',
+          agentSessionId: null,
+          sessionKind: 'grok',
+        },
+      ],
+      getPanel: () => ({ id: 'p-grok', initialCommand: 'grok --session-id g-pre', cwd: '/tmp' }),
+      onRelaunch: async (action, panel, command) => {
+        relaunched.push(command);
+      },
+      delayMs: 0,
+    });
+
+    expect(relaunched).toEqual(['grok --resume g-pre']);
+  });
+
+  test.each([
+    ['kimi', 'kimi --continue'],
+    ['grok', 'grok --continue'],
+    ['codex', 'codex resume --last'],
+    ['qoder', 'qodercli --continue'],
+  ])(
+    'RESUME_AGENT_SESSION for %s without id falls back to "%s"',
+    async (provider, expectedCommand) => {
+      const panelId = `p-${provider}`;
+      clearPanelInitialCommandLifecycle(panelId);
+      const relaunched = [];
+
+      await dispatchStartupRestoreQueue({
+        actions: [
+          {
+            action: RESTORE_ACTION.RESUME_AGENT_SESSION,
+            terminalId: panelId,
+            provider,
+            agentSessionId: null,
+            sessionKind: provider,
+          },
+        ],
+        getPanel: () => ({ id: panelId, initialCommand: null, cwd: '/tmp' }),
+        onRelaunch: async (action, panel, command) => {
+          relaunched.push(command);
+        },
+        delayMs: 0,
+      });
+
+      expect(relaunched).toEqual([expectedCommand]);
+    }
+  );
+
+  test('RESUME_AGENT_SESSION keeps single-inject protection for repeated dispatches', async () => {
+    clearPanelInitialCommandLifecycle('p-codex');
+    markPanelInitialCommandDispatched('p-codex', 'codex resume --last');
+    const relaunched = [];
+
+    await dispatchStartupRestoreQueue({
+      actions: [
+        {
+          action: RESTORE_ACTION.RESUME_AGENT_SESSION,
+          terminalId: 'p-codex',
+          provider: 'codex',
+          agentSessionId: null,
+          sessionKind: 'codex',
+        },
+      ],
+      getPanel: () => ({ id: 'p-codex', initialCommand: null, cwd: '/tmp' }),
+      onRelaunch: async (action) => {
+        relaunched.push(action.terminalId);
+      },
+      delayMs: 0,
+    });
+
+    expect(relaunched).toEqual([]);
+  });
+
   test('dispatchStartupRestoreQueue skips relaunch when inject intent already satisfied', async () => {
     clearPanelInitialCommandLifecycle('p1');
     markPanelInitialCommandDispatched('p1', 'opencode --session oc-1');

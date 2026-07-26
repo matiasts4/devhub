@@ -16,6 +16,7 @@ import {
   terminalHasActiveMouseReporting,
   resolveConnectInitialCommandState,
   resolveTerminalConnectionCloseState,
+  restoreTerminalViewportScroll,
   TERMINAL_SNAPSHOT_THRESHOLD_BYTES,
   TERMINAL_SNAPSHOT_MAX_INTERVAL_MS,
   TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
@@ -113,6 +114,8 @@ export default function useTerminalV2Session({ ctxRef }) {
       initialCommandConnectSnapshotRef,
       isActivePanelRef,
       lastPtySizeRef,
+      preReconnectViewportRef,
+      scrollTerminalToBottom,
       setConnectionState,
       setHasConnectedOnce,
       setRestoredToast,
@@ -635,6 +638,9 @@ export default function useTerminalV2Session({ ctxRef }) {
                 // ignore subscribe send errors
               }
             } else {
+              // Fresh terminal (no snapshot): nothing to re-anchor — drop any
+              // pending pre-reconnect viewport intent so it can't go stale.
+              if (preReconnectViewportRef) preReconnectViewportRef.current = null;
               try {
                 socket.send(JSON.stringify({ type: 'subscribe', v2: true }));
               } catch {
@@ -669,6 +675,32 @@ export default function useTerminalV2Session({ ctxRef }) {
                 setNativeWheelPassthrough,
               });
               sendResizeRef.current?.();
+
+              // Re-anchor the viewport after a reconnect replay. reconnect()
+              // clear()s the buffer (ydisp=0) and the non-forced scroll rescues
+              // skip Kimi TUIs, so without this the user lands at the TOP of the
+              // rebuilt scrollback. Restore the intent captured pre-clear.
+              const pendingViewport = preReconnectViewportRef?.current;
+              if (preReconnectViewportRef) preReconnectViewportRef.current = null;
+              if (pendingViewport != null && termRef.current) {
+                const term = termRef.current;
+                const restoreViewport = () => {
+                  if (pendingViewport === 'bottom') {
+                    scrollTerminalToBottom?.(true);
+                  } else {
+                    restoreTerminalViewportScroll(term, pendingViewport);
+                  }
+                };
+                // Wait for the snapshot write to flush and sendResize's RAF fit
+                // (which reflows the grid) to settle before re-anchoring.
+                if (typeof term.write === 'function') {
+                  term.write('', () => {
+                    requestAnimationFrame(() => requestAnimationFrame(restoreViewport));
+                  });
+                } else {
+                  restoreViewport();
+                }
+              }
               return;
             }
 
@@ -781,6 +813,24 @@ export default function useTerminalV2Session({ ctxRef }) {
             window.dispatchEvent(
               new CustomEvent('devhub:opencode-session-detected', {
                 detail: { panelId: id, sessionId: payload.sessionId },
+              })
+            );
+            return;
+          }
+
+          // Multiprovider session-id detection (kimi/codex fs correlation,
+          // grok/qoder pre-assigned ids) — same flow as opencode above.
+          const agentSessionDetectedMatch = String(payload.type || '').match(
+            /^(kimi|codex|grok|qoder)-session-detected$/
+          );
+          if (agentSessionDetectedMatch && payload.sessionId) {
+            window.dispatchEvent(
+              new CustomEvent(`devhub:${agentSessionDetectedMatch[1]}-session-detected`, {
+                detail: {
+                  panelId: id,
+                  sessionId: payload.sessionId,
+                  agentType: payload.agentType || agentSessionDetectedMatch[1],
+                },
               })
             );
             return;

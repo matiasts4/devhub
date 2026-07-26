@@ -156,10 +156,16 @@ jest.mock('@/components/terminal/terminalTypographyPreferences', () => ({
 
 jest.mock('@/lib/terminal/restorePreferences', () => ({
   RESTORE_POLICY: { AUTO: 'auto', MANUAL: 'manual', OFF: 'off' },
+  TERMINAL_RESTORE_KINDS: ['opencode', 'kimi', 'grok', 'codex', 'qoder', 'swarm', 'generic'],
   readTerminalRestorePreferences: jest.fn(() => ({
     opencode: 'auto',
+    kimi: 'auto',
+    grok: 'auto',
+    codex: 'auto',
+    qoder: 'auto',
     generic: 'auto',
     swarm: 'auto',
+    restoreOnReboot: true,
   })),
   writeTerminalRestorePreferences: jest.fn(),
 }));

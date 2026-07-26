@@ -1,5 +1,21 @@
 const OPENCODE_PROVIDER = 'opencode';
 
+const RESUME_COMMAND_BUILDERS = {
+  opencode: (sessionId) => `opencode --session ${sessionId}`,
+  kimi: (sessionId) => `kimi --session ${sessionId}`,
+  grok: (sessionId) => `grok --resume ${sessionId}`,
+  codex: (sessionId) => `codex resume ${sessionId}`,
+  qoder: (sessionId) => `qodercli --resume ${sessionId}`,
+};
+
+const CONTINUE_COMMANDS = {
+  opencode: null,
+  kimi: 'kimi --continue',
+  grok: 'grok --continue',
+  codex: 'codex resume --last',
+  qoder: 'qodercli --continue',
+};
+
 function normalizeUpdatedAt(value) {
   if (!value) return null;
   const parsed = new Date(value).getTime();
@@ -13,25 +29,39 @@ export function createResumableSessionKey(session) {
   return `${provider}:${sessionId}`;
 }
 
-export function normalizeOpenCodeSession(session = {}) {
-  const sessionId = String(session?.sessionId || session?.id || '').trim();
+/**
+ * Maps a raw route/scanner session payload into the shared resumable-session
+ * shape for any durable provider. Accepts both route-style keys
+ * (`id`/`directory`/`updated`) and normalized keys (`sessionId`/`cwd`/`updatedAt`).
+ */
+export function normalizeProviderSession(provider, raw = {}) {
+  const sessionId = String(raw?.sessionId || raw?.id || '').trim();
   if (!sessionId) return null;
 
-  const cwd = session?.cwd || session?.directory || null;
-  const activePanelId = session?.activePanelId || null;
+  const cwd = raw?.cwd || raw?.directory || null;
+  const activePanelId = raw?.activePanelId || null;
+  const buildResume = RESUME_COMMAND_BUILDERS[provider];
 
   return {
-    provider: OPENCODE_PROVIDER,
+    provider,
     sessionId,
-    title:
-      typeof session?.title === 'string' && session.title.trim() ? session.title.trim() : sessionId,
+    title: typeof raw?.title === 'string' && raw.title.trim() ? raw.title.trim() : sessionId,
     cwd: typeof cwd === 'string' && cwd.trim() ? cwd.trim() : null,
-    updatedAt: normalizeUpdatedAt(session?.updatedAt || session?.updated || session?.lastUpdatedAt),
-    isActive: Boolean(session?.isActive || activePanelId),
+    updatedAt: normalizeUpdatedAt(raw?.updatedAt || raw?.updated || raw?.lastUpdatedAt),
+    isActive: Boolean(raw?.isActive || activePanelId),
     activePanelId,
-    resumeCommand: `opencode --session ${sessionId}`,
-    durable: true,
+    resumeCommand:
+      typeof raw?.resumeCommand === 'string' && raw.resumeCommand.trim()
+        ? raw.resumeCommand.trim()
+        : buildResume
+          ? buildResume(sessionId)
+          : null,
+    durable: raw?.durable !== false,
   };
+}
+
+export function normalizeOpenCodeSession(session = {}) {
+  return normalizeProviderSession(OPENCODE_PROVIDER, session);
 }
 
 function sortNewestFirst(left, right) {
@@ -78,77 +108,85 @@ export function mergeResumableCatalogResults(results = []) {
   return { status: 'empty', sessions: [], error: null };
 }
 
-export const openCodeResumableSessionAdapter = {
-  id: OPENCODE_PROVIDER,
-  supportsDurableResume() {
-    return true;
-  },
-  buildResumeCommand(session) {
-    return `opencode --session ${session.sessionId}`;
-  },
-  async listSessions({ cwd, fetchImpl = fetch } = {}) {
-    const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
-    const response = await fetchImpl(`/api/opencode/sessions${params}`, { cache: 'no-store' });
-    const payload = await response.json().catch(() => null);
+function createHttpResumableSessionAdapter(provider) {
+  return {
+    id: provider,
+    supportsDurableResume() {
+      return true;
+    },
+    buildResumeCommand(session) {
+      return RESUME_COMMAND_BUILDERS[provider](session.sessionId);
+    },
+    buildContinueCommand() {
+      return CONTINUE_COMMANDS[provider] || null;
+    },
+    async listSessions({ cwd, fetchImpl = fetch } = {}) {
+      const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+      const response = await fetchImpl(`/api/${provider}/sessions${params}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
 
-    if (!response.ok) {
+      if (!response.ok) {
+        return {
+          provider,
+          status: 'error',
+          sessions: [],
+          error: payload?.error || {
+            code: 'request-failed',
+            message: `${provider} sessions could not be loaded.`,
+            retryable: true,
+          },
+        };
+      }
+
+      const normalizedSessions = Array.isArray(payload?.sessions)
+        ? payload.sessions
+            .map((session) => normalizeProviderSession(provider, session))
+            .filter(Boolean)
+        : [];
+
       return {
-        provider: OPENCODE_PROVIDER,
-        status: 'error',
-        sessions: [],
-        error: payload?.error || {
-          code: 'request-failed',
-          message: 'OpenCode sessions could not be loaded.',
-          retryable: true,
-        },
+        provider,
+        status: payload?.status || (normalizedSessions.length ? 'success' : 'empty'),
+        sessions: normalizedSessions,
+        error: payload?.error || null,
       };
-    }
+    },
+  };
+}
 
-    const normalizedSessions = Array.isArray(payload?.sessions)
-      ? payload.sessions.map(normalizeOpenCodeSession).filter(Boolean)
-      : [];
+export const openCodeResumableSessionAdapter = createHttpResumableSessionAdapter(OPENCODE_PROVIDER);
+export const kimiResumableSessionAdapter = createHttpResumableSessionAdapter('kimi');
+export const grokResumableSessionAdapter = createHttpResumableSessionAdapter('grok');
+export const codexResumableSessionAdapter = createHttpResumableSessionAdapter('codex');
+export const qoderResumableSessionAdapter = createHttpResumableSessionAdapter('qoder');
 
-    return {
-      provider: OPENCODE_PROVIDER,
-      status: payload?.status || (normalizedSessions.length ? 'success' : 'empty'),
-      sessions: normalizedSessions,
-      error: payload?.error || null,
-    };
-  },
-};
-
-/** Placeholder until Grok CLI list+resume is verified — never auto-resumes on startup. */
-export const grokResumableSessionAdapter = {
-  id: 'grok',
+/** Placeholder until Claude CLI list+resume is verified — never auto-resumes on startup. */
+export const claudeResumableSessionAdapter = {
+  id: 'claude',
   supportsDurableResume() {
     return false;
   },
   buildResumeCommand() {
     return null;
   },
-  async listSessions() {
-    return { provider: 'grok', status: 'empty', sessions: [], error: null };
-  },
-};
-
-/** Placeholder until Kimi/KimiCode CLI list+resume is verified. */
-export const kimiResumableSessionAdapter = {
-  id: 'kimi',
-  supportsDurableResume() {
-    return false;
-  },
-  buildResumeCommand() {
+  buildContinueCommand() {
     return null;
   },
   async listSessions() {
-    return { provider: 'kimi', status: 'empty', sessions: [], error: null };
+    return { provider: 'claude', status: 'empty', sessions: [], error: null };
   },
 };
 
 export function getResumableSessionAdapters() {
-  return [openCodeResumableSessionAdapter].filter((adapter) => adapter.supportsDurableResume());
+  return [
+    openCodeResumableSessionAdapter,
+    kimiResumableSessionAdapter,
+    grokResumableSessionAdapter,
+    codexResumableSessionAdapter,
+    qoderResumableSessionAdapter,
+  ].filter((adapter) => adapter.supportsDurableResume());
 }
 
 export function getPlaceholderResumableSessionAdapters() {
-  return [grokResumableSessionAdapter, kimiResumableSessionAdapter];
+  return [claudeResumableSessionAdapter].filter((adapter) => !adapter.supportsDurableResume());
 }
