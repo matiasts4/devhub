@@ -77,6 +77,37 @@ function createCtx(overrides = {}) {
   };
 }
 
+// pizarra-instant-enter A1 defers the pizarra-mode pass to requestAnimationFrame.
+// Queue rAF manually so tests can flush deterministically (sync rAF stubs break
+// the ref-clearing order inside the deferred callback).
+let rafQueue = [];
+let originalRaf;
+let originalCancelRaf;
+
+function flushRafQueue() {
+  const pending = rafQueue;
+  rafQueue = [];
+  for (const cb of pending) cb(performance.now());
+}
+
+beforeEach(() => {
+  rafQueue = [];
+  originalRaf = window.requestAnimationFrame;
+  originalCancelRaf = window.cancelAnimationFrame;
+  window.requestAnimationFrame = (cb) => {
+    rafQueue.push(cb);
+    return rafQueue.length;
+  };
+  window.cancelAnimationFrame = (id) => {
+    if (id >= 1 && id <= rafQueue.length) rafQueue[id - 1] = () => {};
+  };
+});
+
+afterEach(() => {
+  window.requestAnimationFrame = originalRaf;
+  window.cancelAnimationFrame = originalCancelRaf;
+});
+
 describe('useTerminalLayoutChurnRecovery', () => {
   beforeEach(() => {
     mockRefreshTerminalViewport.mockClear();
@@ -104,6 +135,7 @@ describe('useTerminalLayoutChurnRecovery', () => {
             detail: { reason: 'pizarra-mode-exit', panelIds: ['p1'] },
           })
         );
+        flushRafQueue();
       });
     }).not.toThrow();
 
@@ -131,6 +163,7 @@ describe('useTerminalLayoutChurnRecovery', () => {
           detail: { reason: 'pizarra-mode-exit', panelIds: ['p1'] },
         })
       );
+      flushRafQueue();
     });
 
     expect(mockRefreshTerminalViewport).toHaveBeenCalledWith(ctx.termRef.current);
@@ -334,6 +367,7 @@ describe('pizarra transition gating (sin-parpadeo fase 4)', () => {
           detail: { reason: 'pizarra-mode-exit' },
         })
       );
+      flushRafQueue();
     });
 
     expect(ctx.syncTerminalViewportOnWorkspaceShow).not.toHaveBeenCalled();
@@ -358,11 +392,79 @@ describe('pizarra transition gating (sin-parpadeo fase 4)', () => {
           detail: { reason: 'pizarra-mode-exit' },
         })
       );
+      flushRafQueue();
     });
 
     expect(ctx.syncTerminalViewportOnWorkspaceShow).toHaveBeenCalledWith(
       'layout-settled-pizarra-mode-exit-immediate',
       expect.objectContaining({ clearAtlas: false })
     );
+  });
+});
+
+describe('pizarra transition coalescing (pizarra-instant-enter A1)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function dispatchPizarra(reason) {
+    window.dispatchEvent(
+      new CustomEvent('devhub:terminal-layout-settled', {
+        detail: { reason, panelIds: ['p1'] },
+      })
+    );
+  }
+
+  test('collapses the enter storm (broadcast + portal immediate + portal rAF) into one pass', () => {
+    const ctx = createCtx();
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    act(() => {
+      dispatchPizarra('pizarra-mode-enter');
+      dispatchPizarra('pizarra-mode-enter');
+      dispatchPizarra('pizarra-mode-exit'); // latest wins if a fast exit lands
+      expect(rafQueue).toHaveLength(1); // absorbed, not re-scheduled
+      flushRafQueue();
+    });
+
+    expect(ctx.syncTerminalViewportOnWorkspaceShow).toHaveBeenCalledTimes(1);
+    expect(ctx.syncTerminalViewportOnWorkspaceShow).toHaveBeenCalledWith(
+      'layout-settled-pizarra-mode-exit-immediate',
+      expect.objectContaining({ clearAtlas: false })
+    );
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledTimes(1);
+  });
+
+  test('runs one pass per frame across frames (not blocked after flush)', () => {
+    const ctx = createCtx();
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    act(() => {
+      dispatchPizarra('pizarra-mode-enter');
+      flushRafQueue();
+    });
+    act(() => {
+      dispatchPizarra('pizarra-mode-enter');
+      flushRafQueue();
+    });
+
+    expect(ctx.syncTerminalViewportOnWorkspaceShow).toHaveBeenCalledTimes(2);
+  });
+
+  test('hidden terminal only marks churn flags (deferred pass else-branch)', () => {
+    const ctx = createCtx({ isVisibleInLayoutRef: { current: false } });
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    act(() => {
+      dispatchPizarra('pizarra-mode-enter');
+      flushRafQueue();
+    });
+
+    expect(ctx.needsViewportSyncOnShowRef.current).toBe(true);
+    expect(ctx.layoutChurnedWhileHiddenRef.current).toBe(true);
+    expect(ctx.syncTerminalViewportOnWorkspaceShow).not.toHaveBeenCalled();
   });
 });

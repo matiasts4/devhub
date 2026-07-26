@@ -316,6 +316,7 @@ export function SharedTerminalSurfacePortal({
 
     let mounted = true;
     let resizeObserver = null;
+    let hostResizeDebounceTimer = 0;
 
     const dispatchIfLive = (reason) => {
       if (!mounted || !propsBySurfaceId.has(surfaceId)) return;
@@ -356,10 +357,20 @@ export function SharedTerminalSurfacePortal({
         if (!mounted || !propsBySurfaceId.has(surfaceId)) return;
         const rect = entries?.[0]?.contentRect;
         if (!rect || rect.width <= 1 || rect.height <= 1) return;
-        dispatchTerminalLayoutSettled({
-          reason: 'shared-surface-host-resize',
-          panelIds: [surfaceId],
-        });
+        // pizarra-instant-enter A1: debounce host resizes — the entry cascade
+        // (seed 800x600 → real measure → entry autofit) used to dispatch one
+        // layout-settled per intermediate size, forcing 2-3 real xterm fits +
+        // SIGWINCH per terminal per toggle. Collapse to a single dispatch once
+        // the bounds settle.
+        if (hostResizeDebounceTimer) window.clearTimeout(hostResizeDebounceTimer);
+        hostResizeDebounceTimer = window.setTimeout(() => {
+          hostResizeDebounceTimer = 0;
+          if (!mounted || !propsBySurfaceId.has(surfaceId)) return;
+          dispatchTerminalLayoutSettled({
+            reason: 'shared-surface-host-resize',
+            panelIds: [surfaceId],
+          });
+        }, 90);
       });
       resizeObserver.observe(hostEl);
     });
@@ -367,6 +378,10 @@ export function SharedTerminalSurfacePortal({
     return () => {
       mounted = false;
       cancelAnimationFrame(raf);
+      if (hostResizeDebounceTimer) {
+        window.clearTimeout(hostResizeDebounceTimer);
+        hostResizeDebounceTimer = 0;
+      }
       resizeObserver?.disconnect();
       if (registry.getPreferredHostForSurface(surfaceId) === hostId) {
         registry.clearPreferredHostForSurface(surfaceId);

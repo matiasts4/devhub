@@ -127,8 +127,134 @@ export function softRevealVisibleSurvivor(c, diagnosticReason) {
   }
 }
 
+/**
+ * pizarra-instant-enter A1: ctx-level version of the layout-settled skip guard so
+ * both handleLayoutSettled's closure and the deferred pizarra transition pass can
+ * share it. If the container dims already match the terminal grid and there is no
+ * GPU recovery pending, layout-settled reasons do not need the heavy fit+repaint.
+ * Sin-parpadeo fase 2: also require the GPU addon to be attached — during an async
+ * reattach window the ref is null and the bitmap is not guaranteed.
+ */
+function canSkipLayoutSettledRepaintForCtx(c) {
+  const {
+    termRef,
+    fitRef,
+    containerRef,
+    pendingWebglRecoveryRef,
+    canvasReleasedOnLayoutHideRef,
+    webglReleasedOnLayoutHideRef,
+    operationalRendererModeRef,
+    webglAddonRef,
+    canvasAddonRef,
+  } = c;
+  if (!termRef?.current || !fitRef?.current || !containerRef?.current) return false;
+  const proposed = proposeTerminalViewportDimensions({
+    container: containerRef.current,
+    fitAddon: fitRef.current,
+    term: termRef.current,
+  });
+  const cols = termRef.current.cols;
+  const rows = termRef.current.rows;
+  const dimsMatch = proposed && proposed.cols === cols && proposed.rows === rows;
+  const noGpuRecovery =
+    !pendingWebglRecoveryRef.current &&
+    !canvasReleasedOnLayoutHideRef.current &&
+    !webglReleasedOnLayoutHideRef.current;
+  const gpuAttached = !needsGpuRendererReattach({
+    operationalRendererMode: operationalRendererModeRef.current,
+    webglAddon: webglAddonRef.current,
+    canvasAddon: canvasAddonRef.current,
+  });
+  return dimsMatch && noGpuRecovery && gpuAttached && cols > 0 && rows > 0;
+}
+
+/**
+ * pizarra-instant-enter A1: single pizarra enter/exit recovery pass, extracted
+ * from handleLayoutSettled so the rAF coalescing can run it once per frame with
+ * the latest transition reason. Body identical to the pre-A1 inline branch.
+ */
+function runPizarraTransitionPass(c, reason) {
+  const {
+    initialCommand,
+    isDisposingRef,
+    termRef,
+    fitRef,
+    containerRef,
+    wsRef,
+    lastPtySizeRef,
+    isVisibleInLayoutRef,
+    hasConnectedOnceRef,
+    viewportFitConfirmedRef,
+    webglReleasedOnLayoutHideRef,
+    canvasReleasedOnLayoutHideRef,
+    tuiSessionActiveRef,
+    kimiReadyNotifiedRef,
+    needsViewportSyncOnShowRef,
+    layoutChurnedWhileHiddenRef,
+    fitTerminalViewport: fitViewportFn = fitTerminalViewport,
+    maybeConnectAfterViewportFit,
+    logViewportDiagnostic,
+    syncTerminalViewportOnWorkspaceShow,
+    scrollTerminalToBottom,
+    coalescedForceRepaint,
+  } = c;
+  if (!termRef?.current || !fitRef?.current) return;
+
+  if (!hasConnectedOnceRef.current && isVisibleInLayoutRef.current && containerRef.current) {
+    const fitWorked = fitViewportFn({
+      container: containerRef.current,
+      fitAddon: fitRef.current,
+      term: termRef.current,
+      socket: wsRef.current,
+      clearAtlas: false,
+      lastPtySizeRef: lastPtySizeRef.current,
+    });
+    maybeConnectAfterViewportFit(fitWorked);
+  }
+  if (isVisibleInLayoutRef.current) {
+    // Sin-parpadeo fase 4: keep-alive siblings already painted correctly via
+    // the phase-1 soft reveal on the layout-show edge; re-syncing + nudging
+    // them here is the residual pizarra-toggle flicker. Fresh re-targeted
+    // instances have viewportFitConfirmedRef=false until their first fit
+    // lands, so they always take the full path below.
+    if (viewportFitConfirmedRef?.current === true && canSkipLayoutSettledRepaintForCtx(c)) {
+      logViewportDiagnostic(`${reason}-skipped-verified-clean`);
+      return;
+    }
+    syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
+      clearAtlas: webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
+    });
+    if (!isDisposingRef.current && termRef.current && isTerminalRendererReady(termRef.current)) {
+      const kimiTuiLive = isKimiTuiLive({
+        initialCommand,
+        kimiReady: kimiReadyNotifiedRef.current,
+      });
+      if (tuiSessionActiveRef.current && !kimiTuiLive) {
+        scrollTerminalToBottom(true);
+      }
+      refreshTerminalViewport(termRef.current);
+      // The sync pass above already ends with a coalesced force repaint. Using
+      // the coalesced variant here (instead of an unconditional force repaint)
+      // collapses the two into a single 1-cell nudge, removing the double
+      // resize flicker on workspace↔pizarra toggles.
+      if (typeof coalescedForceRepaint === 'function') {
+        coalescedForceRepaint(termRef.current, { reason: `pizarra-mode-transition` });
+      } else {
+        forceTerminalViewportRepaint(termRef.current);
+      }
+    }
+  } else {
+    needsViewportSyncOnShowRef.current = true;
+    layoutChurnedWhileHiddenRef.current = true;
+  }
+}
+
 export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
   const layoutSettleBurstCleanupRef = useRef(null);
+  // pizarra-instant-enter A1: rAF coalescing state for the pizarra-mode
+  // enter/exit event storm (latest reason wins, one pass per frame).
+  const pizarraTransitionRafRef = useRef(null);
+  const pizarraTransitionPendingReasonRef = useRef(null);
 
   useEffect(() => {
     const handleSurvivorRecover = (event) => {
@@ -386,7 +512,6 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         tuiSessionActiveRef,
         kimiReadyNotifiedRef,
         hasConnectedOnceRef,
-        viewportFitConfirmedRef,
         operationalRendererModeRef,
         pendingWebglRecoveryRef,
         webglReleasedOnLayoutHideRef,
@@ -405,12 +530,10 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         // use imported refreshTerminalViewport / forceTerminalViewportRepaint —
         // neither is on viewportCtxRef; destructuring would shadow with undefined
         nudgeTerminalPtyResize,
-        coalescedForceRepaint,
         scheduleWorkspaceShowRecovery,
         scheduleBoundedForceRepaint,
         scheduleBoundedFitRepaint,
         scheduleBoundedGpuRecover,
-        scrollTerminalToBottom,
       } = c;
       if (isDisposingRef.current) return;
       if (!termRef.current || !fitRef.current) return;
@@ -494,29 +617,8 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       // Lightweight guard: if the container dims already match the terminal grid and
       // there is no GPU recovery pending, most layout-settled reasons do not need the
       // heavy fit+repaint burst. This cuts the repeated flicker on workspace switch.
-      // Sin-parpadeo fase 2: also require the GPU addon to be attached — during an
-      // async reattach window the ref is null and the bitmap is not guaranteed.
-      const canSkipLayoutSettledRepaint = () => {
-        if (!termRef.current || !fitRef.current || !containerRef.current) return false;
-        const proposed = proposeTerminalViewportDimensions({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-        });
-        const cols = termRef.current.cols;
-        const rows = termRef.current.rows;
-        const dimsMatch = proposed && proposed.cols === cols && proposed.rows === rows;
-        const noGpuRecovery =
-          !pendingWebglRecoveryRef.current &&
-          !canvasReleasedOnLayoutHideRef.current &&
-          !webglReleasedOnLayoutHideRef.current;
-        const gpuAttached = !needsGpuRendererReattach({
-          operationalRendererMode: operationalRendererModeRef.current,
-          webglAddon: webglAddonRef.current,
-          canvasAddon: canvasAddonRef.current,
-        });
-        return dimsMatch && noGpuRecovery && gpuAttached && cols > 0 && rows > 0;
-      };
+      // Shared with the deferred pizarra transition pass (pizarra-instant-enter A1).
+      const canSkipLayoutSettledRepaint = () => canSkipLayoutSettledRepaintForCtx(c);
 
       // Unified hidden-panel handling: a panel that is opacity-hidden in another
       // workspace cannot run the visible burst safely, but panel-closed churn from
@@ -715,63 +817,24 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         String(reason).includes('pizarra-mode-exit') ||
         String(reason).includes('pizarra-mode-enter')
       ) {
-        if (
-          !hasConnectedOnceRef.current &&
-          isVisibleInLayoutRef.current &&
-          containerRef.current &&
-          termRef.current
-        ) {
-          const fitWorked = fitTerminalViewport({
-            container: containerRef.current,
-            fitAddon: fitRef.current,
-            term: termRef.current,
-            socket: wsRef.current,
-            clearAtlas: false,
-            lastPtySizeRef: lastPtySizeRef.current,
-          });
-          maybeConnectAfterViewportFit(fitWorked);
-        }
-        if (isVisibleInLayoutRef.current) {
-          // Sin-parpadeo fase 4: keep-alive siblings already painted correctly via
-          // the phase-1 soft reveal on the layout-show edge; re-syncing + nudging
-          // them here is the residual pizarra-toggle flicker. Fresh re-targeted
-          // instances have viewportFitConfirmedRef=false until their first fit
-          // lands, so they always take the full path below.
-          if (viewportFitConfirmedRef?.current === true && canSkipLayoutSettledRepaint()) {
-            logViewportDiagnostic(`${reason}-skipped-verified-clean`);
-            return;
-          }
-          syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
-            clearAtlas:
-              webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,
-          });
-          if (
-            !isDisposingRef.current &&
-            termRef.current &&
-            isTerminalRendererReady(termRef.current)
-          ) {
-            const kimiTuiLive = isKimiTuiLive({
-              initialCommand,
-              kimiReady: kimiReadyNotifiedRef.current,
-            });
-            if (tuiSessionActiveRef.current && !kimiTuiLive) {
-              scrollTerminalToBottom(true);
-            }
-            refreshTerminalViewport(termRef.current);
-            // The sync pass above already ends with a coalesced force repaint. Using
-            // the coalesced variant here (instead of an unconditional force repaint)
-            // collapses the two into a single 1-cell nudge, removing the double
-            // resize flicker on workspace↔pizarra toggles.
-            if (typeof coalescedForceRepaint === 'function') {
-              coalescedForceRepaint(termRef.current, { reason: `pizarra-mode-transition` });
-            } else {
-              forceTerminalViewportRepaint(termRef.current);
-            }
-          }
-        } else {
-          needsViewportSyncOnShowRef.current = true;
-          layoutChurnedWhileHiddenRef.current = true;
-        }
+        // pizarra-instant-enter A1: coalesce the per-toggle storm. Each flip
+        // fans out 3+ identical events per terminal (global broadcast + portal
+        // immediate + portal rAF); keep only the latest one per frame and run
+        // a single recovery pass at the next paint. The pass re-reads live
+        // refs at execution time, so the latest event carries all the state
+        // the recovery needs.
+        pizarraTransitionPendingReasonRef.current = reason;
+        if (pizarraTransitionRafRef.current != null) return;
+        pizarraTransitionRafRef.current = window.requestAnimationFrame(() => {
+          pizarraTransitionRafRef.current = null;
+          const pendingReason = pizarraTransitionPendingReasonRef.current;
+          pizarraTransitionPendingReasonRef.current = null;
+          if (!pendingReason) return;
+          const deferredCtx = readLayoutChurnCtx(ctxRef);
+          if (!deferredCtx || deferredCtx.isDisposingRef?.current) return;
+          if (!deferredCtx.termRef?.current || !deferredCtx.fitRef?.current) return;
+          runPizarraTransitionPass(deferredCtx, pendingReason);
+        });
         return;
       }
 
@@ -917,6 +980,11 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
     return () => {
       layoutSettleBurstCleanupRef.current?.();
       layoutSettleBurstCleanupRef.current = null;
+      if (pizarraTransitionRafRef.current != null) {
+        window.cancelAnimationFrame(pizarraTransitionRafRef.current);
+        pizarraTransitionRafRef.current = null;
+      }
+      pizarraTransitionPendingReasonRef.current = null;
       window.removeEventListener('devhub:terminal-layout-settled', handleLayoutSettled);
     };
   }, [ctxRef]);
