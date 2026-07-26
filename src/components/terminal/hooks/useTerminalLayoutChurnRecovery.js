@@ -182,6 +182,44 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       const isWorkspaceTabSwitch =
         reasonStr.includes('workspace-switch') && !reasonStr.includes('window-switch');
 
+      // Sin-parpadeo fase 3: verify before recovering. The 7-event storm exists
+      // because GPU context loss lands asynchronously after a peer close — when it
+      // lands, the addon detaches, recovery flags raise or dims shift, and the gate
+      // fails open to the full recovery ladder. When the survivor is verified clean
+      // (dims match, GPU attached, no pending recovery, no silent context loss),
+      // another soft reveal only re-paints an already-correct bitmap: that IS the
+      // post-close flicker users see at 0/50/150/350/600/1000/1600 ms.
+      const survivorVerifiedClean = () => {
+        if (!termRef.current || !fitRef.current || !containerRef.current) return false;
+        const proposed = proposeTerminalViewportDimensions({
+          container: containerRef.current,
+          fitAddon: fitRef.current,
+          term: termRef.current,
+        });
+        const dimsMatch =
+          proposed &&
+          Number(proposed.cols) === Number(termRef.current.cols) &&
+          Number(proposed.rows) === Number(termRef.current.rows);
+        const gpuAttached = !needsGpuRendererReattach({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+        });
+        const noGpuRecovery =
+          !pendingWebglRecoveryRef.current &&
+          !webglReleasedOnLayoutHideRef.current &&
+          !canvasReleasedOnLayoutHideRef.current;
+        const webglContextAlive =
+          !shouldAttachWebglRenderer({
+            operationalRendererMode: operationalRendererModeRef.current,
+          }) || !isWebglAddonContextLost(webglAddonRef.current);
+        return dimsMatch && gpuAttached && noGpuRecovery && webglContextAlive;
+      };
+      if (survivorVerifiedClean()) {
+        logViewportDiagnostic(`${reasonStr || 'survivor'}-recover-skipped-verified-clean`);
+        return;
+      }
+
       // Peer workspace close / close-active landing: soft reveal (TUI + SIGWINCH nudge).
       // Releasing WebGL here left Option B survivors black until a manual tab switch.
       // Empty shells are fine with refresh; OpenCode only blacks when this workspace

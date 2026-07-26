@@ -243,3 +243,68 @@ describe('layout-settled burst gating (sin-parpadeo fase 2)', () => {
     expect(ctx.scheduleBoundedGpuRecover).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('survivor-recover gating (sin-parpadeo fase 3)', () => {
+  beforeEach(() => {
+    mockRefreshTerminalViewport.mockClear();
+    mockForceTerminalViewportRepaint.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function createSurvivorCtx(overrides = {}) {
+    return createCtx({
+      containerRef: { current: { getBoundingClientRect: () => ({ width: 800, height: 600 }) } },
+      canvasAddonRef: { current: {} },
+      ...overrides,
+    });
+  }
+
+  function dispatchSurvivorRecover(reason) {
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-survivor-recover', {
+          detail: { reason, panelIds: ['p1'] },
+        })
+      );
+    });
+  }
+
+  test('skips the soft reveal when the survivor is verified clean (storm no-ops)', () => {
+    const ctx = createSurvivorCtx();
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    dispatchSurvivorRecover('workspace-removed');
+
+    expect(ctx.fitTerminalViewport).not.toHaveBeenCalled();
+    expect(ctx.coalescedForceRepaint).not.toHaveBeenCalled();
+    expect(ctx.logViewportDiagnostic).toHaveBeenCalledWith(
+      'workspace-removed-recover-skipped-verified-clean'
+    );
+  });
+
+  test('recovers when dims shifted after the close (gate fails open)', () => {
+    const ctx = createSurvivorCtx({
+      fitRef: { current: { proposeDimensions: () => ({ cols: 60, rows: 24 }) } },
+    });
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    dispatchSurvivorRecover('workspace-removed');
+
+    expect(ctx.fitTerminalViewport).toHaveBeenCalled();
+  });
+
+  test('recovers when the GPU addon is unattached', () => {
+    const ctx = createSurvivorCtx({ canvasAddonRef: { current: null } });
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    dispatchSurvivorRecover('workspace-removed');
+
+    expect(ctx.fitTerminalViewport).toHaveBeenCalled();
+  });
+});
