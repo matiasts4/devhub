@@ -2,7 +2,50 @@ import {
   RUNTIME_STATUS,
   createRuntimeDiagnosticsSnapshot,
   detectQuotaSignals,
+  listTmuxSessionNames,
 } from './runtimeStatus';
+
+describe('runtimeStatus — tmuxSessions', () => {
+  it('includes tmuxSessions in the snapshot output', () => {
+    const snapshot = createRuntimeDiagnosticsSnapshot({
+      tmuxSessions: ['devhub-swarm-launch-abc-coder'],
+    });
+
+    expect(snapshot.tmuxSessions).toEqual(['devhub-swarm-launch-abc-coder']);
+  });
+
+  it('defaults tmuxSessions to an empty list and filters invalid entries', () => {
+    expect(createRuntimeDiagnosticsSnapshot({}).tmuxSessions).toEqual([]);
+    expect(
+      createRuntimeDiagnosticsSnapshot({ tmuxSessions: ['a', '', null, 42] }).tmuxSessions
+    ).toEqual(['a']);
+    expect(createRuntimeDiagnosticsSnapshot({ tmuxSessions: 'nope' }).tmuxSessions).toEqual([]);
+  });
+
+  it('listTmuxSessionNames returns [] on win32 without spawning tmux', () => {
+    expect(listTmuxSessionNames({ platform: 'win32' })).toEqual([]);
+  });
+
+  it('listTmuxSessionNames parses tmux output and never throws on errors', () => {
+    const childProcess = require('child_process');
+    const spawnSpy = jest.spyOn(childProcess, 'spawnSync');
+
+    try {
+      spawnSpy.mockReturnValue({ status: 0, stdout: 'alpha\nbeta\n\n', error: null });
+      expect(listTmuxSessionNames({ platform: 'linux' })).toEqual(['alpha', 'beta']);
+
+      spawnSpy.mockReturnValue({ status: 1, stdout: '', error: new Error('no tmux') });
+      expect(listTmuxSessionNames({ platform: 'linux' })).toEqual([]);
+
+      spawnSpy.mockImplementation(() => {
+        throw new Error('spawn failed');
+      });
+      expect(listTmuxSessionNames({ platform: 'linux' })).toEqual([]);
+    } finally {
+      spawnSpy.mockRestore();
+    }
+  });
+});
 
 describe('runtimeStatus', () => {
   it('marks alive terminals without sockets as reattachable', () => {

@@ -8,6 +8,7 @@ import {
   createRuntimeDiagnosticsSnapshot,
   detectQuotaSignals,
   extractErrorLines,
+  listTmuxSessionNames,
 } from '@/lib/swarm/runtimeStatus';
 
 export const dynamic = 'force-dynamic';
@@ -139,6 +140,7 @@ export async function GET() {
       errorLines,
       agentWorkspaces,
       supervisorSnapshots,
+      tmuxSessions: listTmuxSessionNames(),
     });
 
     snapshot.evidence_refs = buildRuntimeEvidenceRefs({

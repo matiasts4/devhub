@@ -1,3 +1,5 @@
+import { spawnSync } from 'child_process';
+
 export const RUNTIME_STATUS = Object.freeze({
   ACTIVE: 'active',
   REATTACHABLE: 'reattachable',
@@ -8,6 +10,28 @@ export const RUNTIME_STATUS = Object.freeze({
   TERMINATED: 'terminated',
   UNKNOWN: 'unknown',
 });
+
+/**
+ * Lists live tmux session names (`tmux list-sessions -F '#S'`).
+ * Returns [] on win32, when tmux is unavailable, or on any tmux error —
+ * never throws, so the diagnostics route cannot fail because of tmux.
+ */
+export function listTmuxSessionNames({ platform = process.platform } = {}) {
+  if (platform === 'win32') return [];
+  try {
+    const result = spawnSync('tmux', ['list-sessions', '-F', '#S'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    if (result.error || result.status !== 0) return [];
+    return String(result.stdout || '')
+      .split('\n')
+      .map((name) => name.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 const QUOTA_PATTERNS = [/\b429\b/i, /GoUsageLimitError/i, /quota/i, /too many requests/i];
 
@@ -256,6 +280,7 @@ export function createRuntimeDiagnosticsSnapshot({
   errorLines = [],
   agentWorkspaces = [],
   supervisorSnapshots = [],
+  tmuxSessions = [],
 } = {}) {
   const processBySessionId = new Map(
     swarmProcesses.filter((entry) => entry?.sessionId).map((entry) => [entry.sessionId, entry])
@@ -350,6 +375,9 @@ export function createRuntimeDiagnosticsSnapshot({
     crashDumps,
     logSignals,
     errorLines,
+    tmuxSessions: Array.isArray(tmuxSessions)
+      ? tmuxSessions.filter((name) => typeof name === 'string' && name.trim())
+      : [],
     anomalies: {
       reattachableTerminals: terminals
         .filter((entry) => entry.status === RUNTIME_STATUS.REATTACHABLE)
