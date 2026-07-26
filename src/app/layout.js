@@ -42,12 +42,8 @@ export default function RootLayout({ children }) {
               "try{var u=localStorage.getItem('devhub:scenery:wallpaper-url');if(u&&u.indexOf('data:')!==0){var l=document.createElement('link');l.rel='preload';l.as='image';l.href=u;document.head.appendChild(l);}}catch(e){}",
           }}
         />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
+        {/* Fonts are now self-hosted via @fontsource (globals.css). No external
+            preconnect/stylesheet needed — woff2 is same-origin and cached. */}
       </head>
       <body>
         <ClientErrorLogger />

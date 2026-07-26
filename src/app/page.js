@@ -2,12 +2,16 @@
 
 import App from '@/App';
 import { useEffect, useState } from 'react';
+import { prewarmGpuAddons } from '@/lib/terminal/prewarmGpuAddons';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    // Pre-warm terminal GPU addon chunks during the loading shell so the
+    // first terminal doesn't pay the cold-start import cost.
+    prewarmGpuAddons();
   }, []);
 
   if (!mounted) {
