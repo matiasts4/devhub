@@ -10,19 +10,6 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
-// ─── Context tool type detection ──────────────────────────────────────────────
-const CONTEXT_GROUP_TOOLS = new Set([
-  'read',
-  'read_file',
-  'readFile',
-  'glob',
-  'grep',
-  'search',
-  'list',
-  'ls',
-  'directory',
-]);
-
 // ─── Icon per tool type ───────────────────────────────────────────────────────
 const TOOL_ICON_MAP = {
   read: FileText,

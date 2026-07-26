@@ -3,7 +3,7 @@ import { updateTrace } from '@/lib/db/localDb.js';
 
 export async function PATCH(req, { params }) {
   try {
-    const { sessionId, traceId } = await params;
+    const { sessionId: _sessionId, traceId } = await params;
     const body = await req.json();
 
     if (!traceId) {

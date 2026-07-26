@@ -8,7 +8,7 @@ export default function SessionListModal({
   onClose,
   sessions = [],
   onSelect,
-  projectId,
+  projectId: _projectId,
   onCreateNew,
 }) {
   const [search, setSearch] = useState('');

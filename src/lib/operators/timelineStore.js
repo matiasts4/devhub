@@ -108,7 +108,6 @@ function insertTimelineItem(item) {
   const storedNextStepHint = item.redaction_level === 'full' ? null : item.next_step_hint || null;
 
   // 4. Clear next_step_hint when redaction_level === 'full' (D-2)
-  const nextStepHint = item.redaction_level === 'full' ? null : item.next_step_hint || null;
 
   // 5. Build error fields
   const errorCode = item.error?.code || null;

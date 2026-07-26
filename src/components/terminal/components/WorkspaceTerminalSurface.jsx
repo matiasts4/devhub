@@ -78,7 +78,7 @@ function WorkspaceTerminalSurface({
   totalPanelCount,
   totalTerminalPanelCount,
   isWorkspaceVisibleInLayout,
-  panelSubtabsBarRef,
+  panelSubtabsBarRef: _panelSubtabsBarRef,
   rightDockPlaceholderRef,
   renderWorkspaceWindowBar,
   renderWorkspacePanelSlot,

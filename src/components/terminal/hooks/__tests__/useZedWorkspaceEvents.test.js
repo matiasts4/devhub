@@ -2,7 +2,6 @@
  * Guard tests for useZedWorkspaceEvents.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook } = require('@testing-library/react');
 

@@ -1,11 +1,6 @@
 'use strict';
 
-const {
-  LOCAL_USER,
-  LOCAL_USER_ID,
-  LOCAL_USER_EMAIL,
-  LOCAL_WORKSPACE_ID,
-} = require('../../constants/local');
+const { LOCAL_USER_ID, LOCAL_USER_EMAIL, LOCAL_WORKSPACE_ID } = require('../../constants/local');
 
 /**
  * Local AuthProvider adapter.

@@ -11,7 +11,6 @@
 
 const {
   createPanel,
-  createColumn,
   createDefaultWorkspaceState,
   normalizeWorkspaceState,
   buildWorkspaceColumnsForTerminalCount,

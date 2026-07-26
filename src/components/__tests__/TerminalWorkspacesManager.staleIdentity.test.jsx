@@ -590,11 +590,6 @@ describe('TIC-2: Panel ID counter randomized on fresh workspace creation', () =>
     }
 
     // Find all terminal IDs within ws3's panel group
-    const ws3Terminals = current
-      ? Array.from(current.querySelectorAll('[data-testid^="terminal-"]')).map((el) =>
-          el.getAttribute('data-testid').replace('terminal-', '')
-        )
-      : [];
 
     // If we can't find ws3-specific terminals, verify at minimum that p1 and p2
     // (the stale IDs) are NOT the newest additions by comparing vs devhub_agent_runs

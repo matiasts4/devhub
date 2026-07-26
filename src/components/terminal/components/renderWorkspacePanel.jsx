@@ -115,7 +115,7 @@ function PanelAddSpaceMenu({ panelId, panelKind, onAddSpaceKind, onSetPanelKind 
           <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
             Añadir
           </div>
-          {SPACE_KIND_OPTIONS.map(({ kind, label, Icon: _Icon }) => (
+          {SPACE_KIND_OPTIONS.map(({ kind, label, Icon }) => (
             <button
               key={`add-${kind}`}
               type="button"
@@ -142,7 +142,7 @@ function PanelAddSpaceMenu({ panelId, panelKind, onAddSpaceKind, onSetPanelKind 
               <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Convertir
               </div>
-              {SPACE_KIND_OPTIONS.map(({ kind, label, Icon: _Icon }) => (
+              {SPACE_KIND_OPTIONS.map(({ kind, label, Icon }) => (
                 <button
                   key={`convert-${kind}`}
                   type="button"

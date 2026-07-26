@@ -2,7 +2,6 @@
  * Guard tests for useTerminalRendererController — WebGL context-loss fallback.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook, act } = require('@testing-library/react');
 

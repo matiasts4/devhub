@@ -25,7 +25,7 @@ const SPANISH = Object.freeze({
   llmNotReady: (reason) =>
     reason || 'No hay proveedor LLM configurado. Andá a Ajustes → LLM y activá un proveedor.',
   mcpMissingTool: (tool) =>
-    `DevHub MCP no expone la herramienta "${tool}". Revisá Conexiones MCP y reiniciá el server.`,
+    `DevHub MCP no expone la herramienta "${tool}". Revisá la config del server MCP y reinicialo.`,
   mcpUnreachable: 'DevHub MCP no responde. Verificá que esté corriendo.',
   docsMissing: 'Política documental no definida — el agente usará "personal" por defecto.',
   localPathMissing:
@@ -127,7 +127,7 @@ const SUBSYSTEM_LABELS = Object.freeze({
  */
 export async function validatePlanningLaunch(input = {}) {
   const {
-    projectId,
+    projectId: _projectId,
     documentationPolicy,
     localPath,
     hasContext,

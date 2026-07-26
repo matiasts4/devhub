@@ -119,7 +119,7 @@ describe('PizarraPane — pizarra-ux-overhaul 3.4 cascade contract', () => {
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

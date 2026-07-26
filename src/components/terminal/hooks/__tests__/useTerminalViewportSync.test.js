@@ -2,7 +2,6 @@
  * Guard tests for useTerminalViewportSync — fit/resize coalescing.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook, act } = require('@testing-library/react');
 

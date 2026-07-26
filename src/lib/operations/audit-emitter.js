@@ -18,7 +18,6 @@ const buffer = new Array(RING_SIZE);
 let head = 0;
 
 // Flush state — only one flush runs at a time
-const flushTimer = null;
 let flushPromise = null;
 
 function redactSecrets(obj) {

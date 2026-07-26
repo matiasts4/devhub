@@ -222,14 +222,6 @@ function getVisibleWorkspaceId(container) {
   );
 }
 
-function getActiveWorkspaceTabLabel(container) {
-  return (
-    Array.from(container.querySelectorAll('[title^="Workspace "]'))
-      .find((node) => String(node.getAttribute('style') || '').includes('box-shadow'))
-      ?.getAttribute('title') || null
-  );
-}
-
 function getAutoFocusedTerminal(container) {
   return getVisibleWorkspaceShell(container)?.querySelector('[data-autofocus="true"]') || null;
 }

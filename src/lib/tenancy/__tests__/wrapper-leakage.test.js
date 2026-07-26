@@ -78,7 +78,7 @@ describe('withWorkspaceContext wrapper (REQ-POL-3)', () => {
           await withWorkspaceContext(ACTOR_W2, 'W2', async () => {
             throw new Error('inner failure');
           });
-        } catch (e) {
+        } catch (_e) {
           /* swallow */
         }
         outerState = getCurrentContext();

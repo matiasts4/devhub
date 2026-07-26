@@ -122,7 +122,7 @@ describe('PizarraPane — pizarra-add-terminal-bugfix full add flow', () => {
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

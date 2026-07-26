@@ -11,10 +11,8 @@ import {
   History,
   ArrowLeft,
   ChevronRight,
-  Plug2,
   FolderOpen,
   Terminal,
-  Send,
   Cpu,
   Plus,
   Sparkles,
@@ -56,11 +54,9 @@ const allNavItems = {
   roadmap: { icon: MapPin, label: 'Roadmap' },
   historial: { icon: History, label: 'Historial' },
   swarm: { icon: Cpu, label: 'Swarm Control' },
-  telegram: { icon: Send, label: 'Telegram Bot' },
 };
 
 const configNavItems = {
-  conexiones: { icon: Plug2, label: 'Conexiones MCP' },
   ajustes: { icon: Settings, label: 'Ajustes' },
 };
 
@@ -72,11 +68,10 @@ const DEFAULT_NAV = [
   'roadmap',
   'historial',
   'swarm',
-  'telegram',
 ];
 
 const SECTION_CORE = ['dashboard', 'planificacion', 'tareas', 'editor', 'roadmap', 'historial'];
-const SECTION_AI = ['swarm', 'telegram'];
+const SECTION_AI = ['swarm'];
 
 function ProgressRing({ value, color = 'oklch(0.74 0.16 57)' }) {
   const radius = 16;

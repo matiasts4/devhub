@@ -1,7 +1,6 @@
 const {
   buildSurfaceStorageKey,
   compactSurfaceForStorage,
-  serializeSurfacesForStorage,
   readSurfacesFromStorage,
   writeSurfacesToStorage,
   pruneStaleSurfaceStorageKeys,

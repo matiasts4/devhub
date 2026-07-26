@@ -283,10 +283,8 @@ describe('DG polling loop', () => {
   describe('backoff reset', () => {
     test('successful poll resets backoff to pollIntervalMs', async () => {
       const { startPolling } = require('../polling');
-      let callCount = 0;
       const callTimestamps = [];
       const mockFetch = jest.fn().mockImplementation(() => {
-        callCount++;
         callTimestamps.push(Date.now());
         return Promise.resolve({
           ok: true,

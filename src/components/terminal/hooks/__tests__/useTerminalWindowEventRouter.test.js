@@ -3,7 +3,6 @@
  * Viewport/WebGL paths are not re-tested here — only that resume may call reconnect.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook, act } = require('@testing-library/react');
 

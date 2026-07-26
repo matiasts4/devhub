@@ -24,7 +24,6 @@ jest.mock('../ZedActionCard', () => {
 });
 
 jest.mock('../ZedAuditTrace', () => {
-  const React = require('react');
   return function MockZedAuditTrace() {
     return null;
   };

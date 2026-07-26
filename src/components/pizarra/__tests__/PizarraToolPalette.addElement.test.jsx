@@ -94,7 +94,7 @@ describe('PizarraToolPalette — pizarra-add-terminal-bugfix click contract', ()
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

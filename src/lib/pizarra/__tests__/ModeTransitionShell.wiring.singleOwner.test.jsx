@@ -167,7 +167,6 @@ jest.mock('@/components/pizarra/PizarraPropertyInspector', () => {
 });
 
 jest.mock('@/components/commandBar/CommandBar', () => {
-  const ReactLocal = require('react');
   return {
     __esModule: true,
     default: () => null,

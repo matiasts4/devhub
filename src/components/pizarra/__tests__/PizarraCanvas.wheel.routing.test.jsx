@@ -130,7 +130,6 @@ function installJsdom() {
 }
 
 describe('PizarraCanvas — wheel routing via shouldCanvasConsumeWheel (P-MP-4)', () => {
-  let dom;
   let container;
   let root;
   let PizarraCanvas;
@@ -142,7 +141,7 @@ describe('PizarraCanvas — wheel routing via shouldCanvasConsumeWheel (P-MP-4)'
     mockSetPan.mockClear();
     mockShouldCanvasConsumeWheel.mockReset();
     mockZoomAtPoint.mockReset();
-    dom = installJsdom();
+    installJsdom();
 
     jest.isolateModules(() => {
       createRoot = require('react-dom/client').createRoot;

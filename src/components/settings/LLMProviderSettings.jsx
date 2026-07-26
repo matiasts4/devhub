@@ -219,10 +219,6 @@ export default function LLMProviderSettings({ embedded = false }) {
     persistConfig({ favoriteModels: next });
   }
 
-  function isFavorite(providerName, model) {
-    return (favoriteModels[providerName] || []).includes(model);
-  }
-
   // Load current configuration
   useEffect(() => {
     loadConfig();

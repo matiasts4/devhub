@@ -66,7 +66,7 @@ describe('GET /api/terminal/sessions', () => {
 
     // Re-import after mocks are set
     const { GET } = await import('./route.js');
-    const response = await GET();
+    await GET();
 
     const { NextResponse } = await import('next/server');
     const [data] = NextResponse.json.mock.calls[0];

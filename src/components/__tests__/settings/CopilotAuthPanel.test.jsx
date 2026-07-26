@@ -68,7 +68,7 @@ describe('CopilotAuthPanel', () => {
   test('transitions to error state when login fetch fails', async () => {
     global.fetch.mockRejectedValue(new Error('Network error'));
     const onAuthChange = jest.fn();
-    const { container, rerender } = await renderIntoDom(
+    const { container } = await renderIntoDom(
       React.createElement(CopilotAuthPanel, {
         isAuthenticated: false,
         onAuthChange,

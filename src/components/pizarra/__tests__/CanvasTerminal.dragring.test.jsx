@@ -134,7 +134,7 @@ describe('CanvasTerminal — border drag ring (pizarra-drag-fluidity-2)', () => 
     if (global.window && global.window.close) {
       try {
         global.window.close();
-      } catch (e) {
+      } catch (_e) {
         // JSDOM may already be closed; ignore.
       }
     }

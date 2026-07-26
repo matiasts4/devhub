@@ -41,14 +41,12 @@ function makeMinimalRuntime() {
 
 let buildStartupRestorePlan;
 let RESTORE_ACTION;
-let normalizeRestoreManifest;
 
 function loadModule() {
   jest.resetModules();
   const mod = require('../../../lib/terminal/startupRestoreCoordinator');
   buildStartupRestorePlan = mod.buildStartupRestorePlan;
   RESTORE_ACTION = mod.RESTORE_ACTION;
-  normalizeRestoreManifest = mod.normalizeRestoreManifest;
 }
 
 // ---------------------------------------------------------------------------

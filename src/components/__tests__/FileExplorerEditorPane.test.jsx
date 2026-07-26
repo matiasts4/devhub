@@ -231,7 +231,7 @@ describe('FileExplorerEditorPane', () => {
     dom = installDom();
     window.localStorage.clear();
 
-    global.fetch = jest.fn((url, init) => {
+    global.fetch = jest.fn((url, _init) => {
       const href = String(url);
 
       if (href.startsWith('/api/fs/git-status')) {

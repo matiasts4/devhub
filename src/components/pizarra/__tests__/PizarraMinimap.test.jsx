@@ -205,7 +205,7 @@ describe('PizarraMinimap — pizarra-minimap component contract', () => {
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
     }

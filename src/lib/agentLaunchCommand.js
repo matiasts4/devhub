@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { shellQuotePrompt } from '@/lib/docopsPrompts';
 import { DEFAULT_OPENCODE_AGENT } from '@/lib/opencodeAgentDefaults';
 import { buildPrompt } from './sdd/SwarmPromptEngine';
@@ -10,21 +8,6 @@ import {
   buildTmuxWrappedCommand,
   resolveKimiSkillDir,
 } from './agentLaunchCommand.shared';
-
-// Server-only minimax config reader (fs is safe here — this module is never bundled for browser)
-let _serverMinimaxConfig = null;
-function getServerMinimaxConfig() {
-  if (_serverMinimaxConfig) return _serverMinimaxConfig;
-  try {
-    const configPath = path.join(process.cwd(), 'data', 'llm-providers-config.json');
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    _serverMinimaxConfig = parsed?.providers?.minimax ?? null;
-  } catch {
-    _serverMinimaxConfig = null;
-  }
-  return _serverMinimaxConfig;
-}
 
 // ---------------------------------------------------------------------------
 // SDD Session + Prompt integration (server-only, with persistence)

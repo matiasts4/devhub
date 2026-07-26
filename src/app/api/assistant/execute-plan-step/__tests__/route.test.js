@@ -24,7 +24,7 @@ function stubPrompt() {
 
 jest.mock('@/lib/asistente/buildZedRegistry', () => ({
   buildZedRegistry: () => ({
-    execute: jest.fn(async (tool, input) => {
+    execute: jest.fn(async (tool, _input) => {
       if (tool === 'list_terminals') {
         return { processes: [] };
       }

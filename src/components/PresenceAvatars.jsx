@@ -20,7 +20,7 @@ export default function PresenceAvatars({ projectId }) {
         const state = room.presenceState();
         // Convertir state de presence { uuid: [{ user_id, email, ... }] }
         const usersMap = new Map();
-        for (const [key, presences] of Object.entries(state)) {
+        for (const [, presences] of Object.entries(state)) {
           presences.forEach((p) => {
             if (p.user_id) {
               usersMap.set(p.user_id, p);

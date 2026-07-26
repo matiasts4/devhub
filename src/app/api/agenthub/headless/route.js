@@ -413,7 +413,6 @@ export const POST = withAuth(async function POST(req) {
 
     if (activeCount >= maxConcurrent) {
       // Enqueue the request
-      const queueId = `headless-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const queuePosition = swarmQueue.getQueueLength() + 1;
       const estimatedWaitMs = swarmQueue.getEstimatedWait(queuePosition);
 

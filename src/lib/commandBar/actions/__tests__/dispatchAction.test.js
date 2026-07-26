@@ -21,7 +21,7 @@ describe('dispatchAction', () => {
       findTerminalByLabel: jest.fn(() => null),
       focusedTerminal: jest.fn(() => null),
       listTerminals: jest.fn(() => []),
-      spawnBrowser: jest.fn(async (opts) => ({ id: 'browser-1' })),
+      spawnBrowser: jest.fn(async (_opts) => ({ id: 'browser-1' })),
       focusBrowser: jest.fn(),
       captureTerminal: jest.fn(async () => 'output text'),
     };

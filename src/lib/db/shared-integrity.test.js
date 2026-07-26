@@ -135,7 +135,6 @@ test('rejects a corrupt backup candidate via integrity_check', () => {
 test('accepts a valid backup candidate via integrity_check', () => {
   const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'db-backup-test-'));
   try {
-    const goodBackup = path.join(dir, 'devhub.db.backup-0001');
     makeValidDb(dir, 'devhub.db.backup-0001');
 
     const backups = fs

@@ -6,12 +6,7 @@
  */
 
 const React = require('react');
-const {
-  installDom,
-  renderIntoDom,
-  cleanupMountedRoots,
-  flushEffects,
-} = require('@/test-support/domHarness');
+const { installDom, renderIntoDom, cleanupMountedRoots } = require('@/test-support/domHarness');
 
 const mountedRoots = [];
 

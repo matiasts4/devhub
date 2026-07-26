@@ -71,7 +71,7 @@ jest.mock('@/lib/pizarra/canvasViewport', () => ({
     setPan: mockSetPan,
   }),
   CanvasViewportProvider: ({ children }) => children,
-  zoomAtPoint: ({ deltaY }) => ({ zoom: 1, pan: { x: 0, y: 0 } }),
+  zoomAtPoint: () => ({ zoom: 1, pan: { x: 0, y: 0 } }),
 }));
 
 // pizarra-motion-polish (P-MP-4): the wheel handler now routes

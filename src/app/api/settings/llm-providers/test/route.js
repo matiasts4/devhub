@@ -93,7 +93,7 @@ async function testCopilot(oauthToken) {
   return { valid: false, error: result.error };
 }
 
-async function testOpenCode(model) {
+async function testOpenCode(_model) {
   try {
     // Just try to get models list as a connectivity test
     await execAsync('opencode models');

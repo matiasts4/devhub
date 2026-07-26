@@ -6,7 +6,6 @@
 
 const React = require('react');
 const { createRoot } = require('react-dom/client');
-const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
 function installDom() {

@@ -120,7 +120,7 @@ export default function AgentMetricsCard({
   agent,
   session,
   traces = [],
-  isRunning,
+  isRunning: _isRunning,
   onExpand,
   onViewTrace,
   onKill,

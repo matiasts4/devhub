@@ -83,7 +83,6 @@ export function downscaleDataUrl(dataUrl, opts = {}) {
     }
 
     let done = false;
-    let timer;
     const finish = (value) => {
       if (done) return;
       done = true;
@@ -92,7 +91,7 @@ export function downscaleDataUrl(dataUrl, opts = {}) {
     };
 
     // Never hang if the image decode stalls (also keeps tests fast).
-    timer = setTimeout(() => finish(dataUrl), timeoutMs);
+    const timer = setTimeout(() => finish(dataUrl), timeoutMs);
 
     const img = new Image();
     img.onload = () => {

@@ -9,10 +9,8 @@ export const PROJECT_PAGE_KEYS = Object.freeze([
   'scaffolding',
   'roadmap',
   'historial',
-  'conexiones',
   'ajustes',
   'swarm',
-  'telegram',
   'motion-lab',
   'terminales',
 ]);

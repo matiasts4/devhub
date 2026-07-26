@@ -18,10 +18,6 @@ function getBaseUrl() {
 let _activeMissionId = null;
 let _activeMissionTerminal = false;
 
-function isTerminal(status) {
-  return ['completed', 'failed', 'rejected'].includes(status);
-}
-
 function setActiveMission(missionId, terminal = false) {
   _activeMissionId = missionId;
   _activeMissionTerminal = terminal;

@@ -23,7 +23,6 @@ export default function SubagentBreadcrumbs({ chain = [], onNavigate, currentSes
       {chain.map((item, index) => {
         const isCurrent = item.id === currentSessionId;
         const isRoot = item.isRoot || index === 0;
-        const isLast = index === chain.length - 1;
 
         return (
           <React.Fragment key={item.id}>

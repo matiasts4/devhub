@@ -78,7 +78,7 @@ function classifyTerminal({ terminal, hasMatchingProcess, quotaBlocked }) {
   return RUNTIME_STATUS.TERMINATED;
 }
 
-function classifyProcess({ process, hasTerminal, hasRegistryAgent, quotaBlocked }) {
+function classifyProcess({ process, hasTerminal: _hasTerminal, hasRegistryAgent, quotaBlocked }) {
   if (quotaBlocked) return RUNTIME_STATUS.QUOTA_BLOCKED;
   if (!process) return RUNTIME_STATUS.UNKNOWN;
   if (!hasRegistryAgent) return RUNTIME_STATUS.ORPHANED_PROCESS;

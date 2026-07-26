@@ -49,7 +49,7 @@ function makeTmpDb() {
   return { dir, dbPath };
 }
 
-function makeTmpScript(extra) {
+function makeTmpScript(_extra) {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'devhub-shim-ws-'));
 }
 

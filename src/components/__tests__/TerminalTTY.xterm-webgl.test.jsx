@@ -32,7 +32,6 @@ const mockSetPanelRendererPreference = jest.fn();
 
 const { WebglAddon } = require('@xterm/addon-webgl');
 const { CanvasAddon } = require('@xterm/addon-canvas');
-const { Terminal: xtermTerminalMock } = require('@xterm/xterm');
 
 jest.mock('framer-motion', () => ({
   motion: {

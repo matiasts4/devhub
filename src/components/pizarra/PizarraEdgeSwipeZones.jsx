@@ -11,7 +11,7 @@ import {
 function EdgeZone({
   side,
   enabled,
-  canvasHeight,
+  canvasHeight: _canvasHeight,
   insetTop = 0,
   insetBottom = 0,
   zoneWidth = EDGE_ZONE_WIDTH_PX,

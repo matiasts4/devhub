@@ -1,6 +1,5 @@
 const {
   resolveActiveWorkspaceWindowId,
-  resolvePanelVisibleInLayout,
   resolveWorkspaceWindowsForRender,
 } = require('@/lib/terminal/workspaceWindowRender.js');
 

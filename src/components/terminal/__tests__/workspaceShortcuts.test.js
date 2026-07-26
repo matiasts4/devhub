@@ -10,7 +10,6 @@ const {
   resolveTerminalWorkspaceAction,
   shouldHandleTerminalFocusExitShortcut,
   shouldHandleTerminalNavigationShortcut,
-  shouldHandleTerminalWorkspaceShortcut,
 } = require('../workspaceShortcuts');
 
 describe('workspaceShortcuts navigation', () => {

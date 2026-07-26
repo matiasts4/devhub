@@ -32,7 +32,6 @@ export function isBootstrapReady({ program, signals } = {}) {
   const grokReady = s.grokReady === true;
   const kimiReady = s.kimiReady === true;
   const opencodeFooterReady = s.opencodeFooterReady === true;
-  const tuiActive = s.tuiActive === true;
   const prog = typeof program === 'string' && program.trim() ? program.trim().toLowerCase() : '';
 
   // IMPORTANT: do NOT treat launch-command heuristics as ready.

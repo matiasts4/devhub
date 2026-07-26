@@ -2,7 +2,6 @@
  * @jest-environment jsdom
  */
 
-const React = require('react');
 const { renderHook, act } = require('@testing-library/react');
 const { useZedOverlay } = require('@/lib/asistente/useZedOverlay');
 const {

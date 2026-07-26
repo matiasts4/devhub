@@ -19,30 +19,6 @@ function safeExec(cmd) {
   }
 }
 
-function getDiskWorktrees() {
-  try {
-    const output = safeExec('git worktree list --porcelain');
-    if (!output) return [];
-
-    const worktrees = [];
-    let current = null;
-    for (const line of output.split('\n')) {
-      if (line.startsWith('worktree ')) {
-        if (current) worktrees.push(current);
-        current = { path: line.slice('worktree '.length), head: '', branch: '' };
-      } else if (line.startsWith('HEAD ') && current) {
-        current.head = line.slice('HEAD '.length);
-      } else if (line.startsWith('branch ') && current) {
-        current.branch = line.slice('branch '.length);
-      }
-    }
-    if (current) worktrees.push(current);
-    return worktrees;
-  } catch {
-    return [];
-  }
-}
-
 function getTmuxSessions() {
   try {
     const output = safeExec('tmux list-sessions -F "#{session_name}"');
@@ -82,7 +58,6 @@ function reconcileSwarmState(options = {}) {
   report.missions_checked = activeMissions.length;
 
   // 2. Get disk evidence
-  const diskWorktrees = getDiskWorktrees();
   const tmuxSessions = getTmuxSessions();
 
   // 3. Check each active workspace

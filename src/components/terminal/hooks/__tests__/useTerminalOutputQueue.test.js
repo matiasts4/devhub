@@ -2,7 +2,6 @@
  * Guard tests for useTerminalOutputQueue — backlog coalescing and DEC 2026 sync output.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
 const { renderHook, act } = require('@testing-library/react');
 

@@ -50,7 +50,7 @@ afterEach(() => {
   if (dom?.window?.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }

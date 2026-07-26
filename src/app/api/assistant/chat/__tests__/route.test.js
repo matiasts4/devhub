@@ -194,7 +194,7 @@ describe('chat route — module contract', () => {
   test('native tool_use path: model returns tool_use block (not textual) → executes tool → result fed back with tool_result block', async () => {
     const realFetch = global.fetch;
     let callIndex = 0;
-    global.fetch = jest.fn(async (url, init) => {
+    global.fetch = jest.fn(async (url, _init) => {
       callIndex++;
       if (typeof url === 'string' && url.includes('/api/terminal/processes')) {
         return { ok: true, status: 200, json: async () => ({ processes: [{ id: 'p1' }] }) };

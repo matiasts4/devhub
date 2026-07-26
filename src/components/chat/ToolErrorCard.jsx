@@ -1,56 +1,12 @@
 import { useState, useCallback } from 'react';
-import {
-  XCircle,
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  Terminal,
-  FileText,
-  Search,
-  FolderOpen,
-  Globe,
-  PenLine,
-  Cpu,
-} from 'lucide-react';
+import { XCircle, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 
 // ─── Generic icon fallback ────────────────────────────────────────────────────
-const TOOL_ICON_MAP = {
-  read: FileText,
-  read_file: FileText,
-  readFile: FileText,
-  grep: Search,
-  glob: Search,
-  search: Search,
-  bash: Terminal,
-  execute_command: Terminal,
-  shell: Terminal,
-  write: PenLine,
-  write_file: PenLine,
-  writeFile: PenLine,
-  edit: PenLine,
-  list: FolderOpen,
-  ls: FolderOpen,
-  directory: FolderOpen,
-  web: Globe,
-  fetch: Globe,
-  webSearch: Globe,
-};
-
-function getToolIcon(toolName) {
-  if (!toolName) return Cpu;
-  const lower = toolName.toLowerCase();
-  for (const [key, Icon] of Object.entries(TOOL_ICON_MAP)) {
-    if (lower.includes(key)) return Icon;
-  }
-  return Cpu;
-}
-
 export default function ToolErrorCard({ tool }) {
   const [expanded, setExpanded] = useState(false);
 
   const handleToggle = useCallback(() => setExpanded((v) => !v), []);
 
-  const Icon = getToolIcon(tool.toolName);
   const timing = tool.timeEnd && tool.timeStart ? tool.timeEnd - tool.timeStart : null;
 
   // Extract error message from output or input

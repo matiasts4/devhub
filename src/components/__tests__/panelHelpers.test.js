@@ -156,7 +156,7 @@ describe('normalizeWorkspaceState', () => {
       { id: 'ws-a', name: 'Alpha', columns: [{ panels: [{ id: 'p1' }] }] },
       { id: 'ws-b', name: 'Beta', columns: [{ panels: [{ id: 'p2' }] }] },
     ];
-    const state = normalizeWorkspaceState(raw, 'ws-a', { 'ws-a': 'p1' }, (ws, idx) => {
+    const state = normalizeWorkspaceState(raw, 'ws-a', { 'ws-a': 'p1' }, (ws, _idx) => {
       if (ws.swarmRole) return `override-${ws.swarmRole}`;
       return null;
     });

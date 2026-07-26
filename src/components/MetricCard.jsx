@@ -4,7 +4,7 @@ export default function MetricCard({
   title,
   value,
   subtitle,
-  icon,
+  icon: _icon,
   accentColor,
   accentVar,
   progressValue,

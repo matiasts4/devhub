@@ -6,7 +6,7 @@ import { useState } from 'react';
  * react-markdown v9+ no longer passes `inline` prop; block code is
  * handled by the `pre` override instead.
  */
-export function InlineCode({ className, children, ...props }) {
+export function InlineCode({ className: _className, children, ...props }) {
   return (
     <code
       className="rounded px-1.5 py-0.5 text-[0.85em]"

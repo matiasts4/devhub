@@ -38,7 +38,7 @@ function truncateId(id = '') {
   return `${id.slice(0, 4)}…${id.slice(-4)}`;
 }
 
-export default function DGChainRow({ row, onApprovalAction }) {
+export default function DGChainRow({ row, onApprovalAction: _onApprovalAction }) {
   const visual = STATUS_VISUAL[row.status] || STATUS_VISUAL.pending;
   const initiatorLabel = INITIATOR_LABELS[row.initiator] || row.initiator;
   const actionLabel = ACTION_LABELS[row.action] || row.action;

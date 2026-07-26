@@ -33,7 +33,7 @@ afterEach(() => {
   if (dom && dom.window && dom.window.close) {
     try {
       dom.window.close();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
   }

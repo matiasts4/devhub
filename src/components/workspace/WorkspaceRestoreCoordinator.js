@@ -254,7 +254,7 @@ export function createWorkspaceRestoreCoordinator({
   return { runStartupRestore, abortStartupRestore };
 }
 
-function isTuiPanelForGenericPolicy(panel, agentRun) {
+function isTuiPanelForGenericPolicy(panel, _agentRun) {
   const cmd = String(panel?.initialCommand || '')
     .replace(/\s*#recovery-\d+\s*$/i, '')
     .trim();

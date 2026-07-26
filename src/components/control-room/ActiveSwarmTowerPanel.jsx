@@ -9,8 +9,6 @@ function statLabel(value, singular, plural) {
 
 export default function ActiveSwarmTowerPanel({ hero, onPrimaryAction }) {
   const roster = Array.isArray(hero?.roster) ? hero.roster : [];
-  const director = roster.find((member) => member.isDirector) || roster[0] || null;
-  const workers = roster.filter((member) => member.id !== director?.id);
 
   return (
     <SurfaceCard emphasized className="p-5 md:p-6">

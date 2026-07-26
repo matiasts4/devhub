@@ -53,7 +53,7 @@ function makeWindowStub() {
         for (const h of handlers) {
           try {
             h.call(null, event);
-          } catch (err) {
+          } catch (_err) {
             // Swallow listener errors in the stub — they should not abort
             // the dispatcher's retry loop.
           }

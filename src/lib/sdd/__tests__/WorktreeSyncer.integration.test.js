@@ -119,7 +119,7 @@ describe('WorktreeSyncer (integration)', () => {
 
   describe('worktree listing', () => {
     test('listWorktrees returns worktrees for repo', () => {
-      const worktrees = WorktreeSyncer.listWorktrees(repoRoot);
+      WorktreeSyncer.listWorktrees(repoRoot);
       // Bare repo has no worktree listing
       const worktreesInA = WorktreeSyncer.listWorktrees(worktreeA);
       expect(worktreesInA.length).toBeGreaterThan(0);

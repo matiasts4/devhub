@@ -72,7 +72,7 @@ function getDb() {
     try {
       _db.exec(SWARM_SESSIONS_TABLE_SQL);
       _db.exec(PHASE_BRANCH_MAP_SQL);
-    } catch (e) {
+    } catch (_e) {
       // Tables may already exist
     }
   }

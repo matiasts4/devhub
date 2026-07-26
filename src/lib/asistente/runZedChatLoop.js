@@ -346,11 +346,9 @@ export async function runZedChatLoop({
  */
 export function createZedSseStream(params) {
   const encoder = new TextEncoder();
-  let controllerRef = null;
 
   return new ReadableStream({
     async start(controller) {
-      controllerRef = controller;
       try {
         const { finalText, allToolResults, meta } = await runZedChatLoop({
           ...params,
@@ -383,9 +381,7 @@ export function createZedSseStream(params) {
         controller.close();
       }
     },
-    cancel() {
-      controllerRef = null;
-    },
+    cancel() {},
   });
 }
 

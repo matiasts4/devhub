@@ -1475,7 +1475,7 @@ describe('WorkspaceBridgePane', () => {
     });
 
     iframe.setAttribute('src', 'https://remote-preview.example.com/page-two');
-    const navigatedRuntime = installCrossOriginIframe(iframe, {
+    installCrossOriginIframe(iframe, {
       href: 'https://remote-preview.example.com/page-two',
       protocolReady: true,
       postMessage: initialRuntime.postMessage,

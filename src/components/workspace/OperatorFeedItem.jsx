@@ -75,7 +75,7 @@ function TranscriptBubble({ item }) {
 // ── ActionRow — action-executed ────────────────────────────────────────────────
 
 function ActionRow({ item }) {
-  const { tool, argsSummary, startedAt, completedAt, status, error } = item;
+  const { tool, argsSummary, startedAt, status, error } = item;
   const timeStr = formatTime(startedAt);
 
   let icon = null;

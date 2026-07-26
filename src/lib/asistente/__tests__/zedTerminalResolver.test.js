@@ -5,8 +5,6 @@
 
 import { resolve, resolveTerminalByName, nameFromId } from '../zedTerminalResolver';
 
-const T = (processes) => resolve('Chase', processes);
-
 describe('zedTerminalResolver.resolve — ZTT-001', () => {
   test('case-insensitive exact match returns ok with the right terminalId', () => {
     const result = resolve('chase', [

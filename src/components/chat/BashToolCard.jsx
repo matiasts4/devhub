@@ -13,15 +13,6 @@ import OutputViewerModal from './OutputViewerModal';
 import { useState, useCallback, useMemo } from 'react';
 import { ansiToHtml } from './utils/ansiToHtml';
 
-// Strip ANSI codes for plain-text display
-// eslint-disable-next-line no-control-regex
-const ANSI_ESCAPE_REGEX = /\x1b\[[0-9;]*m/g;
-
-function stripAnsi(text) {
-  if (!text) return '';
-  return text.replace(ANSI_ESCAPE_REGEX, '');
-}
-
 export default function BashToolCard({ tool }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -39,7 +30,6 @@ export default function BashToolCard({ tool }) {
     return typeof val === 'string' ? val : JSON.stringify(val);
   }, [tool.toolInput]);
 
-  const outputPlain = useMemo(() => stripAnsi(tool.toolOutput || ''), [tool.toolOutput]);
   const outputHtml = useMemo(() => ansiToHtml(tool.toolOutput || ''), [tool.toolOutput]);
 
   const handleCopy = useCallback(

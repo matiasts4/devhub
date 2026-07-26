@@ -626,7 +626,7 @@ describe('TerminalWorkspacesManager reopen menu', () => {
 
   test('posts canonical binding reconciliation when a swarm launch panel detects a verified OpenCode session', async () => {
     const originalSetTimeout = window.setTimeout;
-    window.setTimeout = (cb, delay) => {
+    window.setTimeout = (cb, _delay) => {
       return originalSetTimeout(cb, 0);
     };
 

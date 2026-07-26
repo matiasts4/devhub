@@ -5,14 +5,6 @@ jest.mock('next/server', () => ({
   },
 }));
 
-function makeMockFetch(response, status = 200) {
-  return jest.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => response,
-  });
-}
-
 describe('DG approval timeout integration', () => {
   test('approval reply returns 409 → failed timeline row with correct fallback', async () => {
     jest.resetModules();

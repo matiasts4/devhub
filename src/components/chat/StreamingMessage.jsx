@@ -13,7 +13,7 @@ import { createTagParser } from './utils/tagStateMachine';
  * 5. Only THIS component re-renders — the rest of the message list is static
  * 6. When streaming completes, parent flushes final content to messages state
  */
-export default function StreamingMessage({ contentRef, model }) {
+export default function StreamingMessage({ contentRef, model: _model }) {
   const [content, setContent] = useState('');
   const rafRef = useRef(null);
   const parserRef = useRef(createTagParser());

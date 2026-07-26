@@ -155,7 +155,7 @@ jest.mock('@/components/terminal/terminalTypographyPreferences', () => {
       { id: 'kali', label: 'Kali Linux', value: 'monospace' },
       { id: 'jetbrains', label: 'JetBrains Mono', value: 'JetBrains Mono' },
     ],
-    findPresetByValue: jest.fn((v) => ({ id: 'jetbrains', value: 'JetBrains Mono' })),
+    findPresetByValue: jest.fn((_v) => ({ id: 'jetbrains', value: 'JetBrains Mono' })),
     resolveTerminalTypography: jest.fn(() => typography),
     getStoredTerminalTypography: jest.fn(() => typography),
     setTerminalTypography: jest.fn((_ls, partial) => ({ ...typography, ...partial })),

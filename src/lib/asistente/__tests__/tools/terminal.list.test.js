@@ -257,7 +257,7 @@ describe('review_terminal_output (reviewTerminalTool)', () => {
 
   test('blocks duplicate review on same session_id without new input', async () => {
     const ctx = { _zed_review_guard: {} };
-    mockFetch(async (url) => ({
+    mockFetch(async (_url) => ({
       ok: true,
       status: 200,
       json: async () => ({ output: 'same', session_id: 'p1' }),

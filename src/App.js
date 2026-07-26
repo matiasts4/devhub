@@ -27,10 +27,8 @@ import Scaffolding from './views/Scaffolding';
 import Roadmap from './views/Roadmap';
 import Planificacion from './views/Planificacion';
 import Historial from './views/Historial';
-import Conexiones from './views/Conexiones';
 import Ajustes from './views/Ajustes';
 import SwarmControl from './views/SwarmControl';
-import TelegramMonitor from './views/TelegramMonitor';
 import MotionLab from './views/MotionLab';
 import NotificationToastStack from './components/NotificationToastStack';
 import { createClient } from '@/lib/db/localClient';
@@ -107,10 +105,8 @@ const PAGE_LABELS = {
   scaffolding: 'scaffolding',
   roadmap: 'roadmap',
   historial: 'historial',
-  conexiones: 'conexiones',
   ajustes: 'ajustes',
   swarm: 'swarm control',
-  telegram: 'telegram monitor',
   planning: 'planning',
   planificacion: 'planificación',
 };
@@ -698,10 +694,8 @@ function App() {
               <Route path="scaffolding" element={<Scaffolding />} />
               <Route path="roadmap" element={<Roadmap />} />
               <Route path="historial" element={<Historial />} />
-              <Route path="conexiones" element={<Conexiones />} />
               <Route path="ajustes" element={<Ajustes />} />
               <Route path="swarm" element={<SwarmControl />} />
-              <Route path="telegram" element={<TelegramMonitor />} />
               <Route path="motion-lab" element={<MotionLab />} />
               <Route path="agenthub" element={<LegacyAgentHubRedirect />} />
 

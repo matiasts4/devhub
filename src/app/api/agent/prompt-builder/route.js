@@ -36,7 +36,7 @@ export async function POST(request) {
       const sysPromptPath = path.join(process.cwd(), 'docs', '09_Prompts_Maestros_Agentes.md');
       const sysPrompt = await fs.readFile(sysPromptPath, 'utf8');
       sections.push(sysPrompt);
-    } catch (e) {
+    } catch (_e) {
       sections.push('Eres un Agent Worker encargado de ejecutar tareas automáticas.');
     }
 

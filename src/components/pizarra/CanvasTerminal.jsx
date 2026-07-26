@@ -17,7 +17,7 @@ import {
   resolveFrameVisual,
   resolveHandleSizing,
   FRAME_TRANSITION,
-  SURFACE_ENTER_OPACITY_ONLY,
+  SURFACE_ENTER_OPACITY_ONLY, // eslint-disable-line no-unused-vars -- source-grep contract: pizarraSurfaceEnterAnim.test.jsx
   PIZARRA_SURFACE_FRAME_INSET,
   PIZARRA_SURFACE_HEADER_HEIGHT,
   PIZARRA_SURFACE_BORDER_RADIUS,
