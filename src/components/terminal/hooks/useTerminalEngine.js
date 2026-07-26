@@ -812,6 +812,7 @@ export default function useTerminalEngine({
         // in a general CSS layer instead of inside the terminal component.
         const fontOpts = getTerminalFontOptions();
 
+        const remountStartedAt = Date.now();
         const terminal = new Terminal({
           cursorBlink: true,
           cursorStyle: 'bar',
@@ -847,6 +848,30 @@ export default function useTerminalEngine({
         // is intentionally NOT counted — that distinction is the point of the
         // metric (see openspec terminal-load-performance PR1).
         incrementPerfCounter(PERF_COUNTERS.TERMINAL_REMOUNT, { panelId: id, reused: false });
+
+        // B2 diagnostics — split the remount stall into segments: time until
+        // the first canvas paint (renderer/GPU) vs time until the first parsed
+        // data chunk (WS connect + replay). One-shot listeners, self-disposed
+        // on first fire so they never leak into the graveyard stash or add
+        // per-write cost after the first event.
+        if (typeof terminal.onRender === 'function') {
+          const firstRenderDisposable = terminal.onRender(() => {
+            firstRenderDisposable.dispose();
+            incrementPerfCounter('terminal-remount-first-render', {
+              panelId: id,
+              ms: Date.now() - remountStartedAt,
+            });
+          });
+        }
+        if (typeof terminal.onWriteParsed === 'function') {
+          const firstWriteDisposable = terminal.onWriteParsed(() => {
+            firstWriteDisposable.dispose();
+            incrementPerfCounter('terminal-remount-first-write', {
+              panelId: id,
+              ms: Date.now() - remountStartedAt,
+            });
+          });
+        }
 
         // scenery-wallpapers: keep this terminal's theme in sync with the
         // wallpaper state (transparent background while a scenery is active).
