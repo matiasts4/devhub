@@ -2,9 +2,8 @@
  * Guard tests for useTerminalWorkspaceShowRecovery — workspace-show sync.
  */
 
-const React = require('react');
 const { installDom } = require('@/test-support/domHarness');
-const { renderHook } = require('@testing-library/react');
+const { renderHook, act } = require('@testing-library/react');
 
 const useTerminalWorkspaceShowRecovery = require('../useTerminalWorkspaceShowRecovery').default;
 
@@ -109,5 +108,46 @@ describe('useTerminalWorkspaceShowRecovery', () => {
     expect(typeof result.current.scheduleBoundedFitRepaint).toBe('function');
     expect(typeof result.current.scheduleBoundedGpuRecover).toBe('function');
     expect(typeof result.current.scheduleInactiveViewportRepaint).toBe('function');
+  });
+});
+
+describe('scheduleBoundedForceRepaint verified stop (sin-parpadeo fase 2)', () => {
+  let originalRaf;
+
+  beforeEach(() => {
+    originalRaf = global.requestAnimationFrame;
+    global.requestAnimationFrame = jest.fn(() => 0);
+  });
+
+  afterEach(() => {
+    global.requestAnimationFrame = originalRaf;
+  });
+
+  it('stops at the first tick when the repaint was only coalesced and dims+GPU are settled', () => {
+    const ctx = createCtx();
+    ctx.fitRef = { current: { proposeDimensions: () => ({ cols: 80, rows: 24 }) } };
+    ctx.coalescedForceRepaint = jest.fn(() => false); // coalesced: one already landed
+    const ctxRef = { current: ctx };
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+
+    act(() => result.current.scheduleBoundedForceRepaint(16));
+
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledTimes(1);
+    expect(global.requestAnimationFrame).not.toHaveBeenCalled();
+  });
+
+  it('keeps retrying while the GPU addon is unattached', () => {
+    const ctx = createCtx();
+    ctx.fitRef = { current: { proposeDimensions: () => ({ cols: 80, rows: 24 }) } };
+    ctx.operationalRendererModeRef = { current: 'xterm-canvas' };
+    ctx.canvasAddonRef = { current: null }; // reattach pending
+    ctx.coalescedForceRepaint = jest.fn(() => false);
+    const ctxRef = { current: ctx };
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+
+    act(() => result.current.scheduleBoundedForceRepaint(16));
+
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledTimes(1);
+    expect(global.requestAnimationFrame).toHaveBeenCalled();
   });
 });

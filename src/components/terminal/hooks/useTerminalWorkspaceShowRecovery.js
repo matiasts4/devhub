@@ -490,6 +490,25 @@ export default function useTerminalWorkspaceShowRecovery({
           return;
         }
         if (coalescedForceRepaint(termRef.current, { reason: 'bounded-force-repaint' })) return;
+        // Sin-parpadeo fase 2: stop at the first verified-painted tick. A `false`
+        // above often means the repaint was merely coalesced (one already landed
+        // inside the 200 ms window); when the grid also matches the container and
+        // the GPU addon is attached, more rAF spins cannot improve the frame.
+        const proposed = proposeTerminalViewportDimensions({
+          container: containerRef.current,
+          fitAddon: fitRef.current,
+          term: termRef.current,
+        });
+        const dimsMatch =
+          proposed &&
+          Number(proposed.cols) === Number(termRef.current.cols) &&
+          Number(proposed.rows) === Number(termRef.current.rows);
+        const gpuReady = !needsGpuRendererReattach({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+        });
+        if (dimsMatch && gpuReady && isTerminalRendererReady(termRef.current)) return;
         if (attempts++ < maxAttempts) requestAnimationFrame(attempt);
       };
       attempt();

@@ -455,6 +455,8 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       // Lightweight guard: if the container dims already match the terminal grid and
       // there is no GPU recovery pending, most layout-settled reasons do not need the
       // heavy fit+repaint burst. This cuts the repeated flicker on workspace switch.
+      // Sin-parpadeo fase 2: also require the GPU addon to be attached — during an
+      // async reattach window the ref is null and the bitmap is not guaranteed.
       const canSkipLayoutSettledRepaint = () => {
         if (!termRef.current || !fitRef.current || !containerRef.current) return false;
         const proposed = proposeTerminalViewportDimensions({
@@ -469,7 +471,12 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
           !pendingWebglRecoveryRef.current &&
           !canvasReleasedOnLayoutHideRef.current &&
           !webglReleasedOnLayoutHideRef.current;
-        return dimsMatch && noGpuRecovery && cols > 0 && rows > 0;
+        const gpuAttached = !needsGpuRendererReattach({
+          operationalRendererMode: operationalRendererModeRef.current,
+          webglAddon: webglAddonRef.current,
+          canvasAddon: canvasAddonRef.current,
+        });
+        return dimsMatch && noGpuRecovery && gpuAttached && cols > 0 && rows > 0;
       };
 
       // Unified hidden-panel handling: a panel that is opacity-hidden in another
@@ -810,10 +817,11 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
             ? [120, 180, 340, 500]
             : [180, 340];
 
-      // Workspace/window switches with mounted terminals and no GPU recovery do not
-      // need the multi-phase repaint burst. The layout-show useLayoutEffect already
-      // handles the single repaint needed for instant reactivation.
-      if (isWorkspaceOrWindowSwitch && canSkipLayoutSettledRepaint()) {
+      // Sin-parpadeo fase 2: gate ALL burst reasons (previously only workspace/window
+      // switches). If the container dims already match the grid, no GPU recovery is
+      // pending and the addon is attached, the multi-phase burst only re-paints an
+      // already-correct bitmap — that re-paint IS the visible flicker.
+      if (canSkipLayoutSettledRepaint()) {
         logViewportDiagnostic(`${reason}-burst-skipped-no-change`);
         return;
       }
@@ -824,6 +832,13 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
           if (!isVisibleInLayoutRef.current) {
             needsViewportSyncOnShowRef.current = true;
             layoutChurnedWhileHiddenRef.current = true;
+            return;
+          }
+          // Sin-parpadeo fase 2: deferred phases re-check the gate — when the
+          // immediate pass already settled dims with the GPU addon attached, the
+          // 80/180/340 ms phases would only re-paint an already-correct bitmap.
+          if (phase !== 'immediate' && canSkipLayoutSettledRepaint()) {
+            logViewportDiagnostic(`${reason}-burst-phase-skipped-no-change`, { phase });
             return;
           }
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-${phase}`, {
