@@ -407,6 +407,29 @@ export function markWarmTierDone() {
   logStartupPerfSummary('warm-done');
 }
 
+// Transition auto-flush (pizarra-instant-enter B1): transition marks/measures
+// used to accumulate in memory but were only persisted at startup milestones
+// (warm-done / first-panel-interactive / ws-connected / first-pty-byte), so
+// data/logs/startup-perf/latest.json never showed pizarraEnterMs or the
+// resize-sent samples around a bad transition. Flush — debounced so an
+// enter+exit burst collapses into one write — after each transition settles.
+const TRANSITION_FLUSH_DEBOUNCE_MS = 1500;
+let transitionFlushTimer = 0;
+
+function scheduleTransitionFlush(reason) {
+  if (!isStartupPerfEnabled()) return;
+  if (typeof globalThis.setTimeout !== 'function') return;
+  if (transitionFlushTimer) globalThis.clearTimeout(transitionFlushTimer);
+  transitionFlushTimer = globalThis.setTimeout(() => {
+    transitionFlushTimer = 0;
+    try {
+      persistStartupPerfSnapshot(reason);
+    } catch {
+      /* telemetry never breaks a transition */
+    }
+  }, TRANSITION_FLUSH_DEBOUNCE_MS);
+}
+
 /** Workspace tab switch start — repeatable; each switch re-arms the pair. */
 export function markWorkspaceSwitchStart() {
   mark(MARKS.WORKSPACE_SWITCH_START);
@@ -416,6 +439,7 @@ export function markWorkspaceSwitchStart() {
 export function markWorkspaceSwitchEnd() {
   mark(MARKS.WORKSPACE_SWITCH_END);
   measure(MEASURES.WORKSPACE_SWITCH, MARKS.WORKSPACE_SWITCH_START, MARKS.WORKSPACE_SWITCH_END);
+  scheduleTransitionFlush('workspace-switch');
 }
 
 /** Pizarra exit start (portal re-target towards `workspace-dock`). */
@@ -427,6 +451,7 @@ export function markPizarraExitStart() {
 export function markPizarraExitEnd() {
   mark(MARKS.PIZARRA_EXIT_END);
   measure(MEASURES.PIZARRA_EXIT, MARKS.PIZARRA_EXIT_START, MARKS.PIZARRA_EXIT_END);
+  scheduleTransitionFlush('pizarra-exit');
 }
 
 /** Pizarra enter start (portal re-target towards `pizarra-canvas`). */
@@ -438,6 +463,7 @@ export function markPizarraEnterStart() {
 export function markPizarraEnterEnd() {
   mark(MARKS.PIZARRA_ENTER_END);
   measure(MEASURES.PIZARRA_ENTER, MARKS.PIZARRA_ENTER_START, MARKS.PIZARRA_ENTER_END);
+  scheduleTransitionFlush('pizarra-enter');
 }
 
 /** Sidecar/session endpoint cached and ready for WS connect (prod hot path). */
@@ -500,6 +526,10 @@ export function resetStartupPerfForTests() {
   localMarks.length = 0;
   localMeasures.length = 0;
   perfCounters.clear();
+  if (transitionFlushTimer) {
+    globalThis.clearTimeout(transitionFlushTimer);
+    transitionFlushTimer = 0;
+  }
   if (!hasPerformanceApi()) return;
   try {
     performance.clearMarks?.();

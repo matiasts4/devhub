@@ -167,6 +167,51 @@ describe('startupPerfMarks', () => {
     expect(report.summary.pizarraEnterMs).toEqual(expect.any(Number));
   });
 
+  // pizarra-instant-enter B1: transition end marks persist the snapshot
+  // (debounced) so latest.json reflects transitions, not only startup.
+  test('pizarra enter end schedules a debounced persisted snapshot', () => {
+    jest.useFakeTimers();
+    try {
+      const { markPizarraEnterStart, markPizarraEnterEnd } = require('../startupPerfMarks');
+      markPizarraEnterStart();
+      markPizarraEnterEnd();
+      // Debounced: nothing posted yet.
+      expect(global.fetch).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(1600);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.reason).toBe('pizarra-enter');
+      expect(body.summary.pizarraEnterMs).toEqual(expect.any(Number));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('transition flush debounce collapses a burst into the latest reason', () => {
+    jest.useFakeTimers();
+    try {
+      const {
+        markPizarraEnterStart,
+        markPizarraEnterEnd,
+        markPizarraExitStart,
+        markPizarraExitEnd,
+      } = require('../startupPerfMarks');
+      markPizarraEnterStart();
+      markPizarraEnterEnd();
+      jest.advanceTimersByTime(400); // inside the 1500ms window
+      markPizarraExitStart();
+      markPizarraExitEnd();
+      jest.advanceTimersByTime(1600);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.reason).toBe('pizarra-exit');
+      expect(body.summary.pizarraEnterMs).toEqual(expect.any(Number));
+      expect(body.summary.pizarraExitMs).toEqual(expect.any(Number));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('incrementPerfCounter tracks counts, FIFO samples, and redundant resizes', () => {
     const { incrementPerfCounter, getPerfCounters, PERF_COUNTERS } = require('../startupPerfMarks');
 
