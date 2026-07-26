@@ -170,3 +170,43 @@ takes the full recovery path — the black-panel fix is untouched.
   switches ×5, pizarra enter/exit ×5, workspace close with 3+ panels, Alt+Tab ×10 — then check
   `data/logs/startup-perf/latest.json`: `terminal-repaint-nudge` should stay ~0 on clean
   transitions and still fire on real churn (no black panels).
+
+---
+
+## Follow-up: pizarra-instant-enter (2026-07-26)
+
+**Goal:** pizarra enter/exit should feel instant — the terminal stays mounted
+(keep-alive), so the only acceptable cost is the retarget + fit + repaint chain,
+and it must be invisible to the user.
+
+**Diagnosis (what made enter/exit slow before):** on every workspace↔pizarra
+retarget, each terminal fired 3-5 uncoalesced layout-settled passes (seed
+800x600 → real measure → entry autofit → host ResizeObserver cascade), each
+forcing a real xterm fit + SIGWINCH; the shell phase machine spent 330ms of
+dead time around it; the first entry also paid the react-konva dynamic-import
+fetch; and the card body sat black/empty for the whole chain.
+
+### Phases (each = one commit, tests green)
+
+| Fase | Commit   | Change                                                                                                                                                                                                                                                                                                                              |
+| ---- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A0   | 6162d8eb | `pizarra-enter-start/end` marks + `pizarraEnterMs` measure (`startupPerfMarks.js`), wired in `SharedTerminalSurface.jsx` (mirror of the exit telemetry)                                                                                                                                                                             |
+| A1   | 87fda0de | Pizarra branch of `useTerminalLayoutChurnRecovery` coalesced per rAF (one pass per frame, latest-reason-wins); host ResizeObserver dispatches debounced 90ms in `SharedTerminalSurfacePortal` — collapses the entry cascade to a single fit                                                                                         |
+| A2   | 39031b22 | Unconditional `scheduleBoundedForceRepaint()` at the end of the visible full path — self-cancels on verified-clean (dimsMatch && gpuReady && rendererReady), retries ~24 frames on async GPU reattach (anti black-panel)                                                                                                            |
+| A3   | —        | No commit needed: the coalescing branch is direction-agnostic, so exit was already covered by A1+A2 (pinned by the `pizarra-mode-exit` tests)                                                                                                                                                                                       |
+| A4   | 058da2ba | Surface enter fade 340→180ms (`DUR.enter`); shell phase budget 110/220 → 40/110 (150ms total); idle `requestIdleCallback` preload of the PizarraCanvas (react-konva) chunk in `WorkspaceRightDock`                                                                                                                                  |
+| A5   | 1ff610de | `terminalViewportSnapshot` (text ghost of the xterm viewport captured on dispose, TTL 45s — renderer-agnostic, avoids the WebGL no-`preserveDrawingBuffer` readback problem) + `PizarraTerminalGhost` overlay: paints instantly on card mount, crossfades 150ms after the panel's first layout-settled + 250ms grace, 4s safety cap |
+| A6   | adce6921 | `NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE` default ON in production too (packaged desktop build now runs the same shared-view path as dev); env var stays as kill switch (`=0`) / force-ON (`=1`); dead `deferLiveSurfaceToPizarra && sharedViewEnabled` branch removed (unreachable)                                                  |
+
+### Verification
+
+- Per-phase suites green: churn recovery 21/21, mode transition 15/15,
+  feature flag 23/23, snapshot store + ghost 17/17.
+- Baseline stash checks at A4/A5/A6: every remaining failure
+  (`WorkspaceBridgePane`, `PizarraPane.cascade`, `PizarraCanvas.grid` flake in
+  the full-run, `TerminalTTY.test.js`, `TerminalTTY.v2.test.jsx`) reproduces
+  WITHOUT these changes — pre-existing, owned by other in-flight work on the
+  shared branch.
+- **Pending human QA:** `localStorage.devhub_perf=1`, enter ×10 / exit ×10
+  with 1/3/5 terminals (TUI + shell), dev AND packaged build; check
+  `data/logs/startup-perf/latest.json` → `pizarraEnterMs` / `pizarraExitMs`.

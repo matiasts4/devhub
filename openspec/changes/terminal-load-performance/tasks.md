@@ -124,7 +124,7 @@
 ### T5.1 — Pizarra
 
 - [x] Decision recorded: direct↔singleton remount **stays** (permanent-singleton reverts a deliberate design choice; hidden-direct risks two live WS per panel). Remount is now symptom-free: no overlay, no `connecting` state, immediate reconnect, live server-side reattach
-- [ ] Portal re-target without any remount — **dropped by design decision** (see `apply-progress.md` PR5)
+- [ ] Portal re-target without any remount — **dropped by design decision** (see `apply-progress.md` PR5). pizarra-instant-enter follow-up: the remount still happens, but it is now _invisible_ — churn coalescing (A1), verified repaint retry (A2), retimed fades + Konva preload (A4) and the instant viewport ghost (A5) cover the remount window.
 
 ### T5.2 — V2 keep-alive on tab switch
 
