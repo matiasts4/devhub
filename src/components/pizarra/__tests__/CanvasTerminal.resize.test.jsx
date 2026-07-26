@@ -21,7 +21,7 @@
 
 const React = require('react');
 const { createRoot } = require('react-dom/client');
-const { flushSync, act: flushSyncAct } = require('react-dom');
+const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
 // â”€â”€ Mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -126,7 +126,7 @@ function makeMouseEvent(type, clientX, clientY, button = 0, extraProps = {}) {
   Object.keys(extraProps).forEach((key) => {
     try {
       event[key] = extraProps[key];
-    } catch (e) {
+    } catch (_e) {
       // Some props are read-only; ignore.
     }
   });
@@ -180,7 +180,7 @@ describe('CanvasTerminal â€” border resize (pizarra-drag-resize-polish)', (
     if (global.window && global.window.close) {
       try {
         global.window.close();
-      } catch (e) {
+      } catch (_e) {
         // JSDOM may already be closed; ignore.
       }
     }

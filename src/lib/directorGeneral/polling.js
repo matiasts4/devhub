@@ -45,7 +45,6 @@ function isTransientError(status) {
  */
 function startPolling(missionId, config = {}, callbacks = {}) {
   const { pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, fetchImpl } = config;
-  const { onStatus = () => {}, onFailure = () => {} } = callbacks;
 
   const abortController = new AbortController();
   const fetcher = fetchImpl || (typeof fetch !== 'undefined' ? fetch : globalThis.fetch);
@@ -94,7 +93,7 @@ function startPolling(missionId, config = {}, callbacks = {}) {
 
 async function runPollingLoop(missionId, abortController, fetcher, base, callbacks, state, config) {
   const { onStatus, onFailure } = callbacks;
-  const { pollIntervalMs, stop } = config;
+  const { pollIntervalMs } = config;
 
   while (!state.getStopped() && !abortController.signal.aborted) {
     // Polling starts after pollIntervalMs delay (per design Section 5)

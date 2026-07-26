@@ -221,7 +221,6 @@ export const listTerminalsTool = {
   async execute(_params, context = {}) {
     zedLog.info('TOOL', 'list_terminals', {});
     const baseUrl = getBaseUrl();
-    const clientTerminals = workspaceTerminalsFromContext(context);
     let processes = [];
     try {
       const response = await fetch(`${baseUrl}/api/terminal/processes`);
@@ -231,7 +230,7 @@ export const listTerminalsTool = {
       } else {
         processes = buildZedTerminalCatalog(context, []);
       }
-    } catch (err) {
+    } catch (_err) {
       processes = buildZedTerminalCatalog(context, []);
     }
 
@@ -313,7 +312,6 @@ export { _resetOpenTerminalCounterForTests, _nextTerminalId };
 
 async function fetchTerminalProcessList(context) {
   const baseUrl = getBaseUrl();
-  const clientTerminals = workspaceTerminalsFromContext(context);
   try {
     const res = await fetch(`${baseUrl}/api/terminal/processes`, { cache: 'no-store' });
     if (!res.ok) {

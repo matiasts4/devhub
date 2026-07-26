@@ -54,8 +54,8 @@ export default function PizarraLiveSurfaceLayer({
   // Draggable layout dividers (optional)
   // The parent (PizarraPane) computes them and provides the handler that performs
   // the paired resize when a divider is dragged.
-  layoutDividers = [],
-  onDividerMouseDown,
+  layoutDividers: _layoutDividers = [],
+  onDividerMouseDown: _onDividerMouseDown,
   // pizarra-editing-ux Phase 4: right-click on a composite surface —
   // { id, clientX, clientY } — so PizarraPane can open the context menu
   // over the surface (same menu as shapes, with the surface selected).
@@ -481,7 +481,7 @@ function LiveSurfaceItem({
         }
       }
     },
-    [onMoveElementRef, onSurfaceDragEnd, projectId, registryRef, workspaceId]
+    [onMoveElementRef, onSurfaceDragEnd, projectId, registryRef]
   );
 
   // pizarra-editing-ux Phase 4: right-click on a composite resolves to the

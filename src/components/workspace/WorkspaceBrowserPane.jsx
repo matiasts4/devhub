@@ -35,8 +35,6 @@ import {
   BROWSER_RUNTIME,
   PREVIEW_SUPPORT_MODE,
   SUPPORT_REASON,
-  getBrowserRuntimeFallbackCopy,
-  getBrowserRuntimeLabel,
   getHostnameLabel,
   hasNativeSelectorInspectCapability,
   resolveBrowserRuntimeSelection,
@@ -79,7 +77,7 @@ function WorkspaceBrowserPane({
   browserWindowState = null,
   onBrowserWindowStateChange = null,
   workspaceWindows = [],
-  activeWorkspaceWindowId = null,
+  activeWorkspaceWindowId: _activeWorkspaceWindowId = null,
   onWorkspaceWindowSelect = null,
   onWorkspaceWindowAdd = null,
   onWorkspaceWindowRemove = null,
@@ -263,7 +261,6 @@ function WorkspaceBrowserPane({
     dockState.activeTab,
   ]);
 
-  const canUseNativeEditMode = nativeRuntimeActive && nativeSelectorReady;
   const {
     browserError,
     canSubmit,
@@ -502,33 +499,6 @@ function WorkspaceBrowserPane({
     return 'Native inspect ready';
   }, [isInspecting, nativeRuntimeActive, nativeSelectorReady, selectorState]);
   const nativeInspectOnlyMode = nativeRuntimeActive && effectiveEditMode;
-  const runtimeStatusCopy = useMemo(() => {
-    if (useDomWebview) {
-      return 'Activo: native';
-    }
-    if (nativeRuntimeActive) {
-      return `Activo: ${getBrowserRuntimeLabel(BROWSER_RUNTIME.NATIVE_GTK)}`;
-    }
-    if (browserRuntimeSelection.requestedRuntime === BROWSER_RUNTIME.NATIVE_GTK) {
-      const fallbackCopy = getBrowserRuntimeFallbackCopy(browserRuntimeSelection.fallbackReason);
-      const fallbackReason = fallbackCopy.startsWith('iframe fallback · ')
-        ? fallbackCopy.slice('iframe fallback · '.length)
-        : fallbackCopy === 'iframe fallback'
-          ? ''
-          : fallbackCopy;
-
-      return fallbackReason
-        ? `Fallback activo: iframe · ${fallbackReason}`
-        : 'Fallback activo: iframe';
-    }
-
-    return `Activo: ${getBrowserRuntimeLabel(BROWSER_RUNTIME.IFRAME)}`;
-  }, [
-    browserRuntimeSelection.fallbackReason,
-    browserRuntimeSelection.requestedRuntime,
-    nativeRuntimeActive,
-    useDomWebview,
-  ]);
   const handleBrowserRuntimeChange = (nextRuntime) => {
     const normalizedRuntime =
       nextRuntime === BROWSER_RUNTIME.NATIVE_GTK

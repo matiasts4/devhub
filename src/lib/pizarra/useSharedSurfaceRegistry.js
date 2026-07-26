@@ -376,40 +376,6 @@ export function SharedSurfaceRegistryProvider({
 
   // subscribe-and-snapshot bridge for the surfaces list.
   const getSnapshot = useCallback(() => registry.list(), [registry]);
-  const getServerSnapshot = getSnapshot;
-  const subscribeBridge = useCallback(
-    (cb) => {
-      // Subscribe to all ids; the bridge coalesces into one
-      // callback. The list shape is what consumers need.
-      const unsubList = [];
-      // Listen to every existing surface id. New ids add their
-      // own subscription on the fly via the watcher below.
-      for (const s of registry.list()) {
-        unsubList.push(registry.subscribe(s.id, cb));
-      }
-      // Also listen to a sentinel 'list' channel for add /
-      // remove. We re-poll the list whenever any id changes.
-      const unsubscribe = registry.subscribe('*', cb);
-      // Watcher: re-subscribe when new ids appear.
-      const watcherInterval = setInterval(() => {
-        for (const s of registry.list()) {
-          // Best-effort: we cannot easily know which ids are
-          // new. Re-subscribing to existing ids is a no-op
-          // (the Set dedupes by callback identity, but we use
-          // the same callback here so it's deduped).
-        }
-      }, 0);
-      // Simpler approach: subscribe to a wildcard by hooking
-      // record/unregister to call cb directly. That's done
-      // below in `bridgeSubscribe`.
-      return () => {
-        for (const u of unsubList) u();
-        unsubscribe();
-        clearInterval(watcherInterval);
-      };
-    },
-    [registry]
-  );
 
   // Simpler subscription: just call cb on every record /
   // unregister. We expose this through the registry's

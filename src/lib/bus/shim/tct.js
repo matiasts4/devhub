@@ -34,7 +34,7 @@ function _tableExists(db, name) {
       .prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name = ?")
       .get(name);
     return Boolean(r && r.n);
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 }
@@ -75,7 +75,7 @@ function resolveInboxForRole(db, missionId, toRole, env) {
          ORDER BY created_at ASC`
       )
       .all(missionId, toRole);
-  } catch (e) {
+  } catch (_e) {
     // table missing → treat as empty, do not crash
     legacyRows = [];
   }
@@ -105,7 +105,7 @@ function resolveInboxForRole(db, missionId, toRole, env) {
          LIMIT 50`
       )
       .all(missionId, toRole, `%${toRole}%`);
-  } catch (e) {
+  } catch (_e) {
     legacyRows = [];
   }
   if (legacyRows.length === 0) {

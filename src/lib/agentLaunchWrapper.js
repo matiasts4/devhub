@@ -1020,7 +1020,11 @@ export function buildPendingDeliveriesPollingCommand() {
  *   compat. Configurable via tuiWaitTimeoutMs on the wrapper.
  * @returns {string} Bash block
  */
-export function buildTuiWaitForBlock({ sessionName, graceSeconds = 2, timeoutSeconds = 10 } = {}) {
+export function buildTuiWaitForBlock({
+  sessionName,
+  graceSeconds = 2,
+  timeoutSeconds: _timeoutSeconds = 10,
+} = {}) {
   if (!sessionName) {
     return '# TUI wait-for skipped (no tmux session name)';
   }
@@ -1255,7 +1259,7 @@ export function buildDirectorTmuxInjection(directorTmuxSession) {
 export function buildAutoRestartLoopCommand({
   innerCommand,
   deferBootstrap = false,
-  tuiGraceSeconds = 12,
+  tuiGraceSeconds: _tuiGraceSeconds = 12,
   programId = 'opencode',
 } = {}) {
   const programLabel = String(programId || 'opencode');
@@ -1893,10 +1897,6 @@ export function scheduleChunkedPrompt(prompt, callbacks, options = {}) {
     );
   }
   const plan = planPromptChunks(prompt, options);
-  const intervalMs = Math.max(
-    0,
-    Math.floor(options.intervalMs ?? T2_2_PROMPT_CHUNK_PACING_MS_DEFAULT)
-  );
 
   const timers = [];
   for (let i = 0; i < plan.chunks.length; i += 1) {

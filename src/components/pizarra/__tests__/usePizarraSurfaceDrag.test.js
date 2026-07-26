@@ -16,7 +16,6 @@
 
 const React = require('react');
 const { createRoot } = require('react-dom/client');
-const { flushSync } = require('react-dom');
 const { act } = require('react');
 const { JSDOM } = require('jsdom');
 
@@ -91,7 +90,7 @@ function makeMouseEvent(type, clientX, clientY, button = 0, extraProps = {}) {
   Object.keys(extraProps).forEach((key) => {
     try {
       event[key] = extraProps[key];
-    } catch (e) {
+    } catch (_e) {
       // Some props are read-only; ignore.
     }
   });
@@ -200,7 +199,7 @@ describe('usePizarraSurfaceDrag — board-terminal-drag contract', () => {
     if (dom && dom.window) {
       try {
         dom.window.close();
-      } catch (e) {
+      } catch (_e) {
         // JSDOM may already be closed; ignore.
       }
     }

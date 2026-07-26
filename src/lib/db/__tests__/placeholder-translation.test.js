@@ -10,8 +10,6 @@
  * REQ-PGD-1.
  */
 
-const path = require('path');
-
 // Mock `pg` to avoid a real network call.
 jest.mock('pg', () => {
   const queries = [];
@@ -32,7 +30,6 @@ jest.mock('pg', () => {
   return { Pool: jest.fn(() => pool), __queries: queries, __client: client, __pool: pool };
 });
 
-const { Pool } = require('pg');
 const { createPostgresGenericDriver } = require('../postgres-generic.js');
 
 const QUERIES = require('pg').__queries;
@@ -109,7 +106,6 @@ describe('postgres-generic placeholder translation (REQ-PGD-1)', () => {
     client.query.mockClear();
     // simulate success path
     const result = await driver.transaction(async (tx) => {
-      const stmt = tx.query ? null : null; // use raw for tx path
       // direct query on wrapped client (the tx fn receives wrapped with .query)
       return await tx.query('INSERT INTO projects (id, workspace_id) VALUES (?, ?)', [
         'p-tx',

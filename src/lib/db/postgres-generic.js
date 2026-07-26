@@ -76,15 +76,6 @@ function translatePlaceholders(sql) {
 }
 
 /**
- * @param {string} text
- * @param {any[]} params
- * @returns {Promise<{ rows: any[] }>}
- */
-async function defaultQuery(text, params) {
-  return { rows: [] };
-}
-
-/**
  * Create a postgres-generic driver instance.
  *
  * @param {object} options

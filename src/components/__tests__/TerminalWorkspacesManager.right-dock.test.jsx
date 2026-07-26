@@ -2,10 +2,7 @@ const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
-const {
-  DEFAULT_RIGHT_DOCK_STATE,
-  buildRightDockStorageKey,
-} = require('../workspace/rightDockState');
+const { buildRightDockStorageKey } = require('../workspace/rightDockState');
 const {
   buildBrowserWindowStorageKey,
   buildBrowserWindowLabel,
@@ -201,8 +198,8 @@ jest.mock('date-fns', () => ({
   formatDistanceToNow: () => 'just now',
 }));
 
-let sharedEditorPaneMountCount = 0;
-let sharedEditorPaneUnmountCount = 0;
+let _sharedEditorPaneMountCount = 0;
+let _sharedEditorPaneUnmountCount = 0;
 
 jest.mock(
   '../workspace/FileExplorerEditorPane',
@@ -212,9 +209,9 @@ jest.mock(
       const React = require('react');
 
       React.useEffect(() => {
-        sharedEditorPaneMountCount += 1;
+        _sharedEditorPaneMountCount += 1;
         return () => {
-          sharedEditorPaneUnmountCount += 1;
+          _sharedEditorPaneUnmountCount += 1;
         };
       }, []);
 
@@ -237,9 +234,9 @@ jest.mock('@/components/workspace/FileExplorerEditorPane', () => ({
     const React = require('react');
 
     React.useEffect(() => {
-      sharedEditorPaneMountCount += 1;
+      _sharedEditorPaneMountCount += 1;
       return () => {
-        sharedEditorPaneUnmountCount += 1;
+        _sharedEditorPaneUnmountCount += 1;
       };
     }, []);
 
@@ -462,8 +459,8 @@ describe('TerminalWorkspacesManager right dock', () => {
     delete window.__TAURI_INTERNALS__;
     consoleErrorSpy = jest.spyOn(console, 'error');
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-    sharedEditorPaneMountCount = 0;
-    sharedEditorPaneUnmountCount = 0;
+    _sharedEditorPaneMountCount = 0;
+    _sharedEditorPaneUnmountCount = 0;
     mockInvoke.mockReset();
     mockListen.mockReset();
   });

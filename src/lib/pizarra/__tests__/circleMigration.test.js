@@ -66,7 +66,7 @@ function makeStorage(initial = {}) {
 
 describe('circleMigration — first run (P-MP-9)', () => {
   test('legacy circle is re-anchored to midpoint; flag set; .bak written', () => {
-    const { store, getItem, setItem } = makeStorage();
+    const { getItem, setItem } = makeStorage();
     const payload = [{ type: 'circle', x: 100, y: 200, radius: 50, width: null, height: null }];
     const next = migrateCircleShapes(payload, { getItem, setItem });
     // The single circle: x += radius, y += radius, width = 2*radius,
@@ -89,7 +89,7 @@ describe('circleMigration — first run (P-MP-9)', () => {
   });
 
   test('already-migrated circles (width and height present) are NOT re-mutated', () => {
-    const { store, getItem, setItem } = makeStorage();
+    const { getItem, setItem } = makeStorage();
     const payload = [{ type: 'circle', x: 200, y: 300, radius: 50, width: 100, height: 100 }];
     const next = migrateCircleShapes(payload, { getItem, setItem });
     // The shape is returned as-is (no x/y shift).
@@ -97,7 +97,7 @@ describe('circleMigration — first run (P-MP-9)', () => {
   });
 
   test('only circles are mutated; rects/lines/arrows pass through', () => {
-    const { store, getItem, setItem } = makeStorage();
+    const { getItem, setItem } = makeStorage();
     const rect = { type: 'rect', x: 100, y: 200, width: 50, height: 80 };
     const line = { type: 'line', x: 0, y: 0, points: [0, 0, 10, 10] };
     const arrow = { type: 'arrow', x: 0, y: 0, points: [0, 0, 20, 20] };

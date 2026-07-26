@@ -76,49 +76,6 @@ function querySwarmSessions({ missionId, agentId, status } = {}) {
   return db.prepare(query).all(...params);
 }
 
-function queryPhaseArtifacts({ missionId, phase } = {}) {
-  const db = getDb();
-  let query = `
-    SELECT
-      artifact_id as id,
-      mission_id,
-      artifact_type as type,
-      artifact_phase as phase,
-      content_summary as summary,
-      created_at,
-      updated_at
-    FROM sdd_artifacts
-    WHERE 1=1
-  `;
-  const params = [];
-
-  if (missionId) {
-    query += ' AND mission_id = ?';
-    params.push(missionId);
-  }
-  if (phase) {
-    query += ' AND artifact_phase = ?';
-    params.push(phase);
-  }
-
-  query += ' ORDER BY created_at DESC LIMIT 50';
-  return db.prepare(query).all(...params);
-}
-
-function queryPhaseBranchMap({ missionId } = {}) {
-  const db = getDb();
-  let query = 'SELECT * FROM phase_branch_map WHERE 1=1';
-  const params = [];
-
-  if (missionId) {
-    query += ' AND mission_id = ?';
-    params.push(missionId);
-  }
-
-  query += ' ORDER BY created_at ASC';
-  return db.prepare(query).all(...params);
-}
-
 // ---------------------------------------------------------------------------
 // GET — SSE stream for phase events
 // ---------------------------------------------------------------------------
@@ -242,7 +199,6 @@ export const POST = withAuth(async function POST(request) {
 // ---------------------------------------------------------------------------
 
 async function persistPhaseEvent(event) {
-  const db = getDb();
   const { getDb: getSharedDb } = await import('@/lib/db/shared');
   const writeDb = getSharedDb();
 
