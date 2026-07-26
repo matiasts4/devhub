@@ -386,6 +386,7 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         tuiSessionActiveRef,
         kimiReadyNotifiedRef,
         hasConnectedOnceRef,
+        viewportFitConfirmedRef,
         operationalRendererModeRef,
         pendingWebglRecoveryRef,
         webglReleasedOnLayoutHideRef,
@@ -731,6 +732,15 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
           maybeConnectAfterViewportFit(fitWorked);
         }
         if (isVisibleInLayoutRef.current) {
+          // Sin-parpadeo fase 4: keep-alive siblings already painted correctly via
+          // the phase-1 soft reveal on the layout-show edge; re-syncing + nudging
+          // them here is the residual pizarra-toggle flicker. Fresh re-targeted
+          // instances have viewportFitConfirmedRef=false until their first fit
+          // lands, so they always take the full path below.
+          if (viewportFitConfirmedRef?.current === true && canSkipLayoutSettledRepaint()) {
+            logViewportDiagnostic(`${reason}-skipped-verified-clean`);
+            return;
+          }
           syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
             clearAtlas:
               webglReleasedOnLayoutHideRef.current || canvasReleasedOnLayoutHideRef.current,

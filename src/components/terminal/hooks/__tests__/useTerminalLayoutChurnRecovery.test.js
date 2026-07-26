@@ -308,3 +308,61 @@ describe('survivor-recover gating (sin-parpadeo fase 3)', () => {
     expect(ctx.fitTerminalViewport).toHaveBeenCalled();
   });
 });
+
+describe('pizarra transition gating (sin-parpadeo fase 4)', () => {
+  beforeEach(() => {
+    mockRefreshTerminalViewport.mockClear();
+    mockForceTerminalViewportRepaint.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  test('pizarra exit skips sync+repaint on a verified-clean keep-alive sibling', () => {
+    const ctx = createCtx({
+      containerRef: { current: { getBoundingClientRect: () => ({ width: 800, height: 600 }) } },
+      canvasAddonRef: { current: {} },
+      viewportFitConfirmedRef: { current: true },
+    });
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-layout-settled', {
+          detail: { reason: 'pizarra-mode-exit' },
+        })
+      );
+    });
+
+    expect(ctx.syncTerminalViewportOnWorkspaceShow).not.toHaveBeenCalled();
+    expect(ctx.coalescedForceRepaint).not.toHaveBeenCalled();
+    expect(ctx.logViewportDiagnostic).toHaveBeenCalledWith(
+      'pizarra-mode-exit-skipped-verified-clean'
+    );
+  });
+
+  test('pizarra exit keeps the full path on a fresh re-targeted instance', () => {
+    const ctx = createCtx({
+      containerRef: { current: { getBoundingClientRect: () => ({ width: 800, height: 600 }) } },
+      canvasAddonRef: { current: {} },
+      viewportFitConfirmedRef: { current: false },
+    });
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-layout-settled', {
+          detail: { reason: 'pizarra-mode-exit' },
+        })
+      );
+    });
+
+    expect(ctx.syncTerminalViewportOnWorkspaceShow).toHaveBeenCalledWith(
+      'layout-settled-pizarra-mode-exit-immediate',
+      expect.objectContaining({ clearAtlas: false })
+    );
+  });
+});
