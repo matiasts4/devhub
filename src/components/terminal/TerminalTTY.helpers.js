@@ -617,15 +617,19 @@ export function forceTerminalViewportRepaint(term) {
   if (cols <= 0 || rows <= 0) return false;
   try {
     term._core?._renderService?.clear?.();
-    return nudgeTerminalViewportRepaint(term);
+    return nudgeTerminalViewportRepaint(term, { kind: 'force' });
   } catch (error) {
     if (isStaleXtermRendererError(error)) return false;
     throw error;
   }
 }
 
-/** 1-cell resize nudge + refresh without clearing the render service (less blink). */
-export function nudgeTerminalViewportRepaint(term) {
+/**
+ * 1-cell resize nudge + refresh without clearing the render service (less blink).
+ * Emits the `terminal-repaint-nudge` perf counter on every executed nudge so the
+ * "zero nudges on a clean reveal" SLO is measurable (no-op when perf is off).
+ */
+export function nudgeTerminalViewportRepaint(term, telemetryDetail) {
   if (!term || typeof term.resize !== 'function') return false;
   if (!isTerminalRendererReady(term)) return false;
   const cols = Number(term.cols ?? 0);
@@ -642,6 +646,11 @@ export function nudgeTerminalViewportRepaint(term) {
       return false;
     }
     term.refresh(0, term.rows - 1);
+    incrementPerfCounter(PERF_COUNTERS.TERMINAL_REPAINT_NUDGE, {
+      cols,
+      rows,
+      kind: telemetryDetail?.kind ?? 'nudge',
+    });
     return true;
   } catch (error) {
     if (isStaleXtermRendererError(error)) return false;

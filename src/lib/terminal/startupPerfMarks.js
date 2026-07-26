@@ -54,6 +54,7 @@ const COUNTERS = Object.freeze({
   TERMINAL_RESIZE_SENT: 'terminal-resize-sent',
   TERMINAL_RESIZE_SENT_REDUNDANT: 'terminal-resize-sent-redundant',
   TERMINAL_SCROLL_JUMP: 'terminal-scroll-jump',
+  TERMINAL_REPAINT_NUDGE: 'terminal-repaint-nudge',
 });
 
 /** Cap of detail samples kept per counter (FIFO). */
