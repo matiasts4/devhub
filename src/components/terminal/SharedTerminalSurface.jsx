@@ -9,7 +9,12 @@ import {
 } from '@/components/workspace/SharedSurfacesProvider';
 import { dispatchTerminalLayoutSettled } from '@/components/terminal/nativeLayoutSync';
 import { isPizarraSharedViewEnabled } from '@/lib/pizarra/featureFlag';
-import { markPizarraExitEnd, markPizarraExitStart } from '@/lib/terminal/startupPerfMarks';
+import {
+  markPizarraEnterEnd,
+  markPizarraEnterStart,
+  markPizarraExitEnd,
+  markPizarraExitStart,
+} from '@/lib/terminal/startupPerfMarks';
 
 /** Host id that owns live projection when pizarra mode is active. */
 export const PIZARRA_SHARED_SURFACE_HOST = 'pizarra';
@@ -327,6 +332,13 @@ export function SharedTerminalSurfacePortal({
       hostId !== 'pizarra-canvas' &&
       registry.getPreferredHostForSurface(surfaceId) === 'pizarra-canvas';
     if (isPizarraExitRetarget) markPizarraExitStart();
+    // Pizarra-enter telemetry: real re-target FROM the workspace dock TO the
+    // pizarra canvas (pizarra-canvas mounts with no prior dock host are not
+    // enters — the terminal was born inside the pizarra).
+    const isPizarraEnterRetarget =
+      hostId === 'pizarra-canvas' &&
+      registry.getPreferredHostForSurface(surfaceId) === 'workspace-dock';
+    if (isPizarraEnterRetarget) markPizarraEnterStart();
 
     registry.setPreferredHostForSurface(surfaceId, hostId);
     dispatchIfLive(hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit');
@@ -335,6 +347,7 @@ export function SharedTerminalSurfacePortal({
       if (!mounted) return;
       dispatchIfLive(hostId === 'pizarra-canvas' ? 'pizarra-mode-enter' : 'pizarra-mode-exit');
       if (isPizarraExitRetarget) markPizarraExitEnd();
+      if (isPizarraEnterRetarget) markPizarraEnterEnd();
 
       const hostEl = registry.getActiveTarget(surfaceId);
       if (!hostEl || typeof ResizeObserver !== 'function') return;

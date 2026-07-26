@@ -27,6 +27,8 @@ const MARKS = Object.freeze({
   WORKSPACE_SWITCH_END: `${PREFIX}workspace-switch-end`,
   PIZARRA_EXIT_START: `${PREFIX}pizarra-exit-start`,
   PIZARRA_EXIT_END: `${PREFIX}pizarra-exit-end`,
+  PIZARRA_ENTER_START: `${PREFIX}pizarra-enter-start`,
+  PIZARRA_ENTER_END: `${PREFIX}pizarra-enter-end`,
 });
 
 const MEASURES = Object.freeze({
@@ -46,6 +48,7 @@ const MEASURES = Object.freeze({
   WARM_DURATION: `${PREFIX}warm-duration`,
   WORKSPACE_SWITCH: `${PREFIX}workspace-switch`,
   PIZARRA_EXIT: `${PREFIX}pizarra-exit`,
+  PIZARRA_ENTER: `${PREFIX}pizarra-enter`,
 });
 
 /** Known perf counter names (generic registry below accepts any name). */
@@ -264,6 +267,7 @@ export function buildStartupPerfReport(reason) {
     // Transition metrics (latest measure) + counter totals
     workspaceSwitchMs: byName[MEASURES.WORKSPACE_SWITCH] ?? null,
     pizarraExitMs: byName[MEASURES.PIZARRA_EXIT] ?? null,
+    pizarraEnterMs: byName[MEASURES.PIZARRA_ENTER] ?? null,
     terminalRemounts: counters[COUNTERS.TERMINAL_REMOUNT]?.count ?? 0,
     terminalResizeSent: counters[COUNTERS.TERMINAL_RESIZE_SENT]?.count ?? 0,
     terminalResizeSentRedundant: counters[COUNTERS.TERMINAL_RESIZE_SENT_REDUNDANT]?.count ?? 0,
@@ -423,6 +427,17 @@ export function markPizarraExitStart() {
 export function markPizarraExitEnd() {
   mark(MARKS.PIZARRA_EXIT_END);
   measure(MEASURES.PIZARRA_EXIT, MARKS.PIZARRA_EXIT_START, MARKS.PIZARRA_EXIT_END);
+}
+
+/** Pizarra enter start (portal re-target towards `pizarra-canvas`). */
+export function markPizarraEnterStart() {
+  mark(MARKS.PIZARRA_ENTER_START);
+}
+
+/** Pizarra enter settled — pairs with the most recent start mark. */
+export function markPizarraEnterEnd() {
+  mark(MARKS.PIZARRA_ENTER_END);
+  measure(MEASURES.PIZARRA_ENTER, MARKS.PIZARRA_ENTER_START, MARKS.PIZARRA_ENTER_END);
 }
 
 /** Sidecar/session endpoint cached and ready for WS connect (prod hot path). */

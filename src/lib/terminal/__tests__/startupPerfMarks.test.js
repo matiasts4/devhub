@@ -148,6 +148,8 @@ describe('startupPerfMarks', () => {
       markWorkspaceSwitchEnd,
       markPizarraExitStart,
       markPizarraExitEnd,
+      markPizarraEnterStart,
+      markPizarraEnterEnd,
     } = require('../startupPerfMarks');
 
     markWorkspaceSwitchStart();
@@ -156,9 +158,13 @@ describe('startupPerfMarks', () => {
     markPizarraExitStart();
     markPizarraExitEnd();
 
+    markPizarraEnterStart();
+    markPizarraEnterEnd();
+
     const report = buildStartupPerfReport('transition-test');
     expect(report.summary.workspaceSwitchMs).toEqual(expect.any(Number));
     expect(report.summary.pizarraExitMs).toEqual(expect.any(Number));
+    expect(report.summary.pizarraEnterMs).toEqual(expect.any(Number));
   });
 
   test('incrementPerfCounter tracks counts, FIFO samples, and redundant resizes', () => {
