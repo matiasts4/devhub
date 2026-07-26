@@ -55,7 +55,27 @@ let exitCode = 0;
 function buildDevEnv() {
   const env = { ...process.env };
 
-  env.DEVHUB_HOME = env.DEVHUB_HOME || path.join(os.homedir(), '.devhub-dev');
+  // When launched from a terminal hosted by the *installed* DevHub app, the
+  // env inherits DEVHUB_HOME=~/.devhub + DEVHUB_RUNTIME=production. Keeping
+  // that home makes the dev stack share the live production DB with the app
+  // (two writers, one WAL) → SQLITE_BUSY ("database is locked") for both.
+  // Unless the caller pinned a DB via DEVHUB_DB_PATH, treat that inherited
+  // home as unset and fall back to the isolated dev home.
+  const prodHome = path.join(os.homedir(), '.devhub');
+  const inheritedProdHome =
+    !process.env.DEVHUB_DB_PATH &&
+    process.env.DEVHUB_RUNTIME === 'production' &&
+    typeof process.env.DEVHUB_HOME === 'string' &&
+    path.resolve(process.env.DEVHUB_HOME) === prodHome;
+  env.DEVHUB_HOME = inheritedProdHome
+    ? path.join(os.homedir(), '.devhub-dev')
+    : env.DEVHUB_HOME || path.join(os.homedir(), '.devhub-dev');
+  if (inheritedProdHome) {
+    console.log(
+      '[electron-up] host-app DEVHUB_HOME (~/.devhub, production) detected — ' +
+        'isolating dev stack to ~/.devhub-dev. Set DEVHUB_DB_PATH to pin a specific DB.'
+    );
+  }
   if (process.env.DEVHUB_DB_PATH) {
     env.DEVHUB_DB_PATH = process.env.DEVHUB_DB_PATH;
   } else {
