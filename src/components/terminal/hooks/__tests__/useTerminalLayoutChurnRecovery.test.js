@@ -372,6 +372,8 @@ describe('pizarra transition gating (sin-parpadeo fase 4)', () => {
 
     expect(ctx.syncTerminalViewportOnWorkspaceShow).not.toHaveBeenCalled();
     expect(ctx.coalescedForceRepaint).not.toHaveBeenCalled();
+    // A2: no safety-net retries on the verified-clean skip path.
+    expect(ctx.scheduleBoundedForceRepaint).not.toHaveBeenCalled();
     expect(ctx.logViewportDiagnostic).toHaveBeenCalledWith(
       'pizarra-mode-exit-skipped-verified-clean'
     );
@@ -399,6 +401,9 @@ describe('pizarra transition gating (sin-parpadeo fase 4)', () => {
       'layout-settled-pizarra-mode-exit-immediate',
       expect.objectContaining({ clearAtlas: false })
     );
+    // A2: the full path arms the verified-stop retry so a repaint lost to an
+    // async GPU reattach still lands without user interaction.
+    expect(ctx.scheduleBoundedForceRepaint).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -466,5 +471,6 @@ describe('pizarra transition coalescing (pizarra-instant-enter A1)', () => {
     expect(ctx.needsViewportSyncOnShowRef.current).toBe(true);
     expect(ctx.layoutChurnedWhileHiddenRef.current).toBe(true);
     expect(ctx.syncTerminalViewportOnWorkspaceShow).not.toHaveBeenCalled();
+    expect(ctx.scheduleBoundedForceRepaint).not.toHaveBeenCalled();
   });
 });

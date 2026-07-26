@@ -197,6 +197,7 @@ function runPizarraTransitionPass(c, reason) {
     syncTerminalViewportOnWorkspaceShow,
     scrollTerminalToBottom,
     coalescedForceRepaint,
+    scheduleBoundedForceRepaint,
   } = c;
   if (!termRef?.current || !fitRef?.current) return;
 
@@ -242,6 +243,15 @@ function runPizarraTransitionPass(c, reason) {
       } else {
         forceTerminalViewportRepaint(termRef.current);
       }
+    }
+    // pizarra-instant-enter A2: verified-stop safety net. The single pass above
+    // can land while the GPU addon is still re-attaching async (or the renderer
+    // is not ready yet); the bounded retry keeps spinning until dimsMatch &&
+    // gpuReady && rendererReady, and stops immediately when the frame is already
+    // clean — this removes the "black panel until the next interaction" case
+    // without re-introducing blind repaint bursts.
+    if (typeof scheduleBoundedForceRepaint === 'function') {
+      scheduleBoundedForceRepaint();
     }
   } else {
     needsViewportSyncOnShowRef.current = true;
