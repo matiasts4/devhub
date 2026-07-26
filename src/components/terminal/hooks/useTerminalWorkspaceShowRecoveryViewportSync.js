@@ -20,6 +20,7 @@ import {
   shouldFreezeSingleWebglViewportOnWorkspaceShow,
   shouldFreezeDomViewportOnWorkspaceShow,
   isOsResumeFocusReason,
+  needsGpuRendererReattach,
   shouldSkipRedundantLayoutSettleViewportSync,
   shouldClearGpuAtlasOnWorkspaceShow,
   takeHiddenTerminalOutputBuffer,
@@ -222,6 +223,10 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
         !pendingWebglRecoveryRef.current &&
         !canvasReleasedOnLayoutHideRef.current &&
         !webglReleasedOnLayoutHideRef.current;
+      // Sin-parpadeo fase 5: snapshot the catch-up flag at entry — the catch-up
+      // block below clears it, but a clean OS-resume pass needs the entry value
+      // to decide whether the final force repaint is skippable.
+      const hadHiddenOutputCatchupPending = hiddenOutputCatchupPendingRef.current;
       const isSurvivorRecover = isWorkspaceSurvivorRecoverLayoutReason(reason);
       const isLayoutSettledImmediate =
         String(reason).startsWith('layout-settled-') && String(reason).endsWith('-immediate');
@@ -663,7 +668,27 @@ export default function useTerminalWorkspaceShowRecoveryViewportSync({ ctxRef })
       // until a manual resize. See docs/errores/06-terminal-status-and-workspace-switch.
       if (termRef.current && isTerminalRendererReady(termRef.current)) {
         refreshTerminalViewport(termRef.current);
-        coalescedForceRepaint(termRef.current, { reason });
+        // Sin-parpadeo fase 5: clean OS-resume (Alt+Tab / window focus / pageshow)
+        // with unchanged geometry and no recovery pending — the GPU bitmap
+        // survived, so the 1-cell nudge is the residual blink. Multi-panel WebGL
+        // TUIs fall through every freeze path above and used to repaint here
+        // unconditionally. Keep the nudge for any real churn (zero-size recovery,
+        // catch-up, missing renderer, geometry change).
+        const skipForceRepaintOnCleanOsResume =
+          isOsResumeFocusReason(reason) &&
+          noGpuRecoveryPending &&
+          sizeUnchanged &&
+          proposedDimsMatch &&
+          !hadHiddenOutputCatchupPending &&
+          !recoveredFromZeroSizeThisPass &&
+          !needsGpuRendererReattach({
+            operationalRendererMode: operationalRendererModeRef.current,
+            webglAddon: webglAddonRef.current,
+            canvasAddon: canvasAddonRef.current,
+          });
+        if (!skipForceRepaintOnCleanOsResume) {
+          coalescedForceRepaint(termRef.current, { reason });
+        }
       }
 
       // Panel-close churn can discard the GPU bitmap of a live TUI even when the

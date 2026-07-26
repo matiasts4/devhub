@@ -151,3 +151,101 @@ describe('scheduleBoundedForceRepaint verified stop (sin-parpadeo fase 2)', () =
     expect(global.requestAnimationFrame).toHaveBeenCalled();
   });
 });
+
+describe('clean OS-resume skips final repaint (sin-parpadeo fase 5)', () => {
+  let originalWebSocket;
+
+  beforeEach(() => {
+    originalWebSocket = global.WebSocket;
+    global.WebSocket = { OPEN: 1 };
+  });
+
+  afterEach(() => {
+    global.WebSocket = originalWebSocket;
+  });
+
+  function createMultiWebglTuiCtx() {
+    const ctx = createCtx();
+    ctx.termRef = {
+      current: {
+        cols: 80,
+        rows: 24,
+        scrollToBottom: jest.fn(),
+        refresh: jest.fn(),
+        resize: jest.fn(),
+      },
+    };
+    ctx.fitRef = { current: { proposeDimensions: () => ({ cols: 80, rows: 24 }), fit: jest.fn() } };
+    ctx.operationalRendererModeRef = { current: 'xterm-webgl' };
+    ctx.webglAddonRef = { current: {} };
+    // Multi-panel split: above TERMINAL_SPLIT_WEBGL_PANEL_LIMIT, so the
+    // single-webgl freeze path does not apply and the pass reaches the final block.
+    ctx.visibleTerminalPanelCountRef = { current: 2 };
+    ctx.tuiSessionActiveRef = { current: true };
+    return ctx;
+  }
+
+  it('skips the force repaint on a clean visibility-visible resume (multi-panel WebGL TUI)', async () => {
+    const ctx = createMultiWebglTuiCtx();
+    const ctxRef = { current: ctx };
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+
+    await act(async () => {
+      await result.current.syncTerminalViewportOnWorkspaceShow('visibility-visible', {
+        clearAtlas: false,
+      });
+    });
+
+    expect(ctx.coalescedForceRepaint).not.toHaveBeenCalled();
+    expect(ctx.termRef.current.refresh).toHaveBeenCalled();
+  });
+
+  it('still repaints when hidden-output catch-up was pending at entry', async () => {
+    const ctx = createMultiWebglTuiCtx();
+    ctx.hiddenOutputCatchupPendingRef = { current: true };
+    const ctxRef = { current: ctx };
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+
+    await act(async () => {
+      await result.current.syncTerminalViewportOnWorkspaceShow('visibility-visible', {
+        clearAtlas: false,
+      });
+    });
+
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledTimes(1);
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledWith(ctx.termRef.current, {
+      reason: 'visibility-visible',
+    });
+  });
+
+  it('still repaints on clean non-OS-resume reasons', async () => {
+    const ctx = createMultiWebglTuiCtx();
+    const ctxRef = { current: ctx };
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+
+    await act(async () => {
+      await result.current.syncTerminalViewportOnWorkspaceShow('panel-closed', {
+        clearAtlas: false,
+      });
+    });
+
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledTimes(1);
+  });
+
+  it('still repaints when the proposed geometry changed', async () => {
+    const ctx = createMultiWebglTuiCtx();
+    ctx.fitRef = {
+      current: { proposeDimensions: () => ({ cols: 100, rows: 30 }), fit: jest.fn() },
+    };
+    const ctxRef = { current: ctx };
+    const { result } = renderHook(() => useTerminalWorkspaceShowRecovery({ ctxRef }));
+
+    await act(async () => {
+      await result.current.syncTerminalViewportOnWorkspaceShow('window-focus', {
+        clearAtlas: false,
+      });
+    });
+
+    expect(ctx.coalescedForceRepaint).toHaveBeenCalledTimes(1);
+  });
+});
