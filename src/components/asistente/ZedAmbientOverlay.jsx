@@ -58,23 +58,6 @@ const ACCENT_HEX = Object.freeze({
   file: '#f0b54a',
 });
 
-function ZedLoadingDots({ className = '' }) {
-  return (
-    <span className={`inline-flex items-center gap-[3px] ${className}`} aria-hidden="true">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="h-1 w-1 rounded-full bg-current opacity-70"
-          style={{
-            animation: 'zed-dot-pulse 1.4s ease-in-out infinite',
-            animationDelay: `${i * 0.16}s`,
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
 function ZedEqualizer({ className = '', bars = 4 }) {
   return (
     <span className={`zed-eq inline-flex items-end gap-[2px] ${className}`} aria-hidden="true">
@@ -428,12 +411,7 @@ export default function ZedAmbientOverlay({
   const motionMode = useMotionMode();
   const isReduced = motionMode === 'reduced';
   const isAmplified = motionMode === 'amplified';
-  const {
-    isOpen = false,
-    close = () => {},
-    open = () => {},
-    toggle = () => {},
-  } = useZedOverlay() || {};
+  const { isOpen = false, close = () => {}, open = () => {} } = useZedOverlay() || {};
 
   // Soft-mount keeps this tree alive off /terminales. Never leave the composer open
   // across route hide/show — only an explicit user open while visible should expand it.

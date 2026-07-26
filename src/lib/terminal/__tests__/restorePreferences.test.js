@@ -7,12 +7,6 @@
 const { JSDOM } = require('jsdom');
 
 describe('restorePreferences', () => {
-  let restorePreferences;
-  let originalLocalStorage;
-
-  const STORAGE_KEY_PREFIX = 'devhub_terminal_restore_preferences:';
-  const TEST_PROJECT_ID = 'test-project-123';
-
   beforeEach(() => {
     // Setup JSDOM environment for localStorage
     const dom = new JSDOM('<!doctype html><html><body></body></html>', {

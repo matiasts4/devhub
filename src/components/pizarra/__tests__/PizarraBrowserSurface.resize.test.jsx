@@ -24,10 +24,9 @@
 
 const React = require('react');
 const { createRoot } = require('react-dom/client');
-const { flushSync, act: flushSyncAct } = require('react-dom');
+const { flushSync } = require('react-dom');
 const { JSDOM } = require('jsdom');
 
-let capturedWorkspacePaneProps = null;
 let mockUseNativeBrowserCapability = () => null;
 
 jest.mock('lucide-react', () => {
@@ -41,7 +40,6 @@ jest.mock('@/components/workspace/WorkspaceBrowserPane', () => ({
   __esModule: true,
   default: (props) => {
     const ReactLocal = require('react');
-    capturedWorkspacePaneProps = props;
     return ReactLocal.createElement(
       'div',
       { 'data-testid': 'workspace-browser-pane' },
@@ -69,7 +67,7 @@ function makeMouseEvent(type, clientX, clientY, button = 0, extraProps = {}) {
   Object.keys(extraProps).forEach((key) => {
     try {
       event[key] = extraProps[key];
-    } catch (e) {
+    } catch (_e) {
       // Some props are read-only; ignore.
     }
   });
@@ -112,7 +110,6 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
   let consoleErrorSpy;
 
   beforeEach(() => {
-    capturedWorkspacePaneProps = null;
     mockUseNativeBrowserCapability = () => null;
     jest.clearAllMocks();
 
@@ -135,7 +132,7 @@ describe('PizarraBrowserSurface — border resize (pizarra-drag-resize-polish)',
     if (global.window && global.window.close) {
       try {
         global.window.close();
-      } catch (e) {
+      } catch (_e) {
         // JSDOM may already be closed; ignore.
       }
     }

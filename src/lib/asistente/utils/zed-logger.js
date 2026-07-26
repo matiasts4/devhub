@@ -37,7 +37,7 @@ function rotateLogIfNeeded() {
       const archivePath = ZED_JSON_FILE.replace('.log', `-${Date.now()}.log`);
       fs.renameSync(ZED_JSON_FILE, archivePath);
     }
-  } catch (err) {
+  } catch (_err) {
     // ignore
   }
 }
@@ -59,7 +59,7 @@ function writeZedLog(message) {
       // Prefix so it stands out among Next/Tauri noise in the same terminal.
       process.stdout.write(`[ZED] ${line}`);
     }
-  } catch (err) {
+  } catch (_err) {
     // ignore
   }
 }
@@ -71,7 +71,7 @@ function writeJsonLog(entry) {
     rotateLogIfNeeded();
     const line = JSON.stringify(entry) + '\n';
     fs.appendFileSync(ZED_JSON_FILE, line);
-  } catch (err) {
+  } catch (_err) {
     // ignore
   }
 }
@@ -240,7 +240,7 @@ export const zedLog = {
           return { name: f, size: formatSize(stats.size), modified: stats.mtime.toISOString() };
         })
         .sort((a, b) => b.modified.localeCompare(a.modified));
-    } catch (err) {
+    } catch (_err) {
       return [];
     }
   },
