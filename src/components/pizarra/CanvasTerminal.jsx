@@ -38,6 +38,7 @@ import {
 // let IT run the live WebGL probe in its own mount; TerminalTTY
 // already surfaces a visible demotion warning if the probe fails.
 import PanelRendererSelect from '@/components/terminal/components/PanelRendererSelect';
+import PizarraTerminalGhost from './PizarraTerminalGhost';
 import { SHOW_RENDERER_SWITCH } from '@/components/terminal/terminalRendererPreferences';
 
 // pizarra-shared-view-state (Phase 1 — flicker fix): the minimum
@@ -552,6 +553,11 @@ export default function CanvasTerminal({
               suspendNativeSurface={suspendNative}
             />
           )}
+          {/* pizarra-instant-enter A5: instant text ghost of the last
+              viewport while the live surface retargets/remounts/refits.
+              One-shot painting, pointerEvents none, fades on the first
+              layout-settled for this panel (see PizarraTerminalGhost). */}
+          {sharedSurfacesEnabled ? <PizarraTerminalGhost terminalId={terminalId} /> : null}
         </div>
       </div>
 

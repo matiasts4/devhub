@@ -33,6 +33,7 @@ import {
 import { resolveTerminalFontFamily } from '@/components/terminal/TerminalTTY.helpers';
 import { clearPanelActivity } from '@/components/terminal/utils/panelActivityStore';
 import { stashTerminalPanelBridge } from '@/lib/terminal/terminalPanelBridge';
+import { captureTerminalViewportSnapshot } from '@/lib/terminal/terminalViewportSnapshot';
 import {
   hasSurface as graveyardHasSurface,
   restoreSurface as graveyardRestoreSurface,
@@ -188,6 +189,12 @@ export default function useTerminalEngine({
         clearTimers();
         clearConnectDeferTimer();
         clearOutputQueue();
+
+        // pizarra-instant-enter A5: capture the text viewport ghost while
+        // the term instance is still alive. The next pizarra entry paints
+        // this instantly (PizarraTerminalGhost) instead of a black card
+        // during retarget → remount → fit → repaint. No-op without content.
+        captureTerminalViewportSnapshot(id, termRef.current);
 
         // 3. Silence and close the websocket. Closing it first means the
         //    onmessage/onclose can't push more output into a disposed terminal.
