@@ -125,3 +125,48 @@ Caveat: the 5.6 s run reused cached terminal-graph modules (only the chunk bound
 ### Recommendation (not applied — needs admin, outside repo)
 
 On Windows, excluding `D:\devhub\.next` (74k cache files) and `D:\devhub\node_modules` from Windows Defender real-time scanning typically cuts dev compile/restore times substantially.
+
+---
+
+## Follow-up (2026-07-25): "Sin-parpadeo" — flicker-free keep-alive terminal reveals
+
+User report: keep-alive terminals recover correctly from every transition (no more black
+panels), but each reveal still shows a visible blink — the recovery nudges fire even when
+nothing actually broke. Goal: instant, flicker-free reveals while keeping the anti-black-panel
+recovery intact for real churn.
+
+### Strategy
+
+Gate every force-repaint / resize-nudge on actual viewport + GPU state instead of firing
+them defensively on every transition. Telemetry first, then one small phase per nudge source,
+each with tests and its own commit on `feature/electron-desktop-host`.
+
+### Phases (each = one commit, tests green)
+
+| Fase | Commit   | Change                                                                                                                                                                                                                   |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | e3156bdf | `terminal-repaint-nudge` counter (`startupPerfMarks.js`) emitted by `nudgeTerminalViewportRepaint` / `forceTerminalViewportRepaint` — baseline measurement                                                               |
+| 1    | 368d615a | `coalescedSoftGpuVisibilityReveal` no longer nudges eagerly; post-paint rAF probe nudges only when `needsGpuRendererReattach` (helpers + tests landed inside lint commit 0f156338)                                       |
+| 2    | 62e8e724 | Deferred layout-settled bursts re-evaluate `canSkipLayoutSettledRepaint` (+ `needsGpuRendererReattach`) at fire time; `scheduleBoundedForceRepaint` stops at first verified tick                                         |
+| 3    | a8848cd2 | `handleSurvivorRecover` gated by `survivorVerifiedClean` (dimsMatch && gpuAttached && no recovery && webgl context alive) — per-event self-gate, storm shape unchanged                                                   |
+| 4    | 52c3b38d | Pizarra-mode enter/exit churn skips keep-alive siblings when `viewportFitConfirmedRef && canSkipLayoutSettledRepaint()`; fresh re-targets keep the full recovery path                                                    |
+| 5    | febc7a91 | Final-block repaint skipped on clean OS-resume (`visibility-visible`/`window-focus`/`pageshow`) when geometry unchanged, no catch-up/recovery pending, renderer attached — fixes the multi-panel WebGL TUI Alt+Tab blink |
+
+### Invariant preserved
+
+Every gate only skips the nudge when the bitmap provably survived (dims match, GPU addon
+attached, WebGL context alive, no catch-up/zero-size/recovery pending). Any real churn still
+takes the full recovery path — the black-panel fix is untouched.
+
+### Verification
+
+- Per-phase suites green; new tests: `repaintNudgeCounter.test.js`, burst-gating +
+  bounded-repaint describes (`useTerminalLayoutChurnRecovery` / `useTerminalWorkspaceShowRecovery`),
+  clean-OS-resume describe (4 cases).
+- Full terminal sweep rerun at close-out; only the known pre-existing failure remains
+  (`TerminalTTY.test.js` "workspace-created fresh panel initial command injection" —
+  present before this work, caused by foreign working-tree changes, not by these phases).
+- **Pending human QA:** transition matrix with `localStorage.devhub_perf=1` — workspace
+  switches ×5, pizarra enter/exit ×5, workspace close with 3+ panels, Alt+Tab ×10 — then check
+  `data/logs/startup-perf/latest.json`: `terminal-repaint-nudge` should stay ~0 on clean
+  transitions and still fire on real churn (no black panels).

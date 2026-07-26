@@ -162,7 +162,7 @@
 
 - [x] `restoreTerminalViewportAfterReveal` (new, pure): scrollback readers land back where they were on reveal; `terminal-scroll-jump` counter on real jumps; at-bottom users stay at bottom
 - [x] Server Ctrl+L reattach redraw removed; client relies on existing snapshot/history replay paths — **visual TUI QA pending human**
-- [ ] Collapse churn bursts `[80,180,340]` / `[120,180,340,500]` + 48-frame polling — **deferred** (with the guard, zero-delta resizes no longer reach the PTY; burst collapse is a separate risky refactor)
+- [ ] Collapse churn bursts `[80,180,340]` / `[120,180,340,500]` + 48-frame polling — **deferred** (with the guard, zero-delta resizes no longer reach the PTY; burst collapse is a separate risky refactor). Partially superseded 2026-07-25 by the sin-parpadeo gates (see apply-progress.md "Sin-parpadeo"): deferred bursts now re-evaluate skip conditions at fire time and stop at the first verified tick, and survivor/pizarra/OS-resume repaints are gated on geometry + GPU state, so clean transitions schedule ~0 nudges without collapsing the legacy timers
 
 **Exit:** green (`terminalScrollIntegrity.test.js` 8/8). QA matrix pending human.
 
