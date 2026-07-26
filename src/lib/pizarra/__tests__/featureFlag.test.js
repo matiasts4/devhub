@@ -3,8 +3,9 @@
  *
  * Contract (this file pins):
  *   1. `isPizarraSharedViewEnabled()` returns a boolean.
- *   2. The default is ON in dev (NODE_ENV !== 'production') and
- *      OFF in production.
+ *   2. The default is ON in dev AND in production (since
+ *      pizarra-instant-enter A6; the explicit env var remains as
+ *      kill switch / force-ON override).
  *   3. When `NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE` is set to a
  *      truthy value ('1' | 'true' | 'yes' | 'on', case-insensitive)
  *      the flag returns true regardless of NODE_ENV.
@@ -41,14 +42,14 @@ describe('featureFlag — defaults', () => {
     else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prevFlag;
   });
 
-  test('defaults to OFF in production when no env var is set', () => {
+  test('defaults to ON in production when no env var is set (pizarra-instant-enter A6)', () => {
     const prev = process.env.NODE_ENV;
     const prevFlag = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
     delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
     process.env.NODE_ENV = 'production';
     const { isPizarraSharedViewEnabled, _resetFlagForTests } = require('../featureFlag');
     _resetFlagForTests();
-    expect(isPizarraSharedViewEnabled()).toBe(false);
+    expect(isPizarraSharedViewEnabled()).toBe(true);
     if (prev === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = prev;
     if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
@@ -159,7 +160,7 @@ describe('featureFlag — getRolloutStage (B.1)', () => {
     else process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE = prevFlag;
   });
 
-  test('returns prod in production when env var is unset (default OFF)', () => {
+  test('returns prod in production when env var is unset (default ON since A6)', () => {
     const prevNodeEnv = process.env.NODE_ENV;
     const prevFlag = process.env.NEXT_PUBLIC_PIZARRA_SHARED_VIEW_STATE;
     process.env.NODE_ENV = 'production';

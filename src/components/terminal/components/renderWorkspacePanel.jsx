@@ -346,6 +346,10 @@ export function renderWorkspacePanel(
     connectionState,
     visibleTerminalPanelCount = 1,
     coldMountOrdinal = 0,
+    // pizarra-instant-enter A6: prop kept for call-site compatibility.
+    // Its only consumer was the `deferLiveSurfaceToPizarra &&
+    // sharedViewEnabled` branch, which was unreachable (it lived inside
+    // the `!sharedViewEnabled` else arm) and has been removed.
     deferLiveSurfaceToPizarra = false,
     pizarraOwnsLiveSurfaces = false,
     swarmDelegatedRoleKeys = null,
@@ -370,6 +374,7 @@ export function renderWorkspacePanel(
     layoutSyncKey = null,
   }
 ) {
+  void deferLiveSurfaceToPizarra; // kept in the signature for call-site compatibility (see prop comment)
   const isActive = panel.id === activePanelId && activeWsId === wsId;
   const panelKind = normalizePanelKind(panel?.kind);
   const isSpaceComponent = panelKind === 'browser' || panelKind === 'files';
@@ -688,13 +693,6 @@ export function renderWorkspacePanel(
                     className="h-full w-full"
                   />
                 )
-              ) : deferLiveSurfaceToPizarra && sharedViewEnabled ? (
-                <div
-                  data-testid={`panel-body-deferred-pizarra-${panel.id}`}
-                  className="h-full w-full"
-                  aria-hidden="true"
-                  style={{ background: 'var(--surface-app, #050814)' }}
-                />
               ) : shouldMountTerminal ? (
                 <TerminalTTY
                   id={panel.id}

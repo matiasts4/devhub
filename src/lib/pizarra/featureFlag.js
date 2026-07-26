@@ -9,10 +9,13 @@
  * Convention (per the design §9.1 and the existing pizarra /
  * commandBar / terminal patterns):
  *   - The env var is read once at module scope and cached.
- *   - In dev (NODE_ENV !== 'production'), the flag defaults to ON
- *     so dogfood catches regressions early.
- *   - In production, the flag defaults to OFF so the new code
- *     paths are opt-in until the rollout completes.
+ *   - The flag defaults to ON in every environment (dev AND
+ *     production) since pizarra-instant-enter A6: the shared-view
+ *     path is the supported one, and the packaged desktop build
+ *     (NODE_ENV=production) must match what dev dogfoods.
+ *   - The env var remains as an explicit kill switch
+ *     (= 0 / false / off) and as an explicit force-ON for old
+ *     builds (= 1 / true / on).
  *   - Callers MUST go through `isPizarraSharedViewEnabled()`
  *     rather than reading the env var directly.
  *
@@ -42,19 +45,18 @@
  *   staging:| explicit ON  | NEXT_PUBLIC_PIZARRA_ | pre-prod QA env
  *          | required      |   SHARED_VIEW_STATE  |
  *          |               | = 1 / true / on      |
- *   prod:  | OFF           | NEXT_PUBLIC_PIZARRA_ | production rollout
- *          | (NODE_ENV === |   SHARED_VIEW_STATE  | — gated on Agente 1
- *          |  'production')| = 1 / true / on (after|   (terminales) being
- *          |               |   Agente 1 sign-off) |   stable
+ *   prod:  | ON (since     | NEXT_PUBLIC_PIZARRA_ | production rollout
+ *          | pizarra-      |   SHARED_VIEW_STATE  | — kill switch stays
+ *          | instant-enter | = 0 / false / off    |   available
+ *          | A6)           |   (kill switch)      |
  *
- * Why the asymmetry: in dev we want the new code paths to run by
- * default so regressions surface during dogfood. In staging the
- * env var must be set explicitly (no fallback) so a missed env
- * config in the staging deploy blocks the rollout rather than
- * silently shipping a new code path. In production the default
- * is OFF and an explicit opt-in is required — the rollout
- * happens after Agente 1 (terminales) stabilizes the noise
- * filter that pizarra-shared-view-state depends on.
+ * History: until pizarra-instant-enter A6 the production default was
+ * OFF, gated on "Agente 1 (terminales)" sign-off. A0–A5 of
+ * pizarra-instant-enter (churn coalescing, verified repaint retry,
+ * telemetry, retimed fades, Konva preload, viewport ghost) completed
+ * the stabilization the gate was waiting for, so the shared view is
+ * now the default everywhere. The explicit env override is the
+ * supported rollback.
  *
  * See docs/delegation/00-shared-context.md for the dependency
  * table that ties this flag to the terminal noise filter
@@ -73,8 +75,11 @@ function readFlagFromEnv(env) {
 }
 
 function defaultForEnv(env) {
-  // Dev defaults ON, production defaults OFF.
-  if (env && env.NODE_ENV === 'production') return false;
+  // pizarra-instant-enter A6: ON everywhere. The explicit env var is the
+  // kill switch (false) and the force-ON for old builds (true); the
+  // default no longer differs between dev and production so the packaged
+  // desktop build runs the same shared-view path dev dogfoods.
+  void env;
   return true;
 }
 
