@@ -2,6 +2,7 @@ import { applyKimiUsagePayload } from '../server/kimi.js';
 import { applyCodexUsagePayload } from '../server/codex.js';
 import { applyZaiQuotaPayload } from '../server/zai.js';
 import { applyAntigravityStatus } from '../server/antigravity.js';
+import { applyQoderQuotaPayload } from '../server/qoder.js';
 
 function baseResult() {
   return {
@@ -239,5 +240,102 @@ describe('Antigravity GetUserStatus payload parsing', () => {
       userStatus: { email: 'x@y.z', cascadeModelConfigData: { clientModelConfigs: [] } },
     });
     expect(result.error).toMatch(/no model quota data/);
+  });
+});
+
+describe('Qoder credits payload parsing', () => {
+  const payload = {
+    userId: 'u1',
+    userType: 'personal_professional',
+    usageType: 'credits',
+    totalUsagePercentage: 0.25,
+    isQuotaExceeded: false,
+    expiresAt: 1787673600000,
+    upgradeUrl: 'https://qoder.com/pricing?client=qoder',
+    userQuota: { total: 2000, used: 259, remaining: 1741, percentage: 0.13, unit: 'credits' },
+    addOnQuota: {
+      total: 300,
+      used: 300,
+      remaining: 0,
+      percentage: 1,
+      unit: 'credits',
+      detailUrl: 'https://qoder.com/account/usage',
+    },
+    isPlanQuotaProrated: false,
+  };
+
+  test('maps plan + add-on credit windows with combined primary usage', () => {
+    const result = applyQoderQuotaPayload(baseResult(), payload, 1785000000000);
+
+    expect(result.windows).toHaveLength(2);
+
+    const plan = result.windows.find((w) => w.name === 'Plan credits');
+    // used/total drives the window, not the 0..1 fraction: 259/2000 ≈ 12.95%
+    expect(plan.usagePercent).toBe(13);
+    expect(plan.isExhausted).toBe(false);
+    expect(plan.resetsAt).toBe(new Date(1787673600000).toISOString());
+
+    const addOn = result.windows.find((w) => w.name === 'Add-on credits');
+    expect(addOn.usagePercent).toBe(100);
+    expect(addOn.isExhausted).toBe(true);
+    expect(addOn.resetsAt).toBeNull();
+
+    // Primary = combined totalUsagePercentage (0.25 fraction → 25%)
+    expect(result.primaryUsagePercent).toBe(25);
+    expect(result.primaryRemainingPercent).toBe(75);
+    expect(result.timeUntilResetMs).toBeGreaterThan(0);
+  });
+
+  test('exposes credit + plan metadata', () => {
+    const result = applyQoderQuotaPayload(baseResult(), payload, 1785000000000);
+    expect(result.metadata.userType).toBe('personal_professional');
+    expect(result.metadata.usageType).toBe('credits');
+    expect(result.metadata.unit).toBe('credits');
+    expect(result.metadata.planCredits).toEqual({ total: 2000, used: 259, remaining: 1741 });
+    expect(result.metadata.addOnCredits).toEqual({
+      total: 300,
+      used: 300,
+      remaining: 0,
+      detailUrl: 'https://qoder.com/account/usage',
+    });
+    expect(result.metadata.dataSource).toBe('cli-log');
+    expect(result.metadata.dataAsOfMs).toBe(1785000000000);
+    expect(result.metadata.upgradeUrl).toBe('https://qoder.com/pricing?client=qoder');
+    expect(result.metadata.planExpiresAt).toBe(new Date(1787673600000).toISOString());
+    expect(Number.isInteger(result.metadata.daysUntilRenewal)).toBe(true);
+    expect(result.metadata.daysUntilRenewal).toBeGreaterThan(0);
+  });
+
+  test('plan-only payload yields a single window', () => {
+    const result = applyQoderQuotaPayload(baseResult(), {
+      userType: 'personal_standard',
+      usageType: 'credits',
+      totalUsagePercentage: 0.5,
+      userQuota: { total: 100, used: 50, remaining: 50, percentage: 0.5, unit: 'credits' },
+    });
+    expect(result.windows).toHaveLength(1);
+    expect(result.windows[0].name).toBe('Plan credits');
+    expect(result.windows[0].usagePercent).toBe(50);
+    expect(result.primaryUsagePercent).toBe(50);
+    expect(result.metadata.addOnCredits).toBeNull();
+  });
+
+  test('treats the year-9999 sentinel as no reset', () => {
+    const result = applyQoderQuotaPayload(baseResult(), {
+      usageType: 'credits',
+      isQuotaExceeded: true,
+      expiresAt: 253402214400000,
+      userQuota: { total: 0, used: 0, remaining: 0, percentage: 0, unit: 'credits' },
+    });
+    expect(result.primaryResetAt).toBeNull();
+    expect(result.timeUntilResetMs).toBeNull();
+    expect(result.metadata.daysUntilRenewal).toBeNull();
+    expect(result.metadata.isQuotaExceeded).toBe(true);
+  });
+
+  test('reports error when no quota data present', () => {
+    const result = applyQoderQuotaPayload(baseResult(), { usageType: 'credits' });
+    expect(result.windows).toHaveLength(0);
+    expect(result.error).toMatch(/no quota data/);
   });
 });

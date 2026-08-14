@@ -25,7 +25,11 @@ const {
   extractAgentSessionId,
   synthesizeAgentSessionId,
 } = require('./agentTuiMetadata');
-const { detectKimiTuiReady } = require('./kimiReadyMarker');
+const {
+  detectKimiTuiReady,
+  detectKimiStrongSignal,
+  countKimiPromotingSignals,
+} = require('./kimiReadyMarker');
 const { detectAntigravityTuiReady } = require('./antigravityReadyMarker');
 const { detectQodercliTuiReady } = require('./qodercliReadyMarker');
 
@@ -97,15 +101,80 @@ function detectOpenCodeSessionId(text) {
   return outputMatch?.[0] || null;
 }
 
+/**
+ * Strong OpenCode signal — MiniMax provider row (both halves required).
+ * Keep in sync with src/lib/terminal/opencodeReadyMarker.js.
+ */
+function detectOpenCodeStrongSignal(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /minimax\.io/i.test(text) && /MiniMax/i.test(text);
+}
+
+// Promoting weak signals — only promote in combination (>=2 distinct in the
+// same chunk). The generic `/status x.y` pattern never promotes (log-prone).
+const OPENCODE_PROMOTING_SIGNALS = [
+  /ctrl\+p\s+commands/i,
+  /esc\s+interrupt/i,
+  /\bMCP\s*\/\s*status\b/i,
+  /[⊙⊛]\s*\d+\s+MCP/i,
+];
+
+function countOpenCodePromotingSignals(text) {
+  if (!text || typeof text !== 'string') return 0;
+  let count = 0;
+  for (const re of OPENCODE_PROMOTING_SIGNALS) {
+    if (re.test(text)) count += 1;
+  }
+  return count;
+}
+
 /** OpenCode interactive TUI footer — input area is ready for paste. */
 function detectOpenCodeTuiReady(text) {
   if (!text || typeof text !== 'string') return false;
-  if (/ctrl\+p\s+commands/i.test(text) || /esc\s+interrupt/i.test(text)) return true;
-  if (/\bMCP\s*\/\s*status\b/i.test(text)) return true;
-  if (/[⊙⊛]\s*\d+\s+MCP/i.test(text)) return true;
+  if (detectOpenCodeStrongSignal(text)) return true;
+  if (countOpenCodePromotingSignals(text) > 0) return true;
   if (/\/status\s+\d+\.\d+(?:\.\d+)?/i.test(text)) return true;
-  if (/minimax\.io/i.test(text) && /MiniMax/i.test(text)) return true;
   return false;
+}
+
+// ─── Output-based agent promotion gate ──────────────────────────────────────
+// CJS mirror of src/lib/terminal/agentOutputPromotion.js — keep in sync.
+// Prevents log noise (e.g. `pnpm electron:up` piping DevHub's own startup
+// logs: MCP status lines, session ids) from falsely promoting a shell panel
+// to an agent TUI, which lit the workspace activity dot for non-agents.
+const MIN_PROMOTING_SIGNALS = 2;
+
+/** True when the session has an explicit NON-agent initialCommand. */
+function isExplicitNonAgentLaunch(session) {
+  const command = session?.initialCommand;
+  if (!command || typeof command !== 'string' || !command.trim()) return false;
+  return detectAgentTypeFromCommand(command) === null;
+}
+
+/**
+ * Whether `text` justifies promoting `session` to agent `kind` from output
+ * alone. Only consult when session.agentType is NOT yet set.
+ */
+function shouldPromoteAgentFromOutput(session, kind, text) {
+  if (!text || typeof text !== 'string') return false;
+  if (isExplicitNonAgentLaunch(session)) return false;
+  switch (kind) {
+    case 'kimi':
+      return (
+        detectKimiStrongSignal(text) || countKimiPromotingSignals(text) >= MIN_PROMOTING_SIGNALS
+      );
+    case 'opencode':
+      return (
+        detectOpenCodeStrongSignal(text) ||
+        countOpenCodePromotingSignals(text) >= MIN_PROMOTING_SIGNALS
+      );
+    case 'agy':
+      return detectAntigravityTuiReady(text);
+    case 'qodercli':
+      return detectQodercliTuiReady(text);
+    default:
+      return false;
+  }
 }
 
 function stripTerminalFocusReporting(chunk) {
@@ -188,13 +257,19 @@ function applyAgentTuiDetection(session, command) {
   session.mode = 'tui';
   session.historyEnabled = false;
   session.history = [];
-  if (!session.agentType) {
+  // A newly detected launch (fresh session OR provider switch inside the same
+  // PTY) must replace the previous identity; otherwise the old provider's
+  // session id survives and gets resurrected on restore.
+  const providerChanged = session.agentType !== type;
+  if (!session.agentType || providerChanged) {
     session.agentType = type;
     session.agentDetectedAt = Date.now();
   }
-  if (!session.agentSessionId) {
+  if (!session.agentSessionId || providerChanged) {
     const explicit = extractAgentSessionId(type, command);
     session.agentSessionId = explicit || synthesizeAgentSessionId(type, session.id) || null;
+    session._agentSessionBinderStarted = false;
+    session._lastBroadcastAgentSessionId = null;
   }
   return true;
 }
@@ -368,6 +443,10 @@ function reapTypedAgentSessionIfExited(session, chunk, now = Date.now()) {
   session.historyEnabled = true;
   session.agentLaunchOrigin = null;
   session._typedAgentReaper = null;
+  // Re-arm session-id detection so the NEXT launch in this shell (same or
+  // different provider) binds and broadcasts a fresh id.
+  session._agentSessionBinderStarted = false;
+  session._lastBroadcastAgentSessionId = null;
 
   return frame;
 }
@@ -387,8 +466,10 @@ module.exports = {
   detectOpenCodeSessionId,
   detectOpenCodeTuiReady,
   getTransportMode,
+  isExplicitNonAgentLaunch,
   parseClientMessage,
   reapTypedAgentSessionIfExited,
+  shouldPromoteAgentFromOutput,
   stripShellTerminalResponseNoise,
   synthesizeAgentSessionId,
   updateSessionModeFromInput,

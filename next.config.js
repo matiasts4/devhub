@@ -6,9 +6,12 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 });
 
+const { version: appVersion } = require('./package.json');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
     NEXT_PUBLIC_SUPABASE_URL: 'https://kpgeyukrsydjujqouape.supabase.co',
     NEXT_PUBLIC_SUPABASE_ANON_KEY:
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwZ2V5dWtyc3lkanVqcW91YXBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjYzOTIsImV4cCI6MjA5MDIwMjM5Mn0.ytocfR5lKCgiEvdTy8-8oVr-e8lomxrG7O_JZHv7Upw',

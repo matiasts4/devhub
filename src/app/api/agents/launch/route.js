@@ -71,6 +71,9 @@ export async function POST(request) {
       env: childEnv,
       detached: true,
       stdio: 'ignore',
+      // Windows gives a detached child its own console window — hide it so
+      // background engine launches don't pop stray external terminals.
+      windowsHide: true,
     });
 
     child.unref();

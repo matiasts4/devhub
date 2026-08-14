@@ -296,6 +296,10 @@ function main() {
   require('./materialize-standalone-runtime.cjs').materializeStandaloneNodeModules();
   require('./materialize-standalone-runtime.cjs').assertRequiredFiles();
 
+  // After materialization all packages are real copies in top-level node_modules.
+  // The .pnpm store is dead weight (~576 MB of duplicated sharp/platform binaries).
+  removeIfExists(path.join(STANDALONE_DIR, 'node_modules', '.pnpm'));
+
   // Prune after materialization because injectPackageFromProject copies the full package tree.
   pruneNodePtyPrebuilds();
   pruneUnusedSharpPrebuilds();

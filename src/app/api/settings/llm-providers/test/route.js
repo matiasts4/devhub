@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { validateCopilotOAuth } from '@/lib/copilot-token';
+import { resolveXaiOAuthAccessToken, isXaiOAuthMode } from '@/lib/xai-oauth';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -41,6 +42,19 @@ export async function POST(request) {
         break;
       case 'copilot':
         result = await testCopilot((config.COPILOT_OAUTH_TOKEN || '').trim());
+        break;
+      case 'kimi_code':
+        result = await testOpenAICompatible(
+          'https://api.kimi.com/coding/v1',
+          (config.KIMI_CODE_API_KEY || '').trim(),
+          config.KIMI_CODE_MODEL || 'kimi-for-coding'
+        );
+        break;
+      case 'xai':
+        result = await testXai(config);
+        break;
+      case 'minimax':
+        result = await testMinimax(config);
         break;
       default:
         return NextResponse.json({ valid: false, error: 'Proveedor desconocido' });
@@ -91,6 +105,65 @@ async function testCopilot(oauthToken) {
     return { valid: true };
   }
   return { valid: false, error: result.error };
+}
+
+async function testXai(config = {}) {
+  let accessToken = (config.XAI_API_KEY || '').trim();
+  if (
+    (!accessToken || isXaiOAuthMode(config)) &&
+    (config.XAI_OAUTH_REFRESH_TOKEN || config.XAI_OAUTH_ACCESS_TOKEN)
+  ) {
+    try {
+      const oauth = await resolveXaiOAuthAccessToken(config);
+      if (oauth.accessToken) accessToken = oauth.accessToken;
+    } catch {
+      // Keep API key if OAuth refresh fails.
+    }
+  }
+  if (!accessToken) {
+    return {
+      valid: false,
+      error: 'Sin credenciales de Grok. Cargá una API key o iniciá sesión con SuperGrok.',
+    };
+  }
+  return testOpenAICompatible(
+    'https://api.x.ai/v1',
+    accessToken,
+    config.XAI_MODEL || 'grok-4.20-0309-non-reasoning'
+  );
+}
+
+async function testMinimax(config = {}) {
+  const apiKey = (config.MINIMAX_API_KEY || process.env.MINIMAX_API_KEY || '').trim();
+  if (!apiKey) {
+    return {
+      valid: false,
+      error: 'Sin API key de MiniMax. Cargá MINIMAX_API_KEY en el modal o en .env.local.',
+    };
+  }
+  try {
+    const res = await fetch('https://api.minimax.io/anthropic/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: config.MINIMAX_MODEL || 'minimax-coding-plan/MiniMax-M3',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'test' }],
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      return { valid: true };
+    }
+    const error = await res.json().catch(() => ({}));
+    return { valid: false, error: error.error?.message || `HTTP ${res.status}` };
+  } catch (err) {
+    return { valid: false, error: err.message };
+  }
 }
 
 async function testOpenCode(_model) {

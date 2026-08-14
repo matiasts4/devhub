@@ -30,6 +30,7 @@ import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import { createClient } from '@/lib/db/localClient';
 import { sileo } from 'sileo';
 import { chromeSurfaceStyle } from '@/components/ui/chrome-surface';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import {
   btnDangerStyle,
   btnPrimaryStyle,
@@ -1073,6 +1074,8 @@ export default function Tareas() {
 
   const activeFiltersCount = [fMilestone, fSearch, fUnlocked, fMyTasks].filter(Boolean).length;
 
+  if (loading) return <PageSkeleton tiles={5} rows={6} />;
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col" style={getWorkspacePageShellStyle()}>
       {/* Content */}
@@ -1289,11 +1292,7 @@ export default function Tareas() {
         )}
 
         {/* Board / Agent View */}
-        {loading ? (
-          <div className="flex items-center justify-center flex-1 py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-[var(--accent-primary)]" />
-          </div>
-        ) : viewMode === 'agent' ? (
+        {viewMode === 'agent' ? (
           <AgentQueueView
             tasks={tasks}
             dependencies={dependencies}

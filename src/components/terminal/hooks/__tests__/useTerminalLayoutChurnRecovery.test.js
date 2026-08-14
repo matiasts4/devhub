@@ -474,3 +474,56 @@ describe('pizarra transition coalescing (pizarra-instant-enter A1)', () => {
     expect(ctx.scheduleBoundedForceRepaint).not.toHaveBeenCalled();
   });
 });
+
+describe('window-visible dedup (window switch toggles isVisibleInLayout)', () => {
+  beforeEach(() => {
+    mockRefreshTerminalViewport.mockClear();
+    mockForceTerminalViewportRepaint.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function createWindowVisibleCtx(overrides = {}) {
+    return createCtx({
+      containerRef: { current: { getBoundingClientRect: () => ({ width: 800, height: 600 }) } },
+      canvasAddonRef: { current: {} },
+      ...overrides,
+    });
+  }
+
+  function dispatchWindowVisible() {
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('devhub:terminal-window-visible', { detail: { panelIds: ['p1'] } })
+      );
+    });
+  }
+
+  test('skips the redundant sync when the destination panel is verified clean', () => {
+    const ctx = createWindowVisibleCtx();
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    dispatchWindowVisible();
+
+    expect(ctx.syncTerminalViewportOnWorkspaceShowRef.current).not.toHaveBeenCalled();
+    expect(ctx.logViewportDiagnostic).toHaveBeenCalledWith(
+      'workspace-window-switch-visible-skipped-verified-clean'
+    );
+  });
+
+  test('still syncs when the GPU addon is unattached (recovery wins)', () => {
+    const ctx = createWindowVisibleCtx({ canvasAddonRef: { current: null } });
+    const ctxRef = { current: ctx };
+    renderHook(() => useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2: false }));
+
+    dispatchWindowVisible();
+
+    expect(ctx.syncTerminalViewportOnWorkspaceShowRef.current).toHaveBeenCalledWith(
+      'workspace-window-switch-visible',
+      expect.objectContaining({ clearAtlas: false })
+    );
+  });
+});

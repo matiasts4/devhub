@@ -6,6 +6,8 @@
 import { useEffect, useRef } from 'react';
 import { usesLegacyTerminalSurvivorRecovery } from '@/lib/terminal/legacyTerminalSurvivorRecovery';
 import { isKimiTuiLive } from '@/lib/terminal/kimiReadyMarker';
+import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import { probeTerminalRenderIntegrity } from '@/components/terminal/TerminalTTY.helpers';
 import {
   fitTerminalViewport,
   proposeTerminalViewportDimensions,
@@ -30,6 +32,41 @@ function readLayoutChurnCtx(ctxRef) {
   const c = ctxRef.current;
   if (!c) return null;
   return c;
+}
+
+/**
+ * Verified-clean predicate shared by the survivor-recover and window-visible
+ * paths. A panel is "clean" when its grid already matches the proposed fit, the
+ * GPU renderer is attached with no pending/released recovery, and there is no
+ * silent WebGL context loss. Recovering a clean panel only re-paints an
+ * already-correct bitmap — that re-paint IS the flicker users see, so callers
+ * skip it. Exported for tests.
+ */
+export function isLayoutChurnSurvivorVerifiedClean(c) {
+  if (!c?.termRef?.current || !c?.fitRef?.current || !c?.containerRef?.current) return false;
+  const proposed = proposeTerminalViewportDimensions({
+    container: c.containerRef.current,
+    fitAddon: c.fitRef.current,
+    term: c.termRef.current,
+  });
+  const dimsMatch =
+    proposed &&
+    Number(proposed.cols) === Number(c.termRef.current.cols) &&
+    Number(proposed.rows) === Number(c.termRef.current.rows);
+  const gpuAttached = !needsGpuRendererReattach({
+    operationalRendererMode: c.operationalRendererModeRef?.current,
+    webglAddon: c.webglAddonRef?.current,
+    canvasAddon: c.canvasAddonRef?.current,
+  });
+  const noGpuRecovery =
+    !c.pendingWebglRecoveryRef?.current &&
+    !c.webglReleasedOnLayoutHideRef?.current &&
+    !c.canvasReleasedOnLayoutHideRef?.current;
+  const webglContextAlive =
+    !shouldAttachWebglRenderer({
+      operationalRendererMode: c.operationalRendererModeRef?.current,
+    }) || !isWebglAddonContextLost(c.webglAddonRef?.current);
+  return dimsMatch && gpuAttached && noGpuRecovery && webglContextAlive;
 }
 
 /**
@@ -220,6 +257,23 @@ function runPizarraTransitionPass(c, reason) {
     // lands, so they always take the full path below.
     if (viewportFitConfirmedRef?.current === true && canSkipLayoutSettledRepaintForCtx(c)) {
       logViewportDiagnostic(`${reason}-skipped-verified-clean`);
+      const probe = probeTerminalRenderIntegrity({
+        term: c.termRef?.current,
+        container: c.containerRef?.current,
+        fitAddon: c.fitRef?.current,
+        operationalRendererMode: c.operationalRendererModeRef?.current,
+        webglAddon: c.webglAddonRef?.current,
+        canvasAddon: c.canvasAddonRef?.current,
+        lastPtySize: c.lastPtySizeRef?.current,
+      });
+      if (!probe.healthy) {
+        logTerminalSession('verified-clean-false-negative', {
+          panelId: c.id,
+          gate: 'pizarra-transition',
+          reason: String(reason),
+          ...probe,
+        });
+      }
       return;
     }
     syncTerminalViewportOnWorkspaceShow(`layout-settled-${reason}-immediate`, {
@@ -325,34 +379,25 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       // (dims match, GPU attached, no pending recovery, no silent context loss),
       // another soft reveal only re-paints an already-correct bitmap: that IS the
       // post-close flicker users see at 0/50/150/350/600/1000/1600 ms.
-      const survivorVerifiedClean = () => {
-        if (!termRef.current || !fitRef.current || !containerRef.current) return false;
-        const proposed = proposeTerminalViewportDimensions({
-          container: containerRef.current,
-          fitAddon: fitRef.current,
-          term: termRef.current,
-        });
-        const dimsMatch =
-          proposed &&
-          Number(proposed.cols) === Number(termRef.current.cols) &&
-          Number(proposed.rows) === Number(termRef.current.rows);
-        const gpuAttached = !needsGpuRendererReattach({
-          operationalRendererMode: operationalRendererModeRef.current,
-          webglAddon: webglAddonRef.current,
-          canvasAddon: canvasAddonRef.current,
-        });
-        const noGpuRecovery =
-          !pendingWebglRecoveryRef.current &&
-          !webglReleasedOnLayoutHideRef.current &&
-          !canvasReleasedOnLayoutHideRef.current;
-        const webglContextAlive =
-          !shouldAttachWebglRenderer({
-            operationalRendererMode: operationalRendererModeRef.current,
-          }) || !isWebglAddonContextLost(webglAddonRef.current);
-        return dimsMatch && gpuAttached && noGpuRecovery && webglContextAlive;
-      };
-      if (survivorVerifiedClean()) {
+      if (isLayoutChurnSurvivorVerifiedClean(c)) {
         logViewportDiagnostic(`${reasonStr || 'survivor'}-recover-skipped-verified-clean`);
+        const probe = probeTerminalRenderIntegrity({
+          term: c.termRef?.current,
+          container: c.containerRef?.current,
+          fitAddon: c.fitRef?.current,
+          operationalRendererMode: c.operationalRendererModeRef?.current,
+          webglAddon: c.webglAddonRef?.current,
+          canvasAddon: c.canvasAddonRef?.current,
+          lastPtySize: c.lastPtySizeRef?.current,
+        });
+        if (!probe.healthy) {
+          logTerminalSession('verified-clean-false-negative', {
+            panelId: c.id,
+            gate: 'survivor-recover',
+            reason: reasonStr || 'survivor',
+            ...probe,
+          });
+        }
         return;
       }
 
@@ -385,10 +430,11 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
         logViewportDiagnostic('survivor-recover-webgl-context-lost');
         disposeWebglAddonForContextLoss('survivor-recover-webgl-context-lost');
       }
-      // Window switch (V1/V2/V3) does not toggle isVisibleInLayout, so live TUIs
-      // like OpenCode/Grok never get the layout-show TUI-safe churn path. Run the
-      // same fit + stabilize + refresh + force-repaint + forced-SIGWINCH sequence
-      // that workspace-show uses for churn recovery.
+      // Window switch (V1/V2/V3) DOES toggle isVisibleInLayout, so the layout-show
+      // edge normally owns the destination panel's recovery. We only reach here when
+      // the verified-clean gate above failed open (dims shifted / GPU needs reattach),
+      // so run the same fit + stabilize + refresh + force-repaint + forced-SIGWINCH
+      // sequence that workspace-show uses for churn recovery.
       const canRunWindowSwitchTuiRecover =
         isWorkspaceWindowSwitch &&
         tuiSessionActiveRef.current &&
@@ -460,11 +506,13 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
 
     window.addEventListener('devhub:terminal-survivor-recover', handleSurvivorRecover);
 
-    // Window switches don't toggle isVisibleInLayout, so the layout-show
-    // useLayoutEffect never fires for the destination panel. The manager dispatches
-    // a single-shot devhub:terminal-window-visible event for the active panel of the
-    // destination window; run the exact same workspace-show golden path here so
-    // window switches get the same fit/stabilize/recover sequence as tab switches.
+    // Window switches DO toggle isVisibleInLayout (WorkspaceTerminalSurface gates
+    // it on isActiveWindow), so the layout-show useLayoutEffect already owns the
+    // false→true recovery for the destination panel. This legacy window-visible
+    // path is a fallback for the same switch; to avoid double-syncing (the visible
+    // "terminals move around" churn), skip it when the panel is verified clean and
+    // only run the golden recovery path when something actually needs it (detached
+    // GPU addon, shifted dims, pending recovery).
     const handleWindowVisible = (event) => {
       const c = readLayoutChurnCtx(ctxRef);
       if (!c) return;
@@ -483,6 +531,27 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       if (!isVisibleInLayoutRef.current) {
         needsViewportSyncOnShowRef.current = true;
         layoutChurnedWhileHiddenRef.current = true;
+        return;
+      }
+      if (isLayoutChurnSurvivorVerifiedClean(c)) {
+        logViewportDiagnostic('workspace-window-switch-visible-skipped-verified-clean');
+        const probe = probeTerminalRenderIntegrity({
+          term: c.termRef?.current,
+          container: c.containerRef?.current,
+          fitAddon: c.fitRef?.current,
+          operationalRendererMode: c.operationalRendererModeRef?.current,
+          webglAddon: c.webglAddonRef?.current,
+          canvasAddon: c.canvasAddonRef?.current,
+          lastPtySize: c.lastPtySizeRef?.current,
+        });
+        if (!probe.healthy) {
+          logTerminalSession('verified-clean-false-negative', {
+            panelId: c.id,
+            gate: 'window-visible',
+            reason: 'workspace-window-switch-visible',
+            ...probe,
+          });
+        }
         return;
       }
       logViewportDiagnostic('workspace-window-switch-visible');
@@ -871,10 +940,11 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
           logViewportDiagnostic(`${reason}-webgl-context-lost`);
           disposeWebglAddonForContextLoss(`${reason}-webgl-context-lost`);
         }
-        // Window switch (V1/V2/V3) does not toggle isVisibleInLayout, so live TUIs
-        // like OpenCode/Grok never get the layout-show TUI-safe churn path. Run the
-        // same fit + stabilize + refresh + force-repaint + forced-SIGWINCH sequence
-        // that workspace-show uses for churn recovery.
+        // Window switch (V1/V2/V3) DOES toggle isVisibleInLayout, so the layout-show
+        // edge normally owns the destination panel's recovery. We only reach here when
+        // the verified-clean gate failed open (dims shifted / GPU needs reattach), so
+        // run the same fit + stabilize + refresh + force-repaint + forced-SIGWINCH
+        // sequence that workspace-show uses for churn recovery.
         if (
           isWindowSwitch &&
           tuiSessionActiveRef.current &&
@@ -944,6 +1014,23 @@ export default function useTerminalLayoutChurnRecovery({ ctxRef, isEngineV2 }) {
       // already-correct bitmap — that re-paint IS the visible flicker.
       if (canSkipLayoutSettledRepaint()) {
         logViewportDiagnostic(`${reason}-burst-skipped-no-change`);
+        const probe = probeTerminalRenderIntegrity({
+          term: c.termRef?.current,
+          container: c.containerRef?.current,
+          fitAddon: c.fitRef?.current,
+          operationalRendererMode: c.operationalRendererModeRef?.current,
+          webglAddon: c.webglAddonRef?.current,
+          canvasAddon: c.canvasAddonRef?.current,
+          lastPtySize: c.lastPtySizeRef?.current,
+        });
+        if (!probe.healthy) {
+          logTerminalSession('verified-clean-false-negative', {
+            panelId: c.id,
+            gate: 'layout-settled-burst',
+            reason: String(reason),
+            ...probe,
+          });
+        }
         return;
       }
 

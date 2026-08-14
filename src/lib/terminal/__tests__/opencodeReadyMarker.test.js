@@ -4,6 +4,8 @@ const {
 } = require('../viewportReadyMarker.js');
 const {
   detectOpenCodeTuiReady,
+  detectOpenCodeStrongSignal,
+  countOpenCodePromotingSignals,
   detectOpenCodeReadyFromTerminalBuffer,
   isOpenCodeLaunchCommand,
   resolveOpencodeReadyMarkerPath,
@@ -51,6 +53,23 @@ describe('opencodeReadyMarker', () => {
       detectOpenCodeTuiReady('⊙ 6 MCP /status    1.16.2\nMiniMax Token Plan (minimax.io)')
     ).toBe(true);
     expect(detectOpenCodeTuiReady('booting opencode')).toBe(false);
+  });
+
+  test('detectOpenCodeStrongSignal matches the MiniMax provider row', () => {
+    expect(detectOpenCodeStrongSignal('MiniMax Token Plan (minimax.io)')).toBe(true);
+    // Both regexes are case-insensitive, so "minimax.io" alone satisfies both.
+    expect(detectOpenCodeStrongSignal('minimax.io alone')).toBe(true);
+    expect(detectOpenCodeStrongSignal('MiniMax without domain')).toBe(false);
+    expect(detectOpenCodeStrongSignal('MCP / status')).toBe(false);
+  });
+
+  test('countOpenCodePromotingSignals counts distinct footer hints only', () => {
+    expect(countOpenCodePromotingSignals('MCP / status')).toBe(1);
+    expect(countOpenCodePromotingSignals('⊙ 6 MCP   esc interrupt')).toBe(2);
+    // The generic version row never counts toward promotion (log-prone).
+    expect(countOpenCodePromotingSignals('/status 1.16.2')).toBe(0);
+    expect(countOpenCodePromotingSignals('MCP / status   /status 1.16.2')).toBe(1);
+    expect(countOpenCodePromotingSignals(null)).toBe(0);
   });
 
   test('shouldSkipConfirmedTuiReadyHotPath is one-shot after footer or grok ready', () => {

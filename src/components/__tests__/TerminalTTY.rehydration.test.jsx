@@ -770,4 +770,59 @@ describe('TerminalTTY â€” v2 rehydration protocol', () => {
     expect(term.scrollToLine).toHaveBeenCalledWith(40);
     expect(term.scrollToBottom).not.toHaveBeenCalled();
   });
+
+  // Initial restore (first connect, no reconnect) replays the snapshot the same
+  // way and leaves the viewport pinned at the TOP of the rebuilt scrollback.
+  // There is no pre-clear intent to restore, so the default intent must be
+  // 'bottom' — otherwise restored agent TUIs (Kimi) land at the conversation
+  // header looking frozen, since every non-forced scroll rescue skips them.
+  it('re-anchors the viewport to the bottom after an initial restore replay', async () => {
+    await renderIntoDom(
+      React.createElement(TerminalTTY, {
+        id: 'panel-initial-restore',
+        isEngineV2: true,
+        isVisibleInLayout: true,
+        isActivePanel: true,
+        showQuickCopyButton: false,
+        requestedRendererMode: 'xterm',
+      })
+    );
+
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await waitForWebSocket();
+
+    const socket = getLastSocket();
+    const term = getLastTerminal();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        serialized: 'SNAPSHOT_RESTORED',
+        ptyOffset: 100,
+        termsize: { cols: 80, rows: 24 },
+      }),
+    });
+    await flushTerminalEffects();
+
+    // Post-replay xterm state: viewport stuck at the top while baseY grew.
+    term.buffer.active = { type: 'normal', viewportY: 0, baseY: 100, length: 124 };
+    term.scrollToBottom.mockClear();
+    term.scrollToLine.mockClear();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'metadata',
+        termsize: { cols: 80, rows: 24 },
+        cwd: '/home/user',
+        replayComplete: true,
+      }),
+    });
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+    await flushTerminalEffects();
+
+    // Forced restore — the non-forced rescues are blocked (viewportY=0, baseY=100).
+    expect(term.scrollToBottom).toHaveBeenCalled();
+  });
 });

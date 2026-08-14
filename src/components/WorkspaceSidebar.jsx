@@ -35,6 +35,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
 import { markTerminalNavIntent } from '@/lib/terminal/startupPerfMarks';
+import { getAppVersion } from '@/lib/appVersion';
 
 const ACTIVE_AGENT_STATUSES = new Set([
   'working',
@@ -125,6 +126,17 @@ export default function WorkspaceSidebar({
   const { user } = useAuth();
 
   const [activeAgentsCount, setActiveAgentsCount] = useState(0);
+  const [appVersion, setAppVersion] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    getAppVersion().then((v) => {
+      if (alive) setAppVersion(v);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!project?.id) return;
@@ -491,6 +503,30 @@ export default function WorkspaceSidebar({
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* App version strip */}
+          {appVersion && (
+            <div
+              data-testid="sidebar-app-version"
+              className={`flex items-center border-t ${
+                collapsed ? 'justify-center px-1 py-1' : 'justify-between px-2.5 py-1'
+              }`}
+              style={{ borderColor: 'var(--chrome-border-color)' }}
+              title={`DevHub v${appVersion}`}
+            >
+              {!collapsed && (
+                <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                  DevHub
+                </span>
+              )}
+              <span
+                className="text-[9px] font-mono"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                v{appVersion}
+              </span>
             </div>
           )}
 

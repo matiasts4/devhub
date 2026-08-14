@@ -193,7 +193,7 @@ describe('terminalRendererCapabilities', () => {
     );
   });
 
-  test('resolveOperationalRendererMode keeps WebGL for a single visible panel', () => {
+  test('resolveOperationalRendererMode resolves GPU requests to canvas even for a single panel', () => {
     expect(TERMINAL_SPLIT_WEBGL_PANEL_LIMIT).toBe(1);
     expect(
       resolveOperationalRendererMode({
@@ -201,7 +201,7 @@ describe('terminalRendererCapabilities', () => {
         effectiveMode: 'xterm-webgl',
         visibleTerminalPanelCount: 1,
       })
-    ).toBe('xterm-webgl');
+    ).toBe('xterm-canvas');
   });
 
   test('resolveVisibleTerminalPanelCountForRenderer treats files/browser siblings as a GPU slot', () => {

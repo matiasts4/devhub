@@ -119,6 +119,10 @@ function injectPackageFromProject(packageName, targetNodeModules = NODE_MODULES)
     throw new Error(`Project dependency missing: ${packageName}`);
   }
 
+  if (fs.existsSync(targetDir) && !isPackageJsonOnlyStub(targetDir)) {
+    return;
+  }
+
   fs.rmSync(targetDir, { recursive: true, force: true });
   fs.cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
 }
@@ -225,9 +229,16 @@ function materializeNodeModulesTree(nodeModulesDir) {
   }
 }
 
+let _hashedExternalCache = null;
+
 function discoverHashedExternalPackages() {
+  if (_hashedExternalCache !== null) {
+    return _hashedExternalCache;
+  }
+
   if (!fs.existsSync(SERVER_CHUNKS_DIR)) {
-    return [];
+    _hashedExternalCache = [];
+    return _hashedExternalCache;
   }
 
   const hashedNames = new Set();
@@ -240,7 +251,8 @@ function discoverHashedExternalPackages() {
     }
   }
 
-  return [...hashedNames].sort();
+  _hashedExternalCache = [...hashedNames].sort();
+  return _hashedExternalCache;
 }
 
 function resolveHashedPackageSource(hashedName) {

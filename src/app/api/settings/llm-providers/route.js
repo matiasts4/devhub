@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 
+import { invalidateLlmProviderConfigCache } from '@/lib/llmProviderConfig';
+
 const CONFIG_PATH = path.join(process.cwd(), 'data', 'llm-providers-config.json');
 
 const DEFAULT_CONFIG = {
@@ -103,9 +105,17 @@ export async function POST(request) {
       favoriteModels: body.favoriteModels || current.favoriteModels || {},
       globalTemperature: body.globalTemperature ?? current.globalTemperature ?? 0.7,
       globalMaxTokens: body.globalMaxTokens ?? current.globalMaxTokens ?? 4000,
+      settings: {
+        ...(current.settings || {}),
+        zed: {
+          ...(current.settings?.zed || {}),
+          ...(body.settings?.zed || body.zed || {}),
+        },
+      },
     };
 
     await saveConfig(next);
+    invalidateLlmProviderConfigCache();
 
     return NextResponse.json({ success: true });
   } catch (err) {

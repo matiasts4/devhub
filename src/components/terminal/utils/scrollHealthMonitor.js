@@ -21,6 +21,7 @@ import {
   terminalHasActiveMouseReporting,
 } from '../TerminalTTY.helpers';
 import { logTuiPointerDebug } from '@/lib/terminal/tuiPointerDebug';
+import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 
 function isElementVisible(el) {
   if (!el || !(el instanceof (globalThis.Element || Object))) return false;
@@ -239,6 +240,11 @@ export function createScrollHealthMonitor(
         deadHistory = [];
         if (status === 'broken') {
           status = 'healthy';
+          logTerminalSession('scroll-recovered', {
+            panelId,
+            deadCount: 0,
+            lastHandlerPath,
+          });
           if (typeof logger === 'function') {
             logger('scroll-recovered', {
               panelId,
@@ -273,6 +279,20 @@ export function createScrollHealthMonitor(
 
         if (deadCount >= deadThreshold && status !== 'broken') {
           status = 'broken';
+          logTerminalSession('scroll-broken', {
+            panelId,
+            deadCount,
+            lastHandlerPath,
+            mouseTrackingMode: snapshot.mouseTrackingMode,
+            tuiSessionActive: snapshot.tuiSessionActive,
+            wsReadyState: snapshot.wsReadyState,
+            bufferType: snapshot.bufferType,
+            viewportYBefore: snapshot.viewportYBefore,
+            kimiReadyNotified: snapshot.kimiReadyNotified,
+            grokTuiReady: snapshot.grokTuiReady,
+            opencodeFooterConfirmed: snapshot.opencodeFooterConfirmed,
+            topElement: snapshot.topElement?.descriptor ?? null,
+          });
           if (typeof logger === 'function') {
             logger('scroll-broken', {
               panelId,

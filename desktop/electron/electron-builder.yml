@@ -23,6 +23,37 @@ files:
   - package.json
   - '!desktop/electron/**/*.test.js'
   - '!desktop/electron/scripts/**'
+  # The electron shell only needs: electron-updater, node-pty, ws, better-sqlite3.
+  # Everything below is build-time or frontend-only (served via standalone.zip).
+  - '!node_modules/@next/**'
+  - '!node_modules/@img/**'
+  - '!node_modules/@tailwindcss/**'
+  - '!node_modules/@swc/**'
+  - '!node_modules/lightningcss*/**'
+  - '!node_modules/next/**'
+  - '!node_modules/react/**'
+  - '!node_modules/react-dom/**'
+  - '!node_modules/tailwindcss/**'
+  - '!node_modules/postcss/**'
+  - '!node_modules/autoprefixer/**'
+  - '!node_modules/@monaco-editor/**'
+  - '!node_modules/monaco-editor/**'
+  - '!node_modules/@xterm/**'
+  - '!node_modules/xterm/**'
+  - '!node_modules/@radix-ui/**'
+  - '!node_modules/@fontsource/**'
+  - '!node_modules/recharts/**'
+  - '!node_modules/framer-motion/**'
+  - '!node_modules/konva/**'
+  - '!node_modules/react-konva/**'
+  - '!node_modules/@supabase/**'
+  - '!node_modules/openai/**'
+  - '!node_modules/typescript/**'
+  - '!node_modules/eslint*/**'
+  - '!node_modules/jest*/**'
+  - '!node_modules/playwright*/**'
+  - '!node_modules/electron/**'
+  - '!node_modules/sharp/**'
 
 # Packaged resource layout (read by packaging/runtime.js via process.resourcesPath):
 #   resources/standalone.zip
@@ -33,11 +64,13 @@ extraResources:
     filter:
       - '**/*'
       - '!**/.*'
+      - '!**/*.tmp'
   - from: sidecar-backend
     to: resources/sidecar-backend
     filter:
       - '**/*'
       - '!**/.*'
+      - '!**/*.tmp'
   - from: sidecar-backend/node_modules
     to: resources/sidecar-backend/node_modules
     filter:
@@ -58,15 +91,21 @@ win:
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+  oneClick: true
+  perMachine: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: DevHub
   deleteAppDataOnUninstall: false
 
-# Do not auto-publish
-publish: null
+# Publish config enables latest.yml generation and bakes resources/app-update.yml
+# into the installer (required by electron-updater). The default URL is the local
+# dev feed served by `pnpm electron:feed`; override at runtime with DEVHUB_UPDATE_URL,
+# or rebuild with the production URL for real distribution.
+publish:
+  - provider: generic
+    url: http://127.0.0.1:9100/devhub
+    channel: latest
 
 # Electron version comes from devDependency "electron"
 electronVersion: null

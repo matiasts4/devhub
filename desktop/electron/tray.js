@@ -54,12 +54,13 @@ function loadTrayImage(iconPath) {
  * Create (or replace) the app tray.
  * @param {{
  *   getMainWindow: () => import('electron').BrowserWindow | null,
+ *   onCheckUpdates?: (() => void) | null,
  *   onQuit?: () => void,
  * }} opts
  * @returns {import('electron').Tray | null}
  */
 function createTray(opts) {
-  const { getMainWindow, onQuit } = opts;
+  const { getMainWindow, onCheckUpdates, onQuit } = opts;
 
   destroyTray();
 
@@ -92,6 +93,14 @@ function createTray(opts) {
         if (win.isMinimized()) win.restore();
         win.show();
         win.focus();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Check for updates',
+      enabled: typeof onCheckUpdates === 'function',
+      click: () => {
+        if (typeof onCheckUpdates === 'function') onCheckUpdates();
       },
     },
     { type: 'separator' },

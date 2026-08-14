@@ -462,5 +462,65 @@ describe('agentStateDetection', () => {
       expect(sm.pendingIdle.confirmations).toBe(0);
       expect(sm.state).toBe('running');
     });
+
+    test('anti-flap dwell holds rapid running<->idle oscillation (prompt-visible)', () => {
+      const sm = new AgentStateMachine();
+      const running = {
+        state: 'running',
+        visibleIdle: false,
+        visibleWorking: true,
+        visibleBlocker: false,
+      };
+      const promptIdle = {
+        state: 'idle',
+        visibleIdle: true,
+        visibleWorking: false,
+        visibleBlocker: false,
+      };
+      // First publish from unknown is immediate
+      expect(sm.publish(running, 0)?.state).toBe('running');
+      // Oscillation within milliseconds: nothing may publish
+      expect(sm.publish(promptIdle, 100)).toBeNull();
+      expect(sm.publish(running, 200)).toBeNull();
+      // Candidate abandoned when the previous state is re-detected
+      expect(sm.pendingTransition).toBeNull();
+      expect(sm.publish(promptIdle, 300)).toBeNull();
+      expect(sm.state).toBe('running');
+      // A stable candidate publishes once the dwell window elapses
+      expect(sm.publish(promptIdle, 1000)).toBeNull();
+      expect(sm.publish(promptIdle, 1900)?.state).toBe('idle');
+      expect(sm.state).toBe('idle');
+    });
+
+    test('anti-flap dwell holds idle->blocked->running flapping but first publish is immediate', () => {
+      const sm = new AgentStateMachine();
+      const idle = {
+        state: 'idle',
+        visibleIdle: true,
+        visibleWorking: false,
+        visibleBlocker: false,
+      };
+      const blocked = {
+        state: 'blocked',
+        visibleIdle: false,
+        visibleWorking: false,
+        visibleBlocker: true,
+      };
+      const running = {
+        state: 'running',
+        visibleIdle: false,
+        visibleWorking: true,
+        visibleBlocker: false,
+      };
+      expect(sm.publish(idle, 0)?.state).toBe('idle');
+      expect(sm.publish(blocked, 50)).toBeNull();
+      expect(sm.publish(running, 100)).toBeNull();
+      expect(sm.publish(blocked, 150)).toBeNull();
+      expect(sm.state).toBe('idle');
+      // bypassHold (hooks, user input, quiescence) skips the dwell entirely
+      const published = sm.publish(running, 200, { bypassHold: true });
+      expect(published?.state).toBe('running');
+      expect(sm.pendingTransition).toBeNull();
+    });
   });
 });

@@ -103,6 +103,28 @@ export function resolveColdMountStaggerMs({
 }
 
 /**
+ * Stagger between FIRST session connects of restored panels (PTY spawn fan-out
+ * control). Mounting N restored panels at once fires N simultaneous node-pty
+ * spawns in the sidecar, which trips the conPTY "AttachConsole failed" race on
+ * Windows and feeds reconnect storms. Panels still mount/paint in parallel
+ * (mount stagger stays 0) — only the first WS connect is fanned out. Fresh
+ * user-created panels (restored=false) connect immediately; reconnects are
+ * never delayed.
+ */
+export const TERMINAL_COLD_CONNECT_STAGGER_MS = 150;
+export const TERMINAL_COLD_CONNECT_STAGGER_MAX_MS = 1500;
+export function resolveColdConnectStaggerMs({
+  coldMountOrdinal = 0,
+  restored = false,
+  staggerMsPerPanel = TERMINAL_COLD_CONNECT_STAGGER_MS,
+  maxStaggerMs = TERMINAL_COLD_CONNECT_STAGGER_MAX_MS,
+} = {}) {
+  if (!restored || staggerMsPerPanel <= 0) return 0;
+  const raw = Math.max(0, Number(coldMountOrdinal) || 0) * staggerMsPerPanel;
+  return Math.min(raw, Math.max(0, maxStaggerMs));
+}
+
+/**
  * Full-screen blocking loader — only on the panel's first real boot, never on
  * remounts (tab switch, pizarra enter/exit, graveyard restore). Remounts seed
  * hasConnectedOnce from terminalConnectedOnceRegistry, so a reconnecting panel
@@ -829,6 +851,9 @@ export const TERMINAL_VIEWPORT_MAX_ROWS = 120;
 export const TERMINAL_VIEWPORT_MAX_COLS = 400;
 export const TERMINAL_VIEWPORT_MIN_CELL_HEIGHT = 6;
 export const TERMINAL_VIEWPORT_MIN_CELL_WIDTH = 4;
+/** CSS var set on the xterm container so the GPU canvas stretch stops at the
+   vertical scrollbar instead of running underneath it (see globals.css). */
+export const TERMINAL_SCROLLBAR_INSET_CSS_VAR = '--devhub-terminal-scrollbar-w';
 
 export function isPlausibleTerminalCellSize(cellH, cellW) {
   return (
@@ -866,21 +891,39 @@ function proposeTerminalAxisDimension({ available, cellSize, minValue, fillSlack
   return clip < slack ? expanded : base;
 }
 
+/** Width (px) to reserve for the terminal's vertical scrollbar, or 0 when the
+   platform uses overlay scrollbars (macOS) or scrollback is disabled. Always
+   reserves xterm's constructor-measured `scrollBarWidth` whenever scrollback is
+   enabled, regardless of whether the scrollbar is currently rendered: the
+   viewport is `overflow-y: auto`, so reading the live gutter
+   (`offsetWidth - clientWidth`) flips between 0 and `scrollBarWidth` as
+   scrollback overflows and clears. That made `proposeTerminalViewportDimensions`
+   return different cols for the same container, breaking the dims-match gates
+   (panel activation, workspace show) that keep reveals from refitting and
+   flickering. Reserving up front matches @xterm/addon-fit, which subtracts
+   `scrollBarWidth` whenever `scrollback !== 0`. */
+export function measureTerminalScrollbarWidth(term) {
+  const scrollBarW = Number(term?._core?.viewport?.scrollBarWidth ?? 0);
+  if (scrollBarW <= 0) return 0;
+  return Number(term?.options?.scrollback ?? 0) !== 0 ? scrollBarW : 0;
+}
+
+/** Publish the scrollbar inset on the container so the GPU canvas stretch
+   (globals.css) stops at the scrollbar instead of rendering underneath it. */
+export function syncTerminalScrollbarInset(container, term) {
+  if (!container?.style) return;
+  const scrollbarW = measureTerminalScrollbarWidth(term);
+  if (scrollbarW > 0) {
+    container.style.setProperty(TERMINAL_SCROLLBAR_INSET_CSS_VAR, `${scrollbarW}px`);
+  } else {
+    container.style.removeProperty(TERMINAL_SCROLLBAR_INSET_CSS_VAR);
+  }
+}
+
 export function resolveTerminalHorizontalAvailWidth(rect, term) {
   const width = Number(rect?.width ?? 0);
   if (width <= 0) return 0;
-
-  const viewport = term?._core?.viewport;
-  const scrollBarW = Number(viewport?.scrollBarWidth ?? 0);
-  if (scrollBarW <= 0) return width;
-
-  const scrollBarVisible =
-    viewport?.scrollBarVisible?.value ??
-    viewport?.scrollBarVisible ??
-    viewport?.scrollBarHasVisible ??
-    false;
-
-  return scrollBarVisible ? Math.max(0, width - scrollBarW) : width;
+  return Math.max(0, width - measureTerminalScrollbarWidth(term));
 }
 
 export function proposeTerminalViewportDimensions({ container, fitAddon, term }) {
@@ -889,6 +932,8 @@ export function proposeTerminalViewportDimensions({ container, fitAddon, term })
 
   const rect = container.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
+
+  syncTerminalScrollbarInset(container, term);
 
   const cell = term?._core?._renderService?.dimensions?.css?.cell;
   const cellH = Number(cell?.height ?? 0);
@@ -1975,6 +2020,7 @@ export function resolveConnectInitialCommandState({
   hasConnectedOnce = false,
   panelId = '',
   initialCommand = '',
+  readyEverReceived = false,
 } = {}) {
   const dispatched = getPanelInitialCommandDispatch(panelId);
   if (!hasConnectedOnce) {
@@ -1990,12 +2036,40 @@ export function resolveConnectInitialCommandState({
       markDispatched: false,
     };
   }
+  if (!readyEverReceived) {
+    // Boot-race guard (startup-resume): previous connect attempts flapped before
+    // the server's first `ready` frame, so the launch command provably never
+    // reached a PTY (injection is gated on ready). Any dispatch record here is
+    // stale — clear it and let the next fresh `ready` retry the injection
+    // instead of latching hasSentInitialCommand and silently losing the resume.
+    return {
+      clearLifecycle: true,
+      sessionReattached: false,
+      hasSentInitialCommand: false,
+      markDispatched: false,
+    };
+  }
   return {
     clearLifecycle: false,
     sessionReattached: true,
     hasSentInitialCommand: Boolean(dispatched) || Boolean(initialCommand),
     markDispatched: Boolean(initialCommand) && !dispatched,
   };
+}
+
+/**
+ * Startup-restore reattach latch guard (boot-race fix). The planner emits
+ * `devhub:panel-startup-reattach` when it sees a live PTY, but right after a
+ * cold boot every PTY is an empty shell created by the panel's own reconnect
+ * attempts — latching there kills the pending resume. Only latch when this
+ * panel already holds proof of a live/dispatched session; otherwise defer to
+ * the server's `ready` frame (payload.reattached is the authoritative signal).
+ */
+export function shouldDeferStartupReattachLatch({
+  hasDispatchRecord = false,
+  sessionReattached = false,
+} = {}) {
+  return !hasDispatchRecord && !sessionReattached;
 }
 
 /** Workspace tab switch and in-workspace V1/V2/V3 window switch share the same GPU recovery path. */
@@ -2467,6 +2541,163 @@ export function ensureTerminalFontReady(fontSize = 14) {
   }
 
   return terminalFontReadyPromise;
+}
+
+// ---------------------------------------------------------------------------
+// Render integrity probe — corruption diagnostics (Phase 1 root-cause tooling)
+// ---------------------------------------------------------------------------
+
+const terminalInstanceRegistry = new Map();
+
+export function registerTerminalInstance(id, refs) {
+  terminalInstanceRegistry.set(id, refs);
+}
+
+export function unregisterTerminalInstance(id) {
+  terminalInstanceRegistry.delete(id);
+}
+
+export function getRegisteredTerminalInstances() {
+  return terminalInstanceRegistry;
+}
+
+/**
+ * Probe the render integrity of a terminal instance. Returns a structured
+ * report with `healthy: boolean` and `issues: string[]`. Pure — never throws.
+ *
+ * Checks:
+ *  1. term exists, not disposed, element connected
+ *  2. renderer ready (render service has a live renderer with valid cell dims)
+ *  3. term.cols/rows match the proposed fit from the container
+ *  4. WebGL context not silently lost (when WebGL is the operational renderer)
+ *  5. cell dimensions are plausible (>= min thresholds)
+ *  6. PTY size agrees with terminal grid (when lastPtySize is available)
+ */
+export function probeTerminalRenderIntegrity({
+  term,
+  container,
+  fitAddon,
+  operationalRendererMode,
+  webglAddon,
+  canvasAddon,
+  lastPtySize,
+}) {
+  const issues = [];
+  const report = {
+    healthy: true,
+    issues,
+    cols: 0,
+    rows: 0,
+    proposedCols: null,
+    proposedRows: null,
+    ptyCols: null,
+    ptyRows: null,
+    rendererReady: false,
+    webglContextLost: null,
+    gpuNeedsReattach: false,
+    cellWidth: null,
+    cellHeight: null,
+    viewportY: null,
+    baseY: null,
+    bufferType: null,
+    scrollbackLines: null,
+    isNearBottom: null,
+  };
+
+  if (!term) {
+    issues.push('term-null');
+    report.healthy = false;
+    return report;
+  }
+
+  report.cols = term.cols ?? 0;
+  report.rows = term.rows ?? 0;
+
+  if (term._core?._isDisposed) {
+    issues.push('term-disposed');
+    report.healthy = false;
+    return report;
+  }
+
+  if (term.element && !term.element.isConnected) {
+    issues.push('element-disconnected');
+    report.healthy = false;
+    return report;
+  }
+
+  report.rendererReady = isTerminalRendererReady(term);
+  if (!report.rendererReady) {
+    issues.push('renderer-not-ready');
+    report.healthy = false;
+  }
+
+  const cell = term._core?._renderService?.dimensions?.css?.cell;
+  report.cellWidth = Number(cell?.width ?? 0) || null;
+  report.cellHeight = Number(cell?.height ?? 0) || null;
+  if (report.rendererReady && !isPlausibleTerminalCellSize(report.cellHeight, report.cellWidth)) {
+    issues.push(`implausible-cell-size:${report.cellWidth}x${report.cellHeight}`);
+    report.healthy = false;
+  }
+
+  if (container && fitAddon && report.rendererReady) {
+    const proposed = proposeTerminalViewportDimensions({ container, fitAddon, term });
+    if (proposed) {
+      report.proposedCols = proposed.cols;
+      report.proposedRows = proposed.rows;
+      if (proposed.cols !== term.cols || proposed.rows !== term.rows) {
+        issues.push(
+          `dims-mismatch:term=${term.cols}x${term.rows},proposed=${proposed.cols}x${proposed.rows}`
+        );
+        report.healthy = false;
+      }
+    } else {
+      issues.push('propose-dims-returned-null');
+    }
+  }
+
+  if (shouldAttachWebglRenderer({ operationalRendererMode })) {
+    report.webglContextLost = isWebglAddonContextLost(webglAddon);
+    if (report.webglContextLost) {
+      issues.push('webgl-context-lost');
+      report.healthy = false;
+    }
+  }
+
+  report.gpuNeedsReattach = needsGpuRendererReattach({
+    operationalRendererMode,
+    webglAddon,
+    canvasAddon,
+  });
+  if (report.gpuNeedsReattach) {
+    issues.push('gpu-needs-reattach');
+    report.healthy = false;
+  }
+
+  if (lastPtySize && report.cols > 0 && report.rows > 0) {
+    report.ptyCols = lastPtySize.cols;
+    report.ptyRows = lastPtySize.rows;
+    if (
+      Number(lastPtySize.cols) > 0 &&
+      Number(lastPtySize.rows) > 0 &&
+      (Number(lastPtySize.cols) !== term.cols || Number(lastPtySize.rows) !== term.rows)
+    ) {
+      issues.push(
+        `pty-size-drift:term=${term.cols}x${term.rows},pty=${lastPtySize.cols}x${lastPtySize.rows}`
+      );
+      report.healthy = false;
+    }
+  }
+
+  const activeBuffer = term.buffer?.active;
+  if (activeBuffer) {
+    report.bufferType = activeBuffer.type ?? null;
+    report.baseY = Number.isInteger(activeBuffer.baseY) ? activeBuffer.baseY : null;
+    report.viewportY = getTerminalViewportScrollOffset(term);
+    report.scrollbackLines = term.options?.scrollback ?? null;
+    report.isNearBottom = isTerminalViewportNearBottom(term);
+  }
+
+  return report;
 }
 
 /** Test-only: reset the cached promise so each test re-evaluates font state. */

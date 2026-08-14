@@ -5,7 +5,9 @@ const path = require('path');
 const {
   bindAgentSession,
   findNewCodexSession,
+  findNewGrokSession,
   findNewKimiSession,
+  findNewQoderSession,
 } = require('../agentSessionBinder');
 
 function makeTmpHome() {
@@ -48,6 +50,34 @@ function writeCodexRollout(home, { sessionId, cwd, timestamp }) {
   return filePath;
 }
 
+function writeQoderState(home, { projectSlug, sessionId, workspaceDirectories, createdAt }) {
+  const dir = path.join(home, '.qoder', 'projects', projectSlug, sessionId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'state.json'),
+    JSON.stringify({
+      sessionId,
+      createdAt,
+      updatedAt: createdAt,
+      workspaceDirectories,
+    })
+  );
+}
+
+function writeGrokSummary(home, { cwdSlug, sessionId, cwd, createdAt }) {
+  const dir = path.join(home, '.grok', 'sessions', cwdSlug, sessionId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'summary.json'),
+    JSON.stringify({
+      info: { id: sessionId, cwd },
+      session_summary: 'fixture',
+      created_at: createdAt,
+      updated_at: createdAt,
+    })
+  );
+}
+
 const PANEL_CWD = path.join(os.tmpdir(), 'binder-panel-cwd');
 const NOW = Date.now();
 
@@ -72,7 +102,7 @@ describe('findNewKimiSession', () => {
 
     const result = findNewKimiSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW });
     expect(result.status).toBe('unique');
-    expect(result.sessionId).toBe('kimi-new-1');
+    expect(result.sessionId).toBe('session_kimi-new-1');
   });
 
   test('ignores sessions created before spawnedAt (clock skew tolerated)', () => {
@@ -92,7 +122,7 @@ describe('findNewKimiSession', () => {
 
     const result = findNewKimiSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW });
     expect(result.status).toBe('unique');
-    expect(result.sessionId).toBe('kimi-skew-1');
+    expect(result.sessionId).toBe('session_kimi-skew-1');
   });
 
   test('ignores sessions from a different cwd', () => {
@@ -186,6 +216,134 @@ describe('findNewCodexSession', () => {
   });
 });
 
+describe('findNewQoderSession', () => {
+  let home;
+
+  beforeEach(() => {
+    home = makeTmpHome();
+  });
+
+  afterEach(() => {
+    rmTmpHome(home);
+  });
+
+  test('returns unique when exactly one new session matches the panel cwd', () => {
+    const sessionId = '385a91e2-3772-4fce-9125-51f2063c785c';
+    writeQoderState(home, {
+      projectSlug: 'D--devhub',
+      sessionId,
+      workspaceDirectories: [PANEL_CWD],
+      createdAt: new Date(NOW).toISOString(),
+    });
+    const result = findNewQoderSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW });
+    expect(result.status).toBe('unique');
+    expect(result.sessionId).toBe(sessionId);
+  });
+
+  test('matches when the panel cwd is any of the workspaceDirectories', () => {
+    const sessionId = '7bcc9939-51f4-4dec-8179-357bcd3cd80b';
+    writeQoderState(home, {
+      projectSlug: 'd-devhub',
+      sessionId,
+      workspaceDirectories: [path.join(os.tmpdir(), 'otro'), PANEL_CWD],
+      createdAt: new Date(NOW).toISOString(),
+    });
+    expect(findNewQoderSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW }).sessionId).toBe(
+      sessionId
+    );
+  });
+
+  test('skips sessions from other cwds, stale ones, and falls back to the dir name', () => {
+    writeQoderState(home, {
+      projectSlug: 'C--other',
+      sessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
+      workspaceDirectories: [path.join(os.tmpdir(), 'elsewhere')],
+      createdAt: new Date(NOW).toISOString(),
+    });
+    writeQoderState(home, {
+      projectSlug: 'D--devhub',
+      sessionId: 'bbbbbbbb-0000-4000-8000-000000000002',
+      workspaceDirectories: [PANEL_CWD],
+      createdAt: new Date(NOW - 60000).toISOString(), // older than skew window
+    });
+    // No sessionId field → dir name is the id.
+    const dirId = 'cccccccc-0000-4000-8000-000000000003';
+    const dir = path.join(home, '.qoder', 'projects', 'D--devhub', dirId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'state.json'),
+      JSON.stringify({ createdAt: new Date(NOW).toISOString(), workspaceDirectories: [PANEL_CWD] })
+    );
+
+    const result = findNewQoderSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW });
+    expect(result.status).toBe('unique');
+    expect(result.sessionId).toBe(dirId);
+  });
+
+  test('none when the store is missing or cwd is null', () => {
+    expect(findNewQoderSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW }).status).toBe(
+      'none'
+    );
+    expect(findNewQoderSession({ homeDir: home, cwd: null, spawnedAt: NOW }).status).toBe('none');
+  });
+});
+
+describe('findNewGrokSession', () => {
+  let home;
+
+  beforeEach(() => {
+    home = makeTmpHome();
+  });
+
+  afterEach(() => {
+    rmTmpHome(home);
+  });
+
+  test('returns unique when exactly one new session matches the panel cwd', () => {
+    const sessionId = '8259b57c-2efb-4cfb-8768-993c43b17f05';
+    writeGrokSummary(home, {
+      cwdSlug: encodeURIComponent(PANEL_CWD),
+      sessionId,
+      cwd: PANEL_CWD,
+      createdAt: new Date(NOW).toISOString(),
+    });
+    const result = findNewGrokSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW });
+    expect(result.status).toBe('unique');
+    expect(result.sessionId).toBe(sessionId);
+  });
+
+  test('skips sessions without a recorded cwd (never steals a conversation)', () => {
+    const sessionId = 'fc06adad-9daf-462c-8a05-82a5e7325805';
+    const dir = path.join(home, '.grok', 'sessions', 'misc', sessionId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'summary.json'),
+      JSON.stringify({ info: { id: sessionId }, created_at: new Date(NOW).toISOString() })
+    );
+    expect(findNewGrokSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW }).status).toBe(
+      'none'
+    );
+  });
+
+  test('skips stale sessions and other cwds', () => {
+    writeGrokSummary(home, {
+      cwdSlug: 'a',
+      sessionId: 'dddddddd-0000-4000-8000-000000000004',
+      cwd: PANEL_CWD,
+      createdAt: new Date(NOW - 60000).toISOString(),
+    });
+    writeGrokSummary(home, {
+      cwdSlug: 'b',
+      sessionId: 'eeeeeeee-0000-4000-8000-000000000005',
+      cwd: path.join(os.tmpdir(), 'elsewhere'),
+      createdAt: new Date(NOW).toISOString(),
+    });
+    expect(findNewGrokSession({ homeDir: home, cwd: PANEL_CWD, spawnedAt: NOW }).status).toBe(
+      'none'
+    );
+  });
+});
+
 describe('bindAgentSession', () => {
   let home;
 
@@ -224,7 +382,7 @@ describe('bindAgentSession', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(onBound).toHaveBeenCalledTimes(1);
-    expect(onBound).toHaveBeenCalledWith('kimi-bound-1');
+    expect(onBound).toHaveBeenCalledWith('session_kimi-bound-1');
     cancel();
   });
 
@@ -307,9 +465,41 @@ describe('bindAgentSession', () => {
     expect(onBound).not.toHaveBeenCalled();
   });
 
+  test('calls onBound once for a typed qodercli launch (no id in command)', async () => {
+    const spawnedAt = Date.now();
+    const sessionId = '385a91e2-3772-4fce-9125-51f2063c785c';
+    const onBound = jest.fn();
+
+    const cancel = bindAgentSession({
+      sessionId: 'term-q1',
+      agentType: 'qodercli',
+      cwd: PANEL_CWD,
+      spawnedAt,
+      onBound,
+      homeDir: home,
+      intervalMs: 10,
+      timeoutMs: 2000,
+    });
+
+    setTimeout(() => {
+      writeQoderState(home, {
+        projectSlug: 'D--devhub',
+        sessionId,
+        workspaceDirectories: [PANEL_CWD],
+        createdAt: new Date().toISOString(),
+      });
+    }, 30);
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(onBound).toHaveBeenCalledTimes(1);
+    expect(onBound).toHaveBeenCalledWith(sessionId);
+    cancel();
+  });
+
   test('returns a noop cancel for unsupported providers or bad args', () => {
     expect(() =>
-      bindAgentSession({ agentType: 'grok', cwd: PANEL_CWD, spawnedAt: 1, onBound: () => {} })()
+      bindAgentSession({ agentType: 'claude', cwd: PANEL_CWD, spawnedAt: 1, onBound: () => {} })()
     ).not.toThrow();
     expect(() => bindAgentSession(null)()).not.toThrow();
     expect(() =>

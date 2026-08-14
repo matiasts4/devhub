@@ -85,4 +85,24 @@ export function buildZedRegistry({ skillsDir = DEFAULT_SKILLS_DIR } = {}) {
   return registry;
 }
 
+let cachedRegistry = null;
+
+/**
+ * Lazily build and reuse a shared registry. Tool definitions are stateless
+ * (the per-request context is passed to `execute`), so one instance can serve
+ * all requests; this avoids re-registering tools and re-scanning the skills
+ * directory on every chat request.
+ *
+ * @returns {ReturnType<typeof buildZedRegistry>}
+ */
+export function getZedRegistry() {
+  if (!cachedRegistry) cachedRegistry = buildZedRegistry();
+  return cachedRegistry;
+}
+
+/** Drop the cached registry so the next getZedRegistry() rebuilds it. */
+export function invalidateZedRegistry() {
+  cachedRegistry = null;
+}
+
 export default buildZedRegistry;

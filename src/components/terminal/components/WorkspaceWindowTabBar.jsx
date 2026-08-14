@@ -10,6 +10,7 @@
 import { motion } from 'framer-motion';
 import { Plus, X, Grip, Pencil } from 'lucide-react';
 import { getWorkspaceColor } from '../workspaceColors';
+import AgentStatusDot from './AgentStatusDot';
 
 const COMPACT_THRESHOLD = 4;
 
@@ -122,51 +123,38 @@ function WorkspaceWindowTabBar({
                 style={{ color: 'currentColor' }}
                 aria-hidden="true"
               />
-              {/* Workspace identity dot + agent activity halo */}
-              <span
-                className="relative inline-flex shrink-0 items-center justify-center"
-                style={{ width: 12, height: 12 }}
-                data-activity={activity || 'none'}
-                aria-hidden="true"
-              >
-                {activity === 'running' ? (
-                  <motion.span
-                    className="absolute inset-0 rounded-full"
-                    style={{ background: 'rgba(52,211,153,0.5)' }}
-                    animate={{ scale: [1, 2.1], opacity: [0.75, 0] }}
-                    transition={{ repeat: Infinity, duration: 1.3, ease: 'easeOut' }}
+              {/* Workspace identity dot + agent activity status.
+                  `activity` is a PANEL_STATUS value ('running' | 'blocked')
+                  aggregated from the same agent-state frames that feed the
+                  panel header badge, rendered through the shared
+                  AgentStatusDot so both surfaces show the same vocabulary. */}
+              {activity ? (
+                <span data-activity={activity}>
+                  <AgentStatusDot
+                    status={activity}
+                    size={isActive ? 7 : 6}
+                    halo
+                    glow
                   />
-                ) : null}
-                {activity === 'blocked' ? (
-                  <motion.span
-                    className="absolute inset-0 rounded-full"
-                    style={{ background: 'rgba(251,113,133,0.45)' }}
-                    animate={{ scale: [1, 1.7], opacity: [0.65, 0.1] }}
-                    transition={{ repeat: Infinity, duration: 1.1, ease: 'easeInOut' }}
-                  />
-                ) : null}
+                </span>
+              ) : (
                 <span
-                  className="relative rounded-full transition-all duration-150"
-                  style={{
-                    width: isActive ? 7 : 6,
-                    height: isActive ? 7 : 6,
-                    background:
-                      activity === 'running'
-                        ? 'rgb(52,211,153)'
-                        : activity === 'blocked'
-                          ? 'rgb(251,113,133)'
-                          : wsColor(isActive ? 1 : 0.55),
-                    boxShadow:
-                      activity === 'running'
-                        ? '0 0 8px rgba(52,211,153,0.8)'
-                        : activity === 'blocked'
-                          ? '0 0 8px rgba(251,113,133,0.7)'
-                          : isActive
-                            ? `0 0 7px ${wsColor(0.6)}`
-                            : 'none',
-                  }}
-                />
-              </span>
+                  className="relative inline-flex shrink-0 items-center justify-center"
+                  style={{ width: 12, height: 12 }}
+                  data-activity="none"
+                  aria-hidden="true"
+                >
+                  <span
+                    className="relative rounded-full transition-all duration-150"
+                    style={{
+                      width: isActive ? 7 : 6,
+                      height: isActive ? 7 : 6,
+                      background: wsColor(isActive ? 1 : 0.55),
+                      boxShadow: isActive ? `0 0 7px ${wsColor(0.6)}` : 'none',
+                    }}
+                  />
+                </span>
+              )}
               {editingWsId === ws.id ? (
                 <span className="relative inline-flex min-w-0 flex-1 items-center">
                   <input

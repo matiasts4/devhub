@@ -146,6 +146,28 @@ describe('sidecar session transport contract', () => {
     updateSessionModeFromInput(session, 'agy\r');
     expect(session.agentLaunchOrigin).toBe('output');
   });
+
+  test('provider switch in the same pty replaces agent identity and re-arms the binder', () => {
+    const session = {
+      id: 'sess-1',
+      mode: 'shell',
+      historyEnabled: true,
+      history: [],
+      pendingInput: '',
+    };
+    updateSessionModeFromInput(session, 'kimi --session km-old-1\r');
+    expect(session.agentType).toBe('kimi');
+    expect(session.agentSessionId).toBe('km-old-1');
+
+    session._agentSessionBinderStarted = true;
+    session._lastBroadcastAgentSessionId = 'km-old-1';
+
+    updateSessionModeFromInput(session, 'qodercli\r');
+    expect(session.agentType).toBe('qodercli');
+    expect(session.agentSessionId).not.toBe('km-old-1');
+    expect(session._agentSessionBinderStarted).toBe(false);
+    expect(session._lastBroadcastAgentSessionId).toBe(null);
+  });
 });
 
 describe('sidecar buildAgentStateFrame (N4/N5 schema)', () => {

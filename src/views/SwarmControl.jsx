@@ -7,7 +7,8 @@ import StatusSignal from '@/components/ui/StatusSignal';
 import OperatorTimelineFeed from '@/components/OperatorTimeline/OperatorTimelineFeed.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Bot, Loader2 } from 'lucide-react';
+import { Bot } from 'lucide-react';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import {
   composeControlRoomSnapshot,
   createSwarmLaunchDraft,
@@ -745,16 +746,7 @@ export default function SwarmControl({ snapshotInput = null }) {
   const filteredErrors = useMemo(() => errors.filter(matchesFilter), [errors, matchesFilter]);
 
   if (!surfaceReady) {
-    return (
-      <div
-        className="flex h-full items-center justify-center core-page-shell"
-        style={getWorkspacePageShellStyle()}
-        aria-busy="true"
-        aria-label="Cargando Swarm Control"
-      >
-        <Loader2 className="h-6 w-6 animate-spin text-accent-primary" />
-      </div>
-    );
+    return <PageSkeleton tiles={4} rows={4} className="h-full" aria-label="Cargando Swarm Control" />;
   }
 
   return (

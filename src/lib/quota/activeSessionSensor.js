@@ -24,6 +24,7 @@ export function detectProviderFromSession(commandOrTitle) {
     lower.includes('zhipu')
   )
     return PROVIDERS.ZAI;
+  if (lower.includes('qodercli') || lower.includes('qoder')) return PROVIDERS.QODER;
 
   return null; // unknown session — let the caller decide (user order wins)
 }

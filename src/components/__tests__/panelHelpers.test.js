@@ -187,6 +187,65 @@ describe('normalizeWorkspaceWindows', () => {
     expect(result.workspaceWindows.ws1).toHaveLength(1);
     expect(result.workspaceWindows.ws1[0].name).toBe('Custom');
   });
+
+  test('keeps the workspace panel resume command when the persisted window copy is stale', () => {
+    // Regression: provider session binds update workspaces only, so the window
+    // copy persists initialCommand: null. Hydration must not let the stale
+    // window columns wipe the command (broke reboot restore: plan came out
+    // "terminated/no-runtime-evidence").
+    const cmd = 'kimi --session session_abc';
+    const rawWindows = {
+      ws1: [
+        {
+          id: 'v3',
+          name: 'V1',
+          columns: [
+            {
+              id: 'c1',
+              panels: [
+                {
+                  id: 'p1',
+                  kind: 'terminal',
+                  initialCommand: null,
+                  cwd: null,
+                  displayName: 'Alex',
+                },
+              ],
+            },
+          ],
+          activePanelId: 'p1',
+        },
+      ],
+    };
+    const workspaces = [
+      { id: 'ws1', columns: [{ id: 'c1', panels: [{ id: 'p1', cwd: null, initialCommand: cmd }] }] },
+    ];
+    const result = normalizeWorkspaceWindows(rawWindows, { ws1: 'v3' }, workspaces, { ws1: 'p1' });
+
+    expect(workspaces[0].columns[0].panels[0].initialCommand).toBe(cmd);
+    const winPanel = result.workspaceWindows.ws1[0].columns[0].panels[0];
+    expect(winPanel.initialCommand).toBe(cmd);
+    // Window-only fields survive the merge.
+    expect(winPanel.displayName).toBe('Alex');
+    expect(winPanel.kind).toBe('terminal');
+  });
+
+  test('window panel command wins when the workspace mirror has none', () => {
+    const rawWindows = {
+      ws1: [
+        {
+          id: 'v1',
+          columns: [{ id: 'c1', panels: [{ id: 'p1', initialCommand: 'grok --continue' }] }],
+          activePanelId: 'p1',
+        },
+      ],
+    };
+    const workspaces = [
+      { id: 'ws1', columns: [{ id: 'c1', panels: [{ id: 'p1', initialCommand: null }] }] },
+    ];
+    normalizeWorkspaceWindows(rawWindows, { ws1: 'v1' }, workspaces, { ws1: 'p1' });
+    expect(workspaces[0].columns[0].panels[0].initialCommand).toBe('grok --continue');
+  });
 });
 
 describe('resolveWorkspacePanelId', () => {

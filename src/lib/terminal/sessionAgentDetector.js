@@ -375,6 +375,7 @@ export function tickAgentDetection(session, now = Date.now()) {
   const state = session.agentTuiState;
   const isRunningOrBlocked = state === 'running' || state === 'blocked';
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
+  const hasPendingTransition = !!session.agentStateMachine.pendingTransition;
 
   // Output Quiescence (two stages, DONE-EVIDENCE-01). Activity is any PTY
   // chunk (session.lastActivityAt), so streaming output whose footer scrolled
@@ -439,7 +440,7 @@ export function tickAgentDetection(session, now = Date.now()) {
     return result;
   }
 
-  if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle) {
+  if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle && !hasPendingTransition) {
     return result;
   }
 

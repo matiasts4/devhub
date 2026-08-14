@@ -49,6 +49,7 @@ const {
   getTransportMode,
   parseClientMessage,
   reapTypedAgentSessionIfExited,
+  shouldPromoteAgentFromOutput,
   synthesizeAgentSessionId,
   updateSessionModeFromInput,
 } = require('./sessionTransport');
@@ -59,6 +60,31 @@ const {
   shouldRespawnShellAfterPtyExit,
   shouldRelaunchAgentAfterCtrlCRespawn,
 } = require('./ptyRespawnPolicy.cjs');
+const { logSidecarEvent } = require('./sidecarLog.cjs');
+
+// ─── Agent session binder (kimi/codex fs correlation) ────────────────────────
+// Static require of the local CJS twin: packaged desktop builds ship no src/
+// tree, so the previous lazy import('../src/lib/terminal/agentSessionBinder.js')
+// failed silently in production (.catch(() => null)) and disabled kimi/codex
+// session binding entirely. A load failure here must be LOUD, not silent.
+let agentSessionBinder = null;
+try {
+  agentSessionBinder = require('./agentSessionBinder.cjs');
+} catch (binderLoadError) {
+  console.error(
+    '[Sidecar] agentSessionBinder.cjs FAILED to load — kimi/codex session binding DISABLED:',
+    binderLoadError?.message
+  );
+  logSidecarEvent('agent-session-binder-require-failed', {
+    error: String(binderLoadError?.message || binderLoadError),
+  });
+}
+
+/** Truncates commands for log lines (restore forensics, not full transcripts). */
+function truncateForLog(value, max = 200) {
+  const text = String(value || '');
+  return text.length > max ? text.slice(0, max) : text;
+}
 
 // ─── Directorios de estado ────────────────────────────────────────────────────
 // Respeta DEVHUB_HOME cuando el wrapper / Tauri lo pasan (permite tests con home
@@ -189,30 +215,20 @@ function broadcastSessionPayload(session, payload) {
   }
 }
 
-// ─── Agent session-id binding (kimi/codex fs correlation) ────────────────────
-// Mirrors src/lib/terminal/ttyServer.js. grok/qodercli ids are pre-assigned in
-// their launch commands (no binder needed); kimi/codex have no pre-assign flag,
-// so we correlate the on-disk session created right after the typed launch.
-// The binder implementation is ESM and lives in the Next.js tree, so it is
-// loaded lazily: in packaged desktop builds the path does not exist and
-// binding stays disabled (best-effort, never throws).
-const AGENT_SESSION_BINDABLE_TYPES = new Set(['kimi', 'codex']);
+// ─── Agent session-id binding (fs correlation) ───────────────────────────────
+// Mirrors src/lib/terminal/ttyServer.js. DevHub-launched grok/qodercli ids are
+// pre-assigned in their launch commands; kimi/codex have no pre-assign flag —
+// and ANY provider typed by hand in a shell carries no id — so we correlate
+// the on-disk session created right after the typed launch.
+// The binder lives in ./agentSessionBinder.cjs (required statically above) so
+// packaged builds — which ship no src/ tree — keep binding enabled.
+const AGENT_SESSION_BINDABLE_TYPES = new Set(['kimi', 'codex', 'grok', 'qodercli']);
 const AGENT_SESSION_DETECTED_WS_TYPE = {
   kimi: 'kimi-session-detected',
   codex: 'codex-session-detected',
   grok: 'grok-session-detected',
   qodercli: 'qoder-session-detected',
 };
-
-let agentSessionBinderModulePromise = null;
-function loadAgentSessionBinder() {
-  if (!agentSessionBinderModulePromise) {
-    agentSessionBinderModulePromise = import('../src/lib/terminal/agentSessionBinder.js').catch(
-      () => null
-    );
-  }
-  return agentSessionBinderModulePromise;
-}
 
 function maybeStartAgentSessionBinding(session) {
   try {
@@ -227,14 +243,20 @@ function maybeStartAgentSessionBinding(session) {
         : null;
     if (explicitId) {
       // Resume/pre-assigned form typed or injected by the client — surface it
-      // once so the frontend can persist it. No binder needed (grok/qodercli
-      // always carry their id in the launch command).
+      // once so the frontend can persist it. No binder needed for this launch.
       if (session._lastBroadcastAgentSessionId !== explicitId) {
         session._lastBroadcastAgentSessionId = explicitId;
         broadcastSessionPayload(session, {
           type: eventType,
           sessionId: explicitId,
           agentType,
+        });
+        logSidecarEvent('agent-session-detected-broadcast', {
+          provider: agentType,
+          sessionId: session.id,
+          agentSessionId: explicitId,
+          eventType,
+          origin: 'explicit',
         });
       }
       return;
@@ -244,30 +266,78 @@ function maybeStartAgentSessionBinding(session) {
     if (session._agentSessionBinderStarted) return;
 
     session._agentSessionBinderStarted = true;
-    loadAgentSessionBinder()
-      .then((mod) => {
-        if (!mod || typeof mod.bindAgentSession !== 'function') return;
-        if (!sessions.has(session.id)) return; // session closed while importing
-        mod.bindAgentSession({
-          sessionId: session.id,
-          agentType,
-          cwd: session.cwd,
-          spawnedAt: Date.now(),
-          onBound: (agentSessionId) => {
-            try {
-              session.agentSessionId = agentSessionId;
-              broadcastSessionPayload(session, {
-                type: AGENT_SESSION_DETECTED_WS_TYPE[agentType],
-                sessionId: agentSessionId,
-                agentType,
-              });
-            } catch (_) {
-              // best-effort
-            }
-          },
-        });
-      })
-      .catch(() => {});
+    if (!agentSessionBinder || typeof agentSessionBinder.bindAgentSession !== 'function') {
+      // Require failed at startup (already logged loudly) — nothing to do.
+      logSidecarEvent('agent-session-binder-unavailable', {
+        sessionId: session.id,
+        agentType,
+      });
+      return;
+    }
+
+    logSidecarEvent('agent-session-binder-start', {
+      sessionId: session.id,
+      agentType,
+      cwd: session.cwd,
+    });
+
+    agentSessionBinder.bindAgentSession({
+      sessionId: session.id,
+      agentType,
+      cwd: session.cwd,
+      spawnedAt: Date.now(),
+      onBound: (agentSessionId) => {
+        try {
+          session.agentSessionId = agentSessionId;
+          logSidecarEvent('agent-session-binder-bound', {
+            sessionId: session.id,
+            agentType,
+            agentSessionId,
+          });
+          broadcastSessionPayload(session, {
+            type: AGENT_SESSION_DETECTED_WS_TYPE[agentType],
+            sessionId: agentSessionId,
+            agentType,
+            cwd: session.cwd,
+          });
+          logSidecarEvent('agent-session-detected-broadcast', {
+            provider: agentType,
+            sessionId: session.id,
+            agentSessionId,
+            eventType: AGENT_SESSION_DETECTED_WS_TYPE[agentType],
+            origin: 'binder',
+          });
+        } catch (_) {
+          // best-effort
+        }
+      },
+      onSettled: (status, info) => {
+        try {
+          if (status === 'timeout') {
+            // Grok (and any late-creating provider) may write its session dir
+            // only after the user's first prompt — well past the bind window.
+            // Re-arm so the next input re-triggers the binder instead of
+            // giving up for the lifetime of this pty session.
+            session._agentSessionBinderStarted = false;
+          }
+          if (status === 'ambiguous' || status === 'timeout') {
+            logSidecarEvent(`agent-session-binder-${status}`, {
+              sessionId: session.id,
+              agentType,
+              ...(status === 'ambiguous'
+                ? {
+                    candidates: (info?.candidates || [])
+                      .map((candidate) => candidate?.sessionId)
+                      .filter(Boolean),
+                  }
+                : {}),
+            });
+          }
+        } catch (_) {
+          // best-effort
+        }
+      },
+    });
   } catch (_) {
     // best-effort — never break the sidecar on binding failures
   }
@@ -320,6 +390,13 @@ function resetSessionAfterTuiPtyDeath(session) {
 
 function finalizeSidecarSessionExit(session, exitCode, signal) {
   console.log(`[Sidecar] Session ${session.id} exited.`, { exitCode, signal });
+  logSidecarEvent('pty-session-exit', {
+    sessionId: session.id,
+    exitCode: exitCode ?? 0,
+    signal: signal ?? null,
+    agentType: session.agentType || null,
+    agentSessionId: session.agentSessionId || null,
+  });
   // N7: final agent-state frame (idle, reason 'exit') BEFORE the exit frame so
   // clients get a deterministic "agent finished" signal instead of a dangling
   // running/blocked badge.
@@ -419,6 +496,14 @@ function tryRespawnShellAfterTuiExit(session, exitCode, signal) {
     shell: spawnResult.shell,
     relaunchAgent,
   });
+  logSidecarEvent('pty-session-respawn', {
+    sessionId: session.id,
+    shell: spawnResult.shell,
+    relaunchAgent,
+    respawnCount: session._tuiCtrlCRespawnCount,
+    exitCode: exitCode ?? 0,
+    agentType: priorAgentType || null,
+  });
   return true;
 }
 
@@ -476,19 +561,38 @@ function attachSidecarPtyHandlers(session) {
             type: 'opencode-session-detected',
             sessionId: detectedSessionId,
           });
+          logSidecarEvent('agent-session-detected-broadcast', {
+            provider: 'opencode',
+            sessionId: session.id,
+            agentSessionId: detectedSessionId,
+            eventType: 'opencode-session-detected',
+            origin: 'output-scrape',
+          });
         }
       }
 
       // Detect TUI readiness for agents started without an explicit initialCommand.
       // W7: output-detected agents live in tmux/pre-attached panes — mark the
       // origin so the typed-agent reaper never touches them.
-      if (detectKimiTuiReady(filteredData)) {
+      // Promotion from output alone is gated by shouldPromoteAgentFromOutput:
+      // explicit non-agent launches (e.g. `pnpm electron:up`) and single weak
+      // footer hints never promote — that log noise previously poisoned
+      // panels as fake agents (workspace activity dot false positives).
+      const kimiOutReady = detectKimiTuiReady(filteredData);
+      const opencodeOutReady = !kimiOutReady && detectOpenCodeTuiReady(filteredData);
+      const agyOutReady = !kimiOutReady && !opencodeOutReady && detectAntigravityTuiReady(filteredData);
+      const qodercliOutReady =
+        !kimiOutReady && !opencodeOutReady && !agyOutReady && detectQodercliTuiReady(filteredData);
+      if (kimiOutReady && (session.agentType || shouldPromoteAgentFromOutput(session, 'kimi', filteredData))) {
         if (!session.agentType) {
           applyAgentTuiDetection(session, 'kimi');
           session.agentLaunchOrigin = 'output';
         }
         maybeStartAgentSessionBinding(session);
-      } else if (detectOpenCodeTuiReady(filteredData)) {
+      } else if (
+        opencodeOutReady &&
+        (session.agentType || shouldPromoteAgentFromOutput(session, 'opencode', filteredData))
+      ) {
         if (session.mode !== 'tui') {
           session.mode = 'tui';
           session.historyEnabled = false;
@@ -505,7 +609,10 @@ function attachSidecarPtyHandlers(session) {
           });
           session._opencodeReadyMarkerWritten = true;
         }
-      } else if (detectAntigravityTuiReady(filteredData)) {
+      } else if (
+        agyOutReady &&
+        (session.agentType || shouldPromoteAgentFromOutput(session, 'agy', filteredData))
+      ) {
         // W1: Antigravity output-based start detection (tmux/swarm pre-attach).
         if (!session.agentType) {
           applyAgentTuiDetection(session, 'agy');
@@ -518,11 +625,15 @@ function attachSidecarPtyHandlers(session) {
           });
           session._antigravityReadyMarkerWritten = true;
         }
-      } else if (detectQodercliTuiReady(filteredData)) {
+      } else if (
+        qodercliOutReady &&
+        (session.agentType || shouldPromoteAgentFromOutput(session, 'qodercli', filteredData))
+      ) {
         if (!session.agentType) {
           applyAgentTuiDetection(session, 'qodercli');
           session.agentLaunchOrigin = 'output';
         }
+        maybeStartAgentSessionBinding(session);
         if (session.tmuxSession && !session._qodercliReadyMarkerWritten) {
           writeQodercliReadyMarker(session.tmuxSession, {
             sessionId,
@@ -627,6 +738,16 @@ function getOrCreateSession(sessionId, cwd, swarmContext = {}) {
     tmuxEnabled: spawnConfig.tmuxEnabled,
     isSwarmRole: Boolean(swarmContext.isSwarmRole),
   });
+  logSidecarEvent('pty-session-created', {
+    sessionId,
+    cwd: effectiveCwd,
+    shell,
+    agentType: session.agentType || null,
+    requestedCwd: cwdResolution.requestedCwd,
+    usedFallback: cwdResolution.usedFallback,
+    tmuxSession: spawnConfig.tmuxSession || null,
+    isSwarmRole: Boolean(swarmContext.isSwarmRole),
+  });
   return session;
 }
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
@@ -727,7 +848,20 @@ app.put('/sessions/:id/input', (req, res) => {
       type: 'opencode-session-detected',
       sessionId: detectedSessionId,
     });
+    logSidecarEvent('agent-session-detected-broadcast', {
+      provider: 'opencode',
+      sessionId: session.id,
+      agentSessionId: detectedSessionId,
+      eventType: 'opencode-session-detected',
+      origin: 'http-input',
+    });
   }
+
+  logSidecarEvent('terminal-input-inject', {
+    sessionId,
+    command: truncateForLog(filteredInput),
+    source: 'http-put',
+  });
 
   try {
     session.ptyProcess.write(filteredInput);
@@ -841,7 +975,24 @@ wss.on('connection', (ws, req) => {
   // una TUI viva. En sesión fresca el frontend inyecta initialCommand vía WebSocket.
   // Este contrato debe mantenerse en paralelo con src/lib/terminal/ttyServer.js.
   const isReattach = sessions.has(sessionId);
-  const session = getOrCreateSession(sessionId, cwd, swarmContext);
+  let session;
+  try {
+    session = getOrCreateSession(sessionId, cwd, swarmContext);
+  } catch (spawnErr) {
+    // pty.spawn puede lanzar (carrera conPTY "AttachConsole failed", shell
+    // inválido, etc.). Sin este guard la excepción mataba el handler y el
+    // cliente quedaba colgado hasta su timeout de 10s, alimentando un loop de
+    // reconexión. Respondemos con un frame explícito y cerramos limpio: el
+    // cliente reintenta con backoff acotado sobre una conexión nueva.
+    const message = String(spawnErr?.message || spawnErr || 'pty spawn failed');
+    console.error(`[Sidecar] PTY spawn falló para sesión ${sessionId}:`, message);
+    logSidecarEvent('pty-spawn-failed', { sessionId, cwd, error: message });
+    sendToClient(ws, { type: 'spawn-error', message });
+    try {
+      ws.close(1011, 'pty-spawn-failed');
+    } catch (_) {}
+    return;
+  }
   session.clients.add(ws);
 
   console.log(
@@ -975,6 +1126,23 @@ wss.on('connection', (ws, req) => {
         type: 'opencode-session-detected',
         sessionId: detectedSessionId,
       });
+      logSidecarEvent('agent-session-detected-broadcast', {
+        provider: 'opencode',
+        sessionId: session.id,
+        agentSessionId: detectedSessionId,
+        eventType: 'opencode-session-detected',
+        origin: 'ws-input',
+      });
+    }
+
+    // Command-like submissions only (Enter) — keystroke-level input is too
+    // noisy for the durable log; this still captures initial-command injects.
+    if (typeof filteredInput === 'string' && /[\r\n]/.test(filteredInput)) {
+      logSidecarEvent('terminal-input-send', {
+        sessionId: session.id,
+        command: truncateForLog(filteredInput),
+        source: 'ws-input',
+      });
     }
 
     // Input de teclado al PTY
@@ -1036,6 +1204,13 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`[Sidecar] ✅ Sidecar escuchando en http://127.0.0.1:${PORT}`);
   console.log(`[Sidecar]    PID: ${process.pid}`);
   console.log(`[Sidecar]    Shell: ${process.env.SHELL || 'bash'}`);
+
+  logSidecarEvent('sidecar-startup', {
+    port: PORT,
+    pid: process.pid,
+    devhubHome: DEVHUB_DIR,
+    agentSessionBinderLoaded: Boolean(agentSessionBinder),
+  });
 
   // Arrancar intervalo de tick para detección de agentes
   const tickMs = Number(process.env.AGENT_DETECTION_TICK_MS || 500);

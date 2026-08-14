@@ -7,6 +7,7 @@ function sleep(ms) {
 }
 import {
   buildProviderResumeCommand,
+  extractOpenCodeSessionId,
   extractProviderSessionIdFromCommand,
   getProviderContinueCommand,
   inferPanelSessionKind,
@@ -15,6 +16,7 @@ import {
 } from './restorePolicyResolver';
 import { buildOpencodeResumeCommand } from './opencodeSessionRegistry.js';
 import { resolvePanelStartupInjectIntent } from './startupInjectOrchestrator.js';
+import { logRestoreDiagnostic, truncateForDiagnostics } from './restoreDiagnostics';
 
 export const STARTUP_RESTORE_MAX_CONCURRENCY = 2;
 export const STARTUP_RESTORE_DELAY_MS = 350;
@@ -249,6 +251,24 @@ export async function dispatchStartupRestoreQueue({
       if (intent.action === 'skip') {
         continue;
       }
+
+      // Durable record of the exact relaunch about to be dispatched — without
+      // this, a failed restore leaves no trace of what was even attempted.
+      const dispatchProvider = resolveActionProvider(panel, action) || 'opencode';
+      const dispatchSessionId =
+        dispatchProvider === 'opencode'
+          ? action?.opencodeSessionId || extractOpenCodeSessionId(panel?.initialCommand) || null
+          : (typeof action?.agentSessionId === 'string' && action.agentSessionId.trim()) ||
+            extractProviderSessionIdFromCommand(dispatchProvider, panel?.initialCommand) ||
+            null;
+      logRestoreDiagnostic('startup-restore-dispatch', {
+        action: action.action,
+        panelId: action.terminalId,
+        provider: dispatchProvider,
+        agentSessionId: dispatchSessionId,
+        command: truncateForDiagnostics(intent.command),
+        continueFallback: dispatchProvider !== 'opencode' && !dispatchSessionId,
+      });
 
       await onRelaunch(action, panel, intent.command);
 

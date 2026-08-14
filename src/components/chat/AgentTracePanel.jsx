@@ -252,10 +252,22 @@ export default function AgentTracePanel({
   filterStatus = 'all',
 }) {
   const scrollRef = useRef(null);
+  const isAtBottomRef = useRef(true);
 
-  // Auto-scroll mientras corre
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }, []);
+
+  // Desenganchar el auto-scroll en cuanto el usuario sube con la rueda
+  const handleWheel = useCallback((e) => {
+    if (e.deltaY < 0) isAtBottomRef.current = false;
+  }, []);
+
+  // Auto-scroll mientras corre (solo si el usuario no subió)
   useEffect(() => {
-    if (isRunning && scrollRef.current) {
+    if (isRunning && isAtBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [trace, isRunning]);
@@ -311,7 +323,12 @@ export default function AgentTracePanel({
         </div>
       )}
 
-      <div ref={scrollRef} className="overflow-y-auto scroll-smooth px-3 py-2 space-y-1.5">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        onWheel={handleWheel}
+        className="overflow-y-auto px-3 py-2 space-y-1.5"
+      >
         {groupedTrace.map((group, i) => {
           if (group.type === 'context-group') {
             return (

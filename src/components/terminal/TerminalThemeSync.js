@@ -223,6 +223,19 @@ function applySceneryThemeToLiveTerminals() {
 }
 
 /**
+ * Public variant for the body-flag publisher (SceneryBackground). The
+ * SCENERY_CHANGED_EVENT listener only covers settings changes; on startup the
+ * flag flips without that event, and terminals already constructed with an
+ * opaque background would keep the wallpaper hidden behind the WebGL/Canvas
+ * background fill until something else re-applied their theme (the multi-second
+ * "wallpaper pops in late" gap). Calling this right after the flag is set
+ * makes the glass deterministic instead of racy.
+ */
+export function syncSceneryThemeToLiveTerminals() {
+  applySceneryThemeToLiveTerminals();
+}
+
+/**
  * Keep a constructed terminal's theme in sync with the scenery wallpaper
  * state. Registered once per Terminal instance; pair with
  * unregisterTerminalFromSceneryThemeSync on dispose. The listener is global

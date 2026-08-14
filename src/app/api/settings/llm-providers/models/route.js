@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getCopilotToken } from '@/lib/copilot-token';
+import {
+  listXaiChatModels,
+  resolveXaiOAuthAccessToken,
+  isXaiOAuthMode,
+} from '@/lib/xai-oauth';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -74,6 +79,19 @@ function getProviderRequest(provider, config = {}) {
         isMinimax: true,
       };
     }
+    case 'kimi_code': {
+      return {
+        baseUrl: 'https://api.kimi.com/coding/v1',
+        apiKey: config.KIMI_CODE_API_KEY,
+        headers: {},
+      };
+    }
+    case 'xai': {
+      return {
+        isXai: true,
+        xaiConfig: config,
+      };
+    }
     default:
       return null;
   }
@@ -111,6 +129,31 @@ export async function POST(request) {
       // Static manifest — no HTTP call needed (D-6)
       return NextResponse.json({
         models: ['minimax-coding-plan/MiniMax-M2.7', 'minimax-coding-plan/MiniMax-M3'],
+      });
+    }
+
+    if (reqConfig.isXai) {
+      const cfg = reqConfig.xaiConfig || {};
+      let accessToken = (cfg.XAI_API_KEY || '').trim();
+      let authSource = accessToken ? 'api_key' : null;
+      if ((!accessToken || isXaiOAuthMode(cfg)) && (cfg.XAI_OAUTH_REFRESH_TOKEN || cfg.XAI_OAUTH_ACCESS_TOKEN)) {
+        try {
+          const oauth = await resolveXaiOAuthAccessToken(cfg);
+          if (oauth.accessToken) {
+            accessToken = oauth.accessToken;
+            authSource = 'oauth';
+          }
+        } catch {
+          // Keep API key if OAuth refresh fails.
+        }
+      }
+      const { models, sources, errors } = await listXaiChatModels({ accessToken });
+      return NextResponse.json({
+        models,
+        sources,
+        authSource,
+        warnings: errors,
+        ...(models.length ? {} : { error: errors[0] || 'No se pudieron obtener modelos de xAI' }),
       });
     }
 

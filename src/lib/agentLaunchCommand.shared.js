@@ -198,13 +198,20 @@ function candidateBins(programId, home) {
       ].filter(Boolean);
     case 'qodercli':
     case 'qoder':
+      // npm-installed CLI: %APPDATA%\npm\qodercli is a POSIX sh wrapper (works
+      // in WSL/Git Bash); there is no qodercli.exe on PATH. Prefer POSIX/sh
+      // wrappers over .cmd — launch scripts run under bash/WSL.
       return [
         process.env.DEVHUB_AGENT_QODERCLI_BIN,
         process.env.DEVHUB_AGENT_QODER_BIN,
-        home && join(home, '.qoder', 'bin', 'qodercli.exe'),
         home && join(home, '.qoder', 'bin', 'qodercli'),
+        appData && join(appData, 'npm', 'qodercli'),
+        localAppData && join(localAppData, 'npm', 'qodercli'),
+        home && join(home, '.qoder', 'bin', 'qodercli.exe'),
         home && join(home, '.local', 'bin', 'qodercli'),
-        'qodercli.exe',
+        // .cmd last (not executable from WSL bash)
+        appData && join(appData, 'npm', 'qodercli.cmd'),
+        localAppData && join(localAppData, 'npm', 'qodercli.cmd'),
         'qodercli',
       ].filter(Boolean);
     default:
@@ -446,16 +453,20 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       innerCommand = executable;
       break;
     case 'qodercli':
-    case 'qoder':
+    case 'qoder': {
       // Qoder CLI (qodercli): interactive TUI when bare; documented print mode
       // `-p <prompt>` for non-interactive one-shots (docs.qoder.com/en/cli).
-      // Swarm launches use the interactive TUI + send-keys bootstrap.
+      // Model selection uses `-m/--model` with bare names (`qodercli --list-models`).
+      // Swarm launches use the interactive TUI + send-keys bootstrap and need
+      // bypass_permissions so agents auto-approve actions (parity with kimi --yolo).
+      const qoderModelFlag = modelId ? ` -m ${shellQuote(modelId)}` : '';
       if (interactiveBootstrapPrompt) {
-        innerCommand = executable;
+        innerCommand = `${executable} --permission-mode bypass_permissions${qoderModelFlag}`;
       } else {
-        innerCommand = `${executable} -p ${quotedPrompt}`;
+        innerCommand = `${executable} -p ${quotedPrompt}${qoderModelFlag}`;
       }
       break;
+    }
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;

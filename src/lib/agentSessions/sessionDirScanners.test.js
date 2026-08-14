@@ -53,20 +53,20 @@ describe('sessionDirScanners', () => {
       expect(sessions).toEqual([
         {
           provider: 'kimi',
-          sessionId: '2222-bbbb',
+          sessionId: 'session_2222-bbbb',
           title: 'Newest',
           cwd: 'D:/devhub',
           updatedAt: '2026-07-25T19:27:37.239Z',
-          resumeCommand: 'kimi --session 2222-bbbb',
+          resumeCommand: 'kimi --session session_2222-bbbb',
           durable: true,
         },
         {
           provider: 'kimi',
-          sessionId: '1111-aaaa',
+          sessionId: 'session_1111-aaaa',
           title: 'Older',
           cwd: 'D:/devhub',
           updatedAt: '2026-07-01T10:00:00.000Z',
-          resumeCommand: 'kimi --session 1111-aaaa',
+          resumeCommand: 'kimi --session session_1111-aaaa',
           durable: true,
         },
       ]);
@@ -89,7 +89,7 @@ describe('sessionDirScanners', () => {
       const filter = process.platform === 'win32' ? 'd:/DEVHUB' : 'D:/devhub';
       const { sessions } = scanKimiSessions({ cwd: filter, homeDir: home });
 
-      expect(sessions.map((session) => session.sessionId)).toEqual(['3333-cccc']);
+      expect(sessions.map((session) => session.sessionId)).toEqual(['session_3333-cccc']);
     });
 
     test('respects the limit after sorting newest first', async () => {

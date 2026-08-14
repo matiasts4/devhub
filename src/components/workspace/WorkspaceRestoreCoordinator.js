@@ -4,6 +4,7 @@
  */
 
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import { logRestoreDiagnostic } from '@/lib/terminal/restoreDiagnostics';
 import {
   RESTORE_ACTION,
   buildRestoreManifestFromWorkspaceState,
@@ -63,6 +64,10 @@ export function createWorkspaceRestoreCoordinator({
       const rebootPrefs = readTerminalRestorePreferences(
         typeof localStorage !== 'undefined' ? localStorage : storage
       );
+      // Durable record of the exact prefs driving this restore pass — the
+      // plan/skip/relaunch trail below only makes sense with these values.
+      const { restoreOnReboot, ...policies } = rebootPrefs || {};
+      logRestoreDiagnostic('restore-prefs-read', { restoreOnReboot, policies });
       if (!isRebootRestoreEnabled(rebootPrefs)) {
         logTerminalSession('startup-restore-skipped', {
           reason: 'restore-on-reboot-disabled',
@@ -200,13 +205,17 @@ export function createWorkspaceRestoreCoordinator({
           },
           onRelaunch: async (action, panel, command) => {
             if (cancelled) return;
+            const agentRun = restoreAgentRuns[action.terminalId] || null;
+            const relaunchCwd = agentRun?.agentSessionCwd || panel?.cwd || null;
             logTerminalSession('startup-restore-relaunch', {
               panelId: action.terminalId,
               command,
               reason: action.reason,
               action: action.action,
+              cwd: relaunchCwd,
+              agentSessionCwd: agentRun?.agentSessionCwd || null,
             });
-            applyPanelRelaunchCommand(action.terminalId, command, panel?.cwd || null, {
+            applyPanelRelaunchCommand(action.terminalId, command, relaunchCwd, {
               bumpCommand: false,
               emitEvent: true,
             });

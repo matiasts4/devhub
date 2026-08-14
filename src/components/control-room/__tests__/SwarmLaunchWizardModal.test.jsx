@@ -154,4 +154,23 @@ describe('T-018 hook: SwarmLaunchWizardModal spawnStrategy field', () => {
     expect(source).toMatch(/CompactStepRail|lg:hidden/);
     expect(source).toMatch(/getWizardHeaderActionStyle/);
   });
+
+  test('the default model select only sets providerId — it never fans out into every role', () => {
+    const source = readModalSource();
+    expect(source).toMatch(/onChange=\{\(event\) => onDraftChange\(\{ providerId: event\.target\.value \}\)\}/);
+    expect(source).not.toMatch(/applyDefaultModelToRoles/);
+  });
+
+  test('per-role model edits write the sparse override, not the derived effective map', () => {
+    const source = readModalSource();
+    expect(source).toMatch(/currentModel=\{entry\.model_override \|\| ''\}/);
+    expect(source).toMatch(/onDraftChange\(\{\s*roleModelOverrides:/);
+    expect(source).not.toMatch(/onDraftChange\(\{\s*roleModels:/);
+  });
+
+  test('the effective model is visible on each role card and in the launch review', () => {
+    const source = readModalSource();
+    expect(source).toMatch(/effectiveModel=\{entry\.model_id\}/);
+    expect(source).toMatch(/entry\.model_id \? ` · \$\{entry\.model_id\}` : ''/);
+  });
 });

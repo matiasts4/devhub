@@ -13,6 +13,7 @@ import {
 
 export function QuotaHeaderBadge({ activeSessionTitle = null }) {
   const [quotas, setQuotas] = useState({});
+  const [lastGoodQuotas, setLastGoodQuotas] = useState({});
   const [prefs, setPrefs] = useState(() => readQuotaPreferences());
   const [detectedProvider, setDetectedProvider] = useState(null);
   const [selectedProvider, setSelectedProvider] = useState(null);
@@ -27,6 +28,20 @@ export function QuotaHeaderBadge({ activeSessionTitle = null }) {
     // Subscribe to QuotaManager updates
     const unsubscribe = quotaManager.subscribe((updatedQuotas) => {
       setQuotas(updatedQuotas);
+      // Remember the last quota that actually had data per provider, so a
+      // transient error / empty-window / missing response never blanks the
+      // badge — the last good value stays until fresh data replaces it.
+      setLastGoodQuotas((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [id, q] of Object.entries(updatedQuotas)) {
+          if (q && !q.error && q.windows?.length > 0) {
+            next[id] = q;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     });
 
     return () => unsubscribe();
@@ -53,7 +68,11 @@ export function QuotaHeaderBadge({ activeSessionTitle = null }) {
   // No providers enabled → the badge hides itself entirely.
   if (!displayProvider) return null;
 
-  const currentQuota = quotas[displayProvider] || null;
+  const liveQuota = quotas[displayProvider] || null;
+  const liveHasData = !!liveQuota && !liveQuota.error && liveQuota.windows?.length > 0;
+  // Fall back to the last known-good value so a transient empty/error refresh
+  // never blanks the badge; fresh data replaces it as soon as it arrives.
+  const currentQuota = liveHasData ? liveQuota : lastGoodQuotas[displayProvider] || liveQuota;
   // Only trust percentages backed by real usage windows; an errored or
   // window-less status must render as "no data", never as a fake 100%.
   const hasData = !!currentQuota && !currentQuota.error && currentQuota.windows?.length > 0;

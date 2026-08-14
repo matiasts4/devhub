@@ -12,8 +12,8 @@ import {
   buildAgentProviderResumeCommand,
   flushTerminalSessionPersistence,
 } from '@/lib/terminal/terminalSessionFlush';
-import { detectAgentTypeFromCommand } from '@/lib/terminal/agentTuiMetadata';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import { logRestoreDiagnostic } from '@/lib/terminal/restoreDiagnostics';
 
 /**
  * Multiprovider session-detected events (Phase 2, terminal-multiprovider-session-resume).
@@ -26,44 +26,36 @@ const PROVIDER_SESSION_EVENT_CONFIG = {
   qoder: { agentType: 'qodercli' },
 };
 
-function stripRecoveryTag(command) {
-  return String(command || '')
-    .replace(/\s*#recovery-\d+\s*$/i, '')
-    .trim();
+/**
+ * Restore reads the panel's NEWEST run (readAgentRunForPanel sorts by
+ * launchedAt) — persist bindings on that same run so both sides agree.
+ */
+function findNewestRunEntryForPanel(runs, panelId) {
+  return (
+    Object.entries(runs || {})
+      .filter(([, value]) => value?.panelId === panelId)
+      .sort(([, a], [, b]) => (Number(b?.launchedAt) || 0) - (Number(a?.launchedAt) || 0))[0] ||
+    null
+  );
 }
 
 /**
  * Whether a `<provider>-session-detected` event should update this panel's
- * restore command. Mirrors shouldPersistOpenCodeSessionForPanel: blocks
- * cross-contamination into panels owned by another provider or by swarm.
+ * restore command. The event originates from the panel's own PTY socket, so a
+ * different provider's command on the panel means the user switched providers
+ * inside that panel — the new binding replaces the old one. Only swarm panels
+ * (tmux-managed lifecycle) are blocked.
  */
 function shouldPersistProviderSessionForPanel(agentType, panel = null, agentRun = null) {
   if (!panel || !agentType) return false;
 
-  const command = stripRecoveryTag(panel.initialCommand);
-
-  if (
+  return (
     inferPanelSessionKind({
       initialCommand: panel.initialCommand,
       agentRun,
       panel,
-    }) === 'swarm'
-  ) {
-    return false;
-  }
-
-  if (command) {
-    const detected = detectAgentTypeFromCommand(command);
-    if (detected && detected !== agentType) return false;
-    if (detected === agentType) return true;
-  }
-
-  const runType = typeof agentRun?.agentType === 'string' ? agentRun.agentType.trim() : '';
-  if (runType === agentType && agentRun?.agentSessionId) return true;
-
-  if (!command) return true;
-
-  return false;
+    }) !== 'swarm'
+  );
 }
 
 export default function useWorkspaceEventBridge({
@@ -90,14 +82,21 @@ export default function useWorkspaceEventBridge({
     const handleOpenCodeSessionDetected = (e) => {
       const { panelId, sessionId } = e.detail || {};
       if (!panelId || !sessionId) return;
-      if (panelsClosingRef.current.has(panelId)) return;
+      if (panelsClosingRef.current.has(panelId)) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider: 'opencode',
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'panel-closing',
+        });
+        return;
+      }
 
       let runMetadata = null;
       try {
         const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-        const taskEntry = Object.entries(runs || {}).find(
-          ([, value]) => value?.panelId === panelId
-        );
+        const taskEntry = findNewestRunEntryForPanel(runs, panelId);
         runMetadata = taskEntry?.[1] || null;
 
         if (
@@ -131,9 +130,16 @@ export default function useWorkspaceEventBridge({
           runs[taskEntry[0]] = {
             ...runs[taskEntry[0]],
             opencodeSessionId: sessionId,
+            agentType: 'opencode',
+            agentSessionId: null,
             restorePolicy: runs[taskEntry[0]]?.restorePolicy || defaultRestorePolicy,
           };
           localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+          logRestoreDiagnostic('agent-run-persisted', {
+            panelId,
+            provider: 'opencode',
+            agentSessionId: sessionId,
+          });
         }
       } catch {
         // Ignore best-effort canonical reconciliation failures in UI layer.
@@ -144,16 +150,41 @@ export default function useWorkspaceEventBridge({
         .flatMap((col) => col.panels || [])
         .find((entry) => entry.id === panelId);
 
-      if (!panelEntry) return;
+      if (!panelEntry) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider: 'opencode',
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'panel-not-found',
+        });
+        return;
+      }
 
       const panelAgentRun = readAgentRunsByPanel(storage)[panelId] || null;
       const shouldPersistSession = shouldPersistOpenCodeSessionForPanel(panelEntry, panelAgentRun);
 
-      if (!shouldPersistSession) return;
+      if (!shouldPersistSession) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider: 'opencode',
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'persist-guard',
+        });
+        return;
+      }
 
       const pending = pendingReopenPanelsRef.current.get(panelId);
       if (pending) {
         if (pending.sessionId !== sessionId) {
+          logRestoreDiagnostic('provider-session-detected', {
+            provider: 'opencode',
+            panelId,
+            sessionId,
+            outcome: 'blocked',
+            reason: 'pending-reopen-mismatch',
+          });
           failPendingReopen(panelId);
           return;
         }
@@ -195,6 +226,14 @@ export default function useWorkspaceEventBridge({
         agentRunsByPanel: readAgentRunsByPanel(storage),
       });
 
+      logRestoreDiagnostic('provider-session-detected', {
+        provider: 'opencode',
+        panelId,
+        sessionId,
+        outcome: 'accepted',
+        reason: 'persisted',
+      });
+
       setWorkspaces(nextWorkspaces);
     };
 
@@ -205,27 +244,70 @@ export default function useWorkspaceEventBridge({
      * form — same shape as the opencode handler above.
      */
     const handleProviderSessionDetected = (provider) => (e) => {
-      const { panelId, sessionId } = e.detail || {};
+      const { panelId, sessionId, cwd: detectedCwd } = e.detail || {};
       if (!panelId || !sessionId) return;
-      if (panelsClosingRef.current.has(panelId)) return;
+      if (panelsClosingRef.current.has(panelId)) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider,
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'panel-closing',
+        });
+        return;
+      }
 
       const agentType = PROVIDER_SESSION_EVENT_CONFIG[provider]?.agentType || provider;
       const resumeCommand = buildAgentProviderResumeCommand(agentType, sessionId);
-      if (!resumeCommand) return;
+      if (!resumeCommand) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider,
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'no-resume-command',
+        });
+        return;
+      }
 
       const panelEntry = workspacesRef.current
         .flatMap((ws) => ws.columns || [])
         .flatMap((col) => col.panels || [])
         .find((entry) => entry.id === panelId);
 
-      if (!panelEntry) return;
+      if (!panelEntry) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider,
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'panel-not-found',
+        });
+        return;
+      }
 
       const panelAgentRun = readAgentRunsByPanel(storage)[panelId] || null;
-      if (!shouldPersistProviderSessionForPanel(agentType, panelEntry, panelAgentRun)) return;
+      if (!shouldPersistProviderSessionForPanel(agentType, panelEntry, panelAgentRun)) {
+        logRestoreDiagnostic('provider-session-detected', {
+          provider,
+          panelId,
+          sessionId,
+          outcome: 'blocked',
+          reason: 'persist-guard',
+        });
+        return;
+      }
 
       const pending = pendingReopenPanelsRef.current.get(panelId);
       if (pending) {
         if (pending.sessionId !== sessionId) {
+          logRestoreDiagnostic('provider-session-detected', {
+            provider,
+            panelId,
+            sessionId,
+            outcome: 'blocked',
+            reason: 'pending-reopen-mismatch',
+          });
           failPendingReopen(panelId);
           return;
         }
@@ -238,9 +320,7 @@ export default function useWorkspaceEventBridge({
       // a stray event for another provider cannot pollute this panel's run.
       try {
         const runs = JSON.parse(localStorage.getItem('devhub_agent_runs') || '{}');
-        const taskEntry = Object.entries(runs || {}).find(
-          ([, value]) => value?.panelId === panelId
-        );
+        const taskEntry = findNewestRunEntryForPanel(runs, panelId);
 
         if (taskEntry?.[0]) {
           const restorePrefs = readWorkspaceRestorePreferences(storage);
@@ -257,9 +337,16 @@ export default function useWorkspaceEventBridge({
             ...runs[taskEntry[0]],
             agentSessionId: sessionId,
             agentType,
+            agentSessionCwd: detectedCwd || runs[taskEntry[0]]?.agentSessionCwd || null,
+            opencodeSessionId: null,
             restorePolicy: runs[taskEntry[0]]?.restorePolicy || defaultRestorePolicy,
           };
           localStorage.setItem('devhub_agent_runs', JSON.stringify(runs));
+          logRestoreDiagnostic('agent-run-persisted', {
+            panelId,
+            provider: agentType,
+            agentSessionId: sessionId,
+          });
         }
       } catch {
         // Ignore best-effort canonical reconciliation failures in UI layer.
@@ -295,6 +382,14 @@ export default function useWorkspaceEventBridge({
         projectId,
         appSessionId: `${provider}-detect-${sessionId}`,
         agentRunsByPanel: readAgentRunsByPanel(storage),
+      });
+
+      logRestoreDiagnostic('provider-session-detected', {
+        provider,
+        panelId,
+        sessionId,
+        outcome: 'accepted',
+        reason: 'persisted',
       });
 
       setWorkspaces(nextWorkspaces);

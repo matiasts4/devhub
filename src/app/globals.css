@@ -1126,15 +1126,13 @@ code {
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 .fade-in-up {
-  animation: fadeInUp 0.35s ease-out forwards;
+  animation: fadeInUp 0.2s ease-out forwards;
   opacity: 0;
 }
 
@@ -1207,7 +1205,7 @@ code {
 
 /* Stagger children animations */
 .stagger-children > * {
-  animation: fadeInUp 0.35s ease-out both;
+  animation: fadeInUp 0.2s ease-out both;
 }
 .stagger-children > *:nth-child(1) {
   animation-delay: 0ms;
@@ -1317,7 +1315,11 @@ code {
 .devhub-xterm-container[data-operational-renderer='xterm-canvas'] .xterm-screen canvas,
 .devhub-xterm-container[data-operational-renderer='xterm-webgl'] .xterm-screen canvas {
   display: block;
-  width: 100% !important;
+  /* Stretch to the visible text area, stopping at the vertical scrollbar. The
+     --devhub-terminal-scrollbar-w inset is published by the fit logic
+     (syncTerminalScrollbarInset); it is 0/absent when no classic scrollbar is
+     shown, so this degrades to the previous full-width stretch. */
+  width: calc(100% - var(--devhub-terminal-scrollbar-w, 0px)) !important;
   height: 100% !important;
   max-width: none !important;
 }
@@ -1914,6 +1916,59 @@ code {
 
 .terminal-panel-nav-pulse {
   animation: terminal-panel-nav-pulse 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* agent-dot-*: shared heartbeat for agent status dots (AgentStatusDot.jsx).
+   One 2.4s period shared by the panel-header badge pulse and the workspace-tab
+   halo; JS anchors the phase to a common clock via negative animation-delay so
+   every dot beats in sync. Keep the duration in sync with AGENT_DOT_PERIOD_MS. */
+@keyframes agent-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes agent-dot-halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+
+  70%,
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes agent-dot-halo-blocked {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.7);
+    opacity: 0.15;
+  }
+}
+
+.agent-dot-pulse {
+  animation: agent-dot-pulse 2400ms ease-in-out infinite;
+}
+
+.agent-dot-halo {
+  animation: agent-dot-halo 2400ms ease-out infinite;
+}
+
+.agent-dot-halo-blocked {
+  animation: agent-dot-halo-blocked 2400ms ease-in-out infinite;
 }
 
 @keyframes zed-dot-pulse {

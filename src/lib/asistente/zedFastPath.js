@@ -51,8 +51,13 @@ export function normalizeAgentAliases(text) {
     .replace(/\bopen\s+codex\b/g, 'codex')
     .replace(/\bopen\s+kimi\b/g, 'kimi')
     .replace(/\bopen\s+grok\b/g, 'grok')
+    .replace(/\bkimi\s+la\s+m\b/g, 'kimi')
     .replace(/\bquimy\b/g, 'kimi')
-    .replace(/\bkimy\b/g, 'kimi');
+    .replace(/\bkimy\b/g, 'kimi')
+    .replace(/\bkimmy\b/g, 'kimi')
+    .replace(/\bquimico\b/g, 'kimi')
+    .replace(/\bquimi\b/g, 'kimi')
+    .replace(/\bkime\b/g, 'kimi');
 }
 
 function mergedTerminals(context) {
@@ -551,10 +556,14 @@ function extractCommandForExistingTerminal(message) {
 
 function extractTerminalCount(message) {
   const lower = normalizeText(message);
-  const digit = lower.match(/\b(\d+)\s+(?:terminal(?:es)?|panel(?:es)?|nuevas?|nuevos?)\b/);
+  const noun = '(?:terminal(?:es)?|panel(?:es)?|nuevas?|nuevos?)';
+  // Tolerate up to 2 dictation-inserted filler words between the number and the
+  // noun ("dos terminales nuevas", "ponme 2 terminales"), but no more — so
+  // unrelated numbers ("espera 2 segundos y abre una terminal") don't count.
+  const digit = lower.match(new RegExp(`\\b(\\d+)(?:\\s+\\w+){0,2}\\s+${noun}\\b`));
   if (digit) return Math.min(parseInt(digit[1], 10), 6);
   for (const [word, value] of Object.entries(NUMBER_WORDS)) {
-    if (new RegExp(`\\b${word}\\s+(?:terminal(?:es)?|panel(?:es)?|nuevas?|nuevos?)`).test(lower)) {
+    if (new RegExp(`\\b${word}(?:\\s+\\w+){0,2}\\s+${noun}\\b`).test(lower)) {
       return value;
     }
   }
@@ -713,7 +722,7 @@ const AGENT_PROGRAM_ALIASES = {
   opencode: ['opencode', 'open code', 'open-code'],
   codex: ['codex', 'code x'],
   hermes: ['hermes'],
-  kimi: ['kimi', 'kimy', 'quimy'],
+  kimi: ['kimi', 'kimy', 'quimy', 'kimmy', 'quimico', 'químico', 'quimi', 'kime', 'kimi la m'],
   grok: ['grok', 'groc'],
   qodercli: ['qodercli', 'qoder cli', 'qoder'],
 };

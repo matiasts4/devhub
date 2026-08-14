@@ -13,7 +13,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
-import { buildZedRegistry } from '@/lib/asistente/buildZedRegistry';
+import { getZedRegistry } from '@/lib/asistente/buildZedRegistry';
+import { createZedPerf } from '@/lib/asistente/zedPerf';
 import { zedLog } from '@/lib/asistente/utils/zed-logger';
 import { searchZedMemoriesServer, saveZedMemoryServer } from '@/lib/asistente/zedEngramServer';
 import { detectMaliciousPrompt } from '@/lib/asistente/zedSecurityPolicy';
@@ -226,10 +227,9 @@ export async function POST(request) {
       );
     }
 
-    const registry = buildZedRegistry();
-
-    const memorySearch = await searchZedMemoriesServer({ query: message });
-    requestContext.memories = memorySearch.memories || [];
+    const perf = createZedPerf(msgId);
+    const registry = getZedRegistry();
+    perf.mark('registry_build');
 
     const persistInteraction = (finalText, turnToolResults = []) => {
       const hasValue = turnToolResults.length > 0 || finalText?.length > 20;
@@ -274,6 +274,7 @@ export async function POST(request) {
     }
 
     const rateLimit = await checkZedRateLimit(userId);
+    perf.mark('rate_limit');
     if (!rateLimit.allowed) {
       return NextResponse.json(
         { error: 'rate limit exceeded', retry_after_ms: rateLimit.resetMs },
@@ -290,6 +291,7 @@ export async function POST(request) {
       msgId,
       confirmed: body.confirmed === true,
     });
+    perf.mark('fast_path');
     if (fastPath.hit) {
       recordZedServerMetric({
         type: 'fast_path_hit',
@@ -315,6 +317,7 @@ export async function POST(request) {
           msgId,
           meta: fastPath.body?.meta,
         });
+        perf.flush();
         return new Response(stream, {
           headers: {
             'Content-Type': 'text/event-stream; charset=utf-8',
@@ -324,6 +327,7 @@ export async function POST(request) {
         });
       }
       persistInteraction(fastPath.body?.text, fastPath.toolResults);
+      perf.flush();
       return NextResponse.json(fastPath.body);
     }
 
@@ -335,13 +339,20 @@ export async function POST(request) {
       payload: { intent: fastPath.intent?.intent },
     });
 
+    const [memorySearch, llmConfig] = await Promise.all([
+      searchZedMemoriesServer({ query: message }),
+      resolveZedLlmConfig(),
+    ]);
+    requestContext.memories = memorySearch.memories || [];
+    perf.mark('memory_and_config');
+
     const {
       apiKey,
       source: apiKeySource,
       provider: llmProvider,
       model: llmModel,
       baseUrl: llmBaseUrl,
-    } = await resolveZedLlmConfig();
+    } = llmConfig;
     if (!apiKey) {
       zedLog.error('CONFIG', 'No usable LLM API key configured', {
         hint: 'Set XAI_API_KEY, KIMI_CODE_API_KEY, or MINIMAX_API_KEY in .env.local, login SuperGrok OAuth, or configure data/llm-providers-config.json.',
@@ -382,6 +393,7 @@ export async function POST(request) {
         estimatedInputTokens: budget.estimatedInputTokens,
       });
     }
+    perf.mark('prompt_and_budget');
 
     const conversation = [...budget.history, { role: 'user', content: message }];
     const anthropicTools = registry.toAnthropicTools();
@@ -405,6 +417,7 @@ export async function POST(request) {
     if (wantsZedStream(request, body)) {
       zedLog.orchestration('stream_start', { msgId });
       const stream = createZedSseStream({ ...loopParams, msgId, model: llmModel });
+      perf.flush();
       return new Response(stream, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -469,7 +482,9 @@ export async function POST(request) {
 
     zedLog.sessionEnd(msgId, finalText, allToolResults.length);
 
+    perf.mark('llm_loop');
     persistInteraction(finalText, allToolResults);
+    perf.flush();
     return NextResponse.json({
       text: finalText,
       tool_results: allToolResults,

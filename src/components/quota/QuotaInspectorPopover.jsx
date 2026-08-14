@@ -30,6 +30,12 @@ export function QuotaInspectorPopover({
     return `${mins}m remaining`;
   }
 
+  // "personal_professional" → "Professional", "personal_standard" → "Standard"
+  function formatQoderPlan(userType) {
+    const tier = String(userType).replace(/^(personal|team|org)_/, '');
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
+  }
+
   return (
     <div
       data-devhub-modal="soft"
@@ -133,6 +139,16 @@ export function QuotaInspectorPopover({
               {currentQuota.metadata.planType && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
                   Plan: {currentQuota.metadata.planType}
+                </span>
+              )}
+              {currentQuota.metadata.userType && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+                  Plan: {formatQoderPlan(currentQuota.metadata.userType)}
+                </span>
+              )}
+              {currentQuota.metadata.daysUntilRenewal != null && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/25">
+                  Renews in {currentQuota.metadata.daysUntilRenewal}d
                 </span>
               )}
               {currentQuota.metadata.creditsBalance != null && (

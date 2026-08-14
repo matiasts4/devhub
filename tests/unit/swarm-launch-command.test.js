@@ -14,7 +14,7 @@ describe('swarm launch inner command', () => {
   test('uses bare opencode when disableTmuxWrap is true (no nested tmux attach)', () => {
     const inner = buildAgentLaunchCommand('opencode', 'mission prompt', {
       opencodeAgent: 'swarm-director',
-      modelId: 'minimax-coding-plan/MiniMax-M3',
+      modelId: 'minimax/MiniMax-M3',
       tmuxSessionName: 'devhub-swarm-launch-abc-director',
       disableTmuxWrap: true,
       opencodePure: true,
@@ -25,7 +25,7 @@ describe('swarm launch inner command', () => {
     // so derive the expectation from the same resolver the builder uses.
     const opencodeBin = resolveAgentProgramExecutable('opencode');
     expect(inner).toContain(`${opencodeBin} --agent swarm-director`);
-    expect(inner).toContain('--model minimax-coding-plan/MiniMax-M3');
+    expect(inner).toContain('--model minimax/MiniMax-M3');
     expect(inner).not.toContain('--prompt');
     expect(inner).not.toContain('tmux new-session');
     expect(inner).not.toContain('tmux attach-session');
@@ -34,7 +34,7 @@ describe('swarm launch inner command', () => {
   test('without disableTmuxWrap still wraps in tmux (legacy path)', () => {
     const inner = buildAgentLaunchCommand('opencode', 'mission prompt', {
       opencodeAgent: 'swarm-coder',
-      modelId: 'minimax-coding-plan/MiniMax-M3',
+      modelId: 'minimax/MiniMax-M3',
       tmuxSessionName: 'devhub-swarm-launch-abc-coder',
       interactiveBootstrapPrompt: true,
     });
@@ -112,5 +112,47 @@ describe('swarm launch inner command', () => {
     expect(inner).toContain('tmux new-session');
     expect(inner).toContain('tmux attach-session');
     expect(inner).toContain(resolveAgentProgramExecutable('agy'));
+  });
+
+  test('qodercli swarm launch uses interactive TUI with bypass_permissions and -m model', () => {
+    const inner = buildAgentLaunchCommand('qodercli', 'mission prompt', {
+      role: 'coder',
+      modelId: 'Auto',
+      tmuxSessionName: 'devhub-swarm-launch-abc-coder',
+      disableTmuxWrap: true,
+      interactiveBootstrapPrompt: true,
+    });
+
+    const qoderBin = resolveAgentProgramExecutable('qodercli');
+    expect(inner).toContain(`${qoderBin} --permission-mode bypass_permissions`);
+    expect(inner).toContain("-m 'Auto'");
+    expect(inner).not.toContain('-p ');
+    expect(inner).not.toContain('--yolo');
+    expect(inner).not.toContain('tmux new-session');
+  });
+
+  test('qodercli one-off launch uses -p print mode with optional model', () => {
+    const inner = buildAgentLaunchCommand('qodercli', 'do work', {
+      role: 'coder',
+      modelId: 'DeepSeek-V4-Flash',
+      disableTmuxWrap: true,
+    });
+
+    const qoderBin = resolveAgentProgramExecutable('qodercli');
+    expect(inner).toContain(`${qoderBin} -p`);
+    expect(inner).toContain('do work');
+    expect(inner).toContain("-m 'DeepSeek-V4-Flash'");
+    expect(inner).not.toContain('--permission-mode');
+  });
+
+  test('qodercli launch without model omits the -m flag', () => {
+    const inner = buildAgentLaunchCommand('qodercli', 'mission prompt', {
+      role: 'coder',
+      disableTmuxWrap: true,
+      interactiveBootstrapPrompt: true,
+    });
+
+    expect(inner).toContain('--permission-mode bypass_permissions');
+    expect(inner).not.toContain('-m ');
   });
 });

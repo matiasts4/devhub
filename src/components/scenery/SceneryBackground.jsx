@@ -21,7 +21,7 @@
  *  - withOverlay: render the dim/blur readability overlay (default: true)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import {
   readSceneryPrefs,
   resolveSceneryStyle,
@@ -29,6 +29,13 @@ import {
   resolveTerminalTintColor,
   SCENERY_CHANGED_EVENT,
 } from '@/lib/sceneries/sceneryPreferences';
+import { syncSceneryThemeToLiveTerminals } from '@/components/terminal/TerminalThemeSync';
+
+// SSR-safe layout effect: the body flag must be set before the first paint so
+// the glass CSS rules (and the xterm transparency they enable) apply from the
+// very first frame instead of one frame (or several seconds, if a re-theme
+// never comes) late.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export default function SceneryBackground({
   scope = 'pizarra',
@@ -56,10 +63,14 @@ export default function SceneryBackground({
   // Idempotent across the pizarra + terminal instances of this component.
   // Also publishes the terminal glass tint as a CSS variable so globals.css can
   // dim the xterm layers without re-painting the wallpaper behind them.
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (typeof document === 'undefined') return;
     document.body.setAttribute('data-scenery-active', prefs.sceneryId ? 'true' : 'false');
     document.body.style.setProperty('--scenery-terminal-tint', resolveTerminalTintColor(prefs));
+    // Terminals constructed before the flag flipped still paint an opaque
+    // background into the WebGL/Canvas layer; push the scenery-aware theme so
+    // the wallpaper shows through immediately instead of seconds later.
+    syncSceneryThemeToLiveTerminals();
   }, [prefs.sceneryId, prefs.terminalTint]);
 
   const sceneryStyle = resolveSceneryStyle(prefs, scope);

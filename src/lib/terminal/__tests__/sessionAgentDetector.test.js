@@ -117,9 +117,14 @@ describe('sessionAgentDetector', () => {
         '\x1b[2K\r? for shortcuts\r\n' +
         'accept-edits · Gemini 3.5 Flash\r\n';
       const second = ingestAgentDetectionFromFilteredOutput(session, idleRaw, 2000);
-      expect(second.agentTuiState).toBe('idle');
-      expect(second.published).not.toBeNull();
-      expect(second.published.state).toBe('idle');
+      // Anti-flap dwell: the first idle candidate is held, state stays running
+      expect(second.published).toBeNull();
+      expect(second.agentTuiState).toBe('running');
+      // Once the candidate persists past the dwell window, it publishes
+      const third = ingestAgentDetectionFromFilteredOutput(session, idleRaw, 3600);
+      expect(third.agentTuiState).toBe('idle');
+      expect(third.published).not.toBeNull();
+      expect(third.published.state).toBe('idle');
     });
 
     test('kimi: CR-overwritten moon spinner frames still detect running', () => {
@@ -327,7 +332,13 @@ describe('sessionAgentDetector', () => {
       notifyUserInput(session, 1000);
       expect(session.agentTuiState).toBe('running');
 
-      const res = ingestAgentDetectionFromFilteredOutput(session, 'kimi> ', 2000);
+      // First prompt-visible idle is held by the anti-flap dwell…
+      const held = ingestAgentDetectionFromFilteredOutput(session, 'kimi> ', 2000);
+      expect(held.published).toBeNull();
+      expect(session.agentTuiState).toBe('running');
+
+      // …and publishes once the candidate persists past the dwell window
+      const res = ingestAgentDetectionFromFilteredOutput(session, 'kimi> ', 3600);
       expect(res.published).not.toBeNull();
       expect(res.published.state).toBe('idle');
       expect(res.published.reason).toBe('prompt-visible');

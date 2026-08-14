@@ -370,14 +370,12 @@ describe('TerminalTTY â€” xterm-addon-webgl wiring', () => {
     expect(WebglAddon.instances).toHaveLength(0);
   });
 
-  // XW-06: when the user requested xterm-webgl but the runtime capability
-  // demotes it (probe says no WebGL), the resolver picks plain 'xterm'
-  // and the WebglAddon path is never even attempted. Without this fix the
-  // user sees a silent DOM xterm with no warning that their preferred
-  // renderer is unavailable â€” confusing. The warning line must surface
-  // the demotion reason, matching the prose returned by
-  // getTerminalRendererWebglFallbackCopy.
-  test('xterm-webgl demoted by capability: warning line surfaces the demotion reason (XW-06)', async () => {
+  // XW-06 (uniform renderer): a xterm-webgl request resolves to Canvas 2D for
+  // every panel, so there is no "demotion" to warn about — canvas is the
+  // intentional renderer, not a fallback. No WebglAddon is constructed and no
+  // WebGL error section is rendered, even when the probe reports WebGL as
+  // unavailable.
+  test('xterm-webgl resolves to uniform canvas: no demotion warning is rendered (XW-06)', async () => {
     mockProbeReady = false;
     mockProbeReason = 'webgl-unsupported-in-webview';
     const view = await renderIntoDom(
@@ -390,19 +388,20 @@ describe('TerminalTTY â€” xterm-addon-webgl wiring', () => {
 
     await flushTerminalEffects();
 
-    // No addon constructed (resolver demoted to xterm).
+    // No WebGL addon constructed (resolver resolved the GPU path to canvas).
     expect(WebglAddon.instances).toHaveLength(0);
 
-    // The WebglErrorSection is rendered in place of the xterm mount.
+    // Canvas is the intentional renderer, so no demotion warning is shown.
     const errorSection = view.container.querySelector(
       '[data-testid="terminal-webgl-error-section"]'
     );
-    expect(errorSection).not.toBeNull();
+    expect(errorSection).toBeNull();
   });
 
-  // XW-07: once the user moves AWAY from xterm-webgl, the demotion warning
-  // must clear (no stale 'WebGL unavailable' banner on a different mode).
-  test('clearing xterm-webgl demotion warning when the user picks a different renderer (XW-07)', async () => {
+  // XW-07 (uniform renderer): the demotion warning never appears under the
+  // uniform-canvas resolver, so switching the requested mode must not surface
+  // a stale 'WebGL unavailable' banner either.
+  test('no stale xterm-webgl demotion warning across renderer switches (XW-07)', async () => {
     mockProbeReady = false;
     mockProbeReason = 'webgl-unsupported-in-webview';
     const harness = await renderIntoDom(
@@ -417,7 +416,7 @@ describe('TerminalTTY â€” xterm-addon-webgl wiring', () => {
     let errorSection = harness.container.querySelector(
       '[data-testid="terminal-webgl-error-section"]'
     );
-    expect(errorSection).not.toBeNull();
+    expect(errorSection).toBeNull();
 
     // Re-render with a different requested mode (e.g. user picks 'xterm').
     const otherModeElement = React.createElement(TerminalTTY, {

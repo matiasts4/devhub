@@ -12,6 +12,7 @@ function getProcessCount(pattern) {
   try {
     const result = execSync(`pgrep -c -f "${pattern}" 2>/dev/null || echo 0`, {
       encoding: 'utf8',
+      windowsHide: true,
     }).trim();
     return parseInt(result, 10) || 0;
   } catch {
@@ -23,6 +24,7 @@ function getTmuxSessions() {
   try {
     const output = execSync('tmux list-sessions -F "#{session_name}" 2>/dev/null', {
       encoding: 'utf8',
+      windowsHide: true,
     }).trim();
     if (!output) return [];
     return output.split('\n');
@@ -36,6 +38,7 @@ function getWorktreeList() {
     const output = execSync('git worktree list --porcelain', {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     }).trim();
     if (!output) return [];
 

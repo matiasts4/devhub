@@ -147,6 +147,55 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
   const [speaking, setSpeaking] = useState(false);
   const unlistenRef = useRef([]);
   const browserUtteranceRef = useRef(null);
+  // Electron plays Piper's tts-chunk wav renderer-side (no paplay on Windows).
+  const desktopAudioRef = useRef(null);
+  // Last requested utterance, so an async Piper `tts-error` can still be
+  // spoken by the OS voice instead of leaving the user in silence.
+  const pendingSpeechRef = useRef(null);
+
+  /** @returns {'started'|'unavailable'|'failed'} 'failed' means ttsError is already set. */
+  const startBrowserSpeech = useCallback((text, options) => {
+    const browserSpeech = createBrowserUtterance(text, options);
+    if (!browserSpeech) return 'unavailable';
+
+    const { synth, utterance } = browserSpeech;
+    browserUtteranceRef.current = utterance;
+    utterance.onend = () => {
+      browserUtteranceRef.current = null;
+      setSpeaking(false);
+    };
+    utterance.onerror = (event) => {
+      browserUtteranceRef.current = null;
+      setSpeaking(false);
+      if (event?.error !== 'canceled' && event?.error !== 'interrupted') {
+        setTtsError(`No se pudo reproducir la voz de Windows (${event?.error || 'error'})`);
+      }
+    };
+    try {
+      synth.speak(utterance);
+    } catch (error) {
+      browserUtteranceRef.current = null;
+      setSpeaking(false);
+      setTtsError(
+        `No se pudo iniciar la voz de Windows (${String(error?.message || error || 'error')})`
+      );
+      return 'failed';
+    }
+    return 'started';
+  }, []);
+
+  const stopDesktopAudio = useCallback(() => {
+    const current = desktopAudioRef.current;
+    desktopAudioRef.current = null;
+    if (current) {
+      try {
+        current.audio.pause();
+      } catch {
+        /* ignore */
+      }
+      URL.revokeObjectURL(current.url);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,17 +206,59 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
           await import('@/lib/desktop/desktopBridge');
 
         if (isElectronDesktop()) {
-          // Voice events are optional on Electron (preload may no-op).
-          const unError = await subscribeDesktopEvent('tts-error', (payload) => {
-            const msg =
-              typeof payload === 'string' && payload.trim()
-                ? payload.trim()
-                : 'No se pudo reproducir audio';
-            setTtsError(msg);
-            setSpeaking(false);
+          // Main-process voice.js forwards the Piper sidecar events verbatim.
+          const unVoice = await subscribeDesktopEvent('voice-event', (payload) => {
+            if (payload?.type === 'tts-error') {
+              stopDesktopAudio();
+              // Piper failed (missing voice model / binary): speak with the OS
+              // voice instead of leaving the reply silent.
+              const pending = pendingSpeechRef.current;
+              pendingSpeechRef.current = null;
+              const retry = pending
+                ? startBrowserSpeech(pending.text, pending.options)
+                : 'unavailable';
+              if (retry !== 'unavailable') return;
+              const msg =
+                typeof payload?.error === 'string' && payload.error.trim()
+                  ? payload.error.trim()
+                  : 'No se pudo reproducir audio';
+              setTtsError(msg);
+              setSpeaking(false);
+              return;
+            }
+            if (payload?.type === 'tts-chunk') {
+              pendingSpeechRef.current = null;
+              try {
+                const bytes = Uint8Array.from(atob(payload.bytes_b64 || ''), (c) =>
+                  c.charCodeAt(0)
+                );
+                const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+                stopDesktopAudio();
+                const audio = new Audio(url);
+                desktopAudioRef.current = { audio, url };
+                const finish = () => {
+                  if (desktopAudioRef.current?.audio === audio) desktopAudioRef.current = null;
+                  URL.revokeObjectURL(url);
+                  setSpeaking(false);
+                };
+                audio.onended = finish;
+                audio.onerror = () => {
+                  finish();
+                  setTtsError('No se pudo reproducir audio');
+                };
+                audio.play()?.catch?.(() => {});
+              } catch {
+                setSpeaking(false);
+              }
+              return;
+            }
+            if (payload?.type === 'tts-done') {
+              // Python emits done right after the chunk; the renderer-side
+              // Audio is what actually keeps `speaking` alive now.
+              if (!desktopAudioRef.current) setSpeaking(false);
+            }
           });
-          const unDone = await subscribeDesktopEvent('tts-done', () => setSpeaking(false));
-          if (!cancelled) unlistenRef.current = [unError, unDone];
+          if (!cancelled) unlistenRef.current = [unVoice];
           return;
         }
 
@@ -198,12 +289,13 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
         if (typeof fn === 'function') fn();
       }
       unlistenRef.current = [];
+      stopDesktopAudio();
       if (browserUtteranceRef.current && typeof window !== 'undefined') {
         window.speechSynthesis?.cancel?.();
         browserUtteranceRef.current = null;
       }
     };
-  }, []);
+  }, [startBrowserSpeech, stopDesktopAudio]);
 
   const speak = useCallback(
     async (text, { full = false } = {}) => {
@@ -214,6 +306,7 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
       setTtsError('');
       setSpeaking(true);
       await invokeVoice('voice_stop_speak');
+      stopDesktopAudio();
       if (typeof window !== 'undefined' && window.speechSynthesis?.cancel) {
         window.speechSynthesis.cancel();
       }
@@ -224,61 +317,41 @@ export function useVoiceTts({ enabled = true, voice, rate, systemVoiceURI = '' }
       const args = Object.keys(nativeOptions).length
         ? { text: clipped, options: nativeOptions }
         : { text: clipped };
+      const browserOptions = { voiceId: voice, rate, systemVoiceURI };
+      pendingSpeechRef.current = { text: clipped, options: browserOptions };
       const result = await invokeVoice('voice_speak', args);
       if (result.ok) {
         return { ...result, backend: 'piper' };
       }
 
-      // Windows builds intentionally reject the Python/Piper command. WebView2
-      // already exposes the OS speech voices, so use the platform feature
-      // instead of requiring another native dependency.
-      // Electron also defers Piper → same Web Speech fallback.
-      const browserSpeech = createBrowserUtterance(clipped, {
-        voiceId: voice,
-        rate,
-        systemVoiceURI,
-      });
-      if (!browserSpeech) {
-        setTtsError(result.error || 'No hay un motor de voz disponible');
-        setSpeaking(false);
-        return result;
-      }
-
-      const { synth, utterance } = browserSpeech;
-      browserUtteranceRef.current = utterance;
-      utterance.onend = () => {
-        browserUtteranceRef.current = null;
-        setSpeaking(false);
-      };
-      utterance.onerror = (event) => {
-        browserUtteranceRef.current = null;
-        setSpeaking(false);
-        if (event?.error !== 'canceled' && event?.error !== 'interrupted') {
-          setTtsError(`No se pudo reproducir la voz de Windows (${event?.error || 'error'})`);
+      // Windows builds intentionally reject the Python/Piper command when the
+      // voice runtime is missing. WebView2 already exposes the OS speech
+      // voices, so use the platform feature instead of requiring another
+      // native dependency.
+      pendingSpeechRef.current = null;
+      const browserStatus = startBrowserSpeech(clipped, browserOptions);
+      if (browserStatus !== 'started') {
+        if (browserStatus === 'unavailable') {
+          setTtsError(result.error || 'No hay un motor de voz disponible');
+          setSpeaking(false);
         }
-      };
-      try {
-        synth.speak(utterance);
-      } catch (error) {
-        browserUtteranceRef.current = null;
-        setSpeaking(false);
-        const message = String(error?.message || error || 'error');
-        setTtsError(`No se pudo iniciar la voz de Windows (${message})`);
-        return { ok: false, error: message };
+        return result;
       }
       return { ok: true, backend: 'web-speech', fallbackFrom: result.error || null };
     },
-    [enabled, voice, rate, systemVoiceURI]
+    [enabled, voice, rate, systemVoiceURI, startBrowserSpeech, stopDesktopAudio]
   );
 
   const stopSpeaking = useCallback(async () => {
     setSpeaking(false);
     browserUtteranceRef.current = null;
+    pendingSpeechRef.current = null;
+    stopDesktopAudio();
     if (typeof window !== 'undefined' && window.speechSynthesis?.cancel) {
       window.speechSynthesis.cancel();
     }
     await invokeVoice('voice_stop_speak');
-  }, []);
+  }, [stopDesktopAudio]);
 
   const clearTtsError = useCallback(() => setTtsError(''), []);
 

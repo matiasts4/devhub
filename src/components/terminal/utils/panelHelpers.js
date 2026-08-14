@@ -237,7 +237,30 @@ function normalizeWorkspaceWindows(
       nextActiveWindowIds[ws.id] = activeWindow?.id || normalizedWindows[0]?.id || null;
 
       if (activeWindow?.columns?.length) {
-        ws.columns = activeWindow.columns;
+        // Reboot-restore: the workspace tree carries the freshest per-panel
+        // initialCommand/cwd (provider session binds update workspaces only,
+        // so persisted window copies go stale with null). Merge the mirrored
+        // fields into the adopted window columns so a stale window never
+        // wipes a resume command during hydration.
+        const wsPanelsById = new Map(
+          (ws.columns || [])
+            .flatMap((col) => col.panels || [])
+            .map((panel) => [panel?.id, panel])
+        );
+        const mergedColumns = activeWindow.columns.map((col) => ({
+          ...col,
+          panels: (col.panels || []).map((panel) => {
+            const mirror = wsPanelsById.get(panel?.id);
+            if (!mirror) return panel;
+            return {
+              ...panel,
+              initialCommand: mirror?.initialCommand ?? panel?.initialCommand ?? null,
+              cwd: mirror?.cwd ?? panel?.cwd ?? null,
+            };
+          }),
+        }));
+        activeWindow.columns = mergedColumns;
+        ws.columns = mergedColumns;
         activePanelIds[ws.id] =
           activeWindow.activePanelId ||
           activeWindow.columns.flatMap((col) => col.panels || [])[0]?.id ||

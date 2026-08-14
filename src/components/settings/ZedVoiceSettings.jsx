@@ -288,7 +288,9 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
             </label>
 
             <label className="flex items-center justify-between gap-4 text-sm">
-              <span style={{ color: 'var(--text-secondary)' }}>Voz Piper (Linux / opcional)</span>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Voz Piper (app de escritorio)
+              </span>
               <select
                 value={settings.ttsVoice}
                 onChange={(e) => setSettings((s) => ({ ...s, ttsVoice: e.target.value }))}
@@ -306,10 +308,11 @@ export default function ZedVoiceSettings({ onNavigateToZed } = {}) {
 
             <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               Atajo micrófono: <strong>Ctrl+Shift+M</strong>. Abrir Zed:{' '}
-              <strong>Ctrl+Shift+Z</strong>. En Windows Zed usa las voces instaladas del sistema
-              (elegí una arriba y probala). Para mejor calidad, instalá voces Natural desde
-              Configuración → Hora e idioma → Voz. En Linux usa Piper (
-              <code>npm run voice:add-voice -- &lt;id&gt;</code>).
+              <strong>Ctrl+Shift+Z</strong>. En la app de escritorio (Linux y Windows) Zed habla
+              con Piper; agregá más voces con{' '}
+              <code>npm run voice:add-voice -- &lt;id&gt;</code>. En el navegador usa las voces
+              instaladas del sistema (elegí una arriba y probala). Para mejor calidad ahí,
+              instalá voces Natural desde Configuración → Hora e idioma → Voz.
             </p>
 
             <TtsTestButton

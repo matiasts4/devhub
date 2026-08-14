@@ -70,16 +70,47 @@ export function claimSessionFlagOnce(session, flagKey) {
   return true;
 }
 
+/**
+ * Strong OpenCode signal — the MiniMax provider row is unambiguous OpenCode
+ * TUI chrome that never appears in generic log output. One strong hit is
+ * enough to promote a session to an agent from output alone (see
+ * agentOutputPromotion.js). Both checks are case-insensitive, so in practice
+ * the `minimax.io` domain alone satisfies them.
+ */
+export function detectOpenCodeStrongSignal(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /minimax\.io/i.test(text) && /MiniMax/i.test(text);
+}
+
+/**
+ * Promoting weak signals — OpenCode footer hints that count toward
+ * output-based promotion only in combination (≥2 distinct signals in the
+ * same chunk). The generic `/status x.y` version pattern is deliberately
+ * excluded: it appears in plain log output and must never promote.
+ */
+const OPENCODE_PROMOTING_SIGNALS = [
+  /ctrl\+p\s+commands/i,
+  /esc\s+interrupt/i,
+  /\bMCP\s*\/\s*status\b/i,
+  /[⊙⊛]\s*\d+\s+MCP/i,
+];
+
+/** Count of DISTINCT promoting weak signals present in the chunk (0..4). */
+export function countOpenCodePromotingSignals(text) {
+  if (!text || typeof text !== 'string') return 0;
+  let count = 0;
+  for (const re of OPENCODE_PROMOTING_SIGNALS) {
+    if (re.test(text)) count += 1;
+  }
+  return count;
+}
+
 /** OpenCode interactive TUI footer — input area is ready for paste. */
 export function detectOpenCodeTuiReady(text) {
   if (!text || typeof text !== 'string') return false;
-  // Legacy footer (pre-1.16)
-  if (/ctrl\+p\s+commands/i.test(text) || /esc\s+interrupt/i.test(text)) return true;
-  // Current OpenCode footer: MCP status line + provider/plan row
-  if (/\bMCP\s*\/\s*status\b/i.test(text)) return true;
-  if (/[⊙⊛]\s*\d+\s+MCP/i.test(text)) return true;
+  if (detectOpenCodeStrongSignal(text)) return true;
+  if (countOpenCodePromotingSignals(text) > 0) return true;
   if (/\/status\s+\d+\.\d+(?:\.\d+)?/i.test(text)) return true;
-  if (/minimax\.io/i.test(text) && /MiniMax/i.test(text)) return true;
   return false;
 }
 

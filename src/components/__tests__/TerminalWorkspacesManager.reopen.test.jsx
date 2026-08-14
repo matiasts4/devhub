@@ -846,21 +846,27 @@ describe('TerminalWorkspacesManager multiprovider session-detected events', () =
     );
   });
 
-  test('does not apply kimi session detect to unrelated grok panels', async () => {
+  test('kimi session detect replaces prior grok binding in the same panel', async () => {
+    // `<provider>-session-detected` events are panel-local (the sidecar emits
+    // them on the panel's own PTY socket), so a kimi event on a grok panel
+    // means the user switched providers there — the new binding must replace
+    // the old one instead of resurrecting the stale grok session on restore.
     seedSinglePanelWorkspace('grok --session-id gk-keep-1');
 
     await renderManager();
 
     window.dispatchEvent(
       new window.CustomEvent('devhub:kimi-session-detected', {
-        detail: { panelId: 'p1', sessionId: 'km-stray-1', agentType: 'kimi' },
+        detail: { panelId: 'p1', sessionId: 'km-new-1', agentType: 'kimi' },
       })
     );
     await flushEffects();
 
-    expect(readPersistedPanelCommand()).not.toContain('kimi');
+    expect(readPersistedPanelCommand()).toBe('kimi --session km-new-1');
 
     const runs = JSON.parse(window.localStorage.getItem('devhub_agent_runs') || '{}');
-    expect(runs.task1?.agentSessionId).not.toBe('km-stray-1');
+    expect(runs.task1).toEqual(
+      expect.objectContaining({ agentSessionId: 'km-new-1', agentType: 'kimi' })
+    );
   });
 });

@@ -303,6 +303,60 @@ describe('zedFastPath intent cache', () => {
     expect(normalizeAgentAliases('lanza kimy')).toContain('kimi');
   });
 
+  test('normalizeAgentAliases maps STT mis-transcriptions of kimi', () => {
+    expect(normalizeAgentAliases('ejecuta quimico')).toContain('kimi');
+    expect(normalizeAgentAliases('ejecuta químico')).toContain('kimi');
+    expect(normalizeAgentAliases('lanza quimi')).toContain('kimi');
+    expect(normalizeAgentAliases('abre kime')).toContain('kimi');
+    expect(normalizeAgentAliases('Kimi la M en terminal')).toContain('kimi');
+    expect(normalizeAgentAliases('abre kimmy')).toContain('kimi');
+  });
+
+  test('normalizeAgentAliases is word-boundary-safe on chemistry words', () => {
+    // "químicos" / "química" are different words — must NOT be rewritten.
+    expect(normalizeAgentAliases('los análisis químicos')).not.toContain('kimi');
+    expect(normalizeAgentAliases('la química del elemento')).not.toContain('kimi');
+  });
+
+  test('dictated: "abre dos terminales y ejecuta químico en ellas" → 2 kimi panels', () => {
+    const hit = resolveZedFastPathIntent('abre dos terminales y ejecuta químico en ellas', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_terminal_agent');
+    expect(hit?.steps).toHaveLength(2);
+    expect(hit?.steps.every((s) => s.input.program === 'kimi')).toBe(true);
+  });
+
+  test('open terminal with "quimico" STT variant resolves to kimi', () => {
+    const hit = resolveZedFastPathIntent('abre una terminal con quimico', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_terminal_agent');
+    expect(hit?.steps[0]).toMatchObject({
+      tool: 'open_terminal',
+      input: { program: 'kimi' },
+    });
+  });
+
+  test('count tolerates dictation filler words between number and noun', () => {
+    for (const [phrase, count] of [
+      ['abre tres terminales nuevas', 3],
+      ['abre 2 terminales nuevas', 2],
+      ['abre 3 nuevas terminales', 3],
+    ]) {
+      const hit = resolveZedFastPathIntent(phrase, { workspace_terminals: TERMINALS });
+      expect(hit?.steps?.filter((s) => s.tool === 'open_terminal')).toHaveLength(count);
+    }
+  });
+
+  test('unrelated numbers do not inflate terminal count', () => {
+    const hit = resolveZedFastPathIntent('espera 2 segundos y abre una terminal', {
+      workspace_terminals: TERMINALS,
+    });
+    expect(hit?.intent).toBe('open_terminal');
+    expect(hit?.steps).toHaveLength(1);
+  });
+
   test('open_url on "abrí github.com en pizarra"', () => {
     const hit = resolveZedFastPathIntent('abrí github.com en pizarra', {
       workspace_terminals: TERMINALS,

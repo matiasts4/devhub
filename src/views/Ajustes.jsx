@@ -642,6 +642,14 @@ export default function Ajustes() {
       sileo.error({ title: 'Error al guardar' });
       return;
     }
+    // Notify the workspace shell (App.js) so project consumers — terminal cwd,
+    // sidebar, editor — pick up changes like local_path without an app reload.
+    // The Supabase realtime channel is a no-op stub in local mode.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('devhub:project-updated', { detail: { projectId: project?.id } })
+      );
+    }
     sileo.success({ title: 'Proyecto actualizado' });
   }
 

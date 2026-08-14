@@ -150,8 +150,41 @@ export function appendPendingUiProvision(metadata = {}, runtimeRequest = {}) {
   };
 }
 
-export function consumePendingUiProvision(metadata = {}, launchId = '', roleKey = '') {
-  const normalizedLaunchId = String(launchId || '').trim();
+/**
+ * Eager provisioning at launch: pre-seed pendingUiProvisions for the roles
+ * the operator picked in the wizard, so the UI materializes their panels in
+ * parallel with the orchestrator instead of waiting for the LLM orchestrator
+ * to discover and call provision_swarm_worker (~5 min on first contact).
+ * Roles not present in the deferred roster are skipped (non-lazy strategies
+ * materialize every role at launch anyway, so nothing is needed there).
+ */
+export function buildEagerUiProvisions({
+  launchId = '',
+  provisionRoleKeys = [],
+  deferredRuntimeRequests = [],
+} = {}) {
+  const deferred = Array.isArray(deferredRuntimeRequests) ? deferredRuntimeRequests : [];
+  const requested = Array.isArray(provisionRoleKeys) ? provisionRoleKeys : [];
+  let metadata = {
+    launchId: String(launchId || '').trim(),
+    provisionedRoleKeys: [],
+    pendingUiProvisions: [],
+  };
+  const skippedRoleKeys = [];
+  for (const rawKey of requested) {
+    const roleKey = String(rawKey || '').trim();
+    if (!roleKey) continue;
+    const request = deferred.find((entry) => String(entry?.roleKey || '').trim() === roleKey);
+    if (!request) {
+      skippedRoleKeys.push(roleKey);
+      continue;
+    }
+    metadata = appendPendingUiProvision(metadata, request);
+  }
+  return { metadata, skippedRoleKeys };
+}
+
+export function consumePendingUiProvision(metadata = {}, launchId = '', roleKey = '') {  const normalizedLaunchId = String(launchId || '').trim();
   const normalizedRoleKey = String(roleKey || '').trim();
   const pendingUiProvisions = Array.isArray(metadata.pendingUiProvisions)
     ? metadata.pendingUiProvisions.filter(

@@ -1,5 +1,6 @@
 import { RESTORE_POLICY, readTerminalRestorePreferences } from './restorePreferences';
 import { detectAgentTypeFromCommand, extractAgentSessionId } from './agentTuiMetadata.shared.js';
+import { normalizeCwdForCompare } from './cwdNormalize.js';
 
 const VALID_POLICIES = new Set([RESTORE_POLICY.AUTO, RESTORE_POLICY.MANUAL, RESTORE_POLICY.OFF]);
 
@@ -69,6 +70,24 @@ export function getProviderContinueCommand(provider) {
   const kind = normalizeProviderKind(provider);
   if (!kind) return null;
   return PROVIDER_CONTINUE_COMMANDS[kind] || null;
+}
+
+/**
+ * Prefixes a resume/continue command with `cd` only when the PTY did not already
+ * start in the directory the CLI expects — a cold-start PTY landing in homedir
+ * makes the CLI derive a different project slug and reject the session.
+ * Uses `;` instead of `&&`: PTY shells are powershell/pwsh on Windows (where
+ * `&&` is a syntax error on 5.x and `cd /d` is CMD-only) and bash elsewhere.
+ */
+export function wrapCommandWithCwd(command, cwd, currentCwd = null) {
+  const cmd = String(command || '').trim();
+  if (!cmd) return null;
+
+  const dir = String(cwd || '').trim();
+  const target = normalizeCwdForCompare(dir);
+  if (!target || target === normalizeCwdForCompare(currentCwd)) return cmd;
+
+  return `cd "${dir}"; ${cmd}`;
 }
 
 export function isSwarmLaunchWrapperCommand(initialCommand) {
@@ -298,7 +317,7 @@ export function normalizeOpenCodePanelCommand(panel, agentRun = null) {
  * one-shot pre-assign forms (`grok --session-id`, `qodercli --session-id`),
  * materialized swarm launch wrappers, or other one-shot launchers on restore.
  */
-export function resolveTerminalInjectCommand(initialCommand, agentRun = null) {
+export function resolveTerminalInjectCommand(initialCommand, agentRun = null, panelCwd = null) {
   const stripped = String(initialCommand || '')
     .replace(/\s*#recovery-\d+\s*$/i, '')
     .trim();
@@ -312,7 +331,11 @@ export function resolveTerminalInjectCommand(initialCommand, agentRun = null) {
       agentRun,
     });
     if (sessionId) {
-      return buildProviderResumeCommand(provider, sessionId);
+      return wrapCommandWithCwd(
+        buildProviderResumeCommand(provider, sessionId),
+        agentRun?.agentSessionCwd || null,
+        panelCwd,
+      );
     }
   }
 
@@ -349,30 +372,21 @@ export function isOpenCodePanel(panel, agentRun = null) {
 
 /**
  * Whether an opencode-session-detected event should update this panel's restore command.
- * Blocks cross-contamination into grok/hermes/swarm panels when another workspace closes.
+ * The event originates from the panel's own PTY socket, so a different provider's
+ * command on the panel means the user switched providers inside that panel — the
+ * new binding must replace the old one. Only swarm panels (tmux-managed
+ * lifecycle) are blocked.
  */
 export function shouldPersistOpenCodeSessionForPanel(panel = null, agentRun = null) {
   if (!panel) return false;
 
-  const command = String(panel.initialCommand || '')
-    .replace(/\s*#recovery-\d+\s*$/i, '')
-    .trim();
-
-  if (/^(grok|groc)\b/i.test(command) || /^hermes\b/i.test(command)) return false;
-  if (
+  return (
     inferPanelSessionKind({
       initialCommand: panel.initialCommand,
       agentRun,
       panel,
-    }) === 'swarm'
-  ) {
-    return false;
-  }
-
-  if (/^opencode\b/i.test(command) || agentRun?.opencodeSessionId) return true;
-  if (!command) return true;
-
-  return false;
+    }) !== 'swarm'
+  );
 }
 
 /**

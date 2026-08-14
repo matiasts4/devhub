@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import {
   ZED_ORCHESTRATOR_TEMPLATE_ID,
   filterModelsForProgram,
+  filterModelsForPrograms,
+  isOrchestratorRoleKey,
 } from '@/lib/operations/swarmControl';
 import {
   btnDangerStyle,
@@ -271,6 +273,7 @@ function RoleRuntimeCard({
   programs,
   models,
   currentModel,
+  effectiveModel,
   onProgramChange,
   onModelChange,
 }) {
@@ -328,6 +331,11 @@ function RoleRuntimeCard({
               </>
             )}
           </select>
+          {supportsModel && effectiveModel ? (
+            <span className="block font-normal" style={{ color: 'var(--text-muted)' }}>
+              {currentModel ? 'Lanza con' : 'Hereda'}: {effectiveModel}
+            </span>
+          ) : null}
         </label>
       </div>
       {program?.summary ? (
@@ -456,7 +464,6 @@ export default function SwarmLaunchWizardModal({
   const templates = Array.isArray(catalog?.templates) ? catalog.templates : [];
   const swarmTypes = Array.isArray(catalog?.swarm_types) ? catalog.swarm_types : [];
   const teams = Array.isArray(catalog?.teams) ? catalog.teams : [];
-  const providers = Array.isArray(catalog?.providers) ? catalog.providers : [];
   const programs = Array.isArray(catalog?.programs) ? catalog.programs : [];
   const models = Array.isArray(catalog?.models) ? catalog.models : [];
   const launchStrategies = Array.isArray(catalog?.launch_strategies)
@@ -465,6 +472,16 @@ export default function SwarmLaunchWizardModal({
   const bootstrapModes = Array.isArray(catalog?.bootstrap_modes) ? catalog.bootstrap_modes : [];
 
   const isZedPodTemplate = draft.templateId === ZED_ORCHESTRATOR_TEMPLATE_ID;
+
+  // Worker roles available for eager provisioning (all except orchestrator).
+  const provisionableRoleKeys = useMemo(() => {
+    const rolePrograms = draft.rolePrograms || {};
+    return Object.keys(rolePrograms).filter((key) => key && !isOrchestratorRoleKey(key));
+  }, [draft.rolePrograms]);
+  const eagerProvisionCount = Math.min(
+    Array.isArray(draft.provisionRoleKeys) ? draft.provisionRoleKeys.length : 0,
+    provisionableRoleKeys.length
+  );
 
   const stepDescription = useMemo(() => {
     if (currentStep === 'team') return 'Elegí base operativa: template team o custom team.';
@@ -476,16 +493,14 @@ export default function SwarmLaunchWizardModal({
     return 'Revisá summary, topología y payload local del launch.';
   }, [currentStep, isZedPodTemplate]);
 
-  const applyDefaultModelToRoles = (modelId) => {
-    const nextModels = { ...(draft.roleModels || {}) };
-    (preview?.rolePrograms || []).forEach((entry) => {
-      if (entry?.role_key) nextModels[entry.role_key] = modelId;
-    });
-    onDraftChange({
-      providerId: modelId,
-      roleModels: nextModels,
-    });
-  };
+  const defaultModelOptions = useMemo(
+    () =>
+      filterModelsForPrograms(
+        models,
+        (preview?.rolePrograms || []).map((entry) => entry.program_id)
+      ),
+    [models, preview?.rolePrograms]
+  );
 
   if (!open) return null;
 
@@ -859,20 +874,20 @@ export default function SwarmLaunchWizardModal({
                   </SectionTitle>
 
                   <label className="block max-w-xl space-y-2 text-sm font-medium">
-                    <FieldLabel hint="Se aplica a todos los roles; podés sobreescribir por rol abajo.">
+                    <FieldLabel hint="Se aplica a los roles sin modelo propio; los que elijas abajo lo sobreescriben.">
                       Modelo por defecto
                     </FieldLabel>
                     <select
                       aria-label="Modelo proveedor"
                       value={draft.providerId || ''}
-                      onChange={(event) => applyDefaultModelToRoles(event.target.value)}
+                      onChange={(event) => onDraftChange({ providerId: event.target.value })}
                       className="w-full"
                       style={wizardSelectFieldStyle}
                     >
-                      {providers.map((provider) => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.label}
-                          {provider.stack ? ` · ${provider.stack}` : ''}
+                      {defaultModelOptions.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.label}
+                          {model.stack ? ` · ${model.stack}` : ''}
                         </option>
                       ))}
                     </select>
@@ -885,19 +900,27 @@ export default function SwarmLaunchWizardModal({
                         entry={entry}
                         programs={programs}
                         models={models}
-                        currentModel={draft.roleModels?.[entry.role_key] || ''}
+                        currentModel={entry.model_override || ''}
+                        effectiveModel={entry.model_id}
                         onProgramChange={(programId) =>
                           onDraftChange({
                             rolePrograms: {
                               ...(draft.rolePrograms || {}),
                               [entry.role_key]: programId,
                             },
+                            // Drop the override: the previous ref belongs to the
+                            // old program's provider and would be invalid for
+                            // the new one, so the role goes back to inheriting.
+                            roleModelOverrides: {
+                              ...(draft.roleModelOverrides || {}),
+                              [entry.role_key]: '',
+                            },
                           })
                         }
                         onModelChange={(modelId) =>
                           onDraftChange({
-                            roleModels: {
-                              ...(draft.roleModels || {}),
+                            roleModelOverrides: {
+                              ...(draft.roleModelOverrides || {}),
                               [entry.role_key]: modelId,
                             },
                           })
@@ -962,6 +985,35 @@ export default function SwarmLaunchWizardModal({
                         <option value="automatic">Automatic — todos los paneles al lanzar</option>
                       </select>
                     </label>
+
+                    {(draft.spawnStrategy || 'lazy-on-demand') !== 'automatic' &&
+                    provisionableRoleKeys.length > 0 ? (
+                      <label className="space-y-2 text-sm font-medium">
+                        <FieldLabel>Workers al lanzar</FieldLabel>
+                        <select
+                          aria-label="Workers a provisionar al lanzar"
+                          value={String(eagerProvisionCount)}
+                          onChange={(event) => {
+                            const count = Number(event.target.value) || 0;
+                            onDraftChange({
+                              provisionRoleKeys: provisionableRoleKeys.slice(0, count),
+                            });
+                          }}
+                          className="w-full"
+                          style={wizardSelectFieldStyle}
+                        >
+                          {[0, ...provisionableRoleKeys.map((_, index) => index + 1)].map(
+                            (count) => (
+                              <option key={count} value={count}>
+                                {count === 0
+                                  ? 'Ninguno — ZED los pide al delegar'
+                                  : `${count} en standby inmediato`}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </label>
+                    ) : null}
 
                     <label className="space-y-2 text-sm font-medium sm:col-span-2">
                       <FieldLabel>Ruta operativa</FieldLabel>
@@ -1105,6 +1157,7 @@ export default function SwarmLaunchWizardModal({
                       {(preview?.rolePrograms || []).map((entry) => (
                         <SurfacePill key={entry.role_key}>
                           {entry.role} · {entry.program_label}
+                          {entry.model_id ? ` · ${entry.model_id}` : ''}
                         </SurfacePill>
                       ))}
                     </div>

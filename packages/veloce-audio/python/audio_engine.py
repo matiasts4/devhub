@@ -329,6 +329,13 @@ EDGE_HALLUCINATION_PHRASES = [
     "al canaaal",     # triple-elongated (just in case)
 ]
 
+# Domain vocabulary hint passed as Whisper's initial_prompt so the model biases
+# toward DevHub/Zed product terms instead of phonetically similar Spanish words
+# (e.g. "químico de" instead of "kimi CLI"). Keep it short.
+WHISPER_INITIAL_PROMPT = (
+    "Kimi CLI, opencode, terminal, terminales, DevHub, Zed, repositorio, commit, despliegue."
+)
+
 # Globals
 word_substitutions: dict[str, str] = {}
 recording = False
@@ -2283,7 +2290,8 @@ def transcribe_segment(audio_data, is_final=False, retry_on_cpu=True):
             condition_on_previous_text=False,
             vad_filter=False, # We already did VAD, don't let whisper's internal VAD filter out partials
             language=None if selected_language == "auto" else selected_language,
-            task=effective_task
+            task=effective_task,
+            initial_prompt=WHISPER_INITIAL_PROMPT
         )
         
         text = " ".join([s.text for s in segments]).strip()

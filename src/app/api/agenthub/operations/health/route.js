@@ -52,7 +52,7 @@ import {
   resolveBootstrapPromptForLaunch,
   resolveWorkerBootstrapDelayMs,
 } from '@/lib/operations/swarmControl';
-import { partitionRuntimeRequestsForSpawnStrategy } from '@/lib/operations/swarmLazySpawn';
+import { partitionRuntimeRequestsForSpawnStrategy, buildEagerUiProvisions } from '@/lib/operations/swarmLazySpawn';
 import {
   acknowledgeWorkerUiProvision,
   listPendingUiProvisionsForProject,
@@ -324,8 +324,13 @@ export function buildLaunchCommand(
     disableTmuxWrap: true,
     // `opencode --prompt` is non-interactive in current CLI builds. Start the
     // TUI first and inject the mission prompt into the already-running panel.
-    // Same pattern for Kimi because --prompt cannot be combined with --yolo.
-    interactiveBootstrapPrompt: effectiveProgramId === 'opencode' || effectiveProgramId === 'kimi',
+    // Same pattern for Kimi because --prompt cannot be combined with --yolo,
+    // and for Qoder because swarm agents need the interactive TUI to stay alive.
+    interactiveBootstrapPrompt:
+      effectiveProgramId === 'opencode' ||
+      effectiveProgramId === 'kimi' ||
+      effectiveProgramId === 'qodercli' ||
+      effectiveProgramId === 'qoder',
   });
 
   console.log(`[SWARM_LAUNCH_CMD] Inner command: ${innerCommand}`);
@@ -356,7 +361,10 @@ export function buildLaunchCommand(
     tmuxSessionName,
     directorTmuxSession: isWorker ? directorTmuxSession : null,
     bootstrapPrompt:
-      effectiveProgramId === 'opencode' || effectiveProgramId === 'kimi'
+      effectiveProgramId === 'opencode' ||
+      effectiveProgramId === 'kimi' ||
+      effectiveProgramId === 'qodercli' ||
+      effectiveProgramId === 'qoder'
         ? resolveBootstrapPromptForLaunch({ roleKey, prompt, bootstrapMode })
         : '',
     innerCommand,
@@ -1630,6 +1638,19 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         deferredRuntimeRequests.map((request) => String(request.roleKey || '').trim())
       );
 
+      // Eager worker provisioning: the wizard can pre-pick deferred roles so
+      // the UI materializes their panels in parallel with the orchestrator.
+      const eagerUiProvisions = buildEagerUiProvisions({
+        launchId,
+        provisionRoleKeys: resolvedDraft.provisionRoleKeys,
+        deferredRuntimeRequests,
+      });
+      if (eagerUiProvisions.skippedRoleKeys.length > 0) {
+        console.log(
+          `[SWARM_LAUNCH] Eager provision skipped (not in deferred roster): ${eagerUiProvisions.skippedRoleKeys.join(', ')}`
+        );
+      }
+
       for (const request of runtimeRequests) {
         if (isOrchestratorRoleKey(request.roleKey)) continue;
         if (deferredRoleKeys.has(request.roleKey)) continue;
@@ -1662,8 +1683,8 @@ async function launchSwarmLocal({ projectId, draft, now = new Date().toISOString
         committedAt: launchCommittedAt,
         runtimeRequests: materializedRuntimeRequests,
         deferredWorkerRuntimeRequests: deferredRuntimeRequests,
-        provisionedRoleKeys: [],
-        pendingUiProvisions: [],
+        provisionedRoleKeys: eagerUiProvisions.metadata.provisionedRoleKeys,
+        pendingUiProvisions: eagerUiProvisions.metadata.pendingUiProvisions,
         failedRoles,
         phaseEvents,
         memorySnapshots,
@@ -2602,6 +2623,7 @@ export const POST = withAuth(async function POST(request, _context, dependencies
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'pipe'],
             cwd: root,
+            windowsHide: true,
           }).trim();
           if (!output) return [];
 

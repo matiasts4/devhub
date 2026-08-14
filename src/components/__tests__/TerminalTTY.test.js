@@ -132,6 +132,7 @@ const {
   isWorkspaceSurvivorRecoverLayoutReason,
   WORKSPACE_SURVIVOR_RECOVER_LAYOUT_REASON,
   resolveConnectInitialCommandState,
+  shouldDeferStartupReattachLatch,
   shouldSkipRedundantLayoutSettleViewportSync,
   shouldSkipTerminalOutputWhileLayoutHidden,
   appendHiddenTerminalOutputBuffer,
@@ -152,6 +153,10 @@ const {
   isTerminalViewportNearBottom,
   resolveTerminalClipboardShortcut,
   stabilizeTerminalRenderer,
+  measureTerminalScrollbarWidth,
+  resolveTerminalHorizontalAvailWidth,
+  syncTerminalScrollbarInset,
+  TERMINAL_SCROLLBAR_INSET_CSS_VAR,
 } = TerminalTTYModule;
 
 function installTerminalDom() {
@@ -608,6 +613,101 @@ describe('proposeTerminalViewportDimensions()', () => {
   });
 });
 
+describe('terminal scrollbar inset (xterm 5.5 viewport)', () => {
+  function makeTermWithScrollbar(scrollbarW, cell = { width: 10, height: 20 }) {
+    return {
+      options: { scrollback: 1000 },
+      _core: {
+        viewport: {
+          scrollBarWidth: scrollbarW,
+          _viewportElement: { offsetWidth: 500, clientWidth: 500 - scrollbarW },
+        },
+        _renderService: {
+          _renderer: { value: {} },
+          dimensions: { css: { cell } },
+        },
+      },
+    };
+  }
+  function makeContainer(width, height) {
+    const vars = {};
+    return {
+      getBoundingClientRect: () => ({ width, height }),
+      style: {
+        setProperty: (k, v) => {
+          vars[k] = v;
+        },
+        removeProperty: (k) => {
+          delete vars[k];
+        },
+      },
+      __vars: vars,
+    };
+  }
+
+  test('measureTerminalScrollbarWidth reads the classic scrollbar gutter from the viewport element', () => {
+    expect(measureTerminalScrollbarWidth(makeTermWithScrollbar(15))).toBe(15);
+  });
+
+  test('measureTerminalScrollbarWidth returns 0 when no classic scrollbar is shown', () => {
+    expect(measureTerminalScrollbarWidth(makeTermWithScrollbar(0))).toBe(0);
+  });
+
+  test('measureTerminalScrollbarWidth falls back to xterm scrollBarWidth when scrollback is enabled', () => {
+    const term = { options: { scrollback: 1000 }, _core: { viewport: { scrollBarWidth: 15 } } };
+    expect(measureTerminalScrollbarWidth(term)).toBe(15);
+  });
+
+  test('measureTerminalScrollbarWidth fallback is 0 when scrollback is disabled', () => {
+    const term = { options: { scrollback: 0 }, _core: { viewport: { scrollBarWidth: 15 } } };
+    expect(measureTerminalScrollbarWidth(term)).toBe(0);
+  });
+
+  test('measureTerminalScrollbarWidth reserves the classic gutter even when not currently overflowing', () => {
+    // overflow-y:auto hides the scrollbar when scrollback fits, so the live gutter
+    // (offsetWidth - clientWidth) reads 0 here. Reserving scrollBarWidth anyway keeps
+    // proposeTerminalViewportDimensions stable across scrollbar toggles (no refit
+    // flicker on panel activation) and matches @xterm/addon-fit.
+    const term = {
+      options: { scrollback: 1000 },
+      _core: {
+        viewport: {
+          scrollBarWidth: 15,
+          _viewportElement: { offsetWidth: 500, clientWidth: 500 },
+        },
+      },
+    };
+    expect(measureTerminalScrollbarWidth(term)).toBe(15);
+  });
+
+  test('resolveTerminalHorizontalAvailWidth subtracts the visible scrollbar gutter', () => {
+    expect(resolveTerminalHorizontalAvailWidth({ width: 500 }, makeTermWithScrollbar(15))).toBe(485);
+  });
+
+  test('proposeTerminalViewportDimensions fits cols to the visible width and publishes the inset var', () => {
+    const container = makeContainer(500, 400);
+    const dims = proposeTerminalViewportDimensions({
+      container,
+      fitAddon: { proposeDimensions: jest.fn() },
+      term: makeTermWithScrollbar(15), // visible width = 500 - 15 = 485
+    });
+    // 485 / 10 = 48.5 -> floor 48, +1 fillSlack = 49 cols
+    expect(dims).toEqual({ cols: 49, rows: 20 });
+    expect(container.__vars[TERMINAL_SCROLLBAR_INSET_CSS_VAR]).toBe('15px');
+  });
+
+  test('proposeTerminalViewportDimensions clears the inset var when no scrollbar is shown', () => {
+    const container = makeContainer(500, 400);
+    container.__vars[TERMINAL_SCROLLBAR_INSET_CSS_VAR] = '15px';
+    proposeTerminalViewportDimensions({
+      container,
+      fitAddon: { proposeDimensions: jest.fn() },
+      term: makeTermWithScrollbar(0),
+    });
+    expect(container.__vars[TERMINAL_SCROLLBAR_INSET_CSS_VAR]).toBeUndefined();
+  });
+});
+
 describe('stabilizeTerminalRenderer()', () => {
   test('clears the xterm texture atlas before repainting when supported', () => {
     const term = {
@@ -773,6 +873,7 @@ describe('resolveConnectInitialCommandState()', () => {
         hasConnectedOnce: true,
         panelId: 'panel-a',
         initialCommand: 'grok',
+        readyEverReceived: true,
       })
     ).toEqual({
       clearLifecycle: false,
@@ -780,6 +881,46 @@ describe('resolveConnectInitialCommandState()', () => {
       hasSentInitialCommand: true,
       markDispatched: false,
     });
+  });
+
+  test('retries the launch command when reconnecting before any ready (boot race)', () => {
+    // Stale record from a flapping pre-ready connect must not survive: the
+    // command provably never reached a PTY (injection is gated on ready), so
+    // the next fresh `ready` must be allowed to inject the resume again.
+    markPanelInitialCommandDispatched('panel-a', 'qodercli --resume abc-123');
+    expect(
+      resolveConnectInitialCommandState({
+        hasConnectedOnce: true,
+        panelId: 'panel-a',
+        initialCommand: 'qodercli --resume abc-123',
+        readyEverReceived: false,
+      })
+    ).toEqual({
+      clearLifecycle: true,
+      sessionReattached: false,
+      hasSentInitialCommand: false,
+      markDispatched: false,
+    });
+  });
+});
+
+describe('shouldDeferStartupReattachLatch()', () => {
+  test('defers the latch without live-session evidence (boot race)', () => {
+    expect(
+      shouldDeferStartupReattachLatch({ hasDispatchRecord: false, sessionReattached: false })
+    ).toBe(true);
+  });
+
+  test('keeps the latch when a dispatch record exists', () => {
+    expect(
+      shouldDeferStartupReattachLatch({ hasDispatchRecord: true, sessionReattached: false })
+    ).toBe(false);
+  });
+
+  test('keeps the latch after a server-confirmed reattach', () => {
+    expect(
+      shouldDeferStartupReattachLatch({ hasDispatchRecord: false, sessionReattached: true })
+    ).toBe(false);
   });
 });
 

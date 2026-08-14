@@ -5,7 +5,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { buildZedRegistry } from '../buildZedRegistry';
+import { buildZedRegistry, getZedRegistry, invalidateZedRegistry } from '../buildZedRegistry';
 
 describe('buildZedRegistry', () => {
   test('includes built-in Zed tools', () => {
@@ -68,5 +68,26 @@ describe('buildZedRegistry', () => {
     const third = registry.toAnthropicTools();
     expect(third).not.toBe(first);
     expect(third.length).toBe(first.length + 1);
+  });
+});
+
+describe('getZedRegistry (cached singleton)', () => {
+  afterEach(() => {
+    invalidateZedRegistry();
+  });
+
+  test('returns the same instance across calls', () => {
+    const a = getZedRegistry();
+    const b = getZedRegistry();
+    expect(b).toBe(a);
+    expect(a.get('open_terminal')).toBeDefined();
+  });
+
+  test('invalidateZedRegistry forces a fresh build', () => {
+    const a = getZedRegistry();
+    invalidateZedRegistry();
+    const b = getZedRegistry();
+    expect(b).not.toBe(a);
+    expect(b.get('open_terminal')).toBeDefined();
   });
 });

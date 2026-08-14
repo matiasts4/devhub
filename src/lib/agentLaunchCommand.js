@@ -139,6 +139,24 @@ export function buildAgentLaunchCommand(programId, prompt, options = {}) {
       // wrapper. Keep in sync with agentLaunchCommand.shared.js.
       innerCommand = executable;
       break;
+    case 'grok':
+      // Mirror of agentLaunchCommand.shared.js — bare TUI, bootstrap via tmux.
+      innerCommand = executable;
+      break;
+    case 'qodercli':
+    case 'qoder': {
+      // Qoder CLI: interactive TUI + send-keys bootstrap for swarm launches,
+      // `-p <prompt>` print mode for one-shots. `-m` takes bare model names
+      // (`qodercli --list-models`). bypass_permissions mirrors kimi --yolo so
+      // unattended swarm agents auto-approve actions.
+      const qoderModelFlag = modelId ? ` -m ${shellQuote(modelId)}` : '';
+      if (interactiveBootstrapPrompt) {
+        innerCommand = `${executable} --permission-mode bypass_permissions${qoderModelFlag}`;
+      } else {
+        innerCommand = `${executable} -p ${quotedPrompt}${qoderModelFlag}`;
+      }
+      break;
+    }
     case 'hermes':
     default:
       innerCommand = `${executable} chat -q ${quotedPrompt}`;

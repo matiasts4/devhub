@@ -5,7 +5,8 @@ import StatusSignal from '@/components/ui/StatusSignal';
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
-import { History, Loader2, Calendar, ChevronDown, Download, BarChart3, Flag } from 'lucide-react';
+import { History, Calendar, ChevronDown, Download, BarChart3, Flag } from 'lucide-react';
+import { StatTilesSkeleton, RowsSkeleton } from '@/components/ui/page-skeleton';
 import { createClient } from '@/lib/db/localClient';
 import { getUIPrefs, hasUIPref, saveUIPref } from '@/lib/uiState';
 import {
@@ -186,14 +187,18 @@ export default function Historial() {
             icon={History}
             title="Historial de Actividad"
             projectName={project?.name}
-            badges={[
-              <span
-                className="text-xs px-2 py-0.5"
-                style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
-              >
-                {filtered.length} registros
-              </span>,
-            ]}
+            badges={
+              loading
+                ? []
+                : [
+                    <span
+                      className="text-xs px-2 py-0.5"
+                      style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)' }}
+                    >
+                      {filtered.length} registros
+                    </span>,
+                  ]
+            }
           />
         </div>
 
@@ -255,48 +260,47 @@ export default function Historial() {
             </div>
 
             <div className="p-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: 'Total Tareas', value: tasks.length, color: 'var(--text-primary)' },
-                  {
-                    label: 'Completadas',
-                    value: tasks.filter((t) => t.status === 'completed').length,
-                    color: 'var(--success)',
-                  },
-                  {
-                    label: 'En Progreso',
-                    value: tasks.filter((t) => t.status === 'in_progress').length,
-                    color: 'var(--accent-primary)',
-                  },
-                  {
-                    label: 'Bloqueadas',
-                    value: tasks.filter((t) => t.status === 'blocked').length,
-                    color: 'var(--danger)',
-                  },
-                ].map((s, i) => (
-                  <div
-                    key={i}
-                    className="p-4 rounded-none"
-                    style={getWorkspaceDataTileStyle(s.color)}
-                  >
-                    <p className="typography-label mb-2">{s.label}</p>
-                    <p className="typography-data text-2xl font-bold" style={{ color: s.color }}>
-                      {s.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
+              {loading ? (
+                <StatTilesSkeleton count={4} />
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Total Tareas', value: tasks.length, color: 'var(--text-primary)' },
+                    {
+                      label: 'Completadas',
+                      value: tasks.filter((t) => t.status === 'completed').length,
+                      color: 'var(--success)',
+                    },
+                    {
+                      label: 'En Progreso',
+                      value: tasks.filter((t) => t.status === 'in_progress').length,
+                      color: 'var(--accent-primary)',
+                    },
+                    {
+                      label: 'Bloqueadas',
+                      value: tasks.filter((t) => t.status === 'blocked').length,
+                      color: 'var(--danger)',
+                    },
+                  ].map((s, i) => (
+                    <div
+                      key={i}
+                      className="p-4 rounded-none"
+                      style={getWorkspaceDataTileStyle(s.color)}
+                    >
+                      <p className="typography-label mb-2">{s.label}</p>
+                      <p className="typography-data text-2xl font-bold" style={{ color: s.color }}>
+                        {s.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Timeline */}
           {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2
-                className="w-7 h-7 animate-spin"
-                style={{ color: 'var(--accent-primary)' }}
-              />
-            </div>
+            <RowsSkeleton rows={6} />
           ) : filtered.length === 0 ? (
             <div className="overflow-hidden fade-in-up rounded-none" style={panelStyle()}>
               <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">

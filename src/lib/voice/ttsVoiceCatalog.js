@@ -4,12 +4,12 @@
  * Voice ids match Piper's `<lang>-<speaker>-<quality>` naming (see
  * https://github.com/rhasspy/piper/blob/master/VOICES.md) and the filename
  * `tts_engine.py` resolves under `packages/veloce-audio/python/voices/`.
- * Only `es_ES-davefx-medium` ships via `npm run voice:ensure`; the other
- * (higher-quality) voices must be fetched once with
+ * `es_MX-claude-high` ships via `npm run voice:ensure` on Linux and Windows
+ * (Electron); the other voices must be fetched once with
  * `npm run voice:add-voice -- <id>` before they'll actually speak.
  */
 
-export const DEFAULT_TTS_VOICE = 'es_ES-davefx-medium';
+export const DEFAULT_TTS_VOICE = 'es_MX-claude-high';
 
 export const TTS_VOICE_OPTIONS = [
   { id: 'es_ES-davefx-medium', label: 'Dave · España (estándar)' },

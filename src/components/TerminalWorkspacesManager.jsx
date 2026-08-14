@@ -58,6 +58,7 @@ import { selectSwarmLaunchCatalog } from '@/lib/operations/swarmControl';
 
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
 import { shouldBumpRelaunchCommand } from '@/lib/terminal/startupRestoreRunner';
+import { normalizeCwdForCompare } from '@/lib/terminal/cwdNormalize';
 
 import { SWARM_LAUNCH_MATERIALIZED_EVENT } from '@/lib/terminal/swarmLaunchBatch';
 import {
@@ -644,6 +645,54 @@ export default function TerminalWorkspacesManager({
       startupRestoreCompletedRef,
     },
   });
+
+  // Project-cwd migration: when the project's local_path changes (e.g. edited in
+  // Ajustes), panels that inherited the previous project cwd must follow it —
+  // otherwise `panel.cwd || cwd` keeps spawning them in the stale path (or in the
+  // ttyServer home fallback) forever. Panels with a custom cwd (worktrees,
+  // subdirectories picked on purpose) never match the previous project cwd, so
+  // they are left untouched.
+  const prevProjectCwdRef = useRef(cwd);
+  useEffect(() => {
+    const prevCwd = prevProjectCwdRef.current;
+    prevProjectCwdRef.current = cwd;
+    if (!cwd || !prevCwd) return;
+    const prevNormalized = normalizeCwdForCompare(prevCwd);
+    const nextNormalized = normalizeCwdForCompare(cwd);
+    if (!prevNormalized || !nextNormalized || prevNormalized === nextNormalized) return;
+
+    let migratedCount = 0;
+    for (const ws of workspacesRef.current || []) {
+      for (const col of ws.columns || []) {
+        for (const panel of col.panels || []) {
+          if (panel?.cwd && normalizeCwdForCompare(panel.cwd) === prevNormalized) {
+            migratedCount += 1;
+          }
+        }
+      }
+    }
+    if (migratedCount === 0) return;
+
+    setWorkspaces((prev) =>
+      prev.map((ws) => ({
+        ...ws,
+        columns: (ws.columns || []).map((col) => ({
+          ...col,
+          panels: (col.panels || []).map((panel) => {
+            if (!panel?.cwd || normalizeCwdForCompare(panel.cwd) !== prevNormalized) {
+              return panel;
+            }
+            return { ...panel, cwd };
+          }),
+        })),
+      }))
+    );
+    logTerminalSession('project-cwd-migrated', {
+      previousCwd: prevCwd,
+      nextCwd: cwd,
+      migratedPanels: migratedCount,
+    });
+  }, [cwd, setWorkspaces, workspacesRef]);
 
   useEffect(() => {
     const barElement = panelSubtabsBarRef.current;

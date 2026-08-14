@@ -1,4 +1,5 @@
-import { Plus, Clock, ExternalLink, Loader2 } from 'lucide-react';
+import { Plus, Clock, ExternalLink } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { UiHeader } from '@/components/ui/system';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
@@ -142,8 +143,25 @@ export default function Proyectos() {
         </div>
 
         {loading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" aria-busy="true">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="bg-surface-card/60 border border-white/8 rounded-xl p-5"
+                style={{ borderLeftWidth: '2px', borderLeftColor: 'var(--border-subtle)' }}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex flex-col gap-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-2.5 w-20" />
+                  </div>
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+                <Skeleton className="h-3 w-full mb-2" />
+                <Skeleton className="h-3 w-3/4 mb-4" />
+                <Skeleton className="h-1.5 w-full rounded-full" />
+              </div>
+            ))}
           </div>
         )}
 

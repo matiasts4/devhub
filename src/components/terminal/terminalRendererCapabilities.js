@@ -294,17 +294,14 @@ export function resolveOperationalRendererMode({
     return effective;
   }
 
-  // Multi-panel splits (swarm grid, focus collapse, etc.) stay on canvas whenever
-  // the user asked for the GPU path — even if the WebGL probe demoted effectiveMode.
-  if (panelCount > TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) {
-    if (requested === 'xterm-webgl' || effective === 'xterm-webgl') {
-      return TERMINAL_OPERATIONAL_CANVAS_MODE;
-    }
+  // Uniform renderer: GPU-path requests resolve to Canvas 2D for every panel.
+  // WebGL tolerates a single live context, and the per-panel count that used to
+  // gate it collapses to 1 on focus, so siblings diverged and one flickered on
+  // each WebGL<->Canvas migration.
+  if (requested === 'xterm-webgl' || effective === 'xterm-webgl') {
+    return TERMINAL_OPERATIONAL_CANVAS_MODE;
   }
-
-  if (effective !== 'xterm-webgl') return effective;
-  if (panelCount <= TERMINAL_SPLIT_WEBGL_PANEL_LIMIT) return 'xterm-webgl';
-  return TERMINAL_OPERATIONAL_CANVAS_MODE;
+  return effective;
 }
 
 export function resolveRendererSelection({ requestedMode, capabilities } = {}) {

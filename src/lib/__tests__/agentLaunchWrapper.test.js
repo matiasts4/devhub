@@ -137,6 +137,53 @@ describe('agentLaunchWrapper', () => {
     });
   });
 
+  describe('kimi agent profile bootstrap (panel path without tmux)', () => {
+    const kimiParams = {
+      ...baseParams,
+      role: 'zed',
+      innerCommand: "/mnt/c/Users/PC/.kimi-code/bin/kimi.exe --yolo --model 'kimi-code/k3-256k'",
+      bootstrapPrompt: 'Rol: ZED\n=== STANDBY — esperar operador ===\nNo delegues.',
+    };
+
+    test('kimi + bootstrapPrompt emits agent profile file and --agent-file arg', () => {
+      const result = buildAgentLaunchWrapper(kimiParams);
+      expect(result).toContain('DEVHUB_AGENT_PROFILE_FILE=');
+      expect(result).toContain("$(basename \"$0\" .sh).agent.md");
+      expect(result).toContain('name: devhub-swarm-zed');
+      expect(result).toContain('${base_prompt}');
+      expect(result).toContain('Rol: ZED');
+      expect(result).toContain('DEVHUB_AGENT_PROFILE_ARG="--agent-file ${_devhub_profile_win}"');
+      // The inner command picks the flag up at runtime (unquoted expansion).
+      expect(result).toContain(
+        "/mnt/c/Users/PC/.kimi-code/bin/kimi.exe --yolo --model 'kimi-code/k3-256k' ${DEVHUB_AGENT_PROFILE_ARG}"
+      );
+    });
+
+    test('kebab-cases the role for the profile name', () => {
+      const result = buildAgentLaunchWrapper({ ...kimiParams, role: 'sdd_worker_1' });
+      expect(result).toContain('name: devhub-swarm-sdd-worker-1');
+    });
+
+    test('opencode inner command does NOT get the agent profile block', () => {
+      const result = buildAgentLaunchWrapper({ ...baseParams, bootstrapPrompt: 'brief' });
+      expect(result).not.toContain('DEVHUB_AGENT_PROFILE_FILE');
+      expect(result).not.toContain('--agent-file');
+    });
+
+    test('kimi without bootstrapPrompt does NOT get the agent profile block', () => {
+      const result = buildAgentLaunchWrapper({ ...kimiParams, bootstrapPrompt: '' });
+      expect(result).not.toContain('DEVHUB_AGENT_PROFILE_FILE');
+      expect(result).not.toContain('--agent-file');
+    });
+
+    test('generated wrapper stays bash-parseable with the profile block', () => {
+      const result = buildAgentLaunchWrapper(kimiParams);
+      // Heredoc delimiter must open/close at column 0 for bash -n to accept it.
+      expect(result).toMatch(/\ncat > "\$DEVHUB_AGENT_PROFILE_FILE" <<'DEVHUB_AGENT_PROFILE'\n/);
+      expect(result).toMatch(/\nDEVHUB_AGENT_PROFILE\n/);
+    });
+  });
+
   describe('buildAutoRestartLoopCommand', () => {
     test('includes max restarts limit of 3', () => {
       const result = buildAutoRestartLoopCommand({ innerCommand: 'opencode' });
@@ -643,7 +690,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand:
-          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M3',
+          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax/MiniMax-M3',
         bootstrapPrompt: 'Rol: Coder\nMisión: validar launch',
       });
 
@@ -669,7 +716,7 @@ describe('agentLaunchWrapper', () => {
       const result = buildAgentLaunchWrapper({
         ...tmuxParams,
         innerCommand:
-          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax-coding-plan/MiniMax-M3',
+          '/home/matias/.opencode/bin/opencode --agent swarm-coder --model minimax/MiniMax-M3',
         bootstrapPrompt:
           'Rol: Coder\nMisión: validar launch\n\n=== Worker: identidad y reporte ===\n- Reporta al Director.',
       });

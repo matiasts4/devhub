@@ -1,5 +1,5 @@
 import { createOperationalEvent } from '@/lib/operations/contracts';
-import { persistOperationalEvent } from '@/lib/operations/events';
+import { persistOperationalEvent, EVENT_NAME } from '@/lib/operations/events';
 import { invokeDesktop, isElectronDesktop } from '@/lib/desktop/desktopBridge';
 
 async function loadTauriNotificationModule() {
@@ -88,8 +88,11 @@ export async function dispatchOperationalNotification(eventInput = {}, dependenc
   const requestPermission = dependencies.requestPermission || defaultRequestPermission;
   const sendNotification = dependencies.sendNotification || defaultSendNotification;
 
-  // Persistir evento en el store único canonical de DevHub
-  persistOperationalEvent(event, { storage: dependencies.storage, dispatch: true });
+  // NATIVE-ONLY-01: persist without dispatching — the window event fires
+  // once, AFTER the native attempt, carrying desktop_status so the toast
+  // stack can skip the duplicate in-app aviso when Windows already showed
+  // the native notification.
+  persistOperationalEvent(event, { storage: dependencies.storage, dispatch: false });
 
   const desktop = {
     event_id: event.id,
@@ -119,6 +122,12 @@ export async function dispatchOperationalNotification(eventInput = {}, dependenc
         }
       }
     }
+  }
+
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(
+      new CustomEvent(EVENT_NAME, { detail: { ...event, desktop_status: desktop.status } })
+    );
   }
 
   const finalStatus = desktop.status === 'delivered' ? 'delivered' : 'fallback';

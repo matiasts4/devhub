@@ -4,7 +4,10 @@
  * The top workspace tab strip needs to know, for each workspace, whether any
  * of its terminal panels currently has an *agent* doing work. This hook folds
  * the per-panel semantic agent-TUI state into a single
- * `{ [workspaceId]: 'running' | 'blocked' | null }` map.
+ * `{ [workspaceId]: 'running' | 'blocked' | null }` map. The values are
+ * PANEL_STATUS vocabulary (panelStatusHelpers.js) — the same states the panel
+ * header badge (PanelStatusBadge / AgentStatusDot) renders, so the workspace
+ * dot and the badge always agree.
  *
  * IMPORTANT: the signal is agent-exclusive. It only reads the semantic state
  * populated by `agent-state` WS frames, which the server emits solely for

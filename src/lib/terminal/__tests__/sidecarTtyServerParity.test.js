@@ -130,10 +130,14 @@ describe('sidecar↔ttyServer detection parity (TEST-P2 item 5)', () => {
       const session = makeSession(impl, 'agy');
       const first = impl.ingestAgentDetectionFromFilteredOutput(session, runningChunk, 1000);
       const second = impl.ingestAgentDetectionFromFilteredOutput(session, idleChunk, 2000);
+      // Anti-flap dwell (TRANSITION_DWELL_MS = 1500): the non-authoritative
+      // running -> idle transition must persist for 1500ms before publishing,
+      // so a third ingest with the same idle screen confirms the candidate.
+      const third = impl.ingestAgentDetectionFromFilteredOutput(session, idleChunk, 3600);
       return {
         afterRunning: first.agentTuiState,
-        afterIdle: second.agentTuiState,
-        publishedIdle: second.published ? second.published.state : null,
+        afterIdle: third.agentTuiState,
+        publishedIdle: third.published ? third.published.state : null,
         finalAt: session.agentTuiStateAt,
       };
     });

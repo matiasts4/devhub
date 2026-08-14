@@ -31,6 +31,7 @@ import useNativeTuiBootstrapPaste from './terminal/hooks/useNativeTuiBootstrapPa
 import useTerminalPanelActivationRecovery from './terminal/hooks/useTerminalPanelActivationRecovery';
 import useTerminalAutoReconnect from './terminal/hooks/useTerminalAutoReconnect';
 import useTerminalWindowEventRouter from './terminal/hooks/useTerminalWindowEventRouter';
+import useTerminalRenderIntegrityProbe from './terminal/hooks/useTerminalRenderIntegrityProbe';
 import useTerminalSessionExit from './terminal/hooks/useTerminalSessionExit';
 import useTerminalInitialCommandLifecycle from './terminal/hooks/useTerminalInitialCommandLifecycle';
 import useTerminalNativeVteLifecycle from './terminal/hooks/useTerminalNativeVteLifecycle';
@@ -88,6 +89,8 @@ import {
   TERMINAL_VIEWPORT_SHELL_STYLE,
   TERMINAL_NATIVE_CONTENT_BODY_STYLE,
   TERMINAL_CONNECT_DEFER_MAX_MS,
+  registerTerminalInstance,
+  unregisterTerminalInstance,
 } from './terminal/TerminalTTY.helpers';
 
 export * from './terminal/TerminalTTY.helpers';
@@ -269,6 +272,12 @@ export default function TerminalTTY({
   // already has a live TUI — typing the launch command into it injects it into the
   // conversation as visible text). See Bug B: resume-command injection on reload.
   const serverReadyReceivedRef = useRef(false);
+  // Sticky counterpart of serverReadyReceivedRef: unlike it, this one is NOT
+  // reset on every connect() attempt. resolveConnectInitialCommandState uses it
+  // to distinguish "reattaching a session we know was live" from "flapping
+  // before the first ready" (boot race — the launch command provably never
+  // reached a PTY and must be retried, not latched as sent).
+  const readyEverReceivedRef = useRef(false);
   const initialCommandConnectSnapshotRef = useRef(null);
   const viewportFitConfirmedRef = useRef(false);
   // Fresh panels created from the workspace modal must wait until the host layout has
@@ -284,6 +293,10 @@ export default function TerminalTTY({
   const initialCommandDelayTimerRef = useRef(null);
   const initialCommandDelayScheduledRef = useRef(false);
   const initialCommandProjectionRetryTimerRef = useRef(null);
+  // Bounded retry ladder for the initial command after a fresh `ready` (boot
+  // race): covers gates that resolve slightly after ready (viewport fit,
+  // projection) instead of silently losing the resume.
+  const initialCommandRetryTimerRef = useRef(null);
   const lastPtySizeRef = useRef({ cols: 0, rows: 0 });
   const serverTermsizeRef = useRef({ cols: 0, rows: 0 });
   // Seed from the module-level registry: remounts of an already-booted panel
@@ -1243,6 +1256,8 @@ export default function TerminalTTY({
     restored,
     swarmContext,
     autoFocus,
+    coldMountOrdinal,
+    isVisibleInLayoutRef,
     connectInFlightRef,
     sessionClosingRef,
     wsRef,
@@ -1253,6 +1268,8 @@ export default function TerminalTTY({
     initialCommandDelayScheduledRef,
     sessionReattachedRef,
     serverReadyReceivedRef,
+    readyEverReceivedRef,
+    initialCommandRetryTimerRef,
     hasSentInitialCommand,
     processExitedRef,
     isEngineV2Ref,
@@ -1482,6 +1499,20 @@ export default function TerminalTTY({
     id,
     autoFocus,
   });
+  useTerminalRenderIntegrityProbe({ ctxRef: viewportCtxRef, id, isVisibleInLayout });
+
+  useEffect(() => {
+    registerTerminalInstance(id, {
+      termRef,
+      containerRef,
+      fitRef,
+      operationalRendererModeRef,
+      webglAddonRef,
+      canvasAddonRef,
+      lastPtySizeRef,
+    });
+    return () => unregisterTerminalInstance(id);
+  }, [id]);
 
   const { disposeXtermRuntime: disposeXtermRuntimeImpl } = useTerminalEngine({
     ctxRef: engineCtxRef,

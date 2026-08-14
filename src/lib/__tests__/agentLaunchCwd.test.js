@@ -133,13 +133,13 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     test('buildAgentLaunchCommand can skip tmux wrapping when the terminal is already tmux-backed', () => {
       const result = buildAgentLaunchCommand('opencode', 'do work', {
         opencodeAgent: 'swarm-director',
-        modelId: 'minimax-coding-plan/MiniMax-M3',
+        modelId: 'minimax/MiniMax-M3',
         tmuxSessionName: 'sess-test',
         disableTmuxWrap: true,
       });
 
       expect(result).toContain(`${OPENCODE_BIN} --agent swarm-director`);
-      expect(result).toContain('--model minimax-coding-plan/MiniMax-M3');
+      expect(result).toContain('--model minimax/MiniMax-M3');
       expect(result).not.toContain('tmux new-session');
       expect(result).not.toContain('tmux attach-session');
     });
@@ -147,12 +147,12 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     test('buildAgentLaunchCommand can start interactive OpenCode without --prompt for post-launch bootstrap', () => {
       const result = buildAgentLaunchCommand('opencode', 'do work', {
         opencodeAgent: 'swarm-director',
-        modelId: 'minimax-coding-plan/MiniMax-M3',
+        modelId: 'minimax/MiniMax-M3',
         interactiveBootstrapPrompt: true,
       });
 
       expect(result).toContain(`${OPENCODE_BIN} --agent swarm-director`);
-      expect(result).toContain('--model minimax-coding-plan/MiniMax-M3');
+      expect(result).toContain('--model minimax/MiniMax-M3');
       expect(result).not.toContain('--prompt');
     });
 
@@ -288,7 +288,7 @@ describe('agentLaunchCwd — REQ-CWD-1/2/3', () => {
     test('wrapper can bootstrap the initial prompt into an interactive OpenCode session', () => {
       const result = buildAgentLaunchWrapper({
         ...baseParams,
-        innerCommand: `${OPENCODE_BIN} --agent swarm-director --model minimax-coding-plan/MiniMax-M3`,
+        innerCommand: `${OPENCODE_BIN} --agent swarm-director --model minimax/MiniMax-M3`,
         bootstrapPrompt: 'Rol: Director\nMisión: prueba',
       });
 

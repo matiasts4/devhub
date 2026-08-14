@@ -81,6 +81,22 @@ describe('resolveZedLlmConfig', () => {
     expect(resolved.apiKey).toMatch(/^sk-cp-minimax/);
   });
 
+  test('strict: selected kimi_code with no key does not fall back to xai/minimax', async () => {
+    getZedSettingsSync.mockReturnValue({ provider: 'kimi_code' });
+    getRawLlmProviderSync.mockImplementation((key) => {
+      if (key === 'kimi_code') return { enabled: true };
+      if (key === 'xai') return { XAI_API_KEY: 'xai-key-1234567890123456', enabled: true };
+      return null;
+    });
+    getLlmProviderConfigSync.mockReturnValue({
+      MINIMAX_API_KEY: 'sk-cp-minimax-key-abcdefghijklmnop',
+    });
+
+    const resolved = await resolveZedLlmConfig();
+    expect(resolved.provider).toBe('kimi_code');
+    expect(resolved.apiKey).toBeNull();
+  });
+
   test('legacy auto prefers xai when configured', async () => {
     getZedSettingsSync.mockReturnValue({});
     getRawLlmProviderSync.mockImplementation((key) => {

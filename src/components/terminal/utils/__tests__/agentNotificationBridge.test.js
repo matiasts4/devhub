@@ -266,4 +266,175 @@ describe('agentNotificationBridge', () => {
 
     jest.useRealTimers();
   });
+
+  // ─── LAUNCH-GUARD: no "done" without a real prompt in this run ────────────
+
+  test('LAUNCH-GUARD: startup spinner (manifest running) + prompt-visible idle does NOT notify', () => {
+    jest.useFakeTimers();
+
+    // TUI launch: startup animation matches a working rule → running.
+    handleAgentStateTransition('panel-lg1', null, 'running', {
+      agentType: 'qodercli',
+      reason: 'manifest',
+    });
+    jest.advanceTimersByTime(6000); // longer than the 3s flicker guard
+    // Prompt renders → idle with positive done evidence.
+    handleAgentStateTransition('panel-lg1', 'running', 'idle', {
+      agentType: 'qodercli',
+      reason: 'prompt-visible',
+    });
+
+    expect(dispatchOperationalNotification).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  test('LAUNCH-GUARD: manifest running + quiescence-confirmed idle does NOT notify', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-lg2', null, 'running', {
+      agentType: 'agy',
+      reason: 'manifest',
+    });
+    jest.advanceTimersByTime(15000);
+    handleAgentStateTransition('panel-lg2', 'running', 'idle', {
+      agentType: 'agy',
+      reason: 'quiescence-confirmed',
+    });
+
+    expect(dispatchOperationalNotification).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  test('LAUNCH-GUARD: user-input running arms the run — prompt-visible idle notifies', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-lg3', 'idle', 'running', {
+      agentType: 'grok',
+      reason: 'user-input',
+    });
+    jest.advanceTimersByTime(6000);
+    handleAgentStateTransition('panel-lg3', 'running', 'idle', {
+      agentType: 'grok',
+      reason: 'prompt-visible',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Grok completó su respuesta',
+        entity_id: 'panel-lg3',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('LAUNCH-GUARD: armed state survives an intermediate manifest running frame', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-lg4', 'idle', 'running', {
+      agentType: 'kimi',
+      reason: 'user-input',
+    });
+    jest.advanceTimersByTime(2000);
+    // Reason flips to manifest while still running (screen scrape refresh).
+    handleAgentStateTransition('panel-lg4', 'running', 'running', {
+      agentType: 'kimi',
+      reason: 'manifest',
+      reasonChanged: true,
+    });
+    jest.advanceTimersByTime(6000);
+    handleAgentStateTransition('panel-lg4', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'prompt-visible',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Kimi Code completó su respuesta',
+        entity_id: 'panel-lg4',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('LAUNCH-GUARD: hook idle reason notifies even without an armed running frame', () => {
+    jest.useFakeTimers();
+
+    handleAgentStateTransition('panel-lg5', null, 'running', {
+      agentType: 'kimi',
+      reason: 'manifest',
+    });
+    jest.advanceTimersByTime(6000);
+    // Hooks only fire on real prompts — authoritative even if running came from scrape.
+    handleAgentStateTransition('panel-lg5', 'running', 'idle', {
+      agentType: 'kimi',
+      reason: 'hook:Stop',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Kimi Code completó su respuesta',
+        entity_id: 'panel-lg5',
+      })
+    );
+
+    jest.useRealTimers();
+  });
+
+  test('LAUNCH-GUARD: arm clears when the run ends — next manifest-only cycle stays silent', () => {
+    jest.useFakeTimers();
+
+    // Real run: armed, notifies.
+    handleAgentStateTransition('panel-lg6', 'idle', 'running', {
+      agentType: 'agy',
+      reason: 'user-input',
+    });
+    jest.advanceTimersByTime(6000);
+    handleAgentStateTransition('panel-lg6', 'running', 'idle', {
+      agentType: 'agy',
+      reason: 'prompt-visible',
+    });
+    expect(dispatchOperationalNotification).toHaveBeenCalledTimes(1);
+
+    // Later: footer flicker produces a manifest-only running → idle cycle.
+    jest.advanceTimersByTime(60000);
+    handleAgentStateTransition('panel-lg6', 'idle', 'running', {
+      agentType: 'agy',
+      reason: 'manifest',
+    });
+    jest.advanceTimersByTime(15000);
+    handleAgentStateTransition('panel-lg6', 'running', 'idle', {
+      agentType: 'agy',
+      reason: 'quiescence-confirmed',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
+  });
+
+  test('LAUNCH-GUARD: startup trust dialog (blocked) does not arm — blocked→idle stays silent', () => {
+    jest.useFakeTimers();
+
+    // Launch trust prompt: blocked notification is legit and fires.
+    handleAgentStateTransition('panel-lg7', null, 'blocked', {
+      agentType: 'kimi',
+      reason: 'manifest',
+    });
+    expect(dispatchOperationalNotification).toHaveBeenCalledTimes(1);
+
+    // User accepts the dialog → prompt appears. No run happened: no "done".
+    jest.advanceTimersByTime(6000);
+    handleAgentStateTransition('panel-lg7', 'blocked', 'idle', {
+      agentType: 'kimi',
+      reason: 'prompt-visible',
+    });
+
+    expect(dispatchOperationalNotification).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
+  });
 });

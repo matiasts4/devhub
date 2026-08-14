@@ -56,7 +56,7 @@ describe('ZedVoiceSettings', () => {
 
   test('defaults to the bundled voice and normal speed', () => {
     render(<ZedVoiceSettings />);
-    expect(screen.getByTestId('zed-tts-voice-select').value).toBe('es_ES-davefx-medium');
+    expect(screen.getByTestId('zed-tts-voice-select').value).toBe('es_MX-claude-high');
     expect(screen.getByTestId('zed-tts-rate-select').value).toBe('normal');
     expect(screen.getByTestId('zed-tts-system-voice-select').value).toBe('');
   });

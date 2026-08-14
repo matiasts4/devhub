@@ -35,7 +35,7 @@ describe('route buildLaunchCommand (visible swarm)', () => {
       'opencode',
       'mission prompt',
       'director',
-      'minimax-coding-plan/MiniMax-M3',
+      'minimax/MiniMax-M3',
       'launch-test1234',
       '/tmp/worktree/director'
     );
@@ -60,7 +60,7 @@ describe('route buildLaunchCommand (visible swarm)', () => {
       'opencode',
       'mission prompt',
       'coder',
-      'minimax-coding-plan/MiniMax-M3',
+      'minimax/MiniMax-M3',
       'launch-test5678',
       '/tmp/worktree/coder'
     );

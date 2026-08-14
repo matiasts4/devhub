@@ -808,6 +808,63 @@ function indentBashBlock(block = '', spaces = 4) {
     .join('\n');
 }
 
+/**
+ * Kimi panels have no tmux server (the DevHub UI materializes plain
+ * WSL/Windows terminals), so the send-keys bootstrap below never fires
+ * there — the agent booted as a generic CLI and burned minutes
+ * rediscovering how the swarm works (observed: ~5 min until ZED found the
+ * provision endpoint on its own).
+ *
+ * Fix: deliver the swarm brief as a kimi agent profile. `--agent-file`
+ * is supported by the interactive TUI and the body wraps `${base_prompt}`
+ * (kimi substitutes it with the default system prompt), so the agent boots
+ * WITH its orchestrator/worker instructions instead of discovering them.
+ * The tmux bootstrap stays as the fallback for tmux-backed launches.
+ */
+function buildKimiAgentProfileBlock({ role, bootstrapPrompt }) {
+  const kebabRole =
+    String(role || 'agent')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'agent';
+  return [
+    '# Kimi agent profile: system-prompt delivery of the swarm brief for',
+    '# panel launches without tmux. Written next to this wrapper and passed',
+    '# to kimi via --agent-file (see DEVHUB_AGENT_PROFILE_ARG below).',
+    'DEVHUB_AGENT_PROFILE_FILE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0" .sh).agent.md"',
+    'DEVHUB_AGENT_PROFILE_ARG=""',
+    `cat > "$DEVHUB_AGENT_PROFILE_FILE" <<'DEVHUB_AGENT_PROFILE'`,
+    '---',
+    `name: devhub-swarm-${kebabRole}`,
+    `description: DevHub swarm role ${kebabRole} — launch-scoped brief injected via --agent-file`,
+    '---',
+    '',
+    '${base_prompt}',
+    '',
+    String(bootstrapPrompt || '').trim(),
+    'DEVHUB_AGENT_PROFILE',
+    'if [ -s "$DEVHUB_AGENT_PROFILE_FILE" ]; then',
+    '  # kimi.exe is a Windows binary: hand it a drive-letter path even when',
+    '  # this wrapper runs under WSL (/mnt/c/...) or Git Bash (/c/...).',
+    '  case "$DEVHUB_AGENT_PROFILE_FILE" in',
+    '    /mnt/?/*)',
+    '      _devhub_drive=$(printf %s "$DEVHUB_AGENT_PROFILE_FILE" | cut -c6 | tr \'a-z\' \'A-Z\')',
+    '      _devhub_profile_win="${_devhub_drive}:$(printf %s "$DEVHUB_AGENT_PROFILE_FILE" | cut -c7-)"',
+    '      ;;',
+    '    /?/*)',
+    '      _devhub_drive=$(printf %s "$DEVHUB_AGENT_PROFILE_FILE" | cut -c2 | tr \'a-z\' \'A-Z\')',
+    '      _devhub_profile_win="${_devhub_drive}:$(printf %s "$DEVHUB_AGENT_PROFILE_FILE" | cut -c3-)"',
+    '      ;;',
+    '    *)',
+    '      _devhub_profile_win="$DEVHUB_AGENT_PROFILE_FILE"',
+    '      ;;',
+    '  esac',
+    '  # Unquoted expansion on purpose: splits into --agent-file + path.',
+    '  DEVHUB_AGENT_PROFILE_ARG="--agent-file ${_devhub_profile_win}"',
+    'fi',
+  ].join('\n');
+}
+
 function buildBootstrapPromptBlock(
   prompt = '',
   { preSleepSeconds = 0, invokeInBackground = true } = {}
@@ -1517,6 +1574,18 @@ export function buildAgentLaunchWrapper({
     panelTmuxBacked && Boolean(String(bootstrapPrompt || '').trim());
   const tuiGraceSeconds = Math.max(0, Math.floor(tuiReadyGraceMs / 1000));
 
+  // Kimi-only: deliver the bootstrap prompt as an agent profile so panel
+  // launches without tmux still boot with their swarm instructions.
+  const kimiAgentProfileBlock =
+    effectiveProgramId === 'kimi' && String(bootstrapPrompt || '').trim()
+      ? buildKimiAgentProfileBlock({ role, bootstrapPrompt })
+      : '';
+  // Unquoted ${DEVHUB_AGENT_PROFILE_ARG} expands to `--agent-file <path>`
+  // when the profile was written, and to nothing otherwise.
+  const effectiveInnerCommand = kimiAgentProfileBlock
+    ? `${innerCommand} \${DEVHUB_AGENT_PROFILE_ARG}`
+    : innerCommand;
+
   const parts = [
     '#!/usr/bin/env bash',
     '# DevHub Agent Launch Wrapper',
@@ -1608,6 +1677,7 @@ export function buildAgentLaunchWrapper({
       invokeInBackground: !deferBootstrapUntilAgentStart,
     }),
     '',
+    ...(kimiAgentProfileBlock ? [kimiAgentProfileBlock, ''] : []),
     // T-016.4 — attach the transcript pipe-pane after the bootstrap
     // prompt is queued. Detach happens in the exit trap below.
     ...(pipePane ? ['# T-016.4 — attach transcript capture', pipePane.attach] : []),
@@ -1668,7 +1738,7 @@ export function buildAgentLaunchWrapper({
     '# Execute the actual agent via auto-restart loop',
     '# Captures both stdout and stderr to log; restarts on non-zero exit (max 3)',
     buildAutoRestartLoopCommand({
-      innerCommand,
+      innerCommand: effectiveInnerCommand,
       deferBootstrap: deferBootstrapUntilAgentStart,
       tuiGraceSeconds,
       programId: effectiveProgramId,

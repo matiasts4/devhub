@@ -178,6 +178,16 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeProvisionRoleKeys(value) {
+  return [
+    ...new Set(
+      asArray(value)
+        .map((key) => String(key || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
 function countPendingApprovals(approvals = []) {
   return asArray(approvals).filter((approval) => approval?.status === 'pending').length;
 }
@@ -195,7 +205,7 @@ function buildSwarmTemplateCatalog() {
       category: 'orchestration',
       swarm_type_id: 'zed-orchestration-swarm',
       default_team_id: 'zed-sdd-pod',
-      default_provider_id: 'minimax-coding-plan/MiniMax-M3',
+      default_provider_id: 'minimax/MiniMax-M3',
       default_mission: '',
       launch_defaults: {
         bootstrapMode: 'standby',
@@ -215,7 +225,7 @@ function buildSwarmTemplateCatalog() {
       category: 'recovery',
       swarm_type_id: 'recovery-swarm',
       default_team_id: 'amber-recovery-cell',
-      default_provider_id: 'opencode/claude-sonnet-4.6',
+      default_provider_id: 'headroom/claude-sonnet-4-6',
       default_mission:
         'Resolver checkpoints pendientes, recuperar runs degradados y devolver la cola durable a un estado operable.',
       topology: {
@@ -280,7 +290,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['standby', 'mcp-queue', 'human-qa-gate'],
       category: 'orchestration',
       default_team_id: 'zed-sdd-pod',
-      default_provider_id: 'minimax-coding-plan/MiniMax-M3',
+      default_provider_id: 'minimax/MiniMax-M3',
       topology: buildZedSddPodTopology(4),
     },
     {
@@ -312,7 +322,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['approval-aware', 'durable-refresh'],
       category: 'recovery',
       default_team_id: 'amber-recovery-cell',
-      default_provider_id: 'opencode/claude-sonnet-4.6',
+      default_provider_id: 'headroom/claude-sonnet-4-6',
       topology: {
         label: 'Director → Recovery Ops → Evidence → QA',
         roles: ['Director', 'Recovery Ops', 'Evidence', 'QA'],
@@ -332,7 +342,7 @@ function buildSwarmTypeCatalog() {
       defaults_preview: ['context-first', 'evidence-trace'],
       category: 'research',
       default_team_id: 'launchpad-scout-team',
-      default_provider_id: 'opencode-go/qwen3.5-plus',
+      default_provider_id: 'opencode-go/qwen3.7-plus',
       topology: {
         label: 'Director → Scout → Analyst → Director',
         roles: ['Director', 'Scout', 'Analyst'],
@@ -401,6 +411,14 @@ function buildSwarmLaunchPrograms() {
       supports_model: true,
       summary:
         'TUI Kimi CLI (YOLO/auto) — ideal para ZED y workers con skills gentle-orchestrator.',
+    },
+    {
+      id: 'qodercli',
+      label: 'Qoder',
+      tui_type: 'qodercli',
+      supports_model: true,
+      summary:
+        'Qoder CLI — TUI con -m/--model; swarm lanza con bypass_permissions y bootstrap por tmux.',
     },
     {
       id: 'codex',
@@ -527,7 +545,13 @@ function mergeRolePrograms(defaultRolePrograms = {}, draftRolePrograms = {}) {
   );
 }
 
-function buildRoleProgramPreview(topology = null, rolePrograms = {}, programs = []) {
+function buildRoleProgramPreview(
+  topology = null,
+  rolePrograms = {},
+  programs = [],
+  roleModels = {},
+  roleModelOverrides = {}
+) {
   const programsById = new Map(asArray(programs).map((program) => [program.id, program]));
 
   return asArray(topology?.roles)
@@ -543,6 +567,8 @@ function buildRoleProgramPreview(topology = null, rolePrograms = {}, programs = 
         role_key: roleKey,
         program_id: programId,
         program_label: program?.label || programId || null,
+        model_id: roleModels?.[roleKey] || null,
+        model_override: roleModelOverrides?.[roleKey] || null,
       };
     })
     .filter(Boolean);
@@ -1884,20 +1910,28 @@ export function createSwarmLaunchDraft({
         process.env.SDD_ENABLED !== 'false');
   const sddPhase = draft.phase || null;
 
-  const DEFAULT_SWARM_MODEL = 'minimax-coding-plan/MiniMax-M3';
+  const catalogModels = asArray(resolvedCatalog.models);
   const resolvedDefaultModel = provider?.id || DEFAULT_SWARM_MODEL;
-  const defaultRoleModels = topology?.roles
-    ? topology.roles.reduce((acc, role) => {
-        const key = slugifyRoleKey(role);
-        if (key) acc[key] = resolvedDefaultModel;
-        return acc;
-      }, {})
-    : {};
-  // Prefer explicit per-role models; otherwise seed from default model (providerId).
-  const roleModels =
-    Object.keys(draft.roleModels || {}).length > 0
-      ? { ...defaultRoleModels, ...draft.roleModels }
-      : defaultRoleModels;
+  const topologyRolePrograms = asArray(topology?.roles).reduce((acc, role) => {
+    const key = slugifyRoleKey(role);
+    if (key) acc[key] = rolePrograms?.[key] || null;
+    return acc;
+  }, {});
+  // Explicit per-role picks live apart from the effective map. Changing the
+  // general default must not overwrite them, and "this role inherits the
+  // default" has to stay representable — which a single map cannot express.
+  // A legacy draft (no roleModelOverrides key) still carries its picks in
+  // roleModels; gate on key presence so re-normalization stays idempotent.
+  const roleModelOverrides = normalizeRoleModelOverrides({
+    overrides: draft.roleModelOverrides === undefined ? draft.roleModels : draft.roleModelOverrides,
+    roleKeys: Object.keys(topologyRolePrograms),
+  });
+  const roleModels = resolveRoleModels({
+    rolePrograms: topologyRolePrograms,
+    roleModelOverrides,
+    defaultModelId: resolvedDefaultModel,
+    models: catalogModels,
+  });
 
   return {
     mode: draft.mode || 'template',
@@ -1910,9 +1944,14 @@ export function createSwarmLaunchDraft({
     bootstrapMode: bootstrapMode?.id || launchDefaults.bootstrapMode || 'engram_first',
     spawnStrategy:
       draft.spawnStrategy || launchDefaults.spawnStrategy || SWARM_SPAWN_STRATEGY_AUTOMATIC,
+    // Eager UI provisioning: deferred worker roles the UI materializes right
+    // at launch (standby panels in parallel with the orchestrator). Only
+    // roles that end up in the deferred roster are honored by the API.
+    provisionRoleKeys: normalizeProvisionRoleKeys(draft.provisionRoleKeys),
     workspacePath: draft.workspacePath || projectPath,
     rolePrograms,
     roleModels,
+    roleModelOverrides,
     workerCount: isZedPodTemplate ? workerCount : draft.workerCount,
     mission:
       draft.mission ?? (bootstrapMode?.id === 'standby' ? '' : (template?.default_mission ?? '')),
@@ -1950,7 +1989,9 @@ export function deriveSwarmLaunchPreview({ catalog = null, draft = null } = {}) 
   const rolePrograms = buildRoleProgramPreview(
     topology,
     resolvedDraft.rolePrograms,
-    resolvedCatalog.programs
+    resolvedCatalog.programs,
+    resolvedDraft.roleModels,
+    resolvedDraft.roleModelOverrides
   );
   const modeLabel = resolvedDraft.mode === 'custom' ? 'Equipo personalizado' : 'Equipo plantilla';
 
@@ -2071,44 +2112,52 @@ export function buildRoleAgentProfile(roleKey = '', changeName = null, phase = n
 
 /**
  * Catálogo de modelos disponibles para selección por rol en el wizard.
- * IDs are OpenCode-compatible model refs used by buildAgentLaunchCommand(--model).
- * `compatible_programs`: TUIs that accept --model on launch (others hide model select).
+ * IDs are the exact model refs each CLI expects on launch (--model / -m):
+ * - opencode: `provider/model` refs as reported by `opencode models`
+ *   (minimax/*, opencode-go/*, opencode/*, headroom/*).
+ * - kimi: model aliases from `~/.kimi-code/config.toml` [models.<alias>] entries
+ *   (kimi-code/*). Bare names like `kimi-for-coding` are API-side model names,
+ *   NOT valid CLI aliases — kimi errors with config.invalid at request time.
+ * - qodercli: bare model names from `qodercli --list-models`.
+ * `compatible_programs`: TUIs that accept this ref on launch (others hide it).
+ * Keep synced with the real provider lists — stale ids fail at spawn time.
  */
 export function buildSwarmLaunchModels() {
-  const OPENCODE_KIMI = ['opencode', 'kimi'];
+  const OPENCODE_ONLY = ['opencode'];
+  const OPENCODE_ROLES = [
+    'director',
+    'coder',
+    'builder',
+    'qa',
+    'auditor',
+    'reviewer',
+    'devops',
+    'architect',
+    'explorer',
+    'scout',
+    'analyst',
+    'evidence',
+    'zed',
+    'sdd_worker_1',
+    'sdd_worker_2',
+    'sdd_worker_3',
+    'sdd_worker_4',
+  ];
   return [
     {
-      id: 'minimax-coding-plan/MiniMax-M3',
+      id: 'minimax/MiniMax-M3',
       label: 'MiniMax M3',
       stack: 'minimax',
       summary: 'Modelo por token plan — mismo stack que SDD/asistente; recomendado para swarm.',
-      compatible_programs: OPENCODE_KIMI,
-      recommended_for: [
-        'director',
-        'coder',
-        'builder',
-        'qa',
-        'auditor',
-        'reviewer',
-        'devops',
-        'architect',
-        'explorer',
-        'scout',
-        'analyst',
-        'evidence',
-        'zed',
-        'sdd_worker_1',
-        'sdd_worker_2',
-        'sdd_worker_3',
-        'sdd_worker_4',
-      ],
+      compatible_programs: OPENCODE_ONLY,
+      recommended_for: OPENCODE_ROLES,
     },
     {
-      id: 'minimax-coding-plan/MiniMax-M2.7',
+      id: 'minimax/MiniMax-M2.7',
       label: 'MiniMax M2.7',
       stack: 'minimax',
       summary: 'Alternativa M2.7 — útil si M3 no está disponible en el plan.',
-      compatible_programs: OPENCODE_KIMI,
+      compatible_programs: OPENCODE_ONLY,
       recommended_for: [],
     },
     {
@@ -2116,7 +2165,7 @@ export function buildSwarmLaunchModels() {
       label: 'DeepSeek V4 Flash',
       stack: 'opencode',
       summary: 'Mayor cantidad de requests — ideal para workers intensivos.',
-      compatible_programs: OPENCODE_KIMI,
+      compatible_programs: OPENCODE_ONLY,
       recommended_for: ['coder', 'builder', 'qa', 'devops', 'recovery_ops'],
     },
     {
@@ -2124,26 +2173,201 @@ export function buildSwarmLaunchModels() {
       label: 'Qwen 3.6 Plus',
       stack: 'opencode',
       summary: 'Balanceado para tareas generales de código.',
-      compatible_programs: OPENCODE_KIMI,
+      compatible_programs: OPENCODE_ONLY,
       recommended_for: ['director', 'auditor', 'reviewer'],
     },
     {
-      id: 'opencode-go/qwen3.5-plus',
-      label: 'Qwen 3.5 Plus',
+      id: 'opencode-go/qwen3.7-plus',
+      label: 'Qwen 3.7 Plus',
       stack: 'opencode',
       summary: 'Alternativa con buen ratio de requests.',
-      compatible_programs: OPENCODE_KIMI,
+      compatible_programs: OPENCODE_ONLY,
       recommended_for: ['explorer', 'scout', 'analyst'],
     },
     {
-      id: 'opencode/claude-sonnet-4.6',
+      id: 'headroom/claude-sonnet-4-6',
       label: 'Claude Sonnet 4.6',
       stack: 'opencode',
       summary: 'Mayor criterio para decisiones complejas.',
-      compatible_programs: OPENCODE_KIMI,
+      compatible_programs: OPENCODE_ONLY,
       recommended_for: ['director', 'architect', 'zed'],
     },
+    {
+      id: 'opencode/deepseek-v4-flash-free',
+      label: 'DeepSeek V4 Flash (free)',
+      stack: 'opencode',
+      summary: 'Fallback gratuito del tier opencode — útil sin suscripción activa.',
+      compatible_programs: OPENCODE_ONLY,
+      recommended_for: [],
+    },
+    {
+      id: 'kimi-code/k3-256k',
+      label: 'Kimi K3 256k',
+      stack: 'kimi',
+      summary: 'Alias de config.toml (default del CLI) — contexto largo para ZED y workers.',
+      compatible_programs: ['kimi'],
+      recommended_for: ['zed', 'sdd_worker_1', 'sdd_worker_2', 'sdd_worker_3', 'sdd_worker_4'],
+    },
+    {
+      id: 'kimi-code/kimi-for-coding',
+      label: 'Kimi for Coding',
+      stack: 'kimi',
+      summary: 'Modelo clásico de coding del CLI Kimi Code.',
+      compatible_programs: ['kimi'],
+      recommended_for: ['coder', 'builder'],
+    },
+    {
+      id: 'kimi-code/kimi-for-coding-highspeed',
+      label: 'Kimi for Coding HS',
+      stack: 'kimi',
+      summary: 'Variante highspeed — workers intensivos con Kimi Code.',
+      compatible_programs: ['kimi'],
+      recommended_for: ['coder', 'builder', 'qa'],
+    },
+    {
+      id: 'Auto',
+      label: 'Qoder Auto',
+      stack: 'qoder',
+      summary: 'Router automático de Qoder CLI — default para roles lanzados con qodercli.',
+      compatible_programs: ['qodercli'],
+      recommended_for: ['director', 'zed'],
+    },
+    {
+      id: 'DeepSeek-V4-Flash',
+      label: 'Qoder DeepSeek V4 Flash',
+      stack: 'qoder',
+      summary: 'Worker intensivo en Qoder CLI.',
+      compatible_programs: ['qodercli'],
+      recommended_for: ['coder', 'builder', 'qa', 'devops'],
+    },
+    {
+      id: 'Qwen3.7-Plus',
+      label: 'Qoder Qwen 3.7 Plus',
+      stack: 'qoder',
+      summary: 'Balanceado para tareas generales en Qoder CLI.',
+      compatible_programs: ['qodercli'],
+      recommended_for: ['auditor', 'scout', 'analyst'],
+    },
+    {
+      id: 'Kimi-K3',
+      label: 'Qoder Kimi K3',
+      stack: 'qoder',
+      summary: 'Mayor criterio para decisiones complejas en Qoder CLI.',
+      compatible_programs: ['qodercli'],
+      recommended_for: ['architect', 'reviewer'],
+    },
   ];
+}
+
+/** Default model per launchable program — must exist in buildSwarmLaunchModels(). */
+export const DEFAULT_MODEL_BY_PROGRAM = Object.freeze({
+  opencode: 'minimax/MiniMax-M3',
+  kimi: 'kimi-code/k3-256k',
+  qodercli: 'Auto',
+});
+
+export const DEFAULT_SWARM_MODEL = DEFAULT_MODEL_BY_PROGRAM.opencode;
+
+/**
+ * Resolve the default model for a program: catalog default when compatible,
+ * otherwise the per-program default. Returns null for programs without model support.
+ */
+export function resolveDefaultModelForProgram(programId, preferredModelId = null, models = null) {
+  const catalog = asArray(models || buildSwarmLaunchModels());
+  const compatible = filterModelsForProgram(catalog, programId);
+  if (
+    preferredModelId &&
+    compatible.some((model) => model.id === preferredModelId)
+  ) {
+    return preferredModelId;
+  }
+  const programDefault = DEFAULT_MODEL_BY_PROGRAM[programId] || null;
+  if (programDefault && compatible.some((model) => model.id === programDefault)) {
+    return programDefault;
+  }
+  return compatible[0]?.id || null;
+}
+
+/**
+ * Sanitize per-role models against the catalog and each role's program.
+ * Drops empty/unknown/incompatible entries and falls back to the program default,
+ * so roleModels never carries a ref the target CLI cannot resolve (stale wizard
+ * state or a direct POST to the launch endpoint).
+ */
+export function sanitizeRoleModels({
+  roleModels = {},
+  rolePrograms = {},
+  defaultModelId = null,
+  models = null,
+} = {}) {
+  const catalog = asArray(models || buildSwarmLaunchModels());
+  const sanitized = {};
+  Object.entries(roleModels || {}).forEach(([roleKey, modelId]) => {
+    const key = String(roleKey || '').trim();
+    if (!key) return;
+    const programId = rolePrograms?.[key] || null;
+    sanitized[key] = resolveDefaultModelForProgram(
+      programId,
+      typeof modelId === 'string' && modelId.trim() ? modelId.trim() : defaultModelId,
+      catalog
+    );
+  });
+  return sanitized;
+}
+
+/**
+ * Normalize the sparse map of explicit per-role model picks.
+ *
+ * Only non-empty picks for roles present in the current topology survive, and
+ * values are kept verbatim: an override that is momentarily incompatible with
+ * the role's program must not be rewritten, so it re-applies if the program
+ * changes back. Absent key === "this role inherits the general default".
+ */
+export function normalizeRoleModelOverrides({ overrides = {}, roleKeys = null } = {}) {
+  const allowed = Array.isArray(roleKeys) ? new Set(roleKeys.filter(Boolean)) : null;
+  const normalized = {};
+  Object.entries(overrides || {}).forEach(([roleKey, modelId]) => {
+    const key = String(roleKey || '').trim();
+    if (!key) return;
+    if (allowed && !allowed.has(key)) return;
+    if (typeof modelId !== 'string' || !modelId.trim()) return;
+    normalized[key] = modelId.trim();
+  });
+  return normalized;
+}
+
+/**
+ * Derive the effective model per role: the explicit override wins, otherwise
+ * the general default, in both cases coerced to something the role's program
+ * can actually resolve.
+ */
+export function resolveRoleModels({
+  rolePrograms = {},
+  roleModelOverrides = {},
+  defaultModelId = null,
+  models = null,
+} = {}) {
+  const catalog = asArray(models || buildSwarmLaunchModels());
+  const resolved = {};
+  Object.keys(rolePrograms || {}).forEach((roleKey) => {
+    const key = String(roleKey || '').trim();
+    if (!key) return;
+    const override = roleModelOverrides?.[key];
+    const preferred =
+      typeof override === 'string' && override.trim() ? override.trim() : defaultModelId;
+    resolved[key] = resolveDefaultModelForProgram(rolePrograms[key] || null, preferred, catalog);
+  });
+  return resolved;
+}
+
+/** Models usable by at least one of the given programs. */
+export function filterModelsForPrograms(models = [], programIds = []) {
+  const list = asArray(models);
+  const ids = asArray(programIds).filter(Boolean);
+  if (ids.length === 0) return list;
+  return list.filter((model) =>
+    ids.some((programId) => filterModelsForProgram([model], programId).length > 0)
+  );
 }
 
 /** Models visible for a given program id (TUI). */

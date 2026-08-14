@@ -10,6 +10,12 @@
 const PENDING_IDLE_CAP_MS = 4000;
 const PENDING_IDLE_CONFIRMATIONS = 6;
 const STABLE_VISIBLE_SIGNAL_REFRESH_MS = 800;
+// Anti-flap hysteresis: non-authoritative state changes (manifest ingest/tick)
+// must persist as the same candidate state for this long before publishing.
+// Logs (data/logs/agent-state) showed running↔idle↔blocked flapping within
+// milliseconds when the bottom viewport alternated between prompt-visible and
+// working signals. Hook reports, user input, quiescence and exit paths bypass.
+const TRANSITION_DWELL_MS = 1500;
 
 export class AgentStateMachine {
   constructor() {
@@ -19,6 +25,7 @@ export class AgentStateMachine {
     this.lastVisibleWorking = false;
     this.lastVisibleSignalRefresh = null;
     this.pendingIdle = null;
+    this.pendingTransition = null;
   }
 
   /**
@@ -57,6 +64,45 @@ export class AgentStateMachine {
   }
 
   /**
+   * Generic anti-flap dwell for any non-authoritative state change not already
+   * covered by shouldHoldWorkingToIdle (e.g. running→idle with the prompt
+   * visible, idle→running, running→blocked). The candidate state must persist
+   * for TRANSITION_DWELL_MS before it publishes; any detection of a different
+   * state abandons the candidate. First publish from 'unknown' is immediate.
+   */
+  shouldHoldTransition(previous, next, now) {
+    if (next.state === previous.state) {
+      this.pendingTransition = null;
+      return false;
+    }
+    if (previous.state === 'unknown') {
+      this.pendingTransition = null;
+      return false;
+    }
+    // Plain running→idle already holds via pendingIdle with a longer window.
+    if (
+      previous.state === 'running' &&
+      next.state === 'idle' &&
+      !next.visibleIdle &&
+      !next.visibleBlocker
+    ) {
+      this.pendingTransition = null;
+      return false;
+    }
+
+    if (this.pendingTransition && this.pendingTransition.state === next.state) {
+      if (now - this.pendingTransition.startedAt >= TRANSITION_DWELL_MS) {
+        this.pendingTransition = null;
+        return false;
+      }
+      return true;
+    }
+
+    this.pendingTransition = { state: next.state, startedAt: now };
+    return true;
+  }
+
+  /**
    * Periodically refresh a stable visible blocker so consumers keep noticing it.
    */
   stableVisibleSignalRefreshDue(next, now) {
@@ -73,6 +119,7 @@ export class AgentStateMachine {
    */
   publishHook(detection, now = Date.now()) {
     this.pendingIdle = null;
+    this.pendingTransition = null;
     return this.publish(detection, now, { bypassHold: true });
   }
 
@@ -99,6 +146,12 @@ export class AgentStateMachine {
       return null;
     }
 
+    // Authoritative paths (hooks, user input, quiescence, exit) publish
+    // immediately and cancel any dwell-pending candidate.
+    if (options.bypassHold) {
+      this.pendingTransition = null;
+    }
+
     const next = {
       state: detection.state,
       visibleIdle: detection.visibleIdle,
@@ -118,6 +171,10 @@ export class AgentStateMachine {
     };
 
     if (!options.bypassHold && this.shouldHoldWorkingToIdle(previous, next, now)) {
+      return null;
+    }
+
+    if (!options.bypassHold && this.shouldHoldTransition(previous, next, now)) {
       return null;
     }
 

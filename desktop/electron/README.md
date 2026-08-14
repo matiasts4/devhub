@@ -1,5 +1,7 @@
 # DevHub Electron host
 
+> Building, versioning and shipping updates: see **[BUILDING.md](./BUILDING.md)**.
+
 Windows-first desktop host using Electron.
 
 **Window chrome:** frameless (`frame: false`) like Tauri `decorations: false`.  
@@ -207,6 +209,7 @@ node desktop/electron/packaging/runtime.test.js
 ## Packaging (electron-builder)
 
 Config: [`electron-builder.yml`](./electron-builder.yml) (also referenced from root scripts).
+Full build/release/update guide: **[BUILDING.md](./BUILDING.md)**.
 
 ```bash
 pnpm electron:pack    # unpackaged dir under dist/electron
@@ -216,6 +219,52 @@ pnpm electron:build   # NSIS installer (Windows x64)
 Main entry: `desktop/electron/main.js` via `extraMetadata.main` (does not force package.json `"main"` for Next).
 
 `extraResources` copies `src-tauri/resources/**` into the installer resources tree.
+
+## Auto-update (electron-updater)
+
+Packaged builds self-update **in place** via `electron-updater` (NSIS differential updates
+using the `.blockmap`). No uninstall/reinstall cycle: the NSIS updater only replaces program
+files, so `userData` (`%APPDATA%/DevHub`) and all app state survive every update.
+
+- `updater.js` checks ~15s after boot and every 30 min after that, downloads in the
+  background, and the SPA shows a "Reiniciar para actualizar" pill (`UpdatePill.jsx`).
+  Clicking it applies the update silently (`quitAndInstall(true, true)` — no NSIS
+  wizard) and relaunches. If dismissed, the update still installs on next quit
+  (`autoInstallOnAppQuit`). Errors fail open (log only, app keeps running).
+- Instant detection: `pnpm electron:update-ping` touches
+  `%APPDATA%/DevHub/update-check.signal`; the running app watches that file and
+  re-checks the feed immediately — no 30-min wait. Agent flow after a build:
+  `pnpm electron:build -c.extraMetadata.version=X.Y.Z && pnpm electron:update-ping`.
+- `electron-builder.yml` `publish` config generates `latest.yml` and bakes
+  `resources/app-update.yml` (default feed: the local dev server below).
+- Only runs when packaged. `DEVHUB_UPDATE_FORCE=1` opts in elsewhere.
+
+### Local update feed (dev)
+
+```bash
+pnpm electron:feed    # serves dist/electron/ at http://127.0.0.1:9100/devhub
+```
+
+`DEVHUB_FEED_PORT` overrides the port. `DEVHUB_UPDATE_URL` overrides the feed URL at
+runtime (e.g. `DEVHUB_UPDATE_URL=http://192.168.1.10:9100/devhub DevHub.exe`), so one
+installer can point at any feed without rebuilding.
+
+### Testing a real update
+
+```bash
+# 1. Install the current installer once (never again after this).
+# 2. Bump the version and rebuild:
+pnpm electron:build -c.extraMetadata.version=0.1.1
+# 3. Serve the feed and launch the installed app:
+pnpm electron:feed
+# 4. ~15s after boot the app finds 0.1.1, downloads it (differential), and offers
+#    restart. After restart the new version runs with the same userData intact.
+```
+
+Differential downloads need the old and new `.blockmap`/`.exe` files present in
+`dist/electron/`; old installers accumulate there — delete stale ones manually.
+Unsigned builds may trigger a SmartScreen prompt; that does not block updates.
+For production distribution, rebuild with the real feed URL in `publish`.
 
 ## Smoke scripts
 
@@ -245,7 +294,9 @@ desktop/electron/
   main.js                 # app entry, single-instance, IPC router, tray
   preload.js              # contextBridge → window.devhubDesktop
   window.js               # BrowserWindow factory (frame true, contextIsolation)
-  tray.js                 # system tray Show/Quit
+  tray.js                 # system tray Show/Check for updates/Quit
+  updater.js              # electron-updater wiring (in-place NSIS updates)
+  updater.test.js         # jest tests (injected updater mock)
   sidecar.js              # health / optional spawn
   channels.js             # IPC names + command catalogs
   ipc/
@@ -259,6 +310,7 @@ desktop/electron/
   scripts/
     smoke-e0.cjs
     smoke-e1.cjs
+    update-feed.cjs         # local generic feed server (pnpm electron:feed)
 ```
 
 ## Security

@@ -36,6 +36,7 @@ export const PROVIDERS = {
   OPENCODE: 'opencode',
   CODEX: 'codex',
   ZAI: 'zai',
+  QODER: 'qoder',
 };
 
 export const PROVIDER_LABELS = {
@@ -46,4 +47,5 @@ export const PROVIDER_LABELS = {
   [PROVIDERS.OPENCODE]: 'OpenCode',
   [PROVIDERS.CODEX]: 'Codex',
   [PROVIDERS.ZAI]: 'Z.ai',
+  [PROVIDERS.QODER]: 'Qoder',
 };

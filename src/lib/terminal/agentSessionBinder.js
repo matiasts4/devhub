@@ -2,10 +2,12 @@
  * agentSessionBinder — spawn-time fs correlation between a DevHub terminal
  * session and the provider-side agent session it just created.
  *
- * Node-only (fs/os/path). Used by ttyServer for providers whose CLIs cannot
- * pre-assign a session id (kimi, codex): after the PTY spawns the agent TUI,
- * we poll the provider's on-disk session store for a session created at/after
- * the spawn time whose cwd matches the panel cwd.
+ * Node-only (fs/os/path). Used by ttyServer for providers whose launch cannot
+ * carry a reliable session id (kimi, codex have no pre-assign flag; grok and
+ * qodercli get one only when launched by DevHub, not when typed by hand):
+ * after the PTY spawns the agent TUI, we poll the provider's on-disk session
+ * store for a session created at/after the spawn time whose cwd matches the
+ * panel cwd.
  *
  * Correlation outcomes:
  * - exactly one new candidate → onBound(agentSessionId), polling stops;
@@ -20,6 +22,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { normalizeCwdForCompare } from './cwdNormalize.js';
+
+export { normalizeCwdForCompare };
 
 const DEFAULT_INTERVAL_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -62,16 +67,7 @@ function parseTimestampMs(value) {
 }
 
 /** Slash-normalizes both sides; case-insensitive on win32. */
-function normalizeCwdForCompare(value) {
-  let normalized = String(value || '')
-    .trim()
-    .replace(/\\+/g, '/')
-    .replace(/\/+$/, '');
-  if (process.platform === 'win32') {
-    normalized = normalized.toLowerCase();
-  }
-  return normalized;
-}
+// Implementation lives in ./cwdNormalize.js (pure, browser-safe); re-exported above.
 
 /**
  * Binding requires an exact cwd match (no subdirectory tolerance): a fuzzy
@@ -116,7 +112,8 @@ export function findNewKimiSession({ homeDir = null, cwd = null, spawnedAt = 0 }
         const state = readJsonFile(statePath);
         if (!state) continue;
 
-        const sessionId = sessionEntry.name.replace(/^session_/, '') || sessionEntry.name;
+        // Kimi session ids include the `session_` prefix: `kimi --session session_<uuid>`.
+        const sessionId = sessionEntry.name;
         const workDir = typeof state.workDir === 'string' ? state.workDir : null;
         if (!cwdMatchesExactly(workDir, cwd)) continue;
 
@@ -232,9 +229,114 @@ export function findNewCodexSession({ homeDir = null, cwd = null, spawnedAt = 0 
   }
 }
 
+/**
+ * Scans ~/.qoder/projects/<slug>/<uuid>/state.json for sessions created
+ * at/after `spawnedAt` (minus clock skew) whose workspaceDirectories contain
+ * the panel cwd (exact match). State shape (verified qodercli 0.x):
+ * { sessionId, createdAt, updatedAt, workspaceDirectories: [cwd, ...] }.
+ * Resume: `qodercli --resume <uuid>`.
+ *
+ * @returns {{ status: 'none'|'unique'|'ambiguous', sessionId: string|null, candidates: Array }}
+ */
+export function findNewQoderSession({ homeDir = null, cwd = null, spawnedAt = 0 } = {}) {
+  try {
+    if (!cwd || !Number.isFinite(spawnedAt)) return buildResult([]);
+    const home = homeDir || os.homedir();
+    const root = path.join(home, '.qoder', 'projects');
+    const threshold = spawnedAt - CLOCK_SKEW_MS;
+    const candidates = [];
+
+    for (const projectEntry of safeReaddir(root)) {
+      if (!projectEntry.isDirectory()) continue;
+      const projectPath = path.join(root, projectEntry.name);
+
+      for (const sessionEntry of safeReaddir(projectPath)) {
+        if (!sessionEntry.isDirectory()) continue;
+        const statePath = path.join(projectPath, sessionEntry.name, 'state.json');
+        const state = readJsonFile(statePath);
+        if (!state) continue;
+
+        const sessionId = String(state.sessionId || sessionEntry.name || '').trim();
+        if (!sessionId) continue;
+
+        const workspaceDirs = Array.isArray(state.workspaceDirectories)
+          ? state.workspaceDirectories
+          : [];
+        if (!workspaceDirs.some((dir) => cwdMatchesExactly(dir, cwd))) continue;
+
+        const createdAtMs =
+          parseTimestampMs(state.createdAt) ?? statTimes(statePath).birthtimeMs ?? null;
+        if (!Number.isFinite(createdAtMs) || createdAtMs < threshold) continue;
+
+        candidates.push({ sessionId, createdAt: new Date(createdAtMs).toISOString() });
+      }
+    }
+
+    candidates.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return buildResult(candidates);
+  } catch {
+    return buildResult([]);
+  }
+}
+
+/**
+ * Scans ~/.grok/sessions/<encodeURIComponent(cwd)>/<uuid>/summary.json for
+ * sessions created at/after `spawnedAt` (minus clock skew) whose info.cwd
+ * matches the panel cwd (exact match). Summary shape:
+ * { info: { id, cwd }, session_summary, created_at, updated_at }.
+ * Resume: `grok --resume <uuid>`.
+ *
+ * @returns {{ status: 'none'|'unique'|'ambiguous', sessionId: string|null, candidates: Array }}
+ */
+export function findNewGrokSession({ homeDir = null, cwd = null, spawnedAt = 0 } = {}) {
+  try {
+    if (!cwd || !Number.isFinite(spawnedAt)) return buildResult([]);
+    const home = homeDir || os.homedir();
+    const root = path.join(home, '.grok', 'sessions');
+    const threshold = spawnedAt - CLOCK_SKEW_MS;
+    const candidates = [];
+
+    for (const cwdEntry of safeReaddir(root)) {
+      if (!cwdEntry.isDirectory()) continue;
+      const cwdPath = path.join(root, cwdEntry.name);
+
+      for (const sessionEntry of safeReaddir(cwdPath)) {
+        if (!sessionEntry.isDirectory()) continue;
+        const summaryPath = path.join(cwdPath, sessionEntry.name, 'summary.json');
+        const summary = readJsonFile(summaryPath);
+        if (!summary) continue;
+
+        const sessionId = String(summary?.info?.id || sessionEntry.name || '').trim();
+        if (!sessionId) continue;
+
+        const sessionCwd =
+          typeof summary?.info?.cwd === 'string' && summary.info.cwd.trim()
+            ? summary.info.cwd.trim()
+            : null;
+        // Without a recorded cwd we cannot prove the session belongs to this
+        // panel — skip rather than risk stealing another panel's conversation.
+        if (!cwdMatchesExactly(sessionCwd, cwd)) continue;
+
+        const createdAtMs =
+          parseTimestampMs(summary.created_at) ?? statTimes(summaryPath).birthtimeMs ?? null;
+        if (!Number.isFinite(createdAtMs) || createdAtMs < threshold) continue;
+
+        candidates.push({ sessionId, createdAt: new Date(createdAtMs).toISOString() });
+      }
+    }
+
+    candidates.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return buildResult(candidates);
+  } catch {
+    return buildResult([]);
+  }
+}
+
 const PROVIDER_SCANNERS = {
   kimi: findNewKimiSession,
   codex: findNewCodexSession,
+  grok: findNewGrokSession,
+  qodercli: findNewQoderSession,
 };
 
 /**
@@ -243,10 +345,14 @@ const PROVIDER_SCANNERS = {
  *
  * @param {object} opts
  * @param {string} opts.sessionId - DevHub terminal session id (diagnostics only).
- * @param {string} opts.agentType - 'kimi' | 'codex' (fs-correlation providers).
+ * @param {string} opts.agentType - 'kimi' | 'codex' | 'grok' | 'qodercli' (fs-correlation providers).
  * @param {string} opts.cwd - panel cwd the provider session must match.
  * @param {number} opts.spawnedAt - epoch ms when the agent process was spawned.
  * @param {(agentSessionId: string) => void} opts.onBound - called once on a unique match.
+ * @param {(status: 'bound'|'ambiguous'|'timeout', info?: object) => void} [opts.onSettled]
+ *   Optional lifecycle hook fired exactly once when polling ends with an
+ *   outcome (never on cancel): 'bound' (after onBound), 'ambiguous'
+ *   (info.candidates), or 'timeout'. Listener errors are swallowed.
  * @param {string} [opts.homeDir] - home override for tests.
  * @param {() => number} [opts.now] - clock override for tests.
  * @param {number} [opts.intervalMs] - poll interval (default ~2s).
@@ -263,6 +369,7 @@ export function bindAgentSession(options = {}) {
       cwd = null,
       spawnedAt = 0,
       onBound = null,
+      onSettled = null,
       homeDir = null,
       now = null,
       intervalMs = DEFAULT_INTERVAL_MS,
@@ -282,6 +389,15 @@ export function bindAgentSession(options = {}) {
 
     let cancelled = false;
     let timer = null;
+
+    const settle = (status, info = null) => {
+      if (typeof onSettled !== 'function') return;
+      try {
+        onSettled(status, info);
+      } catch {
+        // Listener failures must never break the PTY server.
+      }
+    };
 
     const stop = () => {
       if (cancelled) return;
@@ -309,6 +425,7 @@ export function bindAgentSession(options = {}) {
         } catch {
           // Listener failures must never break the PTY server.
         }
+        settle('bound', { sessionId: result.sessionId });
         return;
       }
 
@@ -317,11 +434,13 @@ export function bindAgentSession(options = {}) {
         // resume the wrong conversation. Stop and let the caller fall back to
         // continue-style restore.
         stop();
+        settle('ambiguous', { candidates: result.candidates || [] });
         return;
       }
 
       if (clock() - startedAt >= safeTimeout) {
         stop();
+        settle('timeout', { timeoutMs: safeTimeout });
         return;
       }
 

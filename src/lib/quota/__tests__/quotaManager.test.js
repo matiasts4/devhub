@@ -30,6 +30,7 @@ describe('QuotaManager & ActiveSessionSensor', () => {
     expect(detectProviderFromSession('kimi code')).toBe(PROVIDERS.KIMI);
     expect(detectProviderFromSession('opencode')).toBe(PROVIDERS.OPENCODE);
     expect(detectProviderFromSession('codex cli')).toBe(PROVIDERS.CODEX);
+    expect(detectProviderFromSession('qodercli --resume')).toBe(PROVIDERS.QODER);
     expect(detectProviderFromSession('bash terminal')).toBeNull();
     expect(detectProviderFromSession(null)).toBeNull();
   });

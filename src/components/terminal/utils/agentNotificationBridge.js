@@ -3,8 +3,20 @@ import { getAgentDisplayName } from '@/lib/agents/agentDisplayNames';
 
 const runningStartedAtMap = new Map();
 const lastNotificationSentAtMap = new Map();
+const armedRunMap = new Map();
 const MIN_RUNNING_DURATION_MS = 3000;
 const NOTIFICATION_COOLDOWN_MS = 10000;
+
+const isHookReason = (reason) => typeof reason === 'string' && reason.startsWith('hook:');
+
+/**
+ * LAUNCH-GUARD: a running frame only "arms" the done notification when it
+ * carries real prompt evidence — user input or a hook event. Manifest-only
+ * running (screen scrape) covers startup spinners on TUI launch, where no
+ * prompt was ever submitted; notifying "done" after those is a false positive.
+ * Reasonless frames (legacy servers) keep the old behavior and arm.
+ */
+const isArmingRunReason = (reason) => !reason || reason === 'user-input' || isHookReason(reason);
 
 /**
  * DONE-EVIDENCE-01: reasons that count as POSITIVE evidence of "done".
@@ -50,6 +62,9 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
     if (!runningStartedAtMap.has(panelId)) {
       runningStartedAtMap.set(panelId, now);
     }
+    if (isArmingRunReason(reason)) {
+      armedRunMap.set(panelId, true);
+    }
     return;
   }
 
@@ -92,6 +107,10 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
     const runningStartedAt = runningStartedAtMap.get(panelId);
     runningStartedAtMap.delete(panelId);
 
+    // LAUNCH-GUARD: consume the armed flag — this run is over either way.
+    const runWasArmed = armedRunMap.get(panelId) === true;
+    armedRunMap.delete(panelId);
+
     // Ignore transient running -> idle flickers if running duration was less than 3 seconds
     if (
       prev === 'running' &&
@@ -105,6 +124,11 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
     // silence-based 'quiescence' stage never does. A reasonless (legacy)
     // frame keeps the old behavior so nothing regresses during rollout.
     if (reason && !DONE_EVIDENCE_REASONS.has(reason)) return;
+
+    // LAUNCH-GUARD: without a real prompt in this run (armed running frame)
+    // or an authoritative hook idle, "done" is a startup false positive —
+    // e.g. launch spinner scraped as running, then prompt-visible idle.
+    if (!runWasArmed && !isHookReason(reason)) return;
 
     const lastSent = lastNotificationSentAtMap.get(`${panelId}:done`) || 0;
     if (now - lastSent < NOTIFICATION_COOLDOWN_MS) return;
@@ -144,10 +168,12 @@ export function handleAgentStateTransition(panelId, prev, next, options = {}) {
 export function resetAgentNotificationBridgeState(panelId) {
   if (panelId) {
     runningStartedAtMap.delete(panelId);
+    armedRunMap.delete(panelId);
     lastNotificationSentAtMap.delete(`${panelId}:blocked`);
     lastNotificationSentAtMap.delete(`${panelId}:done`);
   } else {
     runningStartedAtMap.clear();
+    armedRunMap.clear();
     lastNotificationSentAtMap.clear();
   }
 }

@@ -15,6 +15,7 @@ function getDb() {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
     let needsRecovery = false;
+    let pendingColdOpenBackup = false;
     if (fs.existsSync(DB_PATH)) {
       try {
         const stats = fs.statSync(DB_PATH);
@@ -29,14 +30,10 @@ function getDb() {
             );
             needsRecovery = true;
           } else {
-            const backupPath = `${DB_PATH}.backup-${Date.now()}`;
-            fs.copyFileSync(DB_PATH, backupPath);
-            const backups = fs
-              .readdirSync(dir)
-              .filter((fileName) => fileName.startsWith('devhub.db.backup-'))
-              .sort()
-              .reverse();
-            backups.slice(5).forEach((fileName) => fs.unlinkSync(path.join(dir, fileName)));
+            // Cold-open backup: deferred until AFTER the handle is ready (see
+            // below) so the first API request doesn't pay a full DB file copy
+            // on the server's single thread during app startup.
+            pendingColdOpenBackup = true;
           }
         }
       } catch (error) {
@@ -100,40 +97,36 @@ function getDb() {
     const { ensureAllSchema } = require('./schema');
     ensureAllSchema(_db);
 
-    // Post-schema safety net: detect WAL-replay corruption before using the handle.
-    // If integrity_check fails here, the handle is unsafe — close and recreate clean.
-    const postIntegrity = _db.prepare('PRAGMA integrity_check').get();
-    if (postIntegrity.integrity_check !== 'ok') {
-      console.error('[localDb] CRITICAL: Post-schema integrity check failed — resetting DB');
-      _db.close();
-      _db = null;
-      try {
-        fs.unlinkSync(DB_PATH);
-      } catch {
-        /* ignore */
-      }
-      try {
-        fs.unlinkSync(`${DB_PATH}-wal`);
-      } catch {
-        /* ignore */
-      }
-      try {
-        fs.unlinkSync(`${DB_PATH}-shm`);
-      } catch {
-        /* ignore */
-      }
-      _db = new Database(DB_PATH, { fileMustExist: false, readonly: false });
-      _db.pragma('journal_mode = WAL');
-      _db.pragma('foreign_keys = ON');
-      _db.pragma('busy_timeout = 5000');
-      ensureAllSchema(_db);
-    }
+    // Post-schema integrity_check was removed from the cold path: it re-scans
+    // every DB page right after the pre-open check already did, doubling the
+    // startup cost on the server's single thread. WAL-replay or schema
+    // corruption surfaces loudly on first use, and the recovery path above
+    // still guards pre-open integrity.
 
     const finalCount = _db.prepare('SELECT count(*) as c FROM projects').get().c;
     if (finalCount === 0) {
       console.error('[localDb] CRITICAL: Projects table is still empty after recovery!');
     } else {
       console.log(`[localDb] DB ready with ${finalCount} projects`);
+    }
+
+    if (pendingColdOpenBackup) {
+      // Deferred cold-open backup + prune: runs right after the current
+      // request cycle instead of blocking the first query.
+      setImmediate(() => {
+        try {
+          const backupPath = `${DB_PATH}.backup-${Date.now()}`;
+          fs.copyFileSync(DB_PATH, backupPath);
+          const backups = fs
+            .readdirSync(dir)
+            .filter((fileName) => fileName.startsWith('devhub.db.backup-'))
+            .sort()
+            .reverse();
+          backups.slice(5).forEach((fileName) => fs.unlinkSync(path.join(dir, fileName)));
+        } catch (error) {
+          console.error('[localDb] Deferred cold-open backup failed:', error.message);
+        }
+      });
     }
   }
 

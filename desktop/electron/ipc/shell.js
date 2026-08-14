@@ -267,7 +267,13 @@ async function notifyRequestPermission() {
 }
 
 function desktopPing() {
-  return { ok: true, host: 'electron', uiUrl: resolveUiUrl() };
+  let version = null;
+  try {
+    version = require('electron').app.getVersion();
+  } catch {
+    /* keep null — SPA falls back to build-time version */
+  }
+  return { ok: true, host: 'electron', uiUrl: resolveUiUrl(), version };
 }
 
 /**

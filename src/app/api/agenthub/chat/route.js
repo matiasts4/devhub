@@ -353,7 +353,11 @@ export const POST = withAuth(async function POST(req) {
                 '\n\n[ASSISTANT]:';
 
               await new Promise((resolve, reject) => {
-                const child = spawn('opencode', ['run', '--model', model, '--format', 'json']);
+                const child = spawn('opencode', ['run', '--model', model, '--format', 'json'], {
+                  // The opencode shim is a .cmd on Windows — without this the
+                  // child pops a visible external console window.
+                  windowsHide: true,
+                });
 
                 let hasSentContent = false;
                 let errorCaptured = null;

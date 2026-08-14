@@ -107,15 +107,14 @@ describe('restorePolicyResolver', () => {
     expect(workspaces[0].columns[0].panels[0].initialCommand).toBe('opencode --session oc-1');
   });
 
-  test('shouldPersistOpenCodeSessionForPanel blocks grok/hermes panels', () => {
+  test('shouldPersistOpenCodeSessionForPanel allows provider switch, blocks only swarm', () => {
+    // Cross-provider switch in the same panel: the detected opencode session
+    // must REPLACE the previous provider binding (events are panel-local).
     expect(shouldPersistOpenCodeSessionForPanel({ id: 'p1', initialCommand: 'grok' }, null)).toBe(
-      false
-    );
-    expect(shouldPersistOpenCodeSessionForPanel({ id: 'p1b', initialCommand: 'groc' }, null)).toBe(
-      false
+      true
     );
     expect(shouldPersistOpenCodeSessionForPanel({ id: 'p2', initialCommand: 'hermes' }, null)).toBe(
-      false
+      true
     );
     expect(
       shouldPersistOpenCodeSessionForPanel(
@@ -126,6 +125,13 @@ describe('restorePolicyResolver', () => {
     expect(shouldPersistOpenCodeSessionForPanel({ id: 'p4', initialCommand: null }, null)).toBe(
       true
     );
+    expect(shouldPersistOpenCodeSessionForPanel(null, null)).toBe(false);
+    expect(
+      shouldPersistOpenCodeSessionForPanel(
+        { id: 'p5', initialCommand: 'bash' },
+        { launchOrigin: 'swarm-control-launch' }
+      )
+    ).toBe(false);
   });
 
   test('inferPanelSessionKind detects swarm runs', () => {
@@ -282,6 +288,46 @@ describe('restorePolicyResolver — multiprovider kinds', () => {
   test('resolveTerminalInjectCommand keeps plain commands when no id is known', () => {
     expect(resolveTerminalInjectCommand('kimi', null)).toBe('kimi');
     expect(resolveTerminalInjectCommand('grok', null)).toBe('grok');
+  });
+
+  test('resolveTerminalInjectCommand omits cd when the PTY already starts in the session cwd', () => {
+    expect(
+      resolveTerminalInjectCommand(
+        'qodercli --resume q-1',
+        { qoderSessionId: 'q-1', agentSessionCwd: 'D:\\devhub' },
+        'D:\\devhub'
+      )
+    ).toBe('qodercli --resume q-1');
+
+    expect(
+      resolveTerminalInjectCommand(
+        'qodercli --resume q-1',
+        { qoderSessionId: 'q-1', agentSessionCwd: 'd:/devhub/' },
+        'D:\\devhub'
+      )
+    ).toBe('qodercli --resume q-1');
+
+    expect(
+      resolveTerminalInjectCommand('qodercli --resume q-1', { qoderSessionId: 'q-1' }, 'D:\\devhub')
+    ).toBe('qodercli --resume q-1');
+  });
+
+  test('resolveTerminalInjectCommand uses shell-portable cd when the cwd differs', () => {
+    expect(
+      resolveTerminalInjectCommand(
+        'qodercli --resume q-1',
+        { qoderSessionId: 'q-1', agentSessionCwd: 'D:\\devhub' },
+        'C:\\Users\\PC'
+      )
+    ).toBe('cd "D:\\devhub"; qodercli --resume q-1');
+
+    expect(
+      resolveTerminalInjectCommand(
+        'kimi',
+        { kimiSessionId: 'k-1', agentSessionCwd: '/home/me/app' },
+        '/home/me'
+      )
+    ).toBe('cd "/home/me/app"; kimi --session k-1');
   });
 
   test('normalizeProviderPanelCommand upgrades provider launch commands to resume form', () => {

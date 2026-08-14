@@ -78,6 +78,11 @@ export default function NotificationToastStack() {
       const notif = detail?.notification || detail;
       if (!notif || !notif.title) return;
 
+      // NATIVE-ONLY-01: notify.js already showed the native Windows
+      // notification for this event — skip the in-app toast and DevHub
+      // sound so the user gets exactly one aviso.
+      if (notif.desktop_status === 'delivered') return;
+
       const prefs = getNotificationPreferences();
 
       // Si está en Modo No Molestar (Quiet Hours), silenciar avisos emergentes

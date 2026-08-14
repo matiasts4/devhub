@@ -30,13 +30,13 @@ const KIMI_CODE_MODELS = ['kimi-for-coding'];
 
 const PROVIDER_OPTIONS = [
   { id: 'xai', label: 'Grok (xAI)' },
-  { id: 'kimi_code', label: 'Kimi Code (suscripción)' },
+  { id: 'kimi_code', label: 'Kimi Code (API key)' },
   { id: 'minimax', label: 'MiniMax' },
 ];
 
 const PROVIDER_LABEL = {
   xai: 'Grok (xAI)',
-  kimi_code: 'Kimi Code (suscripción)',
+  kimi_code: 'Kimi Code (API key)',
   minimax: 'MiniMax',
 };
 
@@ -67,6 +67,10 @@ export default function ZedModelSettings() {
   const [kimiKey, setKimiKey] = useState('');
   const [kimiModel, setKimiModel] = useState(KIMI_CODE_MODELS[0]);
   const [kimiEnabled, setKimiEnabled] = useState(true);
+  const [kimiModelOptions, setKimiModelOptions] = useState(KIMI_CODE_MODELS);
+
+  const [minimaxKey, setMinimaxKey] = useState('');
+  const [minimaxEnabled, setMinimaxEnabled] = useState(true);
 
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState(null);
@@ -94,8 +98,9 @@ export default function ZedModelSettings() {
         const data = await res.json();
         const xai = data.providers?.xai || {};
         const kimi = data.providers?.kimi_code || {};
+        const minimax = data.providers?.minimax || {};
         setFullConfig(data);
-        setProvider(data.zed?.provider || 'xai');
+        setProvider(data.settings?.zed?.provider || 'xai');
         setXaiKey(xai.XAI_API_KEY || '');
         setXaiModel(xai.XAI_MODEL || GROK_MODELS[1]);
         setXaiEnabled(xai.enabled !== false);
@@ -119,8 +124,13 @@ export default function ZedModelSettings() {
         setKimiKey(kimi.KIMI_CODE_API_KEY || '');
         setKimiModel(kimi.KIMI_CODE_MODEL || KIMI_CODE_MODELS[0]);
         setKimiEnabled(kimi.enabled !== false);
+        setMinimaxKey(minimax.MINIMAX_API_KEY || '');
+        setMinimaxEnabled(minimax.enabled !== false);
         if (Array.isArray(data.modelOptions?.xai) && data.modelOptions.xai.length) {
           setXaiModelOptions(data.modelOptions.xai);
+        }
+        if (Array.isArray(data.modelOptions?.kimi_code) && data.modelOptions.kimi_code.length) {
+          setKimiModelOptions(data.modelOptions.kimi_code);
         }
       } catch (err) {
         console.error('Failed to load Zed LLM config:', err);
@@ -260,7 +270,12 @@ export default function ZedModelSettings() {
     setSaving(true);
     setSaveMessage(null);
     try {
-      const current = fullConfig || { providers: {}, priorityOrder: [], modelOptions: {}, zed: {} };
+      const current = fullConfig || {
+        providers: {},
+        priorityOrder: [],
+        modelOptions: {},
+        settings: { zed: {} },
+      };
       const prevXai = current.providers?.xai || {};
       const nextXai = {
         ...prevXai,
@@ -290,15 +305,23 @@ export default function ZedModelSettings() {
           KIMI_CODE_MODEL: kimiModel,
           enabled: kimiEnabled,
         },
+        minimax: {
+          ...(current.providers?.minimax || {}),
+          MINIMAX_API_KEY: minimaxKey.trim(),
+          enabled: minimaxEnabled,
+        },
       };
       const payload = {
         ...current,
-        zed: { ...(current.zed || {}), provider },
+        settings: {
+          ...(current.settings || {}),
+          zed: { ...(current.settings?.zed || {}), provider },
+        },
         providers: nextProviders,
         modelOptions: {
           ...(current.modelOptions || {}),
           xai: xaiModelOptions,
-          kimi_code: KIMI_CODE_MODELS,
+          kimi_code: kimiModelOptions,
         },
       };
       const res = await fetch('/api/settings/llm-providers', {
@@ -382,6 +405,48 @@ export default function ZedModelSettings() {
     }
   }
 
+  /**
+   * Pull live models from the Kimi Code coding API using the current key.
+   * Falls back to the static default list when the catalog is unavailable.
+   */
+  async function refreshKimiModels() {
+    setLoadingModels(true);
+    setModelsError(null);
+    setModelsMeta(null);
+    try {
+      const res = await fetch('/api/settings/llm-providers/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'kimi_code',
+          config: { KIMI_CODE_API_KEY: kimiKey.trim() },
+        }),
+      });
+      const data = await res.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+      if (!models.length) {
+        setModelsError(data.error || 'No se pudieron obtener modelos de Kimi Code');
+        return;
+      }
+      setKimiModelOptions(models);
+      setKimiModel((current) => (models.includes(current) ? current : models[0]));
+      setFullConfig((prev) => {
+        const base = prev || { providers: {}, modelOptions: {} };
+        return {
+          ...base,
+          modelOptions: {
+            ...(base.modelOptions || {}),
+            kimi_code: models,
+          },
+        };
+      });
+    } catch (err) {
+      setModelsError(err.message);
+    } finally {
+      setLoadingModels(false);
+    }
+  }
+
   async function testConnection() {
     setTesting(true);
     setTestResult(null);
@@ -391,6 +456,11 @@ export default function ZedModelSettings() {
         body = {
           provider: 'kimi_code',
           config: { KIMI_CODE_API_KEY: kimiKey.trim(), KIMI_CODE_MODEL: kimiModel },
+        };
+      } else if (provider === 'minimax') {
+        body = {
+          provider: 'minimax',
+          config: { MINIMAX_API_KEY: minimaxKey.trim() },
         };
       } else {
         const xaiCfg = fullConfig?.providers?.xai || {};
@@ -425,7 +495,13 @@ export default function ZedModelSettings() {
       ? xaiAuth.state === 'success' || Boolean(fullConfig?.providers?.xai?.XAI_OAUTH_REFRESH_TOKEN)
       : Boolean(xaiKey.trim()));
   const activeKey =
-    provider === 'kimi_code' ? kimiKey.trim() : provider === 'xai' ? canTestXai : null;
+    provider === 'kimi_code'
+      ? kimiKey.trim()
+      : provider === 'xai'
+        ? canTestXai
+        : provider === 'minimax'
+          ? minimaxEnabled
+          : null;
 
   if (loading) {
     return (
@@ -858,7 +934,7 @@ export default function ZedModelSettings() {
                       Habilitar Kimi Code
                     </p>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      Usa la API de tu suscripción Kimi Code (no la Open Platform pay-as-you-go).
+                      Usá la API key de tu suscripción Kimi Code (no la Open Platform pay-as-you-go).
                     </p>
                   </div>
                   <button
@@ -917,51 +993,147 @@ export default function ZedModelSettings() {
                     </button>
                   </div>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    Base URL: <code>https://api.kimi.com/coding/v1</code> · Modelo:{' '}
-                    <code>kimi-for-coding</code>. Creá la key en la consola de Kimi Code.
+                    Base URL: <code>https://api.kimi.com/coding/v1</code>. Creá la key en la consola
+                    de Kimi Code.
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between gap-4 max-w-sm">
-                  <label
-                    htmlFor="zed-kimi-model-select"
-                    className="text-sm font-medium"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    Modelo
-                  </label>
-                  <select
-                    id="zed-kimi-model-select"
-                    value={kimiModel}
-                    onChange={(e) => setKimiModel(e.target.value)}
-                    disabled={!kimiEnabled}
-                    data-testid="zed-kimi-model-select"
-                    className="h-10 w-[260px] rounded-xl border px-3 text-sm disabled:opacity-40"
-                    style={{
-                      ...chromeSurfaceStyle({ surface: 'pill' }),
-                      color: 'var(--text-primary)',
-                    }}
-                  >
-                    {KIMI_CODE_MODELS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                <div className="space-y-2 max-w-lg">
+                  <div className="flex items-center justify-between gap-4">
+                    <label
+                      htmlFor="zed-kimi-model-select"
+                      className="text-sm font-medium"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      Modelo Kimi Code
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        id="zed-kimi-model-select"
+                        value={
+                          kimiModelOptions.includes(kimiModel)
+                            ? kimiModel
+                            : kimiModelOptions[0] || kimiModel
+                        }
+                        onChange={(e) => setKimiModel(e.target.value)}
+                        disabled={!kimiEnabled}
+                        data-testid="zed-kimi-model-select"
+                        className="h-10 w-[260px] rounded-xl border px-3 text-sm disabled:opacity-40"
+                        style={{
+                          ...chromeSurfaceStyle({ surface: 'pill' }),
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {kimiModelOptions.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        data-testid="zed-kimi-refresh-models"
+                        disabled={!kimiEnabled || loadingModels || !kimiKey.trim()}
+                        onClick={() => refreshKimiModels()}
+                        title="Sincronizar modelos desde la API de Kimi Code"
+                        className="inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium disabled:opacity-50"
+                        style={chromeSurfaceStyle({ surface: 'pill' })}
+                      >
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${loadingModels ? 'animate-spin' : ''}`}
+                        />
+                        {loadingModels ? 'Sync…' : 'Sync modelos'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Lista en vivo: <code>api.kimi.com/coding/v1/models</code>.{' '}
+                    {kimiModelOptions.length} modelos.
+                  </p>
+                  {modelsError ? (
+                    <p className="text-[11px]" style={{ color: 'var(--danger, #f87171)' }}>
+                      {modelsError}
+                    </p>
+                  ) : null}
                 </div>
               </>
             ) : null}
 
             {provider === 'minimax' ? (
-              <p
-                className="text-sm leading-relaxed max-w-lg"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                MiniMax usa la misma API key que el resto de DevHub (<code>MINIMAX_API_KEY</code> en{' '}
-                <code>.env.local</code> o <code>providers.minimax</code> en Ajustes de proveedores
-                LLM). No hace falta API key adicional aquí: con seleccionar MiniMax alcanza si ya
-                está configurado.
-              </p>
+              <>
+                <div className="flex items-center justify-between gap-4 max-w-sm">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Habilitar MiniMax
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      Protocolo Anthropic (<code>api.minimax.io/anthropic</code>), modelo{' '}
+                      <code>MiniMax-M3</code>.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={minimaxEnabled}
+                    data-testid="zed-model-minimax-enabled-toggle"
+                    onClick={() => setMinimaxEnabled((v) => !v)}
+                    className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                    style={{
+                      background: minimaxEnabled ? 'var(--accent-primary)' : 'var(--surface-muted)',
+                    }}
+                  >
+                    <span
+                      className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                      style={{
+                        transform: minimaxEnabled ? 'translateX(22px)' : 'translateX(2px)',
+                      }}
+                    />
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="zed-minimax-api-key"
+                    className="text-sm font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    API Key de MiniMax
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="zed-minimax-api-key"
+                      type={showKey ? 'text' : 'password'}
+                      value={minimaxKey}
+                      onChange={(e) => setMinimaxKey(e.target.value)}
+                      placeholder="Vacío = usa MINIMAX_API_KEY de .env.local"
+                      disabled={!minimaxEnabled}
+                      data-testid="zed-minimax-api-key-input"
+                      className="h-10 flex-1 rounded-xl border px-3 text-sm disabled:opacity-40"
+                      style={{
+                        ...chromeSurfaceStyle({ surface: 'pill' }),
+                        color: 'var(--text-primary)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey((v) => !v)}
+                      aria-label={showKey ? 'Ocultar API key' : 'Mostrar API key'}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
+                      style={chromeSurfaceStyle({ surface: 'pill' })}
+                    >
+                      {showKey ? (
+                        <EyeOff className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
+                      ) : (
+                        <Eye className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Si la dejás vacía, DevHub usa <code>MINIMAX_API_KEY</code> de{' '}
+                    <code>.env.local</code>. Probar conexión valida la key efectiva.
+                  </p>
+                </div>
+              </>
             ) : null}
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -980,19 +1152,17 @@ export default function ZedModelSettings() {
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Guardar
               </button>
-              {provider !== 'minimax' ? (
-                <button
-                  type="button"
-                  onClick={testConnection}
-                  disabled={testing || !activeKey}
-                  data-testid="zed-model-test-button"
-                  className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  style={chromeSurfaceStyle({ surface: 'pill' })}
-                >
-                  {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Probar conexión
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={testConnection}
+                disabled={testing || !activeKey}
+                data-testid="zed-model-test-button"
+                className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-50"
+                style={chromeSurfaceStyle({ surface: 'pill' })}
+              >
+                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Probar conexión
+              </button>
               {testResult ? (
                 <span
                   className="inline-flex items-center gap-1.5 text-xs"

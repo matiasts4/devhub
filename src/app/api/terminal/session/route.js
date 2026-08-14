@@ -112,6 +112,9 @@ async function recoverProductionSidecar() {
     cwd: path.dirname(sidecarScript),
     detached: true,
     stdio: 'ignore',
+    // Windows gives a detached child its own console window by default — the
+    // recovered sidecar would show up as a stray external terminal window.
+    windowsHide: true,
     env: {
       ...process.env,
       NODE_ENV: 'production',

@@ -304,3 +304,24 @@ export function shouldShowPanelStatus(status, { alwaysShow = false, isAgentPanel
   if (status === PANEL_STATUS.IDLE) return isAgentPanel;
   return true;
 }
+
+/**
+ * Canonical RGB dot color per status — the single source of truth shared by
+ * AgentStatusDot (workspace tab strip) and PanelStatusBadge (panel header).
+ * Values mirror the Tailwind palette used by getPanelStatusStyle
+ * (emerald-400, rose-400, blue-400, amber-400, slate-400, cyan-400).
+ */
+export const PANEL_STATUS_DOT_RGB = {
+  [PANEL_STATUS.RUNNING]: 'rgb(52,211,153)',
+  [PANEL_STATUS.ACTIVE]: 'rgb(96,165,250)',
+  [PANEL_STATUS.WAITING]: 'rgb(251,191,36)',
+  [PANEL_STATUS.BLOCKED]: 'rgb(251,113,133)',
+  [PANEL_STATUS.IDLE]: 'rgb(148,163,184)',
+  [PANEL_STATUS.ERROR]: 'rgb(251,113,133)',
+  [PANEL_STATUS.COMPLETED]: 'rgb(34,211,238)',
+  [PANEL_STATUS.UNKNOWN]: 'rgb(148,163,184)',
+};
+
+export function getPanelStatusDotColor(status) {
+  return PANEL_STATUS_DOT_RGB[status] || PANEL_STATUS_DOT_RGB[PANEL_STATUS.UNKNOWN];
+}

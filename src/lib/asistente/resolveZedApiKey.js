@@ -115,6 +115,14 @@ function resolveKimiCodeModel() {
   return kimiConfig?.KIMI_CODE_MODEL || DEFAULT_KIMI_CODE_MODEL;
 }
 
+function resolveMinimaxModel() {
+  if (typeof process.env.MINIMAX_MODEL === 'string' && process.env.MINIMAX_MODEL.trim()) {
+    return process.env.MINIMAX_MODEL.trim();
+  }
+  const minimaxConfig = getRawLlmProviderSync('minimax');
+  return minimaxConfig?.MINIMAX_MODEL || DEFAULT_MINIMAX_MODEL;
+}
+
 function resolveZedProviderPreference() {
   if (typeof process.env.ZED_LLM_PROVIDER === 'string' && process.env.ZED_LLM_PROVIDER.trim()) {
     return process.env.ZED_LLM_PROVIDER.trim();
@@ -200,7 +208,7 @@ function buildMinimaxConfig() {
     apiKey: minimax.apiKey,
     source: minimax.source,
     provider: 'minimax',
-    model: DEFAULT_MINIMAX_MODEL,
+    model: resolveMinimaxModel(),
     baseUrl: null,
   };
 }
@@ -247,7 +255,7 @@ export function resolveZedLlmConfigSync() {
         apiKey: null,
         source: null,
         provider: 'minimax',
-        model: DEFAULT_MINIMAX_MODEL,
+        model: resolveMinimaxModel(),
         baseUrl: null,
       }
     );
@@ -292,7 +300,7 @@ export function resolveZedLlmConfigSync() {
       apiKey: null,
       source: null,
       provider: 'minimax',
-      model: DEFAULT_MINIMAX_MODEL,
+      model: resolveMinimaxModel(),
       baseUrl: null,
     }
   );
@@ -301,7 +309,7 @@ export function resolveZedLlmConfigSync() {
 /**
  * Resolve which LLM provider + credentials Zed should use this turn.
  *
- * When `config.zed.provider` (or `ZED_LLM_PROVIDER`) is set, that provider is
+ * When `settings.zed.provider` (or `ZED_LLM_PROVIDER`) is set, that provider is
  * used exclusively. Otherwise legacy auto-select prefers Grok when configured,
  * then MiniMax.
  *
@@ -319,7 +327,7 @@ export async function resolveZedLlmConfig() {
         apiKey: null,
         source: null,
         provider: 'minimax',
-        model: DEFAULT_MINIMAX_MODEL,
+        model: resolveMinimaxModel(),
         baseUrl: null,
       }
     );
@@ -355,7 +363,7 @@ export async function resolveZedLlmConfig() {
       apiKey: null,
       source: null,
       provider: 'minimax',
-      model: DEFAULT_MINIMAX_MODEL,
+      model: resolveMinimaxModel(),
       baseUrl: null,
     }
   );

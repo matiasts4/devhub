@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import usePanelAgentStatus from '@/hooks/usePanelAgentStatus';
+import AgentStatusDot from '@/components/terminal/components/AgentStatusDot';
 import {
   AGENT_TUI_PATTERN,
   PANEL_STATUS,
@@ -101,14 +102,7 @@ export default function PanelStatusBadge({
           aria-label={`Estado del panel: ${label}`}
           title={`Estado: ${label}${updatedAt ? ` · actualizado ${updatedAt}` : ''}`}
         >
-          <span
-            className={cn(
-              'h-1.5 w-1.5 rounded-full flex-shrink-0',
-              style.dot,
-              isPulsing && 'animate-pulse'
-            )}
-            aria-hidden="true"
-          />
+          <AgentStatusDot status={status} size={6} boxSize={6} pulse={isPulsing} />
           <span>{label}</span>
         </button>
       </PopoverTrigger>
@@ -119,7 +113,7 @@ export default function PanelStatusBadge({
         className="w-64 border border-[var(--chrome-border-color)] bg-[var(--surface-card)] p-3 text-xs shadow-md"
       >
         <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[var(--border-subtle)]">
-          <span className={cn('h-2 w-2 rounded-full', style.dot, isPulsing && 'animate-pulse')} />
+          <AgentStatusDot status={status} size={8} boxSize={8} pulse={isPulsing} />
           <span className="font-semibold text-[var(--text-primary)]">{label}</span>
           {updatedAt && (
             <span className="ml-auto text-[10px] text-[var(--text-muted)]">{updatedAt}</span>

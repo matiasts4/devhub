@@ -2,6 +2,7 @@
 
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
@@ -406,15 +407,15 @@ export default function Planificacion() {
         >
           <span className="flex items-center gap-1.5 text-xs text-text-muted">
             <Milestone className="w-3.5 h-3.5" />
-            {loading ? '…' : milestones.length} hitos
+            {loading ? <Skeleton className="h-3 w-4" /> : milestones.length} hitos
           </span>
           <span className="flex items-center gap-1.5 text-xs text-text-muted">
             <ListTodo className="w-3.5 h-3.5" />
-            {loading ? '…' : tasks.length} tareas
+            {loading ? <Skeleton className="h-3 w-4" /> : tasks.length} tareas
           </span>
           <span className="flex items-center gap-1.5 text-xs text-text-muted">
             <FileText className="w-3.5 h-3.5" />
-            {loading ? '…' : files.length} archivos
+            {loading ? <Skeleton className="h-3 w-4" /> : files.length} archivos
           </span>
           <span className="text-[10px] text-text-muted ml-auto">
             {planningPrompt.length} caracteres de contexto

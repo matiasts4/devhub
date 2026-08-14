@@ -17,6 +17,16 @@ if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
   process.env.NODE_ENV = 'development';
 }
 
+// Never leak the installed app's hook-bridge wiring into dev-spawned shells.
+// When `npm start` runs from a terminal inside the installed app, the shell
+// inherits DEVHUB_HOOK_* / DEVHUB_TERMINAL_ID; PTYs spawned by the dev server
+// would then report agent hooks to the PRODUCTION sidecar (:4000) and ghost
+// sessions would appear in the user's installed app.
+delete process.env.DEVHUB_HOOK_URL;
+delete process.env.DEVHUB_HOOK_TOKEN;
+delete process.env.DEVHUB_HOOK_ENV;
+delete process.env.DEVHUB_TERMINAL_ID;
+
 // Dev default heap is ~0.5–1.5 GB and OOM kills Next mid-session (Failed to fetch /
 // ERR_CONNECTION_REFUSED in the WebView). Packaging uses 1024; give dev more headroom.
 // When this command runs from a terminal inside the installed app, the shell may

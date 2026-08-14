@@ -1,5 +1,4 @@
-/* eslint-disable no-unused-vars */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import useSupabaseRealtime from '@/hooks/useSupabaseRealtime';
 import {
   HashRouter,
@@ -11,7 +10,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { Toaster } from 'sileo';
+import { Toaster, sileo } from 'sileo';
 import { AnimatePresence, motion } from 'framer-motion';
 import '@/App.css';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
@@ -31,6 +30,7 @@ import Ajustes from './views/Ajustes';
 import SwarmControl from './views/SwarmControl';
 import MotionLab from './views/MotionLab';
 import NotificationToastStack from './components/NotificationToastStack';
+import UpdatePill from './components/UpdatePill';
 import { createClient } from '@/lib/db/localClient';
 import { Loader2 } from 'lucide-react';
 import {
@@ -49,7 +49,9 @@ import {
 import dynamic from 'next/dynamic';
 import { OperatorActionsDispatchProvider } from './lib/operator/OperatorActionsDispatchContext';
 import { getUIPrefs, saveUIPref } from '@/lib/uiState';
+import { isCrossPlatformPathMismatch, repairProjectLocalPath } from '@/lib/projectLocalPathRepair';
 import PageHeader from './components/PageHeader';
+import { WorkspaceSkeleton } from '@/components/ui/page-skeleton';
 import {
   getLegacyWorkspaceRedirectPath,
   normalizeProjectPageKey,
@@ -144,6 +146,9 @@ function WorkspaceLayout() {
   }, [projectId]);
   const effectiveTerminalCwd = project?.local_path || cachedProjectCwd || null;
   const db = useMemo(() => createClient(), []);
+  // One repair attempt per project per session: loadProject re-runs on mount and
+  // on every devhub:project-updated event, and we must not stack toasts or loop.
+  const localPathRepairAttempted = useRef(new Set());
 
   const { activeWorkspaceId } = useAuth();
   const navigate = useNavigate();
@@ -153,18 +158,87 @@ function WorkspaceLayout() {
     const { data } = await db.from('projects').select('*').eq('id', projectId).single();
     setProject(data || null);
     setLoading(false);
+
+    // Auto-heal a local_path saved on another OS (e.g. /home/... roaming to a
+    // Windows install). Without this, terminals silently fall back to the home
+    // dir / install dir because the stored path does not exist here.
+    if (
+      data?.id &&
+      data?.local_path &&
+      isCrossPlatformPathMismatch(data.local_path) &&
+      !localPathRepairAttempted.current.has(data.id)
+    ) {
+      localPathRepairAttempted.current.add(data.id);
+      const result = await repairProjectLocalPath(data.id).catch(() => null);
+      if (result?.changed) {
+        sileo.success({
+          title: 'Ruta del proyecto reparada',
+          description: `${result.previousPath || '(vacía)'} → ${result.localPath}`,
+        });
+        const { data: refreshed } = await db
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .single();
+        setProject(refreshed || null);
+      } else if (result && result.exists === false) {
+        sileo.error({
+          title: 'La ruta del proyecto no existe',
+          description: 'Actualízala en Ajustes para abrir las terminales en el lugar correcto.',
+        });
+      }
+    }
   }, [projectId, db]);
 
   useEffect(() => {
     loadProject();
   }, [loadProject]);
 
+  // Local-mode realtime is a no-op stub, so settings screens notify the shell
+  // explicitly after persisting project changes (e.g. local_path in Ajustes).
+  useEffect(() => {
+    const handleProjectUpdated = (event) => {
+      const updatedId = event?.detail?.projectId;
+      if (updatedId && projectId && updatedId !== projectId) return;
+      loadProject();
+    };
+    window.addEventListener('devhub:project-updated', handleProjectUpdated);
+    return () => window.removeEventListener('devhub:project-updated', handleProjectUpdated);
+  }, [loadProject, projectId]);
+
   useEffect(() => {
     markAppShellStart();
     exposePerfSnapshotOnWindow();
-    // Start @xterm + session-route compile ASAP (overlaps project fetch).
-    void prefetchXtermRendererModules().catch(() => {});
-    void warmTtySidecarViaApi({ timeoutMs: 15000 }).catch(() => {});
+    // scenery-wallpapers: mirror the active wallpaper URL to localStorage so the
+    // early <link rel="preload"> in app/layout.js starts the download before the
+    // JS bundle on the NEXT launch, and warm the cache for this session right
+    // away (previously imported but never called, so the early preload never
+    // fired and the wallpaper popped in seconds after the terminals).
+    preloadActiveSceneryPrefs();
+    // Start @xterm + session-route compile once the shell is idle — firing this
+    // on mount makes it compete with first paint and cold-boot disk/CPU (the
+    // projectId/project effects below re-warm as soon as data lands anyway).
+    let cancelled = false;
+    const runWarm = () => {
+      if (cancelled) return;
+      warmAllBundledWallpapers();
+      void prefetchXtermRendererModules().catch(() => {});
+      void warmTtySidecarViaApi({ timeoutMs: 15000 }).catch(() => {});
+    };
+    let idleHandle = null;
+    let timeoutHandle = null;
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(runWarm, { timeout: 2000 });
+    } else {
+      timeoutHandle = setTimeout(runWarm, 1500);
+    }
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle);
+      }
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+    };
   }, []);
 
   // As soon as we know projectId (URL), warm endpoint + hydrate state — don't wait for DB row.
@@ -371,29 +445,19 @@ function WorkspaceLayout() {
   const sidebarOffset = motionMode === 'reduced' ? 0 : -Math.max(sidebarWidth, 48);
   const sidebarTransition = getTransition('nav', motionMode);
 
-  // Soft page enter: fade + slight y (no wait/scale). Premium ease via TRANSITION.enter.
+  // Soft page enter: pure fade, no vertical shift (slide-up felt wrong on load).
   const routeTransition = motionMode === 'reduced' ? TRANSITION.reduced : TRANSITION.enter;
-  const routeVariants =
-    motionMode === 'reduced'
-      ? {
-          enter: { opacity: 0 },
-          center: { opacity: 1 },
-          exit: { opacity: 0 },
-        }
-      : {
-          enter: { opacity: 0, y: 10 },
-          center: { opacity: 1, y: 0 },
-          exit: { opacity: 0, y: -6 },
-        };
+  const routeVariants = {
+    enter: { opacity: 0 },
+    center: { opacity: 1 },
+    exit: { opacity: 0 },
+  };
 
-  // Non-terminal routes keep the full-page spinner. Terminales paints immediately
-  // (cached cwd) so route→panel does not wait on the projects row.
+  // Non-terminal routes paint the workspace skeleton shell immediately.
+  // Terminales paints immediately (cached cwd) so route→panel does not wait on
+  // the projects row.
   if (loading && !isTerminalRoute) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-surface-app">
-        <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
-      </div>
-    );
+    return <WorkspaceSkeleton />;
   }
 
   if (!loading && !project) return <Navigate to="/hub" replace />;
@@ -483,7 +547,10 @@ function WorkspaceLayout() {
                 <Loader2 className="w-6 h-6 animate-spin text-accent-primary" />
               </div>
             ) : (
-              <AnimatePresence initial={false}>
+              // popLayout: the exiting page is popped out of the flex flow, so the
+              // entering page renders in place from frame one (no mid-screen flash
+              // followed by an upward jump when the old page unmounts).
+              <AnimatePresence initial={false} mode="popLayout">
                 <motion.div
                   key={location.pathname}
                   variants={routeVariants}
@@ -682,6 +749,7 @@ function App() {
             }}
           />
           <NotificationToastStack />
+          <UpdatePill />
           <Routes>
             <Route path="/" element={<Navigate to="/hub" replace />} />
             <Route path="/hub" element={<ProjectHub />} />

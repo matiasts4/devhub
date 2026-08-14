@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ListTodo,
   Clock,
-  Loader2,
   AlertTriangle,
   LayoutDashboard,
   Trophy,
@@ -17,6 +16,7 @@ import {
 import { getProjectPlanningPath } from '@/lib/workspaceRouting';
 import { createClient } from '@/lib/db/localClient';
 import { panelStyle, btnPrimaryStyle, progressTrackStyle } from '@/chrome/morphology';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import {
   getWorkspacePageContentStyle,
   getWorkspacePageHeaderStyle,
@@ -143,14 +143,7 @@ export default function ProjectDashboard() {
   const nextMilestone = milestones.find((m) => m.status !== 'completed');
 
   if (loading) {
-    return (
-      <div
-        className="flex h-full items-center justify-center py-20 min-h-screen"
-        style={{ background: 'var(--surface-app)' }}
-      >
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
-      </div>
-    );
+    return <PageSkeleton tiles={5} rows={5} />;
   }
 
   return (

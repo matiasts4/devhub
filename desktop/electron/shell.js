@@ -8,7 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { clipboard, dialog, Notification, BrowserWindow } = require('electron');
+const { app, clipboard, dialog, Notification, BrowserWindow } = require('electron');
 const { SHELL_COMMANDS } = require('./channels');
 
 const SHELL_SET = new Set(Object.values(SHELL_COMMANDS));
@@ -32,7 +32,7 @@ function createShellHandler(ctx = {}) {
 
     switch (command) {
       case SHELL_COMMANDS.PING:
-        return { ok: true, host: 'electron' };
+        return { ok: true, host: 'electron', version: app.getVersion() };
 
       case SHELL_COMMANDS.WINDOW_MINIMIZE: {
         win?.minimize();

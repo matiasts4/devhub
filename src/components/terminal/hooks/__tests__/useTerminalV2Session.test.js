@@ -6,6 +6,7 @@ const { installDom } = require('@/test-support/domHarness');
 const { renderHook, act } = require('@testing-library/react');
 
 const useTerminalV2Session = require('../useTerminalV2Session').default;
+const { shouldReanchorReconnectViewport } = require('../useTerminalV2Session');
 
 function createCtx(overrides = {}) {
   const ws = {
@@ -113,5 +114,84 @@ describe('useTerminalV2Session', () => {
     expect(ctx.setConnectionState).toHaveBeenCalledWith('connected');
     expect(ctx.sendResize).toHaveBeenCalled();
     expect(ctx.connectInFlightRef.current).toBe(false);
+  });
+});
+
+describe('shouldReanchorReconnectViewport (reconnect safety net)', () => {
+  it('does not re-anchor once the viewport intent was already consumed', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: 'bottom',
+        intentConsumed: true,
+        nearBottom: false,
+        currentOffset: null,
+      })
+    ).toBe(false);
+  });
+
+  it('re-anchors a bottom intent when the viewport is still far from the bottom', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: 'bottom',
+        intentConsumed: false,
+        nearBottom: false,
+        currentOffset: null,
+      })
+    ).toBe(true);
+  });
+
+  it('skips a bottom intent already near the bottom', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: 'bottom',
+        intentConsumed: false,
+        nearBottom: true,
+        currentOffset: null,
+      })
+    ).toBe(false);
+  });
+
+  it('re-anchors an integer intent far from the current offset', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: 100,
+        intentConsumed: false,
+        nearBottom: false,
+        currentOffset: 50,
+      })
+    ).toBe(true);
+  });
+
+  it('skips an integer intent already within the threshold', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: 100,
+        intentConsumed: false,
+        nearBottom: false,
+        currentOffset: 98,
+      })
+    ).toBe(false);
+  });
+
+  it('skips an integer intent when the current offset is not an integer', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: 100,
+        intentConsumed: false,
+        nearBottom: false,
+        currentOffset: null,
+      })
+    ).toBe(false);
+  });
+
+  it('skips when there is no pending viewport intent', () => {
+    expect(
+      shouldReanchorReconnectViewport({
+        pendingViewport: null,
+        intentConsumed: false,
+        nearBottom: false,
+        currentOffset: 10,
+      })
+    ).toBe(false);
   });
 });

@@ -1344,6 +1344,7 @@ function detectAgentState(agentType, screen, options = {}) {
 var PENDING_IDLE_CAP_MS = 4e3;
 var PENDING_IDLE_CONFIRMATIONS = 6;
 var STABLE_VISIBLE_SIGNAL_REFRESH_MS = 800;
+var TRANSITION_DWELL_MS = 1500;
 var AgentStateMachine = class {
   constructor() {
     this.state = "unknown";
@@ -1352,6 +1353,7 @@ var AgentStateMachine = class {
     this.lastVisibleWorking = false;
     this.lastVisibleSignalRefresh = null;
     this.pendingIdle = null;
+    this.pendingTransition = null;
   }
   /**
    * Avoid flickering from running → idle on transient pauses.
@@ -1379,6 +1381,36 @@ var AgentStateMachine = class {
     return true;
   }
   /**
+   * Generic anti-flap dwell for any non-authoritative state change not already
+   * covered by shouldHoldWorkingToIdle (e.g. running→idle with the prompt
+   * visible, idle→running, running→blocked). The candidate state must persist
+   * for TRANSITION_DWELL_MS before it publishes; any detection of a different
+   * state abandons the candidate. First publish from 'unknown' is immediate.
+   */
+  shouldHoldTransition(previous, next, now) {
+    if (next.state === previous.state) {
+      this.pendingTransition = null;
+      return false;
+    }
+    if (previous.state === "unknown") {
+      this.pendingTransition = null;
+      return false;
+    }
+    if (previous.state === "running" && next.state === "idle" && !next.visibleIdle && !next.visibleBlocker) {
+      this.pendingTransition = null;
+      return false;
+    }
+    if (this.pendingTransition && this.pendingTransition.state === next.state) {
+      if (now - this.pendingTransition.startedAt >= TRANSITION_DWELL_MS) {
+        this.pendingTransition = null;
+        return false;
+      }
+      return true;
+    }
+    this.pendingTransition = { state: next.state, startedAt: now };
+    return true;
+  }
+  /**
    * Periodically refresh a stable visible blocker so consumers keep noticing it.
    */
   stableVisibleSignalRefreshDue(next, now) {
@@ -1392,6 +1424,7 @@ var AgentStateMachine = class {
    */
   publishHook(detection, now = Date.now()) {
     this.pendingIdle = null;
+    this.pendingTransition = null;
     return this.publish(detection, now, { bypassHold: true });
   }
   /**
@@ -1411,6 +1444,9 @@ var AgentStateMachine = class {
     if (detection.state === "unknown" && !options.bypassHold) {
       return null;
     }
+    if (options.bypassHold) {
+      this.pendingTransition = null;
+    }
     const next = {
       state: detection.state,
       visibleIdle: detection.visibleIdle,
@@ -1428,6 +1464,9 @@ var AgentStateMachine = class {
       visibleBlocker: this.lastVisibleBlocker
     };
     if (!options.bypassHold && this.shouldHoldWorkingToIdle(previous, next, now)) {
+      return null;
+    }
+    if (!options.bypassHold && this.shouldHoldTransition(previous, next, now)) {
       return null;
     }
     const stableRefreshDue = this.stableVisibleSignalRefreshDue(next, now);
@@ -1773,6 +1812,7 @@ function tickAgentDetection(session, now = Date.now()) {
   const state = session.agentTuiState;
   const isRunningOrBlocked = state === "running" || state === "blocked";
   const hasPendingIdle = !!session.agentStateMachine.pendingIdle;
+  const hasPendingTransition = !!session.agentStateMachine.pendingTransition;
   const quiescenceMs = getQuiescenceMs(session);
   const quiescenceConfirmMs = getQuiescenceConfirmMs(session);
   const lastActivityAt = getLastActivityAt(session);
@@ -1815,7 +1855,7 @@ function tickAgentDetection(session, now = Date.now()) {
     result.agentTuiStateAt = now;
     return result;
   }
-  if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle) {
+  if (bufferUnchanged && !isRunningOrBlocked && !hasPendingIdle && !hasPendingTransition) {
     return result;
   }
   if (session.lastDetection) {

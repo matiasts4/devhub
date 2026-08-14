@@ -111,12 +111,15 @@ class QuotaManager {
       const res = await fetch(`/api/quota?${params}${force ? '&force=1' : ''}`);
       if (res.ok) {
         const allQuotas = await res.json();
-        this.cache.clear();
+        // Merge over the existing cache instead of clearing it: a provider
+        // momentarily absent from a response (transient adapter failure) keeps
+        // its last-known value rather than disappearing and blanking the badge.
+        // Disabled providers are pruned separately by pruneDisabledProviders.
         for (const [key, val] of Object.entries(allQuotas)) {
           this.cache.set(key, val);
         }
         this.notifySubscribers();
-        return allQuotas;
+        return this.getAllQuotas();
       }
     } catch (err) {
       console.warn('[QuotaManager] Error fetching all quotas:', err);

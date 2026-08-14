@@ -81,7 +81,7 @@ function pickTitle(...candidates) {
 /**
  * Scans ~/.kimi-code/sessions/wd_* /session_* /state.json.
  * State shape: { createdAt, updatedAt, title, workDir, lastPrompt }.
- * Resume: `kimi --session <uuid>` (dir name is `session_<uuid>`).
+ * Resume: `kimi --session session_<uuid>` (the id IS the dir name, prefix included).
  */
 export function scanKimiSessions({ cwd = null, limit = DEFAULT_LIMIT, homeDir } = {}) {
   try {
@@ -99,7 +99,8 @@ export function scanKimiSessions({ cwd = null, limit = DEFAULT_LIMIT, homeDir } 
         const state = readJsonFile(statePath);
         if (!state) continue;
 
-        const sessionId = sessionEntry.name.replace(/^session_/, '') || sessionEntry.name;
+        // Kimi session ids include the `session_` prefix: `kimi --session session_<uuid>`.
+        const sessionId = sessionEntry.name;
         const sessionCwd =
           typeof state.workDir === 'string' && state.workDir.trim() ? state.workDir.trim() : null;
         if (!cwdMatches(sessionCwd, cwd)) continue;

@@ -3,6 +3,13 @@
 import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/db/localClient';
 
+// Secuencia global para garantizar topics de canal únicos por suscripción.
+// supabase-js >= 2.86 deduplica canales por topic: si otro componente (o un
+// remount de StrictMode / una transición de AnimatePresence) ya suscribió el
+// mismo topic, `.channel(name)` devuelve ESE canal y `.on('postgres_changes')`
+// lanza "cannot add postgres_changes callbacks after subscribe()".
+let channelSeq = 0;
+
 /**
  * Hook genérico para suscribirse a cambios de Postgres vía Supabase Realtime.
  *
@@ -38,7 +45,8 @@ export default function useSupabaseRealtime({
   useEffect(() => {
     if (!enabled || !table) return;
 
-    const name = channelName || `realtime:${table}:${filter || 'all'}`;
+    const base = channelName || `realtime:${table}:${filter || 'all'}`;
+    const name = `${base}#${++channelSeq}`;
     const channel = dbRef.current
       .channel(name)
       .on(
@@ -63,7 +71,13 @@ export default function useSupabaseRealtime({
       .subscribe();
 
     return () => {
-      dbRef.current.removeChannel(channel);
+      // removeChannel es async; evita unhandled rejections al desmontar.
+      try {
+        const result = dbRef.current.removeChannel(channel);
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      } catch {
+        // canal ya eliminado
+      }
     };
   }, [table, filter, enabled, channelName]);
 }

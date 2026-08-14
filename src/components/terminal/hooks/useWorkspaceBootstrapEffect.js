@@ -35,6 +35,7 @@ import {
   collectWorkspacePanelIds,
 } from '@/lib/terminal/startupRestoreCoordinator';
 import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+import { logRestoreDiagnostic } from '@/lib/terminal/restoreDiagnostics';
 import {
   buildCleanTerminalStatePayload,
   flushTerminalSessionPersistence,
@@ -187,6 +188,20 @@ export default function useWorkspaceBootstrapEffect({
       }
       if (parsed) {
         if (parsed.workspaces && parsed.workspaces.length > 0) {
+          // Boot diagnostics: what the hydration source actually carried.
+          try {
+            logRestoreDiagnostic('boot-hydration-parsed', {
+              fromPrefetch: Boolean(prefetched?.terminalState),
+              cmds: parsed.workspaces.flatMap((ws) =>
+                (ws?.columns || []).flatMap((col) =>
+                  (col?.panels || []).map((p) => `${p?.id}=${p?.initialCommand || 'null'}`)
+                )
+              ),
+            });
+          } catch {
+            /* diag only */
+          }
+
           const normalizedState = normalizeWorkspaceState(
             parsed.workspaces,
             parsed.activeWsId,

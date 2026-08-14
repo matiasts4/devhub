@@ -37,6 +37,8 @@ function isShortCircuitableToolResult(tool, result) {
       return Boolean(r.url || r.opened);
     case 'close_url':
       return r.success === true || r.closed === true;
+    case 'workspace_action':
+      return r.success === true;
     default:
       return false;
   }

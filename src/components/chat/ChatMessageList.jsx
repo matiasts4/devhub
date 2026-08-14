@@ -654,7 +654,13 @@ export default function ChatMessageList({
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    isAtBottomRef.current = distanceFromBottom < 120;
+    isAtBottomRef.current = distanceFromBottom < 40;
+  }, []);
+
+  // Si el usuario gira la rueda hacia arriba, desenganchar el auto-scroll de
+  // inmediato (un tick de rueda es ~100px, menor que cualquier umbral razonable)
+  const handleWheel = useCallback((e) => {
+    if (e.deltaY < 0) isAtBottomRef.current = false;
   }, []);
 
   // Scrollear al fondo cuando llega contenido nuevo (solo si estaba abajo)
@@ -662,7 +668,9 @@ export default function ChatMessageList({
     if (!isAtBottomRef.current) return;
     const el = scrollContainerRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // Instantáneo: el scroll suave pelea con la rueda del usuario y cada token
+    // del streaming reiniciaba la animación, "forzando" el fondo
+    el.scrollTop = el.scrollHeight;
   }, [messages.length, isTyping, isStreaming, isWaitingForSubagent]);
 
   // Mantener scroll al bottom mientras llegan partes de trace (60fps mínimo)
@@ -714,6 +722,7 @@ export default function ChatMessageList({
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
+      onWheel={handleWheel}
       className="flex-1 overflow-y-auto"
       style={{ background: 'var(--surface-app)' }}
     >

@@ -21,7 +21,10 @@ import {
   markPanelInitialCommandDispatched,
   shouldSkipRedundantInitialCommandSend,
 } from '@/lib/terminal/panelInitialCommandLifecycle';
-import { shouldBlockLateInitialCommandSend } from '@/components/terminal/TerminalTTY.helpers';
+import {
+  shouldBlockLateInitialCommandSend,
+  shouldDeferStartupReattachLatch,
+} from '@/components/terminal/TerminalTTY.helpers';
 import { resolvePanelStartupInjectIntent } from '@/lib/terminal/startupInjectOrchestrator';
 import { TERMINAL_PROJECTION_READY_TIMEOUT_MS } from '@/components/terminal/TerminalTTY.helpers';
 
@@ -173,8 +176,8 @@ export default function useTerminalInitialCommandLifecycle({
   const resolveInjectCommand = useCallback(() => {
     const storage = typeof window !== 'undefined' ? window.localStorage : null;
     const agentRun = readAgentRunForPanel(storage, id);
-    return resolveTerminalInjectCommand(initialCommand, agentRun);
-  }, [id, initialCommand]);
+    return resolveTerminalInjectCommand(initialCommand, agentRun, ctxRef.current?.cwd || null);
+  }, [id, initialCommand, ctxRef]);
 
   const sendInitialCommandIfReady = useCallback(() => {
     const c = ctxRef.current;
@@ -409,6 +412,26 @@ export default function useTerminalInitialCommandLifecycle({
       const { panelId } = event.detail || {};
       if (panelId !== id) return;
       const c = ctxRef.current;
+      // Boot-race guard: the planner may degrade a pending resume to
+      // "reattach" merely because it sees a PTY alive-without-sockets — but
+      // right after a cold boot that PTY is an empty shell created by this
+      // panel's own reconnect attempts. Without proof of a live/dispatched
+      // session, defer to the server's `ready` frame (payload.reattached is
+      // authoritative) instead of latching the command as sent — the old
+      // unconditional latch is what silently dropped resumes on slow boots.
+      if (
+        shouldDeferStartupReattachLatch({
+          hasDispatchRecord: Boolean(getPanelInitialCommandDispatch(id)),
+          sessionReattached: c.sessionReattachedRef.current,
+        })
+      ) {
+        logTerminalSession('startup-reattach-deferred', {
+          panelId: id,
+          command: event.detail?.initialCommand || initialCommand,
+          reason: 'no-live-session-evidence',
+        });
+        return;
+      }
       c.sessionReattachedRef.current = true;
       c.hasSentInitialCommand.current = true;
       markPanelInitialCommandDispatched(id, event.detail?.initialCommand || initialCommand);

@@ -39,6 +39,7 @@ import {
 } from '@/chrome/morphology';
 import { buildProjectCreatePayload } from '@/lib/projectClassification';
 import { getProjectEntryPath } from '@/lib/workspaceRouting';
+import { StatTilesSkeleton, RowsSkeleton } from '@/components/ui/page-skeleton';
 
 const STATUS_CONFIG = {
   active: {
@@ -290,23 +291,27 @@ export default function ProjectHub() {
         </p>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 stagger-children">
-          {stats.map((stat, i) => (
-            <div
-              key={i}
-              className="fade-in-up core-kpi-card rounded-none px-5 py-4 hover-lift"
-              style={{
-                animationDelay: `${i * 50}ms`,
-                ...dataTileStyle({ color: stat.color }),
-              }}
-            >
-              <p className="typography-label mb-1">{stat.label}</p>
-              <p className="typography-data text-2xl font-bold" style={{ color: stat.color }}>
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : stat.value}
-              </p>
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <StatTilesSkeleton count={4} className="mb-8" />
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 stagger-children">
+            {stats.map((stat, i) => (
+              <div
+                key={i}
+                className="fade-in-up core-kpi-card rounded-none px-5 py-4 hover-lift"
+                style={{
+                  animationDelay: `${i * 50}ms`,
+                  ...dataTileStyle({ color: stat.color }),
+                }}
+              >
+                <p className="typography-label mb-1">{stat.label}</p>
+                <p className="typography-data text-2xl font-bold" style={{ color: stat.color }}>
+                  {stat.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Status filters */}
         <div
@@ -330,9 +335,7 @@ export default function ProjectHub() {
 
         {/* Projects grid */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 text-accent-primary animate-spin" />
-          </div>
+          <RowsSkeleton rows={6} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 stagger-children">
             {filtered.map((project, i) => {

@@ -63,7 +63,7 @@ export const AGENT_LAUNCH_CATALOG = Object.freeze([
     id: 'qodercli',
     label: 'Qoder',
     command: 'qodercli',
-    yoloFlag: '--yolo',
+    yoloFlag: '--dangerously-skip-permissions',
     description: 'Qoder CLI · omite permission checks',
   },
 ]);

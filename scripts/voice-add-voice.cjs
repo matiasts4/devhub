@@ -12,8 +12,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const IS_WIN = process.platform === 'win32';
 const VENV_DIR = path.join(ROOT, 'packages', 'veloce-audio', 'python', '.venv');
-const PYTHON = path.join(VENV_DIR, 'bin', 'python');
+const PYTHON = path.join(VENV_DIR, IS_WIN ? 'Scripts' : 'bin', IS_WIN ? 'python.exe' : 'python');
 const VOICES_DIR = path.join(ROOT, 'packages', 'veloce-audio', 'python', 'voices');
 
 function run(cmd, args, opts = {}) {
@@ -24,8 +25,8 @@ function run(cmd, args, opts = {}) {
 }
 
 function main() {
-  if (process.platform !== 'linux') {
-    console.log('[voice:add-voice] skip (linux-only voice runtime)');
+  if (process.platform !== 'linux' && process.platform !== 'win32') {
+    console.log('[voice:add-voice] skip (voice runtime only on linux/win32)');
     return;
   }
 

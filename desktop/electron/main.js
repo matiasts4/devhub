@@ -29,11 +29,14 @@ const { CHANNELS } = require('./channels');
 const { routeInvoke, initOptionalHandlers, disposeOptionalHandlers } = require('./ipc');
 const { createTray, destroyTray } = require('./tray');
 const { ensureRuntime, runtimeStatus } = require('./packaging/runtime');
+const { initAutoUpdater } = require('./updater');
 
 /** @type {import('electron').BrowserWindow | null} */
 let mainWindow = null;
 /** @type {ReturnType<typeof createBrowserRegistry> | null} */
 let browserRegistry = null;
+/** @type {ReturnType<typeof initAutoUpdater>} */
+let updaterController = null;
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 
@@ -82,6 +85,19 @@ function registerIpc() {
     const payload = message.payload || {};
 
     try {
+      if (command === 'update_status') {
+        return updaterController
+          ? { ok: true, ...updaterController.getStatus() }
+          : { ok: true, downloaded: false, version: null };
+      }
+      if (command === 'update_install') {
+        if (!updaterController || !updaterController.isUpdateDownloaded()) {
+          return { ok: false, reason: 'no-update-downloaded' };
+        }
+        updaterController.installNow();
+        return { ok: true };
+      }
+
       return await routeInvoke({
         command,
         payload,
@@ -168,6 +184,11 @@ async function boot() {
   console.log('[DevHub Electron] UI URL:', resolveUiUrl());
   attachMainWindow(createMainWindow());
 
+  // Auto-update (packaged only): checks the feed in the background, announces
+  // 'update-downloaded' to the SPA (UpdatePill), installs on restart/quit.
+  updaterController = initAutoUpdater({ sendEvent: sendWindowEvent });
+  const updater = updaterController;
+
   // Runtime locate/extract → sidecar, chained: on packaged first-launch the
   // sidecar entry can live inside the extracted standalone, so the sidecar
   // must not race ahead of extraction. Everything runs in the background.
@@ -196,6 +217,7 @@ async function boot() {
 
   createTray({
     getMainWindow,
+    onCheckUpdates: updater ? updater.checkNow : null,
     onQuit: () => {
       app.quit();
     },

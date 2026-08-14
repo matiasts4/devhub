@@ -25,6 +25,8 @@ const {
   resolveLaunchKickoffBodySummary,
   buildSwarmLaunchModels,
   filterModelsForProgram,
+  sanitizeRoleModels,
+  resolveRoleModels,
   resolveWorkerBootstrapDelayMs,
   SWARM_WORKER_FANOUT_BASE_DELAY_MS,
   SWARM_WORKER_FANOUT_STAGGER_MS,
@@ -1654,7 +1656,7 @@ describe('composeControlRoomSnapshot', () => {
         templateId: 'zed-orchestrator-pod',
         swarmTypeId: 'zed-orchestration-swarm',
         teamId: 'zed-sdd-pod',
-        providerId: 'minimax-coding-plan/MiniMax-M3',
+        providerId: 'minimax/MiniMax-M3',
         launchStrategy: 'director_first',
         bootstrapMode: 'standby',
         workspacePath: '/home/matias/ArxonLabs/devhub',
@@ -1667,11 +1669,11 @@ describe('composeControlRoomSnapshot', () => {
           sdd_worker_4: 'kimi',
         },
         roleModels: {
-          zed: 'minimax-coding-plan/MiniMax-M3',
-          sdd_worker_1: 'minimax-coding-plan/MiniMax-M3',
-          sdd_worker_2: 'minimax-coding-plan/MiniMax-M3',
-          sdd_worker_3: 'minimax-coding-plan/MiniMax-M3',
-          sdd_worker_4: 'minimax-coding-plan/MiniMax-M3',
+          zed: 'kimi-code/k3-256k',
+          sdd_worker_1: 'kimi-code/k3-256k',
+          sdd_worker_2: 'kimi-code/k3-256k',
+          sdd_worker_3: 'kimi-code/k3-256k',
+          sdd_worker_4: 'kimi-code/k3-256k',
         },
         sddEnabled: false,
         sddOptions: {
@@ -1684,6 +1686,20 @@ describe('composeControlRoomSnapshot', () => {
     );
   });
 
+  test('createSwarmLaunchDraft normalizes provisionRoleKeys for eager UI provisioning', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+
+    const draft = createSwarmLaunchDraft({
+      catalog,
+      draft: {
+        provisionRoleKeys: [' sdd_worker_1 ', 'sdd_worker_2', 'sdd_worker_1', '', null],
+      },
+    });
+    expect(draft.provisionRoleKeys).toEqual(['sdd_worker_1', 'sdd_worker_2']);
+
+    expect(createSwarmLaunchDraft({ catalog }).provisionRoleKeys).toEqual([]);
+  });
+
   test('selectSwarmLaunchCatalog exposes supported launch clients from existing runtime options', () => {
     const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
 
@@ -1691,6 +1707,7 @@ describe('composeControlRoomSnapshot', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'opencode', label: 'OpenCode', tui_type: 'opencode' }),
         expect.objectContaining({ id: 'kimi', label: 'Kimi Code', tui_type: 'kimi' }),
+        expect.objectContaining({ id: 'qodercli', label: 'Qoder', tui_type: 'qodercli' }),
         expect.objectContaining({ id: 'codex', label: 'Codex', tui_type: 'codex' }),
         expect.objectContaining({ id: 'hermes', label: 'Hermes', tui_type: 'hermes' }),
         expect.objectContaining({ id: 'grok', label: 'Grok', tui_type: 'grok' }),
@@ -1714,7 +1731,7 @@ describe('composeControlRoomSnapshot', () => {
         templateId: 'approval-recovery',
         swarmTypeId: 'recovery-swarm',
         teamId: 'amber-recovery-cell',
-        providerId: 'opencode/claude-sonnet-4.6',
+        providerId: 'headroom/claude-sonnet-4-6',
         workspacePath: '/tmp/devhub-recovery',
         rolePrograms: {
           director: 'codex',
@@ -1847,13 +1864,22 @@ describe('buildRoleAgentProfile', () => {
 describe('buildSwarmLaunchModels', () => {
   test('returns model catalog with expected models', () => {
     const models = buildSwarmLaunchModels();
-    expect(models).toHaveLength(6);
-    expect(models.map((m) => m.id)).toContain('minimax-coding-plan/MiniMax-M3');
-    expect(models.map((m) => m.id)).toContain('minimax-coding-plan/MiniMax-M2.7');
-    expect(models.map((m) => m.id)).toContain('opencode-go/deepseek-v4-flash');
-    expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.6-plus');
-    expect(models.map((m) => m.id)).toContain('opencode-go/qwen3.5-plus');
-    expect(models.map((m) => m.id)).toContain('opencode/claude-sonnet-4.6');
+    expect(models).toHaveLength(14);
+    const ids = models.map((m) => m.id);
+    expect(ids).toContain('minimax/MiniMax-M3');
+    expect(ids).toContain('minimax/MiniMax-M2.7');
+    expect(ids).toContain('opencode-go/deepseek-v4-flash');
+    expect(ids).toContain('opencode-go/qwen3.6-plus');
+    expect(ids).toContain('opencode-go/qwen3.7-plus');
+    expect(ids).toContain('headroom/claude-sonnet-4-6');
+    expect(ids).toContain('opencode/deepseek-v4-flash-free');
+    expect(ids).toContain('kimi-code/k3-256k');
+    expect(ids).toContain('kimi-code/kimi-for-coding');
+    expect(ids).toContain('kimi-code/kimi-for-coding-highspeed');
+    expect(ids).toContain('Auto');
+    expect(ids).toContain('DeepSeek-V4-Flash');
+    expect(ids).toContain('Qwen3.7-Plus');
+    expect(ids).toContain('Kimi-K3');
   });
 
   test('each model has id, label, summary, and recommended_for', () => {
@@ -1868,18 +1894,189 @@ describe('buildSwarmLaunchModels', () => {
     });
   });
 
+  test('every compatible_program is a model-capable program in the catalog', () => {
+    const catalog = selectSwarmLaunchCatalog({});
+    const modelCapablePrograms = new Set(
+      catalog.programs.filter((program) => program.supports_model !== false).map((p) => p.id)
+    );
+    catalog.models.forEach((model) => {
+      model.compatible_programs.forEach((programId) => {
+        expect(modelCapablePrograms.has(programId)).toBe(true);
+      });
+    });
+  });
+
+  test('every template and swarm type default_provider_id exists in the model catalog', () => {
+    const catalog = selectSwarmLaunchCatalog({});
+    const modelIds = new Set(catalog.models.map((m) => m.id));
+    [...catalog.templates, ...catalog.swarm_types].forEach((entry) => {
+      expect(modelIds.has(entry.default_provider_id)).toBe(true);
+    });
+  });
+
   test('catalog includes models', () => {
     const catalog = selectSwarmLaunchCatalog({});
     expect(catalog.models).toBeDefined();
-    expect(catalog.models).toHaveLength(6);
+    expect(catalog.models).toHaveLength(14);
   });
 
   test('filterModelsForProgram keeps model-capable TUIs and drops incompatible program ids', () => {
     const models = buildSwarmLaunchModels();
-    expect(filterModelsForProgram(models, 'opencode').length).toBe(6);
-    expect(filterModelsForProgram(models, 'kimi').length).toBe(6);
+    expect(filterModelsForProgram(models, 'opencode').length).toBe(7);
+    expect(filterModelsForProgram(models, 'kimi').length).toBe(3);
+    expect(filterModelsForProgram(models, 'qodercli').length).toBe(4);
     expect(filterModelsForProgram(models, 'codex').length).toBe(0);
     expect(filterModelsForProgram(models, 'grok').length).toBe(0);
+  });
+});
+
+describe('sanitizeRoleModels', () => {
+  test('keeps valid model refs compatible with the role program', () => {
+    expect(
+      sanitizeRoleModels({
+        roleModels: { coder: 'opencode-go/deepseek-v4-flash' },
+        rolePrograms: { coder: 'opencode' },
+      })
+    ).toEqual({ coder: 'opencode-go/deepseek-v4-flash' });
+  });
+
+  test('replaces refs that are incompatible with the role program with the program default', () => {
+    expect(
+      sanitizeRoleModels({
+        roleModels: { zed: 'minimax/MiniMax-M3', coder: 'Auto' },
+        rolePrograms: { zed: 'kimi', coder: 'qodercli' },
+      })
+    ).toEqual({ zed: 'kimi-code/k3-256k', coder: 'Auto' });
+  });
+
+  test('drops unknown model ids and falls back to the program default', () => {
+    expect(
+      sanitizeRoleModels({
+        roleModels: { coder: 'opencode-go/qwen3.5-plus' },
+        rolePrograms: { coder: 'opencode' },
+      })
+    ).toEqual({ coder: 'minimax/MiniMax-M3' });
+  });
+
+  test('treats empty refs as unset and seeds the program default', () => {
+    expect(
+      sanitizeRoleModels({
+        roleModels: { zed: '' },
+        rolePrograms: { zed: 'qodercli' },
+        defaultModelId: 'minimax/MiniMax-M3',
+      })
+    ).toEqual({ zed: 'Auto' });
+  });
+
+  test('createSwarmLaunchDraft sanitizes injected roleModels against the role program', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+    const draft = createSwarmLaunchDraft({
+      catalog,
+      project: { id: 'project-1', local_path: '/tmp/devhub' },
+      draft: {
+        rolePrograms: { zed: 'qodercli' },
+        roleModels: { zed: 'minimax/MiniMax-M3', sdd_worker_1: 'opencode-go/qwen3.5-plus' },
+      },
+    });
+    expect(draft.roleModels.zed).toBe('Auto');
+    expect(draft.roleModels.sdd_worker_1).toBe('kimi-code/k3-256k');
+  });
+});
+
+describe('role model overrides vs the general default', () => {
+  const project = { id: 'project-1', local_path: '/tmp/devhub' };
+
+  function buildDraft(draft) {
+    return createSwarmLaunchDraft({
+      catalog: selectSwarmLaunchCatalog(buildIdleSnapshot()),
+      project,
+      draft,
+    });
+  }
+
+  test('resolveRoleModels prefers the override and falls back to the general default', () => {
+    expect(
+      resolveRoleModels({
+        rolePrograms: { zed: 'qodercli', coder: 'opencode' },
+        roleModelOverrides: { zed: 'Kimi-K3' },
+        defaultModelId: 'opencode-go/deepseek-v4-flash',
+      })
+    ).toEqual({ zed: 'Kimi-K3', coder: 'opencode-go/deepseek-v4-flash' });
+  });
+
+  test('an explicit per-role pick survives a later change of the general default', () => {
+    const picked = buildDraft({
+      rolePrograms: { zed: 'qodercli' },
+      roleModelOverrides: { zed: 'Kimi-K3' },
+    });
+    expect(picked.roleModels.zed).toBe('Kimi-K3');
+
+    const afterDefaultChange = buildDraft({
+      ...picked,
+      providerId: 'minimax/MiniMax-M3',
+    });
+    expect(afterDefaultChange.roleModelOverrides.zed).toBe('Kimi-K3');
+    expect(afterDefaultChange.roleModels.zed).toBe('Kimi-K3');
+  });
+
+  test('roles without an override follow the general default, coerced to the role program', () => {
+    const draft = buildDraft({
+      rolePrograms: { zed: 'opencode', sdd_worker_1: 'qodercli' },
+      providerId: 'opencode-go/deepseek-v4-flash',
+    });
+    expect(draft.roleModelOverrides).toEqual({});
+    expect(draft.roleModels.zed).toBe('opencode-go/deepseek-v4-flash');
+    // Incompatible with qodercli — falls back to the program default.
+    expect(draft.roleModels.sdd_worker_1).toBe('Auto');
+  });
+
+  test('re-normalizing a draft is a fixpoint for overrides and effective models', () => {
+    const once = buildDraft({
+      rolePrograms: { zed: 'qodercli' },
+      roleModelOverrides: { zed: 'Kimi-K3' },
+      providerId: 'minimax/MiniMax-M3',
+    });
+    const twice = buildDraft(once);
+    expect(twice.roleModelOverrides).toEqual(once.roleModelOverrides);
+    expect(twice.roleModels).toEqual(once.roleModels);
+  });
+
+  test('a legacy draft without roleModelOverrides keeps honouring bare roleModels', () => {
+    const draft = buildDraft({
+      rolePrograms: { zed: 'qodercli' },
+      roleModels: { zed: 'Kimi-K3' },
+    });
+    expect(draft.roleModelOverrides.zed).toBe('Kimi-K3');
+    expect(draft.roleModels.zed).toBe('Kimi-K3');
+  });
+
+  test('an empty override means inherit — it does not resurrect a stale roleModels entry', () => {
+    const draft = buildDraft({
+      rolePrograms: { zed: 'qodercli' },
+      roleModelOverrides: {},
+      roleModels: { zed: 'Kimi-K3' },
+      providerId: 'minimax/MiniMax-M3',
+    });
+    expect(draft.roleModelOverrides).toEqual({});
+    expect(draft.roleModels.zed).toBe('Auto');
+  });
+
+  test('the preview exposes the effective model and the override per role', () => {
+    const catalog = selectSwarmLaunchCatalog(buildIdleSnapshot());
+    const preview = deriveSwarmLaunchPreview({
+      catalog,
+      draft: {
+        rolePrograms: { zed: 'qodercli' },
+        roleModelOverrides: { zed: 'Kimi-K3' },
+      },
+    });
+    const zed = preview.rolePrograms.find((entry) => entry.role_key === 'zed');
+    expect(zed.model_id).toBe('Kimi-K3');
+    expect(zed.model_override).toBe('Kimi-K3');
+
+    const worker = preview.rolePrograms.find((entry) => entry.role_key === 'sdd_worker_1');
+    expect(worker.model_id).toBe('kimi-code/k3-256k');
+    expect(worker.model_override).toBeNull();
   });
 });
 

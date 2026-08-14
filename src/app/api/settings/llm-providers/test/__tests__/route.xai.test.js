@@ -80,3 +80,120 @@ describe('POST /api/settings/llm-providers/test — xai', () => {
     expect(body).toEqual({ valid: true });
   });
 });
+
+describe('POST /api/settings/llm-providers/test — kimi_code', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.clearAllMocks();
+  });
+
+  test('calls the Kimi coding chat/completions endpoint with the given key', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: async () => ({}) }));
+
+    const res = await POST({
+      json: async () => ({
+        provider: 'kimi_code',
+        config: { KIMI_CODE_API_KEY: 'kimi-test-key' },
+      }),
+    });
+
+    const body = await res.json();
+    expect(body).toEqual({ valid: true });
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.kimi.com/coding/v1/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer kimi-test-key' }),
+      })
+    );
+    const [, options] = global.fetch.mock.calls[0];
+    expect(JSON.parse(options.body).model).toBe('kimi-for-coding');
+  });
+
+  test('surfaces upstream error messages when the key is invalid', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: { message: 'Invalid API key' } }),
+      })
+    );
+
+    const res = await POST({
+      json: async () => ({
+        provider: 'kimi_code',
+        config: { KIMI_CODE_API_KEY: 'bad-key' },
+      }),
+    });
+
+    const body = await res.json();
+    expect(body).toEqual({ valid: false, error: 'Invalid API key' });
+  });
+});
+
+describe('POST /api/settings/llm-providers/test — minimax', () => {
+  const originalFetch = global.fetch;
+  const originalEnvKey = process.env.MINIMAX_API_KEY;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    if (originalEnvKey === undefined) delete process.env.MINIMAX_API_KEY;
+    else process.env.MINIMAX_API_KEY = originalEnvKey;
+    jest.clearAllMocks();
+  });
+
+  test('calls the MiniMax Anthropic endpoint with x-api-key header', async () => {
+    delete process.env.MINIMAX_API_KEY;
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: async () => ({}) }));
+
+    const res = await POST({
+      json: async () => ({
+        provider: 'minimax',
+        config: { MINIMAX_API_KEY: 'mm-test-key' },
+      }),
+    });
+
+    const body = await res.json();
+    expect(body).toEqual({ valid: true });
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.minimax.io/anthropic/v1/messages',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-api-key': 'mm-test-key',
+          'anthropic-version': '2023-06-01',
+        }),
+      })
+    );
+    const [, options] = global.fetch.mock.calls[0];
+    expect(JSON.parse(options.body).model).toBe('minimax-coding-plan/MiniMax-M3');
+  });
+
+  test('falls back to MINIMAX_API_KEY env var when config key is empty', async () => {
+    process.env.MINIMAX_API_KEY = 'mm-env-key';
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: async () => ({}) }));
+
+    const res = await POST({
+      json: async () => ({ provider: 'minimax', config: { MINIMAX_API_KEY: '' } }),
+    });
+
+    const body = await res.json();
+    expect(body).toEqual({ valid: true });
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers['x-api-key']).toBe('mm-env-key');
+  });
+
+  test('returns clear error when no key anywhere', async () => {
+    delete process.env.MINIMAX_API_KEY;
+    global.fetch = jest.fn();
+
+    const res = await POST({
+      json: async () => ({ provider: 'minimax', config: {} }),
+    });
+
+    const body = await res.json();
+    expect(body.valid).toBe(false);
+    expect(body.error).toMatch(/MiniMax/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

@@ -61,6 +61,24 @@ describe('shouldShortCircuitAfterTools', () => {
     ).toBe(false);
   });
 
+  test('returns true for workspace_action success (simple UI confirmation)', () => {
+    delete process.env.ZED_LLM_SHORT_CIRCUIT;
+    expect(
+      shouldShortCircuitAfterTools([
+        { tool: 'workspace_action', result: { success: true, action: 'toggle_pizarra' } },
+      ])
+    ).toBe(true);
+  });
+
+  test('returns false for summarize_terminal (LLM must compose the summary)', () => {
+    delete process.env.ZED_LLM_SHORT_CIRCUIT;
+    expect(
+      shouldShortCircuitAfterTools([
+        { tool: 'summarize_terminal', result: { status: 'unknown', tail: 'output' } },
+      ])
+    ).toBe(false);
+  });
+
   test('ZED_LLM_SHORT_CIRCUIT=0 disables short-circuit (LLM-only mode)', () => {
     process.env.ZED_LLM_SHORT_CIRCUIT = '0';
     expect(isLlmShortCircuitEnabled()).toBe(false);

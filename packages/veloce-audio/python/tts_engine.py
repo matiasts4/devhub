@@ -23,8 +23,13 @@ def emit(payload: dict) -> None:
 
 def find_piper() -> str | None:
     # sys.executable may resolve to the base Python (homebrew); venv scripts live under sys.prefix.
-    for bin_dir in (Path(sys.prefix) / "bin", Path(sys.executable).resolve().parent):
-        for name in ("piper", "piper-tts"):
+    # Windows venvs use Scripts/ and .exe entry points instead of bin/.
+    for bin_dir in (
+        Path(sys.prefix) / "bin",
+        Path(sys.prefix) / "Scripts",
+        Path(sys.executable).resolve().parent,
+    ):
+        for name in ("piper", "piper-tts", "piper.exe", "piper-tts.exe"):
             candidate = bin_dir / name
             if candidate.exists() and os.access(candidate, os.X_OK):
                 return str(candidate)
@@ -44,6 +49,12 @@ def resolve_voice_model(voice_id: str | None = None) -> str | None:
         return env_voice
     if DEFAULT_VOICE_PATH.exists():
         return str(DEFAULT_VOICE_PATH)
+    # The requested voice is not downloaded: speak with whatever IS installed
+    # instead of failing. Closest locale first (es_MX-... -> other es_MX
+    # voices), then any Spanish voice, then any voice at all.
+    locale = str(voice_id or "").split("-")[0]
+    patterns = [f"{locale}*.onnx"] if locale else []
+    patterns.extend(("es_*.onnx", "*.onnx"))
     for base in (
         VOICES_DIR,
         Path.home() / ".local/share/piper/voices",
@@ -51,9 +62,10 @@ def resolve_voice_model(voice_id: str | None = None) -> str | None:
     ):
         if not base.exists():
             continue
-        matches = sorted(base.glob("es_ES*.onnx"))
-        if matches:
-            return str(matches[0])
+        for pattern in patterns:
+            matches = sorted(base.glob(pattern))
+            if matches:
+                return str(matches[0])
     return None
 
 
@@ -66,7 +78,12 @@ def play_wav(path: Path) -> bool:
     return False
 
 
-def speak(text: str, voice: str | None = None, length_scale: float | None = None) -> None:
+def speak(
+    text: str,
+    voice: str | None = None,
+    length_scale: float | None = None,
+    play: bool = True,
+) -> None:
     cleaned = (text or "").strip()
     if not cleaned:
         emit({"type": "tts-done", "ok": True, "skipped": True})
@@ -110,7 +127,7 @@ def speak(text: str, voice: str | None = None, length_scale: float | None = None
             emit({"type": "tts-error", "error": "piper produced empty audio"})
             return
 
-        if not play_wav(out_path):
+        if play and not play_wav(out_path):
             emit(
                 {
                     "type": "tts-error",
@@ -154,6 +171,9 @@ def main() -> None:
                 str(payload.get("text", "")),
                 voice=options.get("voice") or payload.get("voice"),
                 length_scale=options.get("length_scale"),
+                # Electron/Windows has no paplay/aplay — the renderer plays the
+                # tts-chunk wav instead, so hosts can pass play=False.
+                play=bool(options.get("play", True)),
             )
 
 

@@ -5,6 +5,7 @@ import {
 } from './restorePolicyResolver';
 import { readTerminalRestorePreferences } from './restorePreferences';
 import { detectAgentTypeFromCommand, extractAgentSessionId } from './agentTuiMetadata';
+import { logRestoreDiagnostic, truncateForDiagnostics } from './restoreDiagnostics';
 
 /**
  * Canonical resume command per provider for persisted panel state. opencode
@@ -258,6 +259,17 @@ export function flushTerminalSessionPersistence(
 ) {
   if (!storage || typeof storage.setItem !== 'function') return false;
 
+  // Snapshot pre-normalization commands so the flush diagnostic can report
+  // exactly which panels had their command rewritten to resume form.
+  const originalCommandsByPanel = new Map();
+  (workspaces || []).forEach((workspace) => {
+    (workspace?.columns || []).forEach((column) => {
+      (column?.panels || []).forEach((panel) => {
+        if (panel?.id) originalCommandsByPanel.set(panel.id, panel?.initialCommand || null);
+      });
+    });
+  });
+
   const keys = resolveTerminalStorageKeys(projectId);
   const runsRecord = readAgentRunsRecord(storage);
   const indexedRuns =
@@ -300,6 +312,31 @@ export function flushTerminalSessionPersistence(
       restorePreferences: readTerminalRestorePreferences(storage),
     });
     storage.setItem(keys.restoreManifestKey, JSON.stringify(manifest));
+
+    const commandChanges = [];
+    (payload.workspaces || []).forEach((workspace) => {
+      (workspace?.columns || []).forEach((column) => {
+        (column?.panels || []).forEach((panel) => {
+          if (!panel?.id) return;
+          const before = originalCommandsByPanel.has(panel.id)
+            ? originalCommandsByPanel.get(panel.id)
+            : null;
+          const after = panel?.initialCommand || null;
+          if (before === after) return;
+          commandChanges.push({
+            panelId: panel.id,
+            provider: detectAgentTypeFromCommand(stripRecoveryTag(after)) || null,
+            from: truncateForDiagnostics(before),
+            to: truncateForDiagnostics(after),
+          });
+        });
+      });
+    });
+    logRestoreDiagnostic('flush-terminal-persistence', {
+      panelCount: originalCommandsByPanel.size,
+      normalizedCount: commandChanges.length,
+      changes: commandChanges,
+    });
 
     return true;
   } catch {

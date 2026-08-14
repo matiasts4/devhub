@@ -769,6 +769,11 @@ export default function useTerminalEngine({
               scheduleResize();
             });
             resizeObserverRef.current.observe(containerRef.current);
+            // Mirror fresh-mount: watch the viewport so a scrollbar toggle
+            // (content-box width change) re-runs the fit even when the
+            // container rect is unchanged.
+            const restoredViewportEl = containerRef.current?.querySelector('.xterm-viewport');
+            if (restoredViewportEl) resizeObserverRef.current.observe(restoredViewportEl);
 
             cliLog(
               `LIFECYCLE:${id}`,
@@ -1060,6 +1065,11 @@ export default function useTerminalEngine({
           scheduleResize();
         });
         resizeObserverRef.current.observe(containerRef.current);
+        // Also watch the xterm viewport: its content-box width shrinks when the
+        // classic vertical scrollbar appears (e.g. scrollback restored after
+        // connect) even though the container rect is unchanged — refit then.
+        const freshViewportEl = containerRef.current?.querySelector('.xterm-viewport');
+        if (freshViewportEl) resizeObserverRef.current.observe(freshViewportEl);
 
         termRef.current = terminal;
         fitRef.current = fitAddon;

@@ -6,6 +6,7 @@ import { fetchKimiQuota } from '@/lib/quota/server/kimi';
 import { fetchCodexQuota } from '@/lib/quota/server/codex';
 import { fetchOpenCodeQuota } from '@/lib/quota/server/opencode';
 import { fetchZaiQuota } from '@/lib/quota/server/zai';
+import { fetchQoderQuota } from '@/lib/quota/server/qoder';
 import { readCachedQuota, writeCachedQuota } from '@/lib/quota/server/quotaCache';
 import { PROVIDERS } from '@/lib/quota/types';
 
@@ -19,6 +20,7 @@ const SERVER_ADAPTERS = {
   [PROVIDERS.CODEX]: fetchCodexQuota,
   [PROVIDERS.OPENCODE]: fetchOpenCodeQuota,
   [PROVIDERS.ZAI]: fetchZaiQuota,
+  [PROVIDERS.QODER]: fetchQoderQuota,
 };
 
 /**

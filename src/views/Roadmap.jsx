@@ -2,6 +2,7 @@
 import { DatePicker } from '@/components/ui/date-picker';
 import WorkspacePageTitle from '@/components/workspace/WorkspacePageTitle';
 import StatusSignal from '@/components/ui/StatusSignal';
+import { RowsSkeleton, StatTilesSkeleton } from '@/components/ui/page-skeleton';
 import { UiHeader } from '@/components/ui/system/ui-header';
 import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -262,6 +263,9 @@ export default function Roadmap() {
 
       <div style={getWorkspacePageContentStyle()}>
         {/* Progress card */}
+        {loading ? (
+          <StatTilesSkeleton count={1} className="mb-6" />
+        ) : (
         <div
           className="overflow-hidden mb-6 fade-in-up rounded-none"
           style={getWorkspaceSectionSurfaceStyle({ emphasized: true })}
@@ -320,16 +324,12 @@ export default function Roadmap() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Timeline */}
         {loading ? (
           <div className="overflow-hidden fade-in-up" style={panelStyle()}>
-            <div className="flex items-center justify-center py-20">
-              <Loader2
-                className="w-7 h-7 animate-spin"
-                style={{ color: 'var(--accent-primary)' }}
-              />
-            </div>
+            <RowsSkeleton rows={4} className="p-6" />
           </div>
         ) : milestones.length === 0 ? (
           <div className="overflow-hidden fade-in-up" style={panelStyle()}>

@@ -1,0 +1,9 @@
+[build]
+# Reduce debug binary size: line tables only instead of full debug info.
+# Cuts src-tauri/target/debug from ~15GB to ~5GB while preserving backtraces.
+debug = "line-tables-only"
+
+[target.x86_64-pc-windows-msvc]
+# Use the faster lld-link linker on Windows (requires: cargo install lld-link
+# or bundled with LLVM/Clang). Falls back to default link.exe if unavailable.
+# linker = "lld-link"

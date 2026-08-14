@@ -2,7 +2,7 @@
  * useTerminalV2Session — WS connect, subscribe, frame decode, rehydration.
  * Extracted from TerminalTTY.jsx (terminal-decompose TTY-6).
  */
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import {
   cliLog,
   prepareActiveTuiTerminalFocus,
@@ -15,8 +15,11 @@ import {
   shouldScrollAgentWheelLocally,
   terminalHasActiveMouseReporting,
   resolveConnectInitialCommandState,
+  resolveColdConnectStaggerMs,
   resolveTerminalConnectionCloseState,
   restoreTerminalViewportScroll,
+  isTerminalViewportNearBottom,
+  getTerminalViewportScrollOffset,
   TERMINAL_SNAPSHOT_THRESHOLD_BYTES,
   TERMINAL_SNAPSHOT_MAX_INTERVAL_MS,
   TERMINAL_DISABLE_MOUSE_REPORTING_SEQ,
@@ -43,15 +46,54 @@ import {
 } from '@/lib/terminal/startupPerfMarks';
 import { warmTtySidecarViaApi } from '@/lib/terminal/terminalWarmPolicy';
 import { markTerminalConnectedOnce } from '@/lib/terminal/terminalConnectedOnceRegistry';
+import { logTerminalSession } from '@/lib/debug/terminalSessionDebug';
+
+/**
+ * Decide whether the reconnect viewport safety net should re-anchor the scroll.
+ * Returns false once the pre-reconnect intent was already consumed (replayComplete
+ * re-anchored it), so a late safety-net tick cannot yank the user's scroll. Otherwise
+ * re-anchor only when the viewport is still far from the captured intent.
+ * @param {object} opts
+ * @param {'bottom'|number|null} opts.pendingViewport - intent captured pre-clear
+ * @param {boolean} opts.intentConsumed - replayComplete already consumed the intent
+ * @param {boolean} opts.nearBottom - viewport currently within threshold of the bottom
+ * @param {number|null} opts.currentOffset - current integer scroll offset (or null)
+ * @param {number} [opts.threshold=4]
+ * @returns {boolean}
+ */
+export function shouldReanchorReconnectViewport({
+  pendingViewport,
+  intentConsumed,
+  nearBottom,
+  currentOffset,
+  threshold = 4,
+}) {
+  if (intentConsumed) return false;
+  if (pendingViewport === 'bottom') return !nearBottom;
+  if (Number.isInteger(pendingViewport)) {
+    return Number.isInteger(currentOffset) && Math.abs(currentOffset - pendingViewport) > threshold;
+  }
+  return false;
+}
 
 export default function useTerminalV2Session({ ctxRef }) {
+  const reconnectViewportVerifyRef = useRef(null);
+
   const stopV2Session = useCallback(() => {
+    if (reconnectViewportVerifyRef.current) {
+      clearTimeout(reconnectViewportVerifyRef.current);
+      reconnectViewportVerifyRef.current = null;
+    }
     const c = ctxRef.current;
     if (typeof c?._cancelGrokWheelBootstrap === 'function') {
       c._cancelGrokWheelBootstrap();
       c._cancelGrokWheelBootstrap = null;
     }
-    const { connectAbortRef, wsRef, connectInFlightRef } = c || {};
+    const { connectAbortRef, wsRef, connectInFlightRef, initialCommandRetryTimerRef } = c || {};
+    if (initialCommandRetryTimerRef?.current) {
+      clearTimeout(initialCommandRetryTimerRef.current);
+      initialCommandRetryTimerRef.current = null;
+    }
     if (connectAbortRef?.current) {
       connectAbortRef.current.abort();
       connectAbortRef.current = null;
@@ -80,6 +122,8 @@ export default function useTerminalV2Session({ ctxRef }) {
       restored,
       swarmContext,
       autoFocus,
+      coldMountOrdinal,
+      isVisibleInLayoutRef,
       connectInFlightRef,
       sessionClosingRef,
       wsRef,
@@ -90,6 +134,8 @@ export default function useTerminalV2Session({ ctxRef }) {
       initialCommandDelayScheduledRef,
       sessionReattachedRef,
       serverReadyReceivedRef,
+      readyEverReceivedRef,
+      initialCommandRetryTimerRef,
       hasSentInitialCommand,
       processExitedRef,
       isEngineV2Ref,
@@ -154,6 +200,7 @@ export default function useTerminalV2Session({ ctxRef }) {
       hasConnectedOnce: hasConnectedOnceRef.current,
       panelId: id,
       initialCommand,
+      readyEverReceived: readyEverReceivedRef.current,
     });
     if (connectCommandState.clearLifecycle) {
       clearPanelInitialCommandLifecycle(id);
@@ -243,6 +290,23 @@ export default function useTerminalV2Session({ ctxRef }) {
       const wsUrl = `${wsProtocol}://127.0.0.1:${port}${wsPath}${queryStr}`;
       console.log(`[TTY:${id}] WebSocket URL: ${wsUrl}`);
       cliLog(`CLIENT:${id}`, 'opening WebSocket', { wsUrl });
+
+      // Restored-workspace fan-out control: N panels restored at once would
+      // fire N simultaneous node-pty spawns (conPTY race on Windows). Only the
+      // FIRST connect of restored panels is staggered; fresh panels and
+      // reconnects are never delayed. See resolveColdConnectStaggerMs.
+      if (!hasConnectedOnceRef.current) {
+        const staggerMs = resolveColdConnectStaggerMs({ coldMountOrdinal, restored });
+        if (staggerMs > 0) {
+          cliLog(`CLIENT:${id}`, 'cold connect stagger', { staggerMs });
+          await new Promise((resolve) => setTimeout(resolve, staggerMs));
+          if (connectEpoch !== connectEpochRef.current || isDisposingRef.current) {
+            cliLog(`CLIENT:${id}`, 'connect() aborted — stale epoch after cold stagger');
+            return;
+          }
+        }
+      }
+
       const socket = new WebSocket(wsUrl);
       if (connectEpoch !== connectEpochRef.current) {
         socket.onopen = null;
@@ -264,11 +328,57 @@ export default function useTerminalV2Session({ ctxRef }) {
         }
       };
 
+      // Boot-race safety net: after a FRESH ready the launch command can still
+      // be waiting on later gates (viewport fit, projection). Retry a few times
+      // with backoff instead of silently losing the resume; every attempt is
+      // persisted to the terminal-session log for diagnostics.
+      const INITIAL_COMMAND_RETRY_DELAYS_MS = [750, 1500, 3000, 6000, 12000];
+      const scheduleInitialCommandRetryLadder = () => {
+        if (!initialCommand) return;
+        if (initialCommandRetryTimerRef.current) {
+          clearTimeout(initialCommandRetryTimerRef.current);
+          initialCommandRetryTimerRef.current = null;
+        }
+        let attempt = 0;
+        const tick = () => {
+          initialCommandRetryTimerRef.current = null;
+          if (isDisposingRef.current) return;
+          if (connectEpoch !== connectEpochRef.current) return;
+          if (!initialCommand || hasSentInitialCommand.current) return;
+          if (sessionReattachedRef.current) return;
+          if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+          logTerminalSession('initial-command-retry', {
+            panelId: id,
+            attempt,
+            command: initialCommand,
+          });
+          sendInitialCommandIfReady();
+          attempt += 1;
+          if (
+            !hasSentInitialCommand.current &&
+            attempt < INITIAL_COMMAND_RETRY_DELAYS_MS.length
+          ) {
+            initialCommandRetryTimerRef.current = setTimeout(
+              tick,
+              INITIAL_COMMAND_RETRY_DELAYS_MS[attempt]
+            );
+          }
+        };
+        initialCommandRetryTimerRef.current = setTimeout(
+          tick,
+          INITIAL_COMMAND_RETRY_DELAYS_MS[0]
+        );
+      };
+
       const maybeSaveSnapshot = (force = false) => {
         if (!isEngineV2Ref.current) return;
         if (!serializeAddonRef.current) return;
         if (!termRef.current) return;
         if (socket.readyState !== WebSocket.OPEN) return;
+        // Hidden keep-alive panels keep the socket open; serializing their
+        // full scrollback on a timer is pure main-thread cost. Snapshots
+        // resume when the panel becomes visible again.
+        if (isVisibleInLayoutRef?.current === false) return;
         if (dataProcessedSinceSnapshotRef.current < TERMINAL_SNAPSHOT_THRESHOLD_BYTES && !force) {
           return;
         }
@@ -353,13 +463,74 @@ export default function useTerminalV2Session({ ctxRef }) {
           rehydrationRef.current = { loaded: false, heldData: [] };
           dataProcessedSinceSnapshotRef.current = 0;
           currentPtyOffsetRef.current = 0;
+          // The snapshot interval is NOT started here: it only makes sense once
+          // the server confirms v2 support in its `ready` frame (sidecar-backend
+          // in production discards save-snapshot — serializing the full
+          // scrollback every 5s per panel would be pure main-thread waste).
           if (snapshotIntervalRef.current) {
             clearInterval(snapshotIntervalRef.current);
             snapshotIntervalRef.current = null;
           }
-          snapshotIntervalRef.current = setInterval(() => {
-            maybeSaveSnapshot(true);
-          }, TERMINAL_SNAPSHOT_MAX_INTERVAL_MS);
+
+          // Initial-restore viewport intent: reconnect() captures the pre-clear
+          // intent, but a first connect (workspace restore / durable resume) has
+          // none — default to 'bottom' so the replayComplete re-anchor and the
+          // safety net below apply. Without it, restored agent TUIs (Kimi) land
+          // pinned at the TOP of the rebuilt scrollback: the snapshot+delta
+          // replay leaves ydisp=0 while baseY grows, and every non-forced scroll
+          // rescue skips inline-scroll TUIs, so nothing re-anchors them.
+          if (preReconnectViewportRef && preReconnectViewportRef.current == null) {
+            preReconnectViewportRef.current = 'bottom';
+          }
+
+          // Reconnect viewport safety net (kimi idle-reconnect): the metadata
+          // replayComplete frame re-anchors the viewport intent captured
+          // pre-clear, but when that frame is lost or raced the panel stays
+          // pinned at the TOP of the rebuilt scrollback looking frozen until
+          // the next user interaction. Re-apply the intent once — only when
+          // the viewport is still far from it — and flush held live output if
+          // the metadata frame never arrived.
+          if (preReconnectViewportRef?.current != null) {
+            const pendingViewport = preReconnectViewportRef.current;
+            const epochAtSchedule = connectEpoch;
+            if (reconnectViewportVerifyRef.current) {
+              clearTimeout(reconnectViewportVerifyRef.current);
+            }
+            reconnectViewportVerifyRef.current = setTimeout(() => {
+              reconnectViewportVerifyRef.current = null;
+              if (isDisposingRef.current || connectEpochRef.current !== epochAtSchedule) return;
+              if (socket.readyState !== WebSocket.OPEN) return;
+              const term = termRef.current;
+              if (!term) return;
+              if (!rehydrationRef.current.loaded) {
+                rehydrationRef.current.loaded = true;
+                flushHeldData();
+                cliLog(`CLIENT:${id}`, 'reconnect safety-net flushed held data (no replayComplete)');
+              }
+              const intentConsumed = preReconnectViewportRef?.current == null;
+              if (preReconnectViewportRef) preReconnectViewportRef.current = null;
+              const currentOffset = getTerminalViewportScrollOffset(term);
+              const shouldReanchor = shouldReanchorReconnectViewport({
+                pendingViewport,
+                intentConsumed,
+                nearBottom: isTerminalViewportNearBottom(term, 4),
+                currentOffset,
+              });
+              if (!shouldReanchor) return;
+              if (pendingViewport === 'bottom') {
+                scrollTerminalToBottom?.(true);
+                cliLog(`CLIENT:${id}`, 'reconnect safety-net re-anchored viewport', {
+                  pendingViewport,
+                });
+              } else if (Number.isInteger(pendingViewport)) {
+                restoreTerminalViewportScroll(term, pendingViewport);
+                cliLog(`CLIENT:${id}`, 'reconnect safety-net re-anchored viewport', {
+                  pendingViewport,
+                  currentOffset,
+                });
+              }
+            }, 2500);
+          }
         } else {
           // Legacy v1 path: fit the viewport and notify the PTY immediately.
           sendResize();
@@ -457,9 +628,29 @@ export default function useTerminalV2Session({ ctxRef }) {
         try {
           const payload = JSON.parse(event.data);
 
+          if (payload.type === 'spawn-error') {
+            // El PTY host no pudo crear la sesión (p.ej. carrera conPTY
+            // "AttachConsole failed"). Fallo explícito: marcamos error ya —
+            // el auto-reconnect acotado reintenta con backoff en vez de
+            // esperar el timeout de 10s.
+            cliLog(`CLIENT:${id}`, 'server spawn-error', { message: payload.message });
+            logTerminalSession('terminal-spawn-error', {
+              panelId: id,
+              message: payload.message || null,
+            });
+            setConnectionState('error');
+            try {
+              socket.close();
+            } catch {
+              // ignore
+            }
+            return;
+          }
+
           if (payload.type === 'ready') {
             panelActivityTrackerRef.current?.onReady(payload);
             serverReadyReceivedRef.current = true;
+            readyEverReceivedRef.current = true;
 
             if (payload.v2) {
               // Phase 3 terminal-engine-v2: remember the server's canonical
@@ -479,6 +670,17 @@ export default function useTerminalV2Session({ ctxRef }) {
               } catch {
                 // ignore snapshot request send errors
               }
+
+              // Server confirmed v2/snapshot support — start the periodic
+              // snapshot saver (moved here from onopen: servers without v2,
+              // e.g. the production sidecar, discard save-snapshot frames).
+              if (snapshotIntervalRef.current) {
+                clearInterval(snapshotIntervalRef.current);
+                snapshotIntervalRef.current = null;
+              }
+              snapshotIntervalRef.current = setInterval(() => {
+                maybeSaveSnapshot(true);
+              }, TERMINAL_SNAPSHOT_MAX_INTERVAL_MS);
             } else if (
               Number(payload.cols) > 0 &&
               Number(payload.rows) > 0 &&
@@ -587,6 +789,7 @@ export default function useTerminalV2Session({ ctxRef }) {
                 tuiSessionActiveRef.current = true;
               }
               sendInitialCommandIfReady();
+              scheduleInitialCommandRetryLadder();
             }
             return;
           }
@@ -638,9 +841,11 @@ export default function useTerminalV2Session({ ctxRef }) {
                 // ignore subscribe send errors
               }
             } else {
-              // Fresh terminal (no snapshot): nothing to re-anchor — drop any
-              // pending pre-reconnect viewport intent so it can't go stale.
-              if (preReconnectViewportRef) preReconnectViewportRef.current = null;
+              // Fresh terminal (no snapshot): keep any pre-reconnect viewport
+              // intent — the subscribe below still triggers a metadata
+              // replayComplete frame whose re-anchor consumes it (the restore
+              // is clamped, so it is a no-op when the buffer only holds live
+              // output).
               try {
                 socket.send(JSON.stringify({ type: 'subscribe', v2: true }));
               } catch {
@@ -682,6 +887,11 @@ export default function useTerminalV2Session({ ctxRef }) {
               // rebuilt scrollback. Restore the intent captured pre-clear.
               const pendingViewport = preReconnectViewportRef?.current;
               if (preReconnectViewportRef) preReconnectViewportRef.current = null;
+              if (pendingViewport != null) {
+                cliLog(`CLIENT:${id}`, 'reconnect viewport re-anchor scheduled (replayComplete)', {
+                  pendingViewport,
+                });
+              }
               if (pendingViewport != null && termRef.current) {
                 const term = termRef.current;
                 const restoreViewport = () => {
@@ -830,6 +1040,7 @@ export default function useTerminalV2Session({ ctxRef }) {
                   panelId: id,
                   sessionId: payload.sessionId,
                   agentType: payload.agentType || agentSessionDetectedMatch[1],
+                  cwd: payload.cwd || null,
                 },
               })
             );
